@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm start)",
+      "Bash(node:*)",
+      "Bash(npm run server:*)",
+      "Bash(taskkill:*)",
+      "Bash(curl:*)",
+      "Bash(npm install)",
+      "Bash(npm run build:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run dev:*)",
+      "Bash(PORT=8081 npm run server)",
+      "Bash(PORT=8081 REACT_APP_SERVER_URL=http://localhost:8081 concurrently \"PORT=8081 npm run server\" \"cd client && REACT_APP_SERVER_URL=http://localhost:8081 npm start\")",
+      "Bash(echo $PORT)",
+      "Bash(PORT=8082 node server/index.js)",
+      "Bash(set PORT=8082)",
+      "Bash(timeout 10 node:*)",
+      "Bash(timeout:*)"
+    ],
+    "deny": []
+  }
+}

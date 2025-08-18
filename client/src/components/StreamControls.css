@@ -1,0 +1,119 @@
+.stream-controls {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.control-button {
+  font-size: 1.2rem;
+  font-weight: 600;
+  padding: 1rem 2rem;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  min-width: 200px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.take-over-button {
+  background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+  color: white;
+}
+
+.take-over-button:hover:not(.disabled) {
+  background: linear-gradient(45deg, #ee5a24, #ff6b6b);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(238, 90, 36, 0.4);
+}
+
+.take-over-button.disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.stop-button {
+  background: linear-gradient(45deg, #2d3436, #636e72);
+  color: white;
+}
+
+.stop-button:hover {
+  background: linear-gradient(45deg, #636e72, #2d3436);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(45, 52, 54, 0.4);
+}
+
+.controls-info {
+  margin-top: 1.5rem;
+  max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.streaming-info,
+.takeover-info,
+.start-info {
+  background: rgba(0, 0, 0, 0.8);
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.streaming-info {
+  background: rgba(255, 193, 7, 0.1);
+  border-left: 4px solid #ffc107;
+}
+
+.takeover-info {
+  background: rgba(255, 107, 107, 0.1);
+  border-left: 4px solid #ff6b6b;
+}
+
+.start-info {
+  background: rgba(116, 185, 255, 0.1);
+  border-left: 4px solid #74b9ff;
+}
+
+.takeover-cooldown-info {
+  margin-top: 1rem;
+  padding: 0.8rem 1.2rem;
+  background: rgba(255, 107, 107, 0.15);
+  border: 2px solid rgba(255, 107, 107, 0.3);
+  border-radius: 8px;
+  color: #d32f2f;
+  font-weight: 500;
+  font-size: 0.95rem;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  .control-button {
+    font-size: 1rem;
+    padding: 0.8rem 1.5rem;
+    min-width: 180px;
+  }
+  
+  .controls-info {
+    margin-top: 1rem;
+    padding: 0 1rem;
+  }
+  
+  .streaming-info,
+  .takeover-info,
+  .start-info {
+    padding: 0.8rem 1rem;
+    font-size: 0.9rem;
+  }
+}

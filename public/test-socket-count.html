@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket Connection Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        .connection {
+            padding: 10px;
+            margin: 10px;
+            border: 1px solid #00ff00;
+            background: #0a0a0a;
+        }
+        .connected { border-color: #00ff00; }
+        .disconnected { border-color: #ff0000; }
+        h1 { color: #00ffff; }
+        .summary {
+            font-size: 1.5em;
+            padding: 20px;
+            background: #0f0f0f;
+            border: 2px solid #00ffff;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 Socket Connection Test</h1>
+    <div id="summary" class="summary">Testing...</div>
+    <div id="connections"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        console.log('🔍 Starting socket connection test...');
+        
+        const connections = [];
+        const connectionsDiv = document.getElementById('connections');
+        const summaryDiv = document.getElementById('summary');
+        
+        // Test main server connection
+        console.log('📡 Connecting to main server (port 8080)...');
+        const mainSocket = io('http://localhost:8080', {
+            transports: ['websocket', 'polling'],
+            forceNew: false
+        });
+        
+        mainSocket.on('connect', () => {
+            console.log('✅ Main socket connected:', mainSocket.id);
+            updateConnection('main', mainSocket);
+        });
+        
+        mainSocket.on('disconnect', () => {
+            console.log('❌ Main socket disconnected');
+            updateConnection('main', mainSocket);
+        });
+        
+        // Test chat service connection
+        console.log('💬 Connecting to chat service (port 8081)...');
+        const chatSocket = io('http://localhost:8081', {
+            transports: ['websocket', 'polling'],
+            forceNew: false
+        });
+        
+        chatSocket.on('connect', () => {
+            console.log('✅ Chat socket connected:', chatSocket.id);
+            updateConnection('chat', chatSocket);
+        });
+        
+        chatSocket.on('disconnect', () => {
+            console.log('❌ Chat socket disconnected');
+            updateConnection('chat', chatSocket);
+        });
+        
+        function updateConnection(name, socket) {
+            let connDiv = document.getElementById(`conn-${name}`);
+            if (!connDiv) {
+                connDiv = document.createElement('div');
+                connDiv.id = `conn-${name}`;
+                connDiv.className = 'connection';
+                connectionsDiv.appendChild(connDiv);
+            }
+            
+            const status = socket.connected ? 'Connected' : 'Disconnected';
+            const statusClass = socket.connected ? 'connected' : 'disconnected';
+            connDiv.className = `connection ${statusClass}`;
+            connDiv.innerHTML = `
+                <h3>${name.toUpperCase()} Socket</h3>
+                <p>Status: ${status}</p>
+                <p>Socket ID: ${socket.id || 'N/A'}</p>
+                <p>URL: ${socket.io.uri}</p>
+                <p>Transport: ${socket.io.engine?.transport?.name || 'N/A'}</p>
+            `;
+            
+            updateSummary();
+        }
+        
+        function updateSummary() {
+            const mainConnected = mainSocket && mainSocket.connected;
+            const chatConnected = chatSocket && chatSocket.connected;
+            const totalConnections = (mainConnected ? 1 : 0) + (chatConnected ? 1 : 0);
+            
+            let status = '';
+            if (totalConnections === 2) {
+                status = '✅ SUCCESS: Exactly 2 socket connections established!';
+                summaryDiv.style.borderColor = '#00ff00';
+            } else if (totalConnections === 1) {
+                status = '⚠️ WARNING: Only 1 socket connection established (expected 2)';
+                summaryDiv.style.borderColor = '#ffff00';
+            } else {
+                status = '❌ ERROR: No socket connections established';
+                summaryDiv.style.borderColor = '#ff0000';
+            }
+            
+            summaryDiv.innerHTML = `
+                <strong>Socket Optimization Test Results:</strong><br>
+                ${status}<br>
+                <br>
+                Main Server (8080): ${mainConnected ? '✅ Connected' : '❌ Disconnected'}<br>
+                Chat Service (8081): ${chatConnected ? '✅ Connected' : '❌ Disconnected'}<br>
+                <br>
+                Total Active Connections: ${totalConnections}
+            `;
+        }
+        
+        // Initial update
+        setTimeout(() => {
+            updateConnection('main', mainSocket);
+            updateConnection('chat', chatSocket);
+        }, 100);
+    </script>
+</body>
+</html>

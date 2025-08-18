@@ -1,0 +1,728 @@
+/* Inventory Toggle Button */
+.inventory-toggle-btn {
+  position: fixed;
+  right: 20px;
+  bottom: 100px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  z-index: 1000;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Move inventory button when shop is open */
+.inventory-toggle-btn.shop-open {
+  right: 160px; /* Move left by shop width + margin */
+}
+
+.inventory-toggle-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+/* Inventory Panel */
+.inventory-panel {
+  position: fixed;
+  right: -140px; /* Very narrow to avoid chat overlap */
+  top: 0;
+  width: 140px; /* Much narrower panel */
+  height: 100vh;
+  background: #1a1a1a;
+  border-left: 1px solid #333;
+  transition: right 0.3s ease;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.inventory-panel.open {
+  right: 0; /* Stay on right edge */
+}
+
+/* When shop is also open, move inventory left */
+.inventory-panel.open.shop-also-open {
+  right: 140px; /* Move left by shop width */
+}
+
+/* Inventory Header */
+.inventory-header {
+  padding: 8px 10px;
+  background: #2a2a2a;
+  border-bottom: 1px solid #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.inventory-header h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 14px; /* Larger, more readable header text */
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.inventory-close-btn {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 24px; /* Smaller close button */
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.inventory-close-btn:hover {
+  color: #fff;
+}
+
+/* Inventory Main Tabs */
+.inventory-main-tabs {
+  display: flex;
+  padding: 6px;
+  gap: 4px;
+  background: #333;
+  border-bottom: 1px solid #444;
+}
+
+.inventory-main-tab {
+  flex: 1;
+  padding: 8px 6px;
+  background: #2a2a2a;
+  color: #bbb;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 12px; /* Larger, more readable font */
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
+.inventory-main-tab:hover {
+  background: #3a3a3a;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.inventory-main-tab.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  font-weight: 700;
+}
+
+/* Shop toggle button styling */
+.inventory-main-tab.shop-toggle.shop-open {
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+}
+
+/* Inventory Sub Tabs */
+.inventory-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+  padding: 6px;
+  gap: 4px;
+  background: #222;
+  border-bottom: 1px solid #333;
+}
+
+.inventory-tab {
+  padding: 5px 3px;
+  background: #2a2a2a;
+  color: #aaa;
+  border: 1px solid #333;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 10px; /* Balanced size for narrow panel */
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 28px;
+}
+
+.inventory-tab:hover {
+  background: #333;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.inventory-tab.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-color: transparent;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.inventory-admin-button {
+  padding: 5px 4px;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 9px; /* Compact admin button text */
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(255, 107, 107, 0.3);
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inventory-admin-button:hover {
+  background: linear-gradient(135deg, #ff5252 0%, #d32f2f 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+}
+
+/* Inventory Content */
+.inventory-loading,
+.inventory-empty,
+.inventory-error {
+  padding: 40px 20px;
+  text-align: center;
+  color: #999;
+  font-size: 16px;
+}
+
+.inventory-guest-prompt {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.inventory-error {
+  color: #ff4444;
+  background: rgba(255, 68, 68, 0.1);
+  margin: 10px;
+  padding: 15px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+/* Inventory Grid */
+.inventory-grid {
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr); /* 2 columns for very narrow panel */
+  grid-auto-rows: 55px; /* Smaller items */
+  gap: 6px; /* Smaller gap */
+  overflow-y: auto;
+  flex: 1;
+  max-height: calc(100vh - 240px);
+  align-content: start;
+}
+
+/* Inventory Item */
+.inventory-item {
+  width: 100%;
+  height: 100%;
+  min-height: 50px;
+  min-width: 50px;
+  max-height: 55px;
+  max-width: 55px;
+  background: #2a2a2a;
+  border: 2px solid #444;
+  border-radius: 8px; /* Smaller radius */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.inventory-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.inventory-item.empty {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.inventory-item.cooldown {
+  cursor: not-allowed;
+}
+
+/* Item Emoji */
+.item-emoji {
+  font-size: 22px; /* Even smaller for very narrow panel */
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Item Quantity */
+.item-quantity {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9px; /* Very small font */
+  font-weight: bold;
+  min-width: 16px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Cooldown Overlay */
+.item-cooldown-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.cooldown-text {
+  color: #ff9999;
+  font-size: 10px; /* Smaller cooldown text */
+  font-weight: bold;
+}
+
+/* Rarity Borders */
+.inventory-item.rarity-common {
+  border-color: #9d9d9d;
+}
+
+.inventory-item.rarity-uncommon {
+  border-color: #1eff00;
+}
+
+.inventory-item.rarity-rare {
+  border-color: #0070dd;
+}
+
+.inventory-item.rarity-epic {
+  border-color: #a335ee;
+}
+
+.inventory-item.rarity-legendary {
+  border-color: #ff8000;
+  background: linear-gradient(135deg, rgba(255, 128, 0, 0.1), rgba(255, 128, 0, 0.05));
+}
+
+/* Item Type Styling */
+.inventory-item[data-type="guard"] {
+  position: relative;
+}
+
+.inventory-item[data-type="guard"]::before {
+  content: '🛡️';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 10px;
+  opacity: 0.7;
+  background: rgba(0, 150, 255, 0.3);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inventory-item[data-type="weapon"] {
+  position: relative;
+}
+
+.inventory-item[data-type="weapon"]::before {
+  content: '⚔️';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 10px;
+  opacity: 0.7;
+  background: rgba(255, 100, 100, 0.3);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Item Tooltip */
+.item-tooltip {
+  position: fixed;
+  background: #1a1a1a;
+  border: 2px solid #444;
+  border-radius: 8px;
+  padding: 15px;
+  min-width: 250px;
+  max-width: 350px;
+  z-index: 10000;
+  pointer-events: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+}
+
+.tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 2px solid;
+}
+
+.tooltip-emoji {
+  font-size: 28px;
+}
+
+.tooltip-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.tooltip-type {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #999;
+}
+
+.type-icon {
+  font-size: 16px;
+}
+
+.type-text {
+  text-transform: capitalize;
+}
+
+.rarity-text {
+  margin-left: auto;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.tooltip-description {
+  color: #ccc;
+  font-size: 14px;
+  line-height: 1.4;
+  margin-bottom: 15px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+}
+
+.tooltip-stats {
+  margin-bottom: 10px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.stat-label {
+  color: #999;
+}
+
+.stat-value {
+  color: #fff;
+  font-weight: 500;
+}
+
+.stat-row.cooldown-active {
+  color: #ff9999;
+}
+
+.stat-row.cooldown-active .stat-value {
+  color: #ff9999;
+}
+
+.tooltip-footer {
+  padding-top: 10px;
+  border-top: 1px solid #333;
+  text-align: center;
+}
+
+.tooltip-hint {
+  font-size: 12px;
+  color: #4CAF50;
+  font-style: italic;
+}
+
+.tooltip-hint.cooldown {
+  color: #ff9999;
+}
+
+.tooltip-hint.empty {
+  color: #666;
+}
+
+/* When layout becomes columnar (chat goes below main content) */
+@media (max-width: 1024px) {
+  .inventory-panel {
+    width: 220px;
+    right: -220px;
+  }
+  
+  .inventory-panel.open {
+    right: 0;
+  }
+  
+  .inventory-panel.open.shop-also-open {
+    right: 220px; /* Move left by shop width on tablets */
+  }
+  
+  /* Adjust grid for wider panel on smaller screens */
+  .inventory-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .inventory-tabs {
+    grid-template-columns: repeat(auto-fit, minmax(65px, 1fr));
+  }
+  
+  .inventory-tab {
+    font-size: 11px;
+    padding: 6px 4px;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .inventory-panel {
+    width: 280px;
+    right: -280px;
+  }
+  
+  .inventory-panel.open {
+    right: 0;
+  }
+  
+  .inventory-panel.open.shop-also-open {
+    right: 280px; /* Move left by shop width on mobile */
+  }
+  
+  /* Adjust grid for wider panel on mobile */
+  .inventory-grid {
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 65px;
+    padding: 14px;
+    gap: 12px;
+  }
+  
+  .inventory-tabs {
+    grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+  }
+  
+  .inventory-tab {
+    font-size: 10px;
+    padding: 5px 3px;
+  }
+  
+  .inventory-item {
+    min-height: 65px;
+    min-width: 65px;
+    max-height: 78px;
+    max-width: 78px;
+  }
+}
+
+@media (max-width: 480px) {
+  .inventory-panel {
+    width: 100%;
+    right: -100%;
+  }
+  
+  .inventory-panel.open {
+    right: 0;
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(5, 1fr);
+    grid-auto-rows: 58px;
+    gap: 10px;
+    padding: 12px;
+  }
+  
+  .inventory-item {
+    min-height: 58px;
+    min-width: 58px;
+    max-height: 70px;
+    max-width: 70px;
+  }
+  
+  .item-emoji {
+    font-size: clamp(24px, 4vw, 32px);
+  }
+  
+  .item-quantity {
+    font-size: 13px;
+    min-width: 28px;
+    padding: 2px 8px;
+  }
+}
+
+/* Inventory Pagination */
+.inventory-pagination {
+  padding: 8px 10px;
+  background: #222;
+  border-top: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 55px;
+}
+
+.inventory-pagination .pagination-info {
+  color: #999;
+  font-size: 11px;
+  text-align: center;
+}
+
+.inventory-pagination .pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.inventory-pagination .pagination-btn {
+  padding: 6px 10px;
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.inventory-pagination .pagination-btn:hover:not(.disabled) {
+  background: #333;
+  border-color: #555;
+}
+
+.inventory-pagination .pagination-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: #666;
+}
+
+.inventory-pagination .pagination-pages {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.inventory-pagination .pagination-page {
+  padding: 6px 10px;
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 32px;
+}
+
+.inventory-pagination .pagination-page:hover {
+  background: #333;
+  border-color: #555;
+}
+
+.inventory-pagination .pagination-page.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: #fff;
+}
+
+/* Responsive Inventory Pagination */
+@media (max-width: 768px) {
+  .inventory-pagination {
+    padding: 12px 15px;
+  }
+  
+  .inventory-pagination .pagination-controls {
+    gap: 6px;
+  }
+  
+  .inventory-pagination .pagination-btn,
+  .inventory-pagination .pagination-page {
+    padding: 5px 8px;
+    font-size: 10px;
+    min-width: 28px;
+  }
+}
+
+@media (max-width: 480px) {
+  .inventory-pagination .pagination-pages {
+    max-width: 180px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #667eea #2a2a2a;
+  }
+  
+  .inventory-pagination .pagination-pages::-webkit-scrollbar {
+    height: 3px;
+  }
+  
+  .inventory-pagination .pagination-pages::-webkit-scrollbar-track {
+    background: #2a2a2a;
+  }
+  
+  .inventory-pagination .pagination-pages::-webkit-scrollbar-thumb {
+    background: #667eea;
+    border-radius: 2px;
+  }
+}

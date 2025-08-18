@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcription Admin Panel - OneStreamer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .panel h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-inactive {
+            background: #ef4444;
+            color: white;
+        }
+
+        .status-processing {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            color: #555;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .control-group select,
+        .control-group input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .control-group select:focus,
+        .control-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .live-transcription {
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 20px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .transcription-chunk {
+            margin-bottom: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .transcription-chunk .timestamp {
+            color: #9ca3af;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .transcription-chunk .text {
+            color: #374151;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            color: #6b7280;
+            text-transform: uppercase;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .history-table th,
+        .history-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .history-table th {
+            background: #f9fafb;
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+        }
+
+        .history-table td {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .history-table tr:hover {
+            background: #f9fafb;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .search-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .search-bar input {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s;
+            z-index: 1000;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(400px); }
+            to { transform: translateX(0); }
+        }
+
+        .toast.success {
+            border-left: 4px solid #10b981;
+        }
+
+        .toast.error {
+            border-left: 4px solid #ef4444;
+        }
+
+        .toast.info {
+            border-left: 4px solid #3b82f6;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            animation: modalSlideIn 0.3s;
+        }
+
+        @keyframes modalSlideIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .modal-header {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .modal-header h3 {
+            color: #333;
+            font-size: 22px;
+        }
+
+        .modal-body {
+            margin-bottom: 20px;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 30px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: #667eea;
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(30px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>
+                <span>🎙️</span>
+                Transcription Admin Panel
+            </h1>
+            <div class="subtitle">Manage real-time stream transcriptions and view history</div>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="main-grid">
+            <!-- Control Panel -->
+            <div class="panel">
+                <h2>
+                    <span>⚙️</span>
+                    Transcription Control
+                    <span id="serviceStatus" class="status-badge status-inactive">Disabled</span>
+                </h2>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="value" id="activeCount">0</div>
+                        <div class="label">Active Sessions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value" id="totalWords">0</div>
+                        <div class="label">Words Today</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value" id="currentModel">base</div>
+                        <div class="label">Model</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value" id="currentLang">en</div>
+                        <div class="label">Language</div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Enable Real-Time Transcription</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="enableTranscription">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="control-group">
+                    <label for="modelSelect">Whisper Model</label>
+                    <select id="modelSelect">
+                        <option value="tiny">Tiny (39 MB) - Fastest</option>
+                        <option value="base" selected>Base (142 MB) - Balanced</option>
+                        <option value="small">Small (466 MB) - Better</option>
+                        <option value="medium">Medium (1.5 GB) - High Quality</option>
+                        <option value="large">Large (2.9 GB) - Best Quality</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="languageSelect">Language</label>
+                    <select id="languageSelect">
+                        <option value="auto">Auto-detect</option>
+                        <option value="en" selected>English</option>
+                        <option value="es">Spanish</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                        <option value="it">Italian</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="ru">Russian</option>
+                        <option value="ja">Japanese</option>
+                        <option value="ko">Korean</option>
+                        <option value="zh">Chinese</option>
+                        <option value="ar">Arabic</option>
+                        <option value="hi">Hindi</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="streamerSelect">Active Streamer</label>
+                    <select id="streamerSelect">
+                        <option value="">No active stream</option>
+                    </select>
+                </div>
+
+                <div class="btn-group">
+                    <button id="startTranscription" class="btn btn-success" disabled>
+                        <span>▶️</span> Start Transcription
+                    </button>
+                    <button id="stopTranscription" class="btn btn-danger" disabled>
+                        <span>⏹️</span> Stop Transcription
+                    </button>
+                    <button id="applySettings" class="btn btn-primary">
+                        <span>💾</span> Apply Settings
+                    </button>
+                </div>
+            </div>
+
+            <!-- Live Transcription Display -->
+            <div class="panel">
+                <h2>
+                    <span>📝</span>
+                    Live Transcription
+                    <span id="liveStatus" class="status-badge status-inactive">Not Active</span>
+                </h2>
+
+                <div id="liveTranscription" class="live-transcription">
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                        </svg>
+                        <p>No active transcription</p>
+                        <p style="font-size: 12px; margin-top: 10px;">Start a transcription to see live text here</p>
+                    </div>
+                </div>
+
+                <div class="btn-group" style="margin-top: 15px;">
+                    <button id="clearLive" class="btn btn-secondary">
+                        <span>🗑️</span> Clear
+                    </button>
+                    <button id="exportLive" class="btn btn-secondary">
+                        <span>💾</span> Export
+                    </button>
+                    <button id="copyLive" class="btn btn-secondary">
+                        <span>📋</span> Copy
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transcription History -->
+        <div class="panel">
+            <h2>
+                <span>📚</span>
+                Transcription History
+            </h2>
+
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="Search transcriptions...">
+                <input type="date" id="dateFilter">
+                <select id="statusFilter">
+                    <option value="">All Status</option>
+                    <option value="completed">Completed</option>
+                    <option value="active">Active</option>
+                    <option value="failed">Failed</option>
+                </select>
+                <button id="searchBtn" class="btn btn-primary">
+                    <span>🔍</span> Search
+                </button>
+            </div>
+
+            <div id="historyContainer">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Session ID</th>
+                            <th>Streamer</th>
+                            <th>Start Time</th>
+                            <th>Duration</th>
+                            <th>Words</th>
+                            <th>Language</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr>
+                            <td colspan="8" style="text-align: center; padding: 40px;">
+                                Loading transcription history...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="btn-group" style="margin-top: 20px;">
+                <button id="refreshHistory" class="btn btn-secondary">
+                    <span>🔄</span> Refresh
+                </button>
+                <button id="exportHistory" class="btn btn-secondary">
+                    <span>📥</span> Export All
+                </button>
+                <button id="deleteOld" class="btn btn-danger">
+                    <span>🗑️</span> Delete Old (30+ days)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Transcript Modal -->
+    <div id="transcriptModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>View Transcript</h3>
+            </div>
+            <div class="modal-body">
+                <div id="transcriptContent" style="max-height: 400px; overflow-y: auto; padding: 15px; background: #f9fafb; border-radius: 8px; font-family: monospace; line-height: 1.6;">
+                    Loading transcript...
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="copyTranscript()" class="btn btn-secondary">Copy</button>
+                <button onclick="downloadTranscript()" class="btn btn-primary">Download</button>
+                <button onclick="closeModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Configuration
+        const API_BASE = window.location.origin;
+        const ADMIN_KEY = localStorage.getItem('adminKey') || prompt('Enter admin key:');
+        if (ADMIN_KEY) {
+            localStorage.setItem('adminKey', ADMIN_KEY);
+        }
+
+        // Socket.IO connection
+        const socket = io(API_BASE);
+        
+        // State
+        let currentSessionId = null;
+        let currentTranscript = '';
+        let liveTranscriptionChunks = [];
+        let transcriptionHistory = [];
+
+        // DOM Elements
+        const serviceStatusEl = document.getElementById('serviceStatus');
+        const liveStatusEl = document.getElementById('liveStatus');
+        const activeCountEl = document.getElementById('activeCount');
+        const totalWordsEl = document.getElementById('totalWords');
+        const currentModelEl = document.getElementById('currentModel');
+        const currentLangEl = document.getElementById('currentLang');
+        const enableToggle = document.getElementById('enableTranscription');
+        const modelSelect = document.getElementById('modelSelect');
+        const languageSelect = document.getElementById('languageSelect');
+        const streamerSelect = document.getElementById('streamerSelect');
+        const startBtn = document.getElementById('startTranscription');
+        const stopBtn = document.getElementById('stopTranscription');
+        const applyBtn = document.getElementById('applySettings');
+        const liveTranscriptionEl = document.getElementById('liveTranscription');
+        const historyTableBody = document.getElementById('historyTableBody');
+
+        // Initialize
+        async function init() {
+            await loadStatus();
+            await loadHistory();
+            setupEventListeners();
+            setupSocketListeners();
+            checkActiveStreamers();
+        }
+
+        // Load current status
+        async function loadStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/transcription/status`, {
+                    headers: { 'x-admin-key': ADMIN_KEY }
+                });
+                
+                if (!response.ok) throw new Error('Failed to load status');
+                
+                const data = await response.json();
+                updateStatus(data.status);
+            } catch (error) {
+                console.error('Error loading status:', error);
+                showToast('Failed to load transcription status', 'error');
+            }
+        }
+
+        // Update status display
+        function updateStatus(status) {
+            enableToggle.checked = status.enabled;
+            modelSelect.value = status.model;
+            languageSelect.value = status.language;
+            activeCountEl.textContent = status.activeCount;
+            currentModelEl.textContent = status.model;
+            currentLangEl.textContent = status.language;
+            
+            if (status.enabled) {
+                serviceStatusEl.textContent = 'Enabled';
+                serviceStatusEl.className = 'status-badge status-active';
+            } else {
+                serviceStatusEl.textContent = 'Disabled';
+                serviceStatusEl.className = 'status-badge status-inactive';
+            }
+            
+            // Update active sessions
+            if (status.activeSessions && status.activeSessions.length > 0) {
+                currentSessionId = status.activeSessions[0].id;
+                liveStatusEl.textContent = 'Recording';
+                liveStatusEl.className = 'status-badge status-active';
+                stopBtn.disabled = false;
+            } else {
+                currentSessionId = null;
+                liveStatusEl.textContent = 'Not Active';
+                liveStatusEl.className = 'status-badge status-inactive';
+                stopBtn.disabled = true;
+            }
+        }
+
+        // Check for active streamers
+        async function checkActiveStreamers() {
+            try {
+                console.log('🔍 ADMIN PANEL: Checking for active streamers...');
+                const response = await fetch(`${API_BASE}/api/stream/active`, {
+                    headers: { 'x-admin-key': ADMIN_KEY }
+                });
+                
+                if (!response.ok) {
+                    console.log(`⚠️ ADMIN PANEL: Stream active check failed - ${response.status}`);
+                    return;
+                }
+                
+                const data = await response.json();
+                console.log('📊 ADMIN PANEL: Stream data received:', data);
+                updateStreamerSelect(data);
+            } catch (error) {
+                console.error('❌ ADMIN PANEL: Error checking streamers:', error);
+            }
+        }
+
+        // Update streamer dropdown
+        function updateStreamerSelect(streamData) {
+            streamerSelect.innerHTML = '<option value="">Select a streamer</option>';
+            
+            if (streamData && streamData.streamerId && streamData.isActive) {
+                const option = document.createElement('option');
+                // Use streamerId for the value (the actual ID), currentStreamer for display name
+                option.value = streamData.streamerId;
+                const displayName = streamData.currentStreamer || streamData.streamerId;
+                const streamType = streamData.streamType ? ` (${streamData.streamType})` : '';
+                option.textContent = `Active: ${displayName}${streamType}`;
+                streamerSelect.appendChild(option);
+                streamerSelect.value = streamData.streamerId;
+                startBtn.disabled = false;
+                console.log(`🎯 ADMIN PANEL: Updated streamer dropdown - ID: ${streamData.streamerId}, Display: ${displayName}, Type: ${streamData.streamType}`);
+            } else {
+                startBtn.disabled = true;
+                console.log('⚠️ ADMIN PANEL: No active streamer found or stream is not active');
+            }
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            applyBtn.addEventListener('click', applySettings);
+            startBtn.addEventListener('click', startTranscription);
+            stopBtn.addEventListener('click', stopTranscription);
+            
+            document.getElementById('clearLive').addEventListener('click', clearLiveTranscription);
+            document.getElementById('exportLive').addEventListener('click', exportLiveTranscription);
+            document.getElementById('copyLive').addEventListener('click', copyLiveTranscription);
+            
+            document.getElementById('refreshHistory').addEventListener('click', loadHistory);
+            document.getElementById('searchBtn').addEventListener('click', searchHistory);
+            document.getElementById('exportHistory').addEventListener('click', exportAllHistory);
+            document.getElementById('deleteOld').addEventListener('click', deleteOldTranscriptions);
+        }
+
+        // Setup Socket.IO listeners
+        function setupSocketListeners() {
+            socket.on('transcription-started', (data) => {
+                console.log('Transcription started:', data);
+                if (data.sessionId) {
+                    currentSessionId = data.sessionId;
+                    liveStatusEl.textContent = 'Recording';
+                    liveStatusEl.className = 'status-badge status-active';
+                    stopBtn.disabled = false;
+                    clearLiveTranscription();
+                    showToast('Transcription started', 'success');
+                }
+            });
+            
+            socket.on('transcription-update', (data) => {
+                console.log('Transcription update:', data);
+                if (data.sessionId === currentSessionId) {
+                    addLiveChunk(data);
+                }
+            });
+            
+            socket.on('transcription-stopped', (data) => {
+                console.log('Transcription stopped:', data);
+                if (data.sessionId === currentSessionId) {
+                    currentSessionId = null;
+                    liveStatusEl.textContent = 'Not Active';
+                    liveStatusEl.className = 'status-badge status-inactive';
+                    stopBtn.disabled = true;
+                    showToast(`Transcription stopped. Total words: ${data.wordCount}`, 'info');
+                    loadHistory(); // Refresh history
+                }
+            });
+            
+            socket.on('stream-started', (data) => {
+                console.log('Stream started:', data);
+                checkActiveStreamers();
+            });
+            
+            socket.on('stream-ended', () => {
+                console.log('Stream ended');
+                streamerSelect.innerHTML = '<option value="">No active stream</option>';
+                startBtn.disabled = true;
+                if (currentSessionId) {
+                    stopTranscription();
+                }
+            });
+        }
+
+        // Apply settings
+        async function applySettings() {
+            try {
+                applyBtn.disabled = true;
+                applyBtn.innerHTML = '<span class="spinner"></span> Applying...';
+                
+                const response = await fetch(`${API_BASE}/admin/transcription/config`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-key': ADMIN_KEY
+                    },
+                    body: JSON.stringify({
+                        enable: enableToggle.checked,
+                        model: modelSelect.value,
+                        language: languageSelect.value
+                    })
+                });
+                
+                if (!response.ok) throw new Error('Failed to apply settings');
+                
+                const data = await response.json();
+                updateStatus({
+                    enabled: data.config.enableTranscription,
+                    model: data.config.model,
+                    language: data.config.language,
+                    activeCount: activeCountEl.textContent
+                });
+                
+                showToast('Settings applied successfully', 'success');
+            } catch (error) {
+                console.error('Error applying settings:', error);
+                showToast('Failed to apply settings', 'error');
+            } finally {
+                applyBtn.disabled = false;
+                applyBtn.innerHTML = '<span>💾</span> Apply Settings';
+            }
+        }
+
+        // Start transcription
+        async function startTranscription() {
+            const streamerId = streamerSelect.value;
+            if (!streamerId) {
+                showToast('Please select a streamer', 'error');
+                return;
+            }
+            
+            console.log(`🚀 ADMIN PANEL: Starting transcription for streamer ID: ${streamerId}`);
+            
+            try {
+                startBtn.disabled = true;
+                startBtn.innerHTML = '<span class="spinner"></span> Starting...';
+                
+                const requestBody = {
+                    streamerId: streamerId,
+                    options: {
+                        model: modelSelect.value,
+                        language: languageSelect.value
+                    }
+                };
+                
+                console.log('📤 ADMIN PANEL: Sending transcription request:', requestBody);
+                
+                const response = await fetch(`${API_BASE}/admin/transcription/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-key': ADMIN_KEY
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                if (!response.ok) throw new Error('Failed to start transcription');
+                
+                const data = await response.json();
+                if (data.success) {
+                    currentSessionId = data.sessionId;
+                    showToast('Transcription started successfully', 'success');
+                } else {
+                    throw new Error(data.error || 'Failed to start');
+                }
+            } catch (error) {
+                console.error('Error starting transcription:', error);
+                showToast(error.message || 'Failed to start transcription', 'error');
+            } finally {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<span>▶️</span> Start Transcription';
+            }
+        }
+
+        // Stop transcription
+        async function stopTranscription() {
+            if (!currentSessionId) return;
+            
+            try {
+                stopBtn.disabled = true;
+                stopBtn.innerHTML = '<span class="spinner"></span> Stopping...';
+                
+                const response = await fetch(`${API_BASE}/admin/transcription/stop/${currentSessionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'x-admin-key': ADMIN_KEY
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Failed to stop transcription');
+                
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Transcription stopped successfully', 'success');
+                }
+            } catch (error) {
+                console.error('Error stopping transcription:', error);
+                showToast('Failed to stop transcription', 'error');
+            } finally {
+                stopBtn.disabled = false;
+                stopBtn.innerHTML = '<span>⏹️</span> Stop Transcription';
+            }
+        }
+
+        // Add live transcription chunk
+        function addLiveChunk(data) {
+            liveTranscriptionChunks.push(data);
+            
+            const chunk = document.createElement('div');
+            chunk.className = 'transcription-chunk';
+            chunk.innerHTML = `
+                <div class="timestamp">Chunk ${data.chunkNumber} - ${new Date(data.timestamp).toLocaleTimeString()}</div>
+                <div class="text">${data.text}</div>
+            `;
+            
+            // Remove empty state if present
+            const emptyState = liveTranscriptionEl.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+            
+            liveTranscriptionEl.appendChild(chunk);
+            liveTranscriptionEl.scrollTop = liveTranscriptionEl.scrollHeight;
+            
+            // Update total words
+            const currentWords = parseInt(totalWordsEl.textContent) || 0;
+            totalWordsEl.textContent = currentWords + (data.text.split(' ').length || 0);
+        }
+
+        // Clear live transcription
+        function clearLiveTranscription() {
+            liveTranscriptionChunks = [];
+            liveTranscriptionEl.innerHTML = `
+                <div class="empty-state">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                            d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                    </svg>
+                    <p>No active transcription</p>
+                    <p style="font-size: 12px; margin-top: 10px;">Start a transcription to see live text here</p>
+                </div>
+            `;
+        }
+
+        // Export live transcription
+        function exportLiveTranscription() {
+            if (liveTranscriptionChunks.length === 0) {
+                showToast('No transcription to export', 'error');
+                return;
+            }
+            
+            const text = liveTranscriptionChunks.map(chunk => chunk.text).join('\n\n');
+            downloadText(text, `transcription_${Date.now()}.txt`);
+            showToast('Transcription exported', 'success');
+        }
+
+        // Copy live transcription
+        function copyLiveTranscription() {
+            if (liveTranscriptionChunks.length === 0) {
+                showToast('No transcription to copy', 'error');
+                return;
+            }
+            
+            const text = liveTranscriptionChunks.map(chunk => chunk.text).join('\n\n');
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Transcription copied to clipboard', 'success');
+            });
+        }
+
+        // Load transcription history
+        async function loadHistory() {
+            try {
+                const response = await fetch(`${API_BASE}/api/transcriptions/history?limit=50`, {
+                    headers: {
+                        'Authorization': `Bearer ${generateToken()}`,
+                        'x-admin-key': ADMIN_KEY
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Failed to load history');
+                
+                const data = await response.json();
+                displayHistory(data.transcriptions || []);
+            } catch (error) {
+                console.error('Error loading history:', error);
+                historyTableBody.innerHTML = '<tr><td colspan="8" style="text-align: center;">Failed to load history</td></tr>';
+            }
+        }
+
+        // Display history in table
+        function displayHistory(transcriptions) {
+            if (!transcriptions || transcriptions.length === 0) {
+                historyTableBody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px;">No transcriptions found</td></tr>';
+                return;
+            }
+            
+            historyTableBody.innerHTML = transcriptions.map(t => `
+                <tr>
+                    <td>${t.id.substring(0, 8)}...</td>
+                    <td>${t.streamer_id || 'Unknown'}</td>
+                    <td>${new Date(t.start_time).toLocaleString()}</td>
+                    <td>${formatDuration(t.duration)}</td>
+                    <td>${t.word_count || 0}</td>
+                    <td>${t.language || 'auto'}</td>
+                    <td><span class="status-badge status-${t.status === 'completed' ? 'active' : 'inactive'}">${t.status}</span></td>
+                    <td>
+                        <button onclick="viewTranscript('${t.id}')" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">View</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // View transcript
+        async function viewTranscript(sessionId) {
+            const modal = document.getElementById('transcriptModal');
+            const content = document.getElementById('transcriptContent');
+            
+            modal.classList.add('active');
+            content.innerHTML = 'Loading transcript...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/transcription/${sessionId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${generateToken()}`
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Failed to load transcript');
+                
+                const data = await response.json();
+                currentTranscript = data.full_text || 'No transcript available';
+                content.innerHTML = `<pre style="white-space: pre-wrap;">${currentTranscript}</pre>`;
+            } catch (error) {
+                console.error('Error loading transcript:', error);
+                content.innerHTML = 'Failed to load transcript';
+            }
+        }
+
+        // Modal functions
+        function closeModal() {
+            document.getElementById('transcriptModal').classList.remove('active');
+        }
+
+        function copyTranscript() {
+            navigator.clipboard.writeText(currentTranscript).then(() => {
+                showToast('Transcript copied to clipboard', 'success');
+            });
+        }
+
+        function downloadTranscript() {
+            downloadText(currentTranscript, `transcript_${Date.now()}.txt`);
+            showToast('Transcript downloaded', 'success');
+        }
+
+        // Search history
+        function searchHistory() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const dateFilter = document.getElementById('dateFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            
+            // Filter logic would go here
+            showToast('Search feature coming soon', 'info');
+        }
+
+        // Export all history
+        function exportAllHistory() {
+            showToast('Export all feature coming soon', 'info');
+        }
+
+        // Delete old transcriptions
+        async function deleteOldTranscriptions() {
+            if (!confirm('Delete all transcriptions older than 30 days?')) return;
+            
+            showToast('Delete old feature coming soon', 'info');
+        }
+
+        // Utility functions
+        function formatDuration(seconds) {
+            if (!seconds) return 'N/A';
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function downloadText(text, filename) {
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function generateToken() {
+            // Simple token generation for demo - in production, get from auth
+            return 'demo-token';
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <span>${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}</span>
+                <span>${message}</span>
+            `;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideIn 0.3s reverse';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Initialize on load
+        init();
+        
+        // Refresh status every 10 seconds
+        setInterval(loadStatus, 10000);
+        
+        // Check for active streamers every 5 seconds
+        setInterval(checkActiveStreamers, 5000);
+    </script>
+</body>
+</html>

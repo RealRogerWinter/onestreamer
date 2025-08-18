@@ -1,0 +1,1787 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { Socket } from 'socket.io-client';
+import { MediasoupClient } from '../services/MediasoupClient';
+import PerformanceMonitorComponent from './PerformanceMonitor';
+import { StreamSwitchManager, StreamSwitchState } from '../services/StreamSwitchManager';
+import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
+import { useVisualFxProcessor } from '../hooks/useVisualFxProcessor';
+import './WebRTCViewer.css';
+
+interface WebRTCViewerProps {
+  socket: Socket;
+  isActive: boolean;
+  className?: string;
+  showPerformanceMonitor?: boolean;
+  forceInitialize?: boolean;
+}
+
+const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className = '', showPerformanceMonitor = false, forceInitialize = false }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const mediasoupClientRef = useRef<MediasoupClient | null>(null);
+  const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isInitializingRef = useRef(false);
+  const isSwitchingRef = useRef(false);
+  const currentStreamIdRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const lastInitTimeRef = useRef<number>(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [playbackState, setPlaybackState] = useState<'loading' | 'playing' | 'paused' | 'failed'>('loading');
+  const [userInteracted, setUserInteracted] = useState(false);
+  const [autoPlayAttempts, setAutoPlayAttempts] = useState(0);
+
+  // Initialize Visual FX processor for viewer
+  const visualFxProcessor = useVisualFxProcessor(videoRef, socket, false);
+  const playRetryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [connectionState, setConnectionState] = useState<'connected' | 'disconnected' | 'reconnecting'>('disconnected');
+  const [reconnectionAttempts, setReconnectionAttempts] = useState(0);
+  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const [switchState, setSwitchState] = useState<StreamSwitchState>('idle');
+  const [isFallbackMode, setIsFallbackMode] = useState(false);
+  const streamSwitchManagerRef = useRef<StreamSwitchManager | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [volume, setVolume] = useState(0.8);
+  const [showControls, setShowControls] = useState(false);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    // Clear any pending initialization
+    if (initTimeoutRef.current) {
+      clearTimeout(initTimeoutRef.current);
+      initTimeoutRef.current = null;
+    }
+
+    if (!socket?.connected) {
+      cleanupSync();
+      return;
+    }
+
+    if (!isActive && !forceInitialize) {
+      cleanupSync();
+      return;
+    }
+
+    // Debounce initialization to prevent rapid switching issues
+    // Use shorter delay when force initializing (takeover scenario)
+    const initDelay = forceInitialize ? 10 : 100;
+    initTimeoutRef.current = setTimeout(() => {
+      console.log('📺 WEBRTC: Starting WebRTC viewer...', forceInitialize ? '(forced after takeover)' : '');
+      initializeViewer();
+    }, initDelay);
+
+    return () => {
+      // Clear any pending initialization
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+      }
+      cleanupSync();
+    };
+  }, [isActive, socket?.connected, forceInitialize]);
+
+  // Handle video events and apply volume
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handlePlay = () => {
+      setIsPaused(false);
+      setPlaybackState('playing');
+    };
+    const handlePause = () => {
+      setIsPaused(true);
+      setPlaybackState('paused');
+    };
+    
+    // Sync initial pause state with video's actual state
+    const handleLoadedData = () => {
+      const paused = video.paused;
+      setIsPaused(paused);
+      setPlaybackState(paused ? 'paused' : 'playing');
+    };
+
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('loadeddata', handleLoadedData);
+    
+    // Apply volume and muted state
+    video.volume = volume;
+    // Only mute if volume is 0 or explicitly required
+    // Allow unmuted autoplay to be attempted first
+    video.muted = volume === 0;
+    
+    // Initial state sync
+    const initialPaused = video.paused;
+    setIsPaused(initialPaused);
+    setPlaybackState(initialPaused ? 'paused' : 'playing');
+
+    return () => {
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('loadeddata', handleLoadedData);
+    };
+  }, [volume, userInteracted]);
+
+  // Cleanup controls timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Update video muted state when user interaction changes
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video && userInteracted && volume > 0) {
+      console.log('📺 WEBRTC: User interacted, unmuting video with volume:', volume);
+      video.muted = false;
+    }
+  }, [userInteracted, volume]);
+
+  // Track fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      setIsFullscreen(isCurrentlyFullscreen);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, []);
+
+  const initializeViewer = async (forceInit: boolean = false) => {
+    // Prevent multiple simultaneous initializations
+    if (isInitializingRef.current) {
+      console.log('📺 WEBRTC: Already initializing, waiting for completion...');
+      // Wait for current initialization to complete
+      let waitTime = 0;
+      while (isInitializingRef.current && waitTime < 10000) { // 10 second max wait
+        await new Promise(resolve => setTimeout(resolve, 100));
+        waitTime += 100;
+      }
+      if (isInitializingRef.current) {
+        console.error('📺 WEBRTC: Previous initialization stuck, forcing reset');
+        isInitializingRef.current = false;
+      } else {
+        console.log('📺 WEBRTC: Previous initialization completed');
+        return;
+      }
+    }
+
+    // Create abort controller for this initialization
+    abortControllerRef.current = new AbortController();
+    
+    // Basic rate limiting - prevent rapid reinitialization
+    const now = Date.now();
+    const timeSinceLastInit = now - lastInitTimeRef.current;
+    const minInterval = (forceInitialize || forceInit) ? 50 : 200; // Very short intervals
+    if (timeSinceLastInit < minInterval && !forceInitialize && !forceInit) {
+      console.log(`📺 WEBRTC: Rate limiting init (${timeSinceLastInit}ms < ${minInterval}ms), skipping...`);
+      return;
+    }
+    lastInitTimeRef.current = now;
+
+    try {
+      isInitializingRef.current = true;
+      setIsLoading(true);
+      setError(null);
+
+      // Ensure we have a clean video element
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+        videoRef.current.load();
+        
+        // Wait a bit for the video element to reset
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+
+      // Always create a completely new MediasoupClient to avoid MID collisions
+      if (mediasoupClientRef.current) {
+        // Clean up existing client completely
+        await mediasoupClientRef.current.cleanup();
+        mediasoupClientRef.current = null;
+      }
+      
+      // Create new client with connection recovery callbacks
+      mediasoupClientRef.current = new MediasoupClient({ 
+        socket,
+        onConnectionLost: () => {
+          console.log('📡 WEBRTC: MediaSoup connection lost');
+          setConnectionState('disconnected');
+          setError('Connection lost - attempting recovery...');
+        },
+        onConnectionRecovered: () => {
+          console.log('🎉 WEBRTC: MediaSoup connection recovered');
+          setConnectionState('connected');
+          setError(null);
+          // Attempt to restart playback
+          if (videoRef.current && playbackState === 'failed') {
+            retryPlayback();
+          }
+        },
+        onReconnectionFailed: (error) => {
+          console.error('❌ WEBRTC: MediaSoup reconnection failed:', error);
+          setConnectionState('disconnected');
+          setError(`Connection failed: ${error.message}`);
+        }
+      });
+
+      // Create StreamSwitchManager for graceful degradation
+      streamSwitchManagerRef.current = new StreamSwitchManager(
+        mediasoupClientRef.current,
+        socket,
+        {
+          maxRetryAttempts: 3,
+          retryDelay: 1000,
+          fallbackTimeout: 8000,
+          enableFallbackMode: true,
+          qualityFallback: true
+        }
+      );
+
+      // Set StreamSwitchManager callbacks
+      streamSwitchManagerRef.current.setCallbacks({
+        onSwitchStart: () => {
+          console.log('🔄 WEBRTC: Stream switch starting');
+          setSwitchState('switching');
+          setError('Switching stream...');
+        },
+        onSwitchSuccess: (result) => {
+          console.log('✅ WEBRTC: Stream switch successful:', result);
+          setSwitchState('idle');
+          setIsFallbackMode(result.fallbackActivated);
+          setError(result.fallbackActivated ? 'Running in fallback mode' : null);
+        },
+        onSwitchFail: (result) => {
+          console.error('❌ WEBRTC: Stream switch failed:', result);
+          setSwitchState('failed');
+          setError(`Stream switch failed: ${result.error}`);
+        },
+        onFallbackActivated: (reason) => {
+          console.warn('⚠️ WEBRTC: Fallback mode activated:', reason);
+          setIsFallbackMode(true);
+          setError(`Fallback mode: ${reason}`);
+        },
+        onRetryAttempt: (attempt, maxAttempts) => {
+          console.log(`🔄 WEBRTC: Retry attempt ${attempt}/${maxAttempts}`);
+          setSwitchState('retrying');
+          setError(`Retrying stream switch (${attempt}/${maxAttempts})...`);
+        },
+        onStateChange: (newState) => {
+          setSwitchState(newState);
+        }
+      });
+      
+      // Initialize device
+      await mediasoupClientRef.current.initialize();
+      
+      // Create receive transport
+      await mediasoupClientRef.current.createRecvTransport();
+      
+      // Enhanced consume logic with better error handling
+      let stream = null;
+      let consumeAttempts = 0;
+      const maxConsumeAttempts = 5; // Increased attempts
+      let lastError: Error | null = null;
+      
+      while (!stream && consumeAttempts < maxConsumeAttempts) {
+        // Check if operation was cancelled
+        if (abortControllerRef.current?.signal.aborted) {
+          console.log('🛑 WEBRTC: Initialization cancelled');
+          throw new Error('Operation cancelled');
+        }
+        
+        consumeAttempts++;
+        console.log(`📺 WEBRTC: Consume attempt ${consumeAttempts}/${maxConsumeAttempts}`);
+        
+        try {
+          // Verify MediaSoup client is still valid before attempting consume
+          if (!mediasoupClientRef.current || mediasoupClientRef.current.destroyed) {
+            throw new Error('MediaSoup client is destroyed or invalid');
+          }
+          
+          stream = await mediasoupClientRef.current.consume();
+          if (stream) {
+            // Verify stream has tracks before considering it successful
+            const tracks = stream.getTracks();
+            if (tracks.length === 0) {
+              console.warn('⚠️ WEBRTC: Stream has no tracks, treating as failed');
+              stream = null;
+              throw new Error('Stream has no tracks');
+            }
+            console.log(`✅ WEBRTC: Stream consumption successful with ${tracks.length} tracks`);
+            break;
+          } else {
+            throw new Error('Consume returned null stream');
+          }
+        } catch (error) {
+          lastError = error as Error;
+          console.warn(`⚠️ WEBRTC: Consume attempt ${consumeAttempts} failed:`, error);
+          
+          // Check for specific error types that indicate we should give up
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          if (errorMessage.includes('No active streamer') && consumeAttempts >= 2) {
+            console.log('🛑 WEBRTC: No active streamer after multiple attempts, stopping retries');
+            break;
+          }
+        }
+        
+        // Progressive backoff: 500ms, 1s, 1.5s, 2s, 2.5s
+        if (!stream && consumeAttempts < maxConsumeAttempts) {
+          const delay = consumeAttempts * 500;
+          console.log(`⏳ WEBRTC: Waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          // Check if we were cancelled during the wait
+          if ((!isActive && !forceInit) || !socket?.connected || abortControllerRef.current?.signal.aborted) {
+            console.log('🛑 WEBRTC: Consume cancelled during wait (inactive, disconnected, or aborted)');
+            break;
+          }
+        }
+      }
+      
+      // Handle complete failure
+      if (!stream) {
+        const finalError = lastError || new Error('Stream consumption failed after all attempts');
+        console.error('❌ WEBRTC: Failed to consume stream after all attempts:', finalError);
+        throw finalError;
+      }
+      
+      if (stream && videoRef.current) {
+        // Ensure video element is ready and not in an interrupted state
+        const video = videoRef.current;
+        
+        // Set the source
+        video.srcObject = stream;
+        
+        // Wait for loadedmetadata before attempting to play
+        await new Promise<void>((resolve, reject) => {
+          const onLoadedMetadata = () => {
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            resolve();
+          };
+          
+          const onError = (e: Event) => {
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            reject(new Error('Video failed to load'));
+          };
+          
+          video.addEventListener('loadedmetadata', onLoadedMetadata);
+          video.addEventListener('error', onError);
+          
+          // If metadata is already loaded, resolve immediately
+          if (video.readyState >= 1) {
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            resolve();
+          }
+        });
+        
+        // Try to play with comprehensive fallback strategies
+        await attemptVideoPlayback(video);
+        setIsConnected(true);
+        setConnectionState('connected');
+        setError(null); // Clear any previous error messages on successful connection
+        
+        // Restart viewing session for points tracking
+        socket.emit('join-as-viewer');
+        console.log('🎯 WEBRTC: Started viewing session for points tracking');
+      } else {
+        setError('No active stream available');
+        console.log('⚠️ WEBRTC: No stream to consume');
+      }
+      
+      setIsLoading(false);
+    } catch (error) {
+      console.error('❌ WEBRTC: Failed to initialize viewer:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to connect to stream';
+      setError(errorMessage);
+      setIsLoading(false);
+      
+      // Retry initialization for certain types of errors
+      if (errorMessage.includes('No active stream') || errorMessage.includes('consume')) {
+        console.log('🔄 WEBRTC: Will retry initialization in 3 seconds...');
+        setTimeout(() => {
+          if (isActive && !isInitializingRef.current && !isSwitchingRef.current) {
+            console.log('🔄 WEBRTC: Retrying initialization...');
+            initializeViewer(true); // Force retry
+          }
+        }, 3000);
+      }
+    } finally {
+      isInitializingRef.current = false;
+    }
+  };
+
+  const attemptVideoPlayback = async (video: HTMLVideoElement): Promise<void> => {
+    const maxAttempts = 3;
+    let attempts = 0;
+    
+    const tryPlay = async (): Promise<boolean> => {
+      attempts++;
+      setAutoPlayAttempts(attempts);
+      
+      try {
+        console.log(`🎬 WEBRTC: Attempting video playback (attempt ${attempts}/${maxAttempts})`);
+        
+        // Strategy 1: Try unmuted autoplay first
+        if (attempts === 1 && !video.muted) {
+          console.log('🔊 WEBRTC: Attempting unmuted autoplay...');
+          video.muted = false;
+          await video.play();
+          setPlaybackState('playing');
+          setUserInteracted(true); // Mark as if user interacted since unmuted play worked
+          console.log('✅ WEBRTC: Video autoplay with sound successful!');
+          return true;
+        }
+        
+        // Strategy 2: Standard muted autoplay as fallback
+        await video.play();
+        setPlaybackState('playing');
+        console.log('✅ WEBRTC: Video autoplay successful');
+        return true;
+        
+      } catch (error: any) {
+        console.warn(`⚠️ WEBRTC: Playback attempt ${attempts} failed:`, error);
+        
+        if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') {
+          // Strategy 3: Try muted autoplay if unmuted failed
+          if (attempts === 1 && !video.muted) {
+            console.log('🔇 WEBRTC: Unmuted autoplay failed, trying muted...');
+            video.muted = true;
+            try {
+              await video.play();
+              setPlaybackState('playing');
+              console.log('✅ WEBRTC: Muted autoplay successful, user interaction needed for audio');
+              // Don't return false, playback is working just muted
+              return true;
+            } catch (mutedError) {
+              console.warn('⚠️ WEBRTC: Even muted autoplay failed:', mutedError);
+              setPlaybackState('paused');
+              console.log('📺 WEBRTC: User interaction required for playback');
+              return false;
+            }
+          }
+          
+          // Strategy 4: User interaction required
+          setPlaybackState('paused');
+          console.log('📺 WEBRTC: User interaction required for playback');
+          return false;
+          
+        } else if (error.name === 'AbortError') {
+          // Strategy 5: Retry after brief delay for AbortError
+          if (attempts < maxAttempts) {
+            console.log('🔄 WEBRTC: Retrying playback after AbortError...');
+            await new Promise(resolve => setTimeout(resolve, 200 + (attempts * 100)));
+            return tryPlay();
+          } else {
+            setPlaybackState('failed');
+            throw new Error(`Playback failed after ${maxAttempts} attempts: ${error.message}`);
+          }
+          
+        } else {
+          // Strategy 6: Other errors - retry with exponential backoff
+          if (attempts < maxAttempts) {
+            console.log('🔄 WEBRTC: Retrying playback after error...');
+            await new Promise(resolve => setTimeout(resolve, 500 * attempts));
+            return tryPlay();
+          } else {
+            setPlaybackState('failed');
+            throw new Error(`Playback failed after ${maxAttempts} attempts: ${error.message}`);
+          }
+        }
+      }
+    };
+    
+    const success = await tryPlay();
+    
+    if (!success && playbackState === 'paused') {
+      // Strategy 7: Set up user interaction listeners
+      setupUserInteractionHandlers(video);
+    }
+  };
+
+  const setupUserInteractionHandlers = (video: HTMLVideoElement) => {
+    const handleUserInteraction = async () => {
+      if (!userInteracted && video.paused) {
+        setUserInteracted(true);
+        try {
+          await video.play();
+          setPlaybackState('playing');
+          console.log('✅ WEBRTC: Video playback started after user interaction');
+        } catch (error) {
+          console.error('❌ WEBRTC: Playback failed even after user interaction:', error);
+          setPlaybackState('failed');
+        }
+      }
+    };
+
+    // Add event listeners for user interaction
+    video.addEventListener('click', handleUserInteraction, { once: true });
+    document.addEventListener('click', handleUserInteraction, { once: true });
+    document.addEventListener('keydown', handleUserInteraction, { once: true });
+    document.addEventListener('touchstart', handleUserInteraction, { once: true });
+  };
+
+  const retryPlayback = async () => {
+    if (videoRef.current && isConnected) {
+      setPlaybackState('loading');
+      setAutoPlayAttempts(0);
+      await attemptVideoPlayback(videoRef.current);
+    }
+  };
+
+  const handleForceReconnection = async () => {
+    if (mediasoupClientRef.current) {
+      try {
+        setIsLoading(true);
+        setError('Attempting manual reconnection...');
+        await mediasoupClientRef.current.forceReconnection();
+        
+        // Try to reinitialize the viewer
+        await initializeViewer();
+      } catch (error) {
+        console.error('❌ WEBRTC: Manual reconnection failed:', error);
+        setError(`Manual reconnection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // Monitor connection state
+  useEffect(() => {
+    if (!mediasoupClientRef.current) return;
+
+    const updateConnectionInfo = () => {
+      const client = mediasoupClientRef.current;
+      if (client) {
+        setConnectionState(client.connectionState);
+        setReconnectionAttempts(client.reconnectionInfo.attempts);
+      }
+    };
+
+    const interval = setInterval(updateConnectionInfo, 1000);
+    return () => clearInterval(interval);
+  }, [isConnected]);
+
+  // Socket event handlers for stream switching (always active to detect new streams)
+  useEffect(() => {
+    if (!socket) return;
+    
+    console.log('🔧 WEBRTC: Setting up event listeners for socket:', socket.id);
+
+    const handleStreamSwitch = async (data: { newStreamId: string, streamerId: string, streamType?: string, isTestStream?: boolean, isWebRTC?: boolean }) => {
+      console.log('🔄 WEBRTC: Received legacy stream switch request:', data);
+      console.log('⚠️ WEBRTC: Using legacy new-streamer event - recommend upgrading to stream-ready');
+      
+      // Process as stream-ready for backward compatibility
+      return handleStreamReady({
+        newStreamId: data.newStreamId,
+        streamerId: data.streamerId,
+        streamType: data.streamType,
+        isTestStream: data.isTestStream,
+        isWebRTC: data.isWebRTC,
+        hasVideo: true, // Assume both tracks for legacy events
+        hasAudio: true,
+        producerVerified: false,
+        timestamp: Date.now()
+      });
+    };
+
+    const handleTakeoverStarted = async (data: {
+      streamerId: string,
+      newStreamerId: string,
+      streamType?: string,
+      timestamp?: number
+    }) => {
+      console.log('🔄 WEBRTC: Takeover started, preparing for stream switch:', data);
+      console.log(`🔄 WEBRTC: Viewer isActive: ${isActive}, will force activation`);
+      console.log(`🔄 WEBRTC: Current viewer state - isConnected: ${isConnected}, isLoading: ${isLoading}, switchState: ${switchState}`);
+      
+      // Skip if already processing this stream
+      if (currentStreamIdRef.current === data.newStreamerId) {
+        console.log('✅ WEBRTC: Already targeting this stream for switch');
+        return;
+      }
+      
+      // Force activation for takeover even if viewer was inactive
+      if (!isActive) {
+        console.log('🔄 WEBRTC: Forcing viewer activation for takeover (was inactive)');
+        // The parent component should handle this, but we can prepare the UI
+      }
+      
+      // Start the switching UI immediately - this will override "no stream active"
+      currentStreamIdRef.current = data.newStreamerId;
+      setSwitchState('switching');
+      setError('Stream takeover in progress...');
+      setIsLoading(true);
+      
+      // Ensure we exit any "waiting for stream" state
+      if (!isConnected && !isLoading) {
+        console.log('🔄 WEBRTC: Activating viewer from idle state for takeover');
+      }
+      
+      // Clean up current connection immediately
+      if (mediasoupClientRef.current) {
+        console.log('🧹 WEBRTC: Pre-cleaning connection for takeover');
+        await mediasoupClientRef.current.cleanup();
+        mediasoupClientRef.current = null;
+      }
+      
+      // Reset video element
+      if (videoRef.current) {
+        // Clean up test pattern animation if it exists
+        if ((videoRef.current as any)._testPatternAnimation) {
+          clearInterval((videoRef.current as any)._testPatternAnimation);
+          (videoRef.current as any)._testPatternAnimation = null;
+        }
+        
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+        videoRef.current.load();
+      }
+      
+      // Reset connection states
+      setIsConnected(false);
+      setPlaybackState('loading');
+      
+      // Clear "no stream active" by ensuring we show loading state
+      setError(null); // Clear any previous "no active stream" errors
+      
+      console.log('✅ WEBRTC: Ready for stream-ready event from new streamer');
+      
+      // Set up fallback timeout in case stream-ready never comes
+      const fallbackTimer = setTimeout(async () => {
+        // Check current state, not captured state
+        if (currentStreamIdRef.current === data.newStreamerId) {
+          console.log('⚠️ WEBRTC: stream-ready timeout after takeover, checking current state...');
+          console.log(`⚠️ WEBRTC: Current switchState: ${switchState}, isConnected: ${isConnected}`);
+          
+          if (!isConnected) {
+            console.log('⚠️ WEBRTC: Attempting fallback connection after stream-ready timeout');
+            setError('Stream producer delay, attempting direct connection...');
+            setSwitchState('retrying');
+            
+            try {
+              await initializeViewer(true); // Force fallback init
+              setSwitchState('idle');
+              setError(null);
+              console.log('✅ WEBRTC: Fallback connection successful');
+            } catch (error) {
+              console.error('❌ WEBRTC: Fallback connection failed:', error);
+              setSwitchState('failed');
+              setError('Connection failed: New stream may not be ready');
+              
+              // Try one more time after additional delay
+              setTimeout(async () => {
+                console.log('🔄 WEBRTC: Final retry attempt...');
+                try {
+                  await initializeViewer(true); // Force final retry
+                  setSwitchState('idle');
+                  setError(null);
+                } catch (finalError) {
+                  console.error('❌ WEBRTC: Final retry failed:', finalError);
+                  setError('Unable to connect to new stream');
+                }
+              }, 3000);
+            }
+          }
+        }
+      }, 8000); // 8 second fallback timeout
+      
+      // Store timer for potential cleanup
+      (globalThis as any)._webrtcFallbackTimer = fallbackTimer;
+    };
+
+    const handleStreamReady = async (data: { 
+      newStreamId: string, 
+      streamerId: string, 
+      streamType?: string, 
+      isTestStream?: boolean, 
+      isWebRTC?: boolean,
+      hasVideo?: boolean,
+      hasAudio?: boolean,
+      producerVerified?: boolean,
+      fallback?: boolean,
+      timestamp?: number
+    }) => {
+      console.log('🎬 WEBRTC: Received stream-ready notification:', data);
+      console.log(`🎬 WEBRTC: Viewer state when stream-ready received - isActive: ${isActive}, isConnected: ${isConnected}, switchState: ${switchState}`);
+      
+      // Check if this stream-ready is for our expected takeover
+      const isExpectedStream = currentStreamIdRef.current === data.newStreamId;
+      const isFreshStream = !currentStreamIdRef.current || currentStreamIdRef.current !== data.newStreamId;
+      const isAlreadyConnected = isConnected && currentStreamIdRef.current === data.newStreamId;
+      
+      console.log(`🔍 WEBRTC: Stream-ready analysis - isExpected: ${isExpectedStream}, isFresh: ${isFreshStream}, alreadyConnected: ${isAlreadyConnected}`);
+      
+      // If we're already successfully connected to this stream, ignore the stream-ready
+      if (isAlreadyConnected) {
+        console.log('✅ WEBRTC: Already connected to this stream, ignoring duplicate stream-ready');
+        return;
+      }
+      
+      if (!isExpectedStream && !isFreshStream) {
+        console.log('⚠️ WEBRTC: Stream-ready for unexpected stream, ignoring');
+        return;
+      }
+      
+      try {
+        console.log(`🎬 WEBRTC: Processing stream-ready for ${data.newStreamId} (verified: ${data.producerVerified})`);
+        
+        if (isFreshStream) {
+          // This is a fresh stream (not from takeover), need to setup
+          console.log('🔄 WEBRTC: Fresh stream detected, setting up switch');
+          currentStreamIdRef.current = data.newStreamId;
+          setSwitchState('switching');
+          setError(`Connecting to stream${data.producerVerified ? ' (verified)' : ''}...`);
+          setIsLoading(true);
+          
+          // Clean up current connection for fresh streams
+          if (mediasoupClientRef.current) {
+            console.log('🧹 WEBRTC: Cleaning up existing connection for fresh stream');
+            
+            // Cancel any ongoing initialization to prevent race conditions
+            if (abortControllerRef.current) {
+              abortControllerRef.current.abort();
+              abortControllerRef.current = null;
+            }
+            isInitializingRef.current = false;
+            
+            await mediasoupClientRef.current.cleanup();
+            mediasoupClientRef.current = null;
+          }
+          
+          // Reset video element
+          if (videoRef.current) {
+            if ((videoRef.current as any)._testPatternAnimation) {
+              clearInterval((videoRef.current as any)._testPatternAnimation);
+              (videoRef.current as any)._testPatternAnimation = null;
+            }
+            videoRef.current.pause();
+            videoRef.current.srcObject = null;
+            videoRef.current.load();
+          }
+          
+          setIsConnected(false);
+          setPlaybackState('loading');
+        } else {
+          // This is expected from takeover-started, just update status
+          console.log('🎬 WEBRTC: Expected stream-ready from takeover, proceeding with connection');
+          setError(`Connecting to stream${data.producerVerified ? ' (verified)' : ''}...`);
+        }
+        
+        
+        // Wait longer if producer not verified, shorter if verified
+        const waitTime = data.producerVerified ? 200 : 800;
+        console.log(`⏳ WEBRTC: Waiting ${waitTime}ms for producer stability...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        
+        // Initialize connection directly
+        console.log('🔄 WEBRTC: Initializing connection for stream switch');
+        setSwitchState('switching');
+        
+        try {
+          await initializeViewer(true); // Force init for stream switching
+          setSwitchState('idle');
+          setError(null);
+          console.log('✅ WEBRTC: Stream switch completed successfully');
+          
+          // Restart viewing session for points tracking
+          socket.emit('join-as-viewer');
+          console.log('🎯 WEBRTC: Restarted viewing session for points tracking');
+        } catch (error) {
+          console.error('❌ WEBRTC: Stream switch failed:', error);
+          setSwitchState('failed');
+          setError(`Stream switch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        
+      } catch (error) {
+        console.error('❌ WEBRTC: Stream switch failed after all attempts:', error);
+        setSwitchState('failed');
+        setError(`Stream switch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        
+        // Final fallback retry after longer delay
+        setTimeout(async () => {
+          console.log('🔄 WEBRTC: Final fallback retry...');
+          setSwitchState('retrying');
+          setError('Final retry attempt...');
+          
+          try {
+            await initializeViewer(true); // Force fallback retry
+            setSwitchState('idle');
+            setError(null);
+            console.log('✅ WEBRTC: Fallback retry succeeded');
+            
+            // Restart viewing session for points tracking
+            socket.emit('join-as-viewer');
+            console.log('🎯 WEBRTC: Restarted viewing session for points tracking (fallback)');
+          } catch (retryError) {
+            console.error('❌ WEBRTC: Final retry failed:', retryError);
+            setSwitchState('failed');
+            setError('Connection failed. Please refresh the page.');
+          }
+        }, 5000);
+      }
+    };
+
+    const handleTestStreamRequest = async () => {
+      console.log('🧪 WEBRTC: Test stream requested via fallback');
+      // The StreamSwitchManager will handle this internally via fallback strategies
+    };
+
+    const handleTestPatternStream = async (data: { streamerId: string, testConfig: { pattern: string, resolution: string, frameRate: number }, isViewBot?: boolean }) => {
+      console.log('🎨 WEBRTC: Test pattern stream requested:', data);
+      
+      try {
+        // Skip if already processing this stream
+        if (currentStreamIdRef.current === data.streamerId) {
+          console.log('✅ WEBRTC: Already displaying this test pattern');
+          return;
+        }
+        
+        const streamType = data.isViewBot ? 'ViewBot' : 'Test pattern';
+        console.log(`🎨 WEBRTC: Starting client-side ${streamType} generation`);
+        setSwitchState('switching');
+        setError(`Generating ${streamType.toLowerCase()}...`);
+        // ViewBot streams are now real WebRTC streams, not fallback patterns
+        setIsFallbackMode(false); // ViewBot streams are handled like regular WebRTC streams
+        
+        // Update current stream ID immediately
+        currentStreamIdRef.current = data.streamerId;
+        
+        // Clean up existing MediaSoup connection
+        if (mediasoupClientRef.current) {
+          console.log(`🧹 WEBRTC: Cleaning up MediaSoup connection for ${streamType}`);
+          await mediasoupClientRef.current.cleanup();
+          mediasoupClientRef.current = null;
+        }
+        
+        // Generate test pattern directly in video element
+        await generateTestPattern(data.testConfig);
+        
+        setIsConnected(true);
+        setSwitchState('idle');
+        setError(null);
+        console.log(`✅ WEBRTC: ${streamType} generation completed`);
+        
+      } catch (error) {
+        console.error(`❌ WEBRTC: ${data.isViewBot ? 'ViewBot' : 'Test pattern'} generation failed:`, error);
+        setSwitchState('failed');
+        setError(`${data.isViewBot ? 'ViewBot' : 'Test pattern'} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    };
+
+
+    const handleStreamEnded = async (data?: { reason?: string, previousStreamer?: string, newStreamer?: string }) => {
+      console.log('🔔 WEBRTC: Stream ended event received:', data);
+      
+      // Clean up video display
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+        console.log('🧹 WEBRTC: Cleared video element');
+      }
+      
+      // Reset state
+      setError(null);
+      setIsConnected(false);
+      
+      // If this is a takeover, clean up consumers immediately to prevent orphaned consumer errors
+      if (data?.reason === 'takeover' && mediasoupClientRef.current) {
+        console.log('🧹 WEBRTC: Takeover detected, cleaning up consumers before new stream');
+        try {
+          await mediasoupClientRef.current.cleanup();
+          console.log('✅ WEBRTC: Takeover cleanup completed');
+        } catch (error) {
+          console.error('❌ WEBRTC: Takeover cleanup failed:', error);
+        }
+      } else {
+        // For normal stream ending (like disconnect), also clean up
+        console.log('🧹 WEBRTC: Stream ended normally, cleaning up consumers');
+        if (mediasoupClientRef.current) {
+          try {
+            await mediasoupClientRef.current.cleanup();
+            console.log('✅ WEBRTC: Normal stream end cleanup completed');
+          } catch (error) {
+            console.error('❌ WEBRTC: Normal stream end cleanup failed:', error);
+          }
+        }
+      }
+    };
+
+    socket.on('new-streamer', handleStreamSwitch);
+    socket.on('stream-ready', handleStreamReady);
+    socket.on('test-stream-available', handleTestStreamRequest);
+    socket.on('test-pattern-stream', handleTestPatternStream);
+    socket.on('stream-ended', handleStreamEnded);
+    
+    console.log('✅ WEBRTC: Event listeners registered (simple mode)');
+
+    return () => {
+      console.log('🧹 WEBRTC: Cleaning up event listeners');
+      socket.off('new-streamer', handleStreamSwitch);
+      socket.off('stream-ready', handleStreamReady);
+      socket.off('test-stream-available', handleTestStreamRequest);
+      socket.off('test-pattern-stream', handleTestPatternStream);
+      socket.off('stream-ended', handleStreamEnded);
+    };
+  }, [socket]); // Remove isActive dependency so events are always listened to
+
+  const generateTestPattern = async (testConfig: { pattern: string, resolution: string, frameRate: number }) => {
+    console.log('🎨 WEBRTC: Generating test pattern:', testConfig);
+    
+    if (!videoRef.current) {
+      throw new Error('Video element not available');
+    }
+    
+    const video = videoRef.current;
+    
+    // Parse resolution
+    const [width, height] = testConfig.resolution.split('x').map(Number);
+    const frameRate = testConfig.frameRate || 30;
+    
+    // Create canvas for pattern generation
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) {
+      throw new Error('Cannot get canvas context');
+    }
+    
+    console.log(`🎨 WEBRTC: Creating ${testConfig.pattern} pattern at ${width}x${height} @ ${frameRate}fps`);
+    
+    // Generate different patterns based on configuration
+    let frameCount = 0;
+    const startTime = Date.now();
+    
+    const drawFrame = () => {
+      const elapsed = Date.now() - startTime;
+      const currentFrame = Math.floor(elapsed / (1000 / frameRate));
+      
+      if (currentFrame <= frameCount) {
+        return; // Skip if we're ahead of schedule
+      }
+      
+      frameCount = currentFrame;
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, width, height);
+      
+      switch (testConfig.pattern) {
+        case 'color-bars':
+          drawColorBars(ctx, width, height);
+          break;
+        case 'moving-text':
+          drawMovingText(ctx, width, height, elapsed);
+          break;
+        case 'clock':
+          drawClock(ctx, width, height);
+          break;
+        case 'noise':
+          drawNoise(ctx, width, height);
+          break;
+        case 'gradient':
+          drawGradient(ctx, width, height, elapsed);
+          break;
+        default:
+          drawSolidColor(ctx, width, height, '#808080');
+      }
+      
+      // Add frame counter and uptime
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(10, 10, 300, 60);
+      ctx.fillStyle = 'white';
+      ctx.font = '16px monospace';
+      ctx.fillText(`OneStreamer Test Pattern`, 20, 30);
+      ctx.fillText(`Frame: ${frameCount} | Uptime: ${Math.floor(elapsed / 1000)}s`, 20, 50);
+    };
+    
+    // Start animation loop
+    const animationId = setInterval(drawFrame, 1000 / frameRate);
+    
+    // Convert canvas to video stream
+    const stream = canvas.captureStream(frameRate);
+    
+    // Set video source
+    video.srcObject = stream;
+    video.muted = true; // Test patterns don't have audio
+    
+    // Store animation ID for cleanup
+    (video as any)._testPatternAnimation = animationId;
+    
+    // Wait for video to load and play
+    await new Promise<void>((resolve, reject) => {
+      const onLoadedMetadata = () => {
+        video.removeEventListener('loadedmetadata', onLoadedMetadata);
+        video.removeEventListener('error', onError);
+        resolve();
+      };
+      
+      const onError = (e: Event) => {
+        video.removeEventListener('loadedmetadata', onLoadedMetadata);
+        video.removeEventListener('error', onError);
+        reject(new Error('Test pattern video failed to load'));
+      };
+      
+      video.addEventListener('loadedmetadata', onLoadedMetadata);
+      video.addEventListener('error', onError);
+      
+      if (video.readyState >= 1) {
+        onLoadedMetadata();
+      }
+    });
+    
+    // Attempt to play
+    try {
+      await video.play();
+      setPlaybackState('playing');
+      console.log('✅ WEBRTC: Test pattern video playing');
+    } catch (error) {
+      console.warn('⚠️ WEBRTC: Test pattern autoplay failed, requiring user interaction');
+      setPlaybackState('paused');
+      setupUserInteractionHandlers(video);
+    }
+  };
+  
+  // Pattern drawing functions
+  const drawColorBars = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const colors = ['#ffffff', '#ffff00', '#00ffff', '#00ff00', '#ff00ff', '#ff0000', '#0000ff', '#000000'];
+    const barWidth = width / colors.length;
+    
+    colors.forEach((color, index) => {
+      ctx.fillStyle = color;
+      ctx.fillRect(index * barWidth, 0, barWidth, height);
+    });
+  };
+  
+  const drawMovingText = (ctx: CanvasRenderingContext2D, width: number, height: number, elapsed: number) => {
+    ctx.fillStyle = '#000080';
+    ctx.fillRect(0, 0, width, height);
+    
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    
+    const text = `OneStreamer Test • ${Math.floor(elapsed / 1000)}s`;
+    const x = width / 2;
+    const y = height / 2 + Math.sin(elapsed / 1000) * 50;
+    
+    ctx.fillText(text, x, y);
+  };
+  
+  const drawClock = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    ctx.fillStyle = '#001122';
+    ctx.fillRect(0, 0, width, height);
+    
+    const now = new Date();
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 64px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(now.toLocaleTimeString(), width / 2, height / 2 - 20);
+    
+    ctx.font = 'bold 32px monospace';
+    ctx.fillText(now.toLocaleDateString(), width / 2, height / 2 + 40);
+  };
+  
+  const drawNoise = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const imageData = ctx.createImageData(width, height);
+    const data = imageData.data;
+    
+    for (let i = 0; i < data.length; i += 4) {
+      const noise = Math.random() * 255;
+      data[i] = noise;     // Red
+      data[i + 1] = noise; // Green
+      data[i + 2] = noise; // Blue
+      data[i + 3] = 255;   // Alpha
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+  };
+  
+  const drawGradient = (ctx: CanvasRenderingContext2D, width: number, height: number, elapsed: number) => {
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    const hue = (elapsed / 50) % 360;
+    gradient.addColorStop(0, `hsl(${hue}, 100%, 50%)`);
+    gradient.addColorStop(0.5, `hsl(${(hue + 120) % 360}, 100%, 50%)`);
+    gradient.addColorStop(1, `hsl(${(hue + 240) % 360}, 100%, 50%)`);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+  };
+  
+  const drawSolidColor = (ctx: CanvasRenderingContext2D, width: number, height: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, width, height);
+  };
+
+  const cleanup = async () => {
+    console.log('🧹 WEBRTC: Cleaning up WebRTC viewer');
+    
+    // Clear any pending initialization
+    if (initTimeoutRef.current) {
+      clearTimeout(initTimeoutRef.current);
+      initTimeoutRef.current = null;
+    }
+    
+    // Reset initialization flag
+    isInitializingRef.current = false;
+    
+    if (mediasoupClientRef.current) {
+      await mediasoupClientRef.current.cleanup();
+      mediasoupClientRef.current = null;
+    }
+
+    if (streamSwitchManagerRef.current) {
+      streamSwitchManagerRef.current.cleanup();
+      streamSwitchManagerRef.current = null;
+    }
+    
+    if (videoRef.current) {
+      // Clean up test pattern animation if it exists
+      if ((videoRef.current as any)._testPatternAnimation) {
+        clearInterval((videoRef.current as any)._testPatternAnimation);
+        (videoRef.current as any)._testPatternAnimation = null;
+        console.log('🧹 WEBRTC: Test pattern animation cleaned up');
+      }
+      
+      // Pause before clearing to avoid play interruption errors
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+      videoRef.current.load(); // Reset the video element state
+    }
+    
+    setIsConnected(false);
+    setIsLoading(false);
+    setPlaybackState('loading');
+    setAutoPlayAttempts(0);
+    setUserInteracted(false);
+    setConnectionState('disconnected');
+    setReconnectionAttempts(0);
+    
+    // Clear any pending play retry
+    if (playRetryTimeoutRef.current) {
+      clearTimeout(playRetryTimeoutRef.current);
+      playRetryTimeoutRef.current = null;
+    }
+  };
+
+  const cleanupSync = () => {
+    console.log('🧹 WEBRTC: Synchronous cleanup WebRTC viewer');
+    
+    // Clear any pending initialization
+    if (initTimeoutRef.current) {
+      clearTimeout(initTimeoutRef.current);
+      initTimeoutRef.current = null;
+    }
+    
+    // Reset flags
+    isInitializingRef.current = false;
+    isSwitchingRef.current = false;
+    
+    if (mediasoupClientRef.current) {
+      // Fire and forget async cleanup
+      mediasoupClientRef.current.cleanup().catch(console.error);
+      mediasoupClientRef.current = null;
+    }
+    
+    if (videoRef.current) {
+      // Clean up test pattern animation if it exists
+      if ((videoRef.current as any)._testPatternAnimation) {
+        clearInterval((videoRef.current as any)._testPatternAnimation);
+        (videoRef.current as any)._testPatternAnimation = null;
+        console.log('🧹 WEBRTC: Test pattern animation cleaned up (sync)');
+      }
+      
+      // Pause before clearing to avoid play interruption errors
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+      videoRef.current.load(); // Reset the video element state
+    }
+    
+    setIsConnected(false);
+    setIsLoading(false);
+    setError(null);
+    setPlaybackState('loading');
+    setAutoPlayAttempts(0);
+    setUserInteracted(false);
+    setConnectionState('disconnected');
+    setReconnectionAttempts(0);
+    setSwitchState('idle');
+    
+    // Clear any pending play retry
+    if (playRetryTimeoutRef.current) {
+      clearTimeout(playRetryTimeoutRef.current);
+      playRetryTimeoutRef.current = null;
+    }
+  };
+
+  const handleVideoClick = () => {
+    // Only mark as interacted if video is actually paused and needs user interaction
+    if (videoRef.current && videoRef.current.paused) {
+      setUserInteracted(true);
+      videoRef.current.play().catch(e => {
+        console.error('❌ WEBRTC: Manual play failed:', e);
+        setError('Unable to play stream');
+      });
+    }
+    // Show controls on video click
+    showControlsTemporary();
+  };
+
+  const togglePause = () => {
+    if (!videoRef.current) return;
+    
+    // Mark user as interacted when they use pause/play controls
+    if (!userInteracted) {
+      setUserInteracted(true);
+    }
+    
+    if (isPaused) {
+      videoRef.current.play().then(() => {
+        setIsPaused(false);
+        setPlaybackState('playing');
+      }).catch(e => {
+        console.error('❌ WEBRTC: Play failed:', e);
+        setPlaybackState('failed');
+      });
+    } else {
+      videoRef.current.pause();
+      setIsPaused(true);
+      setPlaybackState('paused');
+    }
+  };
+
+  const handleVolumeChange = (newVolume: number) => {
+    setVolume(newVolume);
+    if (videoRef.current) {
+      videoRef.current.volume = newVolume;
+      videoRef.current.muted = newVolume === 0;
+      
+      // First time volume is changed, ensure user has interacted
+      if (!userInteracted) {
+        setUserInteracted(true);
+      }
+    }
+  };
+
+  const showControlsTemporary = () => {
+    setShowControls(true);
+    
+    // Clear existing timeout
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    
+    // Hide controls after 3 seconds
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, 3000);
+  };
+
+  const handleMouseMove = () => {
+    // Show controls on mouse movement, but don't change interaction state
+    // This prevents autoplay issues when just moving mouse over video
+    showControlsTemporary();
+  };
+
+  const toggleFullscreen = async () => {
+    const videoContainer = videoRef.current?.parentElement;
+    if (!videoContainer) return;
+
+    try {
+      if (!isFullscreen) {
+        // Enter fullscreen
+        if (videoContainer.requestFullscreen) {
+          await videoContainer.requestFullscreen();
+        } else if ((videoContainer as any).webkitRequestFullscreen) {
+          await (videoContainer as any).webkitRequestFullscreen();
+        } else if ((videoContainer as any).mozRequestFullScreen) {
+          await (videoContainer as any).mozRequestFullScreen();
+        } else if ((videoContainer as any).msRequestFullscreen) {
+          await (videoContainer as any).msRequestFullscreen();
+        }
+      } else {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        } else if ((document as any).mozCancelFullScreen) {
+          await (document as any).mozCancelFullScreen();
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen();
+        }
+      }
+    } catch (error) {
+      console.error('Fullscreen toggle failed:', error);
+    }
+  };
+
+  const handleRetry = async () => {
+    await cleanup();
+    if (socket?.connected) { // Remove isActive requirement for retry
+      initializeViewer(true); // Force init on manual retry
+    }
+  };
+
+  const handleExitFallback = async () => {
+    if (streamSwitchManagerRef.current && isFallbackMode) {
+      console.log('🔧 WEBRTC: Attempting to exit fallback mode');
+      
+      try {
+        const success = await streamSwitchManagerRef.current.exitFallbackMode();
+        if (success) {
+          setIsFallbackMode(false);
+          setError(null);
+          console.log('✅ WEBRTC: Successfully exited fallback mode');
+          
+          // Reinitialize viewer with normal operation
+          await initializeViewer(true); // Force init for fallback exit
+        } else {
+          console.warn('⚠️ WEBRTC: Failed to exit fallback mode');
+          setError('Unable to exit fallback mode');
+        }
+      } catch (error) {
+        console.error('❌ WEBRTC: Error exiting fallback mode:', error);
+        setError(`Fallback exit failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+  };
+
+  return (
+    <div className={`webrtc-viewer ${className}`} style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {/* Canvas Effect Overlay - Only render when there's an active stream or connection */}
+      {(isActive || isConnected) && (
+        <CanvasEffectOverlay
+          videoRef={videoRef}
+          socket={socket}
+          isActive={isActive || isConnected}
+          className="stream-effects-overlay"
+        />
+      )}
+      
+      {isLoading && (
+        <div className="webrtc-loading">
+          <div className="loading-spinner"></div>
+          <p>Connecting to stream...</p>
+        </div>
+      )}
+      
+      {error && (
+        <div className="webrtc-error">
+          <p>⚠️ {error}</p>
+          <button 
+            onClick={handleRetry}
+            className="retry-button"
+          >
+            Retry Connection
+          </button>
+        </div>
+      )}
+
+      {/* Playback Status Overlay */}
+      {isConnected && playbackState === 'paused' && (
+        <div className="playback-overlay" style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'white',
+          zIndex: 10,
+          cursor: 'pointer'
+        }}
+        onClick={retryPlayback}
+        >
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>▶️</div>
+          <p style={{ textAlign: 'center', margin: '10px', fontSize: '18px' }}>
+            Click to play stream
+          </p>
+          <p style={{ textAlign: 'center', margin: '5px', fontSize: '14px', opacity: 0.7 }}>
+            Auto-play was blocked by your browser
+          </p>
+        </div>
+      )}
+
+      {/* Muted Audio Indicator - Show when video is playing but muted and user hasn't interacted */}
+      {isConnected && playbackState === 'playing' && videoRef.current?.muted && !userInteracted && (
+        <div 
+          className="muted-audio-indicator" 
+          style={{
+            position: 'absolute',
+            bottom: '80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(0, 0, 0, 0.9)',
+            color: 'white',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            cursor: 'pointer',
+            zIndex: 20,
+            animation: 'pulse 2s infinite',
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={() => {
+            if (videoRef.current) {
+              videoRef.current.muted = false;
+              setUserInteracted(true);
+              handleVolumeChange(0.8); // Set to 80% volume
+            }
+          }}
+        >
+          <span style={{ fontSize: '24px' }}>🔇</span>
+          <div>
+            <p style={{ margin: 0, fontSize: '14px', fontWeight: 'bold' }}>Click to unmute</p>
+            <p style={{ margin: 0, fontSize: '12px', opacity: 0.8 }}>Audio is currently muted</p>
+          </div>
+        </div>
+      )}
+
+      {/* Stream Switch Status Overlay */}
+      {switchState !== 'idle' && (
+        <div className="stream-switch-status" style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: switchState === 'failed' ? 'rgba(139, 0, 0, 0.8)' : 'rgba(33, 150, 243, 0.8)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'white',
+          zIndex: 12
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>
+            {switchState === 'switching' ? '🔄' : 
+             switchState === 'retrying' ? '⏳' : 
+             switchState === 'fallback' ? '🔧' : '❌'}
+          </div>
+          <p style={{ textAlign: 'center', margin: '10px', fontSize: '18px' }}>
+            {switchState === 'switching' ? 'Switching Stream...' :
+             switchState === 'retrying' ? 'Retrying Stream Switch...' :
+             switchState === 'fallback' ? 'Fallback Mode Active' :
+             'Stream Switch Failed'}
+          </p>
+          {isFallbackMode && (
+            <p style={{ textAlign: 'center', margin: '5px', fontSize: '14px', opacity: 0.8 }}>
+              Running with reduced functionality
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Fallback Mode Indicator */}
+      {isFallbackMode && switchState === 'idle' && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          left: '10px',
+          background: 'rgba(255, 152, 0, 0.9)',
+          color: 'white',
+          padding: '5px 10px',
+          borderRadius: '4px',
+          fontSize: '12px',
+          zIndex: 25,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span>🔧 Fallback Mode</span>
+          <button
+            onClick={handleExitFallback}
+            style={{
+              background: 'rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              border: '1px solid rgba(255, 255, 255, 0.4)',
+              borderRadius: '3px',
+              padding: '2px 6px',
+              fontSize: '10px',
+              cursor: 'pointer',
+              transition: 'background 0.2s ease'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
+            onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+          >
+            Exit
+          </button>
+        </div>
+      )}
+
+      {/* Connection Recovery Overlay */}
+      {connectionState === 'reconnecting' && (
+        <div className="connection-recovery" style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(255, 165, 0, 0.8)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'white',
+          zIndex: 15
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔄</div>
+          <p style={{ textAlign: 'center', margin: '10px', fontSize: '18px' }}>
+            Reconnecting to stream...
+          </p>
+          <p style={{ textAlign: 'center', margin: '5px', fontSize: '14px', opacity: 0.7 }}>
+            Attempt {reconnectionAttempts} of 5
+          </p>
+          <button 
+            onClick={handleForceReconnection}
+            style={{
+              background: '#ff8c00',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              marginTop: '15px',
+              fontSize: '14px'
+            }}
+          >
+            Force Reconnect
+          </button>
+        </div>
+      )}
+
+      {/* Playback Retry Indicator */}
+      {isConnected && playbackState === 'failed' && (
+        <div className="playback-failed" style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(139, 0, 0, 0.8)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'white',
+          zIndex: 10
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠️</div>
+          <p style={{ textAlign: 'center', margin: '10px', fontSize: '18px' }}>
+            Playback failed
+          </p>
+          <p style={{ textAlign: 'center', margin: '5px', fontSize: '14px', opacity: 0.7 }}>
+            Attempted {autoPlayAttempts} times
+          </p>
+          <button 
+            onClick={retryPlayback}
+            style={{
+              background: '#dc3545',
+              color: 'white',
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              marginTop: '15px',
+              fontSize: '16px'
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      )}
+      
+      <video
+        ref={videoRef}
+        className="webrtc-video"
+        controls={false}
+        autoPlay
+        playsInline
+        onClick={(e) => {
+          // Don't handle video clicks if canvas debug mode might be active
+          // The canvas overlay will handle its own clicks when in debug mode
+          handleVideoClick();
+        }}
+        onMouseMove={handleMouseMove}
+        style={{
+          width: '100%',
+          height: '100%',
+          backgroundColor: '#000',
+          objectFit: 'cover',
+          display: isConnected && (playbackState === 'playing' || playbackState === 'paused') ? 'block' : 'none',
+          position: 'relative',
+          zIndex: 1 // Lower z-index than canvas overlay (which is 1000+)
+        }}
+      />
+
+      {/* Custom Video Controls */}
+      {isConnected && playbackState === 'playing' && showControls && (
+        <div 
+          className="video-controls"
+          style={{
+            position: 'absolute',
+            bottom: '20px',
+            left: '20px',
+            right: '20px',
+            background: 'rgba(0, 0, 0, 0.8)',
+            borderRadius: '8px',
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            zIndex: 30,
+            backdropFilter: 'blur(4px)'
+          }}
+          onMouseMove={handleMouseMove}
+        >
+          {/* Play/Pause Button */}
+          <button
+            onClick={togglePause}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              fontSize: '24px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              transition: 'background 0.2s ease'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
+            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+          >
+            {isPaused ? '▶️' : '⏸️'}
+          </button>
+
+          {/* Volume Control */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => handleVolumeChange(volume === 0 ? 0.8 : 0)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'white',
+                fontSize: '20px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '4px'
+              }}
+            >
+              {volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value={volume}
+              onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+              style={{
+                width: '80px',
+                height: '4px',
+                background: '#444',
+                borderRadius: '2px',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            />
+          </div>
+
+          {/* Live Indicator */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: '#ff4444',
+                animation: 'pulse 2s infinite'
+              }}
+            />
+            <span style={{ color: 'white', fontSize: '14px', fontWeight: 'bold' }}>LIVE</span>
+          </div>
+
+          {/* Fullscreen Button */}
+          <button
+            onClick={toggleFullscreen}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              fontSize: '20px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              transition: 'background 0.2s ease',
+              marginLeft: '8px'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
+            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            {isFullscreen ? '⊡' : '⊞'}
+          </button>
+        </div>
+      )}
+      
+      {!isLoading && !error && !isConnected && (
+        <div className="webrtc-waiting">
+          <p>Waiting for stream...</p>
+        </div>
+      )}
+
+
+      {/* Performance Monitor */}
+      {showPerformanceMonitor && (
+        <PerformanceMonitorComponent
+          peerConnection={peerConnection}
+          isActive={isConnected}
+          showDetailed={process.env.NODE_ENV === 'development'}
+        />
+      )}
+    </div>
+  );
+};
+
+export default WebRTCViewer;

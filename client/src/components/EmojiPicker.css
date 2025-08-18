@@ -1,0 +1,236 @@
+.emoji-picker {
+  position: absolute;
+  bottom: 100%;
+  right: 10px;  /* Align with right side buttons */
+  margin-bottom: 10px;
+  width: 340px;
+  max-height: 420px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.emoji-picker-header {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid #333;
+}
+
+.emoji-search {
+  flex: 1;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+}
+
+.emoji-search:focus {
+  border-color: #007bff;
+}
+
+.emoji-picker-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 10px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.emoji-picker-close:hover {
+  color: #fff;
+}
+
+.emoji-categories {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid #333;
+  overflow-x: auto;
+}
+
+.emoji-categories::-webkit-scrollbar {
+  height: 3px;
+}
+
+.emoji-categories::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 2px;
+}
+
+.emoji-category {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 3px 10px;
+  color: #999;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.emoji-category:hover {
+  background: #333;
+  color: #fff;
+}
+
+.emoji-category.active {
+  background: #007bff;
+  border-color: #007bff;
+  color: #fff;
+}
+
+.emoji-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 2px;
+  padding: 8px;
+  overflow-y: auto;
+  min-height: 200px;
+  max-height: 320px;
+}
+
+.emoji-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.emoji-grid::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+
+.emoji-item {
+  position: relative;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.15s;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emoji-item:hover {
+  background: #333;
+  transform: scale(1.2);
+  z-index: 10;
+}
+
+.emoji-item img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.emoji-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #000;
+  color: #fff;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-bottom: 2px;
+  z-index: 1001;
+}
+
+.emoji-item:hover .emoji-tooltip {
+  opacity: 1;
+}
+
+.emoji-loading,
+.emoji-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #666;
+  padding: 40px 20px;
+  font-size: 14px;
+}
+
+.emoji-picker-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-top: 1px solid #333;
+  font-size: 10px;
+  color: #666;
+}
+
+.emoji-count {
+  font-weight: 500;
+}
+
+.emoji-hint {
+  font-style: italic;
+}
+
+/* Emoji button in chat input */
+.emoji-picker-button {
+  position: absolute;
+  right: 40px;  /* Position to the left of bonus icon (which is at right: 10px) */
+  top: 10px;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: 2px solid #444;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.emoji-picker-button:hover {
+  opacity: 1;
+  transform: scale(1.05);
+  border-color: #666;
+}
+
+.emoji-picker-button.active {
+  opacity: 1;
+  border-color: #007bff;
+  background: rgba(0, 123, 255, 0.1);
+}

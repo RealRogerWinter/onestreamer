@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Connection Source Tracker</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        .connection {
+            background: #0a0a0a;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #333;
+        }
+        .error { color: #ff6666; }
+        .success { color: #66ff66; }
+        .warning { color: #ffff66; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Connection Source Tracker</h1>
+    
+    <div id="status"></div>
+    <div id="connections"></div>
+    
+    <script>
+        async function checkConnections() {
+            const statusDiv = document.getElementById('status');
+            const connectionsDiv = document.getElementById('connections');
+            
+            try {
+                // Fetch connection data from admin endpoint
+                const response = await fetch('http://localhost:8080/admin/connections', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    statusDiv.innerHTML = '<div class="error">Failed to fetch connections (need admin auth)</div>';
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                statusDiv.innerHTML = `
+                    <div class="success">
+                        Total Connections: ${data.totalConnections}<br>
+                        Unique IPs: ${data.uniqueIPs}<br>
+                        Unique Viewers: ${data.uniqueViewers}
+                    </div>
+                `;
+                
+                // Group connections by IP
+                const connectionsByIP = {};
+                data.sessions.forEach(session => {
+                    if (!connectionsByIP[session.ipAddress]) {
+                        connectionsByIP[session.ipAddress] = [];
+                    }
+                    connectionsByIP[session.ipAddress].push(session);
+                });
+                
+                // Display connections
+                let html = '';
+                for (const [ip, sessions] of Object.entries(connectionsByIP)) {
+                    html += `<div class="connection">`;
+                    html += `<strong>IP: ${ip}</strong> - ${sessions.length} connections<br>`;
+                    sessions.forEach(session => {
+                        html += `&nbsp;&nbsp;• Socket: ${session.socketId.substring(0, 12)}... `;
+                        html += `User: ${session.username || 'Anonymous'} `;
+                        html += `Auth: ${session.isAuthenticated ? '✓' : '✗'}<br>`;
+                    });
+                    html += `</div>`;
+                }
+                
+                connectionsDiv.innerHTML = html;
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Check connections immediately
+        checkConnections();
+        
+        // Refresh every 2 seconds
+        setInterval(checkConnections, 2000);
+        
+        // Also check browser's socket instances
+        if (window.__SOCKET_MANAGER__) {
+            console.log('Socket Manager found:', window.__SOCKET_MANAGER__);
+        }
+        if (window.__SOCKET_DEBUGGER__) {
+            console.log('Socket Debugger stats:', window.__SOCKET_DEBUGGER__.getStats());
+        }
+    </script>
+</body>
+</html>

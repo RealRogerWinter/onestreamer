@@ -1,0 +1,162 @@
+/* Floating Points Container */
+.floating-points-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10000;
+  overflow: hidden;
+}
+
+/* Individual Floating Points */
+.floating-points {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  
+  color: #4CAF50;
+  font-size: 20px;
+  font-weight: 700;
+  text-shadow: 
+    0 0 10px rgba(76, 175, 80, 0.8),
+    0 0 20px rgba(76, 175, 80, 0.6),
+    0 2px 4px rgba(0, 0, 0, 0.8);
+  
+  /* Glow effect */
+  filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.8));
+  
+  /* Animation */
+  animation: floatToTarget 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  
+  /* Prevent interaction */
+  pointer-events: none;
+  user-select: none;
+  
+  /* Flex layout for points and source */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.points-amount {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+
+.points-source {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.9;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #66BB6A;
+}
+
+/* Floating animation keyframes */
+@keyframes floatToTarget {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5) translateY(0px);
+  }
+  
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2) translateY(-30px);
+  }
+  
+  40% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) translateY(-60px);
+  }
+  
+  70% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.9);
+    left: calc(50% + (var(--target-x) - 50vw) * 0.3);
+    top: calc(50% + (var(--target-y) - 50vh) * 0.3);
+  }
+  
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+    left: var(--target-x);
+    top: var(--target-y);
+  }
+}
+
+/* Alternative animation for when target position is not available */
+@keyframes floatUp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5) translateY(0px);
+  }
+  
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2) translateY(-30px);
+  }
+  
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) translateY(-100px);
+  }
+  
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8) translateY(-140px);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .floating-points {
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .floating-points {
+    font-size: 16px;
+  }
+}
+
+/* Enhanced glow for better visibility */
+.floating-points::before {
+  content: attr(data-amount);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.3), rgba(76, 175, 80, 0.1));
+  border-radius: 20px;
+  filter: blur(8px);
+  z-index: -1;
+}
+
+/* Points counter pulse effect when points are gained */
+.points-counter.points-gained {
+  animation: pointsGainPulse 0.6s ease-out;
+}
+
+@keyframes pointsGainPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4);
+  }
+  
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 8px rgba(76, 175, 80, 0.2);
+  }
+  
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+  }
+}

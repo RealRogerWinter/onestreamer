@@ -1,0 +1,2000 @@
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"S SESSION: Registered socket HYnSOUXZXvxGxWA6AAAJ for IP 127.0.0.1 (5 sockets)
+User connected: HYnSOUXZXvxGxWA6AAAJ from IP: 127.0.0.1
+dY"­ API: Creating transport for 4N2FZhcgBy-Dgh5XAAAF (current streamer: null)
+dY"­ MEDIASOUP: Creating transport for 4N2FZhcgBy-Dgh5XAAAF (current streamer: null)
+dY1 MEDIASOUP: Cleaning up all resources for 4N2FZhcgBy-Dgh5XAAAF
+dY"­ MEDIASOUP: Creating WebRTC transport for 4N2FZhcgBy-Dgh5XAAAF...
+dY"­ MEDIASOUP: Created WebRTC transport for 4N2FZhcgBy-Dgh5XAAAF (2/100)
+ƒo. API: Transport created successfully for 4N2FZhcgBy-Dgh5XAAAF
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"­ API: Creating transport for NPiEz_qDitEsaYR6AAAH (current streamer: null)
+dY"­ MEDIASOUP: Creating transport for NPiEz_qDitEsaYR6AAAH (current streamer: null)
+dY1 MEDIASOUP: Cleaning up all resources for NPiEz_qDitEsaYR6AAAH
+dY"­ MEDIASOUP: Creating WebRTC transport for NPiEz_qDitEsaYR6AAAH...
+dY"­ MEDIASOUP: Created WebRTC transport for NPiEz_qDitEsaYR6AAAH (3/100)
+ƒo. API: Transport created successfully for NPiEz_qDitEsaYR6AAAH
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"­ API: Creating transport for HYnSOUXZXvxGxWA6AAAJ (current streamer: null)
+dY"­ MEDIASOUP: Creating transport for HYnSOUXZXvxGxWA6AAAJ (current streamer: null)
+dY1 MEDIASOUP: Cleaning up all resources for HYnSOUXZXvxGxWA6AAAJ
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"­ MEDIASOUP: Creating WebRTC transport for HYnSOUXZXvxGxWA6AAAJ...
+dY"­ MEDIASOUP: Created WebRTC transport for HYnSOUXZXvxGxWA6AAAJ (4/100)
+ƒo. API: Transport created successfully for HYnSOUXZXvxGxWA6AAAJ
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY'" SERVER: Still alive, connections: 5
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY'" SERVER: Still alive, connections: 5
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY'" SERVER: Still alive, connections: 5
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"­ API: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: null)
+dY"­ MEDIASOUP: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: null)
+dY1 MEDIASOUP: Cleaning up all resources for l9U046d9QiZMz6wXAAAD
+dY"­ MEDIASOUP: Creating WebRTC transport for l9U046d9QiZMz6wXAAAD...
+dY"­ MEDIASOUP: Created WebRTC transport for l9U046d9QiZMz6wXAAAD (5/100)
+ƒo. API: Transport created successfully for l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY'" SERVER: Still alive, connections: 5
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: NPiEz_qDitEsaYR6AAAH tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"­ API: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: null)
+dY"­ MEDIASOUP: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: null)
+dY1 MEDIASOUP: Cleaning up all resources for d-rp4hVY3Uw7Ps4iAAAB
+dY"' MEDIASOUP: Transport cleaned up for d-rp4hVY3Uw7Ps4iAAAB
+dY"­ MEDIASOUP: Creating WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB...
+dY"­ MEDIASOUP: Created WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB (5/100)
+ƒo. API: Transport created successfully for d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ tried to consume but no active streamer
+dY'" SERVER: Still alive, connections: 5
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer null
+dY"? MEDIASOUP DEBUG: StreamService current streamer: null
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: null
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume but no active streamer
+dY"? TAKEOVER: Checking if d-rp4hVY3Uw7Ps4iAAAB (IP: 127.0.0.1) can take over
+   Using identifier: 127.0.0.1
+   Global cooldown: 5s
+   Individual cooldown: 10s
+   Last stream start: never
+   ƒo. Takeover allowed for d-rp4hVY3Uw7Ps4iAAAB (IP: 127.0.0.1)
+dYZ_ TAKEOVER: Set d-rp4hVY3Uw7Ps4iAAAB as current streamer in both services, cleared from notified set
+dY"? TAKEOVER: Recording takeover at 2025-08-08T10:25:22.710Z
+   Global cooldown will be active for 5s
+dY"› TAKEOVER: d-rp4hVY3Uw7Ps4iAAAB approved to stream, waiting for producers to be created
+dY"­ COOLDOWN: Broadcasting global cooldown of 5s to all users except d-rp4hVY3Uw7Ps4iAAAB
+Stream taken over by: d-rp4hVY3Uw7Ps4iAAAB
+dY"­ API: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY"­ MEDIASOUP: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY1 MEDIASOUP: Cleaning up all resources for d-rp4hVY3Uw7Ps4iAAAB
+dY"' MEDIASOUP: Transport cleaned up for d-rp4hVY3Uw7Ps4iAAAB
+dY"­ MEDIASOUP: Creating WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB...
+dY"­ MEDIASOUP: Created WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB (5/100)
+ƒo. API: Transport created successfully for d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+ƒsÿ‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume from d-rp4hVY3Uw7Ps4iAAAB but no producers found yet
+dY"§ MEDIASOUP: Streamer d-rp4hVY3Uw7Ps4iAAAB is registered but may still be setting up media stream
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+ƒsÿ‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume from d-rp4hVY3Uw7Ps4iAAAB but no producers found yet
+dY"§ MEDIASOUP: Streamer d-rp4hVY3Uw7Ps4iAAAB is registered but may still be setting up media stream
+dY"­ API: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY"­ MEDIASOUP: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY1 MEDIASOUP: Cleaning up all resources for d-rp4hVY3Uw7Ps4iAAAB
+dY"' MEDIASOUP: Transport cleaned up for d-rp4hVY3Uw7Ps4iAAAB
+dY"­ MEDIASOUP: Creating WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB...
+dY"­ MEDIASOUP: Created WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB (5/100)
+ƒo. API: Transport created successfully for d-rp4hVY3Uw7Ps4iAAAB
+dY"- MEDIASOUP: Attempting to connect transport for d-rp4hVY3Uw7Ps4iAAAB
+dY"- MEDIASOUP: Current transports: [
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'NPiEz_qDitEsaYR6AAAH',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  'l9U046d9QiZMz6wXAAAD',
+  'd-rp4hVY3Uw7Ps4iAAAB'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for d-rp4hVY3Uw7Ps4iAAAB, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP: Before producer creation - current streamer: d-rp4hVY3Uw7Ps4iAAAB, this socket: d-rp4hVY3Uw7Ps4iAAAB, wasNewStreamer: false
+dY"§ MEDIASOUP: Producer created for d-rp4hVY3Uw7Ps4iAAAB (video)
+dYZ_ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB is now the active streamer
+dYZª MEDIASOUP: Producer created - streamer: d-rp4hVY3Uw7Ps4iAAAB, kind: video, wasNewStreamer: false, notified: false
+dY"? MEDIASOUP DEBUG: Checking notification conditions for d-rp4hVY3Uw7Ps4iAAAB:
+dY"?   wasNewStreamer: false
+dY"?   notifiedStreamers.has(d-rp4hVY3Uw7Ps4iAAAB): false
+dY"?   Current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"?   notifiedStreamers Set: []
+dYZª MEDIASOUP: Processing new streamer d-rp4hVY3Uw7Ps4iAAAB with video track (video: true, audio: false)
+ƒo. MEDIASOUP: Producer(s) verified for d-rp4hVY3Uw7Ps4iAAAB (video: true, audio: false), notifying viewers
+dYZª MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB started producing video
+dY"? MEDIASOUP: Before producer creation - current streamer: d-rp4hVY3Uw7Ps4iAAAB, this socket: d-rp4hVY3Uw7Ps4iAAAB, wasNewStreamer: false
+dY"§ MEDIASOUP: Producer created for d-rp4hVY3Uw7Ps4iAAAB (audio)
+dYZ_ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB is now the active streamer
+dYZª MEDIASOUP: Producer created - streamer: d-rp4hVY3Uw7Ps4iAAAB, kind: audio, wasNewStreamer: false, notified: true
+dY"? MEDIASOUP DEBUG: Checking notification conditions for d-rp4hVY3Uw7Ps4iAAAB:
+dY"?   wasNewStreamer: false
+dY"?   notifiedStreamers.has(d-rp4hVY3Uw7Ps4iAAAB): true
+dY"?   Current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"?   notifiedStreamers Set: [ 'd-rp4hVY3Uw7Ps4iAAAB' ]
+dYZª MEDIASOUP: Existing streamer d-rp4hVY3Uw7Ps4iAAAB producing additional audio track
+dYZª MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB started producing audio
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD attempting to consume video from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for l9U046d9QiZMz6wXAAAD from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD attempting to consume audio from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for l9U046d9QiZMz6wXAAAD from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for l9U046d9QiZMz6wXAAAD from d-rp4hVY3Uw7Ps4iAAAB (video)
+ƒo. MEDIASOUP: l9U046d9QiZMz6wXAAAD successfully consuming video from d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer created for l9U046d9QiZMz6wXAAAD from d-rp4hVY3Uw7Ps4iAAAB (audio)
+ƒo. MEDIASOUP: l9U046d9QiZMz6wXAAAD successfully consuming audio from d-rp4hVY3Uw7Ps4iAAAB
+dY"- MEDIASOUP: Attempting to connect transport for l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Current transports: [
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'NPiEz_qDitEsaYR6AAAH',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  'l9U046d9QiZMz6wXAAAD',
+  'd-rp4hVY3Uw7Ps4iAAAB'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for l9U046d9QiZMz6wXAAAD, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for l9U046d9QiZMz6wXAAAD
+ƒ-‹,? MEDIASOUP: Consumer 4169d79c-ac35-4998-8a4e-42608d1ebfcf resumed for l9U046d9QiZMz6wXAAAD
+ƒ-‹,? MEDIASOUP: l9U046d9QiZMz6wXAAAD resumed consumer 4169d79c-ac35-4998-8a4e-42608d1ebfcf
+ƒ-‹,? MEDIASOUP: Consumer 16255b10-f00e-44e0-887e-eb828789bd67 resumed for l9U046d9QiZMz6wXAAAD
+ƒ-‹,? MEDIASOUP: l9U046d9QiZMz6wXAAAD resumed consumer 16255b10-f00e-44e0-887e-eb828789bd67
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: connecting
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: connected
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connecting
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connected
+dY"­ COOLDOWN: Broadcasting global cooldown of 5s to all users except d-rp4hVY3Uw7Ps4iAAAB
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: closed
+dY"' MEDIASOUP: Transport cleaned up for l9U046d9QiZMz6wXAAAD
+dY"­ API: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY"­ MEDIASOUP: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY1 MEDIASOUP: Cleaning up all resources for l9U046d9QiZMz6wXAAAD
+dY"­ MEDIASOUP: Creating WebRTC transport for l9U046d9QiZMz6wXAAAD...
+dY"­ MEDIASOUP: Created WebRTC transport for l9U046d9QiZMz6wXAAAD (5/100)
+ƒo. API: Transport created successfully for l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD attempting to consume video from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for l9U046d9QiZMz6wXAAAD from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD attempting to consume audio from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for l9U046d9QiZMz6wXAAAD from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for l9U046d9QiZMz6wXAAAD from d-rp4hVY3Uw7Ps4iAAAB (video)
+ƒo. MEDIASOUP: l9U046d9QiZMz6wXAAAD successfully consuming video from d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer created for l9U046d9QiZMz6wXAAAD from d-rp4hVY3Uw7Ps4iAAAB (audio)
+ƒo. MEDIASOUP: l9U046d9QiZMz6wXAAAD successfully consuming audio from d-rp4hVY3Uw7Ps4iAAAB
+dY"- MEDIASOUP: Attempting to connect transport for l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Current transports: [
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'NPiEz_qDitEsaYR6AAAH',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  'l9U046d9QiZMz6wXAAAD'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for l9U046d9QiZMz6wXAAAD, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for l9U046d9QiZMz6wXAAAD
+ƒ-‹,? MEDIASOUP: Consumer 6c708959-e2b2-4b60-9b99-59d030bb6279 resumed for l9U046d9QiZMz6wXAAAD
+ƒ-‹,? MEDIASOUP: l9U046d9QiZMz6wXAAAD resumed consumer 6c708959-e2b2-4b60-9b99-59d030bb6279
+ƒ-‹,? MEDIASOUP: Consumer 69d4f8d9-86f1-4ac9-a75f-5fcec79d7ce5 resumed for l9U046d9QiZMz6wXAAAD
+ƒ-‹,? MEDIASOUP: l9U046d9QiZMz6wXAAAD resumed consumer 69d4f8d9-86f1-4ac9-a75f-5fcec79d7ce5
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connecting
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connected
+dY'" SERVER: Still alive, connections: 5
+dY"­ API: Creating transport for HYnSOUXZXvxGxWA6AAAJ (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY"­ MEDIASOUP: Creating transport for HYnSOUXZXvxGxWA6AAAJ (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY1 MEDIASOUP: Cleaning up all resources for HYnSOUXZXvxGxWA6AAAJ
+dY"' MEDIASOUP: Transport cleaned up for HYnSOUXZXvxGxWA6AAAJ
+dY"­ MEDIASOUP: Creating WebRTC transport for HYnSOUXZXvxGxWA6AAAJ...
+dY"­ MEDIASOUP: Created WebRTC transport for HYnSOUXZXvxGxWA6AAAJ (5/100)
+ƒo. API: Transport created successfully for HYnSOUXZXvxGxWA6AAAJ
+dY"­ API: Creating transport for 4N2FZhcgBy-Dgh5XAAAF (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY"­ MEDIASOUP: Creating transport for 4N2FZhcgBy-Dgh5XAAAF (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY1 MEDIASOUP: Cleaning up all resources for 4N2FZhcgBy-Dgh5XAAAF
+dY"' MEDIASOUP: Transport cleaned up for 4N2FZhcgBy-Dgh5XAAAF
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ attempting to consume video from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for HYnSOUXZXvxGxWA6AAAJ from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ attempting to consume audio from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for HYnSOUXZXvxGxWA6AAAJ from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for HYnSOUXZXvxGxWA6AAAJ from d-rp4hVY3Uw7Ps4iAAAB (video)
+ƒo. MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ successfully consuming video from d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer created for HYnSOUXZXvxGxWA6AAAJ from d-rp4hVY3Uw7Ps4iAAAB (audio)
+ƒo. MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ successfully consuming audio from d-rp4hVY3Uw7Ps4iAAAB
+dY"­ MEDIASOUP: Creating WebRTC transport for 4N2FZhcgBy-Dgh5XAAAF...
+dY"­ MEDIASOUP: Created WebRTC transport for 4N2FZhcgBy-Dgh5XAAAF (5/100)
+ƒo. API: Transport created successfully for 4N2FZhcgBy-Dgh5XAAAF
+dY"- MEDIASOUP: Attempting to connect transport for HYnSOUXZXvxGxWA6AAAJ
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  'l9U046d9QiZMz6wXAAAD',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  '4N2FZhcgBy-Dgh5XAAAF'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for HYnSOUXZXvxGxWA6AAAJ, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for HYnSOUXZXvxGxWA6AAAJ
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF attempting to consume video from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for 4N2FZhcgBy-Dgh5XAAAF from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF attempting to consume audio from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for 4N2FZhcgBy-Dgh5XAAAF from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for 4N2FZhcgBy-Dgh5XAAAF from d-rp4hVY3Uw7Ps4iAAAB (video)
+ƒo. MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF successfully consuming video from d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer created for 4N2FZhcgBy-Dgh5XAAAF from d-rp4hVY3Uw7Ps4iAAAB (audio)
+ƒo. MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF successfully consuming audio from d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: Consumer f94a68f1-7bc8-4746-8e62-2bcb07c84917 resumed for HYnSOUXZXvxGxWA6AAAJ
+ƒ-‹,? MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ resumed consumer f94a68f1-7bc8-4746-8e62-2bcb07c84917
+dY"- MEDIASOUP: Attempting to connect transport for 4N2FZhcgBy-Dgh5XAAAF
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  'l9U046d9QiZMz6wXAAAD',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  '4N2FZhcgBy-Dgh5XAAAF'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for 4N2FZhcgBy-Dgh5XAAAF, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for 4N2FZhcgBy-Dgh5XAAAF
+ƒ-‹,? MEDIASOUP: Consumer 8a34c96a-0445-4bdb-8d78-9bae146304d6 resumed for 4N2FZhcgBy-Dgh5XAAAF
+ƒ-‹,? MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF resumed consumer 8a34c96a-0445-4bdb-8d78-9bae146304d6
+ƒ-‹,? MEDIASOUP: Consumer 91b77a92-fd36-43f5-9d54-2fc853c60ab1 resumed for HYnSOUXZXvxGxWA6AAAJ
+ƒ-‹,? MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ resumed consumer 91b77a92-fd36-43f5-9d54-2fc853c60ab1
+ƒ-‹,? MEDIASOUP: Consumer 95d911a4-9929-44e0-bdc9-a40a6c474d81 resumed for 4N2FZhcgBy-Dgh5XAAAF
+ƒ-‹,? MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF resumed consumer 95d911a4-9929-44e0-bdc9-a40a6c474d81
+dY"­ API: Creating transport for NPiEz_qDitEsaYR6AAAH (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY"­ MEDIASOUP: Creating transport for NPiEz_qDitEsaYR6AAAH (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY1 MEDIASOUP: Cleaning up all resources for NPiEz_qDitEsaYR6AAAH
+dY"' MEDIASOUP: Transport cleaned up for NPiEz_qDitEsaYR6AAAH
+dY"­ MEDIASOUP: Creating WebRTC transport for NPiEz_qDitEsaYR6AAAH...
+dY"­ MEDIASOUP: Created WebRTC transport for NPiEz_qDitEsaYR6AAAH (5/100)
+ƒo. API: Transport created successfully for NPiEz_qDitEsaYR6AAAH
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH attempting to consume video from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for NPiEz_qDitEsaYR6AAAH from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: StreamService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH attempting to consume audio from d-rp4hVY3Uw7Ps4iAAAB (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for NPiEz_qDitEsaYR6AAAH from producer d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for NPiEz_qDitEsaYR6AAAH from d-rp4hVY3Uw7Ps4iAAAB (video)
+ƒo. MEDIASOUP: NPiEz_qDitEsaYR6AAAH successfully consuming video from d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: Consumer created for NPiEz_qDitEsaYR6AAAH from d-rp4hVY3Uw7Ps4iAAAB (audio)
+ƒo. MEDIASOUP: NPiEz_qDitEsaYR6AAAH successfully consuming audio from d-rp4hVY3Uw7Ps4iAAAB
+dY"- MEDIASOUP: Attempting to connect transport for NPiEz_qDitEsaYR6AAAH
+dY"- MEDIASOUP: Current transports: [
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  'l9U046d9QiZMz6wXAAAD',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'NPiEz_qDitEsaYR6AAAH'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for NPiEz_qDitEsaYR6AAAH, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for NPiEz_qDitEsaYR6AAAH
+ƒ-‹,? MEDIASOUP: Consumer 5245ae50-7258-4716-8b17-80af7b419cf8 resumed for NPiEz_qDitEsaYR6AAAH
+ƒ-‹,? MEDIASOUP: NPiEz_qDitEsaYR6AAAH resumed consumer 5245ae50-7258-4716-8b17-80af7b419cf8
+ƒ-‹,? MEDIASOUP: Consumer 695bf980-0cef-44e0-9cb9-d3aacdc1a449 resumed for NPiEz_qDitEsaYR6AAAH
+ƒ-‹,? MEDIASOUP: NPiEz_qDitEsaYR6AAAH resumed consumer 695bf980-0cef-44e0-9cb9-d3aacdc1a449
+dY", MEDIASOUP: Transport DTLS state changed for 4N2FZhcgBy-Dgh5XAAAF: connecting
+dY", MEDIASOUP: Transport DTLS state changed for 4N2FZhcgBy-Dgh5XAAAF: connected
+dY", MEDIASOUP: Transport DTLS state changed for HYnSOUXZXvxGxWA6AAAJ: connecting
+dY", MEDIASOUP: Transport DTLS state changed for HYnSOUXZXvxGxWA6AAAJ: connected
+dY'" SERVER: Still alive, connections: 5
+ƒo. VIEWBOT CLIENT: Found FFmpeg at C:\ffmpeg\ffmpeg\bin\ffmpeg.exe
+dY- VIEWBOT CLIENT: Creating bot viewbot-1754648732171-0 with config: {
+  contentType: 'testPattern',
+  videoFile: null,
+  width: 1280,
+  height: 720,
+  frameRate: 30,
+  videoBitrate: '1000k',
+  audioBitrate: '128k',
+  autoStart: true,
+  streamDuration: 0,
+  testPattern: 'color-bars'
+}
+dY- ViewBot viewbot-1754648732171-0 initialized
+dY"O ViewBot viewbot-1754648732171-0: Connecting to server http://localhost:8080
+dY"S SESSION: Registered socket oUF_Up8QbG5GiSW6AAAL for IP 127.0.0.1 (6 sockets)
+User connected: oUF_Up8QbG5GiSW6AAAL from IP: 127.0.0.1
+ƒo. ViewBot viewbot-1754648732171-0: Connected to server
+ƒo. ViewBot viewbot-1754648732171-0: Ready for FFmpeg-based streaming
+ƒo. ViewBot viewbot-1754648732171-0: Initialization complete
+ƒo. VIEWBOT CLIENT: Bot viewbot-1754648732171-0 created successfully
+dYZª ViewBot viewbot-1754648732171-0: Starting synthetic stream...
+dYZª ViewBot viewbot-1754648732171-0: Skipping media stream generation, using synthetic producers
+ƒo. ViewBot viewbot-1754648732171-0: Streaming request sent via request-to-stream
+dYZª VIEWBOT CLIENT: Bot viewbot-1754648732171-0 is now the active streamer
+dY"? TAKEOVER: Checking if oUF_Up8QbG5GiSW6AAAL (IP: 127.0.0.1) can take over
+   Using identifier: 127.0.0.1
+   Global cooldown: 5s
+   Individual cooldown: 10s
+   Last stream start: 2025-08-08T10:25:22.710Z
+   Time since last stream start: 9s
+   ƒo. Takeover allowed for oUF_Up8QbG5GiSW6AAAL (IP: 127.0.0.1)
+dY"› TAKEOVER: Notifying current streamer viewbot-1754648732171-0 of takeover by oUF_Up8QbG5GiSW6AAAL
+dY- TAKEOVER: Current streamer is viewbot, handling graceful takeover
+dY", VIEWBOT: Handling takeover by oUF_Up8QbG5GiSW6AAAL
+dY"› TAKEOVER: Notifying viewers of stream end before cleanup (excluding new streamer oUF_Up8QbG5GiSW6AAAL)
+ƒ?3 TAKEOVER: Waiting 200ms for viewer cleanup before producer cleanup
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: closed
+dY"' MEDIASOUP: Transport cleaned up for l9U046d9QiZMz6wXAAAD
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: closed
+dY"' MEDIASOUP: Transport cleaned up for d-rp4hVY3Uw7Ps4iAAAB
+dY"­ API: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY"­ MEDIASOUP: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: d-rp4hVY3Uw7Ps4iAAAB)
+dY1 MEDIASOUP: Cleaning up all resources for d-rp4hVY3Uw7Ps4iAAAB
+dYZ_ MEDIASOUP: Streamer d-rp4hVY3Uw7Ps4iAAAB disconnected, no active streamer
+dY1 TAKEOVER: Cleaning up resources for previous streamer viewbot-1754648732171-0
+dY1 MEDIASOUP: Cleaning up all resources for viewbot-1754648732171-0
+dYZ_ TAKEOVER: Set oUF_Up8QbG5GiSW6AAAL as current streamer in both services, cleared from notified set
+dY"? TAKEOVER: Recording takeover at 2025-08-08T10:25:32.398Z
+   Global cooldown will be active for 5s
+dY"› TAKEOVER: oUF_Up8QbG5GiSW6AAAL approved to stream, waiting for producers to be created
+dY"­ COOLDOWN: Broadcasting global cooldown of 5s to all users except oUF_Up8QbG5GiSW6AAAL
+Stream taken over by: oUF_Up8QbG5GiSW6AAAL
+ƒo. ViewBot viewbot-1754648732171-0: Streaming approved by server
+dYZª ViewBot viewbot-1754648732171-0: Now officially streaming, starting FFmpeg media production
+dYZª ViewBot viewbot-1754648732171-0: Socket connected: true, Socket ID: oUF_Up8QbG5GiSW6AAAL
+dYZª ViewBot viewbot-1754648732171-0: Setting up WebRTC transport and FFmpeg pipeline...
+dY"­ ViewBot viewbot-1754648732171-0: Setting up WebRTC send transport...
+dY"S MEDIASOUP: Sent RTP capabilities to oUF_Up8QbG5GiSW6AAAL
+ƒo. ViewBot viewbot-1754648732171-0: Got RTP capabilities from server
+dY"­ MEDIASOUP: Creating transport for oUF_Up8QbG5GiSW6AAAL (current streamer: oUF_Up8QbG5GiSW6AAAL)
+dY1 MEDIASOUP: Cleaning up all resources for oUF_Up8QbG5GiSW6AAAL
+dY"­ MEDIASOUP: Creating WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB...
+dY"­ MEDIASOUP: Created WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB (4/100)
+ƒo. API: Transport created successfully for d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: StreamService current streamer: oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: oUF_Up8QbG5GiSW6AAAL
+ƒsÿ‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume from oUF_Up8QbG5GiSW6AAAL but no producers found yet
+dY"§ MEDIASOUP: Streamer oUF_Up8QbG5GiSW6AAAL is registered but may still be setting up media stream
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: StreamService current streamer: oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: oUF_Up8QbG5GiSW6AAAL
+ƒsÿ‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB tried to consume from oUF_Up8QbG5GiSW6AAAL but no producers found yet
+dY"§ MEDIASOUP: Streamer oUF_Up8QbG5GiSW6AAAL is registered but may still be setting up media stream
+dY"­ MEDIASOUP: Creating WebRTC transport for oUF_Up8QbG5GiSW6AAAL...
+dY"­ MEDIASOUP: Created WebRTC transport for oUF_Up8QbG5GiSW6AAAL (5/100)
+dY"­ MEDIASOUP: Send transport created for oUF_Up8QbG5GiSW6AAAL
+ƒo. ViewBot viewbot-1754648732171-0: WebRTC send transport created
+dY"­ ViewBot viewbot-1754648732171-0: WebRTC transport setup complete
+dYZª ViewBot viewbot-1754648732171-0: Starting FFmpeg media generation...
+dY"1 ViewBot viewbot-1754648732171-0: Starting FFmpeg video generation...
+dY"­ ViewBot viewbot-1754648732171-0: Creating MediaSoup video producer first...
+dY"­ ViewBot viewbot-1754648732171-0: Creating plain RTP transport for video...
+dY- SERVER: ViewBot viewbot-1754648732171-0 creating plain RTP transport for video
+dY"­ SERVER: Plain RTP transport created for ViewBot viewbot-1754648732171-0 video
+dY"­ SERVER: Transport listening for RTP on port 43922
+ƒo. SERVER: ViewBot viewbot-1754648732171-0 video producer created: e2624965-c825-4f26-bc77-c22bc018e275
+ƒo. ViewBot viewbot-1754648732171-0: Plain RTP video producer created: e2624965-c825-4f26-bc77-c22bc018e275
+dY"­ ViewBot viewbot-1754648732171-0: Server allocated port 43922 for video RTP
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: StreamService current streamer: oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: oUF_Up8QbG5GiSW6AAAL
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB attempting to consume video from oUF_Up8QbG5GiSW6AAAL (producers: 1)
+dY"§ MEDIASOUP: Creating consumer for d-rp4hVY3Uw7Ps4iAAAB from producer oUF_Up8QbG5GiSW6AAAL
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 1
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: StreamService current streamer: oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: oUF_Up8QbG5GiSW6AAAL
+ƒ?O MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requested audio from oUF_Up8QbG5GiSW6AAAL but producer not available or closed
+dY"§ MEDIASOUP: Consumer created for d-rp4hVY3Uw7Ps4iAAAB from oUF_Up8QbG5GiSW6AAAL (video)
+ƒo. MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB successfully consuming video from oUF_Up8QbG5GiSW6AAAL
+dY"- MEDIASOUP: Attempting to connect transport for d-rp4hVY3Uw7Ps4iAAAB
+dY"- MEDIASOUP: Current transports: [
+  'HYnSOUXZXvxGxWA6AAAJ',
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'NPiEz_qDitEsaYR6AAAH',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  'oUF_Up8QbG5GiSW6AAAL'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for d-rp4hVY3Uw7Ps4iAAAB, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: Consumer bc37035b-8a36-4066-a856-c6f84782e412 resumed for d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB resumed consumer bc37035b-8a36-4066-a856-c6f84782e412
+dYZª ViewBot viewbot-1754648732171-0: Starting FFmpeg video process...
+dYZª ViewBot viewbot-1754648732171-0: FFmpeg video args: -f lavfi -i testsrc2=size=1280x720:rate=30 -vcodec libvpx -cpu-used 5 -deadline realtime -g 10 -error-resilient 1 -auto-alt-ref 0 -b:v 1000k -maxrate 1000k -bufsize 2000k -f rtp -payload_type 96 rtp://127.0.0.1:43922
+ƒo. ViewBot viewbot-1754648732171-0: FFmpeg video generation and producer creation complete
+dYZ ViewBot viewbot-1754648732171-0: Starting FFmpeg audio generation...
+dY"­ ViewBot viewbot-1754648732171-0: Creating MediaSoup audio producer first...
+dY"­ ViewBot viewbot-1754648732171-0: Creating plain RTP transport for audio...
+ƒ?O ViewBot viewbot-1754648732171-0: FFmpeg video error: Error: spawn ffmpeg ENOENT
+    at ChildProcess._handle.onexit (node:internal/child_process:286:19)
+    at onErrorNT (node:internal/child_process:484:16)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'spawn ffmpeg',
+  path: 'ffmpeg',
+  spawnargs: [
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=size=1280x720:rate=30',
+    '-vcodec',
+    'libvpx',
+    '-cpu-used',
+    '5',
+    '-deadline',
+    'realtime',
+    '-g',
+    '10',
+    '-error-resilient',
+    '1',
+    '-auto-alt-ref',
+    '0',
+    '-b:v',
+    '1000k',
+    '-maxrate',
+    '1000k',
+    '-bufsize',
+    '2000k',
+    '-f',
+    'rtp',
+    '-payload_type',
+    '96',
+    'rtp://127.0.0.1:43922'
+  ]
+}
+dY- SERVER: ViewBot viewbot-1754648732171-0 creating plain RTP transport for audio
+dY>` ViewBot viewbot-1754648732171-0: FFmpeg video process exited with code -4058
+dY"­ SERVER: Plain RTP transport created for ViewBot viewbot-1754648732171-0 audio
+dY"­ SERVER: Transport listening for RTP on port 43946
+ƒo. SERVER: ViewBot viewbot-1754648732171-0 audio producer created: 09f1a56c-a2f7-4c5f-98d3-0678f6299a68
+ƒo. ViewBot viewbot-1754648732171-0: Plain RTP audio producer created: 09f1a56c-a2f7-4c5f-98d3-0678f6299a68
+dY"­ ViewBot viewbot-1754648732171-0: Server allocated port 43946 for audio RTP
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: connecting
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: connected
+dY", MEDIASOUP: Transport DTLS state changed for 4N2FZhcgBy-Dgh5XAAAF: closed
+dY"' MEDIASOUP: Transport cleaned up for 4N2FZhcgBy-Dgh5XAAAF
+dY", MEDIASOUP: Transport DTLS state changed for HYnSOUXZXvxGxWA6AAAJ: closed
+dY"' MEDIASOUP: Transport cleaned up for HYnSOUXZXvxGxWA6AAAJ
+dYZª ViewBot viewbot-1754648732171-0: Starting FFmpeg audio process...
+dYZª ViewBot viewbot-1754648732171-0: FFmpeg audio args: -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 -acodec libopus -b:a 128k -f rtp -payload_type 111 rtp://127.0.0.1:43946
+ƒo. ViewBot viewbot-1754648732171-0: FFmpeg audio generation and producer creation complete
+ƒo. ViewBot viewbot-1754648732171-0: FFmpeg media generation started
+ƒo. ViewBot viewbot-1754648732171-0: FFmpeg pipeline active, streaming to MediaSoup
+ƒ?O ViewBot viewbot-1754648732171-0: FFmpeg audio error: Error: spawn ffmpeg ENOENT
+    at ChildProcess._handle.onexit (node:internal/child_process:286:19)
+    at onErrorNT (node:internal/child_process:484:16)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'spawn ffmpeg',
+  path: 'ffmpeg',
+  spawnargs: [
+    '-f',
+    'lavfi',
+    '-i',
+    'anullsrc=channel_layout=stereo:sample_rate=48000',
+    '-acodec',
+    'libopus',
+    '-b:a',
+    '128k',
+    '-f',
+    'rtp',
+    '-payload_type',
+    '111',
+    'rtp://127.0.0.1:43946'
+  ]
+}
+dY>` ViewBot viewbot-1754648732171-0: FFmpeg audio process exited with code -4058
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: StreamService current streamer: oUF_Up8QbG5GiSW6AAAL
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: oUF_Up8QbG5GiSW6AAAL
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB attempting to consume audio from oUF_Up8QbG5GiSW6AAAL (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for d-rp4hVY3Uw7Ps4iAAAB from producer oUF_Up8QbG5GiSW6AAAL
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for d-rp4hVY3Uw7Ps4iAAAB from oUF_Up8QbG5GiSW6AAAL (audio)
+ƒo. MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB successfully consuming audio from oUF_Up8QbG5GiSW6AAAL
+ƒ-‹,? MEDIASOUP: Consumer 98ab3a27-9f30-4108-94f6-de1f076a9ad6 resumed for d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB resumed consumer 98ab3a27-9f30-4108-94f6-de1f076a9ad6
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+ƒ?1‹,? ViewBot viewbot-1754648732171-0: Stopping stream...
+ƒo. ViewBot viewbot-1754648732171-0: Streaming stopped (duration: 8857ms)
+dY'" SERVER: Still alive, connections: 6
+dY-`‹,? ViewBot viewbot-1754648732171-0: Destroying bot...
+dY"O ViewBot viewbot-1754648732171-0: Disconnected from server
+dY1 ViewBot viewbot-1754648732171-0: Cleaning up FFmpeg processes...
+dY>` ViewBot viewbot-1754648732171-0: Killing video FFmpeg process
+dY>` ViewBot viewbot-1754648732171-0: Killing audio FFmpeg process
+ƒo. ViewBot viewbot-1754648732171-0: Media generation cleanup complete
+ƒo. ViewBot viewbot-1754648732171-0: Destroyed successfully
+dY-`‹,? VIEWBOT CLIENT: Bot viewbot-1754648732171-0 destroyed
+dY"S SESSION: IP 127.0.0.1 still has 5 sockets
+User disconnected: oUF_Up8QbG5GiSW6AAAL from IP: 127.0.0.1
+dY1 MEDIASOUP: Cleaning up all resources for oUF_Up8QbG5GiSW6AAAL
+dY>` MEDIASOUP: Closed video producer for oUF_Up8QbG5GiSW6AAAL
+dY>` MEDIASOUP: Closed audio producer for oUF_Up8QbG5GiSW6AAAL
+dYZ_ MEDIASOUP: Streamer oUF_Up8QbG5GiSW6AAAL disconnected, no active streamer
+dY"' MEDIASOUP: Transport cleaned up for oUF_Up8QbG5GiSW6AAAL
+dY"' TAKEOVER: Set 10s cooldown for oUF_Up8QbG5GiSW6AAAL (IP: unknown, identifier: oUF_Up8QbG5GiSW6AAAL, reason: streamer_disconnect)
+dY"' COOLDOWN: Applied individual cooldown to oUF_Up8QbG5GiSW6AAAL for streamer disconnect
+dY1 DISCONNECT: Cleared oUF_Up8QbG5GiSW6AAAL from both services
+dY"? TAKEOVER: Checking if l9U046d9QiZMz6wXAAAD (IP: 127.0.0.1) can take over
+   Using identifier: 127.0.0.1
+   Global cooldown: 5s
+   Individual cooldown: 10s
+   Last stream start: 2025-08-08T10:25:32.398Z
+   Time since last stream start: 13s
+   ƒo. Takeover allowed for l9U046d9QiZMz6wXAAAD (IP: 127.0.0.1)
+dYZ_ TAKEOVER: Set l9U046d9QiZMz6wXAAAD as current streamer in both services, cleared from notified set
+dY"? TAKEOVER: Recording takeover at 2025-08-08T10:25:46.211Z
+   Global cooldown will be active for 5s
+dY"› TAKEOVER: l9U046d9QiZMz6wXAAAD approved to stream, waiting for producers to be created
+dY"­ COOLDOWN: Broadcasting global cooldown of 5s to all users except l9U046d9QiZMz6wXAAAD
+Stream taken over by: l9U046d9QiZMz6wXAAAD
+dY"­ API: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for l9U046d9QiZMz6wXAAAD
+dY"­ MEDIASOUP: Creating WebRTC transport for l9U046d9QiZMz6wXAAAD...
+dY"­ MEDIASOUP: Created WebRTC transport for l9U046d9QiZMz6wXAAAD (3/100)
+ƒo. API: Transport created successfully for l9U046d9QiZMz6wXAAAD
+dY"­ API: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for l9U046d9QiZMz6wXAAAD
+dY"' MEDIASOUP: Transport cleaned up for l9U046d9QiZMz6wXAAAD
+dY"­ MEDIASOUP: Creating WebRTC transport for l9U046d9QiZMz6wXAAAD...
+dY"­ MEDIASOUP: Created WebRTC transport for l9U046d9QiZMz6wXAAAD (3/100)
+ƒo. API: Transport created successfully for l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  'l9U046d9QiZMz6wXAAAD'
+]
+dY"- MEDIASOUP: Total transports: 3
+dY"- MEDIASOUP: Transport found for l9U046d9QiZMz6wXAAAD, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP: Before producer creation - current streamer: l9U046d9QiZMz6wXAAAD, this socket: l9U046d9QiZMz6wXAAAD, wasNewStreamer: false
+dY"§ MEDIASOUP: Producer created for l9U046d9QiZMz6wXAAAD (video)
+dYZ_ MEDIASOUP: l9U046d9QiZMz6wXAAAD is now the active streamer
+dYZª MEDIASOUP: Producer created - streamer: l9U046d9QiZMz6wXAAAD, kind: video, wasNewStreamer: false, notified: false
+dY"? MEDIASOUP DEBUG: Checking notification conditions for l9U046d9QiZMz6wXAAAD:
+dY"?   wasNewStreamer: false
+dY"?   notifiedStreamers.has(l9U046d9QiZMz6wXAAAD): false
+dY"?   Current streamer: l9U046d9QiZMz6wXAAAD
+dY"?   notifiedStreamers Set: [ 'd-rp4hVY3Uw7Ps4iAAAB' ]
+dYZª MEDIASOUP: Processing new streamer l9U046d9QiZMz6wXAAAD with video track (video: true, audio: false)
+ƒo. MEDIASOUP: Producer(s) verified for l9U046d9QiZMz6wXAAAD (video: true, audio: false), notifying viewers
+dYZª MEDIASOUP: l9U046d9QiZMz6wXAAAD started producing video
+dY"? MEDIASOUP: Before producer creation - current streamer: l9U046d9QiZMz6wXAAAD, this socket: l9U046d9QiZMz6wXAAAD, wasNewStreamer: false
+dY"§ MEDIASOUP: Producer created for l9U046d9QiZMz6wXAAAD (audio)
+dYZ_ MEDIASOUP: l9U046d9QiZMz6wXAAAD is now the active streamer
+dYZª MEDIASOUP: Producer created - streamer: l9U046d9QiZMz6wXAAAD, kind: audio, wasNewStreamer: false, notified: true
+dY"? MEDIASOUP DEBUG: Checking notification conditions for l9U046d9QiZMz6wXAAAD:
+dY"?   wasNewStreamer: false
+dY"?   notifiedStreamers.has(l9U046d9QiZMz6wXAAAD): true
+dY"?   Current streamer: l9U046d9QiZMz6wXAAAD
+dY"?   notifiedStreamers Set: [ 'd-rp4hVY3Uw7Ps4iAAAB', 'l9U046d9QiZMz6wXAAAD' ]
+dYZª MEDIASOUP: Existing streamer l9U046d9QiZMz6wXAAAD producing additional audio track
+dYZª MEDIASOUP: l9U046d9QiZMz6wXAAAD started producing audio
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connecting
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connected
+dY"­ COOLDOWN: Broadcasting global cooldown of 5s to all users except l9U046d9QiZMz6wXAAAD
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: closed
+dY"' MEDIASOUP: Transport cleaned up for d-rp4hVY3Uw7Ps4iAAAB
+dY"­ API: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for d-rp4hVY3Uw7Ps4iAAAB
+dY"­ MEDIASOUP: Creating WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB...
+dY"­ MEDIASOUP: Created WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB (3/100)
+ƒo. API: Transport created successfully for d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for d-rp4hVY3Uw7Ps4iAAAB from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for d-rp4hVY3Uw7Ps4iAAAB from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for d-rp4hVY3Uw7Ps4iAAAB from l9U046d9QiZMz6wXAAAD (video)
+ƒo. MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB successfully consuming video from l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer created for d-rp4hVY3Uw7Ps4iAAAB from l9U046d9QiZMz6wXAAAD (audio)
+ƒo. MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB successfully consuming audio from l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for d-rp4hVY3Uw7Ps4iAAAB
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'd-rp4hVY3Uw7Ps4iAAAB'
+]
+dY"- MEDIASOUP: Total transports: 3
+dY"- MEDIASOUP: Transport found for d-rp4hVY3Uw7Ps4iAAAB, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: Consumer 4e0ae165-b7be-472f-af99-b533918bdb04 resumed for d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB resumed consumer 4e0ae165-b7be-472f-af99-b533918bdb04
+ƒ-‹,? MEDIASOUP: Consumer c17b97d4-423d-417c-ad9c-76a09a8bc519 resumed for d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB resumed consumer c17b97d4-423d-417c-ad9c-76a09a8bc519
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: connecting
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: connected
+dY"­ API: Creating transport for 4N2FZhcgBy-Dgh5XAAAF (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for 4N2FZhcgBy-Dgh5XAAAF (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for 4N2FZhcgBy-Dgh5XAAAF
+dY"­ API: Creating transport for HYnSOUXZXvxGxWA6AAAJ (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for HYnSOUXZXvxGxWA6AAAJ (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for HYnSOUXZXvxGxWA6AAAJ
+dY"­ MEDIASOUP: Creating WebRTC transport for 4N2FZhcgBy-Dgh5XAAAF...
+dY"­ MEDIASOUP: Creating WebRTC transport for HYnSOUXZXvxGxWA6AAAJ...
+dY"­ MEDIASOUP: Created WebRTC transport for 4N2FZhcgBy-Dgh5XAAAF (4/100)
+ƒo. API: Transport created successfully for 4N2FZhcgBy-Dgh5XAAAF
+dY"­ MEDIASOUP: Created WebRTC transport for HYnSOUXZXvxGxWA6AAAJ (5/100)
+ƒo. API: Transport created successfully for HYnSOUXZXvxGxWA6AAAJ
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for 4N2FZhcgBy-Dgh5XAAAF from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for 4N2FZhcgBy-Dgh5XAAAF from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for HYnSOUXZXvxGxWA6AAAJ from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for HYnSOUXZXvxGxWA6AAAJ from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for 4N2FZhcgBy-Dgh5XAAAF from l9U046d9QiZMz6wXAAAD (video)
+ƒo. MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF successfully consuming video from l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer created for 4N2FZhcgBy-Dgh5XAAAF from l9U046d9QiZMz6wXAAAD (audio)
+dY"§ MEDIASOUP: Consumer created for HYnSOUXZXvxGxWA6AAAJ from l9U046d9QiZMz6wXAAAD (video)
+dY"§ MEDIASOUP: Consumer created for HYnSOUXZXvxGxWA6AAAJ from l9U046d9QiZMz6wXAAAD (audio)
+ƒo. MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF successfully consuming audio from l9U046d9QiZMz6wXAAAD
+ƒo. MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ successfully consuming video from l9U046d9QiZMz6wXAAAD
+ƒo. MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ successfully consuming audio from l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for 4N2FZhcgBy-Dgh5XAAAF
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'HYnSOUXZXvxGxWA6AAAJ'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for 4N2FZhcgBy-Dgh5XAAAF, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for 4N2FZhcgBy-Dgh5XAAAF
+dY"- MEDIASOUP: Attempting to connect transport for HYnSOUXZXvxGxWA6AAAJ
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'HYnSOUXZXvxGxWA6AAAJ'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for HYnSOUXZXvxGxWA6AAAJ, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for HYnSOUXZXvxGxWA6AAAJ
+ƒ-‹,? MEDIASOUP: Consumer a0c9b928-a100-4768-8f07-849fa7038d82 resumed for 4N2FZhcgBy-Dgh5XAAAF
+ƒ-‹,? MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF resumed consumer a0c9b928-a100-4768-8f07-849fa7038d82
+ƒ-‹,? MEDIASOUP: Consumer bba75c13-7435-4725-9013-d0401c1d12aa resumed for HYnSOUXZXvxGxWA6AAAJ
+ƒ-‹,? MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ resumed consumer bba75c13-7435-4725-9013-d0401c1d12aa
+ƒ-‹,? MEDIASOUP: Consumer 0c9ca284-0f38-4fb4-b1e5-c89e132bd314 resumed for 4N2FZhcgBy-Dgh5XAAAF
+ƒ-‹,? MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF resumed consumer 0c9ca284-0f38-4fb4-b1e5-c89e132bd314
+ƒ-‹,? MEDIASOUP: Consumer 3eae2fe7-7901-4951-a692-1f27c23eae91 resumed for HYnSOUXZXvxGxWA6AAAJ
+ƒ-‹,? MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ resumed consumer 3eae2fe7-7901-4951-a692-1f27c23eae91
+dY", MEDIASOUP: Transport DTLS state changed for 4N2FZhcgBy-Dgh5XAAAF: connecting
+dY", MEDIASOUP: Transport DTLS state changed for 4N2FZhcgBy-Dgh5XAAAF: connected
+dY", MEDIASOUP: Transport DTLS state changed for HYnSOUXZXvxGxWA6AAAJ: connecting
+dY", MEDIASOUP: Transport DTLS state changed for HYnSOUXZXvxGxWA6AAAJ: connected
+dY"­ API: Creating transport for NPiEz_qDitEsaYR6AAAH (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for NPiEz_qDitEsaYR6AAAH (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for NPiEz_qDitEsaYR6AAAH
+dY"' MEDIASOUP: Transport cleaned up for NPiEz_qDitEsaYR6AAAH
+dY"­ MEDIASOUP: Creating WebRTC transport for NPiEz_qDitEsaYR6AAAH...
+dY"­ MEDIASOUP: Created WebRTC transport for NPiEz_qDitEsaYR6AAAH (5/100)
+ƒo. API: Transport created successfully for NPiEz_qDitEsaYR6AAAH
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for NPiEz_qDitEsaYR6AAAH from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: NPiEz_qDitEsaYR6AAAH attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for NPiEz_qDitEsaYR6AAAH from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for NPiEz_qDitEsaYR6AAAH from l9U046d9QiZMz6wXAAAD (video)
+ƒo. MEDIASOUP: NPiEz_qDitEsaYR6AAAH successfully consuming video from l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer created for NPiEz_qDitEsaYR6AAAH from l9U046d9QiZMz6wXAAAD (audio)
+ƒo. MEDIASOUP: NPiEz_qDitEsaYR6AAAH successfully consuming audio from l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for NPiEz_qDitEsaYR6AAAH
+dY"- MEDIASOUP: Current transports: [
+  'l9U046d9QiZMz6wXAAAD',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  'NPiEz_qDitEsaYR6AAAH'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for NPiEz_qDitEsaYR6AAAH, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for NPiEz_qDitEsaYR6AAAH
+ƒ-‹,? MEDIASOUP: Consumer c5b0930c-da8a-4912-b1d5-545bdf6f5104 resumed for NPiEz_qDitEsaYR6AAAH
+ƒ-‹,? MEDIASOUP: NPiEz_qDitEsaYR6AAAH resumed consumer c5b0930c-da8a-4912-b1d5-545bdf6f5104
+ƒ-‹,? MEDIASOUP: Consumer d21cf76a-f280-4705-a97f-c486b6de2b69 resumed for NPiEz_qDitEsaYR6AAAH
+ƒ-‹,? MEDIASOUP: NPiEz_qDitEsaYR6AAAH resumed consumer d21cf76a-f280-4705-a97f-c486b6de2b69
+dY'" SERVER: Still alive, connections: 5
+dY'" SERVER: Still alive, connections: 5
+dY'" SERVER: Still alive, connections: 5
+dY'" SERVER: Still alive, connections: 5
+ƒo. VIEWBOT CLIENT: Found FFmpeg at C:\ffmpeg\ffmpeg\bin\ffmpeg.exe
+dY- VIEWBOT CLIENT: Creating bot viewbot-1754648764721-1 with config: {
+  contentType: 'testPattern',
+  videoFile: null,
+  width: 1280,
+  height: 720,
+  frameRate: 30,
+  videoBitrate: '1000k',
+  audioBitrate: '128k',
+  autoStart: true,
+  streamDuration: 0,
+  testPattern: 'color-bars'
+}
+dY- ViewBot viewbot-1754648764721-1 initialized
+dY"O ViewBot viewbot-1754648764721-1: Connecting to server http://localhost:8080
+dY"S SESSION: Registered socket Zmf0H9eOTGHbajYsAAAN for IP 127.0.0.1 (6 sockets)
+User connected: Zmf0H9eOTGHbajYsAAAN from IP: 127.0.0.1
+ƒo. ViewBot viewbot-1754648764721-1: Connected to server
+ƒo. ViewBot viewbot-1754648764721-1: Ready for FFmpeg-based streaming
+ƒo. ViewBot viewbot-1754648764721-1: Initialization complete
+ƒo. VIEWBOT CLIENT: Bot viewbot-1754648764721-1 created successfully
+dYZª ViewBot viewbot-1754648764721-1: Starting synthetic stream...
+dYZª ViewBot viewbot-1754648764721-1: Skipping media stream generation, using synthetic producers
+ƒo. ViewBot viewbot-1754648764721-1: Streaming request sent via request-to-stream
+dYZª VIEWBOT CLIENT: Bot viewbot-1754648764721-1 is now the active streamer
+dY"? TAKEOVER: Checking if Zmf0H9eOTGHbajYsAAAN (IP: 127.0.0.1) can take over
+   Using identifier: 127.0.0.1
+   Global cooldown: 5s
+   Individual cooldown: 10s
+   Last stream start: 2025-08-08T10:25:46.211Z
+   Time since last stream start: 18s
+   ƒo. Takeover allowed for Zmf0H9eOTGHbajYsAAAN (IP: 127.0.0.1)
+dY"› TAKEOVER: Notifying current streamer viewbot-1754648764721-1 of takeover by Zmf0H9eOTGHbajYsAAAN
+dY- TAKEOVER: Current streamer is viewbot, handling graceful takeover
+dY", VIEWBOT: Handling takeover by Zmf0H9eOTGHbajYsAAAN
+dY"› TAKEOVER: Notifying viewers of stream end before cleanup (excluding new streamer Zmf0H9eOTGHbajYsAAAN)
+ƒ?3 TAKEOVER: Waiting 200ms for viewer cleanup before producer cleanup
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: closed
+dY"' MEDIASOUP: Transport cleaned up for d-rp4hVY3Uw7Ps4iAAAB
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: closed
+dY"' MEDIASOUP: Transport cleaned up for l9U046d9QiZMz6wXAAAD
+dY"­ API: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for l9U046d9QiZMz6wXAAAD
+dYZ_ MEDIASOUP: Streamer l9U046d9QiZMz6wXAAAD disconnected, no active streamer
+dY1 TAKEOVER: Cleaning up resources for previous streamer viewbot-1754648764721-1
+dY1 MEDIASOUP: Cleaning up all resources for viewbot-1754648764721-1
+dYZ_ TAKEOVER: Set Zmf0H9eOTGHbajYsAAAN as current streamer in both services, cleared from notified set
+dY"? TAKEOVER: Recording takeover at 2025-08-08T10:26:04.928Z
+   Global cooldown will be active for 5s
+dY"› TAKEOVER: Zmf0H9eOTGHbajYsAAAN approved to stream, waiting for producers to be created
+dY"­ COOLDOWN: Broadcasting global cooldown of 5s to all users except Zmf0H9eOTGHbajYsAAAN
+Stream taken over by: Zmf0H9eOTGHbajYsAAAN
+ƒo. ViewBot viewbot-1754648764721-1: Streaming approved by server
+dYZª ViewBot viewbot-1754648764721-1: Now officially streaming, starting FFmpeg media production
+dYZª ViewBot viewbot-1754648764721-1: Socket connected: true, Socket ID: Zmf0H9eOTGHbajYsAAAN
+dYZª ViewBot viewbot-1754648764721-1: Setting up WebRTC transport and FFmpeg pipeline...
+dY"­ ViewBot viewbot-1754648764721-1: Setting up WebRTC send transport...
+dY"S MEDIASOUP: Sent RTP capabilities to Zmf0H9eOTGHbajYsAAAN
+ƒo. ViewBot viewbot-1754648764721-1: Got RTP capabilities from server
+dY"­ MEDIASOUP: Creating transport for Zmf0H9eOTGHbajYsAAAN (current streamer: Zmf0H9eOTGHbajYsAAAN)
+dY1 MEDIASOUP: Cleaning up all resources for Zmf0H9eOTGHbajYsAAAN
+dY"­ MEDIASOUP: Creating WebRTC transport for l9U046d9QiZMz6wXAAAD...
+dY"­ MEDIASOUP: Created WebRTC transport for l9U046d9QiZMz6wXAAAD (4/100)
+ƒo. API: Transport created successfully for l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: StreamService current streamer: Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: Zmf0H9eOTGHbajYsAAAN
+ƒsÿ‹,? MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume from Zmf0H9eOTGHbajYsAAAN but no producers found yet
+dY"§ MEDIASOUP: Streamer Zmf0H9eOTGHbajYsAAAN is registered but may still be setting up media stream
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: StreamService current streamer: Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: Zmf0H9eOTGHbajYsAAAN
+ƒsÿ‹,? MEDIASOUP: l9U046d9QiZMz6wXAAAD tried to consume from Zmf0H9eOTGHbajYsAAAN but no producers found yet
+dY"§ MEDIASOUP: Streamer Zmf0H9eOTGHbajYsAAAN is registered but may still be setting up media stream
+dY"­ MEDIASOUP: Creating WebRTC transport for Zmf0H9eOTGHbajYsAAAN...
+dY"­ MEDIASOUP: Created WebRTC transport for Zmf0H9eOTGHbajYsAAAN (5/100)
+dY"­ MEDIASOUP: Send transport created for Zmf0H9eOTGHbajYsAAAN
+ƒo. ViewBot viewbot-1754648764721-1: WebRTC send transport created
+dY"­ ViewBot viewbot-1754648764721-1: WebRTC transport setup complete
+dYZª ViewBot viewbot-1754648764721-1: Starting FFmpeg media generation...
+dY"1 ViewBot viewbot-1754648764721-1: Starting FFmpeg video generation...
+dY"­ ViewBot viewbot-1754648764721-1: Creating MediaSoup video producer first...
+dY"­ ViewBot viewbot-1754648764721-1: Creating plain RTP transport for video...
+dY- SERVER: ViewBot viewbot-1754648764721-1 creating plain RTP transport for video
+dY"­ SERVER: Plain RTP transport created for ViewBot viewbot-1754648764721-1 video
+dY"­ SERVER: Transport listening for RTP on port 46343
+ƒo. SERVER: ViewBot viewbot-1754648764721-1 video producer created: e118f0e7-026c-402c-8213-1e73b6e44341
+ƒo. ViewBot viewbot-1754648764721-1: Plain RTP video producer created: e118f0e7-026c-402c-8213-1e73b6e44341
+dY"­ ViewBot viewbot-1754648764721-1: Server allocated port 46343 for video RTP
+dY", MEDIASOUP: Transport DTLS state changed for HYnSOUXZXvxGxWA6AAAJ: closed
+dY"' MEDIASOUP: Transport cleaned up for HYnSOUXZXvxGxWA6AAAJ
+dY", MEDIASOUP: Transport DTLS state changed for 4N2FZhcgBy-Dgh5XAAAF: closed
+dY"' MEDIASOUP: Transport cleaned up for 4N2FZhcgBy-Dgh5XAAAF
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume video from streamer Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: StreamService current streamer: Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: Zmf0H9eOTGHbajYsAAAN
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD attempting to consume video from Zmf0H9eOTGHbajYsAAAN (producers: 1)
+dY"§ MEDIASOUP: Creating consumer for l9U046d9QiZMz6wXAAAD from producer Zmf0H9eOTGHbajYsAAAN
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 1
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: StreamService current streamer: Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: Zmf0H9eOTGHbajYsAAAN
+ƒ?O MEDIASOUP: l9U046d9QiZMz6wXAAAD requested audio from Zmf0H9eOTGHbajYsAAAN but producer not available or closed
+dY"§ MEDIASOUP: Consumer created for l9U046d9QiZMz6wXAAAD from Zmf0H9eOTGHbajYsAAAN (video)
+ƒo. MEDIASOUP: l9U046d9QiZMz6wXAAAD successfully consuming video from Zmf0H9eOTGHbajYsAAAN
+dYZª ViewBot viewbot-1754648764721-1: Starting FFmpeg video process...
+dYZª ViewBot viewbot-1754648764721-1: FFmpeg video args: -f lavfi -i testsrc2=size=1280x720:rate=30 -vcodec libvpx -cpu-used 5 -deadline realtime -g 10 -error-resilient 1 -auto-alt-ref 0 -b:v 1000k -maxrate 1000k -bufsize 2000k -f rtp -payload_type 96 rtp://127.0.0.1:46343
+ƒo. ViewBot viewbot-1754648764721-1: FFmpeg video generation and producer creation complete
+dYZ ViewBot viewbot-1754648764721-1: Starting FFmpeg audio generation...
+dY"­ ViewBot viewbot-1754648764721-1: Creating MediaSoup audio producer first...
+dY"­ ViewBot viewbot-1754648764721-1: Creating plain RTP transport for audio...
+ƒ?O ViewBot viewbot-1754648764721-1: FFmpeg video error: Error: spawn ffmpeg ENOENT
+    at ChildProcess._handle.onexit (node:internal/child_process:286:19)
+    at onErrorNT (node:internal/child_process:484:16)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'spawn ffmpeg',
+  path: 'ffmpeg',
+  spawnargs: [
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=size=1280x720:rate=30',
+    '-vcodec',
+    'libvpx',
+    '-cpu-used',
+    '5',
+    '-deadline',
+    'realtime',
+    '-g',
+    '10',
+    '-error-resilient',
+    '1',
+    '-auto-alt-ref',
+    '0',
+    '-b:v',
+    '1000k',
+    '-maxrate',
+    '1000k',
+    '-bufsize',
+    '2000k',
+    '-f',
+    'rtp',
+    '-payload_type',
+    '96',
+    'rtp://127.0.0.1:46343'
+  ]
+}
+dY"- MEDIASOUP: Attempting to connect transport for l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'Zmf0H9eOTGHbajYsAAAN'
+]
+dY"- MEDIASOUP: Total transports: 3
+dY"- MEDIASOUP: Transport found for l9U046d9QiZMz6wXAAAD, connecting...
+dY- SERVER: ViewBot viewbot-1754648764721-1 creating plain RTP transport for audio
+dY>` ViewBot viewbot-1754648764721-1: FFmpeg video process exited with code -4058
+ƒo. MEDIASOUP: Transport connected successfully for l9U046d9QiZMz6wXAAAD
+dY"­ SERVER: Plain RTP transport created for ViewBot viewbot-1754648764721-1 audio
+dY"­ SERVER: Transport listening for RTP on port 47777
+ƒo. SERVER: ViewBot viewbot-1754648764721-1 audio producer created: 61f5f163-9831-4cf5-bd7c-027bfeb9b63a
+ƒo. ViewBot viewbot-1754648764721-1: Plain RTP audio producer created: 61f5f163-9831-4cf5-bd7c-027bfeb9b63a
+dY"­ ViewBot viewbot-1754648764721-1: Server allocated port 47777 for audio RTP
+ƒ-‹,? MEDIASOUP: Consumer 263de958-6edf-4090-871b-ef4546ddd69b resumed for l9U046d9QiZMz6wXAAAD
+ƒ-‹,? MEDIASOUP: l9U046d9QiZMz6wXAAAD resumed consumer 263de958-6edf-4090-871b-ef4546ddd69b
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connecting
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connected
+dYZª ViewBot viewbot-1754648764721-1: Starting FFmpeg audio process...
+dYZª ViewBot viewbot-1754648764721-1: FFmpeg audio args: -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 -acodec libopus -b:a 128k -f rtp -payload_type 111 rtp://127.0.0.1:47777
+ƒo. ViewBot viewbot-1754648764721-1: FFmpeg audio generation and producer creation complete
+ƒo. ViewBot viewbot-1754648764721-1: FFmpeg media generation started
+ƒo. ViewBot viewbot-1754648764721-1: FFmpeg pipeline active, streaming to MediaSoup
+ƒ?O ViewBot viewbot-1754648764721-1: FFmpeg audio error: Error: spawn ffmpeg ENOENT
+    at ChildProcess._handle.onexit (node:internal/child_process:286:19)
+    at onErrorNT (node:internal/child_process:484:16)
+    at processTicksAndRejections (node:internal/process/task_queues:82:21)
+    at runNextTicks (node:internal/process/task_queues:64:3)
+    at process.processTimers (node:internal/timers:511:9) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'spawn ffmpeg',
+  path: 'ffmpeg',
+  spawnargs: [
+    '-f',
+    'lavfi',
+    '-i',
+    'anullsrc=channel_layout=stereo:sample_rate=48000',
+    '-acodec',
+    'libopus',
+    '-b:a',
+    '128k',
+    '-f',
+    'rtp',
+    '-payload_type',
+    '111',
+    'rtp://127.0.0.1:47777'
+  ]
+}
+dY>` ViewBot viewbot-1754648764721-1: FFmpeg audio process exited with code -4058
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD requesting to consume audio from streamer Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: StreamService current streamer: Zmf0H9eOTGHbajYsAAAN
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: Zmf0H9eOTGHbajYsAAAN
+dY"§ MEDIASOUP: l9U046d9QiZMz6wXAAAD attempting to consume audio from Zmf0H9eOTGHbajYsAAAN (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for l9U046d9QiZMz6wXAAAD from producer Zmf0H9eOTGHbajYsAAAN
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for l9U046d9QiZMz6wXAAAD from Zmf0H9eOTGHbajYsAAAN (audio)
+ƒo. MEDIASOUP: l9U046d9QiZMz6wXAAAD successfully consuming audio from Zmf0H9eOTGHbajYsAAAN
+ƒ-‹,? MEDIASOUP: Consumer 707a8349-852f-456c-a3e5-78f5afcbcecc resumed for l9U046d9QiZMz6wXAAAD
+ƒ-‹,? MEDIASOUP: l9U046d9QiZMz6wXAAAD resumed consumer 707a8349-852f-456c-a3e5-78f5afcbcecc
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY"? TAKEOVER: Checking if l9U046d9QiZMz6wXAAAD (IP: 127.0.0.1) can take over
+   Using identifier: 127.0.0.1
+   Global cooldown: 5s
+   Individual cooldown: 10s
+   Last stream start: 2025-08-08T10:26:04.928Z
+   Time since last stream start: 21s
+   ƒo. Takeover allowed for l9U046d9QiZMz6wXAAAD (IP: 127.0.0.1)
+dY"› TAKEOVER: Notifying current streamer Zmf0H9eOTGHbajYsAAAN of takeover by l9U046d9QiZMz6wXAAAD
+dY"' TAKEOVER: Set 10s cooldown for Zmf0H9eOTGHbajYsAAAN (IP: 127.0.0.1, identifier: 127.0.0.1, reason: stream_taken_over)
+dY"› TAKEOVER: Notifying viewers of stream end before cleanup (excluding new streamer l9U046d9QiZMz6wXAAAD)
+ƒ?3 TAKEOVER: Waiting 200ms for viewer cleanup before producer cleanup
+dY"› ViewBot viewbot-1754648764721-1: Stream taken over by l9U046d9QiZMz6wXAAAD
+dY"§ ViewBot viewbot-1754648764721-1: Stream ended notification received
+dY1 TAKEOVER: Cleaning up resources for previous streamer Zmf0H9eOTGHbajYsAAAN
+dY1 MEDIASOUP: Cleaning up all resources for Zmf0H9eOTGHbajYsAAAN
+dY>` MEDIASOUP: Closed video producer for Zmf0H9eOTGHbajYsAAAN
+dY>` MEDIASOUP: Closed audio producer for Zmf0H9eOTGHbajYsAAAN
+dYZ_ MEDIASOUP: Streamer Zmf0H9eOTGHbajYsAAAN disconnected, no active streamer
+dY"' MEDIASOUP: Transport cleaned up for Zmf0H9eOTGHbajYsAAAN
+dYZ_ TAKEOVER: Set l9U046d9QiZMz6wXAAAD as current streamer in both services, cleared from notified set
+dY"? TAKEOVER: Recording takeover at 2025-08-08T10:26:26.943Z
+   Global cooldown will be active for 5s
+dY"› TAKEOVER: l9U046d9QiZMz6wXAAAD approved to stream, waiting for producers to be created
+dY"­ COOLDOWN: Broadcasting global cooldown of 5s to all users except l9U046d9QiZMz6wXAAAD
+Stream taken over by: l9U046d9QiZMz6wXAAAD
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: closed
+dY"' MEDIASOUP: Transport cleaned up for l9U046d9QiZMz6wXAAAD
+dY"­ API: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for l9U046d9QiZMz6wXAAAD
+dY"­ MEDIASOUP: Creating WebRTC transport for l9U046d9QiZMz6wXAAAD...
+dY"­ MEDIASOUP: Created WebRTC transport for l9U046d9QiZMz6wXAAAD (2/100)
+ƒo. API: Transport created successfully for l9U046d9QiZMz6wXAAAD
+dY"­ API: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for l9U046d9QiZMz6wXAAAD (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for l9U046d9QiZMz6wXAAAD
+dY"' MEDIASOUP: Transport cleaned up for l9U046d9QiZMz6wXAAAD
+dY"­ MEDIASOUP: Creating WebRTC transport for l9U046d9QiZMz6wXAAAD...
+dY"­ MEDIASOUP: Created WebRTC transport for l9U046d9QiZMz6wXAAAD (2/100)
+ƒo. API: Transport created successfully for l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Current transports: [ 'NPiEz_qDitEsaYR6AAAH', 'l9U046d9QiZMz6wXAAAD' ]
+dY"- MEDIASOUP: Total transports: 2
+dY"- MEDIASOUP: Transport found for l9U046d9QiZMz6wXAAAD, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP: Before producer creation - current streamer: l9U046d9QiZMz6wXAAAD, this socket: l9U046d9QiZMz6wXAAAD, wasNewStreamer: false
+dY"§ MEDIASOUP: Producer created for l9U046d9QiZMz6wXAAAD (video)
+dYZ_ MEDIASOUP: l9U046d9QiZMz6wXAAAD is now the active streamer
+dYZª MEDIASOUP: Producer created - streamer: l9U046d9QiZMz6wXAAAD, kind: video, wasNewStreamer: false, notified: false
+dY"? MEDIASOUP DEBUG: Checking notification conditions for l9U046d9QiZMz6wXAAAD:
+dY"?   wasNewStreamer: false
+dY"?   notifiedStreamers.has(l9U046d9QiZMz6wXAAAD): false
+dY"?   Current streamer: l9U046d9QiZMz6wXAAAD
+dY"?   notifiedStreamers Set: [ 'd-rp4hVY3Uw7Ps4iAAAB' ]
+dYZª MEDIASOUP: Processing new streamer l9U046d9QiZMz6wXAAAD with video track (video: true, audio: false)
+ƒo. MEDIASOUP: Producer(s) verified for l9U046d9QiZMz6wXAAAD (video: true, audio: false), notifying viewers
+dYZª MEDIASOUP: l9U046d9QiZMz6wXAAAD started producing video
+dY"? MEDIASOUP: Before producer creation - current streamer: l9U046d9QiZMz6wXAAAD, this socket: l9U046d9QiZMz6wXAAAD, wasNewStreamer: false
+dY"§ MEDIASOUP: Producer created for l9U046d9QiZMz6wXAAAD (audio)
+dYZ_ MEDIASOUP: l9U046d9QiZMz6wXAAAD is now the active streamer
+dYZª MEDIASOUP: Producer created - streamer: l9U046d9QiZMz6wXAAAD, kind: audio, wasNewStreamer: false, notified: true
+dY"? MEDIASOUP DEBUG: Checking notification conditions for l9U046d9QiZMz6wXAAAD:
+dY"?   wasNewStreamer: false
+dY"?   notifiedStreamers.has(l9U046d9QiZMz6wXAAAD): true
+dY"?   Current streamer: l9U046d9QiZMz6wXAAAD
+dY"?   notifiedStreamers Set: [ 'd-rp4hVY3Uw7Ps4iAAAB', 'l9U046d9QiZMz6wXAAAD' ]
+dYZª MEDIASOUP: Existing streamer l9U046d9QiZMz6wXAAAD producing additional audio track
+dYZª MEDIASOUP: l9U046d9QiZMz6wXAAAD started producing audio
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connecting
+dY", MEDIASOUP: Transport DTLS state changed for l9U046d9QiZMz6wXAAAD: connected
+dY"­ COOLDOWN: Broadcasting global cooldown of 5s to all users except l9U046d9QiZMz6wXAAAD
+dY"­ API: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for d-rp4hVY3Uw7Ps4iAAAB (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for d-rp4hVY3Uw7Ps4iAAAB
+dY"­ MEDIASOUP: Creating WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB...
+dY"­ MEDIASOUP: Created WebRTC transport for d-rp4hVY3Uw7Ps4iAAAB (3/100)
+ƒo. API: Transport created successfully for d-rp4hVY3Uw7Ps4iAAAB
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for d-rp4hVY3Uw7Ps4iAAAB from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for d-rp4hVY3Uw7Ps4iAAAB from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for d-rp4hVY3Uw7Ps4iAAAB from l9U046d9QiZMz6wXAAAD (video)
+ƒo. MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB successfully consuming video from l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer created for d-rp4hVY3Uw7Ps4iAAAB from l9U046d9QiZMz6wXAAAD (audio)
+ƒo. MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB successfully consuming audio from l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for d-rp4hVY3Uw7Ps4iAAAB
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'd-rp4hVY3Uw7Ps4iAAAB'
+]
+dY"- MEDIASOUP: Total transports: 3
+dY"- MEDIASOUP: Transport found for d-rp4hVY3Uw7Ps4iAAAB, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: Consumer 501ea4b0-8e61-4f55-810a-84bdaa65ca2f resumed for d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB resumed consumer 501ea4b0-8e61-4f55-810a-84bdaa65ca2f
+ƒ-‹,? MEDIASOUP: Consumer afe997e9-1301-4dbf-a6f4-85d00e02a534 resumed for d-rp4hVY3Uw7Ps4iAAAB
+ƒ-‹,? MEDIASOUP: d-rp4hVY3Uw7Ps4iAAAB resumed consumer afe997e9-1301-4dbf-a6f4-85d00e02a534
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: connecting
+dY", MEDIASOUP: Transport DTLS state changed for d-rp4hVY3Uw7Ps4iAAAB: connected
+dY"­ API: Creating transport for HYnSOUXZXvxGxWA6AAAJ (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for HYnSOUXZXvxGxWA6AAAJ (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for HYnSOUXZXvxGxWA6AAAJ
+dY"­ API: Creating transport for 4N2FZhcgBy-Dgh5XAAAF (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for 4N2FZhcgBy-Dgh5XAAAF (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for 4N2FZhcgBy-Dgh5XAAAF
+dY"­ MEDIASOUP: Creating WebRTC transport for HYnSOUXZXvxGxWA6AAAJ...
+dY"­ MEDIASOUP: Creating WebRTC transport for 4N2FZhcgBy-Dgh5XAAAF...
+dY"­ MEDIASOUP: Created WebRTC transport for HYnSOUXZXvxGxWA6AAAJ (4/100)
+ƒo. API: Transport created successfully for HYnSOUXZXvxGxWA6AAAJ
+dY"­ MEDIASOUP: Created WebRTC transport for 4N2FZhcgBy-Dgh5XAAAF (5/100)
+ƒo. API: Transport created successfully for 4N2FZhcgBy-Dgh5XAAAF
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for HYnSOUXZXvxGxWA6AAAJ from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for HYnSOUXZXvxGxWA6AAAJ from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for 4N2FZhcgBy-Dgh5XAAAF from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for 4N2FZhcgBy-Dgh5XAAAF from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for HYnSOUXZXvxGxWA6AAAJ from l9U046d9QiZMz6wXAAAD (video)
+ƒo. MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ successfully consuming video from l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer created for HYnSOUXZXvxGxWA6AAAJ from l9U046d9QiZMz6wXAAAD (audio)
+dY"§ MEDIASOUP: Consumer created for 4N2FZhcgBy-Dgh5XAAAF from l9U046d9QiZMz6wXAAAD (video)
+dY"§ MEDIASOUP: Consumer created for 4N2FZhcgBy-Dgh5XAAAF from l9U046d9QiZMz6wXAAAD (audio)
+ƒo. MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ successfully consuming audio from l9U046d9QiZMz6wXAAAD
+ƒo. MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF successfully consuming video from l9U046d9QiZMz6wXAAAD
+ƒo. MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF successfully consuming audio from l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for 4N2FZhcgBy-Dgh5XAAAF
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  '4N2FZhcgBy-Dgh5XAAAF'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for 4N2FZhcgBy-Dgh5XAAAF, connecting...
+dY"- MEDIASOUP: Attempting to connect transport for HYnSOUXZXvxGxWA6AAAJ
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'd-rp4hVY3Uw7Ps4iAAAB',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  '4N2FZhcgBy-Dgh5XAAAF'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for HYnSOUXZXvxGxWA6AAAJ, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for 4N2FZhcgBy-Dgh5XAAAF
+ƒo. MEDIASOUP: Transport connected successfully for HYnSOUXZXvxGxWA6AAAJ
+ƒ-‹,? MEDIASOUP: Consumer e9a0d2c2-f07e-42ee-b6f7-d5a53dfef1d9 resumed for 4N2FZhcgBy-Dgh5XAAAF
+ƒ-‹,? MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF resumed consumer e9a0d2c2-f07e-42ee-b6f7-d5a53dfef1d9
+ƒ-‹,? MEDIASOUP: Consumer 89b1ccd2-d48b-4f0c-baad-333221f152f0 resumed for HYnSOUXZXvxGxWA6AAAJ
+ƒ-‹,? MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ resumed consumer 89b1ccd2-d48b-4f0c-baad-333221f152f0
+ƒ-‹,? MEDIASOUP: Consumer b1e2bf98-5475-4671-92be-ff0f87f7e699 resumed for 4N2FZhcgBy-Dgh5XAAAF
+ƒ-‹,? MEDIASOUP: 4N2FZhcgBy-Dgh5XAAAF resumed consumer b1e2bf98-5475-4671-92be-ff0f87f7e699
+ƒ-‹,? MEDIASOUP: Consumer 16af9f95-c34f-4d5a-8b26-049c5df4ae47 resumed for HYnSOUXZXvxGxWA6AAAJ
+ƒ-‹,? MEDIASOUP: HYnSOUXZXvxGxWA6AAAJ resumed consumer 16af9f95-c34f-4d5a-8b26-049c5df4ae47
+dY'" SERVER: Still alive, connections: 6
+dY", MEDIASOUP: Transport DTLS state changed for 4N2FZhcgBy-Dgh5XAAAF: connecting
+dY", MEDIASOUP: Transport DTLS state changed for HYnSOUXZXvxGxWA6AAAJ: connecting
+dY", MEDIASOUP: Transport DTLS state changed for 4N2FZhcgBy-Dgh5XAAAF: connected
+dY", MEDIASOUP: Transport DTLS state changed for HYnSOUXZXvxGxWA6AAAJ: connected
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY"S SESSION: IP 127.0.0.1 still has 5 sockets
+User disconnected: d-rp4hVY3Uw7Ps4iAAAB from IP: 127.0.0.1
+dY1 MEDIASOUP: Cleaning up all resources for d-rp4hVY3Uw7Ps4iAAAB
+dY"' MEDIASOUP: Transport cleaned up for d-rp4hVY3Uw7Ps4iAAAB
+dY"S SESSION: Registered socket FMsEDWukgfBjZmS3AAAP for IP 127.0.0.1 (6 sockets)
+User connected: FMsEDWukgfBjZmS3AAAP from IP: 127.0.0.1
+dY"? TAKEOVER: Checking if FMsEDWukgfBjZmS3AAAP (IP: 127.0.0.1) can take over
+   Using identifier: 127.0.0.1
+   Global cooldown: 5s
+   Individual cooldown: 10s
+   Last stream start: 2025-08-08T10:26:26.943Z
+   Time since last stream start: 21s
+   ƒo. Takeover allowed for FMsEDWukgfBjZmS3AAAP (IP: 127.0.0.1)
+dY"­ API: Creating transport for FMsEDWukgfBjZmS3AAAP (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for FMsEDWukgfBjZmS3AAAP (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for FMsEDWukgfBjZmS3AAAP
+dY"­ MEDIASOUP: Creating WebRTC transport for FMsEDWukgfBjZmS3AAAP...
+dY"­ MEDIASOUP: Created WebRTC transport for FMsEDWukgfBjZmS3AAAP (5/100)
+ƒo. API: Transport created successfully for FMsEDWukgfBjZmS3AAAP
+dY"§ MEDIASOUP: FMsEDWukgfBjZmS3AAAP requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: FMsEDWukgfBjZmS3AAAP attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for FMsEDWukgfBjZmS3AAAP from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: FMsEDWukgfBjZmS3AAAP requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: FMsEDWukgfBjZmS3AAAP attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for FMsEDWukgfBjZmS3AAAP from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for FMsEDWukgfBjZmS3AAAP from l9U046d9QiZMz6wXAAAD (video)
+ƒo. MEDIASOUP: FMsEDWukgfBjZmS3AAAP successfully consuming video from l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer created for FMsEDWukgfBjZmS3AAAP from l9U046d9QiZMz6wXAAAD (audio)
+ƒo. MEDIASOUP: FMsEDWukgfBjZmS3AAAP successfully consuming audio from l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for FMsEDWukgfBjZmS3AAAP
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'FMsEDWukgfBjZmS3AAAP'
+]
+dY"- MEDIASOUP: Total transports: 5
+dY"- MEDIASOUP: Transport found for FMsEDWukgfBjZmS3AAAP, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for FMsEDWukgfBjZmS3AAAP
+ƒ-‹,? MEDIASOUP: Consumer 06f9c654-7fd4-4ffa-a9ab-9650b16c312f resumed for FMsEDWukgfBjZmS3AAAP
+ƒ-‹,? MEDIASOUP: FMsEDWukgfBjZmS3AAAP resumed consumer 06f9c654-7fd4-4ffa-a9ab-9650b16c312f
+ƒ-‹,? MEDIASOUP: Consumer c208b1f3-9e4b-422e-9720-75e5023cd42d resumed for FMsEDWukgfBjZmS3AAAP
+ƒ-‹,? MEDIASOUP: FMsEDWukgfBjZmS3AAAP resumed consumer c208b1f3-9e4b-422e-9720-75e5023cd42d
+dY", MEDIASOUP: Transport DTLS state changed for FMsEDWukgfBjZmS3AAAP: connecting
+dY", MEDIASOUP: Transport DTLS state changed for FMsEDWukgfBjZmS3AAAP: connected
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY'" SERVER: Still alive, connections: 6
+dY"S SESSION: Registered socket GUdatuoZsbyASKzRAAAR for IP 127.0.0.1 (7 sockets)
+User connected: GUdatuoZsbyASKzRAAAR from IP: 127.0.0.1
+dY"? TAKEOVER: Checking if GUdatuoZsbyASKzRAAAR (IP: 127.0.0.1) can take over
+   Using identifier: 127.0.0.1
+   Global cooldown: 5s
+   Individual cooldown: 10s
+   Last stream start: 2025-08-08T10:26:26.943Z
+   Time since last stream start: 50s
+   ƒo. Takeover allowed for GUdatuoZsbyASKzRAAAR (IP: 127.0.0.1)
+dY'" SERVER: Still alive, connections: 7
+dY"­ API: Creating transport for GUdatuoZsbyASKzRAAAR (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for GUdatuoZsbyASKzRAAAR (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for GUdatuoZsbyASKzRAAAR
+dY"­ MEDIASOUP: Creating WebRTC transport for GUdatuoZsbyASKzRAAAR...
+dY"­ MEDIASOUP: Created WebRTC transport for GUdatuoZsbyASKzRAAAR (6/100)
+ƒo. API: Transport created successfully for GUdatuoZsbyASKzRAAAR
+dY"§ MEDIASOUP: GUdatuoZsbyASKzRAAAR requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: GUdatuoZsbyASKzRAAAR attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for GUdatuoZsbyASKzRAAAR from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: GUdatuoZsbyASKzRAAAR requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: GUdatuoZsbyASKzRAAAR attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for GUdatuoZsbyASKzRAAAR from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for GUdatuoZsbyASKzRAAAR from l9U046d9QiZMz6wXAAAD (video)
+ƒo. MEDIASOUP: GUdatuoZsbyASKzRAAAR successfully consuming video from l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer created for GUdatuoZsbyASKzRAAAR from l9U046d9QiZMz6wXAAAD (audio)
+ƒo. MEDIASOUP: GUdatuoZsbyASKzRAAAR successfully consuming audio from l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for GUdatuoZsbyASKzRAAAR
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'FMsEDWukgfBjZmS3AAAP',
+  'GUdatuoZsbyASKzRAAAR'
+]
+dY"- MEDIASOUP: Total transports: 6
+dY"- MEDIASOUP: Transport found for GUdatuoZsbyASKzRAAAR, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for GUdatuoZsbyASKzRAAAR
+ƒ-‹,? MEDIASOUP: Consumer 8d1fd02d-fa20-4361-8941-182e9f4630da resumed for GUdatuoZsbyASKzRAAAR
+ƒ-‹,? MEDIASOUP: GUdatuoZsbyASKzRAAAR resumed consumer 8d1fd02d-fa20-4361-8941-182e9f4630da
+ƒ-‹,? MEDIASOUP: Consumer 420cc57a-78f9-4630-8de8-dc66def3eb47 resumed for GUdatuoZsbyASKzRAAAR
+ƒ-‹,? MEDIASOUP: GUdatuoZsbyASKzRAAAR resumed consumer 420cc57a-78f9-4630-8de8-dc66def3eb47
+dY", MEDIASOUP: Transport DTLS state changed for GUdatuoZsbyASKzRAAAR: connecting
+dY", MEDIASOUP: Transport DTLS state changed for GUdatuoZsbyASKzRAAAR: connected
+dY'" SERVER: Still alive, connections: 7
+dY"S SESSION: Registered socket cAjAL5z8BfHKeDo2AAAT for IP 127.0.0.1 (8 sockets)
+User connected: cAjAL5z8BfHKeDo2AAAT from IP: 127.0.0.1
+dY"? TAKEOVER: Checking if cAjAL5z8BfHKeDo2AAAT (IP: 127.0.0.1) can take over
+   Using identifier: 127.0.0.1
+   Global cooldown: 5s
+   Individual cooldown: 10s
+   Last stream start: 2025-08-08T10:26:26.943Z
+   Time since last stream start: 61s
+   ƒo. Takeover allowed for cAjAL5z8BfHKeDo2AAAT (IP: 127.0.0.1)
+dY"­ API: Creating transport for cAjAL5z8BfHKeDo2AAAT (current streamer: l9U046d9QiZMz6wXAAAD)
+dY"­ MEDIASOUP: Creating transport for cAjAL5z8BfHKeDo2AAAT (current streamer: l9U046d9QiZMz6wXAAAD)
+dY1 MEDIASOUP: Cleaning up all resources for cAjAL5z8BfHKeDo2AAAT
+dY"­ MEDIASOUP: Creating WebRTC transport for cAjAL5z8BfHKeDo2AAAT...
+dY"­ MEDIASOUP: Created WebRTC transport for cAjAL5z8BfHKeDo2AAAT (7/100)
+ƒo. API: Transport created successfully for cAjAL5z8BfHKeDo2AAAT
+dY"§ MEDIASOUP: cAjAL5z8BfHKeDo2AAAT requesting to consume video from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: cAjAL5z8BfHKeDo2AAAT attempting to consume video from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for cAjAL5z8BfHKeDo2AAAT from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: cAjAL5z8BfHKeDo2AAAT requesting to consume audio from streamer l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: StreamService current streamer: l9U046d9QiZMz6wXAAAD
+dY"? MEDIASOUP DEBUG: MediasoupService current streamer: l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: cAjAL5z8BfHKeDo2AAAT attempting to consume audio from l9U046d9QiZMz6wXAAAD (producers: 2)
+dY"§ MEDIASOUP: Creating consumer for cAjAL5z8BfHKeDo2AAAT from producer l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer transport exists: true
+dY"§ MEDIASOUP: Producer map exists: true, size: 2
+dY"§ MEDIASOUP: Consumer created for cAjAL5z8BfHKeDo2AAAT from l9U046d9QiZMz6wXAAAD (video)
+ƒo. MEDIASOUP: cAjAL5z8BfHKeDo2AAAT successfully consuming video from l9U046d9QiZMz6wXAAAD
+dY"§ MEDIASOUP: Consumer created for cAjAL5z8BfHKeDo2AAAT from l9U046d9QiZMz6wXAAAD (audio)
+ƒo. MEDIASOUP: cAjAL5z8BfHKeDo2AAAT successfully consuming audio from l9U046d9QiZMz6wXAAAD
+dY"- MEDIASOUP: Attempting to connect transport for cAjAL5z8BfHKeDo2AAAT
+dY"- MEDIASOUP: Current transports: [
+  'NPiEz_qDitEsaYR6AAAH',
+  'l9U046d9QiZMz6wXAAAD',
+  'HYnSOUXZXvxGxWA6AAAJ',
+  '4N2FZhcgBy-Dgh5XAAAF',
+  'FMsEDWukgfBjZmS3AAAP',
+  'GUdatuoZsbyASKzRAAAR',
+  'cAjAL5z8BfHKeDo2AAAT'
+]
+dY"- MEDIASOUP: Total transports: 7
+dY"- MEDIASOUP: Transport found for cAjAL5z8BfHKeDo2AAAT, connecting...
+ƒo. MEDIASOUP: Transport connected successfully for cAjAL5z8BfHKeDo2AAAT
+ƒ-‹,? MEDIASOUP: Consumer 3aa6f31c-8cd7-4a7e-a8a4-595f82f06b9b resumed for cAjAL5z8BfHKeDo2AAAT
+ƒ-‹,? MEDIASOUP: cAjAL5z8BfHKeDo2AAAT resumed consumer 3aa6f31c-8cd7-4a7e-a8a4-595f82f06b9b
+dY", MEDIASOUP: Transport DTLS state changed for cAjAL5z8BfHKeDo2AAAT: connecting
+dY", MEDIASOUP: Transport DTLS state changed for cAjAL5z8BfHKeDo2AAAT: connected
+ƒ-‹,? MEDIASOUP: Consumer af8225a5-d4a7-4fb9-8129-6642121da363 resumed for cAjAL5z8BfHKeDo2AAAT
+ƒ-‹,? MEDIASOUP: cAjAL5z8BfHKeDo2AAAT resumed consumer af8225a5-d4a7-4fb9-8129-6642121da363
+dY'" SERVER: Still alive, connections: 8
+dY'" SERVER: Still alive, connections: 8
+dY"S SESSION: IP 127.0.0.1 still has 7 sockets
+User disconnected: cAjAL5z8BfHKeDo2AAAT from IP: 127.0.0.1
+dY1 MEDIASOUP: Cleaning up all resources for cAjAL5z8BfHKeDo2AAAT
+dY"' MEDIASOUP: Transport cleaned up for cAjAL5z8BfHKeDo2AAAT
+dY"S SESSION: IP 127.0.0.1 still has 6 sockets
+User disconnected: GUdatuoZsbyASKzRAAAR from IP: 127.0.0.1
+dY1 MEDIASOUP: Cleaning up all resources for GUdatuoZsbyASKzRAAAR
+dY"' MEDIASOUP: Transport cleaned up for GUdatuoZsbyASKzRAAAR
+dY"S SESSION: IP 127.0.0.1 still has 5 sockets
+User disconnected: FMsEDWukgfBjZmS3AAAP from IP: 127.0.0.1
+dY1 MEDIASOUP: Cleaning up all resources for FMsEDWukgfBjZmS3AAAP
+dY"' MEDIASOUP: Transport cleaned up for FMsEDWukgfBjZmS3AAAP
+dY'" SERVER: Still alive, connections: 5
+dY"S SESSION: IP 127.0.0.1 still has 4 sockets
+User disconnected: HYnSOUXZXvxGxWA6AAAJ from IP: 127.0.0.1
+dY1 MEDIASOUP: Cleaning up all resources for HYnSOUXZXvxGxWA6AAAJ
+dY"' MEDIASOUP: Transport cleaned up for HYnSOUXZXvxGxWA6AAAJ
+dY'" SERVER: Still alive, connections: 4
+dY'" SERVER: Still alive, connections: 4

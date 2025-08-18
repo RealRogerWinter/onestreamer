@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>XSS Protection Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+        .test {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 4px;
+        }
+        .test h3 {
+            color: #4ECDC4;
+            margin-top: 0;
+        }
+        .input {
+            background: #2a2a2a;
+            color: #fff;
+            border: 1px solid #444;
+            padding: 8px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        .output {
+            background: #2a2a2a;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .safe {
+            color: #28a745;
+        }
+        .unsafe {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <h1>🛡️ XSS Protection Test Suite</h1>
+    <p>Test various XSS payloads to ensure chat is protected</p>
+    
+    <div class="test">
+        <h3>Test Payloads:</h3>
+        <p>Try copying these into the chat to verify they don't execute:</p>
+        
+        <div class="output">
+            <strong>1. Basic Script Tag:</strong><br>
+            <code>&lt;script&gt;alert('XSS')&lt;/script&gt;</code>
+        </div>
+        
+        <div class="output">
+            <strong>2. Image Tag with onerror:</strong><br>
+            <code>&lt;img src=x onerror=alert('XSS')&gt;</code>
+        </div>
+        
+        <div class="output">
+            <strong>3. SVG with onload:</strong><br>
+            <code>&lt;svg onload=alert('XSS')&gt;</code>
+        </div>
+        
+        <div class="output">
+            <strong>4. Iframe injection:</strong><br>
+            <code>&lt;iframe src=javascript:alert('XSS')&gt;&lt;/iframe&gt;</code>
+        </div>
+        
+        <div class="output">
+            <strong>5. HTML formatting (should not render):</strong><br>
+            <code>&lt;b&gt;bold&lt;/b&gt; &lt;i&gt;italic&lt;/i&gt; &lt;font color="red"&gt;red text&lt;/font&gt;</code>
+        </div>
+        
+        <div class="output">
+            <strong>6. JavaScript URL:</strong><br>
+            <code>&lt;a href="javascript:alert('XSS')"&gt;Click me&lt;/a&gt;</code>
+        </div>
+        
+        <div class="output">
+            <strong>7. Data URL with script:</strong><br>
+            <code>&lt;a href="data:text/html,&lt;script&gt;alert('XSS')&lt;/script&gt;"&gt;Click&lt;/a&gt;</code>
+        </div>
+        
+        <div class="output">
+            <strong>8. Event handler injection:</strong><br>
+            <code>&lt;div onclick="alert('XSS')"&gt;Click me&lt;/div&gt;</code>
+        </div>
+        
+        <div class="output">
+            <strong>9. Style with expression:</strong><br>
+            <code>&lt;div style="background:url('javascript:alert(1)')"&gt;test&lt;/div&gt;</code>
+        </div>
+        
+        <div class="output">
+            <strong>10. Mixed with emoji (should only render emoji):</strong><br>
+            <code>&lt;script&gt;alert('XSS')&lt;/script&gt; :kek: &lt;img src=x onerror=alert('XSS')&gt;</code>
+        </div>
+    </div>
+    
+    <div class="test">
+        <h3>✅ Expected Behavior:</h3>
+        <ul class="safe">
+            <li>All HTML tags should be displayed as plain text</li>
+            <li>No JavaScript should execute</li>
+            <li>No pop-ups or alerts should appear</li>
+            <li>Emoji codes like :kek: should still render as images</li>
+            <li>Regular URLs should still be clickable</li>
+        </ul>
+    </div>
+    
+    <div class="test">
+        <h3>🔒 Security Measures Implemented:</h3>
+        <ul>
+            <li><strong>Client-side:</strong> HTML escaping before rendering</li>
+            <li><strong>Client-side:</strong> DOMPurify sanitization with strict config</li>
+            <li><strong>Server-side:</strong> HTML entity encoding</li>
+            <li><strong>HTTP Headers:</strong> Content Security Policy</li>
+            <li><strong>HTTP Headers:</strong> X-XSS-Protection</li>
+            <li><strong>Allowed HTML:</strong> Only &lt;img&gt; for emojis and &lt;a&gt; for links</li>
+        </ul>
+    </div>
+    
+    <script>
+        console.log('✅ If you see this message but no alerts, XSS protection is working!');
+    </script>
+</body>
+</html>
