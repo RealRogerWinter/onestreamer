@@ -103,6 +103,8 @@ const ViewBotTab: React.FC<ViewBotTabProps> = ({ makeApiCall, addLog }) => {
   const [editName, setEditName] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingConfig, setEditingConfig] = useState<{[key: string]: any}>({});
+  const [uploadingVideo, setUploadingVideo] = useState<{[key: string]: boolean}>({});
+  const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
 
   // Create ViewBot handler
   // Close dropdown when clicking outside
@@ -879,18 +881,116 @@ const ViewBotTab: React.FC<ViewBotTabProps> = ({ makeApiCall, addLog }) => {
                   <div className="setting-row">
                     <label>Video File</label>
                     {editingConfig[bot.botId] ? (
-                      <input 
-                        type="text"
-                        value={editingConfig[bot.botId].videoFile || bot.config.videoFile || ''}
-                        onChange={(e) => setEditingConfig({
-                          ...editingConfig,
-                          [bot.botId]: {
-                            ...editingConfig[bot.botId],
-                            videoFile: e.target.value
-                          }
-                        })}
-                        placeholder="Enter video file path or URL"
-                      />
+                      <div className="video-file-input-group">
+                        <input 
+                          type="text"
+                          value={editingConfig[bot.botId].videoFile || bot.config.videoFile || ''}
+                          onChange={(e) => setEditingConfig({
+                            ...editingConfig,
+                            [bot.botId]: {
+                              ...editingConfig[bot.botId],
+                              videoFile: e.target.value
+                            }
+                          })}
+                          placeholder="Enter video file path or URL"
+                        />
+                        <div className="file-upload-wrapper">
+                          <input
+                            type="file"
+                            id={`file-upload-${bot.botId}`}
+                            accept="video/*"
+                            disabled={uploadingVideo[bot.botId]}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                // Set uploading state
+                                setUploadingVideo({ ...uploadingVideo, [bot.botId]: true });
+                                setUploadProgress({ ...uploadProgress, [bot.botId]: 0 });
+                                
+                                // Create FormData for file upload
+                                const formData = new FormData();
+                                formData.append('video', file);
+                                
+                                try {
+                                  const token = localStorage.getItem('adminToken');
+                                  const adminKey = localStorage.getItem('adminKey') || token;
+                                  
+                                  // Create XMLHttpRequest to track upload progress
+                                  const xhr = new XMLHttpRequest();
+                                  
+                                  // Track upload progress
+                                  xhr.upload.addEventListener('progress', (event) => {
+                                    if (event.lengthComputable) {
+                                      const percentComplete = Math.round((event.loaded / event.total) * 100);
+                                      setUploadProgress(prev => ({ ...prev, [bot.botId]: percentComplete }));
+                                    }
+                                  });
+                                  
+                                  // Handle completion
+                                  await new Promise((resolve, reject) => {
+                                    xhr.onload = () => {
+                                      if (xhr.status === 200) {
+                                        try {
+                                          const result = JSON.parse(xhr.responseText);
+                                          // Update the video file path with the uploaded file path
+                                          setEditingConfig({
+                                            ...editingConfig,
+                                            [bot.botId]: {
+                                              ...editingConfig[bot.botId],
+                                              videoFile: result.filePath
+                                            }
+                                          });
+                                          log(`✅ Video uploaded: ${result.filePath}`);
+                                          resolve(result);
+                                        } catch (error) {
+                                          reject(error);
+                                        }
+                                      } else {
+                                        log(`❌ Failed to upload video: ${xhr.statusText}`);
+                                        reject(new Error(xhr.statusText));
+                                      }
+                                    };
+                                    
+                                    xhr.onerror = () => reject(new Error('Network error'));
+                                    
+                                    xhr.open('POST', `${process.env.REACT_APP_SERVER_URL || 'http://localhost:8080'}/admin/viewbot-client/upload-video`);
+                                    xhr.setRequestHeader('x-admin-key', adminKey || '');
+                                    if (token) {
+                                      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                                    }
+                                    xhr.send(formData);
+                                  });
+                                } catch (error) {
+                                  console.error('File upload error:', error);
+                                  log(`❌ Error uploading video: ${error}`);
+                                } finally {
+                                  // Reset upload state
+                                  setUploadingVideo({ ...uploadingVideo, [bot.botId]: false });
+                                  setUploadProgress({ ...uploadProgress, [bot.botId]: 0 });
+                                }
+                              }
+                            }}
+                            style={{ display: 'none' }}
+                          />
+                          {uploadingVideo[bot.botId] ? (
+                            <div className="upload-progress">
+                              <div className="upload-progress-bar">
+                                <div 
+                                  className="upload-progress-fill" 
+                                  style={{ width: `${uploadProgress[bot.botId] || 0}%` }}
+                                />
+                              </div>
+                              <span className="upload-progress-text">
+                                Uploading... {uploadProgress[bot.botId] || 0}%
+                              </span>
+                            </div>
+                          ) : (
+                            <label htmlFor={`file-upload-${bot.botId}`} className="file-upload-btn">
+                              <Upload size={16} /> Upload Video
+                            </label>
+                          )}
+                        </div>
+                      </div>
                     ) : (
                       <div className="video-file-info">
                         <span className="file-path">{bot.config.videoFile || 'No file selected'}</span>

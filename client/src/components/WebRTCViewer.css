@@ -15,6 +15,13 @@
   object-fit: cover;
   background: #000;
   z-index: 1;
+  /* Mobile Chrome video rendering optimizations */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  /* Prevent video layout shifts on mobile */
+  will-change: auto;
 }
 
 /* Ensure canvas overlay container is properly positioned */
@@ -71,4 +78,35 @@
 /* Video controls should be above everything except debug panel */
 .video-controls {
   z-index: 150;
+}
+
+/* Mobile Chrome specific video fixes */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+  .webrtc-video {
+    /* Force hardware acceleration on Webkit/Chrome */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+  }
+  
+  .webrtc-viewer {
+    /* Ensure proper compositing on mobile */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+}
+
+/* Additional mobile optimizations */
+@media (max-width: 768px) {
+  .webrtc-video {
+    /* Optimize for mobile performance */
+    -webkit-optimize-contrast: optimizeSpeed;
+    image-rendering: optimizeSpeed;
+    image-rendering: -webkit-optimize-contrast;
+  }
+  
+  .webrtc-viewer {
+    /* Prevent overscroll issues on mobile */
+    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
+  }
 }

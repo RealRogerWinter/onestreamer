@@ -7,6 +7,9 @@ const puppeteer = require('puppeteer');
 const ViewBotDatabaseService = require('./ViewBotDatabaseService');
 const ViewBotGStreamerService = require('./ViewBotGStreamerService');
 
+// Load environment variables
+require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
+
 /**
  * ViewBotClientService - Creates actual bot clients that connect and stream like real users
  * This differs from ViewbotService by actually creating client connections that go through
@@ -14,7 +17,13 @@ const ViewBotGStreamerService = require('./ViewBotGStreamerService');
  */
 class ViewBotClientService {
   constructor(serverUrl, mediasoupService, streamService, viewbotService = null) {
-    this.serverUrl = serverUrl || 'http://localhost:8080';
+    // Use environment variable for server URL, fallback to provided serverUrl or localhost
+    // ViewBots should connect to the main HTTP server (not HTTPS) for internal connections
+    const envServerUrl = process.env.VIEWBOT_SERVER_URL || 
+                        `http://${process.env.SERVER_HOST || 'localhost'}:${process.env.PORT || 8080}`;
+    this.serverUrl = serverUrl || envServerUrl;
+    
+    console.log(`🤖 VIEWBOT CLIENT: Service initialized with server URL: ${this.serverUrl}`);
     this.mediasoupService = mediasoupService;
     this.streamService = streamService;
     this.viewbotService = viewbotService;
@@ -733,13 +742,41 @@ class ViewBotClientService {
         await this.gstreamerService.stopAll();
       }
       
-      // Destroy all bots
+      // Destroy all bots (this will close individual Puppeteer instances)
       console.log('   Destroying all ViewBot clients...');
       await this.destroyAllBots();
+      
+      // Kill any orphaned Puppeteer processes
+      await this.killOrphanedPuppeteerProcesses();
       
       console.log('✅ ViewBotClientService: Cleanup complete');
     } catch (error) {
       console.error('❌ ViewBotClientService: Error during cleanup:', error);
+    }
+  }
+
+  /**
+   * Kill any orphaned Puppeteer browser processes
+   */
+  async killOrphanedPuppeteerProcesses() {
+    console.log('🧹 ViewBotClientService: Checking for orphaned Puppeteer processes...');
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execPromise = promisify(exec);
+    
+    try {
+      if (process.platform === 'win32') {
+        // Windows: Kill Chrome processes launched by Puppeteer
+        await execPromise('taskkill /F /IM chrome.exe /FI "COMMANDLINE like *puppeteer*" 2>nul').catch(() => {});
+        await execPromise('taskkill /F /IM chromium.exe /FI "COMMANDLINE like *puppeteer*" 2>nul').catch(() => {});
+      } else {
+        // Unix-like systems: Kill Chrome/Chromium processes with Puppeteer flags
+        await execPromise('pkill -f "puppeteer.*chrome" 2>/dev/null').catch(() => {});
+        await execPromise('pkill -f "chrome.*--no-sandbox.*--disable-setuid-sandbox" 2>/dev/null').catch(() => {});
+      }
+      console.log('✅ ViewBotClientService: Orphaned Puppeteer processes cleaned up');
+    } catch (error) {
+      console.warn('⚠️ ViewBotClientService: Could not clean up Puppeteer processes:', error.message);
     }
   }
 
@@ -1248,15 +1285,22 @@ class ViewBotInstance {
       console.log(`🔌 ViewBot ${this.botId}: Connecting to server ${this.serverUrl}`);
       
       // Connect to the server via Socket.IO
+      // Use both websocket and polling transports for better compatibility
       this.socket = io(this.serverUrl, {
-        transports: ['websocket'],
-        timeout: 5000
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
+        reconnection: true,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 1000,
+        // For HTTPS with self-signed certificates
+        rejectUnauthorized: false
       });
       
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
+          console.error(`❌ ViewBot ${this.botId}: Connection timeout after 10 seconds to ${this.serverUrl}`);
           reject(new Error('Connection timeout'));
-        }, 5000);
+        }, 10000);
         
         this.socket.on('connect', () => {
           clearTimeout(timeout);
@@ -1267,6 +1311,8 @@ class ViewBotInstance {
         
         this.socket.on('connect_error', (error) => {
           clearTimeout(timeout);
+          console.error(`❌ ViewBot ${this.botId}: Connection error:`, error.message, error.type);
+          console.error(`❌ ViewBot ${this.botId}: Failed to connect to ${this.serverUrl}`);
           reject(error);
         });
       });
@@ -1536,7 +1582,7 @@ class ViewBotInstance {
       '-f', 'rtp',
       '-ssrc', '11111111',
       '-payload_type', '96',
-      `rtp://127.0.0.1:${this.videoRtpPort}`,
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.videoRtpPort}`,
       // Audio output
       '-map', '0:a:0', // Map first audio stream
       '-af', 'asetpts=PTS-STARTPTS', // FIXED: Simplified audio filter for better sync
@@ -1549,7 +1595,7 @@ class ViewBotInstance {
       '-f', 'rtp',
       '-ssrc', '22222222',
       '-payload_type', '111',
-      `rtp://127.0.0.1:${this.audioRtpPort}`
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.audioRtpPort}`
     ];
     
     console.log(`🎬 ViewBot ${this.botId}: Starting combined FFmpeg process...`);
@@ -1663,7 +1709,7 @@ class ViewBotInstance {
       // RTP output settings
       '-ssrc', '11111111:22222222', // Both SSRCs
       '-payload_type', '96:111', // Both payload types
-      `rtp://127.0.0.1:${this.videoRtpPort}|rtp://127.0.0.1:${this.audioRtpPort}`
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.videoRtpPort}|rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.audioRtpPort}`
     ];
     
     // Optimized approach: Use filter_complex with synchronized timestamp processing
@@ -1689,7 +1735,7 @@ class ViewBotInstance {
       '-f', 'rtp',
       '-ssrc', '11111111',
       '-payload_type', '96',
-      `rtp://127.0.0.1:${this.videoRtpPort}`,
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.videoRtpPort}`,
       // Map synchronized audio stream
       '-map', '[aout]',
       '-c:a', 'libopus',
@@ -1701,7 +1747,7 @@ class ViewBotInstance {
       '-f', 'rtp',
       '-ssrc', '22222222',
       '-payload_type', '111',
-      `rtp://127.0.0.1:${this.audioRtpPort}`
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.audioRtpPort}`
     ];
     
     console.log(`🎬 ViewBot ${this.botId}: Using filter_complex for synchronized output`);
@@ -1833,7 +1879,7 @@ class ViewBotInstance {
       '-f', 'rtp',
       '-ssrc', '11111111',
       '-payload_type', '96',
-      `rtp://127.0.0.1:${videoRtpPort}?rtcpport=${videoRtcpPort}`,
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${videoRtpPort}?rtcpport=${videoRtcpPort}`,
       // Audio output with RTCP
       '-map', '[aout]',
       '-c:a', 'libopus',
@@ -1845,7 +1891,7 @@ class ViewBotInstance {
       '-f', 'rtp',
       '-ssrc', '22222222',
       '-payload_type', '111',
-      `rtp://127.0.0.1:${audioRtpPort}?rtcpport=${audioRtcpPort}`
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${audioRtpPort}?rtcpport=${audioRtcpPort}`
     ];
     
     console.log(`🎬 ViewBot ${this.botId}: Starting FFmpeg with RTCP synchronization...`);
@@ -1898,8 +1944,10 @@ class ViewBotInstance {
     const util = require('util');
     const execPromise = util.promisify(exec);
     
-    // Check common Windows installation path first
-    const gstreamerPath = 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe';
+    // Check common installation path based on OS
+    const gstreamerPath = process.platform === 'win32'
+      ? 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe'
+      : '/usr/bin/gst-launch-1.0';
     if (fs.existsSync(gstreamerPath)) {
       return true;
     }
@@ -2179,7 +2227,10 @@ class ViewBotInstance {
         'async=false'
     ];
     
-    const gstreamerPath = '"C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe"';
+    // Use the correct GStreamer path based on the operating system
+    const gstreamerPath = process.platform === 'win32' 
+      ? '"C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe"'
+      : 'gst-launch-1.0';
     
     console.log(`🎥 ViewBot ${this.botId}: Starting video pipeline (no rtpbin)`);
     
@@ -2458,7 +2509,10 @@ class ViewBotInstance {
         'async=false'
     ];
     
-    const gstreamerPath = 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe';
+    // Use the correct GStreamer path based on the operating system
+    const gstreamerPath = process.platform === 'win32'
+      ? 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe'
+      : 'gst-launch-1.0';
     
     console.log(`🔊 ViewBot ${this.botId}: Starting GStreamer audio pipeline on port ${this.audioRtpPort}`);
     
@@ -2688,26 +2742,32 @@ class ViewBotInstance {
       '-re', // Read input at native frame rate
       ...inputArgs, // Input source (test pattern or video file)
       // Video processing options with PTS reset for sync
-      '-vf', `scale=${width}:${height},setpts=PTS-STARTPTS`, // Scale and reset PTS
+      '-vf', `scale=${width}:${height},format=yuv420p,setpts=PTS-STARTPTS`, // Scale, ensure format, and reset PTS
       '-r', frameRate.toString(), // Set frame rate
       '-vsync', 'cfr', // Constant frame rate for consistent timing
-      // Video codec settings for VP8
+      // Video codec settings for VP8 with better parameters
       '-codec:v', 'libvpx',
       '-deadline', 'realtime',
       '-error-resilient', '1',
       '-auto-alt-ref', '0',
-      '-cpu-used', '5',
-      '-b:v', '1000k',
-      '-maxrate', '1500k',
-      '-bufsize', '3000k',
-      '-g', '30', // Moderate GOP for better quality
+      '-cpu-used', '8', // Faster encoding for real-time
+      '-b:v', '800k',
+      '-minrate', '400k',
+      '-maxrate', '1200k',
+      '-bufsize', '1600k',
+      '-g', '10', // Keyframe every 10 frames for faster start
+      '-keyint_min', '10', // Minimum keyframe interval
+      '-quality', 'realtime',
+      '-static-thresh', '0', // Disable static area detection
+      '-max-intra-rate', '0', // No limit on intra frames
+      '-lag-in-frames', '0', // No frame lookahead
       '-pix_fmt', 'yuv420p',
       // RTP output settings with fixed SSRC
       '-an', // No audio in video stream
       '-f', 'rtp',
       '-ssrc', String(ssrc),
       '-payload_type', '96',
-      `rtp://127.0.0.1:${this.videoRtpPort}`
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.videoRtpPort}`
     ];
     
     console.log(`🎬 ViewBot ${this.botId}: Video FFmpeg command: ffmpeg ${args.join(' ')}`);
@@ -2720,6 +2780,47 @@ class ViewBotInstance {
     console.log(`  - input args: [${inputArgs.join(', ')}]`);
     console.log(`  - target RTP port: ${this.videoRtpPort}`);
     
+    return args;
+  }
+
+  /**
+   * Creates FFmpeg arguments for H.264 video generation (alternative to VP8)
+   */
+  createH264VideoFFmpegArgs() {
+    if (!this.videoRtpPort) {
+      throw new Error('Video RTP port not allocated by server');
+    }
+    
+    const { width = 1280, height = 720, frameRate = 30 } = this.config;
+    
+    // Generate test pattern
+    const videoInput = `testsrc2=size=${width}x${height}:rate=${frameRate}:duration=3600`;
+    
+    const args = [
+      '-re',
+      '-f', 'lavfi',
+      '-i', videoInput,
+      '-vf', `scale=${width}:${height}`,
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast', // Fastest encoding
+      '-tune', 'zerolatency', // Minimize latency
+      '-profile:v', 'baseline', // Most compatible profile
+      '-level', '3.1',
+      '-b:v', '1000k',
+      '-maxrate', '1500k',
+      '-bufsize', '2000k',
+      '-g', '10', // Keyframe every 10 frames
+      '-keyint_min', '10',
+      '-sc_threshold', '0', // Disable scene change detection
+      '-pix_fmt', 'yuv420p',
+      '-an',
+      '-f', 'rtp',
+      '-ssrc', '11111111',
+      '-payload_type', '96',
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.videoRtpPort}`
+    ];
+    
+    console.log(`🎬 ViewBot ${this.botId}: Using H.264 codec for video`);
     return args;
   }
 
@@ -2787,7 +2888,7 @@ class ViewBotInstance {
       '-f', 'rtp',
       '-ssrc', String(ssrc),
       '-payload_type', '111',
-      `rtp://127.0.0.1:${this.audioRtpPort}`
+      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.audioRtpPort}`
     ];
     
     console.log(`🎤 ViewBot ${this.botId}: Audio FFmpeg command: ffmpeg ${args.join(' ')}`);
@@ -3579,6 +3680,44 @@ class ViewBotInstance {
   async cleanupMediaGeneration() {
     console.log(`🧹 ViewBot ${this.botId}: Cleaning up media generation processes...`);
     
+    // Clean up Puppeteer resources first (if they exist)
+    if (this.page) {
+      console.log(`🌐 ViewBot ${this.botId}: Closing Puppeteer page`);
+      try {
+        await this.page.close();
+      } catch (error) {
+        console.warn(`⚠️ ViewBot ${this.botId}: Error closing page:`, error.message);
+      }
+      this.page = null;
+    }
+    
+    if (this.browser) {
+      console.log(`🌐 ViewBot ${this.botId}: Closing Puppeteer browser`);
+      try {
+        // Get all pages and close them first
+        const pages = await this.browser.pages();
+        await Promise.all(pages.map(page => page.close().catch(() => {})));
+        
+        // Close the browser
+        await this.browser.close();
+        
+        // Additional cleanup - kill the browser process if it's still running
+        if (this.browser.process() && !this.browser.process().killed) {
+          this.browser.process().kill('SIGKILL');
+        }
+      } catch (error) {
+        console.warn(`⚠️ ViewBot ${this.botId}: Error closing browser:`, error.message);
+        // Force kill the browser process if normal close failed
+        try {
+          if (this.browser.process() && !this.browser.process().killed) {
+            this.browser.process().kill('SIGKILL');
+          }
+        } catch (killError) {
+          console.warn(`⚠️ ViewBot ${this.botId}: Could not force kill browser:`, killError.message);
+        }
+      }
+      this.browser = null;
+    }
     
     // Clean up GStreamer processes if they exist
     if (this.gstreamerVideoProcess && !this.gstreamerVideoProcess.killed) {

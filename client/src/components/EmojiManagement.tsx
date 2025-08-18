@@ -43,7 +43,8 @@ const EmojiManagement: React.FC<EmojiManagementProps> = ({ addLog }) => {
   const fetchEmojis = async () => {
     try {
       const token = authService.getToken();
-      const response = await fetch('http://localhost:8080/api/admin/emojis', {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/admin/emojis`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -100,7 +101,8 @@ const EmojiManagement: React.FC<EmojiManagementProps> = ({ addLog }) => {
     
     try {
       const token = authService.getToken();
-      const response = await fetch('http://localhost:8080/api/admin/emojis', {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/admin/emojis`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -128,7 +130,8 @@ const EmojiManagement: React.FC<EmojiManagementProps> = ({ addLog }) => {
   const handleUpdate = async (emoji: CustomEmoji) => {
     try {
       const token = authService.getToken();
-      const response = await fetch(`http://localhost:8080/api/admin/emojis/${emoji.id}`, {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/admin/emojis/${emoji.id}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -162,7 +165,8 @@ const EmojiManagement: React.FC<EmojiManagementProps> = ({ addLog }) => {
     
     try {
       const token = authService.getToken();
-      const response = await fetch(`http://localhost:8080/api/admin/emojis/${emoji.id}`, {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/admin/emojis/${emoji.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -302,7 +306,7 @@ const EmojiManagement: React.FC<EmojiManagementProps> = ({ addLog }) => {
               <tr key={emoji.id} className={!emoji.is_active ? 'inactive' : ''}>
                 <td className="emoji-preview">
                   <img 
-                    src={`http://localhost:8080${emoji.url}`} 
+                    src={`${process.env.REACT_APP_API_URL || 'http://localhost:8080'}${emoji.url}`} 
                     alt={emoji.name}
                     width="32"
                     height="32"

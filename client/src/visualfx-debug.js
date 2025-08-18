@@ -351,7 +351,11 @@ class VisualFxDebugPanel {
     }
 
     setupSocketConnection() {
-        this.socket = io();
+        // Connect to the main server for Socket.IO
+        this.socket = io('https://<SERVER_IP>:8443', {
+            transports: ['websocket', 'polling'],
+            reconnection: true
+        });
         
         // Initialize client-side visual FX processor
         this.initializeClientProcessor();

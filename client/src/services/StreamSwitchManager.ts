@@ -59,7 +59,7 @@ export class StreamSwitchManager {
   }
 
   // Set callback handlers
-  setCallbacks(callbacks: typeof this.callbacks): void {
+  setCallbacks(callbacks: Partial<StreamSwitchManager['callbacks']>): void {
     Object.assign(this.callbacks, callbacks);
   }
 

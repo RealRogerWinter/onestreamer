@@ -54,7 +54,8 @@ const ChatModeration: React.FC<ChatModerationProps> = ({ addLog }) => {
   const fetchModerationData = async () => {
     try {
       const token = authService.getToken();
-      const response = await fetch('http://localhost:8080/api/admin/moderation', {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/admin/moderation`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -93,7 +94,8 @@ const ChatModeration: React.FC<ChatModerationProps> = ({ addLog }) => {
     
     try {
       const token = authService.getToken();
-      const response = await fetch('http://localhost:8080/api/admin/ban', {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/admin/ban`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,7 +138,8 @@ const ChatModeration: React.FC<ChatModerationProps> = ({ addLog }) => {
     
     try {
       const token = authService.getToken();
-      const response = await fetch('http://localhost:8080/api/admin/timeout', {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/admin/timeout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -173,7 +176,8 @@ const ChatModeration: React.FC<ChatModerationProps> = ({ addLog }) => {
     
     try {
       const token = authService.getToken();
-      const response = await fetch('http://localhost:8080/api/admin/unban', {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/admin/unban`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -203,7 +207,8 @@ const ChatModeration: React.FC<ChatModerationProps> = ({ addLog }) => {
     
     try {
       const token = authService.getToken();
-      const response = await fetch('http://localhost:8080/api/admin/remove-timeout', {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/admin/remove-timeout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

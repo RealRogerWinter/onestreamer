@@ -148,13 +148,18 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
         }
       };
       
-      video.addEventListener('loadedmetadata', onLoadedMetadata);
-      video.addEventListener('loadeddata', onLoadedData);
+      // Add null check before adding event listeners
+      if (video) {
+        video.addEventListener('loadedmetadata', onLoadedMetadata);
+        video.addEventListener('loadeddata', onLoadedData);
+      }
       
       return () => {
         debug.canvas('Cleaning up EffectEngine', undefined, 'verbose');
-        video.removeEventListener('loadedmetadata', onLoadedMetadata);
-        video.removeEventListener('loadeddata', onLoadedData);
+        if (video) {
+          video.removeEventListener('loadedmetadata', onLoadedMetadata);
+          video.removeEventListener('loadeddata', onLoadedData);
+        }
         
         if (effectEngineRef.current) {
           effectEngineRef.current.cleanup();

@@ -221,8 +221,14 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       }
       
       // Create new client with connection recovery callbacks
+      // Use the correct server URL from environment or default to HTTPS
+      const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}:8443`;
+      console.log('🌐 WEBRTC: Creating MediasoupClient with server URL:', serverUrl);
+      console.log('🌐 WEBRTC: Using HTTPS for transport connection');
+      
       mediasoupClientRef.current = new MediasoupClient({ 
         socket,
+        serverUrl,
         onConnectionLost: () => {
           console.log('📡 WEBRTC: MediaSoup connection lost');
           setConnectionState('disconnected');
@@ -363,6 +369,15 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         const finalError = lastError || new Error('Stream consumption failed after all attempts');
         console.error('❌ WEBRTC: Failed to consume stream after all attempts:', finalError);
         throw finalError;
+      }
+      
+      // Get the current streamer ID from MediaSoup client and store it
+      if (mediasoupClientRef.current) {
+        const currentStreamer = mediasoupClientRef.current.getCurrentStreamer();
+        if (currentStreamer) {
+          console.log(`📝 WEBRTC: Setting currentStreamIdRef to ${currentStreamer} after successful consumption`);
+          currentStreamIdRef.current = currentStreamer;
+        }
       }
       
       if (stream && videoRef.current) {
@@ -1628,6 +1643,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         controls={false}
         autoPlay
         playsInline
+        muted={volume === 0 || !userInteracted}
+        webkit-playsinline="true"
+        crossOrigin="anonymous"
+        preload="auto"
         onClick={(e) => {
           // Don't handle video clicks if canvas debug mode might be active
           // The canvas overlay will handle its own clicks when in debug mode
@@ -1641,7 +1660,12 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           objectFit: 'cover',
           display: isConnected && (playbackState === 'playing' || playbackState === 'paused') ? 'block' : 'none',
           position: 'relative',
-          zIndex: 1 // Lower z-index than canvas overlay (which is 1000+)
+          zIndex: 1, // Lower z-index than canvas overlay (which is 1000+)
+          // Mobile Chrome specific fixes
+          WebkitTransform: 'translateZ(0)', // Force hardware acceleration
+          transform: 'translateZ(0)',
+          WebkitBackfaceVisibility: 'hidden',
+          backfaceVisibility: 'hidden'
         }}
       />
 

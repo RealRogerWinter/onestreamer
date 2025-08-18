@@ -82,6 +82,12 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
   useEffect(() => {
     // Get available devices
     const getDevices = async () => {
+      // Check if mediaDevices is available (requires HTTPS or localhost)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('Media devices not available. HTTPS or localhost required for WebRTC.');
+        return;
+      }
+      
       try {
         // Request permissions first if needed
         await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
@@ -126,12 +132,18 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
 
     getDevices();
 
-    // Listen for device changes
-    navigator.mediaDevices.addEventListener('devicechange', getDevices);
-    return () => {
-      navigator.mediaDevices.removeEventListener('devicechange', getDevices);
-      cleanupStreams();
-    };
+    // Listen for device changes (only if mediaDevices is available)
+    if (navigator.mediaDevices) {
+      navigator.mediaDevices.addEventListener('devicechange', getDevices);
+      return () => {
+        navigator.mediaDevices.removeEventListener('devicechange', getDevices);
+        cleanupStreams();
+      };
+    } else {
+      return () => {
+        cleanupStreams();
+      };
+    }
   }, []);
   
   // Cleanup streams when panel closes

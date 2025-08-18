@@ -31,12 +31,13 @@ export class MediasoupClient {
   private lastConnectionState: 'connected' | 'disconnected' = 'disconnected';
   private healthCheckInterval?: NodeJS.Timeout;
   private onConnectionRecovered?: () => void;
+  private currentStreamerId: string | null = null;
   private onConnectionLost?: () => void;
   private onReconnectionFailed?: (error: Error) => void;
   
   constructor(config: MediasoupClientConfig) {
     this.socket = config.socket;
-    this.serverUrl = config.serverUrl || 'http://localhost:8080';
+    this.serverUrl = config.serverUrl || process.env.REACT_APP_SERVER_URL || 'http://localhost:8080';
     this.device = new Device();
     this.onConnectionRecovered = config.onConnectionRecovered;
     this.onConnectionLost = config.onConnectionLost;
@@ -771,7 +772,13 @@ export class MediasoupClient {
         }
 
         try {
-          const { consumer: consumerData } = response;
+          const { consumer: consumerData, streamerId } = response;
+          
+          // Store the streamer ID
+          if (streamerId) {
+            this.currentStreamerId = streamerId;
+            console.log(`📝 MEDIASOUP CLIENT: Current streamer ID set to ${streamerId}`);
+          }
           
           // Validate consumer data
           if (!consumerData || !consumerData.id || !consumerData.rtpParameters) {
@@ -814,6 +821,30 @@ export class MediasoupClient {
 
           this.consumers.set(consumer.id, consumer);
           console.log(`✅ MEDIASOUP CLIENT: ${kind} consumer created:`, consumer.id);
+
+          // Wait for transport to be connected before resuming consumer
+          console.log(`🔄 MEDIASOUP CLIENT: Waiting for transport connection before resuming ${kind} consumer...`);
+          await new Promise<void>((connectResolve, connectReject) => {
+            const connectTimeout = setTimeout(() => {
+              connectReject(new Error(`Transport connection timeout for ${kind} consumer`));
+            }, 10000);
+            
+            const checkConnection = () => {
+              if (this.recvTransport && this.recvTransport.connectionState === 'connected') {
+                clearTimeout(connectTimeout);
+                console.log(`✅ MEDIASOUP CLIENT: Transport connected for ${kind} consumer`);
+                connectResolve();
+              } else if (this.recvTransport && this.recvTransport.connectionState === 'failed') {
+                clearTimeout(connectTimeout);
+                connectReject(new Error(`Transport connection failed for ${kind} consumer`));
+              } else {
+                // Check again in 100ms
+                setTimeout(checkConnection, 100);
+              }
+            };
+            
+            checkConnection();
+          });
 
           // Resume the consumer with promise-based approach
           await new Promise<void>((resumeResolve, resumeReject) => {
@@ -1022,6 +1053,10 @@ export class MediasoupClient {
 
   get destroyed(): boolean {
     return this.isDestroyed;
+  }
+
+  getCurrentStreamer(): string | null {
+    return this.currentStreamerId;
   }
 
   // Force a reconnection attempt (useful for manual recovery)

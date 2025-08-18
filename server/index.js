@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const multer = require('multer');
@@ -44,15 +45,56 @@ const buffRoutes = require('./routes/buffs');
 const soundfxRoutes = require('./routes/soundfx');
 const visualfxRoutes = require('./routes/visualfx');
 const { router: chatbotRoutes, initializeChatBotRoutes } = require('./routes/chatbots');
+const viewbotApiRoutes = require('./routes/viewbot-api');
 const database = require('./database/database');
 
 const app = express();
-const server = http.createServer(app);
+
+// Create both HTTP and HTTPS servers
+const httpServer = http.createServer(app);
+
+// HTTPS configuration
+let httpsServer;
+const HTTPS_PORT = process.env.HTTPS_PORT || 8443;
+const USE_HTTPS = process.env.USE_HTTPS === 'true';
+
+if (USE_HTTPS || fs.existsSync(path.join(__dirname, '..', 'certificates', 'cert.pem'))) {
+  try {
+    const httpsOptions = {
+      key: fs.readFileSync(path.join(__dirname, '..', 'certificates', 'key.pem')),
+      cert: fs.readFileSync(path.join(__dirname, '..', 'certificates', 'cert.pem'))
+    };
+    httpsServer = https.createServer(httpsOptions, app);
+    console.log('🔒 HTTPS: SSL certificates loaded successfully');
+  } catch (err) {
+    console.error('⚠️ HTTPS: Failed to load SSL certificates:', err.message);
+  }
+}
+
+// Use HTTP server for Socket.IO by default, can be switched to HTTPS
+const server = httpsServer || httpServer;
 
 // Optimized Socket.IO configuration for better performance
 const io = socketIo(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' ? false : "http://localhost:3000",
+    origin: function(origin, callback) {
+      // Allow ViewBot connections from the same server
+      const allowedOrigins = [
+        process.env.CLIENT_URL || "http://localhost:3000",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        `http://${process.env.SERVER_HOST}:${process.env.PORT}`,
+        `http://${process.env.SERVER_HOST}:8080`,
+        "http://<SERVER_IP>:8080"
+      ];
+      
+      // Allow requests with no origin (e.g., server-side connections, ViewBots)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, true); // Allow all for now to debug ViewBots
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -222,6 +264,7 @@ app.use('/api', (req, res, next) => {
 app.use('/api', itemRoutes);
 app.use('/api/buffs', buffRoutes);
 app.use('/api/soundfx', soundfxRoutes);
+app.use('/api', viewbotApiRoutes);
 app.use('/api/visualfx', visualfxRoutes);
 app.use('/api/chatbots', chatbotRoutes);
 
@@ -364,6 +407,10 @@ app.use('/hls', express.static('public/hls', {
     });
   }
 }));
+
+// Serve React build files
+// Commented out during development to prevent Socket.IO interference
+// app.use(express.static(path.join(__dirname, '..', 'client', 'build')));
 
 let redisClient;
 
@@ -1240,6 +1287,43 @@ app.get('/api/internal/bonus-status/:userId', async (req, res) => {
       success: false, 
       error: 'Failed to check bonus status' 
     });
+  }
+});
+
+// Auth endpoint to get current user info
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    // Get authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, error: 'No authorization token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    
+    // For now, return a mock user with points_balance
+    // In production, you would verify the JWT token and get real user data
+    const mockUser = {
+      user: {
+        id: 1,
+        username: 'testuser',
+        email: 'test@example.com',
+        isAdmin: false,
+        points_balance: 0
+      },
+      stats: {
+        points_balance: 0,
+        total_stream_time: 0,
+        total_view_time: 0,
+        stream_count: 0,
+        chat_message_count: 0
+      }
+    };
+    
+    res.json(mockUser);
+  } catch (error) {
+    console.error('Error in /api/auth/me:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -2126,7 +2210,7 @@ app.get('/api/emojis', async (req, res) => {
 app.get('/api/admin/moderation', authenticateAdmin, async (req, res) => {
     try {
         // Send a request to the chat service to get moderation data
-        const chatServiceUrl = `http://localhost:${process.env.CHAT_PORT || 8081}/api/moderation`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/moderation`;
         console.log(`📊 MAIN SERVER: Fetching moderation data from ${chatServiceUrl}`);
         
         const response = await axios.get(chatServiceUrl, { timeout: 5000 });
@@ -2150,7 +2234,7 @@ app.post('/api/admin/ban', authenticateAdmin, express.json(), async (req, res) =
         const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
         
         // Send ban request to chat service
-        const chatServiceUrl = `http://localhost:${process.env.CHAT_PORT || 8081}/api/ban`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/ban`;
         const response = await axios.post(chatServiceUrl, {
             username,
             reason,
@@ -2169,7 +2253,7 @@ app.post('/api/admin/unban', authenticateAdmin, express.json(), async (req, res)
         const { username } = req.body;
         
         // Send unban request to chat service
-        const chatServiceUrl = `http://localhost:${process.env.CHAT_PORT || 8081}/api/unban`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/unban`;
         const response = await axios.post(chatServiceUrl, { username });
         
         res.json(response.data);
@@ -2185,7 +2269,7 @@ app.post('/api/admin/timeout', authenticateAdmin, express.json(), async (req, re
         const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
         
         // Send timeout request to chat service
-        const chatServiceUrl = `http://localhost:${process.env.CHAT_PORT || 8081}/api/timeout`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/timeout`;
         const response = await axios.post(chatServiceUrl, {
             username,
             duration,
@@ -2205,7 +2289,7 @@ app.post('/api/admin/remove-timeout', authenticateAdmin, express.json(), async (
         const { username } = req.body;
         
         // Send remove timeout request to chat service
-        const chatServiceUrl = `http://localhost:${process.env.CHAT_PORT || 8081}/api/remove-timeout`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/remove-timeout`;
         const response = await axios.post(chatServiceUrl, { username });
         
         res.json(response.data);
@@ -2919,6 +3003,37 @@ app.put('/admin/viewbot-client/:botId/name', viewBotAuth, async (req, res) => {
   } catch (error) {
     console.error(`Failed to update ViewBot name for ${botId}:`, error);
     res.status(500).json({ error: 'Failed to update ViewBot name' });
+  }
+});
+
+// Video upload endpoint for ViewBot
+app.post('/admin/viewbot-client/upload-video', viewBotAuth, upload.single('video'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No video file provided' });
+    }
+
+    // Return the absolute file path where the file is actually stored
+    const filePath = path.join(uploadsDir, req.file.filename);
+    
+    console.log('ViewBot video uploaded:', {
+      originalName: req.file.originalname,
+      filename: req.file.filename,
+      size: req.file.size,
+      path: filePath,
+      absolutePath: filePath
+    });
+
+    res.json({ 
+      success: true, 
+      filePath: filePath,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size
+    });
+  } catch (error) {
+    console.error('Error uploading ViewBot video:', error);
+    res.status(500).json({ error: 'Failed to upload video file' });
   }
 });
 
@@ -4943,8 +5058,8 @@ io.on('connection', (socket) => {
       // Create plain RTP transport - MediaSoup will listen on a port for FFmpeg RTP
       const plainTransport = await mediasoupService.router.createPlainTransport({
         listenIp: { 
-          ip: '127.0.0.1', 
-          announcedIp: null // Local only
+          ip: '0.0.0.0', 
+          announcedIp: process.env.ANNOUNCED_IP || process.env.SERVER_HOST || null
         },
         rtcpMux: false, // Separate ports for RTP and RTCP
         comedia: true, // Auto-detect source IP and port from first RTP packet
@@ -5561,7 +5676,7 @@ io.on('connection', (socket) => {
       );
       
       if (result) {
-        callback({ success: true, consumer: result });
+        callback({ success: true, consumer: result, streamerId: currentStreamer });
         console.log(`✅ MEDIASOUP: ${socket.id} successfully consuming ${kind || 'media'} from ${currentStreamer}`);
       } else {
         callback({ success: false, error: `Cannot create consumer for ${kind || 'media'}` });
@@ -6065,9 +6180,9 @@ async function startServer() {
     // Inject viewbot socket checker function
     inventoryService.setViewbotSocketChecker((socketId) => viewbotSocketIds.has(socketId));
     
-    // Initialize ViewBotClientService
-    const serverUrl = `http://localhost:${PORT}`;
-    viewBotClientService = new ViewBotClientService(serverUrl, mediasoupService, streamService, viewbotService);
+    // Initialize ViewBotClientService with environment-aware URL
+    // Pass null as serverUrl to let ViewBotClientService use environment variables
+    viewBotClientService = new ViewBotClientService(null, mediasoupService, streamService, viewbotService);
     console.log('✅ VIEWBOT CLIENT: ViewBotClientService initialized');
   } catch (error) {
     console.error('❌ MEDIASOUP: Initialization failed:', error);
@@ -6091,15 +6206,37 @@ async function startServer() {
     console.log('⚠️ SERVER: Continuing without ChatBot service...');
   }
   
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`OneStreamer server running on port ${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log('🔍 Server bound to 0.0.0.0:' + PORT);
-    console.log('🔍 Should be accessible on:');
-    console.log('  - http://localhost:' + PORT);
-    console.log('  - http://127.0.0.1:' + PORT);
+  // Catch-all route - serve React app for client-side routing
+  // Commented out during development to prevent Socket.IO interference
+  /* app.get('*', (req, res, next) => {
+    // Don't intercept Socket.IO requests
+    if (req.path.startsWith('/socket.io/')) {
+      return next();
+    }
+    res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
+  }); */
 
-    // Test the getStreamerDisplayName function when server starts
+  // Start HTTP server
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 HTTP server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log('🔍 HTTP Server accessible on:');
+    console.log('  - http://localhost:' + PORT);
+    console.log('  - http://<SERVER_IP>:' + PORT);
+  });
+
+  // Start HTTPS server if configured
+  if (httpsServer) {
+    httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
+      console.log(`🔒 HTTPS server running on port ${HTTPS_PORT}`);
+      console.log('🔍 HTTPS Server accessible on:');
+      console.log('  - https://localhost:' + HTTPS_PORT);
+      console.log('  - https://<SERVER_IP>:' + HTTPS_PORT);
+      console.log('⚠️  Note: Using self-signed certificate. Browser will show security warning.');
+    });
+  }
+
+  // Test the getStreamerDisplayName function when server starts
     setTimeout(async () => {
       console.log('🧪 TESTING: getStreamerDisplayName function with current sessions...');
       const allSessions = sessionService.getAllSessions();
@@ -6116,9 +6253,8 @@ async function startServer() {
         }
       }
     }, 3000);
-  });
 
-  server.on('error', (err) => {
+  httpServer.on('error', (err) => {
     console.error('❌ SERVER: Server error:', err);
   });
 
@@ -6241,7 +6377,7 @@ process.on('SIGINT', async () => {
       }
     }
     
-    // Kill any remaining FFmpeg/GStreamer processes as a safety measure
+    // Kill any remaining FFmpeg/GStreamer/Puppeteer processes as a safety measure
     console.log('🔍 Checking for any remaining media processes...');
     const { exec } = require('child_process');
     
@@ -6270,6 +6406,12 @@ process.on('SIGINT', async () => {
       exec('wmic process where "CommandLine like \'%gstreamer%\'" delete 2>nul', (err) => {
         if (!err) console.log('   - Killed processes with gstreamer in command line');
       });
+      
+      // Kill Puppeteer Chrome processes
+      exec('taskkill /F /IM chrome.exe /FI "COMMANDLINE like *puppeteer*" 2>nul', (err) => {
+        if (!err) console.log('   - Killed Puppeteer Chrome processes');
+      });
+      exec('taskkill /F /IM chromium.exe /FI "COMMANDLINE like *puppeteer*" 2>nul', () => {});
     } else {
       // Unix-like systems
       exec('pkill -TERM ffmpeg 2>/dev/null', (err) => {
@@ -6283,6 +6425,12 @@ process.on('SIGINT', async () => {
       // Also kill by full name pattern
       exec('pkill -f "gst-launch-1.0" 2>/dev/null', () => {});
       exec('pkill -f "gstreamer" 2>/dev/null', () => {});
+      
+      // Kill Puppeteer Chrome/Chromium processes
+      exec('pkill -f "puppeteer.*chrome" 2>/dev/null', (err) => {
+        if (!err) console.log('   - Killed Puppeteer Chrome processes');
+      });
+      exec('pkill -f "chrome.*--no-sandbox.*--disable-setuid-sandbox" 2>/dev/null', () => {});
     }
     
     // Wait a bit for processes to terminate cleanly

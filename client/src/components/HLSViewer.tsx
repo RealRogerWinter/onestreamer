@@ -252,12 +252,20 @@ const HLSViewer: React.FC<HLSViewerProps> = ({ hlsUrl, isActive, className = '' 
         autoPlay
         muted
         playsInline
+        webkit-playsinline="true"
+        crossOrigin="anonymous"
+        preload="auto"
         onClick={handleVideoClick}
         style={{
           width: '100%',
           height: '100%',
           backgroundColor: '#000',
-          objectFit: 'cover'
+          objectFit: 'cover',
+          // Mobile Chrome specific fixes
+          WebkitTransform: 'translateZ(0)', // Force hardware acceleration
+          transform: 'translateZ(0)',
+          WebkitBackfaceVisibility: 'hidden',
+          backfaceVisibility: 'hidden'
         }}
       />
     </div>

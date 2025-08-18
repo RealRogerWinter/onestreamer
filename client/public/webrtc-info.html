@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Requirements</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .warning {
+            background: #ff6b6b;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .info {
+            background: #4ECDC4;
+            color: #1a1a1a;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .solution {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 2px solid #4ECDC4;
+        }
+        h1 {
+            color: #4ECDC4;
+        }
+        code {
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        a {
+            color: #4ECDC4;
+        }
+    </style>
+</head>
+<body>
+    <h1>⚠️ WebRTC Camera Access Requirements</h1>
+    
+    <div class="warning">
+        <h2>🔒 HTTPS Required for Camera/Microphone Access</h2>
+        <p>Your browser requires a secure connection (HTTPS) to access camera and microphone for streaming.</p>
+        <p>Current URL: <code id="current-url"></code></p>
+        <p>MediaDevices Available: <code id="media-status"></code></p>
+    </div>
+
+    <div class="info">
+        <h2>Why is this happening?</h2>
+        <p>Modern browsers block camera/microphone access on non-secure (HTTP) connections for security reasons. This is a browser security feature that cannot be bypassed.</p>
+    </div>
+
+    <div class="solution">
+        <h2>✅ Solutions:</h2>
+        <ol>
+            <li>
+                <strong>Option 1: Use localhost (Development)</strong><br>
+                Access the app at: <a href="http://localhost:3000">http://localhost:3000</a><br>
+                Browsers allow WebRTC on localhost even without HTTPS.
+            </li>
+            <li>
+                <strong>Option 2: Set up HTTPS (Production)</strong><br>
+                Configure your server with an SSL certificate (Let's Encrypt is free).
+            </li>
+            <li>
+                <strong>Option 3: Use ngrok or similar tunneling service</strong><br>
+                <code>ngrok http 3000</code><br>
+                This provides a temporary HTTPS URL for testing.
+            </li>
+            <li>
+                <strong>Option 4: Chrome Flag (Testing Only)</strong><br>
+                Chrome: Navigate to <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code><br>
+                Add your URL: <code>http://<SERVER_IP>:3000</code><br>
+                ⚠️ This is insecure and should only be used for testing.
+            </li>
+        </ol>
+    </div>
+
+    <div class="info">
+        <h2>Current Status:</h2>
+        <p>The streaming application is running correctly, but camera access is blocked due to browser security.</p>
+        <p>All other features (chat, viewing streams, etc.) work normally.</p>
+    </div>
+
+    <script>
+        document.getElementById('current-url').textContent = window.location.href;
+        document.getElementById('media-status').textContent = 
+            (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? '✅ Available' : '❌ Not Available';
+    </script>
+</body>
+</html>

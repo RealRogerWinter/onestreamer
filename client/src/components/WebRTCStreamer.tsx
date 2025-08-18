@@ -432,6 +432,14 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         }
       }
       
+      // Check if mediaDevices is available (requires HTTPS or localhost)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error('❌ WEBRTC STREAMER: navigator.mediaDevices not available. HTTPS or localhost required for WebRTC.');
+        // Open info page in new tab
+        window.open('/webrtc-info.html', '_blank');
+        throw new Error('WebRTC requires HTTPS or localhost. See the opened tab for solutions.');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: videoConstraints,
         audio: audioConstraints
@@ -486,7 +494,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       // Create MediasoupClient for remote streaming with proper error handling
       try {
         console.log('🌐 WEBRTC STREAMER: Initializing mediasoup for remote streaming...');
-        mediasoupClientRef.current = new MediasoupClient({ socket });
+        const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}:8443`;
+        console.log('🌐 WEBRTC STREAMER: Using server URL:', serverUrl);
+        mediasoupClientRef.current = new MediasoupClient({ socket, serverUrl });
         
         // Add timeout for initialization
         const initPromise = mediasoupClientRef.current.initialize();
@@ -620,12 +630,19 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         autoPlay
         muted
         playsInline
+        webkit-playsinline="true"
+        crossOrigin="anonymous"
+        preload="auto"
         style={{
           width: '100%',
           height: '100%',
           backgroundColor: '#000',
           objectFit: 'cover',
-          transform: 'scaleX(-1)' // Always mirror the streamer view for consistency
+          transform: 'scaleX(-1)', // Always mirror the streamer view for consistency
+          // Mobile Chrome specific fixes
+          WebkitTransform: 'scaleX(-1) translateZ(0)', // Force hardware acceleration with mirror
+          WebkitBackfaceVisibility: 'hidden',
+          backfaceVisibility: 'hidden'
         }}
       />
       

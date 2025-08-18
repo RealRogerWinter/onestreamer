@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Play, Settings, Monitor } from 'lucide-react';
+import { X, Play, Settings, Monitor, Upload } from 'lucide-react';
 import './CreateViewBotModal.css';
 
 interface ViewBotConfig {
@@ -30,6 +30,9 @@ const CreateViewBotModal: React.FC<CreateViewBotModalProps> = ({
   onClose,
   onCreateBot
 }) => {
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  
   const [config, setConfig] = useState<ViewBotConfig>({
     contentType: 'testPattern',
     testPattern: 'color-bars',
@@ -186,12 +189,101 @@ const CreateViewBotModal: React.FC<CreateViewBotModalProps> = ({
             {config.contentType === 'videoFile' && (
               <div className="form-group">
                 <label>Video File</label>
-                <input
-                  type="text"
-                  value={config.videoFile || ''}
-                  onChange={(e) => updateConfig('videoFile', e.target.value)}
-                  placeholder="Path to video file or URL"
-                />
+                <div className="video-file-input-group">
+                  <input
+                    type="text"
+                    value={config.videoFile || ''}
+                    onChange={(e) => updateConfig('videoFile', e.target.value)}
+                    placeholder="Path to video file or URL"
+                  />
+                  <div className="file-upload-wrapper">
+                    <input
+                      type="file"
+                      id="modal-file-upload"
+                      accept="video/*"
+                      disabled={uploadingVideo}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          // Set uploading state
+                          setUploadingVideo(true);
+                          setUploadProgress(0);
+                          
+                          const formData = new FormData();
+                          formData.append('video', file);
+                          
+                          try {
+                            const token = localStorage.getItem('adminToken');
+                            const adminKey = localStorage.getItem('adminKey') || token;
+                            
+                            // Create XMLHttpRequest to track upload progress
+                            const xhr = new XMLHttpRequest();
+                            
+                            // Track upload progress
+                            xhr.upload.addEventListener('progress', (event) => {
+                              if (event.lengthComputable) {
+                                const percentComplete = Math.round((event.loaded / event.total) * 100);
+                                setUploadProgress(percentComplete);
+                              }
+                            });
+                            
+                            // Handle completion
+                            await new Promise((resolve, reject) => {
+                              xhr.onload = () => {
+                                if (xhr.status === 200) {
+                                  try {
+                                    const result = JSON.parse(xhr.responseText);
+                                    updateConfig('videoFile', result.filePath);
+                                    console.log(`✅ Video uploaded: ${result.filePath}`);
+                                    resolve(result);
+                                  } catch (error) {
+                                    reject(error);
+                                  }
+                                } else {
+                                  console.error(`❌ Failed to upload video: ${xhr.statusText}`);
+                                  reject(new Error(xhr.statusText));
+                                }
+                              };
+                              
+                              xhr.onerror = () => reject(new Error('Network error'));
+                              
+                              xhr.open('POST', `${process.env.REACT_APP_SERVER_URL || 'http://localhost:8080'}/admin/viewbot-client/upload-video`);
+                              xhr.setRequestHeader('x-admin-key', adminKey || '');
+                              if (token) {
+                                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                              }
+                              xhr.send(formData);
+                            });
+                          } catch (error) {
+                            console.error('File upload error:', error);
+                          } finally {
+                            // Reset upload state
+                            setUploadingVideo(false);
+                            setUploadProgress(0);
+                          }
+                        }
+                      }}
+                      style={{ display: 'none' }}
+                    />
+                    {uploadingVideo ? (
+                      <div className="upload-progress">
+                        <div className="upload-progress-bar">
+                          <div 
+                            className="upload-progress-fill" 
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                        <span className="upload-progress-text">
+                          Uploading... {uploadProgress}%
+                        </span>
+                      </div>
+                    ) : (
+                      <label htmlFor="modal-file-upload" className="file-upload-btn">
+                        <Upload size={16} /> Upload Video
+                      </label>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 

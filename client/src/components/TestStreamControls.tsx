@@ -357,6 +357,9 @@ const TestStreamControls: React.FC<TestStreamControlsProps> = ({ makeApiCall, ad
               autoPlay
               muted
               playsInline
+              webkit-playsinline="true"
+              crossOrigin="anonymous"
+              preload="auto"
               className="preview-video"
               ref={(video) => {
                 if (video && localStream) {
@@ -368,7 +371,12 @@ const TestStreamControls: React.FC<TestStreamControlsProps> = ({ makeApiCall, ad
                 maxWidth: '640px',
                 height: 'auto',
                 border: '1px solid #ccc',
-                borderRadius: '4px'
+                borderRadius: '4px',
+                // Mobile Chrome specific fixes
+                WebkitTransform: 'translateZ(0)', // Force hardware acceleration
+                transform: 'translateZ(0)',
+                WebkitBackfaceVisibility: 'hidden',
+                backfaceVisibility: 'hidden'
               }}
             />
             <div className="preview-info">

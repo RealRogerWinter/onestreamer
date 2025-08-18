@@ -66,8 +66,8 @@ class MediasoupPlainTransportService {
       // Create PlainTransport with RTCP enabled for synchronization
       const transport = await this.mediasoupService.router.createPlainTransport({
         listenIp: {
-          ip: '127.0.0.1',
-          announcedIp: null
+          ip: '0.0.0.0',
+          announcedIp: process.env.ANNOUNCED_IP || process.env.SERVER_HOST || null
         },
         rtcpMux: false, // Separate RTCP ports for better sync control
         comedia: true, // Server connects to client
@@ -88,8 +88,8 @@ class MediasoupPlainTransportService {
       // Create second transport for audio (MediaSoup limitation: one producer per transport)
       const audioTransport = await this.mediasoupService.router.createPlainTransport({
         listenIp: {
-          ip: '127.0.0.1',
-          announcedIp: null
+          ip: '0.0.0.0',
+          announcedIp: process.env.ANNOUNCED_IP || process.env.SERVER_HOST || null
         },
         rtcpMux: false,
         comedia: true,

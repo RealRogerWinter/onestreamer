@@ -117,7 +117,8 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     if (!token || !user) return;
     
     try {
-      const response = await fetch(`http://localhost:8080/api/internal/bonus-status/${user.id}`, {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/internal/bonus-status/${user.id}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -206,7 +207,8 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
 
       // Make API call to claim bonus
       console.log('📡 Claiming bonus for user:', user.id);
-      const response = await fetch('http://localhost:8080/api/internal/claim-chat-bonus', {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/internal/claim-chat-bonus`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -282,12 +284,13 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   useEffect(() => {
     const fetchEmojis = async () => {
       try {
-        const response = await fetch('http://localhost:8080/api/emojis');
+        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+        const response = await fetch(`${apiUrl}/api/emojis`);
         if (response.ok) {
           const emojis = await response.json();
           const emojiMap = new Map<string, string>();
           emojis.forEach((emoji: any) => {
-            emojiMap.set(emoji.code, `http://localhost:8080${emoji.url}`);
+            emojiMap.set(emoji.code, `${apiUrl}${emoji.url}`);
           });
           setCustomEmojis(emojiMap);
         }

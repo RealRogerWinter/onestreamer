@@ -39,7 +39,8 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
 
   const fetchEmojis = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/emojis');
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/emojis`);
       if (response.ok) {
         const data = await response.json();
         setEmojis(data);
@@ -65,7 +66,8 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
     
     // Track usage
     try {
-      await fetch(`http://localhost:8080/api/emojis/${emoji.code}/use`, {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+      await fetch(`${apiUrl}/api/emojis/${emoji.code}/use`, {
         method: 'POST'
       });
     } catch (error) {
@@ -121,7 +123,7 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
               title={`:${emoji.code}:`}
             >
               <img 
-                src={`http://localhost:8080${emoji.url}`} 
+                src={`${process.env.REACT_APP_API_URL || 'http://localhost:8080'}${emoji.url}`} 
                 alt={emoji.name}
                 loading="lazy"
               />

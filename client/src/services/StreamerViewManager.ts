@@ -424,9 +424,10 @@ export class StreamerViewManager {
       }
 
       // Create MediasoupClient with the viewer socket
-      const mediasoupServerUrl = process.env.NODE_ENV === 'development' 
-        ? 'http://localhost:8080' 
-        : window.location.origin;
+      const mediasoupServerUrl = process.env.REACT_APP_SERVER_URL || 
+        (process.env.NODE_ENV === 'development' 
+          ? 'http://localhost:8080' 
+          : window.location.origin);
         
       console.log('🎬 STREAMER VIEW: Creating MediasoupClient with server URL:', mediasoupServerUrl);
       

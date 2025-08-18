@@ -1,5 +1,9 @@
+require('dotenv').config();
 const express = require('express');
 const { createServer } = require('http');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
@@ -7,18 +11,46 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 
 const app = express();
-const server = createServer(app);
+
+// Create both HTTP and HTTPS servers
+const httpServer = createServer(app);
+
+// HTTPS configuration
+let httpsServer;
+const HTTPS_PORT = process.env.CHAT_HTTPS_PORT || 8444;
+const USE_HTTPS = process.env.USE_HTTPS === 'true';
+
+if (USE_HTTPS || fs.existsSync(path.join(__dirname, '..', 'certificates', 'cert.pem'))) {
+  try {
+    const httpsOptions = {
+      key: fs.readFileSync(path.join(__dirname, '..', 'certificates', 'key.pem')),
+      cert: fs.readFileSync(path.join(__dirname, '..', 'certificates', 'cert.pem'))
+    };
+    httpsServer = https.createServer(httpsOptions, app);
+    console.log('🔒 CHAT HTTPS: SSL certificates loaded successfully');
+  } catch (err) {
+    console.error('⚠️ CHAT HTTPS: Failed to load SSL certificates:', err.message);
+  }
+}
+
+const server = httpsServer || httpServer;
 
 // Enable CORS for all routes
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:8080'],
+  origin: [
+    process.env.CLIENT_URL || 'http://localhost:3000',
+    process.env.MAIN_SERVER_URL || 'http://localhost:8080'
+  ],
   methods: ['GET', 'POST'],
   credentials: true
 }));
 
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:3000', 'http://localhost:8080'],
+    origin: [
+      process.env.CLIENT_URL || 'http://localhost:3000',
+      process.env.MAIN_SERVER_URL || 'http://localhost:8080'
+    ],
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -70,6 +102,20 @@ const JWT_SECRET = process.env.JWT_SECRET || '***REMOVED-JWT-DEFAULT***';
 // Main server URL for API calls
 const MAIN_SERVER_URL = process.env.MAIN_SERVER_URL || 'http://localhost:8080';
 
+// Create HTTPS agent for self-signed certificates
+const httpsAgent = MAIN_SERVER_URL.startsWith('https') ? new https.Agent({
+  rejectUnauthorized: false // Accept self-signed certificates
+}) : undefined;
+
+// Helper function to get axios config with HTTPS agent
+function getAxiosConfig(additionalConfig = {}) {
+  const config = { ...additionalConfig };
+  if (httpsAgent) {
+    config.httpsAgent = httpsAgent;
+  }
+  return config;
+}
+
 // Verify JWT token and extract user info
 function verifyToken(token) {
   try {
@@ -82,9 +128,10 @@ function verifyToken(token) {
 // Get user admin status from main server
 async function getUserAdminStatus(userId) {
   try {
-    const response = await axios.get(`${MAIN_SERVER_URL}/api/internal/user/${userId}/admin-status`, {
-      timeout: 5000
-    });
+    const response = await axios.get(
+      `${MAIN_SERVER_URL}/api/internal/user/${userId}/admin-status`, 
+      getAxiosConfig({ timeout: 5000 })
+    );
     return response.data.isAdmin || false;
   } catch (error) {
     console.error(`❌ CHAT: Failed to check admin status for user ${userId}:`, error.message);
@@ -560,12 +607,12 @@ const adminCommands = {
       await axios.post(`${MAIN_SERVER_URL}/api/soundfx/tts`, {
         text: message,
         voiceId: 'alloy'
-      }, {
+      }, getAxiosConfig({
         headers: {
           'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
         },
         timeout: 10000
-      });
+      }));
       
       sendAdminResponse(socket, `📢 TTS message sent: "${message}"`);
     } catch (error) {
@@ -603,12 +650,12 @@ const adminCommands = {
         targetUsername,
         amount,
         adminUserId: userInfo.authenticatedUserId
-      }, {
+      }, getAxiosConfig({
         headers: {
           'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
         },
         timeout: 10000
-      });
+      }));
       
       if (response.data.success) {
         // Send StreamBot message to chat
@@ -661,12 +708,12 @@ const adminCommands = {
         targetUsername,
         amount,
         adminUserId: userInfo.authenticatedUserId
-      }, {
+      }, getAxiosConfig({
         headers: {
           'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
         },
         timeout: 10000
-      });
+      }));
       
       if (response.data.success) {
         // Send StreamBot message to chat
@@ -728,12 +775,12 @@ async function handlePublicCommand(command, args, user, socket, io) {
           toUsername: giveTargetUsername,
           amount: giveAmount,
           senderUsername: user.username
-        }, {
+        }, getAxiosConfig({
           headers: {
             'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
           },
           timeout: 10000
-        });
+        }));
         
         if (response.data.success) {
           const streamerBotMessage = {
@@ -770,9 +817,10 @@ async function handlePublicCommand(command, args, user, socket, io) {
       const whoTargetUsername = args.join(' ');
       
       try {
-        const response = await axios.get(`${MAIN_SERVER_URL}/api/internal/user-stats/${encodeURIComponent(whoTargetUsername)}`, {
-          timeout: 10000
-        });
+        const response = await axios.get(
+          `${MAIN_SERVER_URL}/api/internal/user-stats/${encodeURIComponent(whoTargetUsername)}`,
+          getAxiosConfig({ timeout: 10000 })
+        );
         
         if (response.data.success) {
           const stats = response.data.stats;
@@ -833,9 +881,10 @@ async function handlePublicCommand(command, args, user, socket, io) {
       }
       
       try {
-        const response = await axios.get(`${MAIN_SERVER_URL}/api/internal/user-stats/${encodeURIComponent(user.username)}`, {
-          timeout: 10000
-        });
+        const response = await axios.get(
+          `${MAIN_SERVER_URL}/api/internal/user-stats/${encodeURIComponent(user.username)}`,
+          getAxiosConfig({ timeout: 10000 })
+        );
         
         if (response.data.success) {
           const stats = response.data.stats;
@@ -885,9 +934,10 @@ async function handlePublicCommand(command, args, user, socket, io) {
     case 'top':
       // Show leaderboard
       try {
-        const response = await axios.get(`${MAIN_SERVER_URL}/api/internal/leaderboard`, {
-          timeout: 10000
-        });
+        const response = await axios.get(
+          `${MAIN_SERVER_URL}/api/internal/leaderboard`,
+          getAxiosConfig({ timeout: 10000 })
+        );
         
         if (response.data.success && response.data.leaderboard.length > 0) {
           let leaderMessage = '🏆 Top 10 Users by Points:\n';
@@ -923,9 +973,10 @@ async function handlePublicCommand(command, args, user, socket, io) {
     case 'uptime':
       // Show stream uptime
       try {
-        const response = await axios.get(`${MAIN_SERVER_URL}/api/internal/stream-uptime`, {
-          timeout: 10000
-        });
+        const response = await axios.get(
+          `${MAIN_SERVER_URL}/api/internal/stream-uptime`,
+          getAxiosConfig({ timeout: 10000 })
+        );
         
         if (response.data.success) {
           const { isLive, uptime, streamer } = response.data;
@@ -1082,12 +1133,12 @@ async function handlePublicCommand(command, args, user, socket, io) {
         const response = await axios.post(`${MAIN_SERVER_URL}/api/internal/gamble`, {
           userId: user.authenticatedUserId,
           amount: gambleAmount
-        }, {
+        }, getAxiosConfig({
           headers: {
             'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
           },
           timeout: 10000
-        });
+        }));
         
         if (response.data.success) {
           const { won, newBalance } = response.data;
@@ -1137,12 +1188,12 @@ async function handlePublicCommand(command, args, user, socket, io) {
         const response = await axios.post(`${MAIN_SERVER_URL}/api/internal/slots`, {
           userId: user.authenticatedUserId,
           amount: slotAmount
-        }, {
+        }, getAxiosConfig({
           headers: {
             'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
           },
           timeout: 10000
-        });
+        }));
         
         if (response.data.success) {
           const { symbols, winAmount, newBalance } = response.data;
@@ -1210,12 +1261,12 @@ async function handlePublicCommand(command, args, user, socket, io) {
           userId: user.authenticatedUserId,
           amount: claimedReward,
           reason: 'Claim event winner'
-        }, {
+        }, getAxiosConfig({
           headers: {
             'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
           },
           timeout: 10000
-        });
+        }));
         
         if (response.data.success) {
           const winMessage = `🎊 ${user.username} claimed ${claimedReward} points! New balance: ${response.data.newBalance}`;
@@ -1261,12 +1312,15 @@ async function handlePublicCommand(command, args, user, socket, io) {
         
         // Fetch and show user's giftable items
         try {
-          const response = await axios.get(`${MAIN_SERVER_URL}/api/internal/giftable-items/${user.authenticatedUserId}`, {
-            headers: {
-              'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
-            },
-            timeout: 10000
-          });
+          const response = await axios.get(
+            `${MAIN_SERVER_URL}/api/internal/giftable-items/${user.authenticatedUserId}`,
+            getAxiosConfig({
+              headers: {
+                'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
+              },
+              timeout: 10000
+            })
+          );
           
           if (response.data.success && response.data.items.length > 0) {
             let itemsList = 'Your giftable items: ';
@@ -1313,12 +1367,12 @@ async function handlePublicCommand(command, args, user, socket, io) {
           toUsername: targetUsername,
           itemName: itemName,
           quantity: quantity
-        }, {
+        }, getAxiosConfig({
           headers: {
             'Authorization': socket.handshake.auth?.token ? `Bearer ${socket.handshake.auth.token}` : undefined
           },
           timeout: 10000
-        });
+        }));
         
         if (response.data.success) {
           const { item, from, to } = response.data;
@@ -1362,9 +1416,9 @@ async function trackChatMessage(userId, ip) {
     const response = await axios.post(`${MAIN_SERVER_URL}/api/internal/track-chat-message`, {
       userId,
       ip
-    }, {
+    }, getAxiosConfig({
       timeout: 5000
-    });
+    }));
     
     console.log(`💬 CHAT: Message tracking result for user ${userId}:`, response.data);
   } catch (error) {
@@ -1379,9 +1433,9 @@ async function syncChatUsername(ip, username, color) {
       ip,
       username,
       color
-    }, {
+    }, getAxiosConfig({
       timeout: 5000
-    });
+    }));
     
     console.log(`💬 CHAT: Username sync result for IP ${ip}:`, response.data);
   } catch (error) {
@@ -1686,13 +1740,13 @@ io.on('connection', async (socket) => {
     
     // Try to load saved color preference
     try {
-      const response = await fetch(`http://localhost:8080/api/user/${authenticatedUser.id}/chat-color`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.color) {
-          userColor = data.color;
-          console.log(`💬 CHAT: Loaded saved color ${userColor} for user ${authenticatedUser.username}`);
-        }
+      const response = await axios.get(
+        `${MAIN_SERVER_URL}/api/user/${authenticatedUser.id}/chat-color`,
+        getAxiosConfig({ timeout: 5000 })
+      );
+      if (response.data && response.data.color) {
+        userColor = response.data.color;
+        console.log(`💬 CHAT: Loaded saved color ${userColor} for user ${authenticatedUser.username}`);
       }
     } catch (error) {
       console.log(`💬 CHAT: Could not load saved color for user ${authenticatedUser.id}, using default`);
@@ -2057,22 +2111,23 @@ io.on('connection', async (socket) => {
     // Save to database if user is authenticated
     if (userInfo.isAuthenticated && userInfo.authenticatedUserId) {
       try {
-        const response = await fetch('http://localhost:8080/api/user/chat-color', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
+        const response = await axios.post(
+          `${MAIN_SERVER_URL}/api/user/chat-color`,
+          {
             userId: userInfo.authenticatedUserId,
             color: color
+          },
+          getAxiosConfig({
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 5000
           })
-        });
+        );
         
-        if (response.ok) {
-          console.log(`🎨 CHAT: Saved color ${color} to database for user ${userInfo.authenticatedUserId}`);
-        }
+        console.log(`🎨 CHAT: Saved color ${color} to database for user ${userInfo.authenticatedUserId}`);
       } catch (error) {
-        console.error('❌ CHAT: Failed to save color to database:', error);
+        console.error('❌ CHAT: Failed to save color to database:', error.message || error);
       }
     }
     
@@ -2088,15 +2143,26 @@ io.on('connection', async (socket) => {
 
 const PORT = process.env.CHAT_PORT || 8081;
 
-server.listen(PORT, () => {
-  console.log(`💬 CHAT SERVICE: Running on port ${PORT}`);
-  console.log(`💬 CHAT SERVICE: Health check available at http://localhost:${PORT}/health`);
-  console.log(`💬 CHAT SERVICE: Ready to accept WebSocket connections`);
-  
-  // Start the claim event timer
-  scheduleNextClaimEvent();
-  console.log(`🎉 CLAIM: Claim event system initialized`);
+// Start HTTP server
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`💬 CHAT HTTP: Running on port ${PORT}`);
+  console.log(`💬 CHAT HTTP: Health check at http://<SERVER_IP>:${PORT}/health`);
 });
+
+// Start HTTPS server if configured
+if (httpsServer) {
+  httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
+    console.log(`🔒 CHAT HTTPS: Running on port ${HTTPS_PORT}`);
+    console.log(`🔒 CHAT HTTPS: Health check at https://<SERVER_IP>:${HTTPS_PORT}/health`);
+    console.log('⚠️  Note: Using self-signed certificate. Browser will show security warning.');
+  });
+}
+
+console.log(`💬 CHAT SERVICE: Ready to accept WebSocket connections`);
+
+// Start the claim event timer
+scheduleNextClaimEvent();
+console.log(`🎉 CLAIM: Claim event system initialized`);
 
 // Graceful shutdown
 async function gracefulShutdown(signal) {
