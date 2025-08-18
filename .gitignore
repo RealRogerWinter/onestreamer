@@ -1,5 +1,9 @@
 # Uploaded videos
 uploads/
+
+# Whisper models (large files)
+whisper/models/*.bin
+whisper/models/
 *.mp4
 *.avi
 *.mov
