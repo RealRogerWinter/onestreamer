@@ -222,7 +222,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       
       // Create new client with connection recovery callbacks
       // Use the correct server URL from environment or default to HTTPS
-      const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}:8443`;
+      const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}`;
       console.log('🌐 WEBRTC: Creating MediasoupClient with server URL:', serverUrl);
       console.log('🌐 WEBRTC: Using HTTPS for transport connection');
       

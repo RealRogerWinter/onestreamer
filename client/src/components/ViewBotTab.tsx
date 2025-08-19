@@ -200,7 +200,7 @@ const ViewBotTab: React.FC<ViewBotTabProps> = ({ makeApiCall, addLog }) => {
       authHeaders['Authorization'] = `Bearer ${token}`;
     }
     
-    const response = await fetch(`${process.env.REACT_APP_SERVER_URL || 'http://localhost:8080'}${endpoint}`, {
+    const response = await fetch(`${process.env.REACT_APP_SERVER_URL || ''}${endpoint}`, {
       ...options,
       headers: {
         ...authHeaders,
@@ -953,7 +953,7 @@ const ViewBotTab: React.FC<ViewBotTabProps> = ({ makeApiCall, addLog }) => {
                                     
                                     xhr.onerror = () => reject(new Error('Network error'));
                                     
-                                    xhr.open('POST', `${process.env.REACT_APP_SERVER_URL || 'http://localhost:8080'}/admin/viewbot-client/upload-video`);
+                                    xhr.open('POST', `${process.env.REACT_APP_SERVER_URL || window.location.origin}/admin/viewbot-client/upload-video`);
                                     xhr.setRequestHeader('x-admin-key', adminKey || '');
                                     if (token) {
                                       xhr.setRequestHeader('Authorization', `Bearer ${token}`);

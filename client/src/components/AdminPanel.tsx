@@ -55,7 +55,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isVisible, onClose }) => {
   const makeApiCall = async (endpoint: string, options: RequestInit = {}) => {
     try {
       const token = authService.getToken();
-      const response = await fetch(`${process.env.REACT_APP_SERVER_URL || 'http://localhost:8080'}${endpoint}`, {
+      const response = await fetch(`${process.env.REACT_APP_SERVER_URL || ''}${endpoint}`, {
         ...options,
         headers: {
           'Content-Type': 'application/json',

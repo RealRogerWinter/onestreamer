@@ -38,8 +38,8 @@ const server = httpsServer || httpServer;
 // Enable CORS for all routes
 app.use(cors({
   origin: [
-    process.env.CLIENT_URL || 'http://localhost:3000',
-    process.env.MAIN_SERVER_URL || 'http://localhost:8080'
+    process.env.CLIENT_URL || 'https://onestreamer.live',
+    process.env.MAIN_SERVER_URL || 'https://onestreamer.live:8443'
   ],
   methods: ['GET', 'POST'],
   credentials: true
@@ -48,8 +48,8 @@ app.use(cors({
 const io = new Server(server, {
   cors: {
     origin: [
-      process.env.CLIENT_URL || 'http://localhost:3000',
-      process.env.MAIN_SERVER_URL || 'http://localhost:8080'
+      process.env.CLIENT_URL || 'https://onestreamer.live',
+      process.env.MAIN_SERVER_URL || 'https://onestreamer.live:8443'
     ],
     methods: ['GET', 'POST'],
     credentials: true
@@ -100,7 +100,7 @@ const CLAIM_TIMEOUT = 60 * 1000; // Claim events expire after 60 seconds if not 
 const JWT_SECRET = process.env.JWT_SECRET || '***REMOVED-JWT-DEFAULT***';
 
 // Main server URL for API calls
-const MAIN_SERVER_URL = process.env.MAIN_SERVER_URL || 'http://localhost:8080';
+const MAIN_SERVER_URL = process.env.MAIN_SERVER_URL || 'https://onestreamer.live:8443';
 
 // Create HTTPS agent for self-signed certificates
 const httpsAgent = MAIN_SERVER_URL.startsWith('https') ? new https.Agent({
@@ -2146,14 +2146,14 @@ const PORT = process.env.CHAT_PORT || 8081;
 // Start HTTP server
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`💬 CHAT HTTP: Running on port ${PORT}`);
-  console.log(`💬 CHAT HTTP: Health check at http://<SERVER_IP>:${PORT}/health`);
+  console.log(`💬 CHAT HTTP: Health check at http://onestreamer.live:${PORT}/health`);
 });
 
 // Start HTTPS server if configured
 if (httpsServer) {
   httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
     console.log(`🔒 CHAT HTTPS: Running on port ${HTTPS_PORT}`);
-    console.log(`🔒 CHAT HTTPS: Health check at https://<SERVER_IP>:${HTTPS_PORT}/health`);
+    console.log(`🔒 CHAT HTTPS: Health check at https://onestreamer.live:${HTTPS_PORT}/health`);
     console.log('⚠️  Note: Using self-signed certificate. Browser will show security warning.');
   });
 }

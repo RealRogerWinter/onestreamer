@@ -284,7 +284,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   useEffect(() => {
     const fetchEmojis = async () => {
       try {
-        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+        const apiUrl = process.env.REACT_APP_API_URL || 'https://onestreamer.live';
         const response = await fetch(`${apiUrl}/api/emojis`);
         if (response.ok) {
           const emojis = await response.json();

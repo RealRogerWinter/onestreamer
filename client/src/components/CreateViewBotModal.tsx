@@ -247,7 +247,7 @@ const CreateViewBotModal: React.FC<CreateViewBotModalProps> = ({
                               
                               xhr.onerror = () => reject(new Error('Network error'));
                               
-                              xhr.open('POST', `${process.env.REACT_APP_SERVER_URL || 'http://localhost:8080'}/admin/viewbot-client/upload-video`);
+                              xhr.open('POST', `${process.env.REACT_APP_SERVER_URL || window.location.origin}/admin/viewbot-client/upload-video`);
                               xhr.setRequestHeader('x-admin-key', adminKey || '');
                               if (token) {
                                 xhr.setRequestHeader('Authorization', `Bearer ${token}`);

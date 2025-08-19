@@ -80,12 +80,13 @@ const io = socketIo(server, {
     origin: function(origin, callback) {
       // Allow ViewBot connections from the same server
       const allowedOrigins = [
-        process.env.CLIENT_URL || "http://localhost:3000",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        `http://${process.env.SERVER_HOST}:${process.env.PORT}`,
-        `http://${process.env.SERVER_HOST}:8080`,
-        "http://<SERVER_IP>:8080"
+        process.env.CLIENT_URL || "https://onestreamer.live",
+        `https://${process.env.SERVER_HOST}:${process.env.HTTPS_PORT}`,
+        "https://onestreamer.live:8443",
+        "https://onestreamer.live:3443",
+        "https://onestreamer.live",
+        "https://127.0.0.1:8443",
+        "https://127.0.0.1:3443"
       ];
       
       // Allow requests with no origin (e.g., server-side connections, ViewBots)
@@ -2090,7 +2091,7 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/health',
       streamStatus: '/api/stream/status',
-      frontend: 'http://localhost:3000'
+      frontend: process.env.CLIENT_URL || 'https://onestreamer.live:3443'
     }
   });
 });
@@ -2210,7 +2211,7 @@ app.get('/api/emojis', async (req, res) => {
 app.get('/api/admin/moderation', authenticateAdmin, async (req, res) => {
     try {
         // Send a request to the chat service to get moderation data
-        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/moderation`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/moderation`;
         console.log(`📊 MAIN SERVER: Fetching moderation data from ${chatServiceUrl}`);
         
         const response = await axios.get(chatServiceUrl, { timeout: 5000 });
@@ -2234,7 +2235,7 @@ app.post('/api/admin/ban', authenticateAdmin, express.json(), async (req, res) =
         const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
         
         // Send ban request to chat service
-        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/ban`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/ban`;
         const response = await axios.post(chatServiceUrl, {
             username,
             reason,
@@ -2253,7 +2254,7 @@ app.post('/api/admin/unban', authenticateAdmin, express.json(), async (req, res)
         const { username } = req.body;
         
         // Send unban request to chat service
-        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/unban`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/unban`;
         const response = await axios.post(chatServiceUrl, { username });
         
         res.json(response.data);
@@ -2269,7 +2270,7 @@ app.post('/api/admin/timeout', authenticateAdmin, express.json(), async (req, re
         const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
         
         // Send timeout request to chat service
-        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/timeout`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/timeout`;
         const response = await axios.post(chatServiceUrl, {
             username,
             duration,
@@ -2289,7 +2290,7 @@ app.post('/api/admin/remove-timeout', authenticateAdmin, express.json(), async (
         const { username } = req.body;
         
         // Send remove timeout request to chat service
-        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'http://localhost:8081'}/api/remove-timeout`;
+        const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/remove-timeout`;
         const response = await axios.post(chatServiceUrl, { username });
         
         res.json(response.data);
@@ -3720,7 +3721,26 @@ app.post('/admin/recordings/stop/:recordingId', authenticateAdmin, async (req, r
   }
 });
 
-// Get recording status
+// Get all recordings status
+app.get('/admin/recordings/status', authenticateAdmin, (req, res) => {
+  try {
+    const activeRecordings = recordingService.getActiveRecordings();
+    
+    res.json({
+      success: true,
+      status: {
+        activeRecordings: activeRecordings.length,
+        recordings: activeRecordings
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get recordings status:', error);
+    res.status(500).json({ error: 'Failed to get recordings status' });
+  }
+});
+
+// Get specific recording status
 app.get('/admin/recordings/status/:recordingId', authenticateAdmin, (req, res) => {
   try {
     const { recordingId } = req.params;
@@ -6222,7 +6242,7 @@ async function startServer() {
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log('🔍 HTTP Server accessible on:');
     console.log('  - http://localhost:' + PORT);
-    console.log('  - http://<SERVER_IP>:' + PORT);
+    console.log('  - http://onestreamer.live:' + PORT);
   });
 
   // Start HTTPS server if configured
@@ -6231,7 +6251,7 @@ async function startServer() {
       console.log(`🔒 HTTPS server running on port ${HTTPS_PORT}`);
       console.log('🔍 HTTPS Server accessible on:');
       console.log('  - https://localhost:' + HTTPS_PORT);
-      console.log('  - https://<SERVER_IP>:' + HTTPS_PORT);
+      console.log('  - https://onestreamer.live:' + HTTPS_PORT);
       console.log('⚠️  Note: Using self-signed certificate. Browser will show security warning.');
     });
   }

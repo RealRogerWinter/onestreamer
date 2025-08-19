@@ -173,7 +173,7 @@ const ViewBotControls: React.FC<ViewBotControlsProps> = ({ makeApiCall, addLog }
       const formData = new FormData();
       formData.append('video', file);
 
-      const uploadUrl = `${process.env.REACT_APP_SERVER_URL || 'http://localhost:8080'}/admin/upload-video`;
+      const uploadUrl = `${process.env.REACT_APP_SERVER_URL || window.location.origin}/admin/upload-video`;
       console.log('📡 Upload URL:', uploadUrl);
 
       const response = await fetch(uploadUrl, {

@@ -49,7 +49,7 @@ class SocketManager {
       console.log(`🔌 SocketManager: Creating main socket connection... (Attempt #${this.creationCount.main})`);
       
       const authToken = localStorage.getItem('auth_token');
-      const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:8080';
+      const serverUrl = process.env.REACT_APP_SERVER_URL || 'https://onestreamer.live';
       
       SocketDebugger.logCreationAttempt('main', serverUrl);
       
@@ -93,11 +93,13 @@ class SocketManager {
       console.log(`💬 SocketManager: Creating chat socket connection... (Attempt #${this.creationCount.chat})`);
       
       const authToken = localStorage.getItem('auth_token');
-      const chatServerUrl = process.env.REACT_APP_CHAT_SERVER_URL || 'http://localhost:8081';
+      const chatServerUrl = process.env.REACT_APP_CHAT_SERVER_URL || 'https://onestreamer.live';
       
       SocketDebugger.logCreationAttempt('chat', chatServerUrl);
+      console.log('🔵 CHAT: Creating socket with URL:', chatServerUrl, 'and path:', '/chat/socket.io/');
       
       this.chatSocket = io(chatServerUrl, {
+        path: '/chat/socket.io/',
         timeout: 5000,
         forceNew: false,
         transports: ['websocket', 'polling'],
@@ -124,8 +126,23 @@ class SocketManager {
       this.chatSocket.on('disconnect', (reason) => {
         console.log('❌ SocketManager: Chat socket disconnected:', reason);
       });
+
+      this.chatSocket.on('connect_error', (error: any) => {
+        console.error('❌ SocketManager: Chat socket connection error:', error.message);
+        console.error('Error details:', error);
+      });
+
+      // Ensure connection is initiated
+      if (!this.chatSocket.connected) {
+        console.log('🔌 SocketManager: Initiating chat socket connection...');
+        this.chatSocket.connect();
+      }
     } else {
       console.log('♻️ SocketManager: Reusing existing chat socket:', this.chatSocket.id);
+      if (!this.chatSocket.connected) {
+        console.log('🔌 SocketManager: Reconnecting chat socket...');
+        this.chatSocket.connect();
+      }
     }
 
     return this.chatSocket;

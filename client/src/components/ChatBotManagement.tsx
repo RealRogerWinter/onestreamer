@@ -95,7 +95,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
     }
   });
 
-  const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:8080';
+  const serverUrl = process.env.REACT_APP_SERVER_URL || '';
 
   useEffect(() => {
     fetchChatbots();

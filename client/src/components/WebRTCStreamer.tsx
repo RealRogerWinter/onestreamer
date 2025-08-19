@@ -494,7 +494,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       // Create MediasoupClient for remote streaming with proper error handling
       try {
         console.log('🌐 WEBRTC STREAMER: Initializing mediasoup for remote streaming...');
-        const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}:8443`;
+        const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}`;
         console.log('🌐 WEBRTC STREAMER: Using server URL:', serverUrl);
         mediasoupClientRef.current = new MediasoupClient({ socket, serverUrl });
         
