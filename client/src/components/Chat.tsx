@@ -5,6 +5,8 @@ import authService from '../services/AuthService';
 import EmojiPicker from './EmojiPicker';
 import ChatSettings, { ChatUserSettings } from './ChatSettings';
 import DOMPurify from 'dompurify';
+import CloudflareTurnstile from './CloudflareTurnstile';
+import { TURNSTILE_SITE_KEY } from '../config/turnstile';
 import './Chat.css';
 
 interface ChatMessage {
@@ -56,6 +58,8 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [customEmojis, setCustomEmojis] = useState<Map<string, string>>(new Map());
   const [showSettings, setShowSettings] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [chatSettings, setChatSettings] = useState<ChatUserSettings>(() => {
     // Load settings from localStorage
     const saved = localStorage.getItem('chatSettings');
@@ -628,11 +632,25 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     };
   }, [isScrolledUp]);
 
+  // Check if user has been verified for this session
+  useEffect(() => {
+    const verified = sessionStorage.getItem('chatTurnstileVerified');
+    if (verified === 'true') {
+      setTurnstileToken('verified');
+    }
+  }, []);
+
   // Handle sending messages
   const sendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!currentMessage.trim() || !chatSocket || !isConnected) {
+      return;
+    }
+
+    // Check if we need Turnstile verification
+    if (!turnstileToken) {
+      setIsVerifying(true);
       return;
     }
     
@@ -1047,6 +1065,41 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
           </button>
         </form>
       </div>
+
+      {/* Invisible Turnstile verification modal */}
+      {isVerifying && (
+        <div className="turnstile-verification-modal">
+          <div className="turnstile-modal-content">
+            <p>Verifying you're human...</p>
+            <CloudflareTurnstile
+              siteKey={TURNSTILE_SITE_KEY}
+              onVerify={(token) => {
+                setTurnstileToken(token);
+                sessionStorage.setItem('chatTurnstileVerified', 'true');
+                setIsVerifying(false);
+                // Retry sending the message after verification
+                setTimeout(() => {
+                  const form = document.querySelector('.chat-input-form') as HTMLFormElement;
+                  if (form) {
+                    form.requestSubmit();
+                  }
+                }, 100);
+              }}
+              onError={() => {
+                setIsVerifying(false);
+                console.error('Turnstile verification failed');
+              }}
+              onExpire={() => {
+                setTurnstileToken(null);
+                sessionStorage.removeItem('chatTurnstileVerified');
+              }}
+              theme="auto"
+              size="compact"
+              appearance="interaction-only"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
