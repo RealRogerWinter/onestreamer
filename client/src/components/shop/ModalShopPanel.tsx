@@ -48,7 +48,7 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
   const [selectedItem, setSelectedItem] = useState<ShopItemData | null>(null);
   const itemsPerPage = 15; // More items for larger layout
 
-  // Swipe gesture handling for mobile with resize
+  // Reference to panel (no swipe handling needed for full screen mobile)
   const panelRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -57,6 +57,11 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
   const startHeightRef = useRef<number>(40);
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    // Disable dragging on mobile for full screen experience
+    if (window.innerWidth <= 768) {
+      return;
+    }
+    
     const target = e.target as HTMLElement;
     const isHeader = target.closest('.modal-shop-header');
     
@@ -73,6 +78,11 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    // Disable dragging on mobile for full screen experience
+    if (window.innerWidth <= 768) {
+      return;
+    }
+    
     if (!isDragging) return;
 
     e.preventDefault(); // Prevent scroll interference
@@ -98,6 +108,11 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
   };
 
   const handleTouchEnd = () => {
+    // Disable dragging on mobile for full screen experience
+    if (window.innerWidth <= 768) {
+      return;
+    }
+    
     if (!isDragging) return;
 
     setIsDragging(false);
@@ -136,9 +151,16 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
 
   useEffect(() => {
     if (isOpen && panelRef.current) {
-      panelRef.current.style.transform = 'translateY(0)';
-      panelRef.current.style.height = '40vh';
-      setIsExpanded(false);
+      // Full screen on mobile, regular behavior on desktop
+      if (window.innerWidth <= 768) {
+        panelRef.current.style.transform = 'translateY(0)';
+        panelRef.current.style.height = '100vh';
+        setIsExpanded(true); // Always expanded on mobile
+      } else {
+        panelRef.current.style.transform = 'translateY(0)';
+        panelRef.current.style.height = '40vh';
+        setIsExpanded(false);
+      }
     }
   }, [isOpen]);
 

@@ -40,6 +40,8 @@ interface InventoryPanelProps {
   isOpen?: boolean;
   onToggle?: () => void;
   onToggleShop?: () => void;
+  onLogin?: () => void;
+  onSignup?: () => void;
 }
 
 const InventoryPanel: React.FC<InventoryPanelProps> = ({ 
@@ -48,7 +50,9 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
   userProfile, 
   isOpen = false, 
   onToggle, 
-  onToggleShop 
+  onToggleShop,
+  onLogin,
+  onSignup
 }) => {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [cooldowns, setCooldowns] = useState<ItemCooldown[]>([]);
@@ -663,21 +667,48 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
         <div className="inventory-content">
           {!isAuthenticated ? (
-              <div className="inventory-guest-prompt">
-                <div className="guest-prompt-content">
-                  <h4>🎒 Your Personal Inventory</h4>
-                  <p>Store and manage your items here once you join!</p>
-                  <div className="guest-actions">
-                    <p><strong>Sign up or log in to start collecting items!</strong></p>
-                    <div className="auth-buttons">
-                      <a href="/login" className="auth-button login-button">
-                        Login
-                      </a>
-                      <a href="/signup" className="auth-button signup-button">
-                        Sign Up
-                      </a>
-                    </div>
+              <div className="inventory-guest-prompt-v2">
+                <div className="guest-icon-header">
+                  <div className="locked-icon">🔒</div>
+                  <h3>Inventory Locked</h3>
+                </div>
+                
+                <div className="guest-benefits">
+                  <div className="benefit-item">
+                    <span className="benefit-icon">💎</span>
+                    <span>Collect rare items</span>
                   </div>
+                  <div className="benefit-item">
+                    <span className="benefit-icon">⚡</span>
+                    <span>Use powerful buffs</span>
+                  </div>
+                  <div className="benefit-item">
+                    <span className="benefit-icon">🎯</span>
+                    <span>Throw effects on stream</span>
+                  </div>
+                </div>
+
+                <div className="auth-cta-section">
+                  <button 
+                    className="inventory-login-btn"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (onLogin) onLogin();
+                    }}
+                  >
+                    Sign In
+                  </button>
+                  <div className="divider-text">or</div>
+                  <button 
+                    className="inventory-signup-btn"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (onSignup) onSignup();
+                    }}
+                  >
+                    <span className="signup-text">Create Free Account</span>
+                    <span className="signup-bonus">🎁 Get starter items!</span>
+                  </button>
                 </div>
               </div>
             ) : (

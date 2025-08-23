@@ -1014,6 +1014,8 @@ function AppContent() {
           setShowInventory(false);
           setIsShopOpen(true);
         }}
+        onLogin={() => setShowLogin(true)}
+        onSignup={() => setShowSignup(true)}
       />
 
       {isShopOpen && (

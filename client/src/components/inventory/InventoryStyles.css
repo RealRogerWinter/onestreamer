@@ -408,13 +408,315 @@
   height: 100%;
 }
 
+/* V2 Guest Prompt Design - Optimized for narrow panel */
+.inventory-guest-prompt-v2 {
+  padding: 20px 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  background: radial-gradient(circle at center, rgba(102, 126, 234, 0.08), transparent);
+}
+
+/* Icon Header */
+.guest-icon-header {
+  text-align: center;
+  margin-bottom: 25px;
+}
+
+.locked-icon {
+  font-size: 48px;
+  margin-bottom: 10px;
+  animation: subtle-pulse 2s ease-in-out infinite;
+}
+
+@keyframes subtle-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+.guest-icon-header h3 {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+/* Benefits List */
+.guest-benefits {
+  width: 100%;
+  max-width: 240px;
+  margin-bottom: 30px;
+}
+
+.benefit-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid rgba(102, 126, 234, 0.5);
+  transition: all 0.3s ease;
+}
+
+.benefit-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(3px);
+}
+
+.benefit-icon {
+  font-size: 20px;
+}
+
+.benefit-item span:last-child {
+  color: #ccc;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Auth CTA Section */
+.auth-cta-section {
+  width: 100%;
+  max-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.inventory-login-btn,
+.inventory-signup-btn {
+  width: 100%;
+  padding: 12px 20px;
+  text-decoration: none;
+  border-radius: 10px;
+  font-weight: 600;
+  text-align: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+  border: none;
+  font-family: inherit;
+  outline: none;
+}
+
+.inventory-login-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 14px;
+}
+
+.inventory-login-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.divider-text {
+  color: #666;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: relative;
+  width: 100%;
+  text-align: center;
+  margin: 5px 0;
+}
+
+.divider-text::before,
+.divider-text::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 40%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.divider-text::before {
+  left: 0;
+}
+
+.divider-text::after {
+  right: 0;
+}
+
+.inventory-signup-btn {
+  background: linear-gradient(135deg, #f093fb, #f5576c);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 20px;
+  box-shadow: 0 4px 15px rgba(240, 147, 251, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.inventory-signup-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.inventory-signup-btn:hover::before {
+  left: 100%;
+}
+
+.inventory-signup-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(240, 147, 251, 0.4);
+}
+
+.signup-text {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.signup-bonus {
+  font-size: 11px;
+  opacity: 0.95;
+  font-weight: 500;
+}
+
+/* Old v1 styles - keeping for backwards compatibility */
 .inventory-guest-prompt {
-  padding: 20px;
+  padding: 30px 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: 1;
   height: 100%;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
+}
+
+.inventory-guest-prompt .guest-prompt-content {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+  border: 2px solid rgba(102, 126, 234, 0.5);
+  border-radius: 16px;
+  padding: 30px 25px;
+  text-align: center;
+  max-width: 320px;
+  width: 90%;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2);
+  animation: subtle-glow 3s ease-in-out infinite;
+}
+
+@keyframes subtle-glow {
+  0%, 100% { box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2); }
+  50% { box-shadow: 0 8px 32px rgba(102, 126, 234, 0.35); }
+}
+
+.inventory-guest-prompt h4 {
+  color: #fff;
+  font-size: 20px;
+  margin: 0 0 12px 0;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.inventory-guest-prompt p {
+  color: #bbb;
+  font-size: 14px;
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+.inventory-guest-prompt .guest-actions {
+  margin-top: 15px;
+}
+
+.inventory-guest-prompt .guest-actions p {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffd700;
+  margin: 0 0 20px 0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.inventory-guest-prompt .auth-buttons {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px;
+  justify-content: center;
+  align-items: stretch;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.inventory-guest-prompt .auth-button {
+  display: block;
+  width: 100%;
+  padding: 14px 28px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: visible;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.inventory-guest-prompt .login-button {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border: 2px solid transparent;
+}
+
+.inventory-guest-prompt .login-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.inventory-guest-prompt .signup-button {
+  background: linear-gradient(135deg, #f093fb, #f5576c);
+  color: white;
+  border: 2px solid transparent;
+  position: relative;
+}
+
+.inventory-guest-prompt .signup-button::after {
+  content: '🎁';
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  background: #ffd700;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  animation: bounce 2s ease-in-out infinite;
+  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.5);
+  z-index: 1;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.inventory-guest-prompt .signup-button:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
 }
 
 .inventory-error {
@@ -601,8 +903,71 @@
   justify-content: center;
 }
 
+/* Keep buttons stacked vertically on all screen sizes */
+
 /* Mobile Responsive Styles */
 @media (max-width: 768px) {
+  /* V2 Guest prompt mobile styles */
+  .inventory-guest-prompt-v2 {
+    padding: 15px 10px;
+  }
+
+  .locked-icon {
+    font-size: 40px;
+  }
+
+  .guest-icon-header h3 {
+    font-size: 16px;
+  }
+
+  .guest-benefits {
+    max-width: 100%;
+  }
+
+  .benefit-item {
+    padding: 6px 10px;
+  }
+
+  .benefit-item span:last-child {
+    font-size: 12px;
+  }
+
+  .auth-cta-section {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+
+  /* Old Guest prompt mobile styles */
+  .inventory-guest-prompt {
+    padding: 20px 10px;
+  }
+
+  .inventory-guest-prompt .guest-prompt-content {
+    max-width: 95%;
+    padding: 25px 20px;
+    width: 100%;
+  }
+
+  .inventory-guest-prompt h4 {
+    font-size: 18px;
+  }
+
+  .inventory-guest-prompt .guest-actions p {
+    font-size: 14px;
+  }
+
+  .inventory-guest-prompt .auth-buttons {
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .inventory-guest-prompt .auth-button {
+    width: 100%;
+    padding: 16px 20px;
+    font-size: 15px;
+  }
+
   /* Override desktop styles completely for mobile */
   .inventory-panel.mobile {
     position: fixed !important;

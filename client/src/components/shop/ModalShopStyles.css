@@ -817,28 +817,31 @@
     pointer-events: none;
   }
   
-  /* Bottom sheet shop panel on mobile - matches chat behavior */
+  /* Bottom sheet shop panel on mobile - full screen */
   .modal-shop-panel {
     position: fixed !important;
-    bottom: 76px !important; /* Above bottom nav with margin */
+    bottom: 0 !important; /* Full screen from bottom */
     left: 0;
     right: 0;
-    top: auto;
+    top: 0 !important; /* Full screen from top */
     width: 100%;
-    height: 40vh !important; /* Same as chat panel */
-    max-height: none !important; /* Allow expansion */
+    height: 100vh !important; /* Full screen height */
+    max-height: 100vh !important; /* Full screen max height */
     max-width: 100%;
-    border-radius: 20px 20px 0 0;
+    border-radius: 0; /* No rounded corners for full screen */
     margin: 0;
     pointer-events: auto;
-    z-index: 998; /* Same as chat */
+    z-index: 1200; /* Higher than everything for full screen overlay */
     animation: slideUpMobile 0.3s ease-out;
-    transition: height 0.3s ease;
-    will-change: height, transform;
+    transition: none; /* Remove transition for full screen */
+    will-change: transform;
     -webkit-transform: translateZ(0); /* Force GPU acceleration */
     transform: translateZ(0);
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
+    /* Safe area insets for devices with notches */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
   
   @keyframes slideUpMobile {
@@ -850,38 +853,18 @@
     }
   }
   
-  /* Swipe indicator for mobile */
-  .modal-shop-panel::before {
-    content: '';
-    position: absolute;
-    top: 8px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 40px;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 2px;
-    z-index: 1;
-  }
+  /* No swipe indicator needed for full screen */
   
-  /* Make header draggable */
+  /* Header is not draggable on full screen mobile */
   .modal-shop-header {
-    cursor: grab;
-    touch-action: none;
-    user-select: none;
-    -webkit-user-select: none;
-    padding-top: 20px; /* Extra space for swipe indicator */
+    cursor: default;
+    touch-action: auto;
+    user-select: auto;
+    -webkit-user-select: auto;
+    padding: 15px 20px; /* Normal padding for full screen */
   }
   
-  .modal-shop-header:active {
-    cursor: grabbing;
-  }
-  
-  /* Expanded state */
-  .modal-shop-panel.expanded {
-    height: 85vh !important;
-    max-height: none !important;
-  }
+  /* No expanded state needed - always full screen */
   
   .shop-items-grid {
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -910,7 +893,16 @@
 
 @media (max-width: 480px) {
   .modal-shop-panel {
-    border-radius: 8px;
+    border-radius: 0; /* Full screen, no rounded corners */
+  }
+  
+  /* Make close button more prominent on mobile full screen */
+  .modal-close-btn {
+    width: 56px;
+    height: 56px;
+    font-size: 40px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
   }
   
   .shop-items-grid {
@@ -933,6 +925,8 @@
   
   .shop-content {
     padding: 15px;
+    height: calc(100vh - 200px); /* Full height minus header and categories */
+    overflow-y: auto;
   }
   
   .auth-buttons {

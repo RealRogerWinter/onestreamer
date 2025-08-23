@@ -111,8 +111,8 @@
 .emoji-grid {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(10, 1fr);
-  gap: 2px;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
   padding: 8px;
   overflow-y: auto;
   min-height: 200px;
@@ -132,12 +132,12 @@
   position: relative;
   background: none;
   border: none;
-  padding: 2px;
+  padding: 4px;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 4px;
   transition: all 0.15s;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -150,8 +150,8 @@
 }
 
 .emoji-item img {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
 }
 
@@ -201,6 +201,50 @@
 
 .emoji-hint {
   font-style: italic;
+}
+
+/* Pagination controls */
+.emoji-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px;
+  border-top: 1px solid #333;
+  background: #1a1a1a;
+}
+
+.pagination-btn {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 16px;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: #333;
+  border-color: #666;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  color: #999;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 80px;
+  text-align: center;
 }
 
 /* Emoji button in chat input */

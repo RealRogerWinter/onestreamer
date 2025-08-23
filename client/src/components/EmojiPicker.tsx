@@ -21,6 +21,8 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const emojisPerPage = 50;
   const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -83,6 +85,17 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
     return matchesCategory && matchesSearch;
   });
 
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredEmojis.length / emojisPerPage);
+  const startIndex = (currentPage - 1) * emojisPerPage;
+  const endIndex = startIndex + emojisPerPage;
+  const paginatedEmojis = filteredEmojis.slice(startIndex, endIndex);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory, searchTerm]);
+
   return (
     <div className="emoji-picker" ref={pickerRef}>
       <div className="emoji-picker-header">
@@ -115,7 +128,7 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
         ) : filteredEmojis.length === 0 ? (
           <div className="emoji-empty">No emojis found</div>
         ) : (
-          filteredEmojis.map(emoji => (
+          paginatedEmojis.map(emoji => (
             <button
               key={emoji.id}
               className="emoji-item"
@@ -133,9 +146,34 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
         )}
       </div>
       
+      {filteredEmojis.length > emojisPerPage && (
+        <div className="emoji-pagination">
+          <button 
+            className="pagination-btn"
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={currentPage === 1}
+          >
+            ←
+          </button>
+          <span className="pagination-info">
+            Page {currentPage} of {totalPages}
+          </span>
+          <button 
+            className="pagination-btn"
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={currentPage === totalPages}
+          >
+            →
+          </button>
+        </div>
+      )}
+      
       {filteredEmojis.length > 0 && (
         <div className="emoji-picker-footer">
-          <span className="emoji-count">{filteredEmojis.length} emojis</span>
+          <span className="emoji-count">
+            {filteredEmojis.length} emojis
+            {filteredEmojis.length > emojisPerPage && ` (${paginatedEmojis.length} shown)`}
+          </span>
           <span className="emoji-hint">Click to insert</span>
         </div>
       )}
