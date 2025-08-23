@@ -271,15 +271,17 @@ class ViewBotSocketClient {
       // Use simpler, more compatible pipeline
       const pipelineArgs = [
         'filesrc', `location=${this.mediaFile}`,
-        '!', 'decodebin', 'name=dec',
+        '!', 'decodebin', 'name=dec', 'use-buffering=false',
         'dec.',
+        '!', 'queue', 'max-size-buffers=100', 'max-size-time=100000000', 'max-size-bytes=0', 'min-threshold-buffers=1',
         '!', 'videoconvert',
         '!', 'videoscale',
         '!', 'video/x-raw,width=1280,height=720',
-        '!', 'x264enc', 'tune=zerolatency', 'bitrate=2000', 'speed-preset=ultrafast',
+        '!', 'x264enc', 'tune=zerolatency', 'bitrate=2000', 'speed-preset=ultrafast', 'key-int-max=30', 'bframes=0',
         '!', 'rtph264pay', 'pt=102', 'ssrc=11111111',
         '!', 'udpsink', 'host=127.0.0.1', `port=${this.rtpPorts.video}`,
         'dec.',
+        '!', 'queue', 'max-size-buffers=100', 'max-size-time=100000000', 'max-size-bytes=0', 'min-threshold-buffers=1',
         '!', 'audioconvert',
         '!', 'audioresample',
         '!', 'audio/x-raw,rate=48000,channels=2',
@@ -335,7 +337,7 @@ class ViewBotSocketClient {
       setTimeout(() => {
         console.log(`✅ ViewBot ${this.botId}: GStreamer started`);
         resolve();
-      }, 500);
+      }, 100);
     });
   }
   
