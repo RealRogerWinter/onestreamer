@@ -22,17 +22,17 @@ const ViewBotTestCard: React.FC<ViewBotTestCardProps> = ({ bot }) => {
   const [showDropdown, setShowDropdown] = React.useState(false);
 
   const handleStart = () => {
-    console.log('Start button clicked for bot:', bot.botId);
+    // console.log('Start button clicked for bot:', bot.botId);
     alert(`Starting bot ${bot.botId}`);
   };
 
   const handleStop = () => {
-    console.log('Stop button clicked for bot:', bot.botId);
+    // console.log('Stop button clicked for bot:', bot.botId);
     alert(`Stopping bot ${bot.botId}`);
   };
 
   const handleClone = () => {
-    console.log('Clone button clicked for bot:', bot.botId);
+    // console.log('Clone button clicked for bot:', bot.botId);
     alert(`Cloning bot ${bot.botId}`);
   };
 

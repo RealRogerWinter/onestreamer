@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { PassThrough } = require('stream');
+const os = require('os');
 
 class VisualFxService extends EventEmitter {
     constructor(mediasoupService = null, buffDebuffService = null, streamInterceptorService = null) {
@@ -26,15 +27,19 @@ class VisualFxService extends EventEmitter {
             cpuUsage: 0,
             memoryUsage: 0,
             activeEffectCount: 0,
-            maxConcurrentEffects: 25 // Increased for testing
+            maxConcurrentEffects: 50, // Increased for better performance
+            lastCleanup: Date.now(),
+            cleanupInterval: 30000 // Cleanup every 30 seconds instead of constantly
         };
         
         // Configuration
         this.config = {
-            maxEffectsPerStream: 15, // Increased for testing
+            maxEffectsPerStream: 20, // Reasonable limit per stream
             effectTimeout: 60000, // 60 seconds default
-            resourceCheckInterval: 5000,
-            enableAdvancedProcessing: true
+            resourceCheckInterval: 15000, // Check less frequently to reduce overhead
+            enableAdvancedProcessing: true,
+            cpuThreshold: 90, // Higher threshold for high-performance servers
+            memoryThreshold: 2048 // 2GB memory threshold
         };
         
         // Initialize effect definitions
@@ -553,7 +558,8 @@ class VisualFxService extends EventEmitter {
         // Check if effect exists
         const effectConfig = this.effectRegistry.get(effectId);
         if (!effectConfig) {
-            throw new Error(`Effect ${effectId} not found`);
+            console.error(`❌ VISUALFX: Effect ${effectId} not found in registry`);
+            return null; // Return null instead of throwing to prevent crashes
         }
         
         // Check resource limits
@@ -595,7 +601,8 @@ class VisualFxService extends EventEmitter {
         try {
             // Check if we should use stream interception for this effect
             const useInterception = this.streamInterceptorService && 
-                                  ['resolution', 'bitrate', 'framerate', 'filter'].includes(effectConfig.type);
+                                  ['resolution', 'bitrate', 'framerate', 'filter'].includes(effectConfig.type) &&
+                                  false; // DISABLED: Stream interception causing instability
             
             if (useInterception) {
                 console.log(`🎬 VISUALFX: Attempting stream interception for ${effectId}`);
@@ -644,19 +651,23 @@ class VisualFxService extends EventEmitter {
                     
                 } catch (interceptError) {
                     console.error(`⚠️ VISUALFX: Stream interception failed for ${effectId}:`, interceptError.message);
-                    console.log(`🔄 VISUALFX: Falling back to safe MediaSoup methods for ${effectId}`);
+                    console.log(`🔄 VISUALFX: Falling back to safe methods for ${effectId}`);
                     
-                    // Fallback to safe consumer methods
-                    switch (effectConfig.type) {
-                        case 'bitrate':
-                            await this.applySafeBitrateEffect(streamId, effectConfig.parameters);
-                            break;
-                        case 'resolution':
-                            await this.applySafeResolutionEffect(streamId, effectConfig.parameters);
-                            break;
-                        default:
-                            console.log(`📡 VISUALFX: Effect ${effectId} will be client-side only`);
-                            break;
+                    // Always use safe fallback methods
+                    try {
+                        switch (effectConfig.type) {
+                            case 'bitrate':
+                                await this.applySafeBitrateEffect(streamId, effectConfig.parameters);
+                                break;
+                            case 'resolution':
+                                await this.applySafeResolutionEffect(streamId, effectConfig.parameters);
+                                break;
+                            default:
+                                console.log(`📡 VISUALFX: Effect ${effectId} will be client-side only`);
+                                break;
+                        }
+                    } catch (fallbackError) {
+                        console.error(`⚠️ VISUALFX: Safe fallback also failed:`, fallbackError.message);
                     }
                 }
                 
@@ -740,10 +751,11 @@ class VisualFxService extends EventEmitter {
             return effect;
             
         } catch (error) {
-            console.error(`❌ VISUALFX: Failed to apply effect ${effectId}:`, error);
+            console.error(`❌ VISUALFX: Failed to apply effect ${effectId}:`, error.message);
             streamEffects.delete(effect);
             this.resourceMonitor.activeEffectCount--;
-            throw error;
+            // Don't throw - return null to prevent crashes
+            return null;
         }
     }
     
@@ -1397,9 +1409,27 @@ class VisualFxService extends EventEmitter {
         const pipeline = this.processingPipelines.get(streamId);
         if (!pipeline) return;
         
-        // Clean up FFmpeg process if running
-        if (pipeline.ffmpeg) {
-            pipeline.ffmpeg.kill();
+        try {
+            // Clean up FFmpeg process if running
+            if (pipeline.ffmpegProcess) {
+                pipeline.ffmpegProcess.kill('SIGTERM');
+                // Give it time to clean up
+                setTimeout(() => {
+                    if (pipeline.ffmpegProcess && !pipeline.ffmpegProcess.killed) {
+                        pipeline.ffmpegProcess.kill('SIGKILL');
+                    }
+                }, 1000);
+            }
+            
+            // Clean up streams
+            if (pipeline.inputStream) {
+                pipeline.inputStream.destroy();
+            }
+            if (pipeline.outputStream) {
+                pipeline.outputStream.destroy();
+            }
+        } catch (err) {
+            console.error(`⚠️ VISUALFX: Error cleaning up pipeline:`, err.message);
         }
         
         this.processingPipelines.delete(streamId);
@@ -1514,34 +1544,80 @@ class VisualFxService extends EventEmitter {
         const usage = process.cpuUsage();
         const memUsage = process.memoryUsage();
         
-        this.resourceMonitor.cpuUsage = (usage.user + usage.system) / 1000000; // Convert to seconds
+        // Calculate CPU percentage more accurately
+        const cpuPercent = os.loadavg()[0] * 100 / os.cpus().length;
+        this.resourceMonitor.cpuUsage = cpuPercent;
         this.resourceMonitor.memoryUsage = memUsage.heapUsed / 1024 / 1024; // Convert to MB
         
-        // Check for resource cleanup
-        if (this.resourceMonitor.cpuUsage > 80) {
-            console.warn('⚠️ VISUALFX: High CPU usage detected, cleaning up old effects');
+        // Only cleanup if truly necessary and not too frequently
+        const now = Date.now();
+        const timeSinceLastCleanup = now - this.resourceMonitor.lastCleanup;
+        
+        if (cpuPercent > this.config.cpuThreshold && timeSinceLastCleanup > this.resourceMonitor.cleanupInterval) {
+            console.warn(`⚠️ VISUALFX: High CPU usage detected (${cpuPercent.toFixed(1)}%), cleaning up old effects`);
             this.cleanupOldEffects();
+            this.resourceMonitor.lastCleanup = now;
+        } else if (this.resourceMonitor.memoryUsage > this.config.memoryThreshold) {
+            console.warn(`⚠️ VISUALFX: High memory usage detected (${this.resourceMonitor.memoryUsage.toFixed(0)}MB), cleaning up`);
+            this.cleanupOldEffects();
+            this.resourceMonitor.lastCleanup = now;
         }
     }
     
     checkResourceAvailability() {
-        return (
-            this.resourceMonitor.activeEffectCount < this.resourceMonitor.maxConcurrentEffects &&
-            this.resourceMonitor.cpuUsage < 70 &&
-            this.resourceMonitor.memoryUsage < 1024 // 1GB limit
-        );
+        // More lenient resource checking
+        const cpuOk = this.resourceMonitor.cpuUsage < this.config.cpuThreshold;
+        const memoryOk = this.resourceMonitor.memoryUsage < this.config.memoryThreshold;
+        const effectsOk = this.resourceMonitor.activeEffectCount < this.resourceMonitor.maxConcurrentEffects;
+        
+        if (!cpuOk || !memoryOk || !effectsOk) {
+            console.log(`📊 VISUALFX: Resource check - CPU: ${this.resourceMonitor.cpuUsage.toFixed(1)}% (OK: ${cpuOk}), Memory: ${this.resourceMonitor.memoryUsage.toFixed(0)}MB (OK: ${memoryOk}), Effects: ${this.resourceMonitor.activeEffectCount}/${this.resourceMonitor.maxConcurrentEffects} (OK: ${effectsOk})`);
+        }
+        
+        return cpuOk && memoryOk && effectsOk;
     }
     
     cleanupOldEffects() {
         const now = Date.now();
+        let cleanedCount = 0;
         
+        // Clean up expired effects
         for (const [streamId, effects] of this.activeEffects.entries()) {
+            const effectsToRemove = [];
+            
             for (const effect of effects) {
                 // Remove effects that have exceeded their duration
                 if (now - effect.startTime > effect.duration) {
-                    this.removeEffect(streamId, effect.id);
+                    effectsToRemove.push(effect.id);
+                    cleanedCount++;
                 }
             }
+            
+            // Remove effects in batch to avoid iterator issues
+            for (const effectId of effectsToRemove) {
+                this.removeEffect(streamId, effectId).catch(err => {
+                    console.error(`⚠️ VISUALFX: Error removing expired effect:`, err.message);
+                });
+            }
+        }
+        
+        // Clean up abandoned pipelines
+        for (const [streamId, pipeline] of this.processingPipelines.entries()) {
+            if (!pipeline.isActive || (now - pipeline.stats.startTime > 120000)) {
+                this.removeProcessingPipeline(streamId);
+                cleanedCount++;
+            }
+        }
+        
+        // Clear empty effect sets
+        for (const [streamId, effects] of this.activeEffects.entries()) {
+            if (effects.size === 0) {
+                this.activeEffects.delete(streamId);
+            }
+        }
+        
+        if (cleanedCount > 0) {
+            console.log(`🧹 VISUALFX: Cleaned up ${cleanedCount} expired effects/pipelines`);
         }
     }
     

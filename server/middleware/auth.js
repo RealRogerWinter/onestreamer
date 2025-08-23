@@ -70,6 +70,54 @@ const authenticateAdmin = async (req, res, next) => {
     }
 };
 
+const authenticateModerator = async (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    console.log('🔐 Moderator auth check - Token present:', !!token);
+
+    if (!token) {
+        return res.status(401).json({ error: 'Access token required' });
+    }
+
+    const decoded = authService.verifyToken(token);
+    
+    console.log('🔐 Moderator auth - Token decoded:', !!decoded, decoded?.id);
+    
+    if (!decoded) {
+        return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+
+    try {
+        // Check if user exists and is moderator or admin
+        const accountService = new AccountService();
+        const userRecord = await accountService.getUserById(decoded.id);
+        
+        console.log('🔐 Moderator auth - User found:', !!userRecord, 'Is moderator:', userRecord?.is_moderator, 'Is admin:', userRecord?.is_admin);
+        
+        if (!userRecord) {
+            return res.status(403).json({ error: 'User not found' });
+        }
+        
+        if (!userRecord.is_moderator && !userRecord.is_admin) {
+            console.log('🔐 Moderator auth - User is not moderator or admin:', userRecord.username);
+            return res.status(403).json({ error: 'Moderator access required' });
+        }
+
+        if (userRecord.is_banned) {
+            return res.status(403).json({ error: 'Account is banned' });
+        }
+        
+        console.log('🔐 Moderator auth - Access granted for:', userRecord.username);
+        req.user = decoded;
+        req.userRecord = userRecord;
+        next();
+    } catch (err) {
+        console.error('Moderator authentication error:', err);
+        return res.status(500).json({ error: 'Authentication failed' });
+    }
+};
+
 const optionalAuth = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -87,5 +135,6 @@ const optionalAuth = (req, res, next) => {
 module.exports = {
     authenticateToken,
     authenticateAdmin,
+    authenticateModerator,
     optionalAuth
 };

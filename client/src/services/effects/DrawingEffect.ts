@@ -70,7 +70,7 @@ export class DrawingEffect extends BaseEffect {
     // Import existing paths if provided (for display phase)
     if (config.existingPaths && config.existingPaths.length > 0) {
       this.paths = [...config.existingPaths];
-      console.log(`✏️ DrawingEffect: Imported ${this.paths.length} existing paths`);
+      // console.log(`✏️ DrawingEffect: Imported ${this.paths.length} existing paths`);
     }
     
     // Create offscreen canvas for persistent drawing
@@ -88,11 +88,11 @@ export class DrawingEffect extends BaseEffect {
       this.setupDrawingListeners();
     }
     
-    console.log('✏️ DrawingEffect: Initialized with drawing enabled:', this.enableDrawing);
+    // console.log('✏️ DrawingEffect: Initialized with drawing enabled:', this.enableDrawing);
   }
 
   private setupDrawingListeners(): void {
-    console.log('✏️ DrawingEffect: Setting up drawing listeners on canvas:', this.canvas);
+    // console.log('✏️ DrawingEffect: Setting up drawing listeners on canvas:', this.canvas);
     
     // The canvas already exists and is positioned correctly by EffectEngine
     // We just need to temporarily enable pointer events like click-to-throw does
@@ -107,7 +107,7 @@ export class DrawingEffect extends BaseEffect {
     
     // Mouse events
     this.mouseDownHandler = (e: MouseEvent) => {
-      console.log('✏️ DrawingEffect: Mouse down event', e);
+      // console.log('✏️ DrawingEffect: Mouse down event', e);
       this.startDrawing(e.clientX, e.clientY);
     };
     this.mouseMoveHandler = (e: MouseEvent) => {
@@ -117,7 +117,7 @@ export class DrawingEffect extends BaseEffect {
     };
     this.mouseUpHandler = () => {
       if (this.isDrawing) {
-        console.log('✏️ DrawingEffect: Mouse up event');
+        // console.log('✏️ DrawingEffect: Mouse up event');
         this.stopDrawing();
       }
     };
@@ -126,7 +126,7 @@ export class DrawingEffect extends BaseEffect {
     this.touchStartHandler = (e: TouchEvent) => {
       e.preventDefault();
       const touch = e.touches[0];
-      console.log('✏️ DrawingEffect: Touch start event', touch);
+      // console.log('✏️ DrawingEffect: Touch start event', touch);
       this.startDrawing(touch.clientX, touch.clientY);
     };
     this.touchMoveHandler = (e: TouchEvent) => {
@@ -139,7 +139,7 @@ export class DrawingEffect extends BaseEffect {
     this.touchEndHandler = (e: TouchEvent) => {
       e.preventDefault();
       if (this.isDrawing) {
-        console.log('✏️ DrawingEffect: Touch end event');
+        // console.log('✏️ DrawingEffect: Touch end event');
         this.stopDrawing();
       }
     };
@@ -156,14 +156,14 @@ export class DrawingEffect extends BaseEffect {
     this.canvas.addEventListener('touchend', this.touchEndHandler, { passive: false });
     this.canvas.addEventListener('touchcancel', this.touchEndHandler, { passive: false });
     
-    console.log('✏️ DrawingEffect: Canvas setup complete. Canvas dimensions:', {
-      width: this.canvas.width,
-      height: this.canvas.height,
-      clientWidth: this.canvas.clientWidth,
-      clientHeight: this.canvas.clientHeight,
-      pointerEvents: this.canvas.style.pointerEvents,
-      parentPointerEvents: this.canvas.parentElement?.style.pointerEvents
-    });
+    // console.log('✏️ DrawingEffect: Canvas setup complete. Canvas dimensions:', {
+    //   width: this.canvas.width,
+    //   height: this.canvas.height,
+    //   clientWidth: this.canvas.clientWidth,
+    //   clientHeight: this.canvas.clientHeight,
+    //   pointerEvents: this.canvas.style.pointerEvents,
+    //   parentPointerEvents: this.canvas.parentElement?.style.pointerEvents
+    // });
   }
 
   private startDrawing(clientX: number, clientY: number): void {
@@ -184,7 +184,7 @@ export class DrawingEffect extends BaseEffect {
       timestamp: Date.now()
     };
     
-    console.log('✏️ DrawingEffect: Started drawing at', { x, y }, 'with color', currentColor);
+    // console.log('✏️ DrawingEffect: Started drawing at', { x, y }, 'with color', currentColor);
     
     // Broadcast the drawing start point to all viewers
     if (this.socket && this.enableDrawing) {
@@ -252,11 +252,11 @@ export class DrawingEffect extends BaseEffect {
     this.isDrawing = false;
     if (this.currentPath.points.length > 1) {
       this.paths.push(this.currentPath);
-      console.log('✏️ DrawingEffect: Completed path with', this.currentPath.points.length, 'points');
+      // console.log('✏️ DrawingEffect: Completed path with', this.currentPath.points.length, 'points');
       
       // Broadcast the completed path to all viewers
       if (this.socket && this.enableDrawing) {
-        console.log('✏️ DrawingEffect: Broadcasting path to all viewers');
+        // console.log('✏️ DrawingEffect: Broadcasting path to all viewers');
         this.socket.emit('drawing-path-complete', {
           effectId: this.effectId,
           path: this.currentPath
@@ -276,7 +276,7 @@ export class DrawingEffect extends BaseEffect {
     if (this.elapsed > 10000 && this.enableDrawing) {
       this.enableDrawing = false;
       this.removeDrawingListeners();
-      console.log('✏️ DrawingEffect: Drawing phase ended, entering display phase');
+      // console.log('✏️ DrawingEffect: Drawing phase ended, entering display phase');
     }
     
     // Handle fade out in display phase
@@ -359,7 +359,7 @@ export class DrawingEffect extends BaseEffect {
       parent.style.pointerEvents = 'none';
     }
     
-    console.log('✏️ DrawingEffect: Removed drawing listeners and restored pointer events');
+    // console.log('✏️ DrawingEffect: Removed drawing listeners and restored pointer events');
   }
 
   public cleanup(): void {

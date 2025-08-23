@@ -148,6 +148,22 @@
   color: #5EDED6;
 }
 
+/* User badges for admin and moderator */
+.user-badge {
+  display: inline-block;
+  margin-right: 4px;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+.admin-badge {
+  filter: drop-shadow(0 0 2px rgba(255, 215, 0, 0.5));
+}
+
+.moderator-badge {
+  filter: drop-shadow(0 0 2px rgba(23, 162, 184, 0.5));
+}
+
 /* Announcement message styling */
 .chat-message.announcement {
   background: linear-gradient(90deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 215, 0, 0.05) 100%);

@@ -52,7 +52,7 @@ export class SmokeEffect extends BaseEffect {
   }) {
     super(config);
     
-    console.log(`🔥 SMOKE: Starting constructor for ${config.effectType || 'puff'} smoke effect`);
+    // console.log(`🔥 SMOKE: Starting constructor for ${config.effectType || 'puff'} smoke effect`);
     
     this.effectType = config.effectType || 'puff';
     this.turbulenceStrength = config.turbulenceStrength || 0.3;
@@ -63,7 +63,7 @@ export class SmokeEffect extends BaseEffect {
     this.particles = [];
     this.clouds = [];
     
-    console.log(`🔥 SMOKE: Creating ${this.effectType} smoke effect with config:`, config);
+    // console.log(`🔥 SMOKE: Creating ${this.effectType} smoke effect with config:`, config);
     
     try {
       // Initialize noise grid for turbulence
@@ -71,13 +71,13 @@ export class SmokeEffect extends BaseEffect {
       
       if (this.effectType === 'puff') {
         this.initializeSmokeParticles(config.particleCount || 40);
-        console.log(`🔥 SMOKE: Created ${this.particles.length} puff particles`);
+        // console.log(`🔥 SMOKE: Created ${this.particles.length} puff particles`);
       } else {
         this.initializeSmokeClouds(config.cloudCount || 12);
-        console.log(`🔥 SMOKE: Created ${this.clouds.length} persistent clouds`);
+        // console.log(`🔥 SMOKE: Created ${this.clouds.length} persistent clouds`);
       }
       
-      console.log(`🔥 SMOKE: Constructor completed successfully for ${this.effectType}`);
+      // console.log(`🔥 SMOKE: Constructor completed successfully for ${this.effectType}`);
     } catch (error) {
       console.error('🔥 SMOKE: ERROR in constructor initialization:', error);
       // Initialize with empty arrays to prevent crashes
@@ -369,7 +369,7 @@ export class SmokeEffect extends BaseEffect {
     ctx.globalCompositeOperation = 'source-over'; // Reset blend mode
     
     if (this.particles.length > 0 && Math.random() < 0.1) {
-      console.log(`🔥 SMOKE: Rendered ${this.particles.length} puff particles`);
+      // console.log(`🔥 SMOKE: Rendered ${this.particles.length} puff particles`);
     }
   }
 
@@ -408,7 +408,7 @@ export class SmokeEffect extends BaseEffect {
     });
     
     if (this.clouds.length > 0 && Math.random() < 0.1) { // Only log 10% of the time
-      console.log(`🔥 SMOKE: Rendered ${this.clouds.length} persistent clouds`);
+      // console.log(`🔥 SMOKE: Rendered ${this.clouds.length} persistent clouds`);
     }
   }
 

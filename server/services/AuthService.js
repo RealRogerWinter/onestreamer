@@ -150,7 +150,9 @@ class AuthService {
                     id: user.id,
                     email: user.email,
                     username: user.username,
-                    isVerified: false
+                    isVerified: false,
+                    isAdmin: false,
+                    isModerator: false
                 },
                 token,
                 refreshToken,
@@ -177,7 +179,9 @@ class AuthService {
                     id: user.id,
                     email: user.email,
                     username: user.username,
-                    isVerified: user.is_verified
+                    isVerified: user.is_verified,
+                    isAdmin: user.is_admin === 1,
+                    isModerator: user.is_moderator === 1
                 },
                 token,
                 refreshToken

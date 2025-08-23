@@ -110,7 +110,7 @@ export class PerformanceMonitor {
     this.isMonitoring = true;
     this.peerConnection = peerConnection;
 
-    console.log('📊 PERFORMANCE: Starting performance monitoring');
+    // console.log('📊 PERFORMANCE: Starting performance monitoring');
 
     // Monitor system metrics every 5 seconds
     this.monitoringInterval = setInterval(() => {
@@ -135,7 +135,7 @@ export class PerformanceMonitor {
   stopMonitoring(): void {
     if (!this.isMonitoring) return;
 
-    console.log('📊 PERFORMANCE: Stopping performance monitoring');
+    // console.log('📊 PERFORMANCE: Stopping performance monitoring');
 
     this.isMonitoring = false;
 

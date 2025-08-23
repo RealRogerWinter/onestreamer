@@ -51,7 +51,7 @@ class AccountService {
 
     async getUserById(id) {
         return await getAsync(
-            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_banned, oauth_provider, username_changed 
+            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_moderator, is_banned, oauth_provider, username_changed 
              FROM users WHERE id = ?`,
             [id]
         );

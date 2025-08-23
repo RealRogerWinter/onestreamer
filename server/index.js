@@ -41,6 +41,7 @@ const RecordingStorageService = require('./services/RecordingStorageService');
 const TranscriptionService = require('./services/TranscriptionService');
 const IPBanService = require('./services/IPBanService');
 const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
 const itemRoutes = require('./routes/items');
 const buffRoutes = require('./routes/buffs');
 const soundfxRoutes = require('./routes/soundfx');
@@ -269,6 +270,7 @@ app.use('/api', (req, res, next) => {
 });
 
 // API routes
+app.use('/api/admin', adminRoutes);
 app.use('/api', itemRoutes);
 app.use('/api/buffs', buffRoutes);
 app.use('/api/soundfx', soundfxRoutes);
@@ -1351,7 +1353,11 @@ app.get('/api/auth/me', async (req, res) => {
       const points = stats?.points_balance || 0;
       
       res.json({
-        user,
+        user: {
+          ...user,
+          isModerator: user.is_moderator === 1,
+          isAdmin: user.is_admin === 1
+        },
         stats: {
           ...stats,
           points  // Include points for backward compatibility
@@ -2230,7 +2236,7 @@ app.get('/api/mediasoup/stats', (req, res) => {
 });
 
 // Import JWT admin authentication middleware
-const { authenticateAdmin } = require('./middleware/auth');
+const { authenticateAdmin, authenticateModerator } = require('./middleware/auth');
 // AuthService already imported at the top of the file
 
 // Simple admin auth middleware (kept for legacy endpoints that might need admin key)
@@ -2261,7 +2267,7 @@ app.get('/api/emojis', async (req, res) => {
 });
 
 // Chat Moderation API endpoints
-app.get('/api/admin/moderation', authenticateAdmin, async (req, res) => {
+app.get('/api/admin/moderation', authenticateModerator, async (req, res) => {
     try {
         // Send a request to the chat service to get moderation data
         const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/moderation`;
@@ -2282,7 +2288,7 @@ app.get('/api/admin/moderation', authenticateAdmin, async (req, res) => {
     }
 });
 
-app.post('/api/admin/ban', authenticateAdmin, express.json(), async (req, res) => {
+app.post('/api/admin/ban', authenticateModerator, express.json(), async (req, res) => {
     try {
         const { username, reason } = req.body;
         const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
@@ -2302,7 +2308,7 @@ app.post('/api/admin/ban', authenticateAdmin, express.json(), async (req, res) =
     }
 });
 
-app.post('/api/admin/unban', authenticateAdmin, express.json(), async (req, res) => {
+app.post('/api/admin/unban', authenticateModerator, express.json(), async (req, res) => {
     try {
         const { username } = req.body;
         
@@ -2317,7 +2323,7 @@ app.post('/api/admin/unban', authenticateAdmin, express.json(), async (req, res)
     }
 });
 
-app.post('/api/admin/timeout', authenticateAdmin, express.json(), async (req, res) => {
+app.post('/api/admin/timeout', authenticateModerator, express.json(), async (req, res) => {
     try {
         const { username, duration, reason } = req.body;
         const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
@@ -2338,7 +2344,7 @@ app.post('/api/admin/timeout', authenticateAdmin, express.json(), async (req, re
     }
 });
 
-app.post('/api/admin/remove-timeout', authenticateAdmin, express.json(), async (req, res) => {
+app.post('/api/admin/remove-timeout', authenticateModerator, express.json(), async (req, res) => {
     try {
         const { username } = req.body;
         
@@ -3781,11 +3787,11 @@ app.get('/admin/performance-stats', authenticateAdmin, (req, res) => {
 });
 
 // Stream Moderation Endpoints
-app.get('/api/admin/verify', authenticateAdmin, (req, res) => {
-  res.json({ success: true, isAdmin: true });
+app.get('/api/admin/verify', authenticateModerator, (req, res) => {
+  res.json({ success: true, isAdmin: req.userRecord.is_admin === 1, isModerator: req.userRecord.is_moderator === 1 });
 });
 
-app.get('/api/admin/stream-details/:streamerId', authenticateAdmin, (req, res) => {
+app.get('/api/admin/stream-details/:streamerId', authenticateModerator, (req, res) => {
   try {
     const { streamerId } = req.params;
     const socket = io.sockets.sockets.get(streamerId);
@@ -3809,7 +3815,7 @@ app.get('/api/admin/stream-details/:streamerId', authenticateAdmin, (req, res) =
   }
 });
 
-app.post('/api/admin/stream/disconnect', authenticateAdmin, async (req, res) => {
+app.post('/api/admin/stream/disconnect', authenticateModerator, async (req, res) => {
   try {
     const { streamerId } = req.body;
     
@@ -3822,45 +3828,88 @@ app.post('/api/admin/stream/disconnect', authenticateAdmin, async (req, res) => 
       return res.status(400).json({ error: 'Specified streamer is not currently streaming' });
     }
     
-    // Get the socket
-    const socket = io.sockets.sockets.get(streamerId);
-    if (!socket) {
-      return res.status(404).json({ error: 'Streamer socket not found' });
+    // Check if this is a viewbot stream
+    const isViewbotStream = (viewbotService && viewbotService.isViewbotStream(streamerId)) || 
+                           viewbotSocketIds.has(streamerId);
+    
+    if (isViewbotStream) {
+      // For viewbots, trigger rotation instead of disconnect
+      console.log(`🔨 MODERATION: Admin triggering viewbot rotation for stream ${streamerId}`);
+      
+      // Try different rotation methods based on what's available
+      let rotationResult = { success: false, message: 'No rotation service available' };
+      
+      if (viewBotClientService) {
+        // Use ViewBotClientService for rotation
+        rotationResult = await viewBotClientService.forceRotation();
+        console.log(`🤖 ROTATION: Triggered via ViewBotClientService:`, rotationResult);
+      } else if (global.viewBotRotation) {
+        // Use simple rotation service
+        await global.viewBotRotation.forceRotation();
+        rotationResult = { success: true, message: 'Rotation triggered via simple rotation service' };
+        console.log(`🤖 ROTATION: Triggered via simple rotation service`);
+      }
+      
+      // Also ensure rotation is enabled after this action
+      if (global.viewBotRotation) {
+        await global.viewBotRotation.startRotation();
+      }
+      
+      res.json({ 
+        success: true, 
+        message: 'Viewbot rotation triggered',
+        streamerId,
+        rotationResult
+      });
+    } else {
+      // For regular users, perform normal disconnect
+      console.log(`🔨 MODERATION: Admin disconnecting regular stream ${streamerId}`);
+      
+      // Get the socket
+      const socket = io.sockets.sockets.get(streamerId);
+      if (!socket) {
+        return res.status(404).json({ error: 'Streamer socket not found' });
+      }
+      
+      // Clear the streamer
+      streamService.clearStreamer();
+      mediasoupService.currentStreamer = null;
+      
+      // Cleanup MediaSoup resources
+      mediasoupService.cleanup(streamerId);
+      
+      // Notify the streamer they've been disconnected
+      socket.emit('stream-disconnected-by-admin', { 
+        reason: 'Disconnected by administrator',
+        timestamp: new Date().toISOString()
+      });
+      
+      // Disconnect the socket
+      socket.disconnect(true);
+      
+      // Notify all viewers
+      io.emit('stream-ended', { reason: 'admin_disconnect' });
+      
+      // After disconnecting a regular user, ensure viewbot rotation is enabled
+      if (global.viewBotRotation) {
+        console.log(`🤖 ROTATION: Enabling rotation after user disconnect`);
+        await global.viewBotRotation.startRotation();
+      }
+      
+      res.json({ 
+        success: true, 
+        message: 'Stream disconnected successfully',
+        streamerId,
+        rotationEnabled: true
+      });
     }
-    
-    console.log(`🔨 MODERATION: Admin disconnecting stream ${streamerId}`);
-    
-    // Clear the streamer
-    streamService.clearStreamer();
-    mediasoupService.currentStreamer = null;
-    
-    // Cleanup MediaSoup resources
-    mediasoupService.cleanup(streamerId);
-    
-    // Notify the streamer they've been disconnected
-    socket.emit('stream-disconnected-by-admin', { 
-      reason: 'Disconnected by administrator',
-      timestamp: new Date().toISOString()
-    });
-    
-    // Disconnect the socket
-    socket.disconnect(true);
-    
-    // Notify all viewers
-    io.emit('stream-ended', { reason: 'admin_disconnect' });
-    
-    res.json({ 
-      success: true, 
-      message: 'Stream disconnected successfully',
-      streamerId 
-    });
   } catch (error) {
-    console.error('❌ MODERATION: Failed to disconnect stream:', error);
+    console.error('❌ MODERATION: Failed to disconnect/rotate stream:', error);
     res.status(500).json({ error: 'Failed to disconnect stream' });
   }
 });
 
-app.post('/api/admin/stream/ban-ip', authenticateAdmin, async (req, res) => {
+app.post('/api/admin/stream/ban-ip', authenticateModerator, async (req, res) => {
   try {
     const { streamerId, ip, reason } = req.body;
     
@@ -3937,7 +3986,7 @@ app.post('/api/admin/stream/ban-ip', authenticateAdmin, async (req, res) => {
   }
 });
 
-app.get('/api/admin/banned-ips', authenticateAdmin, async (req, res) => {
+app.get('/api/admin/banned-ips', authenticateModerator, async (req, res) => {
   try {
     const bannedIPs = await IPBanService.getBannedIPs();
     res.json({ success: true, bannedIPs });
@@ -3947,7 +3996,7 @@ app.get('/api/admin/banned-ips', authenticateAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/admin/unban-ip', authenticateAdmin, async (req, res) => {
+app.post('/api/admin/unban-ip', authenticateModerator, async (req, res) => {
   try {
     const { ip } = req.body;
     
@@ -3975,7 +4024,7 @@ app.post('/api/admin/unban-ip', authenticateAdmin, async (req, res) => {
 });
 
 // Manual IP ban endpoint
-app.post('/api/admin/ban-ip-manual', authenticateAdmin, async (req, res) => {
+app.post('/api/admin/ban-ip-manual', authenticateModerator, async (req, res) => {
   try {
     const { ip, reason, permanent, expiresAt } = req.body;
     
@@ -4017,7 +4066,7 @@ app.post('/api/admin/ban-ip-manual', authenticateAdmin, async (req, res) => {
 });
 
 // Get streamer connection history
-app.get('/api/admin/streamer-connections', authenticateAdmin, async (req, res) => {
+app.get('/api/admin/streamer-connections', authenticateModerator, async (req, res) => {
   try {
     const { limit = 100, offset = 0, streamerId, ip } = req.query;
     
@@ -4058,7 +4107,7 @@ app.get('/api/admin/streamer-connections', authenticateAdmin, async (req, res) =
 const streamingLogsService = require('./services/StreamingLogsService');
 
 // Get streaming logs
-app.get('/api/admin/streaming-logs', authenticateAdmin, async (req, res) => {
+app.get('/api/admin/streaming-logs', authenticateModerator, async (req, res) => {
   try {
     const filters = {
       limit: parseInt(req.query.limit) || 100,
@@ -4085,7 +4134,7 @@ app.get('/api/admin/streaming-logs', authenticateAdmin, async (req, res) => {
 });
 
 // Get streaming logs statistics
-app.get('/api/admin/streaming-logs/stats', authenticateAdmin, async (req, res) => {
+app.get('/api/admin/streaming-logs/stats', authenticateModerator, async (req, res) => {
   try {
     const result = await streamingLogsService.getStats();
     
@@ -4101,7 +4150,7 @@ app.get('/api/admin/streaming-logs/stats', authenticateAdmin, async (req, res) =
 });
 
 // Ban IP from streaming log
-app.post('/api/admin/streaming-logs/ban-ip', authenticateAdmin, async (req, res) => {
+app.post('/api/admin/streaming-logs/ban-ip', authenticateModerator, async (req, res) => {
   try {
     const { ip, sessionId, reason } = req.body;
     

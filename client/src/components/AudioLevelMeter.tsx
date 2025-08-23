@@ -46,7 +46,7 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
         return;
       }
 
-      console.log('🎤 AUDIO METER: Setting up audio analyzer');
+      // console.log('🎤 AUDIO METER: Setting up audio analyzer');
 
       // Create audio context
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();

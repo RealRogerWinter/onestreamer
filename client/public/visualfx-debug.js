@@ -32,7 +32,7 @@ class VisualFxDebugPanel {
                 return;
             }
             
-            console.log('VisualFX Debug Panel: Admin access confirmed ✅');
+            // console.log('VisualFX Debug Panel: Admin access confirmed ✅');
 
             // Set up keyboard shortcuts
             this.setupKeyboardShortcuts();
@@ -41,7 +41,7 @@ class VisualFxDebugPanel {
             this.createDebugPanel();
             
             this.isInitialized = true;
-            console.log('VisualFX Debug Panel initialized (Press Ctrl+Shift+V to open)');
+            // console.log('VisualFX Debug Panel initialized (Press Ctrl+Shift+V to open)');
         } catch (error) {
             console.error('Failed to initialize VisualFX Debug Panel:', error);
         }
@@ -566,7 +566,7 @@ class VisualFxDebugPanel {
         const logEl = document.getElementById('debug-log') || document.getElementById('console-log');
         
         // Always log to console as well
-        console.log(`[VisualFX Debug] ${level.toUpperCase()}: ${message}`);
+        // console.log(`[VisualFX Debug] ${level.toUpperCase()}: ${message}`);
         
         if (!logEl) {
             return;
@@ -688,7 +688,7 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 // Show initialization message in console
-console.log(`
+/* console.log(`
 🎬 VisualFX Debug Panel loaded!
    
 📋 Quick Commands:

@@ -26,7 +26,7 @@ export class TestStreamGenerator {
     // Capture stream from canvas
     const stream = this.canvas.captureStream(this.frameRate);
     
-    console.log('📹 TEST: Generated video stream with tracks:', stream.getVideoTracks().length);
+    // console.log('📹 TEST: Generated video stream with tracks:', stream.getVideoTracks().length);
     return stream;
   }
 
@@ -55,7 +55,7 @@ export class TestStreamGenerator {
     // Start oscillator
     this.oscillator.start();
     
-    console.log('🎵 TEST: Generated audio stream with tracks:', destination.stream.getAudioTracks().length);
+    // console.log('🎵 TEST: Generated audio stream with tracks:', destination.stream.getAudioTracks().length);
     return destination.stream;
   }
 
@@ -75,8 +75,8 @@ export class TestStreamGenerator {
       combinedStream.addTrack(track);
     });
     
-    console.log('🎬 TEST: Generated combined stream - Video tracks:', 
-      combinedStream.getVideoTracks().length, 'Audio tracks:', combinedStream.getAudioTracks().length);
+    // console.log('🎬 TEST: Generated combined stream - Video tracks:', 
+    //   combinedStream.getVideoTracks().length, 'Audio tracks:', combinedStream.getAudioTracks().length);
     
     return combinedStream;
   }
@@ -301,7 +301,7 @@ export class TestStreamGenerator {
     this.canvas = null;
     this.ctx = null;
     
-    console.log('🧹 TEST: Test stream generator cleaned up');
+    // console.log('🧹 TEST: Test stream generator cleaned up');
   }
 }
 

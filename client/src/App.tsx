@@ -23,6 +23,7 @@ import DesktopHeaderV2 from './components/DesktopHeaderV2';
 import OAuthCallback from './components/OAuthCallback';
 import BugReportModal from './components/BugReportModal';
 import EmailVerification from './components/EmailVerification';
+import PasswordReset from './components/PasswordReset';
 import ModerationPanel from './components/ModerationPanel';
 import BotsPanel from './components/BotsPanel';
 import authService from './services/AuthService';
@@ -59,18 +60,27 @@ function AppContent() {
   const isEmailVerification = /^\/verify-email\/[a-fA-F0-9]+$/i.test(currentPath);
   const [showEmailVerification, setShowEmailVerification] = useState(isEmailVerification);
   
+  // Check if we're on the password reset page
+  const isPasswordReset = /^\/reset-password\/[a-fA-F0-9]+$/i.test(currentPath);
+  const [showPasswordReset, setShowPasswordReset] = useState(isPasswordReset);
+  
   useEffect(() => {
-    console.log(`🔴 AppContent Instance #${instanceId.current} created`);
-    console.log('📧 Email Verification Check - Path:', currentPath, 'Is verification?:', isEmailVerification);
+    // console.log(`🔴 AppContent Instance #${instanceId.current} created`);
+    // console.log('📧 Email Verification Check - Path:', currentPath, 'Is verification?:', isEmailVerification);
     
     // Check on mount if we need to show email verification
     if (currentPath.startsWith('/verify-email/')) {
-      console.log('📧 Setting showEmailVerification to true');
+      // console.log('📧 Setting showEmailVerification to true');
       setShowEmailVerification(true);
     }
     
+    // Check on mount if we need to show password reset
+    if (currentPath.startsWith('/reset-password/')) {
+      setShowPasswordReset(true);
+    }
+    
     return () => {
-      console.log(`🟢 AppContent Instance #${instanceId.current} destroyed`);
+      // console.log(`🟢 AppContent Instance #${instanceId.current} destroyed`);
     };
   }, []);
   
@@ -78,7 +88,7 @@ function AppContent() {
   useEffect(() => {
     const token = authService.getToken();
     if (token && isAuthenticated) {
-      console.log('🔑 App: Initializing socket authentication on app load');
+      // console.log('🔑 App: Initializing socket authentication on app load');
       SocketManager.updateAuth(token);
     }
   }, []); // Only run once on mount
@@ -115,6 +125,7 @@ function AppContent() {
   const [showLogin, setShowLogin] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isModerator, setIsModerator] = useState(false);
 
   // Inventory state
   const [showInventory, setShowInventory] = useState(false);
@@ -192,7 +203,7 @@ function AppContent() {
   // Handle socket disconnection for active streamer
   useEffect(() => {
     if (!connected && isStreaming) {
-      console.log('🔌 CLIENT: Socket disconnected while streaming');
+      // console.log('🔌 CLIENT: Socket disconnected while streaming');
       setIsStreaming(false);
       setIsForceDisconnected(true);
       
@@ -215,7 +226,7 @@ function AppContent() {
     
     // Reset force disconnect state when reconnected
     if (connected && isForceDisconnected) {
-      console.log('🔌 CLIENT: Reconnected after force disconnect');
+      // console.log('🔌 CLIENT: Reconnected after force disconnect');
       setIsForceDisconnected(false);
       setDisconnectionReason(null);
     }
@@ -310,17 +321,17 @@ function AppContent() {
     });
 
     socket.on('cooldown-status-update', (data: { globalCooldown: any, timestamp: number }) => {
-      console.log('🛡️ CLIENT: Cooldown status update from item:', data);
+      // console.log('🛡️ CLIENT: Cooldown status update from item:', data);
       if (data.globalCooldown) {
         const remaining = data.globalCooldown.remainingSeconds || data.globalCooldown.remaining || 0;
-        console.log('🛡️ CLIENT: Setting cooldown to', remaining, 'seconds');
+        // console.log('🛡️ CLIENT: Setting cooldown to', remaining, 'seconds');
         setCooldownRemaining(Math.ceil(remaining));
         startCooldownTimer(Math.ceil(remaining));
       }
     });
 
     socket.on('streaming-approved', () => {
-      console.log('✅ CLIENT: Streaming approved! Starting stream...');
+      // console.log('✅ CLIENT: Streaming approved! Starting stream...');
       setIsStreaming(true);
       setError(null);
       
@@ -334,11 +345,11 @@ function AppContent() {
       }, 2000);
       
       // Log the state change
-      console.log('✅ CLIENT: isStreaming set to true');
+      // console.log('✅ CLIENT: isStreaming set to true');
     });
 
     socket.on('takeover-approved', () => {
-      console.log('✅ CLIENT: Takeover approved!');
+      // console.log('✅ CLIENT: Takeover approved!');
       setIsStreaming(true);
       setError(null);
       
@@ -353,7 +364,7 @@ function AppContent() {
     });
 
     socket.on('takeover-denied', (data: { reason: string, cooldownRemaining: number }) => {
-      console.log('🚫 CLIENT: Takeover denied:', data.reason);
+      // console.log('🚫 CLIENT: Takeover denied:', data.reason);
       setCooldownRemaining(data.cooldownRemaining);
       startCooldownTimer(data.cooldownRemaining);
       setError(data.reason);
@@ -361,14 +372,14 @@ function AppContent() {
 
     // Keep backward compatibility with old event name
     socket.on('takeover-blocked', (data: { message: string, cooldownRemaining: number }) => {
-      console.log('🚫 CLIENT: Takeover blocked (legacy):', data.message);
+      // console.log('🚫 CLIENT: Takeover blocked (legacy):', data.message);
       setCooldownRemaining(data.cooldownRemaining);
       startCooldownTimer(data.cooldownRemaining);
       setError(data.message);
     });
 
     socket.on('admin-notification', (data: { message: string; type: string }) => {
-      console.log('📢 ADMIN:', data.message);
+      // console.log('📢 ADMIN:', data.message);
       setError(data.message);
       setTimeout(() => setError(null), 5000);
     });
@@ -388,7 +399,7 @@ function AppContent() {
     socket.on('time-stats-update', (data: any) => {
       // Only process updates for the current user
       if (currentUser && data.userId && data.userId !== currentUser.id) {
-        console.log('📊 CLIENT: Ignoring update for different user', data.userId, '!==', currentUser?.id);
+        // console.log('📊 CLIENT: Ignoring update for different user', data.userId, '!==', currentUser?.id);
         return;
       }
       
@@ -398,7 +409,7 @@ function AppContent() {
           if (data.points > prevPoints && window.showFloatingPoints) {
             const pointsGained = data.points - prevPoints;
             const source = data.pointSource || data.updateType || 'general';
-            console.log('🎯 Points increased via time-stats-update!', prevPoints, '->', data.points, '(+' + pointsGained + ')', 'Source:', source);
+            // console.log('🎯 Points increased via time-stats-update!', prevPoints, '->', data.points, '(+' + pointsGained + ')', 'Source:', source);
             window.showFloatingPoints(pointsGained, source);
           }
           return data.points;
@@ -407,13 +418,13 @@ function AppContent() {
     });
 
     socket.on('points-updated', (data: { points: number }) => {
-      console.log('💎 CLIENT: Received points-updated:', data);
+      // console.log('💎 CLIENT: Received points-updated:', data);
       setUserPoints(data.points);
     });
 
     // Handle force disconnect from killswitch or admin
     socket.on('force-disconnect', (data: { reason: string; activatedBy?: string; message: string }) => {
-      console.log('💥 CLIENT: Force disconnect received:', data);
+      // console.log('💥 CLIENT: Force disconnect received:', data);
       if (isStreaming) {
         setIsStreaming(false);
         setIsForceDisconnected(true);
@@ -455,7 +466,7 @@ function AppContent() {
 
     // Handle kill switch activation notification
     socket.on('kill-switch-activated', (data: { activatedBy: string; targetStreamer: string; message: string }) => {
-      console.log('💥 CLIENT: Kill switch activated notification:', data);
+      // console.log('💥 CLIENT: Kill switch activated notification:', data);
       // Show notification to all users about the kill switch (but not the disconnected user)
       if (!isForceDisconnected) {
         setError(data.message);
@@ -465,7 +476,7 @@ function AppContent() {
 
     // Handle stream takeover event (sent to the current streamer being taken over)
     socket.on('stream-takeover', (data: { newStreamerId: string; cooldownRemaining: number }) => {
-      console.log('🔄 CLIENT: Stream takeover event received:', data);
+      // console.log('🔄 CLIENT: Stream takeover event received:', data);
       if (isStreaming) {
         setIsStreaming(false);
         setWasStreamingBeforeTakeover(true);
@@ -531,7 +542,9 @@ function AppContent() {
   useEffect(() => {
     const checkAdmin = async () => {
       const adminStatus = await authService.isAdmin();
+      const moderatorStatus = await authService.isModerator();
       setIsAdmin(adminStatus);
+      setIsModerator(moderatorStatus);
     };
     
     if (isAuthenticated) {
@@ -549,7 +562,7 @@ function AppContent() {
       if (response.ok) {
         const data = await response.json();
         const points = data.stats?.points || 0;
-        console.log('📊 Fetched user points from /me endpoint:', points);
+        // console.log('📊 Fetched user points from /me endpoint:', points);
         setUserPoints(points);
       }
     } catch (error) {
@@ -617,11 +630,11 @@ function AppContent() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      // Admin panel shortcut (Ctrl+Shift+A) - only for admins
+      // Admin panel shortcut (Ctrl+Shift+A) - for admins and moderators
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
         e.preventDefault();
-        // Only toggle if user is admin
-        if (isAdmin) {
+        // Only toggle if user is admin or moderator
+        if (isAdmin || isModerator) {
           setShowAdminPanel(!showAdminPanel);
         }
       }
@@ -638,7 +651,7 @@ function AppContent() {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [showAdminPanel, showInventory, isAuthenticated, isAdmin]);
+  }, [showAdminPanel, showInventory, isAuthenticated, isAdmin, isModerator]);
 
   // If we're on the OAuth callback page, show the callback handler
   if (isOAuthCallback) {
@@ -739,6 +752,7 @@ function AppContent() {
           currentUser={currentUser}
           userPoints={userPoints}
           isAdmin={isAdmin}
+          isModerator={isModerator}
           socket={socket}
           onLogin={() => setShowLogin(true)}
           onSignup={() => setShowSignup(true)}
@@ -773,20 +787,20 @@ function AppContent() {
                 } else if ((profile as any).pointSource === 'viewing' || (profile as any).sessionType === 'viewing') {
                   source = 'viewing';
                   pointsGained = totalDiff;
-                  console.log('🎯 Viewing session detected! SessionTime:', (profile as any).currentSessionTime, 'seconds');
+                  // console.log('🎯 Viewing session detected! SessionTime:', (profile as any).currentSessionTime, 'seconds');
                 } else {
                   source = 'general';
                   pointsGained = totalDiff;
                 }
               }
               
-              console.log('🎯 Points increased!', prevPoints, '->', profile.points, '(+' + pointsGained + ')', 'Source:', source, 'UpdateType:', profile.updateType, 'PointSource:', (profile as any).pointSource, 'SessionType:', (profile as any).sessionType, 'SessionTime:', (profile as any).currentSessionTime);
+              // console.log('🎯 Points increased!', prevPoints, '->', profile.points, '(+' + pointsGained + ')', 'Source:', source, 'UpdateType:', profile.updateType, 'PointSource:', (profile as any).pointSource, 'SessionType:', (profile as any).sessionType, 'SessionTime:', (profile as any).currentSessionTime);
               
               if (window.showFloatingPoints) {
-                console.log('🎯 Triggering floating points animation for', source);
+                // console.log('🎯 Triggering floating points animation for', source);
                 window.showFloatingPoints(pointsGained, source);
               } else {
-                console.log('❌ window.showFloatingPoints not available');
+                // console.log('❌ window.showFloatingPoints not available');
               }
             }
           }}
@@ -878,10 +892,10 @@ function AppContent() {
                   console.warn('Cannot take over stream: Socket not connected');
                   return;
                 }
-                console.log('Emitting request-to-stream event', { 
-                  hasActiveStream: streamStatus.hasActiveStream,
-                  currentStreamerId: streamStatus.streamerId 
-                });
+                // console.log('Emitting request-to-stream event', { 
+                //   hasActiveStream: streamStatus.hasActiveStream,
+                //   currentStreamerId: streamStatus.streamerId 
+                // });
                 // Always emit request-to-stream - the server handles both new streams and takeovers
                 socket.emit('request-to-stream', {
                   streamType: 'webcam',
@@ -893,7 +907,7 @@ function AppContent() {
                   console.warn('Cannot stop stream: Socket not connected');
                   return;
                 }
-                console.log('Emitting stop-streaming event');
+                // console.log('Emitting stop-streaming event');
                 socket.emit('stop-streaming');
                 setIsStreaming(false);
               }}
@@ -959,6 +973,16 @@ function AppContent() {
           onSuccess={() => {
             setShowEmailVerification(false);
             handleLogin(); // Refresh user data after verification
+          }}
+        />
+      )}
+
+      {showPasswordReset && (
+        <PasswordReset
+          onClose={() => setShowPasswordReset(false)}
+          onSuccess={() => {
+            setShowPasswordReset(false);
+            // Password reset successful, user can now login
           }}
         />
       )}
@@ -1055,7 +1079,7 @@ function AppContent() {
                     console.warn('Cannot stop stream: Socket not connected');
                     return;
                   }
-                  console.log('Emitting stop-streaming event');
+                  // console.log('Emitting stop-streaming event');
                   socket.emit('stop-streaming');
                   setIsStreaming(false);
                 }

@@ -86,7 +86,7 @@ export class StreamSwitchManager {
       };
     }
 
-    console.log(`🔄 STREAM SWITCH: Attempting switch to ${newStreamId}`);
+    // console.log(`🔄 STREAM SWITCH: Attempting switch to ${newStreamId}`);
     
     this.switchStartTime = Date.now();
     this.currentRetryCount = 0;
@@ -98,7 +98,7 @@ export class StreamSwitchManager {
 
     // Quick check - if switching to the same stream we're already on successfully, skip
     if (newStreamId === this.lastSuccessfulStreamId && !this.fallbackMode) {
-      console.log(`📺 STREAM SWITCH: Already connected to ${newStreamId}, no switch needed`);
+      // console.log(`📺 STREAM SWITCH: Already connected to ${newStreamId}, no switch needed`);
       this.setState('idle');
       
       const result: StreamSwitchResult = {
@@ -124,7 +124,7 @@ export class StreamSwitchManager {
       this.currentRetryCount = attempt;
 
       if (attempt > 0) {
-        console.log(`🔄 STREAM SWITCH: Retry attempt ${attempt}/${this.config.maxRetryAttempts}`);
+        // console.log(`🔄 STREAM SWITCH: Retry attempt ${attempt}/${this.config.maxRetryAttempts}`);
         this.setState('retrying');
         
         if (this.callbacks.onRetryAttempt) {
@@ -149,7 +149,7 @@ export class StreamSwitchManager {
             switchDuration: Date.now() - this.switchStartTime
           };
 
-          console.log(`✅ STREAM SWITCH: Successfully switched to ${streamId} after ${attempt} attempts`);
+          // console.log(`✅ STREAM SWITCH: Successfully switched to ${streamId} after ${attempt} attempts`);
           
           if (this.callbacks.onSwitchSuccess) {
             this.callbacks.onSwitchSuccess(switchResult);
@@ -218,7 +218,7 @@ export class StreamSwitchManager {
   // Perform the actual WebRTC stream switch
   private async performActualSwitch(streamId: string): Promise<boolean> {
     try {
-      console.log(`📡 STREAM SWITCH: Recreating transports for ${streamId}`);
+      // console.log(`📡 STREAM SWITCH: Recreating transports for ${streamId}`);
       
       // Recreate transports to ensure clean state
       await this.mediasoupClient.recreateTransports();
@@ -230,11 +230,11 @@ export class StreamSwitchManager {
       if (streamId && streamId !== 'test-stream') {
         // For non-test streams, we need to verify the streamer is available
         // This is likely why we're getting no tracks - the streamId doesn't correspond to an active streamer
-        console.log(`⚠️ STREAM SWITCH: Attempting switch to ${streamId}, but may not be active`);
+        // console.log(`⚠️ STREAM SWITCH: Attempting switch to ${streamId}, but may not be active`);
       }
       
       // Attempt to consume the new stream
-      console.log(`📺 STREAM SWITCH: Consuming stream ${streamId}`);
+      // console.log(`📺 STREAM SWITCH: Consuming stream ${streamId}`);
       const stream = await this.mediasoupClient.consume();
       
       if (!stream) {
@@ -245,7 +245,7 @@ export class StreamSwitchManager {
         throw new Error(`Stream ${streamId} exists but has no tracks. Streamer may not be sending media.`);
       }
 
-      console.log(`✅ STREAM SWITCH: Successfully obtained stream with ${stream.getTracks().length} tracks`);
+      // console.log(`✅ STREAM SWITCH: Successfully obtained stream with ${stream.getTracks().length} tracks`);
       return true;
 
     } catch (error) {
@@ -275,7 +275,7 @@ export class StreamSwitchManager {
       return result;
     }
 
-    console.log(`🔄 STREAM SWITCH: Activating fallback mode for ${streamId}`);
+    // console.log(`🔄 STREAM SWITCH: Activating fallback mode for ${streamId}`);
     this.setState('fallback');
     this.fallbackMode = true;
 
@@ -295,7 +295,7 @@ export class StreamSwitchManager {
     };
 
     if (fallbackSuccess) {
-      console.log('✅ STREAM SWITCH: Fallback successful');
+      // console.log('✅ STREAM SWITCH: Fallback successful');
       this.setState('idle');
       if (this.callbacks.onSwitchSuccess) {
         this.callbacks.onSwitchSuccess(result);
@@ -326,11 +326,11 @@ export class StreamSwitchManager {
       const strategyName = ['LastKnownStream', 'LowerQuality', 'TestStream', 'BasicConnection'][i];
       
       try {
-        console.log(`🔄 STREAM SWITCH: Trying fallback strategy: ${strategyName}`);
+        // console.log(`🔄 STREAM SWITCH: Trying fallback strategy: ${strategyName}`);
         const success = await strategies[i]();
         
         if (success) {
-          console.log(`✅ STREAM SWITCH: Fallback strategy ${strategyName} succeeded`);
+          // console.log(`✅ STREAM SWITCH: Fallback strategy ${strategyName} succeeded`);
           return true;
         }
         
@@ -355,7 +355,7 @@ export class StreamSwitchManager {
     }
 
     try {
-      console.log(`🔄 STREAM SWITCH: Falling back to last known stream: ${this.lastSuccessfulStreamId}`);
+      // console.log(`🔄 STREAM SWITCH: Falling back to last known stream: ${this.lastSuccessfulStreamId}`);
       return await this.performActualSwitch(this.lastSuccessfulStreamId);
     } catch (error) {
       return false;
@@ -369,7 +369,7 @@ export class StreamSwitchManager {
     }
 
     try {
-      console.log('🔄 STREAM SWITCH: Attempting lower quality fallback');
+      // console.log('🔄 STREAM SWITCH: Attempting lower quality fallback');
       
       // This would typically involve requesting a lower quality version
       // For now, we'll just try the regular switch with more lenient settings
@@ -383,7 +383,7 @@ export class StreamSwitchManager {
   // Fallback to test stream
   private async fallbackToTestStream(): Promise<boolean> {
     try {
-      console.log('🔄 STREAM SWITCH: Attempting test stream fallback');
+      // console.log('🔄 STREAM SWITCH: Attempting test stream fallback');
       
       // Emit request for test stream and wait for confirmation
       const testStreamPromise = new Promise<boolean>((resolve) => {
@@ -392,7 +392,7 @@ export class StreamSwitchManager {
         const handleTestStreamAvailable = (data: { streamId: string }) => {
           clearTimeout(timeout);
           this.socket.off('test-stream-available', handleTestStreamAvailable);
-          console.log(`🧪 STREAM SWITCH: Test stream available: ${data.streamId}`);
+          // console.log(`🧪 STREAM SWITCH: Test stream available: ${data.streamId}`);
           resolve(true);
         };
         
@@ -420,7 +420,7 @@ export class StreamSwitchManager {
   // Fallback to basic connection (no media)
   private async fallbackToBasicConnection(): Promise<boolean> {
     try {
-      console.log('🔄 STREAM SWITCH: Attempting basic connection fallback');
+      // console.log('🔄 STREAM SWITCH: Attempting basic connection fallback');
       
       // Just ensure we have a valid MediaSoup device connection
       await this.mediasoupClient.initialize();
@@ -431,7 +431,7 @@ export class StreamSwitchManager {
         return false;
       }
       
-      console.log('✅ STREAM SWITCH: Basic connection fallback successful - maintaining connection without media consumption');
+      // console.log('✅ STREAM SWITCH: Basic connection fallback successful - maintaining connection without media consumption');
       // Don't actually consume media, just maintain connection
       return true;
     } catch (error) {
@@ -444,7 +444,7 @@ export class StreamSwitchManager {
   cancelSwitch(): void {
     if (this.state === 'idle') return;
 
-    console.log('🛑 STREAM SWITCH: Canceling ongoing switch operation');
+    // console.log('🛑 STREAM SWITCH: Canceling ongoing switch operation');
     
     if (this.switchTimeoutId) {
       clearTimeout(this.switchTimeoutId);
@@ -466,7 +466,7 @@ export class StreamSwitchManager {
       return true;
     }
 
-    console.log('🔄 STREAM SWITCH: Attempting to exit fallback mode');
+    // console.log('🔄 STREAM SWITCH: Attempting to exit fallback mode');
     
     try {
       // Try to restore normal operation
@@ -475,7 +475,7 @@ export class StreamSwitchManager {
       this.fallbackMode = false;
       this.setState('idle');
       
-      console.log('✅ STREAM SWITCH: Successfully exited fallback mode');
+      // console.log('✅ STREAM SWITCH: Successfully exited fallback mode');
       return true;
     } catch (error) {
       console.error('❌ STREAM SWITCH: Failed to exit fallback mode:', error);
@@ -493,7 +493,7 @@ export class StreamSwitchManager {
   private setState(newState: StreamSwitchState): void {
     if (this.state === newState) return;
     
-    console.log(`🔄 STREAM SWITCH: State change: ${this.state} -> ${newState}`);
+    // console.log(`🔄 STREAM SWITCH: State change: ${this.state} -> ${newState}`);
     this.state = newState;
     
     if (this.callbacks.onStateChange) {

@@ -21,7 +21,7 @@ class SocketManager {
   private creationCount = { main: 0, chat: 0 };
 
   private constructor() {
-    console.log('🔧 SocketManager: Singleton instance created at', new Date().toISOString());
+    // console.log('🔧 SocketManager: Singleton instance created at', new Date().toISOString());
     console.trace('SocketManager constructor called from:');
     // Make it accessible globally for debugging
     (window as any).__SOCKET_MANAGER__ = this;
@@ -31,12 +31,12 @@ class SocketManager {
   public static getInstance(): SocketManager {
     // Check window first (survives HMR)
     if (window.__SOCKET_MANAGER_INSTANCE__) {
-      console.log('♻️ SocketManager: Returning existing instance from window');
+      // console.log('♻️ SocketManager: Returning existing instance from window');
       return window.__SOCKET_MANAGER_INSTANCE__;
     }
     
     if (!SocketManager.instance) {
-      console.log('🆕 SocketManager: Creating new instance');
+      // console.log('🆕 SocketManager: Creating new instance');
       SocketManager.instance = new SocketManager();
       window.__SOCKET_MANAGER_INSTANCE__ = SocketManager.instance;
     }
@@ -46,7 +46,7 @@ class SocketManager {
   public getMainSocket(): Socket {
     if (!this.mainSocket) {
       this.creationCount.main++;
-      console.log(`🔌 SocketManager: Creating main socket connection... (Attempt #${this.creationCount.main})`);
+      // console.log(`🔌 SocketManager: Creating main socket connection... (Attempt #${this.creationCount.main})`);
       
       const authToken = localStorage.getItem('auth_token');
       const serverUrl = process.env.REACT_APP_SERVER_URL || 'https://onestreamer.live';
@@ -67,7 +67,7 @@ class SocketManager {
       });
 
       this.mainSocket.on('connect', () => {
-        console.log('✅ SocketManager: Main socket connected:', this.mainSocket?.id);
+        // console.log('✅ SocketManager: Main socket connected:', this.mainSocket?.id);
         SocketDebugger.registerConnection(`main-${this.mainSocket?.id}`, this.mainSocket);
         // Track connection globally
         (window as any).__SOCKET_CONNECTIONS__.push({
@@ -78,10 +78,10 @@ class SocketManager {
       });
 
       this.mainSocket.on('disconnect', (reason) => {
-        console.log('❌ SocketManager: Main socket disconnected:', reason);
+        // console.log('❌ SocketManager: Main socket disconnected:', reason);
       });
     } else {
-      console.log('♻️ SocketManager: Reusing existing main socket:', this.mainSocket.id);
+      // console.log('♻️ SocketManager: Reusing existing main socket:', this.mainSocket.id);
     }
 
     return this.mainSocket;
@@ -90,13 +90,13 @@ class SocketManager {
   public getChatSocket(): Socket {
     if (!this.chatSocket) {
       this.creationCount.chat++;
-      console.log(`💬 SocketManager: Creating chat socket connection... (Attempt #${this.creationCount.chat})`);
+      // console.log(`💬 SocketManager: Creating chat socket connection... (Attempt #${this.creationCount.chat})`);
       
       const authToken = localStorage.getItem('auth_token');
       const chatServerUrl = process.env.REACT_APP_CHAT_SERVER_URL || 'https://onestreamer.live';
       
       SocketDebugger.logCreationAttempt('chat', chatServerUrl);
-      console.log('🔵 CHAT: Creating socket with URL:', chatServerUrl, 'and path:', '/chat/socket.io/');
+      // console.log('🔵 CHAT: Creating socket with URL:', chatServerUrl, 'and path:', '/chat/socket.io/');
       
       this.chatSocket = io(chatServerUrl, {
         path: '/chat/socket.io/',
@@ -113,7 +113,7 @@ class SocketManager {
       });
 
       this.chatSocket.on('connect', () => {
-        console.log('✅ SocketManager: Chat socket connected:', this.chatSocket?.id);
+        // console.log('✅ SocketManager: Chat socket connected:', this.chatSocket?.id);
         SocketDebugger.registerConnection(`chat-${this.chatSocket?.id}`, this.chatSocket);
         // Track connection globally
         (window as any).__SOCKET_CONNECTIONS__.push({
@@ -124,7 +124,7 @@ class SocketManager {
       });
 
       this.chatSocket.on('disconnect', (reason) => {
-        console.log('❌ SocketManager: Chat socket disconnected:', reason);
+        // console.log('❌ SocketManager: Chat socket disconnected:', reason);
       });
 
       this.chatSocket.on('connect_error', (error: any) => {
@@ -134,13 +134,13 @@ class SocketManager {
 
       // Ensure connection is initiated
       if (!this.chatSocket.connected) {
-        console.log('🔌 SocketManager: Initiating chat socket connection...');
+        // console.log('🔌 SocketManager: Initiating chat socket connection...');
         this.chatSocket.connect();
       }
     } else {
-      console.log('♻️ SocketManager: Reusing existing chat socket:', this.chatSocket.id);
+      // console.log('♻️ SocketManager: Reusing existing chat socket:', this.chatSocket.id);
       if (!this.chatSocket.connected) {
-        console.log('🔌 SocketManager: Reconnecting chat socket...');
+        // console.log('🔌 SocketManager: Reconnecting chat socket...');
         this.chatSocket.connect();
       }
     }
@@ -149,7 +149,7 @@ class SocketManager {
   }
 
   public updateAuth(token: string | null): void {
-    console.log('🔑 SocketManager: Updating authentication...');
+    // console.log('🔑 SocketManager: Updating authentication...');
     
     if (this.mainSocket) {
       this.mainSocket.disconnect();
@@ -165,7 +165,7 @@ class SocketManager {
   }
 
   public cleanup(): void {
-    console.log('🧹 SocketManager: Cleaning up connections...');
+    // console.log('🧹 SocketManager: Cleaning up connections...');
     
     if (this.mainSocket) {
       this.mainSocket.disconnect();

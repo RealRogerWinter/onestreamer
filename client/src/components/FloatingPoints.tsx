@@ -44,7 +44,7 @@ const FloatingPoints: React.FC<FloatingPointsProps> = ({
   }, [onAnimationComplete]);
 
   // Log for debugging
-  console.log('🎯 Floating points rendering with target:', targetPosition);
+  // console.log('🎯 Floating points rendering with target:', targetPosition);
   
   return (
     <div 
@@ -74,9 +74,9 @@ export const FloatingPointsManager: React.FC<FloatingPointsManagerProps> = ({ ch
           x: rect.left + rect.width / 2,
           y: rect.top + rect.height / 2
         });
-        console.log('📍 Points counter position updated:', rect.left + rect.width / 2, rect.top + rect.height / 2);
+        // console.log('📍 Points counter position updated:', rect.left + rect.width / 2, rect.top + rect.height / 2);
       } else {
-        console.log('⚠️ Points counter element not found, will retry...');
+        // console.log('⚠️ Points counter element not found, will retry...');
       }
     };
 
@@ -113,7 +113,7 @@ export const FloatingPointsManager: React.FC<FloatingPointsManagerProps> = ({ ch
       
       // Debounce: ignore if same amount within 100ms (likely duplicate)
       if (now - lastPointTime < 100 && amount === lastPointAmount) {
-        console.log('🚫 Ignoring duplicate floating point:', amount, source);
+        // console.log('🚫 Ignoring duplicate floating point:', amount, source);
         return;
       }
       

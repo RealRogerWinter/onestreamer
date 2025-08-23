@@ -17,6 +17,7 @@ interface DesktopHeaderV2Props {
   currentUser: any;
   userPoints: number;
   isAdmin: boolean;
+  isModerator?: boolean;
   
   // Actions
   onLogin: () => void;
@@ -40,6 +41,7 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
   currentUser,
   userPoints,
   isAdmin,
+  isModerator = false,
   onLogin,
   onSignup,
   onLogout,
@@ -207,12 +209,12 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
         <div className="header-v2-right">
           {isAuthenticated ? (
             <div className="user-area-modern">
-              {/* Admin Button - Moved to the left */}
-              {isAdmin && (
+              {/* Admin/Moderator Button - Moved to the left */}
+              {(isAdmin || isModerator) && (
                 <button 
                   className="admin-btn-modern"
                   onClick={onAdminPanel}
-                  title="Admin Panel (Ctrl+Shift+A)"
+                  title={`${isAdmin ? 'Admin' : 'Moderator'} Panel (Ctrl+Shift+A)`}
                 >
                   <div className="admin-btn-bg"></div>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -222,8 +224,8 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
                 </button>
               )}
 
-              {/* Divider for admins */}
-              {isAdmin && <div className="header-divider-vertical"></div>}
+              {/* Divider for admins/moderators */}
+              {(isAdmin || isModerator) && <div className="header-divider-vertical"></div>}
 
               {/* Points Display with Animation Target */}
               <div className="points-display-modern points-counter">

@@ -23,6 +23,7 @@ interface ModerationPanelProps {
 const ModerationPanel: React.FC<ModerationPanelProps> = ({ streamStatus }) => {
   const { socket } = useMainSocket();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isModerator, setIsModerator] = useState(false);
   const [isPanelVisible, setIsPanelVisible] = useState(() => {
     // Load panel visibility preference from localStorage
     const saved = localStorage.getItem('moderationPanelVisible');
@@ -49,17 +50,18 @@ const ModerationPanel: React.FC<ModerationPanelProps> = ({ streamStatus }) => {
   }, [isPanelVisible]);
 
   useEffect(() => {
-    if (streamStatus.hasActiveStream && streamStatus.streamerId && isAdmin) {
+    if (streamStatus.hasActiveStream && streamStatus.streamerId && (isAdmin || isModerator)) {
       fetchStreamDetails(streamStatus.streamerId);
     } else {
       setStreamDetails(null);
     }
-  }, [streamStatus.hasActiveStream, streamStatus.streamerId, isAdmin]);
+  }, [streamStatus.hasActiveStream, streamStatus.streamerId, isAdmin, isModerator]);
 
   const checkAdminStatus = async () => {
     const token = authService.getToken();
     if (!token) {
       setIsAdmin(false);
+      setIsModerator(false);
       return;
     }
 
@@ -71,13 +73,17 @@ const ModerationPanel: React.FC<ModerationPanelProps> = ({ streamStatus }) => {
       });
 
       if (response.ok) {
-        setIsAdmin(true);
+        const data = await response.json();
+        setIsAdmin(data.isAdmin || false);
+        setIsModerator(data.isModerator || false);
       } else {
         setIsAdmin(false);
+        setIsModerator(false);
       }
     } catch (error) {
       console.error('Failed to verify admin status:', error);
       setIsAdmin(false);
+      setIsModerator(false);
     }
   };
 
@@ -128,7 +134,12 @@ const ModerationPanel: React.FC<ModerationPanelProps> = ({ streamStatus }) => {
       });
 
       if (response.ok) {
-        showNotification('success', 'Stream disconnected successfully');
+        const result = await response.json();
+        // Show appropriate message based on whether it was a rotation or disconnect
+        const message = result.message === 'Viewbot rotation triggered' 
+          ? 'Viewbot rotation triggered successfully'
+          : 'Stream disconnected successfully';
+        showNotification('success', message);
         setStreamDetails(null);
       } else {
         const error = await response.json();
@@ -197,7 +208,7 @@ const ModerationPanel: React.FC<ModerationPanelProps> = ({ streamStatus }) => {
   };
 
   // Don't render if not admin
-  if (!isAdmin) {
+  if (!isAdmin && !isModerator) {
     return null;
   }
 

@@ -57,14 +57,14 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const instanceId = React.useRef(++providerInstanceCount);
   
   React.useEffect(() => {
-    console.log(`🔴 SocketProvider Instance #${instanceId.current} created`);
+    // console.log(`🔴 SocketProvider Instance #${instanceId.current} created`);
     return () => {
-      console.log(`🟢 SocketProvider Instance #${instanceId.current} destroyed`);
+      // console.log(`🟢 SocketProvider Instance #${instanceId.current} destroyed`);
     };
   }, []);
 
   useEffect(() => {
-    console.log(`🔌 SocketContext Instance #${instanceId.current}: Initializing with SocketManager...`);
+    // console.log(`🔌 SocketContext Instance #${instanceId.current}: Initializing with SocketManager...`);
     
     // Get sockets from singleton manager
     const main = SocketManager.getMainSocket();
@@ -75,13 +75,13 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     
     // Setup event listeners for connection state
     const handleMainConnect = () => {
-      console.log('✅ SocketContext: Main socket connected');
+      // console.log('✅ SocketContext: Main socket connected');
       setConnected(true);
       setError(null);
     };
     
     const handleMainDisconnect = () => {
-      console.log('❌ SocketContext: Main socket disconnected');
+      // console.log('❌ SocketContext: Main socket disconnected');
       setConnected(false);
     };
     
@@ -91,12 +91,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     };
     
     const handleChatConnect = () => {
-      console.log('✅ SocketContext: Chat socket connected');
+      // console.log('✅ SocketContext: Chat socket connected');
       setChatConnected(true);
     };
     
     const handleChatDisconnect = () => {
-      console.log('❌ SocketContext: Chat socket disconnected');
+      // console.log('❌ SocketContext: Chat socket disconnected');
       setChatConnected(false);
     };
     
@@ -114,7 +114,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     
     // Cleanup listeners on unmount
     return () => {
-      console.log('🔌 SocketContext: Cleaning up listeners...');
+      // console.log('🔌 SocketContext: Cleaning up listeners...');
       main.off('connect', handleMainConnect);
       main.off('disconnect', handleMainDisconnect);
       main.off('connect_error', handleMainError);
@@ -129,7 +129,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'auth_token') {
         const newToken = e.newValue;
-        console.log('🔑 SocketContext: Auth token changed, updating socket auth');
+        // console.log('🔑 SocketContext: Auth token changed, updating socket auth');
         SocketManager.updateAuth(newToken);
       }
     };
@@ -140,7 +140,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
   // Reconnection functions
   const reconnectMain = useCallback(() => {
-    console.log('🔄 SocketContext: Manually reconnecting main socket...');
+    // console.log('🔄 SocketContext: Manually reconnecting main socket...');
     if (mainSocket) {
       mainSocket.disconnect();
       mainSocket.connect();
@@ -148,7 +148,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   }, [mainSocket]);
 
   const reconnectChat = useCallback(() => {
-    console.log('🔄 SocketContext: Manually reconnecting chat socket...');
+    // console.log('🔄 SocketContext: Manually reconnecting chat socket...');
     if (chatSocket) {
       chatSocket.disconnect();
       chatSocket.connect();

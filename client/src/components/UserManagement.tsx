@@ -10,6 +10,7 @@ interface AdminUser {
   last_login: string | null;
   is_verified: boolean;
   is_admin: boolean;
+  is_moderator: boolean;
   is_banned: boolean;
 }
 
@@ -61,6 +62,38 @@ const UserManagement: React.FC<UserManagementProps> = ({ addLog }) => {
       const errorMsg = err.response?.data?.error || err.message || 'Failed to promote user';
       setError(errorMsg);
       addLog(`Error promoting user: ${errorMsg}`);
+    }
+  };
+
+  const handlePromoteModerator = async (userId: number, username: string) => {
+    if (!window.confirm(`Are you sure you want to promote ${username} to moderator?`)) {
+      return;
+    }
+
+    try {
+      await authService.promoteModerator(userId);
+      addLog(`Promoted ${username} to moderator`);
+      await loadUsers(); // Refresh the list
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || err.message || 'Failed to promote user to moderator';
+      setError(errorMsg);
+      addLog(`Error promoting user to moderator: ${errorMsg}`);
+    }
+  };
+
+  const handleDemoteModerator = async (userId: number, username: string) => {
+    if (!window.confirm(`Are you sure you want to demote ${username} from moderator?`)) {
+      return;
+    }
+
+    try {
+      await authService.demoteModerator(userId);
+      addLog(`Demoted ${username} from moderator`);
+      await loadUsers(); // Refresh the list
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || err.message || 'Failed to demote user from moderator';
+      setError(errorMsg);
+      addLog(`Error demoting user from moderator: ${errorMsg}`);
     }
   };
 
@@ -136,6 +169,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ addLog }) => {
   const getUserBadges = (user: AdminUser) => {
     const badges = [];
     if (user.is_admin) badges.push('Admin');
+    if (user.is_moderator) badges.push('Moderator');
     if (user.is_banned) badges.push('Banned');
     if (user.is_verified) badges.push('Verified');
     return badges;
@@ -209,13 +243,32 @@ const UserManagement: React.FC<UserManagementProps> = ({ addLog }) => {
                     <td>
                       <div className="user-actions">
                         {!user.is_admin ? (
-                          <button
-                            onClick={() => handlePromoteUser(user.id, user.username)}
-                            className="action-btn promote-btn"
-                            title="Promote to Admin"
-                          >
-                            ↑ Admin
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handlePromoteUser(user.id, user.username)}
+                              className="action-btn promote-btn"
+                              title="Promote to Admin"
+                            >
+                              ↑ Admin
+                            </button>
+                            {!user.is_moderator ? (
+                              <button
+                                onClick={() => handlePromoteModerator(user.id, user.username)}
+                                className="action-btn promote-btn"
+                                title="Promote to Moderator"
+                              >
+                                ↑ Mod
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleDemoteModerator(user.id, user.username)}
+                                className="action-btn demote-btn"
+                                title="Demote from Moderator"
+                              >
+                                ↓ Mod
+                              </button>
+                            )}
+                          </>
                         ) : (
                           user.id !== authService.getUser()?.id && (
                             <button

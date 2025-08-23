@@ -18,11 +18,11 @@ const EmailVerification: React.FC<EmailVerificationProps> = ({ onClose, onSucces
     const verifyEmail = async () => {
       // Extract token from URL path
       const path = window.location.pathname;
-      console.log('📧 EmailVerification Component - Current path:', path);
+      // console.log('📧 EmailVerification Component - Current path:', path);
       
       // Check if we're on a verify-email path
       if (!path.startsWith('/verify-email/')) {
-        console.log('📧 Component mounted but not on verification path, closing...');
+        // console.log('📧 Component mounted but not on verification path, closing...');
         // Don't show error, just close the component
         if (isMounted) {
           onClose();
@@ -40,7 +40,7 @@ const EmailVerification: React.FC<EmailVerificationProps> = ({ onClose, onSucces
         return;
       }
       
-      console.log('📧 Token extracted:', token, 'Length:', token.length);
+      // console.log('📧 Token extracted:', token, 'Length:', token.length);
 
       try {
         await authService.verifyEmail(token);

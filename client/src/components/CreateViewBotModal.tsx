@@ -234,7 +234,7 @@ const CreateViewBotModal: React.FC<CreateViewBotModalProps> = ({
                                   try {
                                     const result = JSON.parse(xhr.responseText);
                                     updateConfig('videoFile', result.filePath);
-                                    console.log(`✅ Video uploaded: ${result.filePath}`);
+                                    // console.log(`✅ Video uploaded: ${result.filePath}`);
                                     resolve(result);
                                   } catch (error) {
                                     reject(error);

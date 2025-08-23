@@ -8,7 +8,7 @@ class SocketDebugger {
   private activeConnections = new Map<string, any>();
 
   private constructor() {
-    console.log('🔍 SocketDebugger initialized');
+    // console.log('🔍 SocketDebugger initialized');
     (window as any).__SOCKET_DEBUGGER__ = this;
   }
 
@@ -28,7 +28,7 @@ class SocketDebugger {
     };
     
     this.creationAttempts.push(attempt);
-    console.log(`🚨 SOCKET CREATION ATTEMPT #${this.creationAttempts.length}:`, type, url);
+    // console.log(`🚨 SOCKET CREATION ATTEMPT #${this.creationAttempts.length}:`, type, url);
     console.trace('Creation stack trace');
     
     // Log to window for debugging
@@ -42,7 +42,7 @@ class SocketDebugger {
       connected: socket.connected
     });
     
-    console.log(`📌 Registered connection: ${id}, Total active: ${this.activeConnections.size}`);
+    // console.log(`📌 Registered connection: ${id}, Total active: ${this.activeConnections.size}`);
     (window as any).__ACTIVE_SOCKETS__ = Array.from(this.activeConnections.entries());
   }
 
@@ -58,7 +58,7 @@ class SocketDebugger {
   public reset() {
     this.creationAttempts = [];
     this.activeConnections.clear();
-    console.log('🔄 SocketDebugger reset');
+    // console.log('🔄 SocketDebugger reset');
   }
 }
 

@@ -199,14 +199,14 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
 
   // Camera preview functionality
   const toggleCameraPreview = async () => {
-    console.log('📹 toggleCameraPreview called, current state:', isCameraPreview);
+    // console.log('📹 toggleCameraPreview called, current state:', isCameraPreview);
     
     if (isCameraPreview) {
       // Stop preview
-      console.log('📹 Stopping camera preview...');
+      // console.log('📹 Stopping camera preview...');
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => {
-          console.log('📹 Stopping track:', track.kind, track.label);
+          // console.log('📹 Stopping track:', track.kind, track.label);
           track.stop();
         });
         setCameraStream(null);
@@ -217,7 +217,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
       setIsCameraPreview(false);
     } else {
       // Start preview
-      console.log('📹 Starting camera preview...');
+      // console.log('📹 Starting camera preview...');
       try {
         // Build video constraints based on settings
         const getResolutionConstraints = () => {
@@ -248,16 +248,16 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
           audio: false
         };
         
-        console.log('📹 Requesting user media with constraints:', constraints);
+        // console.log('📹 Requesting user media with constraints:', constraints);
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log('📹 Got stream:', stream);
-        console.log('📹 Video tracks:', stream.getVideoTracks());
+        // console.log('📹 Got stream:', stream);
+        // console.log('📹 Video tracks:', stream.getVideoTracks());
         
         setCameraStream(stream);
         
         // Set stream to video element immediately
         if (videoPreviewRef.current) {
-          console.log('📹 Setting srcObject on video element');
+          // console.log('📹 Setting srcObject on video element');
           videoPreviewRef.current.srcObject = stream;
           
           // Apply mirror effect if enabled
@@ -270,7 +270,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
           // Try to play
           try {
             await videoPreviewRef.current.play();
-            console.log('📹 Video playing successfully');
+            // console.log('📹 Video playing successfully');
           } catch (playErr) {
             console.error('📹 Error playing video:', playErr);
           }
@@ -694,7 +694,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
                       
                       // If preview is active, restart it with new camera
                       if (isCameraPreview) {
-                        console.log('📹 Camera changed, restarting preview...');
+                        // console.log('📹 Camera changed, restarting preview...');
                         
                         // Stop current preview
                         if (cameraStream) {

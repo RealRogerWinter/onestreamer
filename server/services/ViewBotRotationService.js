@@ -105,8 +105,8 @@ class ViewBotRotationService {
       await this.stopCurrentBot();
       console.log('🔍 ViewBotRotationService: Current bot stopped');
       
-      // Add a small delay to ensure cleanup completes
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Add a delay to ensure cleanup completes and clients process stream-ended
+      await new Promise(resolve => setTimeout(resolve, 500));
       console.log('🔍 ViewBotRotationService: Cleanup delay completed');
       
       // Select next bot
@@ -205,6 +205,16 @@ class ViewBotRotationService {
     const bot = this.currentBot;
     console.log(`⏹️ ViewBotRotationService: Stopping ${bot.id}...`);
     
+    // Emit stream-ended event BEFORE stopping the bot
+    if (global.io) {
+      console.log(`📢 ViewBotRotationService: Emitting stream-ended for ${bot.id}`);
+      global.io.emit('stream-ended', {
+        reason: 'rotation',
+        previousStreamer: bot.id,
+        timestamp: Date.now()
+      });
+    }
+    
     if (bot.client) {
       try {
         await bot.client.stopStreaming();
@@ -222,12 +232,42 @@ class ViewBotRotationService {
   }
   
   /**
-   * Get random interval
+   * Get random interval with weighted probabilities
    */
   getRandomInterval() {
     const { minRotationInterval, maxRotationInterval } = this.settings;
-    const interval = Math.floor(Math.random() * (maxRotationInterval - minRotationInterval)) + minRotationInterval;
-    console.log(`⏱️ Next rotation in ${Math.round(interval / 1000)} seconds`);
+    
+    // Roll for special cases
+    const roll = Math.random() * 100; // 0-100
+    let interval;
+    
+    if (roll < 0.5) {
+      // 0.5% chance: ULTRA RARE - Very long interval (20-45 minutes)
+      interval = 1200000 + Math.random() * 1500000; // 20-45 minutes
+      console.log(`🎲💎 ULTRA RARE: Extremely long interval rolled (0.5% chance)!`);
+    } else if (roll < 2.5) {
+      // 2% chance: > 10 minutes (10-20 minutes)
+      interval = 600000 + Math.random() * 600000; // 10-20 minutes
+      console.log(`🎲 RARE: Super long interval rolled (2% chance)`);
+    } else if (roll < 7.5) {
+      // 5% chance total: > 6 minutes (6-10 minutes)
+      interval = 360000 + Math.random() * 240000; // 6-10 minutes
+      console.log(`🎲 UNCOMMON: Long interval rolled (5% chance)`);
+    } else if (roll < 11.5) {
+      // 4% chance: < 1 minute (15-60 seconds)
+      interval = 15000 + Math.random() * 45000; // 15-60 seconds
+      console.log(`🎲 UNCOMMON: Short interval rolled (4% chance)`);
+    } else if (roll < 12) {
+      // 0.5% chance: ULTRA RARE - Very short interval (5-15 seconds)
+      interval = 5000 + Math.random() * 10000; // 5-15 seconds
+      console.log(`🎲💎 ULTRA RARE: Lightning fast rotation rolled (0.5% chance)!`);
+    } else {
+      // 88% chance: Normal range (1-6 minutes by default)
+      interval = Math.floor(Math.random() * (maxRotationInterval - minRotationInterval)) + minRotationInterval;
+      console.log(`🎲 NORMAL: Standard interval rolled (88% chance)`);
+    }
+    
+    console.log(`⏱️ Next rotation in ${Math.round(interval / 1000)} seconds (${(interval / 60000).toFixed(1)} minutes)`);
     return interval;
   }
   

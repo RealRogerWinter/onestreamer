@@ -67,7 +67,7 @@ export class MediasoupClient {
   private setupConnectionMonitoring(): void {
     // Monitor socket connection state
     this.socket.on('connect', () => {
-      console.log('🔗 MEDIASOUP CLIENT: Socket connected');
+      // console.log('🔗 MEDIASOUP CLIENT: Socket connected');
       if (this.lastConnectionState === 'disconnected') {
         this.handleConnectionRecovered();
       }
@@ -75,7 +75,7 @@ export class MediasoupClient {
     });
 
     this.socket.on('disconnect', (reason: string) => {
-      console.log('🔌 MEDIASOUP CLIENT: Socket disconnected:', reason);
+      // console.log('🔌 MEDIASOUP CLIENT: Socket disconnected:', reason);
       this.lastConnectionState = 'disconnected';
       this.handleConnectionLost();
     });
@@ -131,7 +131,7 @@ export class MediasoupClient {
       }
     } catch (error) {
       // Stats errors are not critical, just log them
-      console.debug('Stats check error (non-critical):', error);
+      // console.debug('Stats check error (non-critical):', error);
     }
   }
 
@@ -180,7 +180,7 @@ export class MediasoupClient {
       
       // Reset reconnection attempts on successful health check
       if (this.reconnectionAttempts > 0) {
-        console.log('✅ MEDIASOUP CLIENT: Health check passed, resetting reconnection counter');
+        // console.log('✅ MEDIASOUP CLIENT: Health check passed, resetting reconnection counter');
         this.reconnectionAttempts = 0;
         this.reconnectionDelay = 1000;
       }
@@ -192,7 +192,7 @@ export class MediasoupClient {
   }
 
   private handleConnectionLost(): void {
-    console.log('📡 MEDIASOUP CLIENT: Connection lost, starting recovery...');
+    // console.log('📡 MEDIASOUP CLIENT: Connection lost, starting recovery...');
     
     if (this.onConnectionLost) {
       this.onConnectionLost();
@@ -204,7 +204,7 @@ export class MediasoupClient {
   }
 
   private handleConnectionRecovered(): void {
-    console.log('🎉 MEDIASOUP CLIENT: Connection recovered');
+    // console.log('🎉 MEDIASOUP CLIENT: Connection recovered');
     
     // Clear any pending reconnection
     this.stopReconnection();
@@ -226,7 +226,7 @@ export class MediasoupClient {
   }
 
   private async handleTransportFailure(): Promise<void> {
-    console.log('🔴 MEDIASOUP CLIENT: Transport failure detected, initiating recovery...');
+    // console.log('🔴 MEDIASOUP CLIENT: Transport failure detected, initiating recovery...');
     
     // Don't attempt recovery if already destroyed or reconnecting
     if (this.isDestroyed || this.isReconnecting) {
@@ -265,7 +265,7 @@ export class MediasoupClient {
     }
     
     this.isReconnecting = true;
-    console.log(`🔄 MEDIASOUP CLIENT: Starting reconnection attempt ${this.reconnectionAttempts + 1}/${this.maxReconnectionAttempts}`);
+    // console.log(`🔄 MEDIASOUP CLIENT: Starting reconnection attempt ${this.reconnectionAttempts + 1}/${this.maxReconnectionAttempts}`);
     
     if (this.reconnectionAttempts >= this.maxReconnectionAttempts) {
       console.error('❌ MEDIASOUP CLIENT: Max reconnection attempts reached');
@@ -282,7 +282,7 @@ export class MediasoupClient {
       this.maxReconnectionDelay
     );
     
-    console.log(`⏳ MEDIASOUP CLIENT: Waiting ${delay}ms before reconnection attempt`);
+    // console.log(`⏳ MEDIASOUP CLIENT: Waiting ${delay}ms before reconnection attempt`);
     
     this.reconnectionTimer = setTimeout(() => {
       this.attemptReconnection();
@@ -293,11 +293,11 @@ export class MediasoupClient {
 
   private async attemptReconnection(): Promise<void> {
     try {
-      console.log('🔄 MEDIASOUP CLIENT: Attempting to reconnect...');
+      // console.log('🔄 MEDIASOUP CLIENT: Attempting to reconnect...');
       
       // First check if socket is connected
       if (!this.socket.connected) {
-        console.log('🔌 MEDIASOUP CLIENT: Socket not connected, waiting for socket reconnection...');
+        // console.log('🔌 MEDIASOUP CLIENT: Socket not connected, waiting for socket reconnection...');
         this.isReconnecting = false;
         return;
       }
@@ -310,7 +310,7 @@ export class MediasoupClient {
       this.reconnectionDelay = 1000;
       this.isReconnecting = false;
       
-      console.log('✅ MEDIASOUP CLIENT: Reconnection successful');
+      // console.log('✅ MEDIASOUP CLIENT: Reconnection successful');
       
       if (this.onConnectionRecovered) {
         this.onConnectionRecovered();
@@ -342,7 +342,7 @@ export class MediasoupClient {
 
   private async attemptStreamRecovery(): Promise<void> {
     // This method can be overridden by consumers to implement custom stream recovery
-    console.log('🔄 MEDIASOUP CLIENT: Attempting stream recovery...');
+    // console.log('🔄 MEDIASOUP CLIENT: Attempting stream recovery...');
     
     try {
       // Check if we need to recreate transports
@@ -354,7 +354,7 @@ export class MediasoupClient {
         await this.recreateTransports();
       }
       
-      console.log('✅ MEDIASOUP CLIENT: Stream recovery completed');
+      // console.log('✅ MEDIASOUP CLIENT: Stream recovery completed');
     } catch (error) {
       console.error('❌ MEDIASOUP CLIENT: Stream recovery failed:', error);
     }
@@ -366,12 +366,12 @@ export class MediasoupClient {
     }
 
     this.setProcessing(true);
-    console.log('🎬 MEDIASOUP CLIENT: Initializing device...');
+    // console.log('🎬 MEDIASOUP CLIENT: Initializing device...');
     
     try {
       // Check if device is already loaded
       if (this.device.loaded) {
-        console.log('🔄 MEDIASOUP CLIENT: Device already loaded, skipping initialization');
+        // console.log('🔄 MEDIASOUP CLIENT: Device already loaded, skipping initialization');
         return;
       }
 
@@ -390,15 +390,15 @@ export class MediasoupClient {
         throw new Error('No RTP capabilities received from server');
       }
       
-      console.log('📊 MEDIASOUP CLIENT: Received RTP capabilities from server');
+      // console.log('📊 MEDIASOUP CLIENT: Received RTP capabilities from server');
       
       // Load the device with router capabilities
       await this.withTimeout(
         this.device.load({ routerRtpCapabilities: rtpCapabilities })
       );
       
-      console.log('✅ MEDIASOUP CLIENT: Device loaded successfully');
-      console.log('📊 MEDIASOUP CLIENT: RTP Capabilities:', this.device.rtpCapabilities);
+      // console.log('✅ MEDIASOUP CLIENT: Device loaded successfully');
+      // console.log('📊 MEDIASOUP CLIENT: RTP Capabilities:', this.device.rtpCapabilities);
     } catch (error) {
       console.error('❌ MEDIASOUP CLIENT: Failed to initialize device:', error);
       throw error;
@@ -408,13 +408,13 @@ export class MediasoupClient {
   }
 
   async createSendTransport(): Promise<void> {
-    console.log('📡 MEDIASOUP CLIENT: Creating send transport...');
+    // console.log('📡 MEDIASOUP CLIENT: Creating send transport...');
     
     if (!this.socket.id) {
       throw new Error('Socket ID not available. Ensure socket is connected.');
     }
     
-    console.log(`📡 MEDIASOUP CLIENT: Using socket ID: ${this.socket.id}`);
+    // console.log(`📡 MEDIASOUP CLIENT: Using socket ID: ${this.socket.id}`);
     
     try {
       // Request transport creation from server
@@ -455,13 +455,13 @@ export class MediasoupClient {
       // Handle transport events
       this.sendTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
         try {
-          console.log('🔗 MEDIASOUP CLIENT: Connecting send transport...');
+          // console.log('🔗 MEDIASOUP CLIENT: Connecting send transport...');
           
           if (!this.socket.id) {
             throw new Error('Socket ID not available during transport connect');
           }
           
-          console.log(`🔗 MEDIASOUP CLIENT: Connecting transport for socket: ${this.socket.id}`);
+          // console.log(`🔗 MEDIASOUP CLIENT: Connecting transport for socket: ${this.socket.id}`);
           
           // Add timeout and retry logic
           const connectWithRetry = async (attempts = 0): Promise<Response> => {
@@ -490,7 +490,7 @@ export class MediasoupClient {
               return response;
             } catch (error) {
               if (attempts < maxAttempts - 1 && !this.isDestroyed) {
-                console.log(`🔄 MEDIASOUP CLIENT: Connect attempt ${attempts + 1}/${maxAttempts} failed, retrying...`);
+                // console.log(`🔄 MEDIASOUP CLIENT: Connect attempt ${attempts + 1}/${maxAttempts} failed, retrying...`);
                 await new Promise(resolve => setTimeout(resolve, 500 * (attempts + 1)));
                 return connectWithRetry(attempts + 1);
               }
@@ -508,13 +508,13 @@ export class MediasoupClient {
 
       this.sendTransport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
         try {
-          console.log(`🎬 MEDIASOUP CLIENT: Producing ${kind}...`);
+          // console.log(`🎬 MEDIASOUP CLIENT: Producing ${kind}...`);
           
           // Send produce request via socket.io for real-time handling
           this.socket.emit('mediasoup:produce', { kind, rtpParameters }, (response: any) => {
             if (response.success) {
               callback({ id: response.producerId });
-              console.log(`✅ MEDIASOUP CLIENT: Producer created for ${kind}`);
+              // console.log(`✅ MEDIASOUP CLIENT: Producer created for ${kind}`);
             } else {
               errback(new Error(response.error));
             }
@@ -525,7 +525,7 @@ export class MediasoupClient {
         }
       });
 
-      console.log('✅ MEDIASOUP CLIENT: Send transport created');
+      // console.log('✅ MEDIASOUP CLIENT: Send transport created');
     } catch (error) {
       console.error('❌ MEDIASOUP CLIENT: Failed to create send transport:', error);
       throw error;
@@ -533,7 +533,7 @@ export class MediasoupClient {
   }
 
   async createRecvTransport(): Promise<void> {
-    console.log('📡 MEDIASOUP CLIENT: Creating receive transport...');
+    // console.log('📡 MEDIASOUP CLIENT: Creating receive transport...');
     
     try {
       // Request transport creation from server
@@ -569,15 +569,15 @@ export class MediasoupClient {
       
       // Handle connection state changes to detect issues
       this.recvTransport.on('connectionstatechange', (state) => {
-        console.log(`📡 MEDIASOUP CLIENT: Receive transport connection state changed to: ${state}`);
+        // console.log(`📡 MEDIASOUP CLIENT: Receive transport connection state changed to: ${state}`);
         
         // Don't close transport on temporary disconnections
         if (state === 'disconnected') {
-          console.log('⚠️ MEDIASOUP CLIENT: Transport disconnected, waiting for reconnection...');
+          // console.log('⚠️ MEDIASOUP CLIENT: Transport disconnected, waiting for reconnection...');
           // Give it time to reconnect before considering it failed
           setTimeout(async () => {
             if (this.recvTransport?.connectionState === 'disconnected') {
-              console.log('❌ MEDIASOUP CLIENT: Transport still disconnected after timeout');
+              // console.log('❌ MEDIASOUP CLIENT: Transport still disconnected after timeout');
               // Trigger reconnection
               await this.handleTransportFailure();
             }
@@ -587,14 +587,14 @@ export class MediasoupClient {
           // Immediately trigger reconnection on failure
           this.handleTransportFailure();
         } else if (state === 'connected') {
-          console.log('✅ MEDIASOUP CLIENT: Transport reconnected successfully');
+          // console.log('✅ MEDIASOUP CLIENT: Transport reconnected successfully');
         }
       });
       
       // Handle transport events
       this.recvTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
         try {
-          console.log('🔗 MEDIASOUP CLIENT: Connecting receive transport...');
+          // console.log('🔗 MEDIASOUP CLIENT: Connecting receive transport...');
           const response = await fetch(`${this.serverUrl}/api/mediasoup/connect-transport`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -612,7 +612,7 @@ export class MediasoupClient {
         }
       });
 
-      console.log('✅ MEDIASOUP CLIENT: Receive transport created');
+      // console.log('✅ MEDIASOUP CLIENT: Receive transport created');
     } catch (error) {
       console.error('❌ MEDIASOUP CLIENT: Failed to create receive transport:', error);
       throw error;
@@ -627,13 +627,13 @@ export class MediasoupClient {
     // Clean up any existing producers first
     await this.stopProducing();
 
-    console.log('🎬 MEDIASOUP CLIENT: Starting to produce media...');
+    // console.log('🎬 MEDIASOUP CLIENT: Starting to produce media...');
     
     try {
       // Produce video track
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
-        console.log('📺 MEDIASOUP CLIENT: Creating video producer...');
+        // console.log('📺 MEDIASOUP CLIENT: Creating video producer...');
         // Back to single high-quality stream - simulcast was causing quality issues
         this.videoProducer = await this.sendTransport.produce({
           track: videoTrack,
@@ -652,13 +652,13 @@ export class MediasoupClient {
           appData: { mediaType: 'video' }
         });
         
-        console.log('📺 MEDIASOUP CLIENT: Video producer created:', this.videoProducer.id);
+        // console.log('📺 MEDIASOUP CLIENT: Video producer created:', this.videoProducer.id);
       }
 
       // Produce audio track
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) {
-        console.log('🎤 MEDIASOUP CLIENT: Creating audio producer...');
+        // console.log('🎤 MEDIASOUP CLIENT: Creating audio producer...');
         this.audioProducer = await this.sendTransport.produce({
           track: audioTrack,
           codecOptions: {
@@ -672,7 +672,7 @@ export class MediasoupClient {
           appData: { mediaType: 'audio' }
         });
         
-        console.log('🎤 MEDIASOUP CLIENT: Audio producer created:', this.audioProducer.id);
+        // console.log('🎤 MEDIASOUP CLIENT: Audio producer created:', this.audioProducer.id);
       }
 
     } catch (error) {
@@ -690,9 +690,9 @@ export class MediasoupClient {
     }
 
     try {
-      console.log('🎤 MEDIASOUP CLIENT: Replacing audio track...');
+      // console.log('🎤 MEDIASOUP CLIENT: Replacing audio track...');
       await this.audioProducer.replaceTrack({ track: newTrack });
-      console.log('✅ MEDIASOUP CLIENT: Audio track replaced successfully');
+      // console.log('✅ MEDIASOUP CLIENT: Audio track replaced successfully');
     } catch (error) {
       console.error('❌ MEDIASOUP CLIENT: Failed to replace audio track:', error);
       throw error;
@@ -706,9 +706,9 @@ export class MediasoupClient {
     }
 
     try {
-      console.log('📹 MEDIASOUP CLIENT: Replacing video track...');
+      // console.log('📹 MEDIASOUP CLIENT: Replacing video track...');
       await this.videoProducer.replaceTrack({ track: newTrack });
-      console.log('✅ MEDIASOUP CLIENT: Video track replaced successfully');
+      // console.log('✅ MEDIASOUP CLIENT: Video track replaced successfully');
     } catch (error) {
       console.error('❌ MEDIASOUP CLIENT: Failed to replace video track:', error);
       throw error;
@@ -738,7 +738,7 @@ export class MediasoupClient {
     // Small delay to ensure cleanup is complete
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    console.log('📺 MEDIASOUP CLIENT: Starting to consume media...');
+    // console.log('📺 MEDIASOUP CLIENT: Starting to consume media...');
     
     try {
       // Request to consume video and audio from server with timeout
@@ -769,7 +769,7 @@ export class MediasoupClient {
             const clonedTrack = track.clone();
             combinedStream.addTrack(clonedTrack);
             trackCount++;
-            console.log(`📺 MEDIASOUP CLIENT: Added cloned video track (id: ${clonedTrack.id}, state: ${clonedTrack.readyState})`);
+            // console.log(`📺 MEDIASOUP CLIENT: Added cloned video track (id: ${clonedTrack.id}, state: ${clonedTrack.readyState})`);
           } else {
             console.warn('⚠️ MEDIASOUP CLIENT: Skipping video track in non-live state:', track.readyState);
           }
@@ -784,7 +784,7 @@ export class MediasoupClient {
             const clonedTrack = track.clone();
             combinedStream.addTrack(clonedTrack);
             trackCount++;
-            console.log(`🎤 MEDIASOUP CLIENT: Added cloned audio track (id: ${clonedTrack.id}, state: ${clonedTrack.readyState})`);
+            // console.log(`🎤 MEDIASOUP CLIENT: Added cloned audio track (id: ${clonedTrack.id}, state: ${clonedTrack.readyState})`);
           } else {
             console.warn('⚠️ MEDIASOUP CLIENT: Skipping audio track in non-live state:', track.readyState);
           }
@@ -792,20 +792,20 @@ export class MediasoupClient {
       }
       
       if (trackCount > 0) {
-        console.log(`✅ MEDIASOUP CLIENT: Media stream ready with ${trackCount} live tracks`);
+        // console.log(`✅ MEDIASOUP CLIENT: Media stream ready with ${trackCount} live tracks`);
         
         // Set up stream event handlers
         combinedStream.getTracks().forEach(track => {
           track.addEventListener('ended', () => {
-            console.log(`📺 MEDIASOUP CLIENT: Track ${track.kind} ended`);
+            // console.log(`📺 MEDIASOUP CLIENT: Track ${track.kind} ended`);
           });
           
           track.addEventListener('mute', () => {
-            console.log(`🔇 MEDIASOUP CLIENT: Track ${track.kind} muted`);
+            // console.log(`🔇 MEDIASOUP CLIENT: Track ${track.kind} muted`);
           });
           
           track.addEventListener('unmute', () => {
-            console.log(`🔊 MEDIASOUP CLIENT: Track ${track.kind} unmuted`);
+            // console.log(`🔊 MEDIASOUP CLIENT: Track ${track.kind} unmuted`);
           });
         });
         
@@ -832,12 +832,12 @@ export class MediasoupClient {
     
     while (attempt < maxAttempts) {
       attempt++;
-      console.log(`📺 MEDIASOUP CLIENT: Consume attempt ${attempt}/${maxAttempts} for ${kind}`);
+      // console.log(`📺 MEDIASOUP CLIENT: Consume attempt ${attempt}/${maxAttempts} for ${kind}`);
       
       try {
         const stream = await this.attemptConsumeTrack(kind, attempt);
         if (stream) {
-          console.log(`✅ MEDIASOUP CLIENT: Successfully consumed ${kind} on attempt ${attempt}`);
+          // console.log(`✅ MEDIASOUP CLIENT: Successfully consumed ${kind} on attempt ${attempt}`);
           return stream;
         }
       } catch (error) {
@@ -847,7 +847,7 @@ export class MediasoupClient {
       // Wait before retry (except on last attempt)
       if (attempt < maxAttempts) {
         const delay = attempt * 500; // 500ms, 1000ms delays
-        console.log(`⏳ MEDIASOUP CLIENT: Waiting ${delay}ms before retry for ${kind}...`);
+        // console.log(`⏳ MEDIASOUP CLIENT: Waiting ${delay}ms before retry for ${kind}...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -870,7 +870,7 @@ export class MediasoupClient {
         clearTimeout(timeout);
         
         if (!response.success) {
-          console.log(`⚠️ MEDIASOUP CLIENT: No ${kind} stream available: ${response.error}`);
+          // console.log(`⚠️ MEDIASOUP CLIENT: No ${kind} stream available: ${response.error}`);
           resolve(null);
           return;
         }
@@ -881,7 +881,7 @@ export class MediasoupClient {
           // Store the streamer ID
           if (streamerId) {
             this.currentStreamerId = streamerId;
-            console.log(`📝 MEDIASOUP CLIENT: Current streamer ID set to ${streamerId}`);
+            // console.log(`📝 MEDIASOUP CLIENT: Current streamer ID set to ${streamerId}`);
           }
           
           // Validate consumer data
@@ -889,7 +889,7 @@ export class MediasoupClient {
             throw new Error(`Invalid consumer data received for ${kind}`);
           }
           
-          console.log(`📺 MEDIASOUP CLIENT: Creating ${kind} consumer:`, consumerData.id);
+          // console.log(`📺 MEDIASOUP CLIENT: Creating ${kind} consumer:`, consumerData.id);
           
           // Check if transport is still available (race condition protection)
           if (!this.recvTransport || this.recvTransport.closed) {
@@ -914,20 +914,20 @@ export class MediasoupClient {
           // Set up consumer event handlers
           const consumerId = consumer.id;
           consumer.on('transportclose', () => {
-            console.log(`🔒 MEDIASOUP CLIENT: ${kind} consumer transport closed`);
+            // console.log(`🔒 MEDIASOUP CLIENT: ${kind} consumer transport closed`);
             this.consumers.delete(consumerId);
           });
 
           consumer.on('trackended', () => {
-            console.log(`🔒 MEDIASOUP CLIENT: ${kind} consumer track ended`);
+            // console.log(`🔒 MEDIASOUP CLIENT: ${kind} consumer track ended`);
             this.consumers.delete(consumerId);
           });
 
           this.consumers.set(consumer.id, consumer);
-          console.log(`✅ MEDIASOUP CLIENT: ${kind} consumer created:`, consumer.id);
+          // console.log(`✅ MEDIASOUP CLIENT: ${kind} consumer created:`, consumer.id);
 
           // Wait for transport to be connected before resuming consumer
-          console.log(`🔄 MEDIASOUP CLIENT: Waiting for transport connection before resuming ${kind} consumer...`);
+          // console.log(`🔄 MEDIASOUP CLIENT: Waiting for transport connection before resuming ${kind} consumer...`);
           await new Promise<void>((connectResolve, connectReject) => {
             const connectTimeout = setTimeout(() => {
               connectReject(new Error(`Transport connection timeout for ${kind} consumer`));
@@ -936,7 +936,7 @@ export class MediasoupClient {
             const checkConnection = () => {
               if (this.recvTransport && this.recvTransport.connectionState === 'connected') {
                 clearTimeout(connectTimeout);
-                console.log(`✅ MEDIASOUP CLIENT: Transport connected for ${kind} consumer`);
+                // console.log(`✅ MEDIASOUP CLIENT: Transport connected for ${kind} consumer`);
                 connectResolve();
               } else if (this.recvTransport && this.recvTransport.connectionState === 'failed') {
                 clearTimeout(connectTimeout);
@@ -962,7 +962,7 @@ export class MediasoupClient {
               clearTimeout(resumeTimeout);
               
               if (resumeResponse.success) {
-                console.log(`▶️ MEDIASOUP CLIENT: ${kind} consumer resumed:`, consumerId);
+                // console.log(`▶️ MEDIASOUP CLIENT: ${kind} consumer resumed:`, consumerId);
                 resumeResolve();
               } else {
                 resumeReject(new Error(`Failed to resume ${kind} consumer: ${resumeResponse.error}`));
@@ -981,7 +981,7 @@ export class MediasoupClient {
           // Create media stream from consumer track
           const stream = new MediaStream([consumer.track]);
           
-          console.log(`✅ MEDIASOUP CLIENT: ${kind} stream created with track state: ${consumer.track.readyState}`);
+          // console.log(`✅ MEDIASOUP CLIENT: ${kind} stream created with track state: ${consumer.track.readyState}`);
           
           resolve(stream);
           
@@ -994,7 +994,7 @@ export class MediasoupClient {
   }
 
   async stopProducing(): Promise<void> {
-    console.log('⏹️ MEDIASOUP CLIENT: Stopping producers...');
+    // console.log('⏹️ MEDIASOUP CLIENT: Stopping producers...');
     
     const stopTasks: Promise<void>[] = [];
     
@@ -1003,7 +1003,7 @@ export class MediasoupClient {
         Promise.resolve().then(() => {
           this.videoProducer!.close();
           this.videoProducer = undefined;
-          console.log('⏹️ MEDIASOUP CLIENT: Video producer stopped');
+          // console.log('⏹️ MEDIASOUP CLIENT: Video producer stopped');
         })
       );
     }
@@ -1013,7 +1013,7 @@ export class MediasoupClient {
         Promise.resolve().then(() => {
           this.audioProducer!.close();
           this.audioProducer = undefined;
-          console.log('⏹️ MEDIASOUP CLIENT: Audio producer stopped');
+          // console.log('⏹️ MEDIASOUP CLIENT: Audio producer stopped');
         })
       );
     }
@@ -1026,7 +1026,7 @@ export class MediasoupClient {
   }
 
   async stopConsuming(): Promise<void> {
-    console.log('⏹️ MEDIASOUP CLIENT: Stopping consumers...');
+    // console.log('⏹️ MEDIASOUP CLIENT: Stopping consumers...');
     
     if (this.consumers.size === 0) {
       return;
@@ -1039,7 +1039,7 @@ export class MediasoupClient {
         stopTasks.push(
           Promise.resolve().then(() => {
             consumer.close();
-            console.log('⏹️ MEDIASOUP CLIENT: Consumer stopped:', id);
+            // console.log('⏹️ MEDIASOUP CLIENT: Consumer stopped:', id);
           })
         );
       }
@@ -1052,7 +1052,7 @@ export class MediasoupClient {
     }
     
     this.consumers.clear();
-    console.log('✅ MEDIASOUP CLIENT: All consumers stopped');
+    // console.log('✅ MEDIASOUP CLIENT: All consumers stopped');
   }
 
   async cleanup(): Promise<void> {
@@ -1061,7 +1061,7 @@ export class MediasoupClient {
     }
     
     this.isDestroyed = true;
-    console.log('🧹 MEDIASOUP CLIENT: Starting cleanup...');
+    // console.log('🧹 MEDIASOUP CLIENT: Starting cleanup...');
     
     // Stop reconnection and monitoring
     this.stopReconnection();
@@ -1082,18 +1082,18 @@ export class MediasoupClient {
       if (this.sendTransport && !this.sendTransport.closed) {
         this.sendTransport.close();
         this.sendTransport = undefined;
-        console.log('🧹 MEDIASOUP CLIENT: Send transport closed');
+        // console.log('🧹 MEDIASOUP CLIENT: Send transport closed');
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       
       if (this.recvTransport && !this.recvTransport.closed) {
         this.recvTransport.close();
         this.recvTransport = undefined;
-        console.log('🧹 MEDIASOUP CLIENT: Receive transport closed');
+        // console.log('🧹 MEDIASOUP CLIENT: Receive transport closed');
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       
-      console.log('✅ MEDIASOUP CLIENT: Cleanup completed');
+      // console.log('✅ MEDIASOUP CLIENT: Cleanup completed');
     } catch (error) {
       console.error('❌ MEDIASOUP CLIENT: Error during cleanup:', error);
     } finally {
@@ -1102,7 +1102,7 @@ export class MediasoupClient {
   }
 
   async recreateTransports(): Promise<void> {
-    console.log('🔄 MEDIASOUP CLIENT: Recreating transports...');
+    // console.log('🔄 MEDIASOUP CLIENT: Recreating transports...');
     
     if (!this.validateState()) {
       throw new Error('Cannot recreate transports in current state');
@@ -1131,7 +1131,7 @@ export class MediasoupClient {
       await this.createSendTransport();
       await this.createRecvTransport();
       
-      console.log('✅ MEDIASOUP CLIENT: Transports recreated successfully');
+      // console.log('✅ MEDIASOUP CLIENT: Transports recreated successfully');
     } catch (error) {
       console.error('❌ MEDIASOUP CLIENT: Failed to recreate transports:', error);
       throw error;
@@ -1171,7 +1171,7 @@ export class MediasoupClient {
 
   // Force a reconnection attempt (useful for manual recovery)
   async forceReconnection(): Promise<void> {
-    console.log('🔄 MEDIASOUP CLIENT: Force reconnection requested');
+    // console.log('🔄 MEDIASOUP CLIENT: Force reconnection requested');
     this.stopReconnection();
     this.reconnectionAttempts = 0;
     await this.attemptReconnection();

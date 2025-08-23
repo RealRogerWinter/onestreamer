@@ -167,6 +167,11 @@
   color: white;
 }
 
+.badge.moderator {
+  background: #17a2b8;
+  color: white;
+}
+
 .badge.banned {
   background: #6c757d;
   color: white;

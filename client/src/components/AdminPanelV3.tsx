@@ -32,6 +32,7 @@ interface NavItem {
 
 const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTab = 'dashboard' }) => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [isModeratorAuthenticated, setIsModeratorAuthenticated] = useState(false);
   const [activeView, setActiveView] = useState<string>(initialTab);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
@@ -57,15 +58,7 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
     { id: 'logs', label: 'System Logs', icon: '📝', category: 'Monitoring' }
   ];
 
-  // Group navigation items by category
-  const groupedNavItems = navigationItems.reduce((acc, item) => {
-    const category = item.category || 'Other';
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(item);
-    return acc;
-  }, {} as Record<string, NavItem[]>);
+  // We'll move this after we define availableNavItems
 
   useEffect(() => {
     setActiveView(initialTab);
@@ -76,15 +69,19 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
       const isAuth = authService.isAuthenticated();
       if (!isAuth) {
         setIsAdminAuthenticated(false);
+        setIsModeratorAuthenticated(false);
         return;
       }
       
       try {
         const isAdmin = await authService.isAdmin();
+        const isModerator = await authService.isModerator();
         setIsAdminAuthenticated(isAuth && isAdmin);
+        setIsModeratorAuthenticated(isAuth && isModerator);
       } catch (error) {
-        console.error('Failed to check admin status:', error);
+        console.error('Failed to check admin/moderator status:', error);
         setIsAdminAuthenticated(false);
+        setIsModeratorAuthenticated(false);
       }
     };
 
@@ -141,16 +138,9 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
     setShowQuickActions(false);
   };
 
-  // Filter navigation items based on search
-  const filteredNavItems = searchQuery
-    ? navigationItems.filter(item =>
-        item.label.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : null;
-
   if (!isVisible) return null;
 
-  if (!isAdminAuthenticated) {
+  if (!isAdminAuthenticated && !isModeratorAuthenticated) {
     return (
       <div className="admin-panel-v3-overlay">
         <div className="admin-panel-v3">
@@ -161,7 +151,7 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
           <div className="admin-panel-v3-content">
             <div className="access-denied">
               <h3>Access Denied</h3>
-              <p>You must be logged in with an administrator account to access this panel.</p>
+              <p>You must be logged in with an administrator or moderator account to access this panel.</p>
               <button onClick={onClose} className="btn">Close</button>
             </div>
           </div>
@@ -169,6 +159,37 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
       </div>
     );
   }
+
+  // Filter navigation items based on user role
+  const getAvailableNavItems = () => {
+    if (isAdminAuthenticated) {
+      return navigationItems; // Admins get everything
+    } else if (isModeratorAuthenticated) {
+      // Moderators get limited access
+      const moderatorAllowedViews = ['moderation', 'ipbans', 'streaminglogs'];
+      return navigationItems.filter(item => moderatorAllowedViews.includes(item.id));
+    }
+    return [];
+  };
+
+  const availableNavItems = getAvailableNavItems();
+
+  // Group available navigation items by category
+  const groupedNavItems = availableNavItems.reduce((acc, item) => {
+    const category = item.category || 'Other';
+    if (!acc[category]) {
+      acc[category] = [];
+    }
+    acc[category].push(item);
+    return acc;
+  }, {} as Record<string, NavItem[]>);
+
+  // Filter navigation items based on search (from available items only)
+  const filteredNavItems = searchQuery
+    ? availableNavItems.filter(item =>
+        item.label.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : null;
 
   const renderContent = () => {
     switch (activeView) {
@@ -179,7 +200,7 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
       case 'connections':
         return <ConnectionMonitor makeApiCall={makeApiCall} addLog={addLog} />;
       case 'viewbot':
-        console.log('Rendering ViewBotTab in AdminPanelV3');
+        // console.log('Rendering ViewBotTab in AdminPanelV3');
         return <ViewBotTab makeApiCall={makeApiCall} addLog={addLog} />;
       case 'items':
         return <ItemManagement addLog={addLog} />;
@@ -240,7 +261,7 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
             >
               ☰
             </button>
-            <h2>⚙️ OneStreamer Admin</h2>
+            <h2>⚙️ OneStreamer {isAdminAuthenticated ? 'Admin' : 'Moderator'} Panel</h2>
           </div>
           
           <div className="header-center">

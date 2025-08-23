@@ -126,18 +126,28 @@ function verifyToken(token) {
   }
 }
 
-// Get user admin status from main server
-async function getUserAdminStatus(userId) {
+// Get user admin/moderator status from main server
+async function getUserStatus(userId) {
   try {
     const response = await axios.get(
-      `${MAIN_SERVER_URL}/api/internal/user/${userId}/admin-status`, 
+      `${MAIN_SERVER_URL}/api/admin/internal/user/${userId}/status`, 
       getAxiosConfig({ timeout: 5000 })
     );
-    return response.data.isAdmin || false;
+    return {
+      isAdmin: response.data.isAdmin || false,
+      isModerator: response.data.isModerator || false,
+      isBanned: response.data.isBanned || false
+    };
   } catch (error) {
-    console.error(`❌ CHAT: Failed to check admin status for user ${userId}:`, error.message);
-    return false;
+    console.error(`❌ CHAT: Failed to check user status for user ${userId}:`, error.message);
+    return { isAdmin: false, isModerator: false, isBanned: false };
   }
+}
+
+// Legacy function for backward compatibility
+async function getUserAdminStatus(userId) {
+  const status = await getUserStatus(userId);
+  return status.isAdmin;
 }
 
 // Get IP address from socket
@@ -423,7 +433,11 @@ function updateUserMessageHistory(username, message) {
 // Admin command handlers
 const adminCommands = {
   help: (socket, args, userInfo, io) => {
-    const helpMessage = `Available admin commands:
+    let helpMessage;
+    
+    if (userInfo.isAdmin) {
+      // Full admin commands
+      helpMessage = `Available admin commands:
 /help - Show this help message
 /ban [username] - Ban a user from chat
 /unban [username] - Unban a user from chat
@@ -434,6 +448,19 @@ const adminCommands = {
 /claim - Manually trigger a claim event
 /take [username] [amount] - Take points from a user (admin only)
 /announce [message] - Send a highlighted announcement`;
+    } else if (userInfo.isModerator) {
+      // Moderator commands only
+      helpMessage = `Available moderator commands:
+/help - Show this help message
+/ban [username] - Ban a user from chat
+/unban [username] - Unban a user from chat
+/timeout [username] [seconds] - Timeout a user for specified duration
+/clear - Clear all chat messages
+/tts [message] - Send a TTS message
+/announce [message] - Send a highlighted announcement`;
+    } else {
+      helpMessage = 'You do not have permission to use admin commands.';
+    }
     
     sendAdminResponse(socket, helpMessage);
   },
@@ -623,6 +650,12 @@ const adminCommands = {
   },
   
   claim: (socket, args, userInfo, io) => {
+    // Admin only command
+    if (!userInfo.isAdmin) {
+      sendAdminResponse(socket, 'This command is only available to administrators.');
+      return;
+    }
+    
     const result = startClaimEvent(true);
     if (result) {
       sendAdminResponse(socket, '✅ Claim event started manually!');
@@ -632,6 +665,12 @@ const adminCommands = {
   },
   
   award: async (socket, args, userInfo, io) => {
+    // Admin only command
+    if (!userInfo.isAdmin) {
+      sendAdminResponse(socket, 'This command is only available to administrators.');
+      return;
+    }
+    
     if (args.length < 2) {
       sendAdminResponse(socket, 'Usage: /award [username] [amount]');
       return;
@@ -690,6 +729,12 @@ const adminCommands = {
   },
   
   take: async (socket, args, userInfo, io) => {
+    // Admin only command
+    if (!userInfo.isAdmin) {
+      sendAdminResponse(socket, 'This command is only available to administrators.');
+      return;
+    }
+    
     if (args.length < 2) {
       sendAdminResponse(socket, 'Usage: /take [username] [amount]');
       return;
@@ -1731,12 +1776,15 @@ io.on('connection', async (socket) => {
     const colorIndex = authenticatedUser.id % COLORS.length;
     let userColor = COLORS[colorIndex]; // Default color
     
-    // Check if user is admin
+    // Check user status (admin/moderator)
     let isAdmin = false;
+    let isModerator = false;
     try {
-      isAdmin = await getUserAdminStatus(authenticatedUser.id);
+      const userStatus = await getUserStatus(authenticatedUser.id);
+      isAdmin = userStatus.isAdmin;
+      isModerator = userStatus.isModerator;
     } catch (error) {
-      console.error(`💬 CHAT: Failed to get admin status for user ${authenticatedUser.id}:`, error);
+      console.error(`💬 CHAT: Failed to get user status for user ${authenticatedUser.id}:`, error);
     }
     
     // Try to load saved color preference
@@ -1758,9 +1806,10 @@ io.on('connection', async (socket) => {
       color: userColor,
       isAuthenticated: true,
       isAdmin: isAdmin,
+      isModerator: isModerator,
       userId: authenticatedUser.id
     };
-    console.log(`💬 CHAT: Using authenticated username: ${userInfo.name} with color ${userInfo.color} (Admin: ${isAdmin})`);
+    console.log(`💬 CHAT: Using authenticated username: ${userInfo.name} with color ${userInfo.color} (Admin: ${isAdmin}, Moderator: ${isModerator}, UserId: ${authenticatedUser.id})`);
     
     // For authenticated users, remove any previous IP-based assignment to prevent conflicts
     if (ipToUser.has(ip)) {
@@ -1804,6 +1853,7 @@ io.on('connection', async (socket) => {
       color: userInfo.color,
       isAuthenticated: userInfo.isAuthenticated || false,
       isAdmin: userInfo.isAdmin || false,
+      isModerator: userInfo.isModerator || false,
       authenticatedUserId: userInfo.userId || null,
       joinedAt: new Date().toISOString()
     });
@@ -1936,7 +1986,9 @@ io.on('connection', async (socket) => {
         message: sanitizedMessage,
         timestamp: formatTime(),
         fullTimestamp: new Date().toISOString(),
-        userId: socket.id
+        userId: socket.id,
+        isAdmin: user.isAdmin || false,
+        isModerator: user.isModerator || false
       };
       
       chatMessages.push(commandMessage);
@@ -1956,10 +2008,10 @@ io.on('connection', async (socket) => {
       const command = parts[0].toLowerCase();
       const args = parts.slice(1);
       
-      // Check for admin commands
-      if (!user.isAuthenticated || !user.isAdmin) {
-        sendAdminResponse(socket, 'Admin access required to use this command');
-        console.log(`💬 CHAT: Non-admin user ${user.username} tried to use command: ${command}`);
+      // Check for admin/moderator commands
+      if (!user.isAuthenticated || (!user.isAdmin && !user.isModerator)) {
+        sendAdminResponse(socket, 'Admin or Moderator access required to use this command');
+        console.log(`💬 CHAT: Non-admin/moderator user ${user.username} (isAdmin: ${user.isAdmin}, isModerator: ${user.isModerator}) tried to use command: ${command}`);
         return;
       }
       
@@ -1989,6 +2041,8 @@ io.on('connection', async (socket) => {
       timestamp: formatTime(),
       fullTimestamp: new Date().toISOString(),
       userId: socket.id,
+      isAdmin: user.isAdmin || false,
+      isModerator: user.isModerator || false,
       mentions: mentions // Add mentions array to message
     };
     
@@ -2044,6 +2098,7 @@ io.on('connection', async (socket) => {
         color: data.color,
         isAuthenticated: false,
         isAdmin: false,
+        isModerator: false,
         isBot: true,
         botId: botId,
         authenticatedUserId: null,

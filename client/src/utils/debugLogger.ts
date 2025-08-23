@@ -77,7 +77,7 @@ class DebugLogger {
           this.config.enabled = true;
         }
         this.saveConfig();
-        console.log(`🔧 Debug ${category ? `'${category}'` : 'all'} enabled`);
+        // console.log(`🔧 Debug ${category ? `'${category}'` : 'all'} enabled`);
       },
       disable: (category?: string) => {
         if (category) {
@@ -87,13 +87,13 @@ class DebugLogger {
           this.config.enabled = false;
         }
         this.saveConfig();
-        console.log(`🔧 Debug ${category ? `'${category}'` : 'all'} disabled`);
+        // console.log(`🔧 Debug ${category ? `'${category}'` : 'all'} disabled`);
       },
       setLevel: (category: string, level: 'verbose' | 'normal' | 'minimal' | 'off') => {
         this.config.levels[category] = level;
         this.config.categories[category] = level !== 'off';
         this.saveConfig();
-        console.log(`🔧 Debug '${category}' set to ${level}`);
+        // console.log(`🔧 Debug '${category}' set to ${level}`);
       },
       status: () => {
         console.table(this.config.categories);
@@ -102,7 +102,7 @@ class DebugLogger {
       reset: () => {
         this.config = defaultConfig;
         this.saveConfig();
-        console.log('🔧 Debug config reset to defaults');
+        // console.log('🔧 Debug config reset to defaults');
       }
     };
   }
@@ -134,9 +134,9 @@ class DebugLogger {
     if (this.shouldLog(category, level)) {
       const prefix = this.getPrefix(category);
       if (data !== undefined) {
-        console.log(`${prefix} ${message}`, data);
+        // console.log(`${prefix} ${message}`, data);
       } else {
-        console.log(`${prefix} ${message}`);
+        // console.log(`${prefix} ${message}`);
       }
     }
   }

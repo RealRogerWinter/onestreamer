@@ -120,30 +120,30 @@ export class StreamerViewManager {
   // Apply combined CSS filters to video element
   private updateVideoFilters() {
     if (!this.videoElement) {
-      console.log('🎬 STREAMER VIEW: Cannot update filters - no video element');
+      // console.log('🎬 STREAMER VIEW: Cannot update filters - no video element');
       return;
     }
     
     const filterValues = Array.from(this.activeCSSFilters.values());
     const combinedFilter = filterValues.join(' ');
     
-    console.log(`🎬 STREAMER VIEW: Updating video filters: "${combinedFilter || 'none'}"`);
-    console.log(`🎬 STREAMER VIEW: Active CSS filters count: ${this.activeCSSFilters.size}`);
+    // console.log(`🎬 STREAMER VIEW: Updating video filters: "${combinedFilter || 'none'}"`);
+    // console.log(`🎬 STREAMER VIEW: Active CSS filters count: ${this.activeCSSFilters.size}`);
     
     // Clear filter completely if no active filters
     if (combinedFilter === '') {
       this.videoElement.style.filter = '';
-      console.log('🎬 STREAMER VIEW: Cleared all CSS filters from video element');
+      // console.log('🎬 STREAMER VIEW: Cleared all CSS filters from video element');
     } else {
       this.videoElement.style.filter = combinedFilter;
-      console.log(`🎬 STREAMER VIEW: Applied CSS filters to video element: ${combinedFilter}`);
+      // console.log(`🎬 STREAMER VIEW: Applied CSS filters to video element: ${combinedFilter}`);
     }
   }
   
   // Clear specific CSS filter
   private removeCSSFilter(effectId: string) {
     if (this.activeCSSFilters.has(effectId)) {
-      console.log(`🎬 STREAMER VIEW: Removing CSS filter for ${effectId}`);
+      // console.log(`🎬 STREAMER VIEW: Removing CSS filter for ${effectId}`);
       this.activeCSSFilters.delete(effectId);
       this.updateVideoFilters();
     }
@@ -151,7 +151,7 @@ export class StreamerViewManager {
 
   private initialize() {
     if (this.isInitialized) {
-      console.log('🎬 STREAMER VIEW: Already initialized, skipping');
+      // console.log('🎬 STREAMER VIEW: Already initialized, skipping');
       return;
     }
 
@@ -164,31 +164,31 @@ export class StreamerViewManager {
     this.setupSocketListeners();
     
     this.isInitialized = true;
-    console.log('🎬 STREAMER VIEW: Manager initialized for socket:', this.socket.id);
+    // console.log('🎬 STREAMER VIEW: Manager initialized for socket:', this.socket.id);
   }
 
   private setupSocketListeners() {
-    console.log('🎬 STREAMER VIEW: Setting up socket listeners for socket:', this.socket.id);
+    // console.log('🎬 STREAMER VIEW: Setting up socket listeners for socket:', this.socket.id);
     
     // Listen for ALL visual effects being applied (for debugging)
     this.socket.onAny((eventName, ...args) => {
       if (eventName.includes('visual-effect')) {
-        console.log('🎬 STREAMER VIEW: Received socket event:', eventName, 'Data:', args[0]);
-        console.log('🎬 STREAMER VIEW: Event data structure:', JSON.stringify(args[0], null, 2));
+        // console.log('🎬 STREAMER VIEW: Received socket event:', eventName, 'Data:', args[0]);
+        // console.log('🎬 STREAMER VIEW: Event data structure:', JSON.stringify(args[0], null, 2));
         
         // IMPORTANT: Process the events here since the specific listeners aren't always working
         if (eventName === 'visual-effect-applied' && args[0]) {
           const data = args[0];
-          console.log('🎬 STREAMER VIEW: Processing from onAny - isStreamerPreview:', data.isStreamerPreview);
+          // console.log('🎬 STREAMER VIEW: Processing from onAny - isStreamerPreview:', data.isStreamerPreview);
           if (data.isStreamerPreview) {
-            console.log('🎬 STREAMER VIEW: Effect is for streamer preview, handling:', data.effectId);
+            // console.log('🎬 STREAMER VIEW: Effect is for streamer preview, handling:', data.effectId);
             this.handleEffectApplied(data.effectId, data.duration || 15000);
           }
         } else if (eventName === 'visual-effects-cleared') {
-          console.log('🎬 STREAMER VIEW: Processing clear all effects from onAny');
+          // console.log('🎬 STREAMER VIEW: Processing clear all effects from onAny');
           this.handleAllEffectsCleared();
         } else if (eventName === 'visual-effect-removed' && args[0]) {
-          console.log('🎬 STREAMER VIEW: Processing effect removal from onAny:', args[0].effectInstanceId);
+          // console.log('🎬 STREAMER VIEW: Processing effect removal from onAny:', args[0].effectInstanceId);
           this.handleEffectRemoved(args[0].effectInstanceId);
         }
       }
@@ -196,12 +196,12 @@ export class StreamerViewManager {
     
     // Also try to set up specific listener (keeping for compatibility)
     this.socket.on('visual-effect-applied', (data: any) => {
-      console.log('🎬 STREAMER VIEW: SPECIFIC HANDLER - visual-effect-applied handler triggered!', data);
+      // console.log('🎬 STREAMER VIEW: SPECIFIC HANDLER - visual-effect-applied handler triggered!', data);
       if (data && data.isStreamerPreview) {
-        console.log('🎬 STREAMER VIEW: SPECIFIC HANDLER - Effect is for streamer preview, handling:', data.effectId);
+        // console.log('🎬 STREAMER VIEW: SPECIFIC HANDLER - Effect is for streamer preview, handling:', data.effectId);
         this.handleEffectApplied(data.effectId, data.duration || 15000);
       } else {
-        console.log('🎬 STREAMER VIEW: SPECIFIC HANDLER - Effect not for streamer preview, ignoring', data);
+        // console.log('🎬 STREAMER VIEW: SPECIFIC HANDLER - Effect not for streamer preview, ignoring', data);
       }
     });
 
@@ -233,12 +233,12 @@ export class StreamerViewManager {
     const effectKey = `${effectId}_${Math.floor(now / 1000)}`;
     
     if (this.processedEffectIds.has(effectKey) || timeSinceLastProcess < 100) {
-      console.log(`🎬 STREAMER VIEW: Skipping duplicate effect processing for ${effectId} (already processed or too soon)`);
+      // console.log(`🎬 STREAMER VIEW: Skipping duplicate effect processing for ${effectId} (already processed or too soon)`);
       return;
     }
     
     if (this.processingEffect || this.isSwitching) {
-      console.log(`🎬 STREAMER VIEW: Already processing/switching, queuing ${effectId} for later`);
+      // console.log(`🎬 STREAMER VIEW: Already processing/switching, queuing ${effectId} for later`);
       // Queue the effect to be processed after current operation
       setTimeout(() => this.handleEffectApplied(effectId, duration), 500);
       return;
@@ -253,45 +253,45 @@ export class StreamerViewManager {
       this.processedEffectIds.delete(effectKey);
     }, 5000);
     
-    console.log(`🎬 STREAMER VIEW: handleEffectApplied called - Effect: ${effectId}, Duration: ${duration}ms`);
-    console.log(`🎬 STREAMER VIEW: Current state - Mode: ${this.currentState.mode}, Active effects: ${this.currentState.activeEffects.length}`);
+    // console.log(`🎬 STREAMER VIEW: handleEffectApplied called - Effect: ${effectId}, Duration: ${duration}ms`);
+    // console.log(`🎬 STREAMER VIEW: Current state - Mode: ${this.currentState.mode}, Active effects: ${this.currentState.activeEffects.length}`);
     
     // Add to active effects
     if (!this.currentState.activeEffects.includes(effectId)) {
       this.currentState.activeEffects.push(effectId);
-      console.log(`🎬 STREAMER VIEW: Added ${effectId} to active effects list`);
+      // console.log(`🎬 STREAMER VIEW: Added ${effectId} to active effects list`);
     }
 
     // Check if this effect requires stream processing
     const requiresStreamProcessing = this.effectsRequiringStreamProcessing.has(effectId);
-    console.log(`🎬 STREAMER VIEW: Effect ${effectId} requires stream processing: ${requiresStreamProcessing}`);
+    // console.log(`🎬 STREAMER VIEW: Effect ${effectId} requires stream processing: ${requiresStreamProcessing}`);
     
     // Check if this is a client-side CSS effect
     const cssFilter = this.getCSSFilterForEffect(effectId);
     
     if (cssFilter) {
       // Apply CSS filter directly to the video element
-      console.log(`🎬 STREAMER VIEW: Applying client-side CSS filter for ${effectId}: ${cssFilter}`);
+      // console.log(`🎬 STREAMER VIEW: Applying client-side CSS filter for ${effectId}: ${cssFilter}`);
       this.activeCSSFilters.set(effectId, cssFilter);
       this.updateVideoFilters();
     } else if (requiresStreamProcessing) {
       this.currentState.hasStreamProcessingEffects = true;
-      console.log(`🎬 STREAMER VIEW: Stream processing effects flag set to true`);
+      // console.log(`🎬 STREAMER VIEW: Stream processing effects flag set to true`);
       
       // Switch to self-stream viewing if not already
       if (this.currentState.mode === 'local-preview') {
-        console.log(`🎬 STREAMER VIEW: Currently in local-preview mode, switching to self-stream view for effect: ${effectId}`);
+        // console.log(`🎬 STREAMER VIEW: Currently in local-preview mode, switching to self-stream view for effect: ${effectId}`);
         this.switchToSelfStream();
       } else {
-        console.log(`🎬 STREAMER VIEW: Already in ${this.currentState.mode} mode, no switch needed`);
+        // console.log(`🎬 STREAMER VIEW: Already in ${this.currentState.mode} mode, no switch needed`);
       }
     } else {
-      console.log(`🎬 STREAMER VIEW: Effect ${effectId} doesn't require stream processing or CSS, keeping local preview`);
+      // console.log(`🎬 STREAMER VIEW: Effect ${effectId} doesn't require stream processing or CSS, keeping local preview`);
     }
 
     // Set timeout to remove effect
     if (duration > 0) {
-      console.log(`🎬 STREAMER VIEW: Setting timeout to remove effect after ${duration}ms`);
+      // console.log(`🎬 STREAMER VIEW: Setting timeout to remove effect after ${duration}ms`);
       setTimeout(() => {
         this.handleEffectRemoved(effectId);
       }, duration);
@@ -304,7 +304,7 @@ export class StreamerViewManager {
   }
 
   private handleEffectRemoved(effectId: string) {
-    console.log(`🎬 STREAMER VIEW: Effect removed: ${effectId}`);
+    // console.log(`🎬 STREAMER VIEW: Effect removed: ${effectId}`);
     
     // Remove from active effects
     this.currentState.activeEffects = this.currentState.activeEffects.filter(id => id !== effectId);
@@ -327,16 +327,16 @@ export class StreamerViewManager {
       }
       
       this.switchTimeout = setTimeout(() => {
-        console.log('🎬 STREAMER VIEW: No more stream effects, switching back to local preview');
+        // console.log('🎬 STREAMER VIEW: No more stream effects, switching back to local preview');
         this.switchToLocalPreview();
       }, 1000);
     }
   }
 
   private handleAllEffectsCleared() {
-    console.log('🎬 STREAMER VIEW: handleAllEffectsCleared called - Clearing all effects');
-    console.log('🎬 STREAMER VIEW: Active CSS filters before clear:', Array.from(this.activeCSSFilters.keys()));
-    console.log('🎬 STREAMER VIEW: Active effects before clear:', this.currentState.activeEffects);
+    // console.log('🎬 STREAMER VIEW: handleAllEffectsCleared called - Clearing all effects');
+    // console.log('🎬 STREAMER VIEW: Active CSS filters before clear:', Array.from(this.activeCSSFilters.keys()));
+    // console.log('🎬 STREAMER VIEW: Active effects before clear:', this.currentState.activeEffects);
     
     // Clear active effects list
     this.currentState.activeEffects = [];
@@ -346,23 +346,23 @@ export class StreamerViewManager {
     this.activeCSSFilters.clear();
     this.updateVideoFilters();
     
-    console.log('🎬 STREAMER VIEW: All CSS filters and effects cleared');
+    // console.log('🎬 STREAMER VIEW: All CSS filters and effects cleared');
     
     // Switch back to local preview if we were viewing processed stream
     if (this.currentState.mode === 'self-stream') {
-      console.log('🎬 STREAMER VIEW: Switching back to local preview after clearing effects');
+      // console.log('🎬 STREAMER VIEW: Switching back to local preview after clearing effects');
       this.switchToLocalPreview();
     }
   }
 
   private async switchToSelfStream() {
     if (this.currentState.mode === 'self-stream') {
-      console.log('🎬 STREAMER VIEW: Already in self-stream mode');
+      // console.log('🎬 STREAMER VIEW: Already in self-stream mode');
       return;
     }
     
     if (this.isSwitching) {
-      console.log('🎬 STREAMER VIEW: Already switching, aborting duplicate switch');
+      // console.log('🎬 STREAMER VIEW: Already switching, aborting duplicate switch');
       return;
     }
     
@@ -380,14 +380,14 @@ export class StreamerViewManager {
     this.isSwitching = true;
 
     try {
-      console.log('🎬 STREAMER VIEW: Starting switch to self-stream view...');
-      console.log('🎬 STREAMER VIEW: Video element exists:', !!this.videoElement);
-      console.log('🎬 STREAMER VIEW: Current video srcObject:', this.videoElement.srcObject);
+      // console.log('🎬 STREAMER VIEW: Starting switch to self-stream view...');
+      // console.log('🎬 STREAMER VIEW: Video element exists:', !!this.videoElement);
+      // console.log('🎬 STREAMER VIEW: Current video srcObject:', this.videoElement.srcObject);
       
       // Store current local stream and pause video to prevent AbortError
       if (this.videoElement.srcObject instanceof MediaStream) {
         this.originalStream = this.videoElement.srcObject;
-        console.log('🎬 STREAMER VIEW: Stored original stream with', this.originalStream.getTracks().length, 'tracks');
+        // console.log('🎬 STREAMER VIEW: Stored original stream with', this.originalStream.getTracks().length, 'tracks');
         
         // Pause the video element before switching sources
         this.videoElement.pause();
@@ -400,11 +400,11 @@ export class StreamerViewManager {
       // The socket is already connected and authenticated
       this.viewerSocket = this.socket;
       
-      console.log('🎬 STREAMER VIEW: Using existing socket connection:', this.socket.id);
+      // console.log('🎬 STREAMER VIEW: Using existing socket connection:', this.socket.id);
       
       // Ensure socket is connected
       if (!this.socket.connected) {
-        console.log('🎬 STREAMER VIEW: Socket not connected, waiting for connection...');
+        // console.log('🎬 STREAMER VIEW: Socket not connected, waiting for connection...');
         await new Promise((resolve, reject) => {
           const timeout = setTimeout(() => reject(new Error('Socket connection timeout')), 5000);
           
@@ -429,7 +429,7 @@ export class StreamerViewManager {
           ? 'http://localhost:8080' 
           : window.location.origin);
         
-      console.log('🎬 STREAMER VIEW: Creating MediasoupClient with server URL:', mediasoupServerUrl);
+      // console.log('🎬 STREAMER VIEW: Creating MediasoupClient with server URL:', mediasoupServerUrl);
       
       this.mediasoupClient = new MediasoupClient({
         socket: this.viewerSocket,
@@ -450,7 +450,7 @@ export class StreamerViewManager {
       const processedStream = await this.mediasoupClient.consume();
       
       if (processedStream && processedStream.getTracks().length > 0) {
-        console.log('🎬 STREAMER VIEW: Received processed stream with', processedStream.getTracks().length, 'tracks');
+        // console.log('🎬 STREAMER VIEW: Received processed stream with', processedStream.getTracks().length, 'tracks');
         
         // Ensure video element is ready for new stream
         this.videoElement.srcObject = null;
@@ -484,7 +484,7 @@ export class StreamerViewManager {
         // Now play the video
         try {
           await this.videoElement.play();
-          console.log('✅ STREAMER VIEW: Video playing processed stream');
+          // console.log('✅ STREAMER VIEW: Video playing processed stream');
         } catch (playError) {
           console.error('❌ STREAMER VIEW: Error playing video:', playError);
           // Try to play again after a short delay
@@ -498,7 +498,7 @@ export class StreamerViewManager {
         this.currentState.mode = 'self-stream';
         this.currentState.lastSwitchTime = Date.now();
         
-        console.log('✅ STREAMER VIEW: Successfully switched to consuming own stream');
+        // console.log('✅ STREAMER VIEW: Successfully switched to consuming own stream');
         
         // Visual indicator is handled by the React component (WebRTCStreamer)
         // No need to add it here to avoid duplicates
@@ -519,12 +519,12 @@ export class StreamerViewManager {
 
   private async switchToLocalPreview() {
     if (this.currentState.mode === 'local-preview') {
-      console.log('🎬 STREAMER VIEW: Already in local preview mode');
+      // console.log('🎬 STREAMER VIEW: Already in local preview mode');
       return;
     }
     
     if (this.isSwitching) {
-      console.log('🎬 STREAMER VIEW: Already switching, aborting duplicate switch');
+      // console.log('🎬 STREAMER VIEW: Already switching, aborting duplicate switch');
       return;
     }
     
@@ -542,7 +542,7 @@ export class StreamerViewManager {
     this.isSwitching = true;
 
     try {
-      console.log('🎬 STREAMER VIEW: Switching back to local preview...');
+      // console.log('🎬 STREAMER VIEW: Switching back to local preview...');
       
       // Pause video before switching
       this.videoElement.pause();
@@ -578,7 +578,7 @@ export class StreamerViewManager {
         // Now play the video
         try {
           await this.videoElement.play();
-          console.log('✅ STREAMER VIEW: Video playing local preview');
+          // console.log('✅ STREAMER VIEW: Video playing local preview');
         } catch (playError) {
           console.error('❌ STREAMER VIEW: Error playing local preview:', playError);
         }
@@ -592,7 +592,7 @@ export class StreamerViewManager {
       this.currentState.mode = 'local-preview';
       this.currentState.lastSwitchTime = Date.now();
       
-      console.log('✅ STREAMER VIEW: Successfully switched back to local preview');
+      // console.log('✅ STREAMER VIEW: Successfully switched back to local preview');
       
       // Visual indicator is handled by the React component (WebRTCStreamer)
       // No need to remove it here
@@ -605,12 +605,12 @@ export class StreamerViewManager {
   }
 
   private async cleanupViewerConnection() {
-    console.log('🎬 STREAMER VIEW: Starting viewer connection cleanup...');
+    // console.log('🎬 STREAMER VIEW: Starting viewer connection cleanup...');
     
     try {
       // Clean up MediasoupClient first
       if (this.mediasoupClient) {
-        console.log('🎬 STREAMER VIEW: Cleaning up MediasoupClient...');
+        // console.log('🎬 STREAMER VIEW: Cleaning up MediasoupClient...');
         await this.mediasoupClient.cleanup();
         this.mediasoupClient = null;
         // Wait for cleanup to complete
@@ -619,13 +619,13 @@ export class StreamerViewManager {
 
       // Reset viewer socket reference (don't disconnect since it's the main socket)
       if (this.viewerSocket) {
-        console.log('🎬 STREAMER VIEW: Resetting viewer socket reference');
+        // console.log('🎬 STREAMER VIEW: Resetting viewer socket reference');
         this.viewerSocket = null;
         // Small delay for cleanup
         await new Promise(resolve => setTimeout(resolve, 200));
       }
       
-      console.log('✅ STREAMER VIEW: Viewer connection cleanup completed');
+      // console.log('✅ STREAMER VIEW: Viewer connection cleanup completed');
     } catch (error) {
       console.error('❌ STREAMER VIEW: Error during cleanup:', error);
     }
@@ -647,17 +647,17 @@ export class StreamerViewManager {
   }
 
   public forceLocalPreview() {
-    console.log('🎬 STREAMER VIEW: Force switching to local preview');
+    // console.log('🎬 STREAMER VIEW: Force switching to local preview');
     this.switchToLocalPreview();
   }
 
   public forceSelfStream() {
-    console.log('🎬 STREAMER VIEW: Force switching to self-stream view');
+    // console.log('🎬 STREAMER VIEW: Force switching to self-stream view');
     this.switchToSelfStream();
   }
 
   public async cleanup() {
-    console.log('🎬 STREAMER VIEW: Cleaning up manager');
+    // console.log('🎬 STREAMER VIEW: Cleaning up manager');
     
     this.isSwitching = false;
     this.processingEffect = false;

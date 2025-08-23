@@ -703,14 +703,14 @@ export class EffectEngine extends EventEmitter {
 
   public triggerEffect(effectData: EffectData): void {
     try {
-      console.log(`🎬 ENGINE: triggerEffect called with:`, {
-        itemName: effectData.itemName,
-        type: effectData.type,
-        id: effectData.id
-      });
+      // console.log(`🎬 ENGINE: triggerEffect called with:`, {
+      //   itemName: effectData.itemName,
+      //   type: effectData.type,
+      //   id: effectData.id
+      // });
       
       if (effectData.itemName === 'smoke_bomb') {
-        console.log(`🔥 ENGINE: Triggering smoke bomb effect - ${effectData.config.phaseName || effectData.type}`);
+        // console.log(`🔥 ENGINE: Triggering smoke bomb effect - ${effectData.config.phaseName || effectData.type}`);
       }
       
       const effect = this.createEffectRenderer(effectData);
@@ -752,7 +752,7 @@ export class EffectEngine extends EventEmitter {
 
     // SPECIAL CASE: Force smoke bomb items to use SmokeEffect regardless of type
     if (effectData.itemName === 'smoke_bomb') {
-      console.log('🔥 ENGINE: FORCING SmokeEffect for smoke_bomb item!');
+      // console.log('🔥 ENGINE: FORCING SmokeEffect for smoke_bomb item!');
       const isInitialPuff = effectData.config.phaseName === 'initial_puff';
       return new SmokeEffect({
         ...commonConfig,
@@ -778,10 +778,10 @@ export class EffectEngine extends EventEmitter {
         });
       
       case 'particles':
-        console.log('🔥 ENGINE: Creating particle effect with animation:', effectData.config.animation);
+        // console.log('🔥 ENGINE: Creating particle effect with animation:', effectData.config.animation);
         // Check if this is a smoke-related particle effect
         if (effectData.config.animation === 'smoke-puff') {
-          console.log('🔥 ENGINE: Creating SmokeEffect for smoke-puff!');
+          // console.log('🔥 ENGINE: Creating SmokeEffect for smoke-puff!');
           return new SmokeEffect({
             ...commonConfig,
             effectType: 'puff',
@@ -814,10 +814,10 @@ export class EffectEngine extends EventEmitter {
         });
       
       case 'overlay':
-        console.log('🔥 ENGINE: Creating overlay effect with animation:', effectData.config.animation, 'smokeClouds:', effectData.config.smokeClouds, 'full config:', effectData.config);
+        // console.log('🔥 ENGINE: Creating overlay effect with animation:', effectData.config.animation, 'smokeClouds:', effectData.config.smokeClouds, 'full config:', effectData.config);
         // Check if this is a smoke-related overlay effect
         if (effectData.config.animation === 'smoke-fill') {
-          console.log('🔥 ENGINE: Creating SmokeEffect for smoke-fill!');
+          // console.log('🔥 ENGINE: Creating SmokeEffect for smoke-fill!');
           return new SmokeEffect({
             ...commonConfig,
             effectType: 'persistent',
@@ -877,7 +877,7 @@ export class EffectEngine extends EventEmitter {
         return null;
       
       case 'drawing':
-        console.log('✏️ ENGINE: Creating DrawingEffect for drawing phase', effectData.config);
+        // console.log('✏️ ENGINE: Creating DrawingEffect for drawing phase', effectData.config);
         // Check for shared drawing data key based on main effect ID
         // Use the full mainEffectId to ensure uniqueness per drawing session
         const drawingKey = effectData.mainEffectId || effectData.id;
@@ -898,12 +898,12 @@ export class EffectEngine extends EventEmitter {
         });
       
       case 'static_drawing':
-        console.log('✏️ ENGINE: Creating DrawingEffect for display phase');
+        // console.log('✏️ ENGINE: Creating DrawingEffect for display phase');
         // Retrieve shared drawing data
         // Use the full mainEffectId to ensure uniqueness per drawing session
         const displayKey = effectData.mainEffectId || effectData.id;
         const sharedPaths = this.sharedDrawingData.get(displayKey) || [];
-        console.log(`✏️ ENGINE: Display phase using ${sharedPaths.length} shared paths`);
+        // console.log(`✏️ ENGINE: Display phase using ${sharedPaths.length} shared paths`);
         
         return new DrawingEffect({
           ...commonConfig,
@@ -998,13 +998,13 @@ export class EffectEngine extends EventEmitter {
             const mainEffectId = effectId.replace(/_phase\d+$/, '');
             const dataKey = mainEffectId;
             
-            console.log(`✏️ ENGINE: Saving ${drawingData.length} drawing paths with key ${dataKey}`);
+            // console.log(`✏️ ENGINE: Saving ${drawingData.length} drawing paths with key ${dataKey}`);
             this.sharedDrawingData.set(dataKey, drawingData);
             
             // Clean up old data after 30 seconds
             setTimeout(() => {
               this.sharedDrawingData.delete(dataKey);
-              console.log(`✏️ ENGINE: Cleaned up drawing data for ${dataKey}`);
+              // console.log(`✏️ ENGINE: Cleaned up drawing data for ${dataKey}`);
             }, 30000);
           }
         }
@@ -1051,7 +1051,7 @@ export class EffectEngine extends EventEmitter {
     if (effectsToRemove.length > 0) {
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.emit('effectCountChange', this.activeEffects.size);
-      console.log(`🧹 EffectEngine: Cleared ${effectsToRemove.length} effects by type:`, itemNames);
+      // console.log(`🧹 EffectEngine: Cleared ${effectsToRemove.length} effects by type:`, itemNames);
     }
   }
 
@@ -1193,14 +1193,14 @@ export class EffectEngine extends EventEmitter {
 
   public setSocket(socket: any): void {
     this.socket = socket;
-    console.log('🔌 EffectEngine: Socket connection set');
+    // console.log('🔌 EffectEngine: Socket connection set');
   }
 
   public handleRemoteDrawingPath(data: { effectId: string; path: any }): void {
     // Find the active drawing effect with matching ID
     this.activeEffects.forEach((effect, id) => {
       if (id === data.effectId && effect instanceof DrawingEffect) {
-        console.log('✏️ ENGINE: Adding remote drawing path to effect', data.effectId);
+        // console.log('✏️ ENGINE: Adding remote drawing path to effect', data.effectId);
         (effect as DrawingEffect).addPath(data.path);
       }
     });
@@ -1210,7 +1210,7 @@ export class EffectEngine extends EventEmitter {
     // Find the active drawing effect with matching ID
     this.activeEffects.forEach((effect, id) => {
       if (id === data.effectId && effect instanceof DrawingEffect) {
-        console.log('✏️ ENGINE: Adding drawing start point to effect', data.effectId);
+        // console.log('✏️ ENGINE: Adding drawing start point to effect', data.effectId);
         (effect as DrawingEffect).addDrawingStart(data);
       }
     });
@@ -1220,7 +1220,7 @@ export class EffectEngine extends EventEmitter {
     // Find the active drawing effect with matching ID
     this.activeEffects.forEach((effect, id) => {
       if (id === data.effectId && effect instanceof DrawingEffect) {
-        console.log('✏️ ENGINE: Adding real-time drawing segment to effect', data.effectId);
+        // console.log('✏️ ENGINE: Adding real-time drawing segment to effect', data.effectId);
         (effect as DrawingEffect).addDrawingSegment(data.segment);
       }
     });

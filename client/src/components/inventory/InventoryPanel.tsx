@@ -181,7 +181,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
     const handleItemUsed = (data: any) => {
       // ALWAYS update cooldown if present, regardless of notification handling
       if (data.item && data.item.cooldown) {
-        console.log('⏰ INVENTORY: Updating cooldown for item:', data.item.displayName, 'cooldown:', data.item.cooldown);
+        // console.log('⏰ INVENTORY: Updating cooldown for item:', data.item.displayName, 'cooldown:', data.item.cooldown);
         setCooldowns(prev => [
           ...prev.filter(cd => cd.itemId !== data.item.id),
           {
@@ -197,18 +197,18 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
       
       // Don't show notifications for interactive items using fallback mode
       if (data.interactiveFallback) {
-        console.log('🔇 INVENTORY: Skipping notification for interactive item fallback:', data.item);
+        // console.log('🔇 INVENTORY: Skipping notification for interactive item fallback:', data.item);
         return;
       }
       
       // Don't show notifications for items that were thrown (interactive items)
       if (data.thrown) {
-        console.log('🔇 INVENTORY: Skipping notification for thrown interactive item:', data.item?.displayName || data.item?.name);
+        // console.log('🔇 INVENTORY: Skipping notification for thrown interactive item:', data.item?.displayName || data.item?.name);
         return;
       }
       
       // Don't show any notifications - let the individual use handlers manage this
-      console.log('🔇 INVENTORY: Skipping all item-used notifications to prevent duplicates');
+      // console.log('🔇 INVENTORY: Skipping all item-used notifications to prevent duplicates');
     };
 
     socket.on('inventory-updated', handleInventoryUpdate);
@@ -237,7 +237,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
   // Expose cooldown update function globally for thrown items
   useEffect(() => {
     (window as any).updateItemCooldown = (item: { itemId: number; name: string; displayName: string; emoji: string; cooldown: number }) => {
-      console.log('⏰ INVENTORY: Updating cooldown from throw action:', item.displayName, 'cooldown:', item.cooldown);
+      // console.log('⏰ INVENTORY: Updating cooldown from throw action:', item.displayName, 'cooldown:', item.cooldown);
       setCooldowns(prev => {
         const newCooldowns = [
           ...prev.filter(cd => cd.itemId !== item.itemId),
@@ -250,7 +250,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
             cooldownEnd: Date.now() + (item.cooldown * 1000)
           }
         ];
-        console.log('⏰ INVENTORY: Updated cooldowns:', newCooldowns);
+        // console.log('⏰ INVENTORY: Updated cooldowns:', newCooldowns);
         return newCooldowns;
       });
     };
@@ -299,7 +299,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
       }
 
       const data = await response.json();
-      console.log('📊 Fetched cooldowns from server:', data);
+      // console.log('📊 Fetched cooldowns from server:', data);
       
       // Transform the cooldowns to include both remaining time and end time
       const transformedCooldowns = (data.itemCooldowns || []).map((cd: any) => ({
@@ -312,7 +312,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
       }));
       
       setCooldowns(transformedCooldowns);
-      console.log('📊 Set cooldowns state:', transformedCooldowns);
+      // console.log('📊 Set cooldowns state:', transformedCooldowns);
     } catch (err) {
       console.error('Error fetching cooldowns:', err);
     }
@@ -362,7 +362,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
       
       // Debug log for cooldown modifier items
       if (result.cooldownEffects) {
-        console.log('🛡️⚔️ INVENTORY: Cooldown modifier item used successfully:', result);
+        // console.log('🛡️⚔️ INVENTORY: Cooldown modifier item used successfully:', result);
       }
       
       // Check if this is a TTS item that needs input
@@ -377,7 +377,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
       
       // Don't show any notifications when using items - interactive items have click-to-throw UI
       // and non-interactive items will show notifications via socket events
-      console.log('🔇 INVENTORY: Skipping immediate use notification for item:', inventory.find(item => item.item_id === itemId)?.display_name);
+      // console.log('🔇 INVENTORY: Skipping immediate use notification for item:', inventory.find(item => item.item_id === itemId)?.display_name);
       
       // Update local inventory - only if item was actually consumed
       if (!result.interactiveMode && !result.ttsMode) {
@@ -390,7 +390,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
       // Add cooldown if applicable
       if (result.item.cooldown) {
-        console.log(`🔄 Adding cooldown for item ${itemId}: ${result.item.cooldown}s`);
+        // console.log(`🔄 Adding cooldown for item ${itemId}: ${result.item.cooldown}s`);
         setCooldowns(prev => {
           const newCooldowns = [
             ...prev.filter(cd => cd.itemId !== itemId),
@@ -403,7 +403,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
               cooldownEnd: Date.now() + (result.item.cooldown * 1000)
             }
           ];
-          console.log('🔄 Updated cooldowns state after use:', newCooldowns);
+          // console.log('🔄 Updated cooldowns state after use:', newCooldowns);
           return newCooldowns;
         });
       }
@@ -449,7 +449,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
       // Add cooldown
       if (result.item.cooldown) {
-        console.log(`🔄 Adding TTS cooldown for item ${ttsItem.item_id}: ${result.item.cooldown}s`);
+        // console.log(`🔄 Adding TTS cooldown for item ${ttsItem.item_id}: ${result.item.cooldown}s`);
         setCooldowns(prev => {
           const newCooldowns = [
             ...prev.filter(cd => cd.itemId !== ttsItem.item_id),
@@ -462,7 +462,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
               cooldownEnd: Date.now() + (result.item.cooldown * 1000)
             }
           ];
-          console.log('🔄 Updated cooldowns state after TTS use:', newCooldowns);
+          // console.log('🔄 Updated cooldowns state after TTS use:', newCooldowns);
           return newCooldowns;
         });
       }
@@ -547,7 +547,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
     const cooldown = cooldowns.find(cd => cd.itemId === itemId);
     const remaining = cooldown ? cooldown.cooldownRemaining : 0;
     if (remaining > 0) {
-      console.log(`⏰ Getting cooldown for item ${itemId}: ${remaining}s`);
+      // console.log(`⏰ Getting cooldown for item ${itemId}: ${remaining}s`);
     }
     return remaining;
   };

@@ -24,7 +24,7 @@ export const useStreamerViewManager = (
     if (!videoRef.current || !socket || !isStreaming) {
       // Clean up if conditions no longer met
       if (managerRef.current && !isStreaming) {
-        console.log('🎬 STREAMER VIEW HOOK: Cleaning up due to streaming stopped');
+        // console.log('🎬 STREAMER VIEW HOOK: Cleaning up due to streaming stopped');
         managerRef.current.cleanup();
         managerRef.current = null;
       }
@@ -33,12 +33,12 @@ export const useStreamerViewManager = (
 
     // Initialize StreamerViewManager only once
     if (!managerRef.current) {
-      console.log('🎬 STREAMER VIEW HOOK: Initializing StreamerViewManager', {
-        hasSocket: !!socket,
-        socketId: socket.id,
-        hasVideoElement: !!videoRef.current,
-        isStreaming
-      });
+      // console.log('🎬 STREAMER VIEW HOOK: Initializing StreamerViewManager', {
+      //   hasSocket: !!socket,
+      //   socketId: socket.id,
+      //   hasVideoElement: !!videoRef.current,
+      //   isStreaming
+      // });
       managerRef.current = new StreamerViewManager(socket, videoRef.current);
     }
     
@@ -58,7 +58,7 @@ export const useStreamerViewManager = (
     // Cleanup when component unmounts or streaming stops
     return () => {
       if (managerRef.current) {
-        console.log('🎬 STREAMER VIEW HOOK: Cleaning up StreamerViewManager');
+        // console.log('🎬 STREAMER VIEW HOOK: Cleaning up StreamerViewManager');
         managerRef.current.cleanup();
         managerRef.current = null;
       }
@@ -68,7 +68,7 @@ export const useStreamerViewManager = (
   // Cleanup when streaming stops
   useEffect(() => {
     if (!isStreaming && managerRef.current) {
-      console.log('🎬 STREAMER VIEW HOOK: Streaming stopped, forcing local preview');
+      // console.log('🎬 STREAMER VIEW HOOK: Streaming stopped, forcing local preview');
       managerRef.current.forceLocalPreview();
     }
   }, [isStreaming]);

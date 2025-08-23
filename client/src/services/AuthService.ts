@@ -8,9 +8,11 @@ interface User {
   username: string;
   isVerified?: boolean;
   isAdmin?: boolean;
+  isModerator?: boolean;
   isBanned?: boolean;
   is_verified?: boolean;
   is_admin?: boolean;
+  is_moderator?: boolean;
   is_banned?: boolean;
 }
 
@@ -96,7 +98,7 @@ class AuthService {
 
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
-      console.log('🔐 Attempting login with:', { email, passwordLength: password.length });
+      // console.log('🔐 Attempting login with:', { email, passwordLength: password.length });
       
       const response = await axios.post<AuthResponse>(`${API_URL}/auth/login`, {
         email,
@@ -111,7 +113,7 @@ class AuthService {
       // Re-setup interceptors with new token
       this.setupAxiosInterceptors();
 
-      console.log('✅ Login successful for user:', this.user.username);
+      // console.log('✅ Login successful for user:', this.user.username);
       return response.data;
     } catch (error: any) {
       console.error('❌ Login failed:', error.response?.status, error.response?.data);
@@ -365,44 +367,76 @@ class AuthService {
     return this.user?.isAdmin === true || this.user?.is_admin === true || (this.user?.is_admin as any) === 1;
   }
 
+  async isModerator(): Promise<boolean> {
+    try {
+      const response = await axios.get(`${API_URL}/auth/me`, {
+        headers: { 'Authorization': `Bearer ${this.token}` }
+      });
+      const profile = response.data;
+      if (profile && profile.user) {
+        return profile.user.isModerator === true || profile.user.is_moderator === true || (profile.user.is_moderator as any) === 1 || profile.user.isAdmin === true || profile.user.is_admin === true || (profile.user.is_admin as any) === 1;
+      }
+      return false;
+    } catch (error) {
+      // Fallback to cached user data
+      return this.user?.isModerator === true || this.user?.is_moderator === true || (this.user?.is_moderator as any) === 1 || this.user?.isAdmin === true || this.user?.is_admin === true || (this.user?.is_admin as any) === 1;
+    }
+  }
+
+  isModeratorSync(): boolean {
+    return this.user?.isModerator === true || this.user?.is_moderator === true || (this.user?.is_moderator as any) === 1 || this.user?.isAdmin === true || this.user?.is_admin === true || (this.user?.is_admin as any) === 1;
+  }
+
   // Admin API methods
   async getUsers(search?: string, limit = 50): Promise<any[]> {
     const params = new URLSearchParams();
     if (search) params.append('search', search);
     if (limit) params.append('limit', limit.toString());
 
-    const response = await axios.get(`${API_URL}/auth/admin/users?${params.toString()}`, {
+    const response = await axios.get(`${API_URL}/api/admin/users?${params.toString()}`, {
       headers: { 'Authorization': `Bearer ${this.token}` }
     });
-    return response.data.users;
+    return response.data;
   }
 
   async promoteUser(userId: number): Promise<void> {
-    await axios.post(`${API_URL}/auth/admin/users/${userId}/promote`, {}, {
+    await axios.post(`${API_URL}/api/admin/users/${userId}/promote-admin`, {}, {
       headers: { 'Authorization': `Bearer ${this.token}` }
     });
   }
 
   async demoteUser(userId: number): Promise<void> {
-    await axios.post(`${API_URL}/auth/admin/users/${userId}/demote`, {}, {
+    await axios.post(`${API_URL}/api/admin/users/${userId}/demote-admin`, {}, {
+      headers: { 'Authorization': `Bearer ${this.token}` }
+    });
+  }
+
+  async promoteModerator(userId: number): Promise<void> {
+    await axios.post(`${API_URL}/api/admin/users/${userId}/promote-moderator`, {}, {
+      headers: { 'Authorization': `Bearer ${this.token}` }
+    });
+  }
+
+  async demoteModerator(userId: number): Promise<void> {
+    await axios.post(`${API_URL}/api/admin/users/${userId}/demote-moderator`, {}, {
       headers: { 'Authorization': `Bearer ${this.token}` }
     });
   }
 
   async banUser(userId: number): Promise<void> {
-    await axios.post(`${API_URL}/auth/admin/users/${userId}/ban`, {}, {
+    await axios.post(`${API_URL}/api/admin/users/${userId}/ban`, {}, {
       headers: { 'Authorization': `Bearer ${this.token}` }
     });
   }
 
   async unbanUser(userId: number): Promise<void> {
-    await axios.post(`${API_URL}/auth/admin/users/${userId}/unban`, {}, {
+    await axios.post(`${API_URL}/api/admin/users/${userId}/unban`, {}, {
       headers: { 'Authorization': `Bearer ${this.token}` }
     });
   }
 
   async deleteUser(userId: number): Promise<void> {
-    await axios.delete(`${API_URL}/auth/admin/users/${userId}`, {
+    await axios.delete(`${API_URL}/api/admin/users/${userId}`, {
       headers: { 'Authorization': `Bearer ${this.token}` }
     });
   }

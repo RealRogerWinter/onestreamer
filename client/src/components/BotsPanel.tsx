@@ -86,7 +86,9 @@ const BotsPanel: React.FC<BotsPanelProps> = () => {
       });
 
       if (response.ok) {
-        setIsAdmin(true);
+        const data = await response.json();
+        // Only show BotsPanel for admins, not moderators
+        setIsAdmin(data.isAdmin === true);
       } else {
         setIsAdmin(false);
       }

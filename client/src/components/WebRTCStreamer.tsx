@@ -110,7 +110,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
   
   // Replace audio track in real-time
   const replaceAudioTrack = async (newDeviceId: string) => {
-    console.log('🎤 Replacing audio track with device:', newDeviceId);
+    // console.log('🎤 Replacing audio track with device:', newDeviceId);
     
     if (!streamRef.current) {
       console.warn('No active stream to replace audio track');
@@ -135,7 +135,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       };
 
       // Log constraints to debug
-      console.log('🎤 Replacing audio with constraints:', audioConstraints);
+      // console.log('🎤 Replacing audio with constraints:', audioConstraints);
       
       // Get new audio stream
       const newStream = await navigator.mediaDevices.getUserMedia({
@@ -159,12 +159,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         // Stop old track
         oldAudioTrack.stop();
         
-        // Log the actual settings applied to the track
-        if (newAudioTrack.getSettings) {
-          console.log('✅ Audio track replaced successfully with settings:', newAudioTrack.getSettings());
-        } else {
-          console.log('✅ Audio track replaced successfully');
-        }
+        // Audio track replaced successfully
       }
     } catch (error) {
       console.error('❌ Failed to replace audio track:', error);
@@ -173,8 +168,8 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
   // Replace video track in real-time
   const replaceVideoTrack = async (newDeviceId: string) => {
-    console.log('📹 Replacing video track with device:', newDeviceId);
-    console.log('📹 Current video settings:', videoSettings);
+    // console.log('📹 Replacing video track with device:', newDeviceId);
+    // console.log('📹 Current video settings:', videoSettings);
     
     if (!streamRef.current) {
       console.warn('No active stream to replace video track');
@@ -183,7 +178,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
     try {
       // Log current tracks before replacement
-      console.log('📹 Current video tracks:', streamRef.current.getVideoTracks());
+      // console.log('📹 Current video tracks:', streamRef.current.getVideoTracks());
       
       // Build video constraints based on settings
       const getResolutionConstraints = () => {
@@ -204,7 +199,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         aspectRatio: { ideal: 16/9 }
       };
 
-      console.log('📹 Requesting new video stream with constraints:', videoConstraints);
+      // console.log('📹 Requesting new video stream with constraints:', videoConstraints);
 
       // Get new video stream
       const newStream = await navigator.mediaDevices.getUserMedia({
@@ -215,15 +210,15 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       const newVideoTrack = newStream.getVideoTracks()[0];
       const oldVideoTrack = streamRef.current.getVideoTracks()[0];
 
-      console.log('📹 New video track:', newVideoTrack);
-      console.log('📹 Old video track:', oldVideoTrack);
+      // console.log('📹 New video track:', newVideoTrack);
+      // console.log('📹 Old video track:', oldVideoTrack);
 
       if (oldVideoTrack && newVideoTrack) {
         // Replace track in the stream
         streamRef.current.removeTrack(oldVideoTrack);
         streamRef.current.addTrack(newVideoTrack);
         
-        console.log('📹 Track replaced in stream, updating video element...');
+        // console.log('📹 Track replaced in stream, updating video element...');
         
         // Update video element - need to force refresh
         if (videoRef.current) {
@@ -239,7 +234,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
           if (!wasPaused) {
             try {
               await videoRef.current.play();
-              console.log('📹 Video element updated and playing');
+              // console.log('📹 Video element updated and playing');
             } catch (playErr) {
               console.error('📹 Error playing video after track replacement:', playErr);
             }
@@ -248,16 +243,16 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         
         // Replace in MediaSoup if active
         if (mediasoupClientRef.current && mediasoupClientRef.current.hasVideoProducer) {
-          console.log('📹 Replacing track in MediaSoup producer...');
+          // console.log('📹 Replacing track in MediaSoup producer...');
           await mediasoupClientRef.current.replaceVideoTrack(newVideoTrack);
-          console.log('📹 MediaSoup track replaced');
+          // console.log('📹 MediaSoup track replaced');
         }
         
         // Stop old track
         oldVideoTrack.stop();
-        console.log('📹 Old track stopped');
+        // console.log('📹 Old track stopped');
         
-        console.log('✅ Video track replaced successfully');
+        // console.log('✅ Video track replaced successfully');
       } else {
         console.warn('📹 Missing tracks - old:', !!oldVideoTrack, 'new:', !!newVideoTrack);
       }
@@ -271,7 +266,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     if (isStreaming && externalAudioSettings) {
       // Check if device changed
       if (localAudioSettings.inputDeviceId !== externalAudioSettings.inputDeviceId && externalAudioSettings.inputDeviceId) {
-        console.log('🎵 Audio device changed externally, replacing track...');
+        // console.log('🎵 Audio device changed externally, replacing track...');
         replaceAudioTrack(externalAudioSettings.inputDeviceId);
         setLocalAudioSettings(externalAudioSettings);
       }
@@ -283,7 +278,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     if (isStreaming && externalVideoSettings) {
       // Check if device changed
       if (localVideoSettings.videoDeviceId !== externalVideoSettings.videoDeviceId && externalVideoSettings.videoDeviceId) {
-        console.log('📹 Video device changed externally, replacing track...');
+        // console.log('📹 Video device changed externally, replacing track...');
         replaceVideoTrack(externalVideoSettings.videoDeviceId);
         setLocalVideoSettings(externalVideoSettings);
       }
@@ -303,7 +298,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       settings.audio = newSettings;
       localStorage.setItem('streamerSettings', JSON.stringify(settings));
     }
-    console.log('🎵 Audio settings saved:', newSettings);
+    // console.log('🎵 Audio settings saved:', newSettings);
     
     // If streaming and any audio setting changed that requires track replacement (for local settings only)
     if (!externalOnAudioSettingsChange && isStreaming) {
@@ -329,11 +324,11 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
   const handleVideoSettingsChange = async (newSettings: VideoSettingsConfig) => {
     const oldSettings = videoSettings;
     
-    console.log('📹 handleVideoSettingsChange called');
-    console.log('📹 Old settings:', oldSettings);
-    console.log('📹 New settings:', newSettings);
-    console.log('📹 Is streaming:', isStreaming);
-    console.log('📹 Device changed:', oldSettings.videoDeviceId !== newSettings.videoDeviceId);
+    // console.log('📹 handleVideoSettingsChange called');
+    // console.log('📹 Old settings:', oldSettings);
+    // console.log('📹 New settings:', newSettings);
+    // console.log('📹 Is streaming:', isStreaming);
+    // console.log('📹 Device changed:', oldSettings.videoDeviceId !== newSettings.videoDeviceId);
     
     if (externalOnVideoSettingsChange) {
       externalOnVideoSettingsChange(newSettings);
@@ -344,16 +339,16 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       settings.video = newSettings;
       localStorage.setItem('streamerSettings', JSON.stringify(settings));
     }
-    console.log('📹 Video settings saved:', newSettings);
+    // console.log('📹 Video settings saved:', newSettings);
     
     // If streaming and device changed, replace the track in real-time (for local settings only)
     if (!externalOnVideoSettingsChange && isStreaming && oldSettings.videoDeviceId !== newSettings.videoDeviceId && newSettings.videoDeviceId) {
-      console.log('📹 Triggering video track replacement...');
+      // console.log('📹 Triggering video track replacement...');
       await replaceVideoTrack(newSettings.videoDeviceId);
     } else if (externalOnVideoSettingsChange) {
-      console.log('📹 Using external handler, track replacement will be handled by useEffect');
+      // console.log('📹 Using external handler, track replacement will be handled by useEffect');
     } else {
-      console.log('📹 Not replacing track - streaming:', isStreaming, 'device changed:', oldSettings.videoDeviceId !== newSettings.videoDeviceId);
+      // console.log('📹 Not replacing track - streaming:', isStreaming, 'device changed:', oldSettings.videoDeviceId !== newSettings.videoDeviceId);
     }
   };
 
@@ -378,14 +373,14 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
   const startStreaming = async () => {
     // Prevent multiple simultaneous stream starts
     if (isProcessingRef.current) {
-      console.log('🎬 WEBRTC STREAMER: Already processing, skipping...');
+      // console.log('🎬 WEBRTC STREAMER: Already processing, skipping...');
       return;
     }
 
     // Debounce rapid stream attempts
     const now = Date.now();
     if (now - lastStreamAttemptRef.current < STREAM_DEBOUNCE_TIME) {
-      console.log('🎬 WEBRTC STREAMER: Stream attempt too soon, debouncing...');
+      // console.log('🎬 WEBRTC STREAMER: Stream attempt too soon, debouncing...');
       return;
     }
     lastStreamAttemptRef.current = now;
@@ -395,11 +390,11 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       setIsLoading(true);
       setError(null);
       
-      console.log('🎬 WEBRTC STREAMER: Starting stream...');
+      // console.log('🎬 WEBRTC STREAMER: Starting stream...');
 
       // Get user media with user-configured audio settings
-      console.log('📷 WEBRTC STREAMER: Requesting camera access...');
-      console.log('🎵 Audio settings:', audioSettings);
+      // console.log('📷 WEBRTC STREAMER: Requesting camera access...');
+      // console.log('🎵 Audio settings:', audioSettings);
       
       // Build audio constraints with device selection
       const audioConstraints: any = {
@@ -458,33 +453,33 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       }
 
       // Log the constraints being requested
-      console.log('🎤 WEBRTC STREAMER: Requesting getUserMedia with audio constraints:', audioConstraints);
+      // console.log('🎤 WEBRTC STREAMER: Requesting getUserMedia with audio constraints:', audioConstraints);
       
       const stream = await navigator.mediaDevices.getUserMedia({
         video: videoConstraints,
         audio: audioConstraints
       });
 
-      console.log('📷 WEBRTC STREAMER: Got media stream:', stream);
-      console.log('📷 WEBRTC STREAMER: Video tracks:', stream.getVideoTracks().length);
-      console.log('📷 WEBRTC STREAMER: Audio tracks:', stream.getAudioTracks().length);
+      // console.log('📷 WEBRTC STREAMER: Got media stream:', stream);
+      // console.log('📷 WEBRTC STREAMER: Video tracks:', stream.getVideoTracks().length);
+      // console.log('📷 WEBRTC STREAMER: Audio tracks:', stream.getAudioTracks().length);
       
       // Log actual audio track settings to verify what was applied
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack && audioTrack.getSettings) {
         const actualSettings = audioTrack.getSettings();
-        console.log('🎤 WEBRTC STREAMER: Actual audio track settings:', actualSettings);
-        console.log('🎤 WEBRTC STREAMER: Requested vs Actual:');
-        console.log('   echoCancellation: requested=' + audioSettings.echoCancellation + ', actual=' + actualSettings.echoCancellation);
-        console.log('   noiseSuppression: requested=' + audioSettings.noiseSuppression + ', actual=' + actualSettings.noiseSuppression);
-        console.log('   autoGainControl: requested=' + audioSettings.autoGainControl + ', actual=' + actualSettings.autoGainControl);
+        // console.log('🎤 WEBRTC STREAMER: Actual audio track settings:', actualSettings);
+        // console.log('🎤 WEBRTC STREAMER: Requested vs Actual:');
+        // console.log('   echoCancellation: requested=' + audioSettings.echoCancellation + ', actual=' + actualSettings.echoCancellation);
+        // console.log('   noiseSuppression: requested=' + audioSettings.noiseSuppression + ', actual=' + actualSettings.noiseSuppression);
+        // console.log('   autoGainControl: requested=' + audioSettings.autoGainControl + ', actual=' + actualSettings.autoGainControl);
       }
 
       streamRef.current = stream;
 
       // Display local video
       if (videoRef.current) {
-        console.log('📺 WEBRTC STREAMER: Setting video srcObject...');
+        // console.log('📺 WEBRTC STREAMER: Setting video srcObject...');
         const video = videoRef.current;
         
         // Ensure clean video element state
@@ -500,7 +495,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         
         try {
           await video.play();
-          console.log('▶️ WEBRTC STREAMER: Video playing successfully');
+          // console.log('▶️ WEBRTC STREAMER: Video playing successfully');
         } catch (playError) {
           console.error('❌ WEBRTC STREAMER: Video play failed:', playError);
           // Don't fail the whole streaming process for local video playback issues
@@ -511,7 +506,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
       // Cleanup any existing MediasoupClient first to avoid conflicts
       if (mediasoupClientRef.current) {
-        console.log('🧹 WEBRTC STREAMER: Cleaning up existing MediasoupClient...');
+        // console.log('🧹 WEBRTC STREAMER: Cleaning up existing MediasoupClient...');
         try {
           await mediasoupClientRef.current.cleanup();
         } catch (cleanupError) {
@@ -524,9 +519,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
       // Create MediasoupClient for remote streaming with proper error handling
       try {
-        console.log('🌐 WEBRTC STREAMER: Initializing mediasoup for remote streaming...');
+        // console.log('🌐 WEBRTC STREAMER: Initializing mediasoup for remote streaming...');
         const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}`;
-        console.log('🌐 WEBRTC STREAMER: Using server URL:', serverUrl);
+        // console.log('🌐 WEBRTC STREAMER: Using server URL:', serverUrl);
         mediasoupClientRef.current = new MediasoupClient({ socket, serverUrl });
         
         // Add timeout for initialization
@@ -536,7 +531,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         );
         
         await Promise.race([initPromise, timeoutPromise]);
-        console.log('✅ WEBRTC STREAMER: Device initialized');
+        // console.log('✅ WEBRTC STREAMER: Device initialized');
         
         // Create send transport with timeout
         const transportPromise = mediasoupClientRef.current.createSendTransport();
@@ -545,7 +540,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         );
         
         await Promise.race([transportPromise, transportTimeoutPromise]);
-        console.log('✅ WEBRTC STREAMER: Send transport created');
+        // console.log('✅ WEBRTC STREAMER: Send transport created');
         
         // Start producing with timeout
         const producePromise = mediasoupClientRef.current.produce(stream);
@@ -554,7 +549,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         );
         
         await Promise.race([producePromise, produceTimeoutPromise]);
-        console.log('✅ WEBRTC STREAMER: Started producing media');
+        // console.log('✅ WEBRTC STREAMER: Started producing media');
         
       } catch (mediasoupError) {
         console.warn('⚠️ WEBRTC STREAMER: MediaSoup failed, but local video should still work:', mediasoupError);
@@ -572,7 +567,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       
       setIsLoading(false);
       onStreamStart?.();
-      console.log('✅ WEBRTC STREAMER: Local video setup completed');
+      // console.log('✅ WEBRTC STREAMER: Local video setup completed');
       
     } catch (error) {
       console.error('❌ WEBRTC STREAMER: Failed to start stream:', error);
@@ -588,13 +583,13 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
   };
 
   const stopStreaming = async () => {
-    console.log('⏹️ WEBRTC STREAMER: Stopping stream...');
+    // console.log('⏹️ WEBRTC STREAMER: Stopping stream...');
     await cleanup();
     onStreamStop?.();
   };
 
   const cleanup = async () => {
-    console.log('🧹 WEBRTC STREAMER: Cleaning up...');
+    // console.log('🧹 WEBRTC STREAMER: Cleaning up...');
     
     // Reset processing flag
     isProcessingRef.current = false;
@@ -603,7 +598,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       try {
         await mediasoupClientRef.current.stopProducing();
         await mediasoupClientRef.current.cleanup();
-        console.log('✅ WEBRTC STREAMER: MediaSoup cleaned up');
+        // console.log('✅ WEBRTC STREAMER: MediaSoup cleaned up');
       } catch (error) {
         console.warn('⚠️ WEBRTC STREAMER: Error during MediaSoup cleanup:', error);
       }
@@ -612,7 +607,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
-        console.log('🛑 WEBRTC STREAMER: Stopping track:', track.kind);
+        // console.log('🛑 WEBRTC STREAMER: Stopping track:', track.kind);
         track.stop();
       });
       streamRef.current = null;

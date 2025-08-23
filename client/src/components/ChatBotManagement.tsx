@@ -222,7 +222,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
   const fetchMovieBotStatus = async () => {
     try {
       const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
-      console.log('Using admin key:', adminKey);
+      // console.log('Using admin key:', adminKey);
       const response = await fetch(`${serverUrl}/admin/moviebot/status`, {
         headers: {
           'Authorization': `Bearer ${authService.getToken()}`,
@@ -232,7 +232,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
       
       if (response.ok) {
         const data = await response.json();
-        console.log('MovieBot status fetched:', data);
+        // console.log('MovieBot status fetched:', data);
         setMovieBotStatus(data);
       } else {
         console.error('MovieBot status fetch failed:', response.status, await response.text());
@@ -312,9 +312,9 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
         }
         if (status.hasApiKey) {
           // Don't overwrite local API key if server has one
-          console.log('Server has Groq API key configured');
+          // console.log('Server has Groq API key configured');
         }
-        console.log('Global Groq status:', status);
+        // console.log('Global Groq status:', status);
       }
     } catch (error) {
       console.error('Error fetching Groq status:', error);
@@ -351,7 +351,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
         } else {
           addLog(`Global Groq ${enabled ? 'enabled' : 'disabled'} for ALL chatbots`);
         }
-        console.log('Global Groq config updated:', result);
+        // console.log('Global Groq config updated:', result);
         
         // Also update MovieBot config to match
         if (movieBotStatus?.config) {
@@ -372,8 +372,8 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
       const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
       
       // Add debugging
-      console.log('Updating MovieBot config:', { key, value });
-      console.log('Current movieBotStatus:', movieBotStatus);
+      // console.log('Updating MovieBot config:', { key, value });
+      // console.log('Current movieBotStatus:', movieBotStatus);
       
       // Use existing config or default values
       const currentConfig = movieBotStatus?.config || {
@@ -392,7 +392,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
         [key]: value
       };
       
-      console.log('Sending config update:', updatedConfig);
+      // console.log('Sending config update:', updatedConfig);
       
       const response = await fetch(`${serverUrl}/admin/moviebot/config`, {
         method: 'POST',
@@ -404,11 +404,11 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
         body: JSON.stringify(updatedConfig)
       });
       
-      console.log('Response status:', response.status);
+      // console.log('Response status:', response.status);
       
       if (response.ok) {
         const result = await response.json();
-        console.log('Config update result:', result);
+        // console.log('Config update result:', result);
         addLog(`MovieBot config updated: ${key} = ${value}`);
         
         // Don't update movieBotStatus here as it might interfere with local state
@@ -721,13 +721,13 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
   };
 
   const handleDisableAll = async () => {
-    console.log('🔴 DISABLE ALL: Button clicked');
-    console.log('🔴 DISABLE ALL: Server URL:', serverUrl);
-    console.log('🔴 DISABLE ALL: Auth token:', authService.getToken() ? 'Present' : 'Missing');
+    // console.log('🔴 DISABLE ALL: Button clicked');
+    // console.log('🔴 DISABLE ALL: Server URL:', serverUrl);
+    // console.log('🔴 DISABLE ALL: Auth token:', authService.getToken() ? 'Present' : 'Missing');
     
     setTogglingAll(true);
     try {
-      console.log('🔴 DISABLE ALL: Making API request...');
+      // console.log('🔴 DISABLE ALL: Making API request...');
       const response = await fetch(`${serverUrl}/api/chatbots/all/disable`, {
         method: 'POST',
         headers: {
@@ -735,17 +735,17 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
         }
       });
       
-      console.log('🔴 DISABLE ALL: Response status:', response.status);
-      console.log('🔴 DISABLE ALL: Response ok:', response.ok);
+      // console.log('🔴 DISABLE ALL: Response status:', response.status);
+      // console.log('🔴 DISABLE ALL: Response ok:', response.ok);
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.log('🔴 DISABLE ALL: Error response text:', errorText);
+        // console.log('🔴 DISABLE ALL: Error response text:', errorText);
         throw new Error(`Failed to disable all chatbots: ${response.status} - ${errorText}`);
       }
       
       const result = await response.json();
-      console.log('🔴 DISABLE ALL: Success response:', result);
+      // console.log('🔴 DISABLE ALL: Success response:', result);
       addLog(`✅ Disabled all ${result.count} chatbots`);
       fetchChatbots();
     } catch (error) {
@@ -1002,7 +1002,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
                     checked={groqEnabled}
                     onChange={(e) => {
                       const newValue = e.target.checked;
-                      console.log('Global Groq checkbox clicked:', newValue);
+                      // console.log('Global Groq checkbox clicked:', newValue);
                       setGroqEnabled(newValue);
                       localStorage.setItem('groqEnabled', String(newValue));
                       // Update global Groq settings for ALL chatbots
@@ -1030,7 +1030,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
                       // Send to server when user finishes typing (on blur)
                       const key = e.target.value;
                       if (key && key.startsWith('gsk_')) {
-                        console.log('Sending Groq API key globally...');
+                        // console.log('Sending Groq API key globally...');
                         updateGroqConfig(groqEnabled, key, groqModel);
                       } else if (key) {
                         console.error('Invalid Groq API key format - should start with gsk_');
@@ -1052,7 +1052,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
                         onChange={(e) => {
                           const newModel = e.target.value;
                           setGroqModel(newModel);
-                          console.log('Groq model changed to:', newModel);
+                          // console.log('Groq model changed to:', newModel);
                           updateGroqConfig(true, undefined, newModel);
                         }}
                         className="config-input"
@@ -1074,7 +1074,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
                     <button 
                       className="btn btn-primary btn-small"
                       onClick={() => {
-                        console.log('Saving Groq API key globally...');
+                        // console.log('Saving Groq API key globally...');
                         updateGroqConfig(true, groqApiKey);
                         addLog('Groq API key saved globally for ALL chatbots');
                       }}

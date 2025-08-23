@@ -259,16 +259,16 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
             }
         };
         
-        console.log('🎨 CLIENT VISUALFX: Client-side processor initialized');
+        // // console.log('🎨 CLIENT VISUALFX: Client-side processor initialized');
     }
 
     initialize(videoElement) {
-        console.log('🎨 CLIENT VISUALFX: Initializing processor...', { videoElement: !!videoElement });
+        // // console.log('🎨 CLIENT VISUALFX: Initializing processor...', { videoElement: !!videoElement });
         
         this.videoElement = videoElement;
         
         if (!this.videoElement) {
-            console.log('🎨 CLIENT VISUALFX: No video element provided, attempting auto-detection...');
+            // // console.log('🎨 CLIENT VISUALFX: No video element provided, attempting auto-detection...');
             // Try to auto-detect video elements
             this.autoDetectVideoElements();
         }
@@ -278,7 +278,7 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
             return false;
         }
 
-        console.log('🎨 CLIENT VISUALFX: Video element found:', {
+        // // console.log('🎨 CLIENT VISUALFX: Video element found:', {
             tagName: this.videoElement.tagName,
             className: this.videoElement.className,
             id: this.videoElement.id,
@@ -295,8 +295,8 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
         // Detect if this is a streamer or viewer video
         this.detectVideoType();
         
-        console.log('✅ CLIENT VISUALFX: Processor initialized successfully');
-        console.log('🎨 CLIENT VISUALFX: Available effects:', Object.keys(this.effectDefinitions).join(', '));
+        // // console.log('✅ CLIENT VISUALFX: Processor initialized successfully');
+        // // console.log('🎨 CLIENT VISUALFX: Available effects:', Object.keys(this.effectDefinitions).join(', '));
         return true;
     }
 
@@ -314,7 +314,7 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
             const videos = document.querySelectorAll(selector);
             if (videos.length > 0) {
                 this.videoElement = videos[0];
-                console.log(`🎨 CLIENT VISUALFX: Auto-detected video element: ${selector}`);
+                // // console.log(`🎨 CLIENT VISUALFX: Auto-detected video element: ${selector}`);
                 break;
             }
         }
@@ -335,7 +335,7 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
                             containerClasses.includes('viewer') ||
                             this.videoElement.id.includes('viewer');
 
-        console.log(`🎨 CLIENT VISUALFX: Video type detected - Streamer: ${this.isStreamerVideo}, Viewer: ${this.isViewerVideo}`);
+        // // console.log(`🎨 CLIENT VISUALFX: Video type detected - Streamer: ${this.isStreamerVideo}, Viewer: ${this.isViewerVideo}`);
     }
 
     createCanvas() {
@@ -380,20 +380,20 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
         
         if (!effectDef) {
             console.warn(`⚠️ CLIENT VISUALFX: Unknown effect: ${effectId}`);
-            console.log(`🎨 CLIENT VISUALFX: Available effects:`, Object.keys(this.effectDefinitions));
+            // // console.log(`🎨 CLIENT VISUALFX: Available effects:`, Object.keys(this.effectDefinitions));
             return false;
         }
 
         // Log if this is a server-side effect
         if (effectDef.serverSide) {
-            console.log(`🎨 CLIENT VISUALFX: Applying visual feedback for server-side effect: ${effectId}`);
-            console.log(`📡 CLIENT VISUALFX: Note: The actual ${effectDef.description || effectId} is handled by the server`);
+            // // console.log(`🎨 CLIENT VISUALFX: Applying visual feedback for server-side effect: ${effectId}`);
+            // // console.log(`📡 CLIENT VISUALFX: Note: The actual ${effectDef.description || effectId} is handled by the server`);
         } else {
-            console.log(`🎨 CLIENT VISUALFX: Applying client-side effect: ${effectId}`);
+            // // console.log(`🎨 CLIENT VISUALFX: Applying client-side effect: ${effectId}`);
         }
         
-        console.log(`🎨 CLIENT VISUALFX: Effect definition:`, effectDef);
-        console.log(`🎨 CLIENT VISUALFX: Effect options:`, options);
+        // // console.log(`🎨 CLIENT VISUALFX: Effect definition:`, effectDef);
+        // // console.log(`🎨 CLIENT VISUALFX: Effect options:`, options);
 
         const effect = {
             id: effectId,
@@ -425,7 +425,7 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
         if (effectDef.customHandler) {
             try {
                 effectDef.customHandler.call(this, effect);
-                console.log(`🎨 CLIENT VISUALFX: Executed custom handler for ${effectId}`);
+                // // console.log(`🎨 CLIENT VISUALFX: Executed custom handler for ${effectId}`);
             } catch (err) {
                 console.error(`❌ CLIENT VISUALFX: Custom handler error for ${effectId}:`, err);
             }
@@ -450,7 +450,7 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
         // Combine all active filters
         this.updateCombinedStyles();
         
-        console.log(`🎨 CLIENT VISUALFX: Applied CSS filter: ${cssFilter || filter}`);
+        // // console.log(`🎨 CLIENT VISUALFX: Applied CSS filter: ${cssFilter || filter}`);
     }
     
     applyCSSTransform(effect) {
@@ -468,10 +468,10 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
         // Combine all active transforms
         this.updateCombinedStyles();
         
-        console.log(`🎨 CLIENT VISUALFX: Applied CSS transform: ${transformValue}`);
-        console.log(`🎨 CLIENT VISUALFX: Video element:`, this.videoElement);
-        console.log(`🎨 CLIENT VISUALFX: Video element classes:`, this.videoElement.className);
-        console.log(`🎨 CLIENT VISUALFX: Video element computed style transform:`, getComputedStyle(this.videoElement).transform);
+        // // console.log(`🎨 CLIENT VISUALFX: Applied CSS transform: ${transformValue}`);
+        // // console.log(`🎨 CLIENT VISUALFX: Video element:`, this.videoElement);
+        // // console.log(`🎨 CLIENT VISUALFX: Video element classes:`, this.videoElement.className);
+        // // console.log(`🎨 CLIENT VISUALFX: Video element computed style transform:`, getComputedStyle(this.videoElement).transform);
     }
     
     updateCombinedStyles() {
@@ -489,7 +489,7 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
         this.videoElement.style.filter = combinedFilter;
         this.videoElement.style.transform = combinedTransform;
         
-        console.log(`🎨 CLIENT VISUALFX: Updated styles - Filter: "${combinedFilter}", Transform: "${combinedTransform}"`);
+        // // console.log(`🎨 CLIENT VISUALFX: Updated styles - Filter: "${combinedFilter}", Transform: "${combinedTransform}"`);
     }
 
     applyCanvasOverlay(effect) {
@@ -532,7 +532,7 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
             return false;
         }
 
-        console.log(`🎨 CLIENT VISUALFX: Removing effect: ${effectId}`);
+        // // console.log(`🎨 CLIENT VISUALFX: Removing effect: ${effectId}`);
 
         // Remove effect based on type
         switch (effect.definition.type) {
@@ -598,7 +598,7 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
     }
 
     clearAllEffects() {
-        console.log('🎨 CLIENT VISUALFX: Clearing all client-side effects');
+        // // console.log('🎨 CLIENT VISUALFX: Clearing all client-side effects');
         
         // Clear all active effects
         this.activeEffects.clear();

@@ -21,7 +21,7 @@ export const useVisualFxProcessor = (
     const initializeProcessor = () => {
       // Load ClientVisualFxProcessor if not available
       if (typeof (window as any).ClientVisualFxProcessor === 'undefined') {
-        console.log('🎨 VISUAL FX HOOK: Loading ClientVisualFxProcessor...');
+        // console.log('🎨 VISUAL FX HOOK: Loading ClientVisualFxProcessor...');
         const script = document.createElement('script');
         script.src = '/ClientVisualFxProcessor.js';
         script.onload = () => {
@@ -49,16 +49,16 @@ export const useVisualFxProcessor = (
           return;
         }
         
-        console.log(`🎨 VISUAL FX HOOK: Creating ClientVisualFxProcessor for ${isStreamer ? 'streamer' : 'viewer'}`);
+        // console.log(`🎨 VISUAL FX HOOK: Creating ClientVisualFxProcessor for ${isStreamer ? 'streamer' : 'viewer'}`);
         processorRef.current = new ClientVisualFxProcessor();
         
         const success = processorRef.current.initialize(videoRef.current);
-        console.log(`🎨 VISUAL FX HOOK: Processor initialization result: ${success}`);
+        // console.log(`🎨 VISUAL FX HOOK: Processor initialization result: ${success}`);
         
         if (success) {
           isInitializedRef.current = true;
-          console.log(`✅ VISUAL FX HOOK: Processor initialized successfully for ${isStreamer ? 'streamer' : 'viewer'}`);
-          console.log(`🎨 VISUAL FX HOOK: Video element:`, videoRef.current);
+          // console.log(`✅ VISUAL FX HOOK: Processor initialized successfully for ${isStreamer ? 'streamer' : 'viewer'}`);
+          // console.log(`🎨 VISUAL FX HOOK: Video element:`, videoRef.current);
           
           // Set up socket event listeners for visual effects
           setupSocketListeners();
@@ -74,8 +74,8 @@ export const useVisualFxProcessor = (
       if (!socket || !processorRef.current) return;
 
       const handleVisualEffectApplied = (data: any) => {
-        console.log(`🎨 VISUAL FX HOOK: Received visual-effect-applied event:`, data);
-        console.log(`🎨 VISUAL FX HOOK: Processor available: ${!!processorRef.current}, isStreamer: ${isStreamer}`);
+        // console.log(`🎨 VISUAL FX HOOK: Received visual-effect-applied event:`, data);
+        // console.log(`🎨 VISUAL FX HOOK: Processor available: ${!!processorRef.current}, isStreamer: ${isStreamer}`);
         
         const { effectId, duration, applyToStreamer, isStreamerPreview, applyToAllViewers, isSyncEvent } = data;
         
@@ -85,10 +85,10 @@ export const useVisualFxProcessor = (
         // 3. applyToAllViewers is true (for effects that should affect everyone)
         const shouldApply = !isStreamer || (isStreamer && applyToStreamer) || applyToAllViewers;
         
-        console.log(`🎨 VISUAL FX HOOK: Effect application decision - isStreamer: ${isStreamer}, applyToStreamer: ${applyToStreamer}, applyToAllViewers: ${applyToAllViewers}, shouldApply: ${shouldApply}, isSyncEvent: ${isSyncEvent}`);
+        // console.log(`🎨 VISUAL FX HOOK: Effect application decision - isStreamer: ${isStreamer}, applyToStreamer: ${applyToStreamer}, applyToAllViewers: ${applyToAllViewers}, shouldApply: ${shouldApply}, isSyncEvent: ${isSyncEvent}`);
         
         if (shouldApply && processorRef.current) {
-          console.log(`🎨 VISUAL FX HOOK: Applying effect ${effectId} to ${isStreamer ? 'streamer preview' : 'viewer'} via ClientVisualFxProcessor`);
+          // console.log(`🎨 VISUAL FX HOOK: Applying effect ${effectId} to ${isStreamer ? 'streamer preview' : 'viewer'} via ClientVisualFxProcessor`);
           
           const result = processorRef.current.applyEffect(effectId, {
             duration: duration,
@@ -98,9 +98,9 @@ export const useVisualFxProcessor = (
             isSyncEvent: isSyncEvent || false
           });
           
-          console.log(`🎨 VISUAL FX HOOK: ClientVisualFxProcessor.applyEffect result:`, result);
+          // console.log(`🎨 VISUAL FX HOOK: ClientVisualFxProcessor.applyEffect result:`, result);
         } else {
-          console.log(`🎨 VISUAL FX HOOK: NOT applying effect - shouldApply: ${shouldApply}, processor: ${!!processorRef.current}`);
+          // console.log(`🎨 VISUAL FX HOOK: NOT applying effect - shouldApply: ${shouldApply}, processor: ${!!processorRef.current}`);
           if (!processorRef.current) {
             console.error(`❌ VISUAL FX HOOK: ClientVisualFxProcessor not initialized! Video element ready: ${!!videoRef.current}`);
           }
@@ -116,11 +116,11 @@ export const useVisualFxProcessor = (
         // 3. applyToAllViewers is true (for effects that should affect everyone)
         const shouldRemove = !isStreamer || applyToAllViewers;
         
-        console.log(`🎨 VISUAL FX HOOK: Effect removal decision - isStreamer: ${isStreamer}, applyToAllViewers: ${applyToAllViewers}, shouldRemove: ${shouldRemove}`);
+        // console.log(`🎨 VISUAL FX HOOK: Effect removal decision - isStreamer: ${isStreamer}, applyToAllViewers: ${applyToAllViewers}, shouldRemove: ${shouldRemove}`);
         
         if (shouldRemove && processorRef.current) {
           // Remove only the specific effect, not all effects
-          console.log(`🎨 VISUAL FX HOOK: Removing effect ${effectId} from ${isStreamer ? 'streamer' : 'viewer'}`);
+          // console.log(`🎨 VISUAL FX HOOK: Removing effect ${effectId} from ${isStreamer ? 'streamer' : 'viewer'}`);
           if (processorRef.current.removeEffect) {
             processorRef.current.removeEffect(effectId);
           } else {
@@ -133,13 +133,13 @@ export const useVisualFxProcessor = (
 
       const handleVisualEffectsCleared = () => {
         if (processorRef.current) {
-          console.log(`🎨 VISUAL FX HOOK: Clearing all effects on ${isStreamer ? 'streamer' : 'viewer'}`);
+          // console.log(`🎨 VISUAL FX HOOK: Clearing all effects on ${isStreamer ? 'streamer' : 'viewer'}`);
           processorRef.current.clearAllEffects();
         }
       };
 
       // Add event listeners
-      console.log(`🎨 VISUAL FX HOOK: Setting up socket listeners for ${isStreamer ? 'streamer' : 'viewer'}`, socket.id);
+      // console.log(`🎨 VISUAL FX HOOK: Setting up socket listeners for ${isStreamer ? 'streamer' : 'viewer'}`, socket.id);
       socket.on('visual-effect-applied', handleVisualEffectApplied);
       socket.on('visual-effect-removed', handleVisualEffectRemoved);
       socket.on('visual-effects-cleared', handleVisualEffectsCleared);

@@ -38,7 +38,7 @@ interface ViewBotVideoManagerProps {
 }
 
 const ViewBotVideoManager: React.FC<ViewBotVideoManagerProps> = ({ makeApiCall, addLog }) => {
-  console.log('ViewBotVideoManager component loaded!');
+  // console.log('ViewBotVideoManager component loaded!');
   const [videos, setVideos] = useState<VideoFile[]>([]);
   const [rotationStatus, setRotationStatus] = useState<RotationStatus | null>(null);
   const [isUploading, setIsUploading] = useState(false);

@@ -31,6 +31,7 @@ function initializeDatabase() {
                 reset_token TEXT,
                 reset_token_expires DATETIME,
                 is_admin BOOLEAN DEFAULT 0,
+                is_moderator BOOLEAN DEFAULT 0,
                 is_banned BOOLEAN DEFAULT 0
             )
         `);
@@ -100,6 +101,12 @@ function initializeDatabase() {
         db.run(`ALTER TABLE users ADD COLUMN is_banned BOOLEAN DEFAULT 0`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
                 console.error('Error adding is_banned column:', err);
+            }
+        });
+
+        db.run(`ALTER TABLE users ADD COLUMN is_moderator BOOLEAN DEFAULT 0`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('Error adding is_moderator column:', err);
             }
         });
 
@@ -521,6 +528,19 @@ function initializeDatabase() {
                 }
             }
         });
+
+        // IP Ban Management Table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS ip_bans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip_address TEXT UNIQUE NOT NULL,
+                reason TEXT,
+                banned_by TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        db.run(`CREATE INDEX IF NOT EXISTS idx_ip_bans_ip ON ip_bans(ip_address)`);
 
         // Create indexes for recording tables after a delay to ensure columns exist
         setTimeout(() => {

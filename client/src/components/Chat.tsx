@@ -16,6 +16,8 @@ interface ChatMessage {
   fullTimestamp: string;
   userId: string;
   isAnnouncement?: boolean;
+  isAdmin?: boolean;
+  isModerator?: boolean;
   mentions?: string[]; // Array of mentioned usernames
 }
 
@@ -23,6 +25,8 @@ interface UserInfo {
   username: string;
   color: string;
   userId: string;
+  isAdmin?: boolean;
+  isModerator?: boolean;
 }
 
 interface ChatProps {
@@ -205,11 +209,11 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       if (response.ok) {
         const data = await response.json();
         if (data.available) {
-          console.log('🎁 Bonus is available!');
+          // console.log('🎁 Bonus is available!');
           setBonusIconActive(true);
           setBonusIconCooldown(false);
         } else {
-          console.log(`⏰ Bonus on cooldown for ${data.remainingSeconds}s`);
+          // console.log(`⏰ Bonus on cooldown for ${data.remainingSeconds}s`);
           setBonusIconActive(false);
           setBonusIconCooldown(true);
           
@@ -239,25 +243,25 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     const nextTime = Date.now() + randomDelay;
     setNextBonusTime(nextTime);
 
-    console.log(`⏰ Bonus timer set for ${randomDelay}ms (${randomDelay/1000} seconds)`);
+    // console.log(`⏰ Bonus timer set for ${randomDelay}ms (${randomDelay/1000} seconds)`);
 
     bonusTimerRef.current = setTimeout(() => {
-      console.log('🎁 Checking bonus availability...');
+      // console.log('🎁 Checking bonus availability...');
       checkBonusAvailability();
     }, randomDelay);
   };
 
   // Handle bonus icon click
   const handleBonusClick = async () => {
-    console.log('🎁 Bonus icon clicked', {
-      bonusIconActive,
-      bonusIconCooldown,
-      userInfo: userInfo ? 'exists' : 'null',
-      isAuthenticated: !!authService.getToken()
-    });
+    // console.log('🎁 Bonus icon clicked', {
+    //   bonusIconActive,
+    //   bonusIconCooldown,
+    //   userInfo: userInfo ? 'exists' : 'null',
+    //   isAuthenticated: !!authService.getToken()
+    // });
 
     if (!bonusIconActive || bonusIconCooldown) {
-      console.log('❌ Bonus icon not active or in cooldown');
+      // console.log('❌ Bonus icon not active or in cooldown');
       return;
     }
 
@@ -270,11 +274,11 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       const token = authService.getToken();
       const user = authService.getUser();
       
-      console.log('🔑 Auth check:', {
-        hasToken: !!token,
-        hasUser: !!user,
-        userId: user?.id
-      });
+      // console.log('🔑 Auth check:', {
+      //   hasToken: !!token,
+      //   hasUser: !!user,
+      //   userId: user?.id
+      // });
 
       if (!token || !user) {
         console.error('No auth token or user available for bonus claim');
@@ -284,7 +288,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       }
 
       // Make API call to claim bonus
-      console.log('📡 Claiming bonus for user:', user.id);
+      // console.log('📡 Claiming bonus for user:', user.id);
       const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
       const response = await fetch(`${apiUrl}/api/internal/claim-chat-bonus`, {
         method: 'POST',
@@ -297,18 +301,18 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
         })
       });
 
-      console.log('📡 Response status:', response.status);
+      // console.log('📡 Response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Bonus claimed successfully:', data);
+        // console.log('✅ Bonus claimed successfully:', data);
         
         // Show floating points animation
         if (window.showFloatingPoints) {
-          console.log('🎆 Showing floating points animation');
+          // console.log('🎆 Showing floating points animation');
           window.showFloatingPoints(100, 'chat_bonus');
         } else {
-          console.log('❌ window.showFloatingPoints not available');
+          // console.log('❌ window.showFloatingPoints not available');
         }
 
         // Setup next timer with server-provided delay
@@ -320,7 +324,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       } else if (response.status === 429) {
         // Too many requests - bonus still on cooldown
         const errorData = await response.json();
-        console.log(`⏰ Bonus still on cooldown: ${errorData.remainingSeconds}s remaining`);
+        // console.log(`⏰ Bonus still on cooldown: ${errorData.remainingSeconds}s remaining`);
         
         // Keep icon disabled and set timer for remaining cooldown
         setBonusIconActive(false);
@@ -382,18 +386,18 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
 
   // Start bonus timer when user is authenticated
   useEffect(() => {
-    console.log('🔄 Bonus timer useEffect triggered', {
-      hasUserInfo: !!userInfo,
-      hasToken: !!authService.getToken(),
-      username: userInfo?.username
-    });
+    // console.log('🔄 Bonus timer useEffect triggered', {
+    //   hasUserInfo: !!userInfo,
+    //   hasToken: !!authService.getToken(),
+    //   username: userInfo?.username
+    // });
     
     if (userInfo && authService.getToken()) {
-      console.log('✅ Checking bonus availability for authenticated user');
+      // console.log('✅ Checking bonus availability for authenticated user');
       // Check current bonus status from server first
       checkBonusAvailability();
     } else {
-      console.log('❌ Not starting bonus timer - missing userInfo or token');
+      // console.log('❌ Not starting bonus timer - missing userInfo or token');
     }
 
     // Cleanup timer on unmount
@@ -408,11 +412,11 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   useEffect(() => {
     if (!chatSocket) return;
 
-    console.log('💬 CLIENT: Setting up chat event handlers');
+    // console.log('💬 CLIENT: Setting up chat event handlers');
     
     // Chat event handlers
     const handleUserAssigned = (data: UserInfo) => {
-      console.log('💬 CLIENT: Assigned username:', data.username, 'color:', data.color);
+      // console.log('💬 CLIENT: Assigned username:', data.username, 'color:', data.color);
       setUserInfo(data);
       // Update settings with the assigned color if it's different
       if (data.color !== chatSettings.userColor) {
@@ -423,7 +427,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     };
     
     const handleChatHistory = (history: ChatMessage[]) => {
-      console.log('💬 CLIENT: Received chat history:', history.length, 'messages');
+      // console.log('💬 CLIENT: Received chat history:', history.length, 'messages');
       setMessages(history);
       // Force scroll to bottom after chat history loads
       // Use a slight delay to ensure DOM has updated
@@ -440,11 +444,11 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     };
     
     const handleNewMessage = (message: ChatMessage) => {
-      console.log('💬 CLIENT: New message from', message.username + ':', message.message);
+      // console.log('💬 CLIENT: New message from', message.username + ':', message.message);
       
       // Check if this is a clear command
       if (message.message === '**CLEAR_CHAT_UI**') {
-        console.log('💬 CLIENT: Received clear command, clearing chat UI');
+        // console.log('💬 CLIENT: Received clear command, clearing chat UI');
         setMessages([]);
         return; // Don't add the clear command message to the chat
       }
@@ -457,24 +461,24 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     };
     
     const handleChatCleared = (data: any) => {
-      console.log('💬 CLIENT: Chat cleared by admin:', data.message);
+      // console.log('💬 CLIENT: Chat cleared by admin:', data.message);
       setMessages([]);
     };
     
     const handleChatClearUI = (data: any) => {
-      console.log('💬 CLIENT: Chat UI clear requested:', data.message);
+      // console.log('💬 CLIENT: Chat UI clear requested:', data.message);
       setMessages([]);
     };
     
     const handleBanned = (data: any) => {
-      console.log('💬 CLIENT: User has been banned:', data.reason);
+      // console.log('💬 CLIENT: User has been banned:', data.reason);
       alert(`You have been banned from chat: ${data.reason}`);
       setCurrentMessage('');
     };
     
     const handleTimeout = (data: any) => {
       const remainingTime = Math.ceil((data.endTime - Date.now()) / 1000);
-      console.log('💬 CLIENT: User has been timed out for', remainingTime, 'seconds');
+      // console.log('💬 CLIENT: User has been timed out for', remainingTime, 'seconds');
       alert(`You have been timed out for ${remainingTime} seconds: ${data.reason}`);
       setCurrentMessage('');
     };
@@ -491,7 +495,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     
     // Cleanup
     return () => {
-      console.log('💬 CLIENT: Cleaning up chat event handlers');
+      // console.log('💬 CLIENT: Cleaning up chat event handlers');
       chatSocket.off('user-assigned', handleUserAssigned);
       chatSocket.off('chat-history', handleChatHistory);
       chatSocket.off('new-message', handleNewMessage);
@@ -646,8 +650,8 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     
     const token = authService.getToken();
     const user = authService.getUser();
-    console.log('💬 CLIENT: Sending message:', message);
-    console.log('💬 CLIENT: User authenticated:', !!token, !!user ? `as ${user.username} (ID: ${user.id})` : 'not logged in');
+    // console.log('💬 CLIENT: Sending message:', message);
+    // console.log('💬 CLIENT: User authenticated:', !!token, !!user ? `as ${user.username} (ID: ${user.id})` : 'not logged in');
     chatSocket.emit('send-message', { message });
     setCurrentMessage('');
     
@@ -926,6 +930,8 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
               <span className="message-username" style={{ 
                 color: msg.userId === userInfo?.userId && chatSettings.userColor ? chatSettings.userColor : msg.color 
               }}>
+                {msg.isAdmin && <span className="user-badge admin-badge" title="Admin">👑</span>}
+                {!msg.isAdmin && msg.isModerator && <span className="user-badge moderator-badge" title="Moderator">🛡️</span>}
                 {msg.username}:
               </span>
               <span 

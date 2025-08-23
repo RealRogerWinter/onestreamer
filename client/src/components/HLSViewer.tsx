@@ -18,10 +18,10 @@ const HLSViewer: React.FC<HLSViewerProps> = ({ hlsUrl, isActive, className = '' 
     // Check HLS support
     if (Hls.isSupported()) {
       setHlsSupported(true);
-      console.log('✅ HLS: HLS.js is supported');
+      // console.log('✅ HLS: HLS.js is supported');
     } else if (videoRef.current?.canPlayType('application/vnd.apple.mpegurl')) {
       setHlsSupported(true);
-      console.log('✅ HLS: Native HLS support detected');
+      // console.log('✅ HLS: Native HLS support detected');
     } else {
       setHlsSupported(false);
       console.error('❌ HLS: No HLS support detected');
@@ -34,13 +34,13 @@ const HLSViewer: React.FC<HLSViewerProps> = ({ hlsUrl, isActive, className = '' 
       return;
     }
 
-    console.log('📺 HLS: Starting HLS playback for URL:', hlsUrl);
+    // console.log('📺 HLS: Starting HLS playback for URL:', hlsUrl);
     setIsLoading(true);
     setError(null);
 
     // First, try direct video playback for problematic streams
     if (hlsUrl.includes('apple.com') || hlsUrl.includes('bitmovin')) {
-      console.log('📺 HLS: Using direct video playback for external stream');
+      // console.log('📺 HLS: Using direct video playback for external stream');
       if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
         videoRef.current.src = `${process.env.REACT_APP_SERVER_URL || 'http://localhost:8080'}${hlsUrl}`;
         videoRef.current.play().catch(e => {
@@ -59,11 +59,11 @@ const HLSViewer: React.FC<HLSViewerProps> = ({ hlsUrl, isActive, className = '' 
       tryHlsJs();
     } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
       // Native HLS support (Safari)
-      console.log('📺 HLS: Using native HLS support');
+      // console.log('📺 HLS: Using native HLS support');
       videoRef.current.src = `${process.env.REACT_APP_SERVER_URL || 'http://localhost:8080'}${hlsUrl}`;
       
       videoRef.current.addEventListener('loadedmetadata', () => {
-        console.log('📺 HLS: Native HLS metadata loaded');
+        // console.log('📺 HLS: Native HLS metadata loaded');
         setIsLoading(false);
       });
 
@@ -138,11 +138,11 @@ const HLSViewer: React.FC<HLSViewerProps> = ({ hlsUrl, isActive, className = '' 
     hls.attachMedia(videoRef.current);
 
     hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-      console.log('📺 HLS: Media attached');
+      // console.log('📺 HLS: Media attached');
     });
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      console.log('📺 HLS: Manifest parsed, starting playback');
+      // console.log('📺 HLS: Manifest parsed, starting playback');
       setIsLoading(false);
       videoRef.current?.play().catch(e => {
         console.warn('⚠️ HLS: Autoplay failed:', e);
@@ -166,15 +166,15 @@ const HLSViewer: React.FC<HLSViewerProps> = ({ hlsUrl, isActive, className = '' 
         
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            console.log('🔄 HLS: Fatal network error, attempting recovery...');
+            // console.log('🔄 HLS: Fatal network error, attempting recovery...');
             hls.startLoad();
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
-            console.log('🔄 HLS: Fatal media error, attempting recovery...');
+            // console.log('🔄 HLS: Fatal media error, attempting recovery...');
             hls.recoverMediaError();
             break;
           default:
-            console.log('❌ HLS: Unrecoverable error, destroying HLS instance');
+            // console.log('❌ HLS: Unrecoverable error, destroying HLS instance');
             cleanup();
             break;
         }
@@ -185,16 +185,16 @@ const HLSViewer: React.FC<HLSViewerProps> = ({ hlsUrl, isActive, className = '' 
     });
 
     hls.on(Hls.Events.BUFFER_APPENDING, () => {
-      console.log('📊 HLS: Buffer appending');
+      // console.log('📊 HLS: Buffer appending');
     });
 
     hls.on(Hls.Events.BUFFER_APPENDED, () => {
-      console.log('📦 HLS: Buffer appended successfully');
+      // console.log('📦 HLS: Buffer appended successfully');
     });
   }
 
   const cleanup = () => {
-    console.log('🧹 HLS: Cleaning up HLS viewer');
+    // console.log('🧹 HLS: Cleaning up HLS viewer');
     
     if (hlsRef.current) {
       hlsRef.current.destroy();

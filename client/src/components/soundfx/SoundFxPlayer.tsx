@@ -35,13 +35,13 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
     if (!socket) return;
 
     const handleSoundEffect = (effect: SoundEffect) => {
-      console.log('🔊 SOUNDFX CLIENT: Received sound effect for all users:', {
-        type: effect.type,
-        text: effect.text,
-        username: effect.username,
-        voiceId: effect.voiceId,
-        timestamp: new Date(effect.timestamp).toLocaleTimeString()
-      });
+      // console.log('🔊 SOUNDFX CLIENT: Received sound effect for all users:', {
+      //   type: effect.type,
+      //   text: effect.text,
+      //   username: effect.username,
+      //   voiceId: effect.voiceId,
+      //   timestamp: new Date(effect.timestamp).toLocaleTimeString()
+      // });
       playEffect(effect);
     };
 
@@ -93,7 +93,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
 
   const playTTS = async (text: string, voiceId: string) => {
     return new Promise<void>((resolve, reject) => {
-      console.log(`🎤 SOUNDFX CLIENT: Starting TTS playback - Text: "${text}", Voice: ${voiceId}`);
+      // console.log(`🎤 SOUNDFX CLIENT: Starting TTS playback - Text: "${text}", Voice: ${voiceId}`);
       
       if (!('speechSynthesis' in window)) {
         console.error('❌ SOUNDFX CLIENT: Speech synthesis not supported in this browser');
@@ -103,7 +103,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
 
       // Check if speech synthesis is available and not blocked
       if (speechSynthesis.speaking || speechSynthesis.pending) {
-        console.log('⏳ SOUNDFX CLIENT: Speech synthesis busy, canceling previous...');
+        // console.log('⏳ SOUNDFX CLIENT: Speech synthesis busy, canceling previous...');
         speechSynthesis.cancel();
       }
 
@@ -149,11 +149,11 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       utterance.pitch = 1.0;
 
       utterance.onstart = () => {
-        console.log(`▶️ SOUNDFX CLIENT: TTS started playing - "${text}"`);
+        // console.log(`▶️ SOUNDFX CLIENT: TTS started playing - "${text}"`);
       };
 
       utterance.onend = () => {
-        console.log(`✅ SOUNDFX CLIENT: TTS finished playing - "${text}"`);
+        // console.log(`✅ SOUNDFX CLIENT: TTS finished playing - "${text}"`);
         synthRef.current = null;
         resolve();
       };
@@ -162,7 +162,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
         console.error('❌ SOUNDFX CLIENT: TTS error:', event);
         if (event.error === 'not-allowed') {
           console.warn('⚠️ SOUNDFX CLIENT: TTS blocked by browser - user interaction required');
-          console.info('💡 SOUNDFX CLIENT: Click anywhere on the page to enable TTS audio');
+          // console.info('💡 SOUNDFX CLIENT: Click anywhere on the page to enable TTS audio');
         }
         synthRef.current = null;
         reject(event);
@@ -174,7 +174,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       // Small delay to ensure cancel completed
       setTimeout(() => {
         speechSynthesis.speak(utterance);
-        console.log(`🗣️ SOUNDFX CLIENT: Speaking TTS - Voice: ${selectedVoice?.name || 'default'}, Text: "${text}"`);
+        // console.log(`🗣️ SOUNDFX CLIENT: Speaking TTS - Voice: ${selectedVoice?.name || 'default'}, Text: "${text}"`);
       }, 100);
     });
   };
@@ -199,7 +199,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
 
       audio.play().catch(reject);
       
-      console.log(`🔊 SOUNDFX: Playing audio file: ${fileName}`);
+      // console.log(`🔊 SOUNDFX: Playing audio file: ${fileName}`);
     });
   };
 
@@ -225,7 +225,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       // Chrome loads voices asynchronously
       speechSynthesis.onvoiceschanged = () => {
         const voices = speechSynthesis.getVoices();
-        console.log(`🎤 SOUNDFX: Loaded ${voices.length} TTS voices`);
+        // console.log(`🎤 SOUNDFX: Loaded ${voices.length} TTS voices`);
       };
       
       // Try to load voices immediately as well
@@ -238,7 +238,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
           const testUtterance = new SpeechSynthesisUtterance('');
           testUtterance.volume = 0;
           speechSynthesis.speak(testUtterance);
-          console.log('🎤 SOUNDFX: TTS permissions initialized');
+          // console.log('🎤 SOUNDFX: TTS permissions initialized');
           
           // Remove the event listener after first use
           document.removeEventListener('click', initializeTTS);

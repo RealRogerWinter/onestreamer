@@ -55,12 +55,12 @@ const UserProfile: React.FC<UserProfileProps> = ({ socket, onLogout, onOpenProfi
   // Setup socket event listeners when socket is available
   useEffect(() => {
     if (socket && user) {
-      console.log('📊 UserProfile: Setting up real-time stats listeners');
+      // console.log('📊 UserProfile: Setting up real-time stats listeners');
       
       // Listen for real-time time updates
       const handleTimeUpdate = (data: any) => {
-        console.log('📊 UserProfile: Received real-time stats update:', JSON.stringify(data, null, 2));
-        console.log('📊 UserProfile: Details - Chat:', data.chatMessageCount, 'Points:', data.points, 'UpdateType:', data.updateType, 'PointSource:', data.pointSource, 'SessionType:', data.sessionType, 'CurrentSessionTime:', data.currentSessionTime);
+        // console.log('📊 UserProfile: Received real-time stats update:', JSON.stringify(data, null, 2));
+        // console.log('📊 UserProfile: Details - Chat:', data.chatMessageCount, 'Points:', data.points, 'UpdateType:', data.updateType, 'PointSource:', data.pointSource, 'SessionType:', data.sessionType, 'CurrentSessionTime:', data.currentSessionTime);
         
         // Update stats with real-time data
         setStats((prevStats: UserStats | null) => {
@@ -162,7 +162,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ socket, onLogout, onOpenProfi
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          console.log('UserProfile button clicked! Current dropdown state:', showDropdown);
+          // console.log('UserProfile button clicked! Current dropdown state:', showDropdown);
           setShowDropdown(!showDropdown);
         }}
         type="button"
