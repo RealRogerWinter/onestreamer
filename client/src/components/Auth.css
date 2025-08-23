@@ -447,3 +447,14 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+/* Turnstile widget centering */
+.auth-form .cf-turnstile {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.auth-form .cf-turnstile iframe {
+  margin: 0 auto;
+}

@@ -5,6 +5,7 @@ const { body, validationResult } = require('express-validator');
 const AuthService = require('../services/AuthService');
 const SessionService = require('../services/SessionService');
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
+const { requireTurnstile } = require('../middleware/turnstile');
 
 const authService = new AuthService();
 
@@ -19,7 +20,7 @@ const validateLogin = [
     body('password').notEmpty()
 ];
 
-router.post('/signup', validateSignup, async (req, res) => {
+router.post('/signup', requireTurnstile, validateSignup, async (req, res) => {
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -58,7 +59,7 @@ router.post('/signup', validateSignup, async (req, res) => {
     }
 });
 
-router.post('/login', validateLogin, async (req, res) => {
+router.post('/login', requireTurnstile, validateLogin, async (req, res) => {
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -157,7 +158,7 @@ router.post('/resend-verification', authenticateToken, async (req, res) => {
     }
 });
 
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', requireTurnstile, async (req, res) => {
     try {
         const { email } = req.body;
         const resetToken = await authService.requestPasswordReset(email);

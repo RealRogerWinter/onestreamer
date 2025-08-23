@@ -3308,17 +3308,25 @@ app.post('/admin/simple-rotation/settings', viewBotAuth, (req, res) => {
 });
 
 // Modern ViewBot rotation endpoints (used by UI)
-app.get('/admin/viewbot/rotation/status', viewBotAuth, (req, res) => {
+app.get('/admin/viewbot/rotation/status', viewBotAuth, async (req, res) => {
   if (!global.viewBotRotation) {
     return res.status(503).json({ error: 'ViewBot rotation not initialized' });
   }
   const status = global.viewBotRotation.getStatus();
+  
+  // Add port monitor status if available
+  let portStatus = null;
+  if (global.portMonitor) {
+    portStatus = await global.portMonitor.getStatus();
+  }
+  
   res.json({ 
     success: true, 
     status: {
       ...status,
       totalVideos: global.viewBotRotation.bots.length,
-      nextRotationIn: 60000 // Placeholder
+      nextRotationIn: 60000, // Placeholder
+      portMonitor: portStatus
     }
   });
 });
@@ -6975,18 +6983,62 @@ io.on('connection', async (socket) => {
     }
   });
   
+  // ViewBot explicit transport cleanup request
+  socket.on('viewbot-cleanup-transports', (data) => {
+    console.log(`🧹 SERVER: ViewBot ${data.botId} requesting transport cleanup for socket ${data.socketId}`);
+    
+    // Clean up transports immediately
+    if (mediasoupService.transports?.has(socket.id)) {
+      const transports = mediasoupService.transports.get(socket.id);
+      try {
+        if (transports.video && transports.audio) {
+          // Close both video and audio transports
+          if (!transports.video.closed) {
+            transports.video.close();
+            console.log(`✅ Closed video transport for ViewBot ${data.botId}`);
+          }
+          if (!transports.audio.closed) {
+            transports.audio.close();
+            console.log(`✅ Closed audio transport for ViewBot ${data.botId}`);
+          }
+        } else if (typeof transports.close === 'function' && !transports.closed) {
+          transports.close();
+          console.log(`✅ Closed transport for ViewBot ${data.botId}`);
+        }
+      } catch (e) {
+        console.error(`❌ Error closing transports for ViewBot ${data.botId}:`, e);
+      }
+      mediasoupService.transports.delete(socket.id);
+      console.log(`✅ SERVER: Cleaned up transports for ViewBot ${data.botId}`);
+    }
+    
+    // Also clean up producers if they exist
+    if (mediasoupService.producers?.has(socket.id)) {
+      const producers = mediasoupService.producers.get(socket.id);
+      if (producers) {
+        for (const [kind, producer] of producers) {
+          if (!producer.closed) {
+            producer.close();
+            console.log(`✅ Closed ${kind} producer for ViewBot ${data.botId}`);
+          }
+        }
+      }
+      mediasoupService.producers.delete(socket.id);
+    }
+  });
+  
   socket.on('disconnect', async () => {
-    // Clean up ViewBot Plain RTP transports if exist
+    // Clean up ViewBot Plain RTP transports if exist (in case cleanup wasn't called)
     if (mediasoupService.transports?.has(socket.id)) {
       const transports = mediasoupService.transports.get(socket.id);
       try {
         // Handle both single transport and dual transport cases
         if (transports.video && transports.audio) {
           // Dual transport case (ViewBots)
-          transports.video.close();
-          transports.audio.close();
+          if (!transports.video.closed) transports.video.close();
+          if (!transports.audio.closed) transports.audio.close();
           console.log(`🧹 SERVER: Closed Plain RTP transports (video & audio) for socket ${socket.id}`);
-        } else if (typeof transports.close === 'function') {
+        } else if (typeof transports.close === 'function' && !transports.closed) {
           // Single transport case
           transports.close();
           console.log(`🧹 SERVER: Closed Plain RTP transport for socket ${socket.id}`);
@@ -7329,6 +7381,7 @@ async function startServer() {
       
       // Store globally for admin routes
       global.viewBotRotation = viewBotRotation;
+      global.viewBotRotationService = viewBotRotation; // Also store with this name for PortMonitor
       
       // Initialize with media files
       await viewBotRotation.initialize();
@@ -7342,6 +7395,13 @@ async function startServer() {
         maxRotationInterval: 360000,  // 6 minutes maximum (avg = 3.5 min)
         cooldownDuration: 600000      // 10 minutes
       });
+      
+      // Initialize Port Monitor Service
+      const PortMonitorService = require('./services/PortMonitorService');
+      const portMonitor = new PortMonitorService(mediasoupService);
+      global.portMonitor = portMonitor;
+      portMonitor.startMonitoring();
+      console.log('✅ PORT MONITOR: Service started');
       
       // Enable rotation
       viewBotRotation.enabled = true;

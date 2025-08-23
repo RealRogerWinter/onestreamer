@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import authService from '../services/AuthService';
+import CloudflareTurnstile from './CloudflareTurnstile';
+import { TURNSTILE_SITE_KEY } from '../config/turnstile';
 import './Auth.css';
 
 interface SignupProps {
@@ -16,6 +18,7 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showVerificationMessage, setShowVerificationMessage] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const validateForm = (): boolean => {
     if (!email || !username || !password || !confirmPassword) {
@@ -59,16 +62,22 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
       return;
     }
 
+    if (!turnstileToken) {
+      setError('Please complete the security verification');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await authService.signup(email, username, password);
+      await authService.signup(email, username, password, turnstileToken);
       setShowVerificationMessage(true);
       if (onSuccess) {
         setTimeout(onSuccess, 2000);
       }
     } catch (err: any) {
       setError(err.message || 'Signup failed. Please try again.');
+      setTurnstileToken(null); // Reset token on error
     } finally {
       setLoading(false);
     }
@@ -159,10 +168,19 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
             />
           </div>
 
+          <CloudflareTurnstile
+            siteKey={TURNSTILE_SITE_KEY}
+            onVerify={(token) => setTurnstileToken(token)}
+            onError={(error) => setError('Security verification failed. Please try again.')}
+            onExpire={() => setTurnstileToken(null)}
+            theme="auto"
+            size="normal"
+          />
+
           <button 
             type="submit" 
             className="auth-button auth-button-primary"
-            disabled={loading}
+            disabled={loading || !turnstileToken}
           >
             {loading ? 'Creating Account...' : 'Sign Up'}
           </button>

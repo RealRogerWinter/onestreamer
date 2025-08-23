@@ -74,12 +74,13 @@ class AuthService {
     }
   }
 
-  async signup(email: string, username: string, password: string): Promise<AuthResponse> {
+  async signup(email: string, username: string, password: string, turnstileToken: string): Promise<AuthResponse> {
     try {
       const response = await axios.post<AuthResponse>(`${API_URL}/auth/signup`, {
         email,
         username,
-        password
+        password,
+        turnstileToken
       });
 
       this.token = response.data.token;
@@ -96,13 +97,14 @@ class AuthService {
     }
   }
 
-  async login(email: string, password: string): Promise<AuthResponse> {
+  async login(email: string, password: string, turnstileToken: string): Promise<AuthResponse> {
     try {
       // console.log('🔐 Attempting login with:', { email, passwordLength: password.length });
       
       const response = await axios.post<AuthResponse>(`${API_URL}/auth/login`, {
         email,
-        password
+        password,
+        turnstileToken
       });
 
       this.token = response.data.token;
@@ -166,8 +168,8 @@ class AuthService {
     await axios.get(`${API_URL}/auth/verify-email/${token}`);
   }
 
-  async requestPasswordReset(email: string): Promise<void> {
-    await axios.post(`${API_URL}/auth/forgot-password`, { email });
+  async requestPasswordReset(email: string, turnstileToken: string): Promise<void> {
+    await axios.post(`${API_URL}/auth/forgot-password`, { email, turnstileToken });
   }
 
   async resetPassword(resetToken: string, newPassword: string): Promise<void> {

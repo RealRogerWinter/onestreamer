@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import authService from '../services/AuthService';
+import CloudflareTurnstile from './CloudflareTurnstile';
+import { TURNSTILE_SITE_KEY } from '../config/turnstile';
 import './Auth.css';
 
 interface LoginProps {
@@ -16,6 +18,8 @@ const Login: React.FC<LoginProps> = ({ onSuccess, onSwitchToSignup, onClose }) =
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetMessage, setResetMessage] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [resetTurnstileToken, setResetTurnstileToken] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,15 +30,21 @@ const Login: React.FC<LoginProps> = ({ onSuccess, onSwitchToSignup, onClose }) =
       return;
     }
 
+    if (!turnstileToken) {
+      setError('Please complete the security verification');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await authService.login(email, password);
+      await authService.login(email, password, turnstileToken);
       if (onSuccess) {
         onSuccess();
       }
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
+      setTurnstileToken(null); // Reset token on error
     } finally {
       setLoading(false);
     }
@@ -54,17 +64,24 @@ const Login: React.FC<LoginProps> = ({ onSuccess, onSwitchToSignup, onClose }) =
       return;
     }
 
+    if (!resetTurnstileToken) {
+      setError('Please complete the security verification');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await authService.requestPasswordReset(resetEmail);
+      await authService.requestPasswordReset(resetEmail, resetTurnstileToken);
       setResetMessage('Password reset instructions have been sent to your email.');
       setTimeout(() => {
         setShowForgotPassword(false);
         setResetMessage('');
+        setResetTurnstileToken(null);
       }, 3000);
     } catch (err: any) {
       setError('Failed to send reset email. Please try again.');
+      setResetTurnstileToken(null); // Reset token on error
     } finally {
       setLoading(false);
     }
@@ -94,10 +111,19 @@ const Login: React.FC<LoginProps> = ({ onSuccess, onSwitchToSignup, onClose }) =
               />
             </div>
 
+            <CloudflareTurnstile
+              siteKey={TURNSTILE_SITE_KEY}
+              onVerify={(token) => setResetTurnstileToken(token)}
+              onError={(error) => setError('Security verification failed. Please try again.')}
+              onExpire={() => setResetTurnstileToken(null)}
+              theme="auto"
+              size="normal"
+            />
+
             <button 
               type="submit" 
               className="auth-button auth-button-primary"
-              disabled={loading}
+              disabled={loading || !resetTurnstileToken}
             >
               {loading ? 'Sending...' : 'Send Reset Email'}
             </button>
@@ -162,10 +188,19 @@ const Login: React.FC<LoginProps> = ({ onSuccess, onSwitchToSignup, onClose }) =
             </button>
           </div>
 
+          <CloudflareTurnstile
+            siteKey={TURNSTILE_SITE_KEY}
+            onVerify={(token) => setTurnstileToken(token)}
+            onError={(error) => setError('Security verification failed. Please try again.')}
+            onExpire={() => setTurnstileToken(null)}
+            theme="auto"
+            size="normal"
+          />
+
           <button 
             type="submit" 
             className="auth-button auth-button-primary"
-            disabled={loading}
+            disabled={loading || !turnstileToken}
           >
             {loading ? 'Signing In...' : 'Sign In'}
           </button>

@@ -414,11 +414,30 @@ class ViewBotSocketClient {
     // Clear producers
     this.producers.clear();
     
-    // Disconnect socket
-    if (this.socket) {
+    // IMPORTANT: Request server to close transports BEFORE disconnecting
+    if (this.socket && this.socket.connected) {
+      console.log(`🧹 ViewBot ${this.botId}: Requesting transport cleanup from server...`);
+      this.socket.emit('viewbot-cleanup-transports', { 
+        botId: this.botId,
+        socketId: this.socket.id 
+      });
+      
+      // Give server time to cleanup before disconnecting
+      setTimeout(() => {
+        if (this.socket) {
+          this.socket.disconnect();
+          this.socket = null;
+        }
+      }, 100);
+    } else if (this.socket) {
+      // If not connected, just clear the socket
       this.socket.disconnect();
       this.socket = null;
     }
+    
+    // Clear transport reference
+    this.transport = null;
+    this.rtpPorts = { video: null, audio: null };
     
     console.log(`🧹 ViewBot ${this.botId}: Cleaned up`);
   }

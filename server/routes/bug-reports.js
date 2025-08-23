@@ -3,12 +3,13 @@ const router = express.Router();
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
+const { requireTurnstile } = require('../middleware/turnstile');
 
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
 const db = new sqlite3.Database(dbPath);
 
-// Submit a bug report (authentication optional)
-router.post('/', optionalAuth, async (req, res) => {
+// Submit a bug report (authentication optional, Turnstile required)
+router.post('/', requireTurnstile, optionalAuth, async (req, res) => {
     try {
         const { description, username, sessionData } = req.body;
         
