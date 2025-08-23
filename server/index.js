@@ -6321,9 +6321,10 @@ io.on('connection', async (socket) => {
       }
       mediasoupService.transports.set(socket.id, {
         video: videoTransport,
-        audio: audioTransport
+        audio: audioTransport,
+        botId: data.botId  // Store bot ID for debugging
       });
-      console.log(`📦 SERVER: Stored transports for socket ${socket.id}`);
+      console.log(`📦 SERVER: Stored transports for socket ${socket.id} (ViewBot ${data.botId})`);
       
       callback({
         videoTransportId: videoTransport.id,
@@ -6987,34 +6988,60 @@ io.on('connection', async (socket) => {
   socket.on('viewbot-cleanup-transports', (data) => {
     console.log(`🧹 SERVER: ViewBot ${data.botId} requesting transport cleanup for socket ${data.socketId}`);
     
+    // Use the socketId from data, not socket.id (they're different!)
+    const targetSocketId = data.socketId || socket.id;
+    
+    console.log(`🔍 DEBUG: Cleanup requested by socket ${socket.id} for target ${targetSocketId}`);
+    console.log(`🔍 DEBUG: Current transport keys:`, Array.from(mediasoupService.transports?.keys() || []));
+    
+    // Try to find transports by socket ID or by bot ID
+    let transportEntry = null;
+    let transportKey = null;
+    
+    if (mediasoupService.transports?.has(targetSocketId)) {
+      transportEntry = mediasoupService.transports.get(targetSocketId);
+      transportKey = targetSocketId;
+    } else {
+      // If not found by socket ID, search by bot ID
+      for (const [key, value] of mediasoupService.transports?.entries() || []) {
+        if (value.botId === data.botId) {
+          console.log(`🔍 DEBUG: Found transport by botId ${data.botId} under socket ${key}`);
+          transportEntry = value;
+          transportKey = key;
+          break;
+        }
+      }
+    }
+    
     // Clean up transports immediately
-    if (mediasoupService.transports?.has(socket.id)) {
-      const transports = mediasoupService.transports.get(socket.id);
+    if (transportEntry) {
       try {
-        if (transports.video && transports.audio) {
+        if (transportEntry.video && transportEntry.audio) {
           // Close both video and audio transports
-          if (!transports.video.closed) {
-            transports.video.close();
+          if (!transportEntry.video.closed) {
+            transportEntry.video.close();
             console.log(`✅ Closed video transport for ViewBot ${data.botId}`);
           }
-          if (!transports.audio.closed) {
-            transports.audio.close();
+          if (!transportEntry.audio.closed) {
+            transportEntry.audio.close();
             console.log(`✅ Closed audio transport for ViewBot ${data.botId}`);
           }
-        } else if (typeof transports.close === 'function' && !transports.closed) {
-          transports.close();
+        } else if (typeof transportEntry.close === 'function' && !transportEntry.closed) {
+          transportEntry.close();
           console.log(`✅ Closed transport for ViewBot ${data.botId}`);
         }
       } catch (e) {
         console.error(`❌ Error closing transports for ViewBot ${data.botId}:`, e);
       }
-      mediasoupService.transports.delete(socket.id);
+      mediasoupService.transports.delete(transportKey);
       console.log(`✅ SERVER: Cleaned up transports for ViewBot ${data.botId}`);
+    } else {
+      console.log(`⚠️ SERVER: No transports found for socket ${targetSocketId}`);
     }
     
     // Also clean up producers if they exist
-    if (mediasoupService.producers?.has(socket.id)) {
-      const producers = mediasoupService.producers.get(socket.id);
+    if (mediasoupService.producers?.has(transportKey || targetSocketId)) {
+      const producers = mediasoupService.producers.get(transportKey || targetSocketId);
       if (producers) {
         for (const [kind, producer] of producers) {
           if (!producer.closed) {
@@ -7023,7 +7050,7 @@ io.on('connection', async (socket) => {
           }
         }
       }
-      mediasoupService.producers.delete(socket.id);
+      mediasoupService.producers.delete(transportKey || targetSocketId);
     }
   });
   

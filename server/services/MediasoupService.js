@@ -536,8 +536,22 @@ class MediasoupService {
     const transport = this.transports.get(socketId);
     if (transport) {
       try {
-        if (!transport.closed) {
-          transport.close();
+        // Handle both single transport and ViewBot dual transport cases
+        if (transport.video && transport.audio) {
+          // ViewBot case with separate video and audio transports
+          if (!transport.video.closed) {
+            transport.video.close();
+            console.log(`🔒 Closed video transport for ${socketId}`);
+          }
+          if (!transport.audio.closed) {
+            transport.audio.close();
+            console.log(`🔒 Closed audio transport for ${socketId}`);
+          }
+        } else if (transport.close && typeof transport.close === 'function') {
+          // Regular single transport case
+          if (!transport.closed) {
+            transport.close();
+          }
         }
       } catch (error) {
         console.warn(`⚠️ MEDIASOUP: Error closing transport: ${error.message}`);
