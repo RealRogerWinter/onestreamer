@@ -99,21 +99,107 @@
 }
 
 @media (max-width: 768px) {
+  .stream-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  
   .control-button {
-    font-size: 1rem;
-    padding: 0.8rem 1.5rem;
-    min-width: 180px;
+    font-size: 1.1rem;
+    padding: 1rem 2rem;
+    min-width: 200px;
+    margin: 0 auto;
+    display: block;
   }
   
   .controls-info {
     margin-top: 1rem;
     padding: 0 1rem;
+    max-width: 90%;
   }
   
   .streaming-info,
   .takeover-info,
   .start-info {
     padding: 0.8rem 1rem;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    text-align: center;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  
+  .takeover-info {
+    max-width: 100%;
+    margin: 0.5rem auto;
+  }
+  
+  /* Mobile utility buttons */
+  .mobile-utility-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 20px;
+    padding: 0 20px;
+  }
+  
+  .mobile-utility-btn {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    background: #1a1a1a;
+    border: 2px solid #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: #999;
+    text-decoration: none;
+  }
+  
+  .mobile-utility-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+  
+  .mobile-utility-btn.help-btn {
+    font-size: 20px;
+    font-weight: bold;
+  }
+  
+  .mobile-utility-btn.help-btn:hover {
+    border-color: #4a9eff;
+    color: #4a9eff;
+    background: #2c2c2c;
+  }
+  
+  .mobile-utility-btn.bug-btn {
+    color: #ff6b6b;
+    border-color: rgba(255, 107, 107, 0.3);
+  }
+  
+  .mobile-utility-btn.bug-btn:hover {
+    border-color: #ff6b6b;
+    color: #ff8787;
+    background: #2c2c2c;
+  }
+  
+  .mobile-utility-btn.discord-btn {
+    color: #7289da;
+    border-color: rgba(114, 137, 218, 0.3);
+  }
+  
+  .mobile-utility-btn.discord-btn:hover {
+    border-color: #7289da;
+    color: #99aab5;
+    background: #2c2c2c;
+  }
+  
+  .mobile-utility-btn svg {
+    width: 22px;
+    height: 22px;
   }
 }

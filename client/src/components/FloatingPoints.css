@@ -3,18 +3,18 @@
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none;
   z-index: 10000;
-  overflow: hidden;
+  overflow: visible; /* Allow animations to be visible */
 }
 
 /* Individual Floating Points */
 .floating-points {
-  position: absolute;
-  top: 50%;
-  left: 50%;
+  position: fixed; /* Use fixed positioning to match the fixed header */
+  top: 50vh; /* Start from viewport center */
+  left: 50vw; /* Start from viewport center */
   transform: translate(-50%, -50%);
   
   color: #4CAF50;
@@ -40,6 +40,9 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
+  
+  /* High z-index to appear above everything */
+  z-index: 10001;
 }
 
 .points-amount {
@@ -61,29 +64,31 @@
 @keyframes floatToTarget {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.5) translateY(0px);
+    transform: translate(-50%, -50%) scale(0.5);
   }
   
   20% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1.2) translateY(-30px);
+    transform: translate(-50%, -80px) scale(1.2);
   }
   
   40% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1) translateY(-60px);
+    transform: translate(-50%, -100px) scale(1);
   }
   
   70% {
     opacity: 1;
     transform: translate(-50%, -50%) scale(0.9);
-    left: calc(50% + (var(--target-x) - 50vw) * 0.3);
-    top: calc(50% + (var(--target-y) - 50vh) * 0.3);
+    /* Move towards target position */
+    left: calc(50vw + (var(--target-x) - 50vw) * 0.5);
+    top: calc(50vh + (var(--target-y) - 50vh) * 0.5);
   }
   
   100% {
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.6);
+    /* Final position at the points counter */
     left: var(--target-x);
     top: var(--target-y);
   }

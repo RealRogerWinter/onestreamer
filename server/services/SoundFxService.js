@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { EventEmitter } = require('events');
 const axios = require('axios');
+const https = require('https');
 
 class SoundFxService extends EventEmitter {
     constructor() {
@@ -142,20 +143,39 @@ class SoundFxService extends EventEmitter {
 
     async sendTTSToChat(username, text) {
         try {
-            const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'http://localhost:8081';
+            // Use 127.0.0.1 instead of localhost to avoid IPv6 issues
+            const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'http://127.0.0.1:8081';
             const formattedMessage = `📢 ${username} TTS: ${text}`;
             
-            await axios.post(`${chatServiceUrl}/api/system-message`, {
+            console.log(`📤 SOUNDFX: Sending TTS to chat at ${chatServiceUrl}/api/system-message`);
+            
+            // Create axios config with HTTPS agent for self-signed certificates
+            const axiosConfig = {
+                timeout: 5000
+            };
+            
+            // If using HTTPS, add agent to accept self-signed certificates
+            if (chatServiceUrl.startsWith('https')) {
+                axiosConfig.httpsAgent = new https.Agent({
+                    rejectUnauthorized: false
+                });
+            }
+            
+            const response = await axios.post(`${chatServiceUrl}/api/system-message`, {
                 message: formattedMessage,
                 username: '🤖 StreamBot',
                 type: 'tts'
-            }, {
-                timeout: 5000
-            });
+            }, axiosConfig);
             
             console.log(`💬 SOUNDFX: TTS message sent to chat - ${username}: ${text}`);
+            console.log(`✅ SOUNDFX: Chat response:`, response.data);
         } catch (error) {
             console.error('❌ SOUNDFX: Failed to send TTS to chat:', error.message);
+            console.error('❌ SOUNDFX: Error details:', {
+                url: error.config?.url,
+                method: error.config?.method,
+                data: error.config?.data
+            });
             // Don't throw - chat integration failure shouldn't stop TTS playback
         }
     }

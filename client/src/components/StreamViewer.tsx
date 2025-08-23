@@ -73,7 +73,7 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
           {/* Always render WebRTCViewer to handle switching events */}
           <WebRTCViewer
             socket={socket}
-            isActive={hasActiveStream || forceViewerMode}
+            isActive={(hasActiveStream || forceViewerMode) && !isStreaming}
             className="webrtc-viewer-container"
             forceInitialize={forceViewerMode}
           />

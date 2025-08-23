@@ -51,7 +51,7 @@ class AccountService {
 
     async getUserById(id) {
         return await getAsync(
-            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_banned 
+            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_banned, oauth_provider, username_changed 
              FROM users WHERE id = ?`,
             [id]
         );
@@ -78,13 +78,24 @@ class AccountService {
         );
     }
 
-    async verifyPassword(email, password) {
-        const user = await this.getUserByEmail(email);
+    async verifyPassword(emailOrUsername, password) {
+        console.log('🔍 Verifying password for:', emailOrUsername);
+        // Try to find user by email first
+        let user = await this.getUserByEmail(emailOrUsername);
+        
+        // If not found by email, try username
+        if (!user) {
+            console.log('🔍 Not found by email, trying username...');
+            user = await this.getUserByUsername(emailOrUsername);
+        }
+        
         if (!user || !user.password) {
+            console.log('❌ User not found or no password set');
             return null;
         }
-
+        console.log('🔍 Found user:', user.email, 'verifying password...');
         const isValid = await bcrypt.compare(password, user.password);
+        console.log('🔍 Password valid:', isValid);
         if (!isValid) {
             return null;
         }
@@ -157,6 +168,17 @@ class AccountService {
         );
 
         return true;
+    }
+
+    async regenerateVerificationToken(userId) {
+        const newVerificationToken = crypto.randomBytes(32).toString('hex');
+        
+        await runAsync(
+            `UPDATE users SET verification_token = ? WHERE id = ?`,
+            [newVerificationToken, userId]
+        );
+        
+        return newVerificationToken;
     }
 
     async updateUserStats(userId, stats) {
@@ -432,6 +454,64 @@ class AccountService {
              LIMIT ?`,
             [limit]
         );
+    }
+
+    async changeUsername(userId, newUsername) {
+        // Check if user exists and get their current info
+        const user = await this.getUserById(userId);
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // Check if they've already changed their username
+        if (user.username_changed === 1 || user.username_changed === true) {
+            throw new Error('Username can only be changed once');
+        }
+
+        // Check if user signed up via OAuth (they get one username change)
+        if (!user.oauth_provider) {
+            throw new Error('Username change is only available for OAuth users');
+        }
+
+        // Validate username format
+        if (!newUsername || newUsername.length < 3 || newUsername.length > 20) {
+            throw new Error('Username must be between 3 and 20 characters');
+        }
+
+        if (!/^[a-zA-Z0-9_]+$/.test(newUsername)) {
+            throw new Error('Username can only contain letters, numbers, and underscores');
+        }
+
+        // Check if new username is already taken
+        const existingUser = await this.getUserByUsername(newUsername);
+        if (existingUser && existingUser.id !== userId) {
+            throw new Error('Username already taken');
+        }
+
+        // Update username and mark as changed
+        await runAsync(
+            `UPDATE users 
+             SET username = ?, username_changed = 1, updated_at = CURRENT_TIMESTAMP 
+             WHERE id = ?`,
+            [newUsername, userId]
+        );
+
+        return {
+            success: true,
+            username: newUsername
+        };
+    }
+
+    async canChangeUsername(userId) {
+        const user = await this.getUserById(userId);
+        if (!user) {
+            return false;
+        }
+        
+        // User can change username if:
+        // 1. They signed up via OAuth
+        // 2. They haven't changed it yet
+        return user.oauth_provider && (user.username_changed === 0 || user.username_changed === false || user.username_changed === null);
     }
 }
 

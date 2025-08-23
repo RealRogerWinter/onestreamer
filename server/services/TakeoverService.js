@@ -87,12 +87,17 @@ class TakeoverService {
     }
   }
 
-  async recordTakeover() {
+  async recordTakeover(skipGlobalCooldown = false) {
     const timestamp = Date.now();
-    this.lastStreamStartTime = timestamp; // Track when new stream starts
     
-    console.log(`📝 TAKEOVER: Recording takeover at ${new Date(timestamp).toISOString()}`);
-    console.log(`   Global cooldown will be active for ${this.globalCooldownSeconds}s`);
+    // CRITICAL: If skipGlobalCooldown is true (for viewbots), do NOT set lastStreamStartTime
+    if (!skipGlobalCooldown) {
+      this.lastStreamStartTime = timestamp; // Track when new stream starts
+      console.log(`📝 TAKEOVER: Recording takeover at ${new Date(timestamp).toISOString()}`);
+      console.log(`   Global cooldown will be active for ${this.globalCooldownSeconds}s`);
+    } else {
+      console.log(`📝 TAKEOVER: Recording takeover WITHOUT global cooldown (viewbot)`);
+    }
     
     try {
       if (this.redisClient) {

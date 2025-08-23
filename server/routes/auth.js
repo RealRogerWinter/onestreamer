@@ -15,7 +15,7 @@ const validateSignup = [
 ];
 
 const validateLogin = [
-    body('email').isEmail().normalizeEmail(),
+    body('email').notEmpty().trim(), // Accept email or username
     body('password').notEmpty()
 ];
 
@@ -66,6 +66,7 @@ router.post('/login', validateLogin, async (req, res) => {
         }
 
         const { email, password } = req.body;
+        console.log('🔐 Login attempt:', { email, passwordLength: password ? password.length : 0 });
         const result = await authService.login(email, password);
 
         const ipAddress = req.ip || req.connection.remoteAddress;
@@ -132,6 +133,30 @@ router.get('/verify-email/:token', async (req, res) => {
     }
 });
 
+router.post('/resend-verification', authenticateToken, async (req, res) => {
+    try {
+        const user = await authService.accountService.getUserById(req.user.id);
+        
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        if (user.is_verified) {
+            return res.status(400).json({ error: 'Email is already verified' });
+        }
+        
+        const newToken = await authService.resendVerificationEmail(user.id);
+        
+        res.json({ 
+            message: 'Verification email has been resent. Please check your email.',
+            success: true 
+        });
+    } catch (error) {
+        console.error('Resend verification error:', error);
+        res.status(500).json({ error: 'Failed to resend verification email' });
+    }
+});
+
 router.post('/forgot-password', async (req, res) => {
     try {
         const { email } = req.body;
@@ -175,8 +200,14 @@ router.get('/me', authenticateToken, async (req, res) => {
         // Use points_balance, not calculated points
         const points = stats?.points_balance || 0;
         
+        // Check if user can change username
+        const canChangeUsername = await authService.accountService.canChangeUsername(req.user.id);
+        
         res.json({
-            user,
+            user: {
+                ...user,
+                canChangeUsername
+            },
             stats: {
                 ...stats,
                 points  // This is now the balance, not calculated
@@ -185,6 +216,34 @@ router.get('/me', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Get user error:', error);
         res.status(500).json({ error: 'Failed to get user data' });
+    }
+});
+
+router.put('/change-username', authenticateToken, async (req, res) => {
+    try {
+        const { newUsername } = req.body;
+        
+        if (!newUsername) {
+            return res.status(400).json({ error: 'New username is required' });
+        }
+        
+        const result = await authService.accountService.changeUsername(req.user.id, newUsername);
+        
+        // Generate new token with updated username
+        const user = await authService.accountService.getUserById(req.user.id);
+        const token = authService.generateToken(user);
+        const refreshToken = authService.generateRefreshToken(user);
+        
+        res.json({
+            success: true,
+            username: result.username,
+            token,
+            refreshToken,
+            message: 'Username changed successfully'
+        });
+    } catch (error) {
+        console.error('Change username error:', error);
+        res.status(400).json({ error: error.message });
     }
 });
 

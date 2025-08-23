@@ -1,13 +1,11 @@
 const express = require('express');
-const router = express.Router();
-const ViewBotClientService = require('../services/ViewBotClientService');
 const ViewBotDatabaseService = require('../services/ViewBotDatabaseService');
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 
-// Initialize services
-// Pass null to use environment variables for server URL
-const viewBotClientService = new ViewBotClientService(null);
-const viewBotDatabaseService = new ViewBotDatabaseService();
+// Create router factory function that accepts service instances
+module.exports = function(viewBotClientService) {
+  const router = express.Router();
+  const viewBotDatabaseService = new ViewBotDatabaseService();
 
 // Middleware for all viewbot routes
 // Temporarily disabled for testing - REMOVE IN PRODUCTION
@@ -21,12 +19,12 @@ router.get('/viewbots', async (req, res) => {
     
     // Enhance with runtime metrics
     const enhancedBots = viewBots.map(bot => {
-      const client = viewBotClientService.getClient(bot.id);
+      const client = viewBotClientService ? viewBotClientService.getBotStatus(bot.botId) : null;
       
       return {
         ...bot,
-        status: client ? client.status : 'idle',
-        metrics: client ? client.getMetrics() : null,
+        status: client ? (client.streaming ? 'streaming' : 'connected') : 'idle',
+        metrics: client ? client.metrics : null,
         settings: {
           quality: bot.quality || 'medium',
           volume: bot.volume || 50,
@@ -295,6 +293,40 @@ router.post('/viewbots/bulk/stop', async (req, res) => {
   }
 });
 
+// Get rotation settings
+router.get('/rotation-settings', async (req, res) => {
+  try {
+    const settings = viewBotClientService.getRotationSettings();
+    res.json(settings);
+  } catch (error) {
+    console.error('Failed to fetch rotation settings:', error);
+    res.status(500).json({ error: 'Failed to fetch rotation settings' });
+  }
+});
+
+// Update rotation settings
+router.post('/rotation-settings', async (req, res) => {
+  try {
+    const { rotationProbability, rotationCheckIntervalMin, rotationCheckIntervalMax } = req.body;
+    
+    const settings = {
+      rotationProbability: rotationProbability !== undefined ? rotationProbability : viewBotClientService.rotationProbability,
+      rotationCheckIntervalMin: rotationCheckIntervalMin !== undefined ? rotationCheckIntervalMin : viewBotClientService.rotationCheckIntervalMin,
+      rotationCheckIntervalMax: rotationCheckIntervalMax !== undefined ? rotationCheckIntervalMax : viewBotClientService.rotationCheckIntervalMax
+    };
+    
+    viewBotClientService.updateRotationSettings(settings);
+    
+    res.json({ 
+      success: true, 
+      settings: viewBotClientService.getRotationSettings() 
+    });
+  } catch (error) {
+    console.error('Failed to update rotation settings:', error);
+    res.status(500).json({ error: 'Failed to update rotation settings' });
+  }
+});
+
 // ViewBot templates
 router.get('/viewbot-templates', async (req, res) => {
   try {
@@ -326,4 +358,5 @@ router.delete('/viewbot-templates/:id', async (req, res) => {
   }
 });
 
-module.exports = router;
+  return router;
+};

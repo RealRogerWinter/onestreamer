@@ -25,7 +25,7 @@ class TranscriptionService extends EventEmitter {
         // Configuration
         this.config = {
             enableTranscription: false,
-            model: 'base', // tiny, base, small, medium, large
+            model: 'small', // tiny, base, small, medium, large
             language: 'en', // auto-detect if null
             chunkDuration: 5000, // 5 seconds chunks
             overlapDuration: 500, // 0.5 second overlap
@@ -51,6 +51,9 @@ class TranscriptionService extends EventEmitter {
         console.log(`   Platform: ${this.isWindows ? 'Windows' : 'Unix-like'}`);
         console.log(`   Model: ${this.config.model}`);
         console.log(`   Chunk duration: ${this.config.chunkDuration}ms`);
+        
+        // Start periodic cleanup of old audio files
+        this.startPeriodicCleanup(15); // Clean up every 15 minutes
     }
     
     initializeDirectories() {
@@ -421,13 +424,14 @@ class TranscriptionService extends EventEmitter {
                         console.log(`⚠️ TRANSCRIPTION: Ignoring 'you' hallucination from chunk ${session.chunkCount}`);
                     }
                     
-                    // Clean up extracted audio file
+                    // Clean up extracted audio file after successful transcription
                     try {
                         if (fs.existsSync(extractResult.audioPath)) {
                             fs.unlinkSync(extractResult.audioPath);
+                            console.log(`🧹 TRANSCRIPTION: Deleted processed audio file: ${path.basename(extractResult.audioPath)}`);
                         }
                     } catch (e) {
-                        // Ignore cleanup errors
+                        console.error(`⚠️ TRANSCRIPTION: Failed to delete audio file:`, e.message);
                     }
                 } else {
                     console.log(`⚠️ TRANSCRIPTION: Could not extract audio: ${extractResult.error}`);
@@ -551,7 +555,7 @@ class TranscriptionService extends EventEmitter {
             const args = [
                 '-m', modelPath,
                 '-f', audioPath,
-                '-t', '4', // threads
+                '-t', '2', // reduced threads to avoid hanging
                 '--no-timestamps',
                 '-otxt'
             ];
@@ -560,30 +564,72 @@ class TranscriptionService extends EventEmitter {
                 args.push('-l', config.language);
             }
             
+            console.log(`🎙️ WHISPER: Running command: ${whisperExe} ${args.join(' ')}`);
             const whisperProcess = spawn(whisperExe, args);
             
             let output = '';
+            let stderr = '';
+            let timeoutId;
+            
+            // Add timeout to kill hanging whisper process
+            timeoutId = setTimeout(() => {
+                console.log('⚠️ WHISPER: Process timeout, killing...');
+                whisperProcess.kill('SIGTERM');
+                setTimeout(() => {
+                    if (!whisperProcess.killed) {
+                        whisperProcess.kill('SIGKILL');
+                    }
+                }, 2000);
+            }, 20000); // 20 second timeout
+            
             whisperProcess.stdout.on('data', (data) => {
                 output += data.toString();
             });
             
+            whisperProcess.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+            
             whisperProcess.on('close', (code) => {
-                if (code === 0) {
+                clearTimeout(timeoutId);
+                
+                if (code === 0 || code === null) {
                     // Read the output text file
                     const txtPath = audioPath + '.txt';
                     if (fs.existsSync(txtPath)) {
                         const transcription = fs.readFileSync(txtPath, 'utf8').trim();
+                        console.log(`✅ WHISPER: Transcription from file (${transcription.split(' ').length} words)`);
                         fs.unlinkSync(txtPath);
                         resolve(transcription);
+                    } else if (output.trim()) {
+                        // Parse output from stdout if no file
+                        const lines = output.split('\n');
+                        const transcriptionLines = lines.filter(line => 
+                            !line.includes('whisper_') && 
+                            !line.includes('time =') &&
+                            line.trim().length > 0
+                        );
+                        const transcription = transcriptionLines.join(' ').trim();
+                        console.log(`✅ WHISPER: Transcription from stdout (${transcription.split(' ').length} words)`);
+                        resolve(transcription);
                     } else {
-                        resolve(output.trim());
+                        console.log('⚠️ WHISPER: No transcription output');
+                        resolve('');
                     }
+                } else if (code === -15 || code === 143) { // SIGTERM
+                    console.log('⚠️ WHISPER: Process timed out');
+                    resolve(''); // Return empty string on timeout
                 } else {
+                    console.error(`❌ WHISPER: Process exited with code ${code}`);
+                    console.error(`   stderr: ${stderr}`);
                     reject(new Error(`Whisper process exited with code ${code}`));
                 }
             });
             
-            whisperProcess.on('error', reject);
+            whisperProcess.on('error', (error) => {
+                clearTimeout(timeoutId);
+                reject(error);
+            });
         });
     }
     
@@ -638,7 +684,8 @@ class TranscriptionService extends EventEmitter {
             sessionId: sessionId,
             streamerId: session.streamerId,
             endTime: session.endTime,
-            totalWords: session.wordCount,
+            wordCount: session.wordCount,  // Changed from totalWords to wordCount for consistency
+            totalWords: session.wordCount,  // Keep for backwards compatibility
             duration: session.endTime - session.startTime
         });
         
@@ -1029,13 +1076,14 @@ class TranscriptionService extends EventEmitter {
                 console.log(`⚠️ TRANSCRIPTION: No speech detected in recording`);
             }
             
-            // Clean up extracted audio file
+            // Clean up extracted audio file after successful transcription
             try {
                 if (fs.existsSync(extractResult.audioPath)) {
                     fs.unlinkSync(extractResult.audioPath);
+                    console.log(`🧹 TRANSCRIPTION: Deleted processed audio file: ${path.basename(extractResult.audioPath)}`);
                 }
             } catch (e) {
-                // Ignore cleanup errors
+                console.error(`⚠️ TRANSCRIPTION: Failed to delete audio file:`, e.message);
             }
             
         } catch (error) {
@@ -1054,6 +1102,64 @@ class TranscriptionService extends EventEmitter {
         } catch (error) {
             console.error('❌ TRANSCRIPTION: Error cleaning up instant session:', error);
         }
+    }
+    
+    // Clean up old audio files periodically
+    async cleanupOldAudioFiles(maxAgeMinutes = 30) {
+        const directories = [
+            this.config.tempDir,
+            path.join(__dirname, '..', '..', 'temp', 'audio'),
+            path.join(__dirname, '..', '..', 'audio-buffers')
+        ];
+        
+        let deletedCount = 0;
+        const cutoffTime = Date.now() - (maxAgeMinutes * 60 * 1000);
+        
+        for (const dir of directories) {
+            if (!fs.existsSync(dir)) continue;
+            
+            try {
+                const files = fs.readdirSync(dir);
+                
+                for (const file of files) {
+                    if (!file.endsWith('.wav')) continue;
+                    
+                    const filePath = path.join(dir, file);
+                    const stats = fs.statSync(filePath);
+                    
+                    if (stats.mtimeMs < cutoffTime) {
+                        try {
+                            fs.unlinkSync(filePath);
+                            deletedCount++;
+                            console.log(`🧹 TRANSCRIPTION: Deleted old audio file: ${file} (age: ${Math.round((Date.now() - stats.mtimeMs) / 60000)} minutes)`);
+                        } catch (e) {
+                            console.error(`⚠️ TRANSCRIPTION: Failed to delete ${file}:`, e.message);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`⚠️ TRANSCRIPTION: Error cleaning directory ${dir}:`, error.message);
+            }
+        }
+        
+        if (deletedCount > 0) {
+            console.log(`✅ TRANSCRIPTION: Cleaned up ${deletedCount} old audio files`);
+        }
+        
+        return { success: true, deletedCount };
+    }
+    
+    // Start periodic cleanup (called from constructor or init)
+    startPeriodicCleanup(intervalMinutes = 15) {
+        // Run cleanup every N minutes
+        setInterval(() => {
+            this.cleanupOldAudioFiles(30); // Delete files older than 30 minutes
+        }, intervalMinutes * 60 * 1000);
+        
+        // Run initial cleanup
+        this.cleanupOldAudioFiles(30);
+        
+        console.log(`🧹 TRANSCRIPTION: Started periodic cleanup (every ${intervalMinutes} minutes)`);
     }
 }
 

@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS viewbot_system_state (
     current_live_bot TEXT, -- bot_id of currently active ViewBot
     real_streamer_active BOOLEAN DEFAULT 0,
     max_bots INTEGER DEFAULT -1, -- -1 for unlimited
+    rotation_probability REAL DEFAULT 0.045, -- Probability of rotation per check
+    rotation_check_interval_min INTEGER DEFAULT 5000, -- Min interval in milliseconds
+    rotation_check_interval_max INTEGER DEFAULT 10000, -- Max interval in milliseconds
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

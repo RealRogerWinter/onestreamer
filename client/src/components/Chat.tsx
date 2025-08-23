@@ -16,6 +16,7 @@ interface ChatMessage {
   fullTimestamp: string;
   userId: string;
   isAnnouncement?: boolean;
+  mentions?: string[]; // Array of mentioned usernames
 }
 
 interface UserInfo {
@@ -63,7 +64,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
     return {
       showTimestamps: true,
-      timestampFormat: 'short' as const,
+      timestampFormat: 'long' as const,
       userColor: userInfo?.color || '#4ECDC4'
     };
   });
@@ -72,40 +73,117 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const bonusTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const mutationObserverRef = useRef<MutationObserver | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const autoScrollEnabledRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
 
-  // Scroll to bottom of messages
+  // Improved scroll to bottom with direct scrollTop manipulation
   const scrollToBottom = (smooth: boolean = true) => {
-    messagesEndRef.current?.scrollIntoView({ 
-      behavior: smooth ? 'smooth' : 'auto',
-      block: 'end'
-    });
+    const chatContainer = chatContainerRef.current;
+    if (!chatContainer) return;
+    
+    // Set flag to indicate programmatic scroll
+    programmaticScrollRef.current = true;
+    
+    if (smooth) {
+      // Smooth scroll implementation
+      const start = chatContainer.scrollTop;
+      const end = chatContainer.scrollHeight - chatContainer.clientHeight;
+      const distance = end - start;
+      const duration = 300; // ms
+      let startTime: number | null = null;
+      
+      const animateScroll = (currentTime: number) => {
+        if (!startTime) startTime = currentTime;
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Easing function for smooth animation
+        const easeInOutCubic = (t: number) => {
+          return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        };
+        
+        chatContainer.scrollTop = start + (distance * easeInOutCubic(progress));
+        
+        if (progress < 1) {
+          requestAnimationFrame(animateScroll);
+        } else {
+          programmaticScrollRef.current = false;
+        }
+      };
+      
+      requestAnimationFrame(animateScroll);
+    } else {
+      // Instant scroll - more reliable for auto-scroll
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      // Reset flag after a small delay
+      setTimeout(() => {
+        programmaticScrollRef.current = false;
+      }, 50);
+    }
   };
 
-  // Check if user is scrolled near the bottom
+  // More accurate check if user is scrolled near the bottom
   const isScrolledToBottom = () => {
     const chatContainer = chatContainerRef.current;
     if (!chatContainer) return true;
     
     const { scrollTop, scrollHeight, clientHeight } = chatContainer;
-    const threshold = 150; // increased threshold for longer messages
-    return scrollHeight - (scrollTop + clientHeight) <= threshold;
+    // Dynamic threshold based on viewport height
+    const threshold = Math.min(clientHeight * 0.1, 100); // 10% of viewport or 100px max
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+    
+    return distanceFromBottom <= threshold;
   };
 
-  // Handle scroll events to detect if user scrolled up
+  // Debounced scroll handler with improved logic
   const handleScroll = () => {
-    const isAtBottom = isScrolledToBottom();
-    if (isAtBottom) {
-      setIsScrolledUp(false);
-      setNewMessagesCount(0);
-    } else if (!isScrolledUp) {
-      setIsScrolledUp(true);
+    // Ignore programmatic scrolls
+    if (programmaticScrollRef.current) return;
+    
+    const chatContainer = chatContainerRef.current;
+    if (!chatContainer) return;
+    
+    // Get current scroll metrics immediately
+    const { scrollTop, scrollHeight, clientHeight } = chatContainer;
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+    
+    // Clear existing debounce timer
+    if (scrollDebounceRef.current) {
+      clearTimeout(scrollDebounceRef.current);
     }
+    
+    // For touch devices, be more lenient with "at bottom" detection
+    const isTouchDevice = 'ontouchstart' in window;
+    const threshold = isTouchDevice 
+      ? Math.min(clientHeight * 0.15, 150) // 15% or 150px for touch
+      : Math.min(clientHeight * 0.1, 100); // 10% or 100px for desktop
+    
+    // Debounce scroll detection
+    scrollDebounceRef.current = setTimeout(() => {
+      const isAtBottom = distanceFromBottom <= threshold;
+      
+      if (isAtBottom) {
+        setIsScrolledUp(false);
+        setNewMessagesCount(0);
+        autoScrollEnabledRef.current = true;
+      } else {
+        // Only mark as scrolled up if user scrolled significantly
+        if (distanceFromBottom > threshold * 2) {
+          setIsScrolledUp(true);
+          autoScrollEnabledRef.current = false;
+        }
+      }
+    }, 100); // 100ms debounce
   };
 
   // Jump to bottom and reset scroll state
   const jumpToBottom = () => {
     setIsScrolledUp(false);
     setNewMessagesCount(0);
+    autoScrollEnabledRef.current = true;
     scrollToBottom(true);
   };
 
@@ -347,12 +425,18 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     const handleChatHistory = (history: ChatMessage[]) => {
       console.log('💬 CLIENT: Received chat history:', history.length, 'messages');
       setMessages(history);
-      // Scroll to bottom after chat history loads
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollToBottom(false);
-        });
-      });
+      // Force scroll to bottom after chat history loads
+      // Use a slight delay to ensure DOM has updated
+      setTimeout(() => {
+        const chatContainer = chatContainerRef.current;
+        if (chatContainer) {
+          chatContainer.scrollTop = chatContainer.scrollHeight;
+          // Reset scroll state
+          setIsScrolledUp(false);
+          setNewMessagesCount(0);
+          autoScrollEnabledRef.current = true;
+        }
+      }, 50);
     };
     
     const handleNewMessage = (message: ChatMessage) => {
@@ -419,32 +503,84 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     };
   }, [chatSocket]);
 
-  // Auto-scroll to bottom when new messages arrive, unless user is scrolled up
+  // Setup MutationObserver for reliable message detection and auto-scroll
   useEffect(() => {
     const chatContainer = chatContainerRef.current;
-    if (chatContainer) {
-      const wasAtBottom = isScrolledToBottom();
+    if (!chatContainer) return;
+    
+    // Cleanup existing observer
+    if (mutationObserverRef.current) {
+      mutationObserverRef.current.disconnect();
+    }
+    
+    // Create MutationObserver to watch for new messages
+    let scrollTimeout: NodeJS.Timeout | null = null;
+    const observer = new MutationObserver((mutations) => {
+      // Check if there are actual child additions (not just attribute changes)
+      const hasNewMessages = mutations.some(mutation => 
+        mutation.type === 'childList' && mutation.addedNodes.length > 0
+      );
       
-      if (wasAtBottom && !isScrolledUp) {
-        // Use requestAnimationFrame for better timing with DOM updates
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            scrollToBottom(false); // Use instant scroll for reliability
-          });
-        });
+      if (!hasNewMessages) return;
+      
+      // Clear any pending scroll operation
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout);
+      }
+      
+      // Perform auto-scroll logic
+      if (autoScrollEnabledRef.current && !isScrolledUp) {
+        // Batch multiple rapid messages into single scroll
+        scrollTimeout = setTimeout(() => {
+          const container = chatContainerRef.current;
+          if (container) {
+            // Direct manipulation for maximum reliability
+            container.scrollTop = container.scrollHeight;
+          }
+        }, 50); // Small delay to batch rapid messages
       } else if (isScrolledUp) {
         // User is scrolled up, increment new messages count
-        setNewMessagesCount(prev => prev + 1);
+        // Count actual message nodes added
+        const newMessageCount = mutations.reduce((count, mutation) => {
+          return count + Array.from(mutation.addedNodes).filter(
+            node => node.nodeType === Node.ELEMENT_NODE
+          ).length;
+        }, 0);
+        setNewMessagesCount(prev => prev + newMessageCount);
       }
-    } else {
-      // Fallback if ref is not available - use double RAF for proper timing
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollToBottom(false);
-        });
-      });
+    });
+    
+    // Start observing
+    observer.observe(chatContainer, {
+      childList: true,
+      subtree: false, // Only watch direct children
+      attributes: false,
+      characterData: false
+    });
+    
+    mutationObserverRef.current = observer;
+    
+    // Cleanup on unmount
+    return () => {
+      if (mutationObserverRef.current) {
+        mutationObserverRef.current.disconnect();
+      }
+      if (scrollDebounceRef.current) {
+        clearTimeout(scrollDebounceRef.current);
+      }
+    };
+  }, [isScrolledUp]); // Only re-create observer when isScrolledUp changes
+  
+  // Initial scroll to bottom when messages first load
+  useEffect(() => {
+    if (messages.length > 0) {
+      // Use a small timeout to ensure DOM is ready
+      const timer = setTimeout(() => {
+        scrollToBottom(false);
+      }, 100);
+      return () => clearTimeout(timer);
     }
-  }, [messages, isScrolledUp]);
+  }, []); // Only run once on mount
 
   // Add scroll event listener to detect when user scrolls up
   useEffect(() => {
@@ -454,6 +590,39 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       return () => chatContainer.removeEventListener('scroll', handleScroll);
     }
   }, []);
+  
+  // Setup ResizeObserver to handle container size changes (e.g., keyboard on mobile)
+  useEffect(() => {
+    const chatContainer = chatContainerRef.current;
+    if (!chatContainer) return;
+    
+    // Cleanup existing observer
+    if (resizeObserverRef.current) {
+      resizeObserverRef.current.disconnect();
+    }
+    
+    // Create ResizeObserver to watch for size changes
+    const resizeObserver = new ResizeObserver((entries) => {
+      // When container resizes and user is at bottom, maintain scroll position
+      if (autoScrollEnabledRef.current && !isScrolledUp) {
+        requestAnimationFrame(() => {
+          const container = entries[0].target as HTMLElement;
+          container.scrollTop = container.scrollHeight;
+        });
+      }
+    });
+    
+    // Start observing
+    resizeObserver.observe(chatContainer);
+    resizeObserverRef.current = resizeObserver;
+    
+    // Cleanup on unmount
+    return () => {
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+      }
+    };
+  }, [isScrolledUp]);
 
   // Handle sending messages
   const sendMessage = (e: React.FormEvent) => {
@@ -483,9 +652,16 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     setCurrentMessage('');
     
     // Force scroll to bottom after sending a message
-    setTimeout(() => {
-      scrollToBottom();
-    }, 100);
+    // Reset scroll state and enable auto-scroll
+    setIsScrolledUp(false);
+    setNewMessagesCount(0);
+    autoScrollEnabledRef.current = true;
+    
+    // Immediate scroll to bottom
+    const chatContainer = chatContainerRef.current;
+    if (chatContainer) {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
   };
 
   // Handle keyboard navigation for message history
@@ -549,8 +725,8 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
   };
 
-  // Format message text (safely handle HTML, emojis, and URLs)
-  const formatMessage = (text: string) => {
+  // Format message text (safely handle HTML, emojis, URLs, and mentions)
+  const formatMessage = (text: string, isMentioned: boolean = false) => {
     // STEP 1: First, escape ALL HTML to prevent XSS attacks
     // This converts <script> to &lt;script&gt;, etc.
     const escapeHtml = (unsafe: string): string => {
@@ -563,6 +739,13 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     };
     
     let safeText = escapeHtml(text);
+    
+    // STEP 1.5: Process @ mentions - highlight them
+    const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
+    safeText = safeText.replace(mentionRegex, (match, username) => {
+      // Mark mentions with a special delimiter so we can preserve them
+      return `{{MENTION_START}}<span class="chat-mention">@${username}</span>{{MENTION_END}}`;
+    });
     
     // STEP 2: Process emoji codes - these are safe because we control the HTML
     const emojiRegex = /:([a-zA-Z0-9_-]+):/g;
@@ -578,14 +761,14 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     });
     
     // STEP 3: Process URLs - convert them to clickable links
-    // Split by emoji markers to avoid replacing URLs inside emoji tags
-    const parts = safeText.split(/({{EMOJI_START}}.*?{{EMOJI_END}})/);
+    // Split by emoji and mention markers to avoid replacing URLs inside them
+    const parts = safeText.split(/({{(?:EMOJI|MENTION)_START}}.*?{{(?:EMOJI|MENTION)_END}})/);
     safeText = parts.map((part) => {
-      // Skip parts that are emoji markers
-      if (part.startsWith('{{EMOJI_START}}')) {
+      // Skip parts that are emoji or mention markers
+      if (part.startsWith('{{EMOJI_START}}') || part.startsWith('{{MENTION_START}}')) {
         return part;
       }
-      // Replace URLs in non-emoji parts
+      // Replace URLs in non-emoji/non-mention parts
       const urlRegex = /(https?:\/\/[^\s<>&]+)/g;
       return part.replace(urlRegex, (match, url) => {
         // Sanitize the URL to prevent XSS
@@ -598,13 +781,15 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     safeText = safeText
       .replace(/{{EMOJI_START}}/g, '')
       .replace(/{{EMOJI_END}}/g, '')
+      .replace(/{{MENTION_START}}/g, '')
+      .replace(/{{MENTION_END}}/g, '')
       .replace(/{{LINK_START}}/g, '')
       .replace(/{{LINK_END}}/g, '');
     
     // STEP 5: Final sanitization with DOMPurify
     // Configure DOMPurify to only allow specific tags and attributes
     const config = {
-      ALLOWED_TAGS: ['img', 'a'],
+      ALLOWED_TAGS: ['img', 'a', 'span'],
       ALLOWED_ATTR: ['src', 'alt', 'class', 'title', 'href', 'target', 'rel'],
       ALLOWED_PROTOCOLS: ['http', 'https'],
       KEEP_CONTENT: true,
@@ -636,6 +821,17 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
         inputRef.current.setSelectionRange(newPosition, newPosition);
       }
     }, 0);
+  };
+
+  // Check if the current user is mentioned in a message
+  const isUserMentioned = (message: ChatMessage): boolean => {
+    if (!userInfo || !message.mentions || message.mentions.length === 0) {
+      return false;
+    }
+    
+    // Check if current user's username (without emoji prefix) is in mentions
+    const currentUsername = userInfo.username.replace(/^🤖\s*/, '').toLowerCase();
+    return message.mentions.some(mention => mention.toLowerCase() === currentUsername);
   };
 
   // Handle settings changes
@@ -686,8 +882,16 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
         return 'just now';
       }
       case 'short':
-      default:
+      default: {
+        // For short format, also use local time but only show HH:MM
+        if (fullTimestamp) {
+          const date = new Date(fullTimestamp);
+          const hours = date.getHours().toString().padStart(2, '0');
+          const minutes = date.getMinutes().toString().padStart(2, '0');
+          return `${hours}:${minutes}`;
+        }
         return timestamp;
+      }
     }
   };
 
@@ -710,24 +914,27 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
           </div>
         )}
         
-        {messages.map((msg) => (
-          <div key={msg.id} className={`chat-message ${msg.isAnnouncement ? 'announcement' : ''}`}>
-            {chatSettings.showTimestamps && (
-              <span className="message-timestamp">
-                {formatTimestamp(msg.timestamp, msg.fullTimestamp)}
+        {messages.map((msg) => {
+          const isMentioned = isUserMentioned(msg);
+          return (
+            <div key={msg.id} className={`chat-message ${msg.isAnnouncement ? 'announcement' : ''} ${isMentioned ? 'mentioned' : ''}`}>
+              {chatSettings.showTimestamps && (
+                <span className="message-timestamp">
+                  {formatTimestamp(msg.timestamp, msg.fullTimestamp)}
+                </span>
+              )}
+              <span className="message-username" style={{ 
+                color: msg.userId === userInfo?.userId && chatSettings.userColor ? chatSettings.userColor : msg.color 
+              }}>
+                {msg.username}:
               </span>
-            )}
-            <span className="message-username" style={{ 
-              color: msg.userId === userInfo?.userId && chatSettings.userColor ? chatSettings.userColor : msg.color 
-            }}>
-              {msg.username}:
-            </span>
-            <span 
-              className="message-text"
-              dangerouslySetInnerHTML={{ __html: formatMessage(msg.message) }}
-            />
-          </div>
-        ))}
+              <span 
+                className="message-text"
+                dangerouslySetInnerHTML={{ __html: formatMessage(msg.message, isMentioned) }}
+              />
+            </div>
+          );
+        })}
         
         {connectionStatus === 'connecting' && (
           <div className="chat-status-message">
@@ -822,7 +1029,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
             onKeyPress={handleKeyPress}
             placeholder={isConnected ? "Type a message..." : "Connecting..."}
             disabled={!isConnected}
-            maxLength={500}
+            maxLength={2000}
             className="chat-input"
           />
           <button

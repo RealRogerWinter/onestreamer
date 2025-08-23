@@ -26,6 +26,7 @@ interface BuffDisplayProps {
   className?: string;
   isCurrentUserStreaming?: boolean;
   currentUserId?: string;
+  initialBuffs?: BuffData[];
 }
 
 const BuffDisplay: React.FC<BuffDisplayProps> = ({
@@ -34,9 +35,10 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
   showStreamerBuffs = false,
   className = '',
   isCurrentUserStreaming = false,
-  currentUserId
+  currentUserId,
+  initialBuffs = []
 }) => {
-  const [buffs, setBuffs] = useState<BuffData[]>([]);
+  const [buffs, setBuffs] = useState<BuffData[]>(initialBuffs);
   const { socket, connected: isConnected, error: socketError } = useMainSocket();
   const [error, setError] = useState<string | null>(null);
   const [localBuffs, setLocalBuffs] = useState<BuffData[]>([]);
@@ -52,89 +54,44 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
   useEffect(() => {
     if (!socket || !isConnected) return;
 
-    console.log('🎭 BUFF: Socket connected, requesting buff data', { 
-      showPersonalBuffs, 
-      showStreamerBuffs,
-      isCurrentUserStreaming,
-      currentUserId 
-    });
     
     // Request initial buff data
     if (showPersonalBuffs) {
-      console.log('🎭 BUFF: Requesting personal buffs');
       socket.emit('get-my-buffs');
     }
     if (showStreamerBuffs) {
-      console.log('🎭 BUFF: Requesting streamer buffs');
       socket.emit('get-streamer-buffs');
+      
+      // Also request again after a short delay to ensure we get any active buffs
+      // This handles race conditions where the server might not be ready immediately
+      setTimeout(() => {
+        socket.emit('get-streamer-buffs');
+      }, 500);
     }
 
     // Listen for buff updates
     socket.on('my-buffs-update', (data: { buffs: BuffData[] }) => {
-      console.log('🎭 BUFF: Received my-buffs-update', { 
-        showPersonalBuffs, 
-        showStreamerBuffs,
-        buffCount: data.buffs.length,
-        isCurrentUserStreaming 
-      });
       if (showPersonalBuffs) {
-        console.log('🎭 BUFF: Updating personal buffs from my-buffs-update');
         setBuffs(data.buffs);
       }
       // ALSO update the streamer buffs display if the current user is streaming
       // This ensures the public Status Effects updates for the streamer
       if (showStreamerBuffs && isCurrentUserStreaming) {
-        console.log('🎭 BUFF: Current user is streaming, updating streamer buffs from my-buffs-update');
         setBuffs(data.buffs);
       }
     });
 
-    socket.on('streamer-buffs-update', (data: { buffs: BuffData[] }) => {
-      console.log('🎭 BUFF: Received streamer-buffs-update', { 
-        showStreamerBuffs,
-        showPersonalBuffs,
-        isCurrentUserStreaming,
-        buffCount: data.buffs ? data.buffs.length : 0,
-        currentUserId
-      });
-      
-      // ALWAYS update if this is the streamer buff display
-      if (showStreamerBuffs) {
-        const newBuffs = data.buffs || [];
-        console.log('🎭 BUFF: UPDATING streamer display from streamer-buffs-update with', newBuffs.length, 'buffs');
-        console.log('🎭 BUFF: New buffs data:', newBuffs);
-        setBuffs(newBuffs);
-        // Force a re-render to ensure UI updates
-        setUpdateTrigger(prev => prev + 1);
-      }
-      
-      // If this is the personal buff display AND the current user is streaming,
-      // also update personal buffs when streamer buffs are updated
-      // This ensures the streamer sees their own buffs in both displays
-      if (showPersonalBuffs && isCurrentUserStreaming) {
-        console.log('🎭 BUFF: Current user is streaming, updating personal buffs from streamer-buffs-update');
-        setBuffs(data.buffs || []);
-      }
-    });
+    // REMOVED: streamer-buffs-update listener - now handled via initialBuffs prop from App component
+    // The App component listens for this event and passes the buffs down as a prop
 
     socket.on('user-buff-update', (data: { userId: string; buffs: BuffData[] }) => {
-      console.log('🎭 BUFF: Received user-buff-update', { 
-        dataUserId: data.userId, 
-        currentUserId, 
-        showPersonalBuffs, 
-        showStreamerBuffs,
-        isCurrentUserStreaming,
-        match: currentUserId && data.userId.toString() === currentUserId.toString()
-      });
       
       // For personal buffs, only update if this is the current user's buffs
       if (showPersonalBuffs && currentUserId && data.userId.toString() === currentUserId.toString()) {
-        console.log('🎭 BUFF: Updating personal buffs from user-buff-update', data);
         setBuffs(data.buffs);
       }
       // For specific user display (not used currently)
       else if (userId && data.userId.toString() === userId.toString()) {
-        console.log('🎭 BUFF: Updating user-specific buffs from user-buff-update', data);
         setBuffs(data.buffs);
       }
       
@@ -142,24 +99,15 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
       if (showStreamerBuffs && isCurrentUserStreaming && currentUserId && data.userId.toString() === currentUserId.toString()) {
         // The current user is streaming and this update is for them
         // Update the streamer buffs display directly
-        console.log('🎭 BUFF: Current user is streaming and buff update is for them, updating streamer buffs display');
         setBuffs(data.buffs);
       } else if (showStreamerBuffs) {
         // For other users viewing, request fresh streamer buffs
-        console.log('🎭 BUFF: Requesting fresh streamer buffs due to user-buff-update');
         socket.emit('get-streamer-buffs');
       }
     });
 
     socket.on('buff-applied', (buffData: BuffData) => {
       // When a buff is applied, request fresh data to ensure the display is current
-      console.log('🎭 BUFF: buff-applied event received', {
-        buffUserId: buffData.userId,
-        currentUserId,
-        isCurrentUserStreaming,
-        showPersonalBuffs,
-        showStreamerBuffs
-      });
       
       // Request fresh data based on display type
       if (showPersonalBuffs) {
@@ -167,12 +115,10 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
         // 1. The buff was applied to the current user
         // 2. OR the current user is streaming (they need to see buffs applied to them)
         if (currentUserId && buffData.userId && buffData.userId.toString() === currentUserId.toString()) {
-          console.log('🎭 BUFF: Buff applied to current user, requesting personal buffs');
           socket.emit('get-my-buffs');
         } else if (isCurrentUserStreaming) {
           // If current user is streaming, also request their buffs
           // This handles the case where a viewer applies a buff to the streamer
-          console.log('🎭 BUFF: Current user is streaming, requesting personal buffs');
           socket.emit('get-my-buffs');
         }
       }
@@ -180,31 +126,18 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
       if (showStreamerBuffs) {
         // Always refresh streamer buffs when any buff is applied
         // This ensures we catch buffs applied to the streamer
-        console.log('🎭 BUFF: Requesting fresh streamer buffs due to buff-applied');
-        console.log('🎭 BUFF: Buff data:', buffData);
         
-        // Immediately add the buff to the display while waiting for the server response
-        if (buffData && buffData.userId) {
-          // Check if this buff is for the streamer
-          const tempBuff = {
-            ...buffData,
-            id: buffData.id || `temp-${Date.now()}`,
-            remainingSeconds: buffData.remainingSeconds || buffData.durationSeconds || 60
-          };
-          
+        // Immediately add the buff for real-time feedback for ALL viewers
+        if (buffData && buffData.id) {
           setBuffs(prevBuffs => {
-            // Check if buff already exists (avoid duplicates)
-            const exists = prevBuffs.some(b => b.id === tempBuff.id);
+            // Check if this exact buff already exists to prevent duplicates
+            const exists = prevBuffs.some(b => b.id === buffData.id);
             if (!exists) {
-              console.log('🎭 BUFF: Temporarily adding buff to display:', tempBuff);
-              return [...prevBuffs, tempBuff];
+              return [...prevBuffs, buffData];
             }
             return prevBuffs;
           });
         }
-        
-        // Request fresh data from server to sync properly
-        socket.emit('get-streamer-buffs');
       }
     });
 
@@ -213,7 +146,6 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
     });
 
     socket.on('buff-error', (data: { error: string }) => {
-      console.log('🎭 BUFF: Received error', data, { showPersonalBuffs, showStreamerBuffs });
       // Only show authentication errors for personal buffs if user is supposed to be authenticated
       if (data.error.includes('Authentication required') && showPersonalBuffs) {
         setError('Please sign in to view your buffs');
@@ -226,17 +158,10 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
 
     // Also listen for item-used events to catch when visual FX items are used
     socket.on('item-used', (data: any) => {
-      console.log('🎭 BUFF: item-used event received', {
-        itemType: data.item?.itemType,
-        userId: data.userId,
-        currentUserId,
-        isCurrentUserStreaming
-      });
       
       // If an item was used that might create a buff, refresh the displays
       if (data.item && (data.item.itemType === 'buff' || data.item.itemType === 'debuff')) {
         if (showStreamerBuffs) {
-          console.log('🎭 BUFF: Buff/debuff item used, refreshing streamer buffs');
           setTimeout(() => {
             socket.emit('get-streamer-buffs');
           }, 100); // Small delay to ensure buff is created in database
@@ -245,14 +170,12 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
         if (showPersonalBuffs) {
           // Update personal buffs if item was used on current user OR current user is streaming
           if (currentUserId && data.userId && data.userId.toString() === currentUserId.toString()) {
-            console.log('🎭 BUFF: Buff/debuff item used on current user, refreshing personal buffs');
             setTimeout(() => {
               socket.emit('get-my-buffs');
             }, 100);
           } else if (isCurrentUserStreaming) {
             // If current user is streaming, refresh their personal buffs
             // This catches when viewers use items on the streamer
-            console.log('🎭 BUFF: Current user is streaming, refreshing personal buffs after item use');
             setTimeout(() => {
               socket.emit('get-my-buffs');
             }, 200); // Slightly longer delay for streamer case
@@ -266,14 +189,13 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
     let refreshInterval: NodeJS.Timeout | null = null;
     if (showStreamerBuffs && isConnected) {
       refreshInterval = setInterval(() => {
-        console.log('🎭 BUFF: Periodic refresh of streamer buffs');
         socket.emit('get-streamer-buffs');
       }, 3000); // Refresh every 3 seconds for better responsiveness
     }
 
     return () => {
       socket.off('my-buffs-update');
-      socket.off('streamer-buffs-update');
+      // socket.off('streamer-buffs-update'); // Removed - handled by App component
       socket.off('user-buff-update');
       socket.off('buff-applied');
       socket.off('buff-expired');
@@ -284,6 +206,39 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
       }
     };
   }, [socket, isConnected, userId, showPersonalBuffs, showStreamerBuffs, currentUserId, isCurrentUserStreaming]);
+
+  // Update buffs when initialBuffs prop changes (from App component)
+  // This is now the PRIMARY way streamer buffs are updated
+  useEffect(() => {
+    if (showStreamerBuffs) {
+      const buffsToSet = initialBuffs || [];
+      setBuffs(buffsToSet);
+      setLocalBuffs(buffsToSet);
+    }
+  }, [initialBuffs, showStreamerBuffs]);
+
+  // Fetch initial buffs on component mount when showing streamer buffs
+  useEffect(() => {
+    if (showStreamerBuffs && socket && (!initialBuffs || initialBuffs.length === 0)) {
+      
+      // Request current streamer buffs from server
+      const fetchInitialBuffs = async () => {
+        try {
+          const response = await fetch('/api/buffs/streamer/current');
+          if (response.ok) {
+            const data = await response.json();
+            if (data.buffs && Array.isArray(data.buffs)) {
+              setBuffs(data.buffs);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching initial buffs:', error);
+        }
+      };
+      
+      fetchInitialBuffs();
+    }
+  }, [showStreamerBuffs, socket]);
 
   // Sync server buffs to local buffs for real-time countdown
   useEffect(() => {
@@ -300,20 +255,23 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
     const shouldTick = (showPersonalBuffs && isCurrentUserStreaming) || showStreamerBuffs;
     
     if (!shouldTick) {
-      console.log('🎭 BUFF: Client-side countdown disabled (not streaming or not streamer display)');
       return;
     }
 
-    console.log('🎭 BUFF: Client-side countdown enabled', { showPersonalBuffs, isCurrentUserStreaming, showStreamerBuffs });
     
     const countdownInterval = setInterval(() => {
       setLocalBuffs(prevBuffs => {
-        return prevBuffs
+        const updated = prevBuffs
           .map(buff => ({
             ...buff,
             remainingSeconds: Math.max(0, buff.remainingSeconds - 1)
           }))
           .filter(buff => buff.remainingSeconds > 0);
+        
+        if (prevBuffs.length !== updated.length) {
+        }
+        
+        return updated;
       });
     }, 1000);
 
@@ -346,6 +304,10 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
     return <div className={`buff-display ${className}`}>
       <div className="buff-status">Connecting...</div>
     </div>;
+  }
+
+  // Debug log at render
+  if (showStreamerBuffs) {
   }
 
   return (

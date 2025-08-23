@@ -4,11 +4,77 @@ const database = require('../database/database');
 class ChatBotLLMService {
     constructor() {
         this.ollama = new Ollama({
-            host: process.env.OLLAMA_HOST || 'http://localhost:11434'
+            host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'
         });
         this.model = process.env.OLLAMA_MODEL || 'mistral';
         this.isAvailable = false;
         this.globalPrompt = null;
+        
+        // Groq configuration
+        this.groqEnabled = false;
+        this.groqApiKey = process.env.GROQ_API_KEY || null;
+        this.groqModel = 'llama-3.1-8b-instant'; // Default Groq model
+        this.groqApiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+        
+        // Available Groq models with their specifications
+        this.groqModels = [
+            {
+                id: 'llama-3.3-70b-versatile',
+                name: 'Llama 3.3 70B Versatile',
+                contextWindow: 32768,
+                description: 'Most capable model, best for complex tasks',
+                speed: 'Fast'
+            },
+            {
+                id: 'llama-3.1-70b-versatile',
+                name: 'Llama 3.1 70B Versatile',
+                contextWindow: 32768,
+                description: 'Highly capable, great balance of speed and quality',
+                speed: 'Fast'
+            },
+            {
+                id: 'llama-3.1-8b-instant',
+                name: 'Llama 3.1 8B Instant',
+                contextWindow: 128000,
+                description: 'Ultra-fast responses, good for chat',
+                speed: 'Ultra-Fast'
+            },
+            {
+                id: 'llama3-70b-8192',
+                name: 'Llama 3 70B',
+                contextWindow: 8192,
+                description: 'Previous gen large model',
+                speed: 'Fast'
+            },
+            {
+                id: 'llama3-8b-8192',
+                name: 'Llama 3 8B',
+                contextWindow: 8192,
+                description: 'Previous gen small model',
+                speed: 'Very Fast'
+            },
+            {
+                id: 'mixtral-8x7b-32768',
+                name: 'Mixtral 8x7B',
+                contextWindow: 32768,
+                description: 'MoE model, good for diverse tasks',
+                speed: 'Fast'
+            },
+            {
+                id: 'gemma2-9b-it',
+                name: 'Gemma 2 9B',
+                contextWindow: 8192,
+                description: 'Google model, good for instructions',
+                speed: 'Very Fast'
+            },
+            {
+                id: 'gemma-7b-it',
+                name: 'Gemma 7B',
+                contextWindow: 8192,
+                description: 'Google model, balanced performance',
+                speed: 'Very Fast'
+            }
+        ];
         
         // Cache for model availability checks (model -> { available: boolean, lastChecked: timestamp })
         this.modelCache = new Map();
@@ -182,6 +248,72 @@ class ChatBotLLMService {
         
         // Start request processor
         this.startRequestProcessor();
+        
+        // Load Groq configuration from database on initialization
+        this.loadGroqConfig();
+    }
+    
+    async loadGroqConfig() {
+        try {
+            // Use database module directly
+            const db = database.db;
+            if (!db) {
+                console.log('⚠️ ChatBotLLMService: Database not ready for Groq config');
+                return;
+            }
+            
+            db.get(`SELECT * FROM groq_config WHERE id = 1`, (err, row) => {
+                if (err) {
+                    console.error('❌ ChatBotLLMService: Error loading Groq config:', err);
+                    return;
+                }
+                
+                if (row) {
+                    this.groqEnabled = row.enabled === 1;
+                    this.groqApiKey = row.api_key || null;
+                    this.groqModel = row.model || 'llama-3.1-8b-instant';
+                    
+                    if (this.groqEnabled && this.groqApiKey) {
+                        console.log('✅ ChatBotLLMService: Groq API enabled from database');
+                    } else {
+                        console.log('📝 ChatBotLLMService: Groq API disabled or no API key');
+                    }
+                } else {
+                    console.log('📝 ChatBotLLMService: No Groq config found in database');
+                }
+            });
+        } catch (error) {
+            console.error('❌ ChatBotLLMService: Error loading Groq config:', error);
+        }
+    }
+    
+    saveGroqConfig() {
+        try {
+            const db = database.db;
+            if (!db) {
+                console.log('⚠️ ChatBotLLMService: Database not ready, cannot save Groq config');
+                return;
+            }
+            
+            const query = `
+                INSERT OR REPLACE INTO groq_config (id, enabled, api_key, model, updated_at)
+                VALUES (1, ?, ?, ?, datetime('now'))
+            `;
+            
+            db.run(query, [
+                this.groqEnabled ? 1 : 0,
+                this.groqApiKey,
+                this.groqModel
+            ], (err) => {
+                if (err) {
+                    console.error('❌ ChatBotLLMService: Error saving Groq config:', err);
+                } else {
+                    console.log('💾 ChatBotLLMService: Groq config saved to database');
+                }
+            });
+        } catch (error) {
+            console.error('❌ ChatBotLLMService: Error saving Groq config:', error);
+        }
     }
 
     async checkAvailability() {
@@ -215,10 +347,28 @@ class ChatBotLLMService {
         }
     }
 
-    async generateMovieResponse(prompt, transcriptPrompt, context = [], personality = {}, botModel = null) {
-        const systemPrompt = await this.buildMovieSystemPrompt(prompt, personality);
-        const userPrompt = this.buildMovieUserPrompt(transcriptPrompt, context);
+    async generateMovieResponse(prompt, transcriptPrompt, context = [], personality = {}, botModel = null, botUsername = null) {
+        const systemPrompt = await this.buildMovieSystemPrompt(prompt, personality, botUsername);
+        const userPrompt = this.buildMovieUserPrompt(transcriptPrompt, context, botUsername);
         
+        // Check if Groq is enabled for MovieBot responses
+        if (this.groqEnabled && this.groqApiKey) {
+            try {
+                console.log('🚀 Using Groq API for MovieBot response');
+                const result = await this.callGroqAPI(systemPrompt, userPrompt);
+                return {
+                    message: this.cleanResponse(result.message),
+                    exactPrompt: `[GROQ API]\n[SYSTEM MESSAGE]\n${systemPrompt}\n\n[USER MESSAGE]\n${userPrompt}`,
+                    model: 'groq:' + this.groqModel,
+                    responseTime: result.responseTime
+                };
+            } catch (error) {
+                console.error('❌ Groq API failed, falling back to Ollama:', error.message);
+                // Fall back to Ollama if Groq fails
+            }
+        }
+        
+        // Original Ollama implementation
         // Use bot-specific model if provided, otherwise use global default
         const modelToUse = botModel || this.model;
         
@@ -306,10 +456,28 @@ class ChatBotLLMService {
         }
     }
 
-    async generateResponse(prompt, context = [], personality = {}, botModel = null) {
-        const systemPrompt = await this.buildSystemPrompt(prompt, personality);
-        const userPrompt = this.buildUserPrompt(context);
+    async generateResponse(prompt, context = [], personality = {}, botModel = null, botUsername = null) {
+        const systemPrompt = await this.buildSystemPrompt(prompt, personality, botUsername);
+        const userPrompt = this.buildUserPrompt(context, botUsername);
         
+        // Check if Groq is enabled for chatbot responses
+        if (this.groqEnabled && this.groqApiKey) {
+            try {
+                console.log('🚀 Using Groq API for chatbot response');
+                const result = await this.callGroqAPI(systemPrompt, userPrompt);
+                return {
+                    message: this.cleanResponse(result.message),
+                    exactPrompt: `[GROQ API]\n[SYSTEM MESSAGE]\n${systemPrompt}\n\n[USER MESSAGE]\n${userPrompt}`,
+                    model: 'groq:' + this.groqModel,
+                    responseTime: result.responseTime
+                };
+            } catch (error) {
+                console.error('❌ Groq API failed, falling back to Ollama:', error.message);
+                // Fall back to Ollama if Groq fails
+            }
+        }
+        
+        // Original Ollama implementation (fallback)
         // Use bot-specific model if provided, otherwise use global default
         const modelToUse = botModel || this.model;
         
@@ -541,11 +709,21 @@ class ChatBotLLMService {
         return this.globalPrompt;
     }
 
-    async buildMovieSystemPrompt(basePrompt, personality) {
+    async buildMovieSystemPrompt(basePrompt, personality, botUsername) {
         // For movie commentary, use a specialized prompt that overrides the global prompt
         let prompt = "**MOVIE COMMENTARY MODE - SPECIAL INSTRUCTIONS:**\n";
         prompt += "You are a regular viewer watching a movie/show with friends and commenting on what you see and hear.\n";
         prompt += "You will be provided with actual dialogue transcripts or scene descriptions from the content.\n\n";
+        
+        // Add username awareness for moviebots
+        if (botUsername) {
+            prompt += "**YOUR USERNAME IDENTITY:**\n";
+            prompt += `- Your username in the chat is: ${botUsername}\n`;
+            prompt += `- If other users reference you by this name (${botUsername}), you can acknowledge them\n`;
+            prompt += `- IMPORTANT: Check the recent messages - if you (${botUsername}) have already commented on this scene, DO NOT comment again\n`;
+            prompt += `- Avoid repeating yourself or sending duplicate movie reactions\n`;
+            prompt += `- You are aware of your own messages in the chat history\n\n`;
+        }
         
         prompt += "**YOUR OUTPUT:**\n";
         prompt += "- Write ONLY ONE single chat message as a reaction to the movie content\n";
@@ -553,11 +731,22 @@ class ChatBotLLMService {
         prompt += "- Just write the raw message text - nothing else\n";
         prompt += "- Length: 30-100 characters (longer than regular chat to allow proper movie commentary)\n\n";
         
+        prompt += "**EMOJI USAGE:**\n";
+        prompt += "- You can use custom emojis sparingly (1-2 per message max) using :emoji_code: format\n";
+        prompt += "- Key reaction emojis: :kekw: (laugh), :monkas: (tense), :pog: (hype), :sadge: (sad), :copium: (coping), :based: (controversial truth)\n";
+        prompt += "- Music/vibe emojis: :pepejam: :catjam: :donkjam: :headbang: :danse: :ravetime:\n";
+        prompt += "- Peepo emojis: :peepohey: :peepobye: :peepoglad: :peepolove: :peepohug: :peeposweat: :peepowtf:\n";
+        prompt += "- Think emojis: :hmm: :thinkge: :5head: (smart), :nerdge: (nerdy)\n";
+        prompt += "- Agreement: :nodders: (yes), :nopers: (no), :yep: :handshake:\n";
+        prompt += "- Special: :gigachad: :booba: :omegalul: :weirdchamp: :pausechamp: :cinema: :modge: :susge:\n";
+        prompt += "- Use them ONLY when they naturally enhance your reaction\n";
+        prompt += "- Most messages should have 0-1 emoji, never more than 2\n\n";
+        
         prompt += "**CRITICAL REQUIREMENTS:**\n";
-        prompt += "- ABSOLUTELY NO EMOJIS - not a single one, ever\n";
         prompt += "- NEVER include any username in your message\n";
         prompt += "- React DIRECTLY to the movie content provided\n";
-        prompt += "- NO symbols, special characters, or formatting\n\n";
+        prompt += "- NO regular Unicode emojis (❤️😀 etc) - only custom :emoji_code: format\n";
+        prompt += "- Keep formatting simple - just text and occasional custom emojis\n\n";
         
         prompt += "**MOVIE COMMENTARY BEHAVIOR:**\n";
         prompt += "- React to the specific dialogue, scenes, or plot developments shown\n";
@@ -610,9 +799,19 @@ class ChatBotLLMService {
         return prompt;
     }
 
-    async buildSystemPrompt(basePrompt, personality) {
+    async buildSystemPrompt(basePrompt, personality, botUsername) {
         // Only use the global prompt - personal prompts are disabled
         let prompt = await this.getGlobalPrompt();
+        
+        // Add username awareness
+        if (botUsername) {
+            prompt += `\n\n**YOUR USERNAME IDENTITY:**`;
+            prompt += `\n- Your username in the chat is: ${botUsername}`;
+            prompt += `\n- If other users reference you by this name (${botUsername}), you can reply to them directly`;
+            prompt += `\n- IMPORTANT: Check the recent messages - if you (${botUsername}) have already replied to a message, DO NOT reply again`;
+            prompt += `\n- Avoid repeating yourself or sending duplicate responses`;
+            prompt += `\n- You are aware of your own messages in the chat history`;
+        }
         
         // Personal prompt (basePrompt) is ignored - only global prompt is used
         
@@ -645,7 +844,7 @@ class ChatBotLLMService {
         return prompt;
     }
 
-    buildMovieUserPrompt(transcriptPrompt, context) {
+    buildMovieUserPrompt(transcriptPrompt, context, botUsername) {
         // Extract the actual movie prompt and transcription from the MovieBotService
         let movieTranscript = '';
         if (transcriptPrompt.includes('[TRANSCRIPTION_DATA]')) {
@@ -663,9 +862,13 @@ class ChatBotLLMService {
         
         // Add recent chat context if available  
         if (context && context.length > 0) {
-            const recentMessages = context.slice(-5).map(msg => 
-                `${msg.username}: ${msg.message}`
-            ).join('\n');
+            const recentMessages = context.slice(-5).map(msg => {
+                // Mark the bot's own messages clearly
+                if (botUsername && msg.username === botUsername) {
+                    return `${msg.username} (YOU): ${msg.message}`;
+                }
+                return `${msg.username}: ${msg.message}`;
+            }).join('\n');
             prompt += `Recent chat messages (for context):\n${recentMessages}\n\n`;
         }
         
@@ -676,16 +879,32 @@ class ChatBotLLMService {
         return prompt;
     }
 
-    buildUserPrompt(context) {
+    buildUserPrompt(context, botUsername) {
         if (context.length === 0) {
             return "Start a conversation in a way that immediately shows your unique personality. Make your first impression memorable and true to your core identity.";
         }
 
-        const recentMessages = context.slice(-10).map(msg => 
-            `${msg.username}: ${msg.message}`
-        ).join('\n');
+        const recentMessages = context.slice(-10).map(msg => {
+            // Mark the bot's own messages clearly
+            if (botUsername && msg.username === botUsername) {
+                return `${msg.username} (YOU): ${msg.message}`;
+            }
+            return `${msg.username}: ${msg.message}`;
+        }).join('\n');
 
-        return `Recent chat messages:\n${recentMessages}\n\nRespond to this conversation while STRONGLY expressing your unique personality and traits. Be distinctly YOU - not generic. Show what makes you different from everyone else in the chat. Keep it short but impactful.`;
+        let prompt = `Recent chat messages:\n${recentMessages}\n\n`;
+        
+        if (botUsername) {
+            // Check if the bot recently spoke
+            const lastBotMessage = context.slice(-3).find(msg => msg.username === botUsername);
+            if (lastBotMessage) {
+                prompt += `Note: You (${botUsername}) recently said: "${lastBotMessage.message}". Avoid repeating similar content.\n\n`;
+            }
+        }
+        
+        prompt += `Respond to this conversation while STRONGLY expressing your unique personality and traits. Be distinctly YOU - not generic. Show what makes you different from everyone else in the chat. Keep it short but impactful.`;
+        
+        return prompt;
     }
 
     cleanResponse(message) {
@@ -852,6 +1071,102 @@ class ChatBotLLMService {
         }
         
         return stats;
+    }
+    
+    // Groq API methods
+    enableGroq(apiKey = null) {
+        if (apiKey) {
+            this.groqApiKey = apiKey;
+        }
+        if (!this.groqApiKey) {
+            console.error('❌ Groq API key not provided');
+            return false;
+        }
+        this.groqEnabled = true;
+        this.saveGroqConfig(); // Save to database
+        console.log('✅ Groq API enabled for ALL chatbot responses');
+        return true;
+    }
+    
+    disableGroq() {
+        this.groqEnabled = false;
+        this.saveGroqConfig(); // Save to database
+        console.log('✅ Groq API disabled, using local Ollama');
+        return true;
+    }
+    
+    updateGroqSettings(enabled, apiKey = null, model = null) {
+        this.groqEnabled = enabled;
+        if (apiKey !== null) {
+            this.groqApiKey = apiKey;
+        }
+        if (model !== null) {
+            this.groqModel = model;
+        }
+        this.saveGroqConfig();
+        console.log(`✅ Groq settings updated: enabled=${enabled}, hasKey=${!!this.groqApiKey}, model=${this.groqModel}`);
+        return {
+            enabled: this.groqEnabled,
+            hasApiKey: !!this.groqApiKey,
+            model: this.groqModel,
+            availableModels: this.groqModels
+        };
+    }
+    
+    getGroqStatus() {
+        return {
+            enabled: this.groqEnabled,
+            hasApiKey: !!this.groqApiKey,
+            model: this.groqModel,
+            availableModels: this.groqModels
+        };
+    }
+    
+    async callGroqAPI(systemPrompt, userPrompt) {
+        if (!this.groqApiKey) {
+            throw new Error('Groq API key not configured');
+        }
+        
+        const startTime = Date.now();
+        
+        try {
+            const response = await fetch(this.groqApiUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.groqApiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: this.groqModel,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    max_tokens: 120,
+                    temperature: 0.7,
+                    stream: false
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`Groq API error: ${response.status} - ${error}`);
+            }
+            
+            const data = await response.json();
+            const responseTime = Date.now() - startTime;
+            
+            console.log(`⚡ Groq response in ${responseTime}ms`);
+            
+            return {
+                message: data.choices[0].message.content,
+                model: this.groqModel,
+                responseTime: responseTime
+            };
+        } catch (error) {
+            console.error('❌ Groq API call failed:', error);
+            throw error;
+        }
     }
 }
 

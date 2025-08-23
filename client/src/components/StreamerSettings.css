@@ -431,6 +431,31 @@
   .video-preview-container {
     max-height: 150px;
   }
+  
+  /* Make the compact button more prominent on mobile */
+  .streamer-settings.compact {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 80px; /* Above the bottom nav */
+    z-index: 900; /* Lower than panels (998) so it goes behind them */
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+  }
+  
+  .streamer-settings.compact .expand-button {
+    color: white;
+    font-weight: 600;
+    font-size: 1rem;
+    padding: 15px 25px;
+    min-width: 180px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+  
+  .streamer-settings.compact .expand-button:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
 }
 
 /* Light theme support */

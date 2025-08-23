@@ -43,12 +43,15 @@ const FloatingPoints: React.FC<FloatingPointsProps> = ({
     return () => clearTimeout(timer);
   }, [onAnimationComplete]);
 
+  // Log for debugging
+  console.log('🎯 Floating points rendering with target:', targetPosition);
+  
   return (
     <div 
       className="floating-points"
       style={{
-        '--target-x': targetPosition ? `${targetPosition.x}px` : '0px',
-        '--target-y': targetPosition ? `${targetPosition.y}px` : '0px',
+        '--target-x': targetPosition ? `${targetPosition.x}px` : 'calc(100vw - 150px)', // Default to right side if no target
+        '--target-y': targetPosition ? `${targetPosition.y}px` : '40px', // Default to header height
       } as React.CSSProperties}
     >
       <div className="points-amount">+{amount.toLocaleString()}</div>
@@ -71,13 +74,33 @@ export const FloatingPointsManager: React.FC<FloatingPointsManagerProps> = ({ ch
           x: rect.left + rect.width / 2,
           y: rect.top + rect.height / 2
         });
+        console.log('📍 Points counter position updated:', rect.left + rect.width / 2, rect.top + rect.height / 2);
+      } else {
+        console.log('⚠️ Points counter element not found, will retry...');
       }
     };
 
+    // Initial check
     updatePosition();
+    
+    // Check periodically until element is found, then less frequently
+    let retryCount = 0;
+    const interval = setInterval(() => {
+      updatePosition();
+      retryCount++;
+      // Stop checking after 20 attempts (10 seconds)
+      if (retryCount > 20) {
+        clearInterval(interval);
+      }
+    }, 500);
+
+    // Also update on resize
     window.addEventListener('resize', updatePosition);
     
-    return () => window.removeEventListener('resize', updatePosition);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('resize', updatePosition);
+    };
   }, []);
 
   // Expose method to add floating points

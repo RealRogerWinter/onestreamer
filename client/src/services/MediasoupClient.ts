@@ -94,8 +94,45 @@ export class MediasoupClient {
     this.healthCheckInterval = setInterval(() => {
       if (this.socket.connected && this.device.loaded && !this.isDestroyed) {
         this.performHealthCheck();
+        // Also perform transport stats check to keep connection alive
+        this.performTransportStatsCheck();
       }
     }, 5000);
+  }
+
+  private async performTransportStatsCheck(): Promise<void> {
+    try {
+      // Get stats from transport to keep ICE connection active
+      if (this.recvTransport && !this.recvTransport.closed) {
+        const stats = await this.recvTransport.getStats();
+        // Getting stats helps maintain the ICE connection
+        // by triggering ICE consent checks
+        
+        // Check if any transport is in a bad state
+        stats.forEach((stat) => {
+          if (stat.type === 'transport' && stat.state === 'failed') {
+            console.warn('⚠️ MEDIASOUP CLIENT: Transport stats show failed state');
+            this.handleTransportFailure();
+          }
+        });
+      }
+      
+      // Also check consumer stats to ensure media is flowing
+      const consumerEntries = Array.from(this.consumers.entries());
+      for (const [id, consumer] of consumerEntries) {
+        if (!consumer.closed) {
+          try {
+            const consumerStats = await consumer.getStats();
+            // Getting consumer stats also helps keep the connection alive
+          } catch (error) {
+            console.warn(`⚠️ MEDIASOUP CLIENT: Failed to get stats for consumer ${id}:`, error);
+          }
+        }
+      }
+    } catch (error) {
+      // Stats errors are not critical, just log them
+      console.debug('Stats check error (non-critical):', error);
+    }
   }
 
   private async performHealthCheck(): Promise<void> {
@@ -112,6 +149,33 @@ export class MediasoupClient {
       
       if (!response.ok) {
         throw new Error(`Health check failed: ${response.status}`);
+      }
+      
+      // Check transport health
+      if (this.recvTransport) {
+        const transportState = this.recvTransport.connectionState;
+        if (transportState === 'failed' || transportState === 'disconnected') {
+          console.warn(`⚠️ MEDIASOUP CLIENT: Transport in bad state: ${transportState}`);
+          // Trigger recovery for failed transport
+          if (transportState === 'failed') {
+            await this.handleTransportFailure();
+          }
+        }
+      }
+      
+      // Check consumer health
+      let hasActiveConsumer = false;
+      const consumersList = Array.from(this.consumers.entries());
+      for (const [id, consumer] of consumersList) {
+        if (!consumer.closed && consumer.track?.readyState === 'live') {
+          hasActiveConsumer = true;
+          break;
+        }
+      }
+      
+      // If we should have consumers but don't, trigger recovery
+      if (this.currentStreamerId && !hasActiveConsumer && this.consumers.size === 0) {
+        console.warn('⚠️ MEDIASOUP CLIENT: No active consumers detected, may need recovery');
       }
       
       // Reset reconnection attempts on successful health check
@@ -159,6 +223,40 @@ export class MediasoupClient {
     if (!this.isReconnecting && !this.isDestroyed && this.lastConnectionState === 'connected') {
       this.startReconnection();
     }
+  }
+
+  private async handleTransportFailure(): Promise<void> {
+    console.log('🔴 MEDIASOUP CLIENT: Transport failure detected, initiating recovery...');
+    
+    // Don't attempt recovery if already destroyed or reconnecting
+    if (this.isDestroyed || this.isReconnecting) {
+      return;
+    }
+
+    // Notify about connection loss
+    if (this.onConnectionLost) {
+      this.onConnectionLost();
+    }
+
+    // Close existing transports
+    try {
+      if (this.recvTransport) {
+        this.recvTransport.close();
+        this.recvTransport = undefined;
+      }
+      if (this.sendTransport) {
+        this.sendTransport.close();
+        this.sendTransport = undefined;
+      }
+    } catch (error) {
+      console.error('Error closing transports:', error);
+    }
+
+    // Clear consumers
+    this.consumers.clear();
+
+    // Start reconnection process
+    this.startReconnection();
   }
 
   private startReconnection(): void {
@@ -477,13 +575,19 @@ export class MediasoupClient {
         if (state === 'disconnected') {
           console.log('⚠️ MEDIASOUP CLIENT: Transport disconnected, waiting for reconnection...');
           // Give it time to reconnect before considering it failed
-          setTimeout(() => {
+          setTimeout(async () => {
             if (this.recvTransport?.connectionState === 'disconnected') {
               console.log('❌ MEDIASOUP CLIENT: Transport still disconnected after timeout');
+              // Trigger reconnection
+              await this.handleTransportFailure();
             }
           }, 5000);
         } else if (state === 'failed') {
           console.error('❌ MEDIASOUP CLIENT: Transport connection failed');
+          // Immediately trigger reconnection on failure
+          this.handleTransportFailure();
+        } else if (state === 'connected') {
+          console.log('✅ MEDIASOUP CLIENT: Transport reconnected successfully');
         }
       });
       
@@ -757,7 +861,7 @@ export class MediasoupClient {
       // Add timeout to prevent hanging
       const timeout = setTimeout(() => {
         reject(new Error(`Consume timeout for ${kind} on attempt ${attempt}`));
-      }, 8000); // 8 second timeout
+      }, 3000); // 3 second timeout
       
       this.socket.emit('mediasoup:consume', { 
         rtpCapabilities: this.device.rtpCapabilities,
@@ -1006,12 +1110,18 @@ export class MediasoupClient {
     
     this.setProcessing(true);
     
+    // Store the current streamer ID before cleanup
+    const previousStreamerId = this.currentStreamerId;
+    
     try {
       // Complete cleanup first
       await this.cleanup();
       
       // Reset destroyed state to allow reinitialization
       this.isDestroyed = false;
+      
+      // Restore the streamer ID
+      this.currentStreamerId = previousStreamerId;
       
       // Wait for cleanup to complete
       await new Promise(resolve => setTimeout(resolve, 200));

@@ -260,7 +260,7 @@ const HLSViewer: React.FC<HLSViewerProps> = ({ hlsUrl, isActive, className = '' 
           width: '100%',
           height: '100%',
           backgroundColor: '#000',
-          objectFit: 'cover',
+          objectFit: 'contain', // Changed to contain to show full frame without cropping
           // Mobile Chrome specific fixes
           WebkitTransform: 'translateZ(0)', // Force hardware acceleration
           transform: 'translateZ(0)',

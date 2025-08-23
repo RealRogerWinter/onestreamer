@@ -586,7 +586,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
                     type="checkbox"
                     checked={settings.audio.echoCancellation}
                     onChange={() => handleAudioToggle('echoCancellation')}
-                    disabled={isStreaming}
+                    disabled={false}
                   />
                   <span>Echo Cancellation</span>
                 </label>
@@ -599,7 +599,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
                     type="checkbox"
                     checked={settings.audio.noiseSuppression}
                     onChange={() => handleAudioToggle('noiseSuppression')}
-                    disabled={isStreaming}
+                    disabled={false}
                   />
                   <span>Noise Suppression</span>
                 </label>
@@ -612,7 +612,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
                     type="checkbox"
                     checked={settings.audio.autoGainControl}
                     onChange={() => handleAudioToggle('autoGainControl')}
-                    disabled={isStreaming}
+                    disabled={false}
                   />
                   <span>Auto Gain Control</span>
                 </label>

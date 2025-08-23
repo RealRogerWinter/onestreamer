@@ -15,12 +15,15 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
   onToggleVisibility 
 }) => {
   const [audioLevel, setAudioLevel] = useState(0); // 0-1 range
-  const [decibelLevel, setDecibelLevel] = useState(-Infinity); // dB level
+  const [decibelLevel, setDecibelLevel] = useState(-60); // dB level
+  const [peakLevel, setPeakLevel] = useState(-60); // Peak hold level
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const dataArrayRef = useRef<Float32Array | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const peakHoldTimeRef = useRef<number>(0);
+  const smoothedLevelRef = useRef<number>(-60);
 
   useEffect(() => {
     if (stream && isActive) {
@@ -53,17 +56,16 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
       analyserRef.current = audioContext.createAnalyser();
       const analyser = analyserRef.current;
       
-      // Configure analyzer for better frequency resolution and less interference
-      analyser.fftSize = 128; // Very small FFT for minimal processing impact
-      analyser.smoothingTimeConstant = 0.8; // More smoothing to reduce processing load
+      // Configure analyzer for time domain analysis (better for level metering)
+      analyser.fftSize = 2048; // Good balance for accurate RMS calculation
+      analyser.smoothingTimeConstant = 0; // No smoothing - we'll do our own
       
-      // Create data array for frequency data
-      const bufferLength = analyser.frequencyBinCount;
-      dataArrayRef.current = new Uint8Array(bufferLength);
+      // Create data array for time domain data
+      const bufferLength = analyser.fftSize;
+      dataArrayRef.current = new Float32Array(bufferLength);
 
-      // Create source from stream - clone the stream to avoid interference
-      const clonedStream = stream!.clone();
-      sourceRef.current = audioContext.createMediaStreamSource(clonedStream);
+      // Create source from stream
+      sourceRef.current = audioContext.createMediaStreamSource(stream!);
       sourceRef.current.connect(analyser);
 
       // Start analyzing
@@ -83,31 +85,46 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
     const analyze = () => {
       if (!analyser || !dataArray || !isActive) return;
 
-      // Get frequency domain data
-      analyser.getByteFrequencyData(dataArray);
+      // Get time domain data (waveform)
+      analyser.getFloatTimeDomainData(dataArray);
 
-      // Calculate RMS (Root Mean Square) for volume level
+      // Calculate RMS (Root Mean Square) for accurate level measurement
       let sum = 0;
+      let peak = 0;
       for (let i = 0; i < dataArray.length; i++) {
-        const value = dataArray[i] / 255; // Normalize to 0-1
+        const value = dataArray[i];
         sum += value * value;
+        peak = Math.max(peak, Math.abs(value));
       }
       const rms = Math.sqrt(sum / dataArray.length);
 
-      // Convert to decibels
-      // RMS of 0 = -Infinity dB, RMS of 1 = 0 dB
-      const db = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+      // Convert to decibels (20 * log10 for amplitude)
+      // Using -60 dB as floor for better dynamic range
+      const instantDb = rms > 0.0001 ? 20 * Math.log10(rms) : -60;
+      const peakDb = peak > 0.0001 ? 20 * Math.log10(peak) : -60;
       
-      // Clamp dB range for display (-40 dB to 0 dB) - shorter range for faster color transitions
-      const clampedDb = Math.max(-40, Math.min(0, db));
+      // Apply smoothing for more stable display
+      const smoothingFactor = 0.85; // Higher = more smoothing
+      smoothedLevelRef.current = smoothedLevelRef.current * smoothingFactor + 
+                                  instantDb * (1 - smoothingFactor);
       
-      // Convert to 0-1 range for display (0 = -40dB, 1 = 0dB)
-      const normalizedLevel = (clampedDb + 40) / 40;
+      // Update peak hold
+      const currentTime = Date.now();
+      if (peakDb > peakLevel || currentTime - peakHoldTimeRef.current > 2000) {
+        setPeakLevel(peakDb);
+        peakHoldTimeRef.current = currentTime;
+      }
+      
+      // Clamp dB range for display (-60 dB to 0 dB)
+      const clampedDb = Math.max(-60, Math.min(0, smoothedLevelRef.current));
+      
+      // Convert to 0-1 range for display (0 = -60dB, 1 = 0dB)
+      const normalizedLevel = (clampedDb + 60) / 60;
 
       setAudioLevel(normalizedLevel);
       setDecibelLevel(clampedDb);
 
-      // Continue analyzing
+      // Continue analyzing at 60fps
       animationFrameRef.current = requestAnimationFrame(analyze);
     };
 
@@ -142,46 +159,42 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
   };
 
   const formatDb = (db: number): string => {
-    if (db === -Infinity || !isFinite(db)) {
-      return '-∞ dB';
+    if (db <= -60 || !isFinite(db)) {
+      return '-∞';
     }
-    return `${Math.round(db)} dB`;
+    return db.toFixed(1);
   };
 
-  const getLevelColor = (level: number): string => {
-    // Faster color transitions: green -> yellow -> orange -> red
-    // level: 0 (quiet) -> 1 (loud)
+  const getLevelColor = (db: number): string => {
+    // Professional dB-based color scheme
+    // -60 to -20 dB: Green (safe levels)
+    // -20 to -6 dB: Yellow (optimal levels)
+    // -6 to -3 dB: Orange (caution)
+    // -3 to 0 dB: Red (clipping risk)
     
-    if (level < 0.4) {
-      // Green to yellow range (quiet)
-      const green = 255;
-      const red = Math.round(255 * (level / 0.4));
-      return `rgb(${red}, ${green}, 0)`;
-    } else if (level < 0.7) {
-      // Yellow to orange range (moderate)
-      const normalizedLevel = (level - 0.4) / 0.3; // 0-1 range
-      const red = 255;
-      const green = Math.round(255 * (1 - normalizedLevel * 0.5)); // Fade to orange
-      return `rgb(${red}, ${green}, 0)`;
+    if (db < -20) {
+      return '#00ff00'; // Green
+    } else if (db < -6) {
+      return '#ffff00'; // Yellow
+    } else if (db < -3) {
+      return '#ff8800'; // Orange
     } else {
-      // Orange to red range (loud)
-      const normalizedLevel = (level - 0.7) / 0.3; // 0-1 range for red transition
-      const red = 255;
-      const green = Math.round(128 * (1 - normalizedLevel)); // From orange (128) to red (0)
-      return `rgb(${red}, ${green}, 0)`;
+      return '#ff0000'; // Red
     }
   };
 
-  const getMeterBarColor = (position: number, currentLevel: number): string => {
+  const getMeterBarColor = (position: number, currentLevel: number, db: number): string => {
     // position: 0-1 (left to right on meter)
     // currentLevel: 0-1 (current audio level)
+    // db: actual dB value
     
     if (position <= currentLevel) {
-      // Active part of the meter - use gradient
-      return getLevelColor(position);
+      // Map position to dB for color calculation
+      const positionDb = -60 + (position * 60);
+      return getLevelColor(positionDb);
     } else {
-      // Inactive part - dark gray
-      return 'rgba(255, 255, 255, 0.1)';
+      // Inactive part - dark with slight color hint
+      return 'rgba(40, 40, 40, 0.8)';
     }
   };
 
@@ -195,26 +208,9 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
 
   return (
     <div className="audio-level-meter-container">
-      <div className="audio-level-meter-row">
-        <div className="audio-level-meter">
-          {/* Create meter bars */}
-          {Array.from({ length: 50 }, (_, i) => {
-            const position = i / 49; // 0 to 1
-            return (
-              <div
-                key={i}
-                className="audio-meter-bar"
-                style={{
-                  backgroundColor: getMeterBarColor(position, audioLevel),
-                  height: '100%',
-                  width: '2%',
-                  marginRight: '0.2%'
-                }}
-              />
-            );
-          })}
-        </div>
-        
+      <div className="meter-header">
+        <span className="meter-title">AUDIO LEVEL</span>
+        <span className="meter-db-value">{formatDb(decibelLevel)} dB</span>
         {onToggleVisibility && (
           <button
             className="audio-level-toggle-compact"
@@ -226,10 +222,63 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
         )}
       </div>
       
-      <div className="audio-level-labels">
-        <span className="level-label quiet">-40</span>
-        <span className="level-label medium">-20</span>
-        <span className="level-label loud">0 dB</span>
+      <div className="meter-scale">
+        <div className="meter-scale-labels">
+          <span>-60</span>
+          <span>-40</span>
+          <span>-20</span>
+          <span>-12</span>
+          <span>-6</span>
+          <span>-3</span>
+          <span>0</span>
+        </div>
+        
+        <div className="meter-track">
+          <div className="meter-segments">
+            {/* Create segmented meter */}
+            {Array.from({ length: 40 }, (_, i) => {
+              const position = i / 39; // 0 to 1
+              const isActive = position <= audioLevel;
+              const segmentDb = -60 + (position * 60);
+              
+              return (
+                <div
+                  key={i}
+                  className={`meter-segment ${isActive ? 'active' : ''}`}
+                  style={{
+                    backgroundColor: isActive ? getLevelColor(segmentDb) : 'transparent',
+                  }}
+                />
+              );
+            })}
+          </div>
+          
+          {/* Peak indicator */}
+          <div 
+            className="meter-peak"
+            style={{
+              left: `${Math.max(0, Math.min(100, ((peakLevel + 60) / 60) * 100))}%`
+            }}
+          />
+        </div>
+        
+        <div className="meter-markers">
+          {/* dB scale markers */}
+          <div className="marker" style={{ left: '0%' }} />
+          <div className="marker" style={{ left: '33.3%' }} />
+          <div className="marker" style={{ left: '66.7%' }} />
+          <div className="marker" style={{ left: '80%' }} />
+          <div className="marker" style={{ left: '90%' }} />
+          <div className="marker" style={{ left: '95%' }} />
+          <div className="marker" style={{ left: '100%' }} />
+        </div>
+      </div>
+      
+      <div className="meter-legend">
+        <span className="legend-item green">SAFE</span>
+        <span className="legend-item yellow">OPTIMAL</span>
+        <span className="legend-item orange">CAUTION</span>
+        <span className="legend-item red">PEAK</span>
       </div>
     </div>
   );

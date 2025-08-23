@@ -105,6 +105,7 @@ class BuffDebuffService extends EventEmitter {
 
     // Apply a buff or debuff to a user
     async applyBuff(userId, itemId, appliedByUserId, duration, effectData = null, skipBroadcasts = false, streamId = null) {
+        console.log(`🎭 BUFF: applyBuff called - userId: ${userId}, itemId: ${itemId}, duration: ${duration}`);
         try {
             // Get item details
             const item = await getAsync('SELECT * FROM items WHERE id = ? AND is_active = 1', [itemId]);
@@ -162,7 +163,27 @@ class BuffDebuffService extends EventEmitter {
                 ...buffData,
                 stream_id: streamId
             };
+            
+            // Debug: Check if this is a visual effect item
+            const videoEffectItems = ['emboss', 'pixelate', 'motion_blur', 'glitch_bomb', 'thermal_vision', 'rotate_90', 'potato'];
+            const canvasEffectItems = ['smoke_bomb', 'spotlight', 'disco_ball', 'confetti_cannon', 'rainbow_effect', 'freeze_frame'];
+            
+            if (videoEffectItems.includes(item.name)) {
+                console.log(`🎭 BUFF: VIDEO EFFECT ITEM DETECTED: ${item.name}`);
+                console.log(`🎭 BUFF: Event listeners for 'buff-applied': ${this.listenerCount('buff-applied')}`);
+            }
+            
+            if (canvasEffectItems.includes(item.name)) {
+                console.log(`🎭 BUFF: CANVAS EFFECT ITEM DETECTED: ${item.name}`);
+                console.log(`🎭 BUFF: Event listeners for 'buff-applied': ${this.listenerCount('buff-applied')}`);
+                console.log(`🎭 BUFF: About to emit buff-applied for canvas effect with data:`, JSON.stringify(eventData, null, 2));
+            }
+            
             this.emit('buff-applied', eventData);
+            
+            if (canvasEffectItems.includes(item.name)) {
+                console.log(`🎭 BUFF: Successfully emitted buff-applied event for canvas effect ${item.name}`);
+            }
 
             // Send real-time update
             if (this.io && !skipBroadcasts) {
@@ -224,14 +245,32 @@ class BuffDebuffService extends EventEmitter {
     async createNewBuff(userId, itemId, appliedByUserId, buffType, duration, effectData) {
         const metadata = effectData ? JSON.stringify(effectData) : null;
         
-        const result = await runAsync(`
-            INSERT INTO active_buffs (
-                user_id, item_id, applied_by_user_id, buff_type,
-                duration_seconds, remaining_seconds, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [userId, itemId, appliedByUserId, buffType, duration, duration, metadata]);
-
-        return result.id;
+        console.log(`🎭 BUFF: Creating new buff - userId: ${userId}, itemId: ${itemId}, duration: ${duration}`);
+        console.log(`🎭 BUFF: Additional params - appliedByUserId: ${appliedByUserId}, buffType: ${buffType}, metadata: ${metadata}`);
+        
+        try {
+            const insertQuery = `
+                INSERT INTO active_buffs (
+                    user_id, item_id, applied_by_user_id, buff_type,
+                    duration_seconds, remaining_seconds, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            `;
+            console.log(`🎭 BUFF: Executing INSERT query with params:`, [userId, itemId, appliedByUserId, buffType, duration, duration, metadata]);
+            
+            const result = await runAsync(insertQuery, [userId, itemId, appliedByUserId, buffType, duration, duration, metadata]);
+            
+            console.log(`🎭 BUFF: Successfully created buff with ID: ${result.id}, changes: ${result.changes}`);
+            
+            // Verify the buff was actually inserted
+            const verifyBuff = await getAsync('SELECT * FROM active_buffs WHERE id = ?', [result.id]);
+            console.log(`🎭 BUFF: Verification - buff exists in DB:`, !!verifyBuff, verifyBuff ? `(user_id: ${verifyBuff.user_id})` : '');
+            
+            return result.id;
+        } catch (error) {
+            console.error(`❌ BUFF: Failed to create buff:`, error);
+            console.error(`❌ BUFF: Error details:`, error.message, error.code);
+            throw error;
+        }
     }
 
     // Update buff duration
@@ -285,11 +324,13 @@ class BuffDebuffService extends EventEmitter {
     // Get active buffs for the current streamer (public view)
     async getActiveBuffsForCurrentStreamer() {
         if (!this.streamService) {
+            console.log(`🎭 BUFF: StreamService not available`);
             return [];
         }
 
         const currentStreamerSocketId = this.streamService.getCurrentStreamer();
         if (!currentStreamerSocketId) {
+            console.log(`🎭 BUFF: No current streamer found`);
             return [];
         }
 
@@ -302,11 +343,54 @@ class BuffDebuffService extends EventEmitter {
         const session = this.sessionService.getSessionBySocketId(currentStreamerSocketId);
         if (!session || !session.userId) {
             console.log(`🎭 BUFF: No userId found for current streamer socketId: ${currentStreamerSocketId}`);
+            
+            // Fallback: Try to get any active buffs from the database
+            // This handles viewbots and other special cases
+            console.log(`🎭 BUFF: Attempting fallback - checking for any active buffs in database`);
+            const allActiveBuffs = await allAsync(`
+                SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data,
+                       ab.user_id
+                FROM active_buffs ab
+                JOIN items i ON ab.item_id = i.id
+                WHERE ab.is_active = 1 AND ab.remaining_seconds > 0
+                ORDER BY ab.applied_at DESC
+            `);
+            
+            if (allActiveBuffs && allActiveBuffs.length > 0) {
+                console.log(`🎭 BUFF: Found ${allActiveBuffs.length} active buffs in fallback query`);
+                // Group by user and return the buffs for the user with most recent activity
+                const buffsByUser = {};
+                for (const buff of allActiveBuffs) {
+                    if (!buffsByUser[buff.user_id]) {
+                        buffsByUser[buff.user_id] = [];
+                    }
+                    buffsByUser[buff.user_id].push(buff);
+                }
+                
+                // Find the user with the most recent buff application (likely the streamer)
+                let mostRecentUserId = null;
+                let mostRecentTime = null;
+                for (const [userId, userBuffs] of Object.entries(buffsByUser)) {
+                    const latestBuff = userBuffs[0]; // Already sorted by applied_at DESC
+                    if (!mostRecentTime || new Date(latestBuff.applied_at) > mostRecentTime) {
+                        mostRecentTime = new Date(latestBuff.applied_at);
+                        mostRecentUserId = userId;
+                    }
+                }
+                
+                if (mostRecentUserId && buffsByUser[mostRecentUserId]) {
+                    console.log(`🎭 BUFF: Returning buffs for user ${mostRecentUserId} (${buffsByUser[mostRecentUserId].length} buffs)`);
+                    return buffsByUser[mostRecentUserId].map(buff => this.formatBuffForClient(buff));
+                }
+            }
+            
             return [];
         }
 
         console.log(`🎭 BUFF: Current streamer: socketId ${currentStreamerSocketId} -> userId ${session.userId}`);
-        return await this.getActiveBuffsForUser(session.userId);
+        const buffs = await this.getActiveBuffsForUser(session.userId);
+        console.log(`🎭 BUFF: Retrieved ${buffs.length} active buffs for streamer userId ${session.userId}`);
+        return buffs;
     }
 
     // Remove/expire a buff

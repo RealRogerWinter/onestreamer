@@ -3,23 +3,35 @@ const router = express.Router();
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 const axios = require('axios');
 
-// Chat service URL
-const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || 'http://localhost:8081';
+// Chat service URL - Updated to use HTTPS and correct port
+const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
 
 // Function to send system message to chat service
 async function sendSystemMessage(message, username = '🤖 StreamBot') {
     try {
+        const https = require('https');
+        const agent = new https.Agent({  
+            rejectUnauthorized: false // Allow self-signed certificates for local HTTPS
+        });
+        
+        // Add timestamp and call stack to debug duplicate messages
+        const timestamp = Date.now();
+        const stack = new Error().stack.split('\n')[2].trim();
+        console.log(`📤 CHAT: Attempting to send message at ${timestamp}: "${message}" from ${stack}`);
+        
         const response = await axios.post(`${CHAT_SERVICE_URL}/api/system-message`, {
             message,
             username
         }, {
-            timeout: 5000
+            timeout: 5000,
+            httpsAgent: agent
         });
         
-        // console.log(`🤖 CHAT: System message sent successfully:`, response.data);
+        console.log(`✅ CHAT: System message sent successfully at ${timestamp}: "${message}"`);
         return response.data;
     } catch (error) {
         console.error(`❌ CHAT: Failed to send system message:`, error.message);
+        console.error(`❌ CHAT: URL attempted: ${CHAT_SERVICE_URL}/api/system-message`);
         return null;
     }
 }
@@ -128,10 +140,10 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
         
         console.log(`🎯 ITEMS DEBUG: Item ${item.name} - isInteractiveItem: ${isInteractiveItem}, isTTSItem: ${isTTSItem}, item_type: ${item.item_type}`);
         
-        // Check if this is a buff/debuff item FIRST
+        // Check if this is a buff/debuff item
         const isBuffDebuffItem = itemService.isBuffOrDebuffItem(item);
         
-        // Check if this is a cooldown modifier item SECOND (guard or weapon)
+        // Check if this is a cooldown modifier item (guard or weapon)
         const isCooldownModifier = itemService.isCooldownModifierItem(item);
         console.log(`🔍 ITEMS DEBUG: Item "${item.display_name}" - Type: ${item.item_type}, isBuffDebuffItem: ${isBuffDebuffItem}, isCooldownModifier: ${isCooldownModifier}`);
         
@@ -141,7 +153,84 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             console.log(`🏰 FORTRESS DEBUG: Should take cooldown modifier path`);
         }
         
-        if (isBuffDebuffItem) {
+        // IMPORTANT: Check interactive items FIRST before buff/debuff
+        // Some items like smoke_bomb are both interactive AND buff/debuff
+        if (isInteractiveItem) {
+            console.log(`🎯 ITEMS: Taking interactive item path for ${item.display_name}`);
+            
+            // Check if there's an active stream for interactive items
+            if (!streamStatus.hasActiveStream) {
+                console.log(`❌ ITEMS: No active stream for interactive item ${item.display_name}`);
+                return res.status(400).json({ 
+                    error: 'No active stream', 
+                    message: 'Interactive items can only be used when someone is streaming. Please wait for a streamer to start.',
+                    requiresStream: true 
+                });
+            }
+            
+            // For interactive items, only validate but don't consume the item yet
+            const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+            if (!inventoryItem || inventoryItem.quantity < 1) {
+                return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
+            }
+            
+            // Validate item usage (cooldown check)
+            const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+            if (!validation.valid) {
+                return res.status(429).json({ 
+                    error: validation.error || 'Cannot use item',
+                    cooldownRemaining: validation.cooldownRemaining 
+                });
+            }
+            
+            // Get interaction config for the item
+            const interactionConfig = canvasFxService.getInteractionConfig(item);
+            
+            // Return success with interaction mode - client should enable click-to-throw UI
+            const result = {
+                success: true,
+                item: {
+                    id: item.id,
+                    name: item.name,
+                    displayName: item.display_name,
+                    emoji: item.emoji,
+                    type: item.item_type
+                },
+                remainingQuantity: inventoryItem.quantity,
+                interactionMode: interactionConfig?.mode || 'click-to-throw',
+                interactionConfig: interactionConfig,
+                message: 'Interaction mode activated'
+            };
+            
+            // Create a unique interaction ID for tracking
+            const interactionId = `interact_${req.user.id}_${item.id}_${Date.now()}`;
+            result.interactionId = interactionId;
+            
+            // For drawing items, the interaction mode is different
+            if (interactionConfig && interactionConfig.mode === 'click-to-draw') {
+                result.message = 'Drawing mode activated';
+            }
+            
+            // Notify the specific user's socket to enable interaction mode
+            const io = req.app.get('io');
+            const sessionService = req.app.get('sessionService');
+            if (io && sessionService) {
+                const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                userSocketIds.forEach(socketId => {
+                    io.to(socketId).emit('canvas-effect-mode', {
+                        mode: interactionConfig?.mode || 'click-to-throw',
+                        item: result.item,
+                        interactionConfig: interactionConfig,
+                        userId: req.user.id,
+                        username: req.user.username,
+                        streamId,
+                        interactionId: interactionId
+                    });
+                });
+            }
+            
+            res.json(result);
+        } else if (isBuffDebuffItem && !isInteractiveItem) {
             console.log(`🎭 ITEMS: Taking buff/debuff path for ${item.display_name}`);
             // Handle buff/debuff items
             const buffDebuffService = req.app.get('buffDebuffService');
@@ -178,6 +267,14 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
 
             // Apply the buff/debuff
             try {
+                console.log(`🎭 ITEMS: About to call applyBuffDebuffItem with params:`, {
+                    targetUserId,
+                    itemId: req.params.itemId,
+                    appliedByUserId: req.user.id,
+                    hasBuffDebuffService: !!buffDebuffService,
+                    streamId
+                });
+                
                 const buffResult = await itemService.applyBuffDebuffItem(
                     targetUserId,
                     req.params.itemId,
@@ -186,6 +283,8 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     true, // Skip cooldown validation since we already consumed the item
                     streamId // Pass the stream ID for visual effects
                 );
+
+                console.log(`🎭 ITEMS: applyBuffDebuffItem returned:`, buffResult);
 
                 // Add the buff result to the response
                 result.buffResult = buffResult;
@@ -196,6 +295,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
 
                 // Send system message about the effect
                 const effectMessage = `${req.user.username} used ${result.item.displayName} on the streamer!`;
+                console.log(`📨 ITEMS: Sending buff/debuff chat message: "${effectMessage}"`);
                 await sendSystemMessage(effectMessage);
 
             } catch (buffError) {
@@ -282,6 +382,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 });
 
                 for (const message of effectMessages) {
+                    console.log(`📨 ITEMS: Sending cooldown modifier chat message: "${message}"`);
                     await sendSystemMessage(message);
                 }
 
@@ -395,8 +496,11 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
                     const interactionConfig = canvasFxService.getInteractionConfig(item);
                     
+                    // Generate a unique interaction ID for this specific item use
+                    const interactionId = `${req.user.id}-${item.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    
                     userSocketIds.forEach(socketId => {
-                        console.log(`🎯 SOCKET: Sending canvas-effect-mode for drawing to socket ${socketId}`);
+                        console.log(`🎯 SOCKET: Sending canvas-effect-mode for drawing to socket ${socketId} with interaction ID ${interactionId}`);
                         io.to(socketId).emit('canvas-effect-mode', {
                             mode: 'click-to-draw',
                             item: {
@@ -409,7 +513,8 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                             userId: req.user.id,
                             username: req.user.username,
                             streamId,
-                            interactionConfig
+                            interactionConfig,
+                            interactionId  // Add unique ID to prevent duplicate handling
                         });
                     });
                 }
@@ -487,8 +592,11 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     return res.json(fallbackResult);
                 }
                 
+                // Generate a unique interaction ID for this specific item use
+                const interactionId = `${req.user.id}-${item.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
                 userSocketIds.forEach(socketId => {
-                    console.log(`🎯 SOCKET: Sending canvas-effect-mode to socket ${socketId} for user ${req.user.id} (${req.user.username})`);
+                    console.log(`🎯 SOCKET: Sending canvas-effect-mode to socket ${socketId} for user ${req.user.id} (${req.user.username}) with interaction ID ${interactionId}`);
                     io.to(socketId).emit('canvas-effect-mode', {
                         mode: interactionConfig?.mode || 'click-to-throw',
                         item: {
@@ -501,7 +609,8 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                         userId: req.user.id,
                         username: req.user.username,
                         streamId,
-                        interactionConfig
+                        interactionConfig,
+                        interactionId  // Add unique ID to prevent duplicate handling
                     });
                 });
             }
@@ -808,14 +917,70 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
             streamId
         );
         
+        // Check if this is a buff/debuff item that needs special handling after throwing
+        const fullItem = await itemService.getItemById(item.id);
+        const isBuffDebuffItem = itemService.isBuffOrDebuffItem(fullItem);
+        
+        // For buff/debuff items like smoke_bomb, apply the buff first to get duration
+        let buffDuration = null;
+        if (isBuffDebuffItem) {
+            console.log(`🎯 THROW: Item ${fullItem.name} is a buff/debuff, applying after throw`);
+            
+            const buffDebuffService = req.app.get('buffDebuffService');
+            if (buffDebuffService) {
+                // Get the current streamer to determine target
+                const currentStreamerSocketId = streamService.getCurrentStreamer();
+                let targetUserId = null;
+
+                if (currentStreamerSocketId && req.app.get('sessionService')) {
+                    const session = req.app.get('sessionService').getSessionBySocketId(currentStreamerSocketId);
+                    if (session && session.userId) {
+                        targetUserId = session.userId;
+                        console.log(`🎯 THROW: Found current streamer userId: ${targetUserId}`);
+                    }
+                }
+
+                if (targetUserId) {
+                    try {
+                        const buffResult = await itemService.applyBuffDebuffItem(
+                            targetUserId,
+                            item.id,
+                            req.user.id,
+                            buffDebuffService,
+                            true, // Skip cooldown validation since we already consumed the item
+                            streamId
+                        );
+                        console.log(`🎯 THROW: Applied ${fullItem.display_name} buff/debuff to streamer after throw`);
+                        result.buffResult = buffResult;
+                        
+                        // Get the buff duration for the effect
+                        if (fullItem.duration_seconds) {
+                            buffDuration = fullItem.duration_seconds;
+                            console.log(`🎯 THROW: Buff duration is ${buffDuration} seconds`);
+                        }
+                    } catch (buffError) {
+                        console.error('Error applying buff/debuff after throw:', buffError);
+                    }
+                }
+            }
+        }
+        
         // Trigger the visual effect at specific coordinates for ALL viewers
+        // For buff items, pass the buff duration to ensure proper effect duration
         if (canvasFxService) {
+            const effectParams = { username: req.user.username };
+            if (buffDuration) {
+                effectParams.buffDuration = buffDuration;
+                effectParams.triggeredByThrow = true;
+                console.log(`🎯 THROW: Passing buff duration ${buffDuration}s to effect`);
+            }
+            
             const effect = await canvasFxService.triggerItemEffectAtPosition(
                 req.user.id,
                 item.id,
                 streamId,
                 { x: parseFloat(x), y: parseFloat(y) },
-                { username: req.user.username }
+                effectParams
             );
             
             if (effect) {

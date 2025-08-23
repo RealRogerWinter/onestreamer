@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Socket } from 'socket.io-client';
 import InventoryGrid from './InventoryGrid';
 import authService from '../../services/AuthService';
@@ -59,7 +59,108 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
   const [isAdmin, setIsAdmin] = useState(false);
   const [ttsModalOpen, setTtsModalOpen] = useState(false);
   const [ttsItem, setTtsItem] = useState<InventoryItem | null>(null);
-  const inventoryItemsPerPage = 18; // Increased from 12 to show more items
+  const inventoryItemsPerPage = 45; // Show many more items in full height panel
+
+  // Check if mobile - using useMemo to ensure it's available for all hooks
+  const isMobile = useMemo(() => {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+  }, []);
+
+  // Swipe gesture handling for mobile with resize
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const startYRef = useRef<number>(0);
+  const currentYRef = useRef<number>(0);
+  const startHeightRef = useRef<number>(40);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    const isHeader = target.closest('.inventory-header');
+    
+    if (isHeader && isOpen) {
+      setIsDragging(true);
+      startYRef.current = e.touches[0].clientY;
+      currentYRef.current = e.touches[0].clientY;
+      startHeightRef.current = isExpanded ? 85 : 40;
+      
+      if (panelRef.current) {
+        panelRef.current.style.transition = 'none';
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+
+    e.preventDefault(); // Prevent scroll interference
+    currentYRef.current = e.touches[0].clientY;
+    const distance = currentYRef.current - startYRef.current;
+    
+    // Use requestAnimationFrame for smoother updates
+    requestAnimationFrame(() => {
+      const viewportHeight = window.innerHeight;
+      const distanceInVh = (distance / viewportHeight) * 100;
+      const newHeight = Math.max(20, Math.min(85, startHeightRef.current - distanceInVh));
+      
+      if (panelRef.current) {
+        panelRef.current.style.height = `${newHeight}vh`;
+        
+        if (startHeightRef.current === 40 && distance > 100) {
+          panelRef.current.style.transform = `translateY(${distance - 100}px)`;
+        } else {
+          panelRef.current.style.transform = '';
+        }
+      }
+    });
+  };
+
+  const handleTouchEnd = () => {
+    if (!isDragging) return;
+
+    setIsDragging(false);
+    const distance = currentYRef.current - startYRef.current;
+    const viewportHeight = window.innerHeight;
+    const distanceInVh = (distance / viewportHeight) * 100;
+    const currentHeight = startHeightRef.current - distanceInVh;
+
+    if (panelRef.current) {
+      panelRef.current.style.transition = 'all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+      
+      if (startHeightRef.current === 40 && distance > 100) {
+        panelRef.current.style.transform = 'translateY(100%)';
+        panelRef.current.style.height = '40vh';
+        setTimeout(() => {
+          if (onToggle) onToggle();
+          if (panelRef.current) {
+            panelRef.current.style.transform = '';
+            setIsExpanded(false);
+          }
+        }, 300);
+      } else if (currentHeight > 60) {
+        panelRef.current.style.height = '85vh';
+        panelRef.current.style.transform = '';
+        setIsExpanded(true);
+      } else if (currentHeight < 30 && startHeightRef.current === 85) {
+        panelRef.current.style.height = '40vh';
+        panelRef.current.style.transform = '';
+        setIsExpanded(false);
+      } else {
+        panelRef.current.style.height = isExpanded ? '85vh' : '40vh';
+        panelRef.current.style.transform = '';
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && panelRef.current && isMobile) {
+      // Only apply initial height and transform on mobile
+      panelRef.current.style.transform = 'translateY(0)';
+      panelRef.current.style.height = '40vh';
+      setIsExpanded(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]); // isMobile won't change during component lifecycle
 
   useEffect(() => {
     if (isAuthenticated && isOpen) {
@@ -133,6 +234,32 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
     return () => clearInterval(interval);
   }, []);
 
+  // Expose cooldown update function globally for thrown items
+  useEffect(() => {
+    (window as any).updateItemCooldown = (item: { itemId: number; name: string; displayName: string; emoji: string; cooldown: number }) => {
+      console.log('⏰ INVENTORY: Updating cooldown from throw action:', item.displayName, 'cooldown:', item.cooldown);
+      setCooldowns(prev => {
+        const newCooldowns = [
+          ...prev.filter(cd => cd.itemId !== item.itemId),
+          {
+            itemId: item.itemId,
+            name: item.name,
+            displayName: item.displayName,
+            emoji: item.emoji,
+            cooldownRemaining: item.cooldown,
+            cooldownEnd: Date.now() + (item.cooldown * 1000)
+          }
+        ];
+        console.log('⏰ INVENTORY: Updated cooldowns:', newCooldowns);
+        return newCooldowns;
+      });
+    };
+
+    return () => {
+      delete (window as any).updateItemCooldown;
+    };
+  }, []);
+
   const fetchInventory = async () => {
     try {
       setIsLoading(true);
@@ -172,7 +299,20 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
       }
 
       const data = await response.json();
-      setCooldowns(data.itemCooldowns || []);
+      console.log('📊 Fetched cooldowns from server:', data);
+      
+      // Transform the cooldowns to include both remaining time and end time
+      const transformedCooldowns = (data.itemCooldowns || []).map((cd: any) => ({
+        itemId: cd.itemId,
+        name: cd.itemName || '',
+        displayName: cd.itemName || '',
+        emoji: cd.emoji || '',
+        cooldownRemaining: cd.cooldownRemaining,
+        cooldownEnd: Date.now() + (cd.cooldownRemaining * 1000)
+      }));
+      
+      setCooldowns(transformedCooldowns);
+      console.log('📊 Set cooldowns state:', transformedCooldowns);
     } catch (err) {
       console.error('Error fetching cooldowns:', err);
     }
@@ -250,17 +390,22 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
       // Add cooldown if applicable
       if (result.item.cooldown) {
-        setCooldowns(prev => [
-          ...prev.filter(cd => cd.itemId !== itemId),
-          {
-            itemId: result.item.id,
-            name: result.item.name,
-            displayName: result.item.displayName,
-            emoji: result.item.emoji,
-            cooldownRemaining: result.item.cooldown,
-            cooldownEnd: Date.now() + (result.item.cooldown * 1000)
-          }
-        ]);
+        console.log(`🔄 Adding cooldown for item ${itemId}: ${result.item.cooldown}s`);
+        setCooldowns(prev => {
+          const newCooldowns = [
+            ...prev.filter(cd => cd.itemId !== itemId),
+            {
+              itemId: itemId, // Use the itemId parameter, not result.item.id
+              name: result.item.name,
+              displayName: result.item.displayName,
+              emoji: result.item.emoji,
+              cooldownRemaining: result.item.cooldown,
+              cooldownEnd: Date.now() + (result.item.cooldown * 1000)
+            }
+          ];
+          console.log('🔄 Updated cooldowns state after use:', newCooldowns);
+          return newCooldowns;
+        });
       }
 
       setError(null);
@@ -304,17 +449,22 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
       // Add cooldown
       if (result.item.cooldown) {
-        setCooldowns(prev => [
-          ...prev.filter(cd => cd.itemId !== ttsItem.item_id),
-          {
-            itemId: result.item.id,
-            name: result.item.name,
-            displayName: result.item.displayName,
-            emoji: result.item.emoji,
-            cooldownRemaining: result.item.cooldown,
-            cooldownEnd: Date.now() + (result.item.cooldown * 1000)
-          }
-        ]);
+        console.log(`🔄 Adding TTS cooldown for item ${ttsItem.item_id}: ${result.item.cooldown}s`);
+        setCooldowns(prev => {
+          const newCooldowns = [
+            ...prev.filter(cd => cd.itemId !== ttsItem.item_id),
+            {
+              itemId: ttsItem.item_id, // Use the correct item ID
+              name: result.item.name,
+              displayName: result.item.displayName,
+              emoji: result.item.emoji,
+              cooldownRemaining: result.item.cooldown,
+              cooldownEnd: Date.now() + (result.item.cooldown * 1000)
+            }
+          ];
+          console.log('🔄 Updated cooldowns state after TTS use:', newCooldowns);
+          return newCooldowns;
+        });
       }
 
       // Show success notification
@@ -376,7 +526,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
     setCurrentInventoryPage(1);
   }, [inventorySubTab]);
 
-  const filteredInventory = inventorySubTab === 'all' 
+  const filteredInventory = isMobile || inventorySubTab === 'all' 
     ? inventory 
     : inventory.filter(item => item.item_type === inventorySubTab);
 
@@ -395,14 +545,19 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
   const getCooldownForItem = (itemId: number) => {
     const cooldown = cooldowns.find(cd => cd.itemId === itemId);
-    return cooldown ? cooldown.cooldownRemaining : 0;
+    const remaining = cooldown ? cooldown.cooldownRemaining : 0;
+    if (remaining > 0) {
+      console.log(`⏰ Getting cooldown for item ${itemId}: ${remaining}s`);
+    }
+    return remaining;
   };
 
   // Always show the inventory panel, but adjust content based on authentication
 
   return (
     <>
-      {!isOpen && (
+      {/* Hide floating button on mobile since we have bottom nav */}
+      {!isOpen && !isMobile && (
         <button 
           className="inventory-toggle-btn"
           onClick={onToggle}
@@ -412,7 +567,13 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
         </button>
       )}
 
-      <div className={`inventory-panel ${isOpen ? 'open' : ''}`}>
+      <div 
+        ref={panelRef}
+        className={`inventory-panel ${isOpen ? 'open' : ''} ${isExpanded ? 'expanded' : ''} ${isMobile ? 'mobile' : 'desktop'}`}
+        onTouchStart={isMobile ? handleTouchStart : undefined}
+        onTouchMove={isMobile ? handleTouchMove : undefined}
+        onTouchEnd={isMobile ? handleTouchEnd : undefined}
+      >
         <div className="inventory-header">
           <h2>Inventory</h2>
           <button 
@@ -438,68 +599,70 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
           </button>
         </div>
 
-        <>
-            <div className="inventory-tabs">
+        {!isMobile && (
+          <div className="inventory-tabs">
+            <button 
+              className={`inventory-tab ${inventorySubTab === 'all' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('all')}
+            >
+              All
+            </button>
+            <button 
+              className={`inventory-tab ${inventorySubTab === 'buff' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('buff')}
+            >
+              Buff
+            </button>
+            <button 
+              className={`inventory-tab ${inventorySubTab === 'debuff' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('debuff')}
+            >
+              Debuff
+            </button>
+            <button 
+              className={`inventory-tab ${inventorySubTab === 'utility' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('utility')}
+            >
+              Utility
+            </button>
+            <button 
+              className={`inventory-tab ${inventorySubTab === 'guard' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('guard')}
+              title="Items that protect the current streamer by increasing cooldowns"
+            >
+              <span>🛡️</span>
+              <span>Guard</span>
+            </button>
+            <button 
+              className={`inventory-tab ${inventorySubTab === 'weapon' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('weapon')}
+              title="Items that help other viewers by reducing cooldowns"
+            >
+              <span>⚔️</span>
+              <span>Weapon</span>
+            </button>
+            <button 
+              className={`inventory-tab ${inventorySubTab === 'marker' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('marker')}
+              title="Markers for highlighting moments"
+            >
+              <span>📍</span>
+              <span>Marker</span>
+            </button>
+            {isAdmin && (
               <button 
-                className={`inventory-tab ${inventorySubTab === 'all' ? 'active' : ''}`}
-                onClick={() => setInventorySubTab('all')}
+                className="inventory-admin-button"
+                onClick={handleResetCooldowns}
+                title="Reset all personal item cooldowns (Admin Only)"
               >
-                All
+                ⏰ Reset Cooldowns
               </button>
-              <button 
-                className={`inventory-tab ${inventorySubTab === 'buff' ? 'active' : ''}`}
-                onClick={() => setInventorySubTab('buff')}
-              >
-                Buff
-              </button>
-              <button 
-                className={`inventory-tab ${inventorySubTab === 'debuff' ? 'active' : ''}`}
-                onClick={() => setInventorySubTab('debuff')}
-              >
-                Debuff
-              </button>
-              <button 
-                className={`inventory-tab ${inventorySubTab === 'utility' ? 'active' : ''}`}
-                onClick={() => setInventorySubTab('utility')}
-              >
-                Utility
-              </button>
-              <button 
-                className={`inventory-tab ${inventorySubTab === 'guard' ? 'active' : ''}`}
-                onClick={() => setInventorySubTab('guard')}
-                title="Items that protect the current streamer by increasing cooldowns"
-              >
-                <span>🛡️</span>
-                <span>Guard</span>
-              </button>
-              <button 
-                className={`inventory-tab ${inventorySubTab === 'weapon' ? 'active' : ''}`}
-                onClick={() => setInventorySubTab('weapon')}
-                title="Items that help other viewers by reducing cooldowns"
-              >
-                <span>⚔️</span>
-                <span>Weapon</span>
-              </button>
-              <button 
-                className={`inventory-tab ${inventorySubTab === 'marker' ? 'active' : ''}`}
-                onClick={() => setInventorySubTab('marker')}
-                title="Markers for highlighting moments"
-              >
-                <span>📍</span>
-                <span>Marker</span>
-              </button>
-              {isAdmin && (
-                <button 
-                  className="inventory-admin-button"
-                  onClick={handleResetCooldowns}
-                  title="Reset all personal item cooldowns (Admin Only)"
-                >
-                  ⏰ Reset Cooldowns
-                </button>
-              )}
-            </div>
+            )}
+          </div>
+        )}
 
-            {!isAuthenticated ? (
+        <div className="inventory-content">
+          {!isAuthenticated ? (
               <div className="inventory-guest-prompt">
                 <div className="guest-prompt-content">
                   <h4>🎒 Your Personal Inventory</h4>
@@ -585,7 +748,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
                 )}
               </>
             )}
-        </>
+        </div>
       </div>
       
       {ttsItem && (

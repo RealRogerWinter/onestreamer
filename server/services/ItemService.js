@@ -152,7 +152,13 @@ class ItemService {
                 rarity: 'rare',
                 base_price: 400,
                 cooldown_seconds: 200,
-                max_stack: 0
+                max_stack: 0,
+                duration_seconds: 60,
+                effect_data: JSON.stringify({ 
+                    effect_type: 'visual_overlay',
+                    visual_effect: 'smoke_cloud'
+                }),
+                stack_behavior: 'replace'
             },
             {
                 name: 'megaphone',
@@ -819,6 +825,8 @@ class ItemService {
 
     // Apply buff/debuff item (requires BuffDebuffService to be injected)
     async applyBuffDebuffItem(userId, itemId, appliedByUserId, buffDebuffService, skipCooldownValidation = false, streamId = null) {
+        console.log(`📦 ITEM: applyBuffDebuffItem called with userId: ${userId}, itemId: ${itemId}, appliedByUserId: ${appliedByUserId}, streamId: ${streamId}`);
+        
         try {
             // Validate item usage (cooldown, ownership, etc.) unless skipped
             if (!skipCooldownValidation) {
@@ -833,6 +841,8 @@ class ItemService {
             if (!item) {
                 throw new Error('Item not found');
             }
+            
+            console.log(`📦 ITEM: Found item - name: ${item.name}, display_name: ${item.display_name}, type: ${item.item_type}, duration: ${item.duration_seconds}`);
 
             if (!['buff', 'debuff'].includes(item.item_type)) {
                 throw new Error('Item is not a buff or debuff');
@@ -841,6 +851,17 @@ class ItemService {
             // Apply the buff/debuff
             // Don't skip broadcasts completely for viewbots - we need streamer updates
             const skipBroadcasts = false;
+            
+            console.log(`📦 ITEM: Calling buffDebuffService.applyBuff with params:`, {
+                userId,
+                itemId,
+                appliedByUserId,
+                duration: item.duration_seconds,
+                hasEffectData: !!item.effect_data,
+                skipBroadcasts,
+                streamId
+            });
+            
             const buffResult = await buffDebuffService.applyBuff(
                 userId,
                 itemId,

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import AdminDashboard from './AdminDashboard';
 import UserManagement from './UserManagement';
 import ConnectionMonitor from './ConnectionMonitor';
-import ViewBotTab from './ViewBotTab';
+import ViewBotVideoManager from './ViewBotVideoManager';
 import ItemManagement from './ItemManagement';
 import ChatBotManagement from './ChatBotManagement';
 import RecordingManagement from './RecordingManagement';
@@ -10,19 +10,26 @@ import TranscriptionManagement from './TranscriptionManagement';
 import EmojiManagement from './EmojiManagement';
 import ChatModeration from './ChatModeration';
 import TutorialEditor from './TutorialEditor';
+import BugReportsManagement from './BugReportsManagement';
+import IPBanManagement from './IPBanManagement';
 import authService from '../services/AuthService';
 import './AdminPanel.css';
 
 interface AdminPanelProps {
   isVisible: boolean;
   onClose: () => void;
+  initialTab?: 'dashboard' | 'users' | 'connections' | 'viewbot' | 'items' | 'chatbots' | 'recordings' | 'transcriptions' | 'emojis' | 'moderation' | 'ipbans' | 'tutorial' | 'bugs' | 'logs';
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ isVisible, onClose }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTab = 'dashboard' }) => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'connections' | 'viewbot' | 'items' | 'chatbots' | 'recordings' | 'transcriptions' | 'emojis' | 'moderation' | 'tutorial' | 'logs'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'connections' | 'viewbot' | 'items' | 'chatbots' | 'recordings' | 'transcriptions' | 'emojis' | 'moderation' | 'ipbans' | 'tutorial' | 'bugs' | 'logs'>(initialTab);
   const [logs, setLogs] = useState<string[]>([]);
 
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   useEffect(() => {
     // Check if user is authenticated and is admin
@@ -173,10 +180,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isVisible, onClose }) => {
             🛡️ Moderation
           </button>
           <button 
+            className={`tab ${activeTab === 'ipbans' ? 'active' : ''}`}
+            onClick={() => setActiveTab('ipbans')}
+          >
+            🚫 IP Bans
+          </button>
+          <button 
             className={`tab ${activeTab === 'tutorial' ? 'active' : ''}`}
             onClick={() => setActiveTab('tutorial')}
           >
             📚 Tutorial
+          </button>
+          <button 
+            className={`tab ${activeTab === 'bugs' ? 'active' : ''}`}
+            onClick={() => setActiveTab('bugs')}
+          >
+            🐛 Bug Reports
           </button>
           <button 
             className={`tab ${activeTab === 'logs' ? 'active' : ''}`}
@@ -190,14 +209,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isVisible, onClose }) => {
           {activeTab === 'dashboard' && <AdminDashboard makeApiCall={makeApiCall} addLog={addLog} />}
           {activeTab === 'users' && <UserManagement addLog={addLog} />}
           {activeTab === 'connections' && <ConnectionMonitor makeApiCall={makeApiCall} addLog={addLog} />}
-          {activeTab === 'viewbot' && <ViewBotTab makeApiCall={makeApiCall} addLog={addLog} />}
+          {activeTab === 'viewbot' && (
+            <>
+              {console.log('Loading ViewBotVideoManager component')}
+              <ViewBotVideoManager makeApiCall={makeApiCall} addLog={addLog} />
+            </>
+          )}
           {activeTab === 'items' && <ItemManagement addLog={addLog} />}
           {activeTab === 'chatbots' && <ChatBotManagement addLog={addLog} />}
           {activeTab === 'recordings' && <RecordingManagement addLog={addLog} />}
           {activeTab === 'transcriptions' && <TranscriptionManagement addLog={addLog} />}
           {activeTab === 'emojis' && <EmojiManagement addLog={addLog} />}
           {activeTab === 'moderation' && <ChatModeration addLog={addLog} />}
+          {activeTab === 'ipbans' && <IPBanManagement addLog={addLog} />}
           {activeTab === 'tutorial' && <TutorialEditor addLog={addLog} />}
+          {activeTab === 'bugs' && <BugReportsManagement makeApiCall={makeApiCall} addLog={addLog} />}
           {activeTab === 'logs' && (
             <div className="logs-container">
               <h3>System Logs</h3>

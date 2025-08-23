@@ -5,6 +5,14 @@ interface TutorialEditorProps {
   addLog: (message: string) => void;
 }
 
+type TabType = 'about' | 'support' | 'tutorial';
+
+interface TabContent {
+  about: string;
+  support: string;
+  tutorial: string;
+}
+
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
 
 // Simple markdown parser for basic formatting (same as Tutorial component)
@@ -83,7 +91,12 @@ const formatInlineText = (text: string): React.ReactNode => {
 };
 
 const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
-  const [content, setContent] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<TabType>('tutorial');
+  const [content, setContent] = useState<TabContent>({
+    about: '',
+    support: '',
+    tutorial: ''
+  });
   const [isPreview, setIsPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -99,15 +112,37 @@ const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
       const response = await fetch(`${API_URL}/api/tutorial`);
       if (response.ok) {
         const data = await response.json();
-        setContent(data.content || getDefaultContent());
+        // Check if the data has the new structure with tabs
+        if (data.tabs) {
+          setContent({
+            about: data.tabs.about || getDefaultAboutContent(),
+            support: data.tabs.support || getDefaultSupportContent(),
+            tutorial: data.tabs.tutorial || getDefaultTutorialContent()
+          });
+        } else {
+          // Fallback to old single content format
+          setContent({
+            about: getDefaultAboutContent(),
+            support: getDefaultSupportContent(),
+            tutorial: data.content || getDefaultTutorialContent()
+          });
+        }
         addLog('Tutorial content loaded successfully');
       } else {
-        setContent(getDefaultContent());
+        setContent({
+          about: getDefaultAboutContent(),
+          support: getDefaultSupportContent(),
+          tutorial: getDefaultTutorialContent()
+        });
         addLog('Using default tutorial content (no saved content found)');
       }
     } catch (error) {
       console.error('Failed to load tutorial:', error);
-      setContent(getDefaultContent());
+      setContent({
+        about: getDefaultAboutContent(),
+        support: getDefaultSupportContent(),
+        tutorial: getDefaultTutorialContent()
+      });
       addLog('Failed to load tutorial content - using defaults');
     } finally {
       setLoading(false);
@@ -124,7 +159,7 @@ const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ content })
+        body: JSON.stringify({ tabs: content })
       });
 
       if (response.ok) {
@@ -143,12 +178,175 @@ const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
     }
   };
 
-  const getDefaultContent = () => {
-    return `# Welcome to OneStreamer
+  const updateTabContent = (tab: TabType, value: string) => {
+    setContent(prev => ({
+      ...prev,
+      [tab]: value
+    }));
+  };
+
+  const getDefaultAboutContent = () => {
+    return `# About OneStreamer
+
+## Our Platform
+
+OneStreamer is a cutting-edge live streaming platform that brings creators and viewers together in real-time. Built with modern web technologies, we provide a seamless streaming experience across all devices.
+
+## Our Mission
+
+To create an inclusive, interactive streaming community where content creators can share their passions and viewers can discover amazing content while earning rewards for participation.
+
+## Key Features
+
+- **Ultra-Low Latency Streaming**: Experience real-time interaction with minimal delay
+- **Cross-Platform Support**: Stream from any device with a modern browser
+- **Interactive Chat**: Engage with streamers and viewers in real-time
+- **Rewards System**: Earn points for streaming, viewing, and participating
+- **Virtual Economy**: Purchase items and effects with earned points
+- **Mobile-First Design**: Optimized for both desktop and mobile experiences
+
+## Technology Stack
+
+- **WebRTC**: For peer-to-peer real-time communication
+- **React**: Modern, responsive user interface
+- **Node.js**: Scalable backend infrastructure
+- **SQLite**: Reliable data persistence
+
+## Community Guidelines
+
+1. Be respectful to all users
+2. No harassment or hate speech
+3. Keep content appropriate for all audiences
+4. Report violations to administrators
+5. Support fellow streamers and viewers
+
+## Version Information
+
+- Platform Version: 2.0
+- Last Updated: ${new Date().toLocaleDateString()}
+- Status: Active Development
+
+---
+
+*Building the future of live streaming, one stream at a time.*`;
+  };
+
+  const getDefaultSupportContent = () => {
+    return `# Support & Help
+
+## Getting Help
+
+### Contact Methods
+
+- **In-App Support**: Contact admins through the admin panel
+- **Live Chat**: Ask questions in any active stream chat
+- **Email**: support@onestreamer.live
+- **Discord**: Join our community server (link in profile)
+
+## Common Issues & Solutions
+
+### Streaming Issues
+
+#### Camera/Microphone Not Working
+1. Check browser permissions (click the lock icon in address bar)
+2. Ensure no other applications are using your camera/mic
+3. Try refreshing the page
+4. Test with a different browser
+
+#### Poor Stream Quality
+- Check your internet connection speed
+- Lower streaming quality in settings
+- Close other bandwidth-intensive applications
+- Try wired connection instead of WiFi
+
+#### Stream Keeps Disconnecting
+- Verify stable internet connection
+- Check firewall settings
+- Disable VPN if using one
+- Contact your ISP if issues persist
+
+### Viewing Issues
+
+#### Can't See Any Streams
+- Refresh the page
+- Clear browser cache
+- Check if JavaScript is enabled
+- Try incognito/private mode
+
+#### Audio/Video Out of Sync
+- Refresh the stream
+- Check your internet speed
+- Try lowering quality settings
+
+### Account Issues
+
+#### Forgot Password
+- Use the "Forgot Password" link on login page
+- Check your email for reset instructions
+- Contact admin if email not received
+
+#### Points Not Updating
+- Points update every 30 seconds
+- Refresh page to see latest balance
+- Ensure you're logged in
+- Report to admin if issue persists
+
+## System Requirements
+
+### Minimum Requirements
+- **Browser**: Chrome 80+, Firefox 75+, Safari 13+, Edge 80+
+- **Internet**: 5 Mbps download, 2 Mbps upload
+- **RAM**: 4GB
+- **Processor**: Dual-core 2.0 GHz
+
+### Recommended Requirements
+- **Browser**: Latest version of Chrome or Firefox
+- **Internet**: 25 Mbps download, 10 Mbps upload
+- **RAM**: 8GB or more
+- **Processor**: Quad-core 2.5 GHz or better
+
+## Troubleshooting Steps
+
+1. **First Steps**
+   - Refresh the page (Ctrl+F5 / Cmd+Shift+R)
+   - Clear browser cache and cookies
+   - Try a different browser
+   - Restart your device
+
+2. **Advanced Steps**
+   - Check browser console for errors (F12)
+   - Disable browser extensions
+   - Update graphics drivers
+   - Check Windows/Mac audio settings
+
+## Report a Bug
+
+When reporting issues, please include:
+- Browser name and version
+- Operating system
+- Description of the issue
+- Steps to reproduce
+- Screenshots if applicable
+- Time when issue occurred
+
+## Privacy & Security
+
+- All streams are encrypted
+- Personal data is protected
+- No recording without permission
+- Report security issues immediately
+
+---
+
+*Need immediate help? Contact an admin in chat!*`;
+  };
+
+  const getDefaultTutorialContent = () => {
+    return `# Tutorial Guide
 
 ## Getting Started
 
-Welcome to OneStreamer! This platform allows you to stream, chat, and interact with other users in real-time.
+Welcome to OneStreamer! This guide will help you get started with streaming and viewing.
 
 ### For Viewers
 
@@ -235,7 +433,7 @@ A: Admin privileges are granted by existing administrators. Contact an admin if 
   return (
     <div className="tutorial-editor">
       <div className="tutorial-editor-header">
-        <h3>📚 Tutorial Editor</h3>
+        <h3>📚 Tutorial & Help Editor</h3>
         <div className="tutorial-editor-controls">
           <button
             className={`mode-toggle ${!isPreview ? 'active' : ''}`}
@@ -254,7 +452,7 @@ A: Admin privileges are granted by existing administrators. Contact an admin if 
             onClick={saveTutorialContent}
             disabled={saving}
           >
-            {saving ? '💾 Saving...' : '💾 Save'}
+            {saving ? '💾 Saving...' : '💾 Save All'}
           </button>
         </div>
       </div>
@@ -265,17 +463,38 @@ A: Admin privileges are granted by existing administrators. Contact an admin if 
         </div>
       )}
 
+      <div className="tutorial-editor-tabs">
+        <button 
+          className={`tutorial-editor-tab ${activeTab === 'about' ? 'active' : ''}`}
+          onClick={() => setActiveTab('about')}
+        >
+          About
+        </button>
+        <button 
+          className={`tutorial-editor-tab ${activeTab === 'support' ? 'active' : ''}`}
+          onClick={() => setActiveTab('support')}
+        >
+          Support
+        </button>
+        <button 
+          className={`tutorial-editor-tab ${activeTab === 'tutorial' ? 'active' : ''}`}
+          onClick={() => setActiveTab('tutorial')}
+        >
+          Tutorial
+        </button>
+      </div>
+
       <div className="tutorial-editor-content">
         {isPreview ? (
           <div className="tutorial-preview">
-            {parseMarkdown(content)}
+            {parseMarkdown(content[activeTab])}
           </div>
         ) : (
           <textarea
             className="tutorial-textarea"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="Write your tutorial content in Markdown format..."
+            value={content[activeTab]}
+            onChange={(e) => updateTabContent(activeTab, e.target.value)}
+            placeholder={`Write your ${activeTab} content in Markdown format...`}
           />
         )}
       </div>

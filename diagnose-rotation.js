@@ -4,8 +4,11 @@
 
 const axios = require('axios');
 
-const SERVER_URL = 'http://localhost:8080';
+const SERVER_URL = 'https://127.0.0.1:8443';
 const ADMIN_KEY = '***REMOVED-ADMIN-KEY***'; // Update if different
+
+// Allow self-signed certificates
+process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = 0;
 
 async function diagnoseRotation() {
   console.log('🔍 Diagnosing Rotation System\n');

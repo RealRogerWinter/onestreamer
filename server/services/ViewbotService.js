@@ -899,6 +899,66 @@ class ViewbotService {
       viewbotCount: this.currentViewbots.size
     };
   }
+  /**
+   * Handle video end from a ViewBot - trigger rotation
+   * This method is called by ViewBotClientService when a video ends
+   */
+  handleVideoEnd(botId) {
+    console.log(`🎬 ViewbotService: Handling video end for bot ${botId}`);
+    
+    // Always trigger rotation on video end - rotation is enabled by default
+    console.log(`🔄 ViewbotService: Triggering rotation after video end for ${botId}`);
+    
+    // Use ViewBotClientService's rotation mechanism directly
+    if (this.viewBotClientService && this.viewBotClientService.handleRotation) {
+      console.log(`📤 ViewbotService: Delegating rotation to ViewBotClientService`);
+      this.viewBotClientService.handleRotation(botId);
+    } else {
+      // Fallback: stop current bot and start another
+      console.log(`🔀 ViewbotService: Using fallback rotation mechanism`);
+      
+      if (this.viewBotClientService) {
+        // Stop the current bot
+        const bot = this.viewBotClientService.bots.get(botId);
+        if (bot) {
+          console.log(`🛑 ViewbotService: Stopping bot ${botId}`);
+          bot.stopStreaming();
+        }
+        
+        // Start another random bot after a short delay
+        setTimeout(() => {
+          const availableBots = Array.from(this.viewBotClientService.bots.values())
+            .filter(b => !b.streaming && b.connected && b.botId !== botId);
+          
+          if (availableBots.length > 0) {
+            const randomBot = availableBots[Math.floor(Math.random() * availableBots.length)];
+            console.log(`🎲 ViewbotService: Starting random bot ${randomBot.botId} for rotation`);
+            randomBot.requestToStream();
+          } else {
+            console.log(`⚠️ ViewbotService: No available bots for rotation`);
+          }
+        }, 2000);
+      }
+    }
+  }
+  
+  /**
+   * Start a random ViewBot (used for rotations)
+   */
+  startRandomViewBot() {
+    if (!this.viewBotClientService) return;
+    
+    const availableBots = Array.from(this.viewBotClientService.bots.values())
+      .filter(bot => !bot.streaming && bot.connected);
+    
+    if (availableBots.length > 0) {
+      const randomBot = availableBots[Math.floor(Math.random() * availableBots.length)];
+      console.log(`🎲 ViewbotService: Starting random bot ${randomBot.botId} for rotation`);
+      randomBot.requestToStream();
+    } else {
+      console.log(`⚠️ ViewbotService: No available bots for rotation`);
+    }
+  }
 }
 
 module.exports = ViewbotService;

@@ -234,13 +234,36 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           setConnectionState('disconnected');
           setError('Connection lost - attempting recovery...');
         },
-        onConnectionRecovered: () => {
+        onConnectionRecovered: async () => {
           console.log('🎉 WEBRTC: MediaSoup connection recovered');
-          setConnectionState('connected');
+          setConnectionState('reconnecting');
           setError(null);
-          // Attempt to restart playback
-          if (videoRef.current && playbackState === 'failed') {
-            retryPlayback();
+          
+          // Attempt to restart stream consumption
+          try {
+            console.log('🔄 WEBRTC: Restarting stream consumption after recovery...');
+            
+            // Re-consume the stream
+            if (mediasoupClientRef.current && isActive) {
+              const stream = await mediasoupClientRef.current.consume();
+              
+              if (stream && videoRef.current) {
+                console.log('✅ WEBRTC: Stream re-consumed successfully after recovery');
+                videoRef.current.srcObject = stream;
+                
+                // Attempt to restart playback
+                await retryPlayback();
+                setConnectionState('connected');
+                
+                // Restart viewing session for points tracking
+                console.log('🎯 WEBRTC: Restarted viewing session for points tracking after recovery');
+                socket.emit('start-viewing', { timestamp: Date.now() });
+              }
+            }
+          } catch (error) {
+            console.error('❌ WEBRTC: Failed to restart stream after recovery:', error);
+            setError('Failed to restart stream after recovery');
+            setConnectionState('disconnected');
           }
         },
         onReconnectionFailed: (error) => {
@@ -723,7 +746,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             }
           }
         }
-      }, 8000); // 8 second fallback timeout
+      }, 3000); // 3 second fallback timeout
       
       // Store timer for potential cleanup
       (globalThis as any)._webrtcFallbackTimer = fallbackTimer;
@@ -1657,7 +1680,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           width: '100%',
           height: '100%',
           backgroundColor: '#000',
-          objectFit: 'cover',
+          objectFit: 'contain', // Changed to contain to show full frame without cropping
           display: isConnected && (playbackState === 'playing' || playbackState === 'paused') ? 'block' : 'none',
           position: 'relative',
           zIndex: 1, // Lower z-index than canvas overlay (which is 1000+)

@@ -126,13 +126,13 @@ const Login: React.FC<LoginProps> = ({ onSuccess, onSwitchToSignup, onClose }) =
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="auth-form-group">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">Email or Username</label>
             <input
-              type="email"
+              type="text"
               id="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="Email or username"
               disabled={loading}
               required
             />

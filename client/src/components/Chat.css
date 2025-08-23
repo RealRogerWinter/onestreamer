@@ -74,7 +74,12 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  scroll-behavior: smooth;
+  /* Remove smooth scroll behavior as we handle it programmatically */
+  scroll-behavior: auto;
+  /* Add iOS momentum scrolling */
+  -webkit-overflow-scrolling: touch;
+  /* Prevent scroll anchoring issues */
+  overflow-anchor: none;
 }
 
 .chat-messages::-webkit-scrollbar {
@@ -105,6 +110,42 @@
 
 .chat-message:hover {
   background: rgba(255, 255, 255, 0.02);
+}
+
+/* Mentioned message styling - when user is @mentioned */
+.chat-message.mentioned {
+  background: linear-gradient(90deg, rgba(78, 205, 196, 0.15) 0%, rgba(78, 205, 196, 0.05) 100%);
+  border-left: 3px solid #4ECDC4;
+  padding: 6px 16px;
+  animation: mentionPulse 1.5s ease-in-out;
+}
+
+@keyframes mentionPulse {
+  0% {
+    background: linear-gradient(90deg, rgba(78, 205, 196, 0.25) 0%, rgba(78, 205, 196, 0.1) 100%);
+  }
+  50% {
+    background: linear-gradient(90deg, rgba(78, 205, 196, 0.15) 0%, rgba(78, 205, 196, 0.05) 100%);
+  }
+  100% {
+    background: linear-gradient(90deg, rgba(78, 205, 196, 0.15) 0%, rgba(78, 205, 196, 0.05) 100%);
+  }
+}
+
+/* @ mention text styling */
+.chat-mention {
+  color: #4ECDC4;
+  font-weight: 600;
+  background: rgba(78, 205, 196, 0.1);
+  padding: 1px 3px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.chat-mention:hover {
+  background: rgba(78, 205, 196, 0.2);
+  color: #5EDED6;
 }
 
 /* Announcement message styling */
@@ -359,26 +400,203 @@
 }
 
 /* Responsive adjustments */
+/* Mobile v2 Enhanced Chat Styles */
 @media (max-width: 768px) {
+  /* Make chat a bottom sheet on mobile */
+  .chat-container {
+    position: fixed !important;
+    bottom: -100%;
+    left: 0;
+    right: 0;
+    top: auto;
+    width: 100%;
+    height: 40vh !important; /* Force height on mobile */
+    max-height: 400px;
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+    transition: bottom 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    z-index: 998;
+    background: #1a1a1a !important; /* Solid background for visibility */
+    border: none;
+    border-left: none !important;
+    border-top: 3px solid #444;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden;
+  }
+  
+  .chat-container.mobile-open {
+    bottom: 60px !important; /* Above bottom nav */
+    display: flex !important; /* Ensure display when open */
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+  
+  /* Swipe indicator */
+  .chat-container::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    z-index: 1;
+  }
+  
+  /* Larger chat header */
   .chat-header {
-    padding: 10px 12px;
+    padding: 12px 16px !important;
+    background: #2a2a2a !important;
+    border-bottom: 2px solid #444 !important;
+    border-radius: 20px 20px 0 0;
+    position: relative;
+    flex-shrink: 0;
+    display: flex !important;
+    justify-content: space-between;
+    align-items: center;
   }
   
   .chat-header h3 {
+    font-size: 16px !important;
+    font-weight: 700;
+    color: #fff !important;
+    margin: 0 !important;
+  }
+  
+  /* Larger, more readable messages */
+  .chat-messages {
+    padding: 8px;
+    flex: 1;
+    overflow-y: auto;
     font-size: 14px;
+    min-height: 0; /* Important for flex to work properly */
+    /* Ensure smooth scrolling on mobile */
+    -webkit-overflow-scrolling: touch;
+    overflow-anchor: none;
+    /* Prevent overscroll bounce on iOS */
+    overscroll-behavior: contain;
   }
   
   .chat-message {
-    padding: 3px 12px;
-    font-size: 13px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-left: 3px solid transparent;
+    font-size: 14px;
   }
   
+  .chat-message:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  
+  .message-author {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  
+  .message-text {
+    font-size: 15px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.95);
+  }
+  
+  /* Larger input area */
   .chat-input-container {
     padding: 10px;
+    background: rgba(42, 42, 42, 0.95);
+    border-top: 1px solid #444;
+    position: relative;
+    flex-shrink: 0;
   }
   
-  .chat-input, .chat-send-button {
+  .chat-input {
+    font-size: 16px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    min-height: 48px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+  }
+  
+  .chat-input:focus {
+    border-color: rgba(78, 205, 196, 0.5);
+    background: rgba(255, 255, 255, 0.15);
+  }
+  
+  .chat-send-button {
+    padding: 14px 20px;
+    font-size: 15px;
+    min-width: 80px;
+    min-height: 48px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #4ECDC4, #45B7D1);
+    font-weight: 600;
+  }
+  
+  /* System messages more prominent */
+  .system-message {
+    padding: 8px 12px;
     font-size: 13px;
+    border-radius: 8px;
+    background: rgba(78, 205, 196, 0.1);
+    border: 1px solid rgba(78, 205, 196, 0.3);
+  }
+  
+  /* Larger emojis in messages */
+  .chat-emoji {
+    width: 40px;
+    height: 40px;
+  }
+  
+  /* Ensure form is visible */
+  .chat-input-form {
+    display: flex !important;
+    gap: 8px !important;
+    visibility: visible !important;
+    width: 100% !important;
+  }
+  
+  /* Empty state visibility */
+  .chat-empty {
+    display: flex !important;
+    visibility: visible !important;
+    color: #999 !important;
+  }
+  
+  /* Status messages visibility */
+  .chat-status-message {
+    display: flex !important;
+    visibility: visible !important;
+    color: #999 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Even more compact for small phones */
+  .chat-container {
+    height: 85vh;
+  }
+  
+  .chat-header {
+    padding: 14px 16px;
+  }
+  
+  .chat-header h3 {
+    font-size: 16px;
+  }
+  
+  .chat-messages {
+    padding: 8px;
+  }
+  
+  .chat-message {
+    padding: 8px 12px;
+    margin-bottom: 8px;
   }
 }
 
@@ -468,14 +686,14 @@
 /* Custom emoji styles */
 .chat-emoji {
   display: inline-block;
-  width: 20px;
-  height: 20px;
+  width: 40px;
+  height: 40px;
   vertical-align: middle;
-  margin: 0 2px;
+  margin: 0 3px;
   object-fit: contain;
 }
 
 .message-text .chat-emoji {
   position: relative;
-  top: -1px;
+  top: -2px;
 }

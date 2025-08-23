@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
 import ShopQuantitySelector from '../inventory/ShopQuantitySelector';
 import './ModalShopStyles.css';
@@ -47,6 +47,100 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
   const [showQuantitySelector, setShowQuantitySelector] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ShopItemData | null>(null);
   const itemsPerPage = 15; // More items for larger layout
+
+  // Swipe gesture handling for mobile with resize
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const startYRef = useRef<number>(0);
+  const currentYRef = useRef<number>(0);
+  const startHeightRef = useRef<number>(40);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    const isHeader = target.closest('.modal-shop-header');
+    
+    if (isHeader && isOpen) {
+      setIsDragging(true);
+      startYRef.current = e.touches[0].clientY;
+      currentYRef.current = e.touches[0].clientY;
+      startHeightRef.current = isExpanded ? 85 : 40;
+      
+      if (panelRef.current) {
+        panelRef.current.style.transition = 'none';
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+
+    e.preventDefault(); // Prevent scroll interference
+    currentYRef.current = e.touches[0].clientY;
+    const distance = currentYRef.current - startYRef.current;
+    
+    // Use requestAnimationFrame for smoother updates
+    requestAnimationFrame(() => {
+      const viewportHeight = window.innerHeight;
+      const distanceInVh = (distance / viewportHeight) * 100;
+      const newHeight = Math.max(20, Math.min(85, startHeightRef.current - distanceInVh));
+      
+      if (panelRef.current) {
+        panelRef.current.style.height = `${newHeight}vh`;
+        
+        if (startHeightRef.current === 40 && distance > 100) {
+          panelRef.current.style.transform = `translateY(${distance - 100}px)`;
+        } else {
+          panelRef.current.style.transform = '';
+        }
+      }
+    });
+  };
+
+  const handleTouchEnd = () => {
+    if (!isDragging) return;
+
+    setIsDragging(false);
+    const distance = currentYRef.current - startYRef.current;
+    const viewportHeight = window.innerHeight;
+    const distanceInVh = (distance / viewportHeight) * 100;
+    const currentHeight = startHeightRef.current - distanceInVh;
+
+    if (panelRef.current) {
+      panelRef.current.style.transition = 'all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+      
+      if (startHeightRef.current === 40 && distance > 100) {
+        panelRef.current.style.transform = 'translateY(100%)';
+        panelRef.current.style.height = '40vh';
+        setTimeout(() => {
+          onClose();
+          if (panelRef.current) {
+            panelRef.current.style.transform = '';
+            setIsExpanded(false);
+          }
+        }, 300);
+      } else if (currentHeight > 60) {
+        panelRef.current.style.height = '85vh';
+        panelRef.current.style.transform = '';
+        setIsExpanded(true);
+      } else if (currentHeight < 30 && startHeightRef.current === 85) {
+        panelRef.current.style.height = '40vh';
+        panelRef.current.style.transform = '';
+        setIsExpanded(false);
+      } else {
+        panelRef.current.style.height = isExpanded ? '85vh' : '40vh';
+        panelRef.current.style.transform = '';
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && panelRef.current) {
+      panelRef.current.style.transform = 'translateY(0)';
+      panelRef.current.style.height = '40vh';
+      setIsExpanded(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -245,7 +339,13 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
 
   return (
     <div className="modal-shop-overlay">
-      <div className="modal-shop-panel">
+      <div 
+        ref={panelRef}
+        className={`modal-shop-panel ${isExpanded ? 'expanded' : ''}`}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         <div className="modal-shop-header">
           <div className="shop-title-section">
             <span className="shop-icon">🛒</span>

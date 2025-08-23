@@ -8,17 +8,41 @@ const { v4: uuidv4 } = require('uuid');
  */
 class ViewBotDatabaseService {
     constructor() {
+        // Singleton pattern - return existing instance if it exists
+        if (ViewBotDatabaseService.instance) {
+            return ViewBotDatabaseService.instance;
+        }
+        
         this.initialized = false;
+        
+        // Store the instance
+        ViewBotDatabaseService.instance = this;
     }
 
     /**
      * Initialize the service and ensure tables exist
      */
     async initialize() {
+        // Check if already initialized
+        if (this.initialized) {
+            return true;
+        }
+        
         try {
-            // Run migration to ensure tables exist
-            const migration = require('../migrations/setup-viewbot-tables');
-            await migration.setupViewBotTables();
+            // Check if tables already exist before running migration
+            const tableExists = await getAsync(`
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='viewbots'
+            `);
+            
+            if (!tableExists) {
+                // Run migration only if tables don't exist
+                console.log('📦 VIEWBOT DB: Tables not found, running migration...');
+                const migration = require('../migrations/setup-viewbot-tables');
+                await migration.setupViewBotTables();
+            } else {
+                console.log('✓ VIEWBOT DB: Tables already exist, skipping migration');
+            }
             
             this.initialized = true;
             console.log('✅ VIEWBOT DB: ViewBot Database Service initialized');
@@ -153,6 +177,58 @@ class ViewBotDatabaseService {
     }
 
     /**
+     * Disable a ViewBot (soft delete - marks as disabled instead of deleting)
+     */
+    async disableViewBot(botId) {
+        if (!this.initialized) await this.initialize();
+        
+        try {
+            const result = await runAsync(`
+                UPDATE viewbots 
+                SET is_enabled = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE bot_id = ?
+            `, [botId]);
+            
+            if (result.changes > 0) {
+                console.log(`🚫 VIEWBOT DB: Disabled ViewBot ${botId}`);
+                return true;
+            } else {
+                console.log(`⚠️ VIEWBOT DB: ViewBot ${botId} not found`);
+                return false;
+            }
+        } catch (error) {
+            console.error(`❌ VIEWBOT DB: Failed to disable ViewBot ${botId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Enable a ViewBot
+     */
+    async enableViewBot(botId) {
+        if (!this.initialized) await this.initialize();
+        
+        try {
+            const result = await runAsync(`
+                UPDATE viewbots 
+                SET is_enabled = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE bot_id = ?
+            `, [botId]);
+            
+            if (result.changes > 0) {
+                console.log(`✅ VIEWBOT DB: Enabled ViewBot ${botId}`);
+                return true;
+            } else {
+                console.log(`⚠️ VIEWBOT DB: ViewBot ${botId} not found`);
+                return false;
+            }
+        } catch (error) {
+            console.error(`❌ VIEWBOT DB: Failed to enable ViewBot ${botId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
      * Update ViewBot usage statistics
      */
     async updateViewBotUsage(botId) {
@@ -207,14 +283,19 @@ class ViewBotDatabaseService {
                 rotationEnabled = false,
                 currentLiveBot = null,
                 realStreamerActive = false,
-                maxBots = -1
+                maxBots = -1,
+                rotationProbability = 0.045,
+                rotationCheckIntervalMin = 5000,
+                rotationCheckIntervalMax = 10000
             } = state;
 
             await runAsync(`
                 INSERT OR REPLACE INTO viewbot_system_state 
-                (id, rotation_enabled, current_live_bot, real_streamer_active, max_bots, updated_at)
-                VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            `, [rotationEnabled, currentLiveBot, realStreamerActive, maxBots]);
+                (id, rotation_enabled, current_live_bot, real_streamer_active, max_bots, 
+                 rotation_probability, rotation_check_interval_min, rotation_check_interval_max, updated_at)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            `, [rotationEnabled, currentLiveBot, realStreamerActive, maxBots, 
+                rotationProbability, rotationCheckIntervalMin, rotationCheckIntervalMax]);
             
             console.log('💾 VIEWBOT DB: Saved ViewBot system state');
             return { success: true };
@@ -236,22 +317,34 @@ class ViewBotDatabaseService {
             `);
             
             if (!row) {
+                console.log('📊 VIEWBOT DB: No system state found, returning defaults');
                 // Return default state if none exists
                 return {
                     rotationEnabled: false,
                     currentLiveBot: null,
                     realStreamerActive: false,
-                    maxBots: -1
+                    maxBots: -1,
+                    rotationProbability: 0.045,
+                    rotationCheckIntervalMin: 5000,
+                    rotationCheckIntervalMax: 10000
                 };
             }
             
-            return {
+            console.log('📊 VIEWBOT DB: Raw database row:', row);
+            
+            const state = {
                 rotationEnabled: Boolean(row.rotation_enabled),
                 currentLiveBot: row.current_live_bot,
                 realStreamerActive: Boolean(row.real_streamer_active),
                 maxBots: row.max_bots,
+                rotationProbability: row.rotation_probability || 0.045,
+                rotationCheckIntervalMin: row.rotation_check_interval_min || 5000,
+                rotationCheckIntervalMax: row.rotation_check_interval_max || 10000,
                 updatedAt: row.updated_at
             };
+            
+            console.log('📊 VIEWBOT DB: Returning state:', state);
+            return state;
         } catch (error) {
             console.error('❌ VIEWBOT DB: Failed to load system state:', error);
             // Return default state on error

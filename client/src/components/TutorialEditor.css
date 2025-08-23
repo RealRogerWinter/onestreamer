@@ -75,9 +75,45 @@
 .last-saved {
   padding: 8px 20px;
   background: #1f2937;
-  border-bottom: 1px solid #333;
   font-size: 12px;
   color: #22c55e;
+}
+
+.tutorial-editor-tabs {
+  display: flex;
+  background: #1a1a1a;
+  border-bottom: 1px solid #333;
+  padding: 0 20px;
+}
+
+.tutorial-editor-tab {
+  background: none;
+  border: none;
+  color: #999;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tutorial-editor-tab:hover {
+  color: #ccc;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tutorial-editor-tab.active {
+  color: #4a9eff;
+  border-bottom-color: #4a9eff;
+  background: rgba(74, 158, 255, 0.1);
+}
+
+.tutorial-editor-tab.active:hover {
+  color: #4a9eff;
+  background: rgba(74, 158, 255, 0.15);
 }
 
 .tutorial-editor-content {

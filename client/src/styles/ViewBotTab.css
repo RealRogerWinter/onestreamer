@@ -1567,6 +1567,121 @@
   font-family: 'Monaco', 'Courier New', monospace;
 }
 
+.probability-control {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+}
+
+.probability-control input[type="range"] {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.probability-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #6366f1;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.probability-control input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
+}
+
+.probability-control input[type="range"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.probability-control input[type="range"]:disabled::-webkit-slider-thumb {
+  cursor: not-allowed;
+}
+
+.probability-value {
+  min-width: 50px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #6366f1;
+  text-align: right;
+}
+
+.interval-control {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.interval-inputs {
+  display: flex;
+  gap: 20px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+}
+
+.interval-input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.interval-input-group label {
+  font-size: 14px;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.interval-input-group input[type="number"] {
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.interval-input-group input[type="number"]:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.interval-input-group input[type="number"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.interval-input-group span {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.control-hint {
+  display: block;
+  margin-top: 5px;
+  color: #6b7280;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
 .force-rotate-btn {
   display: flex;
   align-items: center;

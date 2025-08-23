@@ -20,13 +20,22 @@ module.exports = function(app) {
     })
   );
 
-  // Proxy for auth endpoints
+  // Proxy for auth endpoints - but NOT auth/success and auth/error which are React routes
   app.use(
     '/auth',
     createProxyMiddleware({
       target: mainServerTarget,
       changeOrigin: true,
-      secure: false
+      secure: false,
+      headers: {
+        'Connection': 'keep-alive'
+      },
+      // Filter function to exclude client-side routes
+      filter: function(pathname, req) {
+        // Don't proxy these paths - let React handle them
+        const clientRoutes = ['/auth/success', '/auth/error'];
+        return !clientRoutes.some(route => pathname.startsWith(route));
+      }
     })
   );
 

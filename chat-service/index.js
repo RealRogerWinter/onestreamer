@@ -46,6 +46,7 @@ app.use(cors({
 }));
 
 const io = new Server(server, {
+  path: '/chat/socket.io',
   cors: {
     origin: [
       process.env.CLIENT_URL || 'https://onestreamer.live',
@@ -1868,19 +1869,18 @@ io.on('connection', async (socket) => {
       return;
     }
     
-    // Sanitize message - remove any HTML/script tags to prevent XSS
-    // This is server-side sanitization as defense in depth
-    const sanitizeHtml = (text) => {
-      return text
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;')
-        .replace(/&(?!(amp|lt|gt|quot|#039);)/g, '&amp;'); // Don't double-escape
-    };
+    // Just trim the message - client handles HTML escaping
+    // We only need to validate it's a valid string and limit length
+    const trimmedMessage = message.trim().substring(0, 2000); // Max 2000 characters
+    const sanitizedMessage = trimmedMessage;
     
-    const trimmedMessage = message.trim().substring(0, 500); // Max 500 characters
-    const sanitizedMessage = sanitizeHtml(trimmedMessage);
+    // Extract @ mentions from the message
+    const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
+    const mentions = [];
+    let match;
+    while ((match = mentionRegex.exec(sanitizedMessage)) !== null) {
+      mentions.push(match[1].toLowerCase());
+    }
     
     // Check if user is banned
     console.log(`🔍 BAN CHECK: Checking if user "${user.username}" is banned`);
@@ -1988,7 +1988,8 @@ io.on('connection', async (socket) => {
       message: sanitizedMessage,
       timestamp: formatTime(),
       fullTimestamp: new Date().toISOString(),
-      userId: socket.id
+      userId: socket.id,
+      mentions: mentions // Add mentions array to message
     };
     
     console.log(`💬 CHAT: Message from ${user.username} (authenticated: ${user.isAuthenticated}): ${sanitizedMessage.substring(0, 50)}${sanitizedMessage.length > 50 ? '...' : ''}`);

@@ -8,6 +8,7 @@ interface UserProfileProps {
   onLogout?: () => void;
   onOpenProfileSettings?: () => void;
   onUserProfileUpdate?: (profile: { points: number; updateType?: string; pointsEarned?: number }) => void;
+  currentUser?: any;
 }
 
 interface UserStats {
@@ -22,9 +23,10 @@ interface UserStats {
   chatMessageCount?: number;
 }
 
-const UserProfile: React.FC<UserProfileProps> = ({ socket, onLogout, onOpenProfileSettings, onUserProfileUpdate }) => {
+const UserProfile: React.FC<UserProfileProps> = ({ socket, onLogout, onOpenProfileSettings, onUserProfileUpdate, currentUser }) => {
   const [showDropdown, setShowDropdown] = useState(false);
-  const [user, setUser] = useState(authService.getUser());
+  const initialUser = currentUser || authService.getUser();
+  const [user, setUser] = useState(initialUser);
   const [stats, setStats] = useState<UserStats | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -42,6 +44,13 @@ const UserProfile: React.FC<UserProfileProps> = ({ socket, onLogout, onOpenProfi
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  // Update user when currentUser prop changes
+  useEffect(() => {
+    if (currentUser) {
+      setUser(currentUser);
+    }
+  }, [currentUser]);
 
   // Setup socket event listeners when socket is available
   useEffect(() => {
@@ -121,7 +130,26 @@ const UserProfile: React.FC<UserProfileProps> = ({ socket, onLogout, onOpenProfi
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
+  // If no user data yet, show a loading state or placeholder
   if (!user) {
+    // If we have currentUser prop, use it as fallback
+    if (currentUser && currentUser.username) {
+      const initials = currentUser.username.substring(0, 2).toUpperCase();
+      return (
+        <div className="user-profile" ref={dropdownRef}>
+          <button 
+            className="user-profile-button"
+            onClick={() => setShowDropdown(!showDropdown)}
+          >
+            <div className="user-avatar">
+              {initials}
+            </div>
+            <span>{currentUser.username}</span>
+          </button>
+        </div>
+      );
+    }
+    // Otherwise return null
     return null;
   }
 
@@ -131,7 +159,13 @@ const UserProfile: React.FC<UserProfileProps> = ({ socket, onLogout, onOpenProfi
     <div className="user-profile" ref={dropdownRef}>
       <button 
         className="user-profile-button"
-        onClick={() => setShowDropdown(!showDropdown)}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('UserProfile button clicked! Current dropdown state:', showDropdown);
+          setShowDropdown(!showDropdown);
+        }}
+        type="button"
       >
         <div className="user-avatar">
           {initials}

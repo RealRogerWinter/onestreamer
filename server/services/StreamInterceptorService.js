@@ -16,8 +16,10 @@ class StreamInterceptorService extends EventEmitter {
         // Active intercepts: streamId -> interception config
         this.activeIntercepts = new Map();
         
-        // GStreamer path
-        this.gstreamerPath = 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe';
+        // GStreamer path - detect based on platform
+        this.gstreamerPath = process.platform === 'win32'
+            ? 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe'
+            : '/usr/bin/gst-launch-1.0'; // Full path on Linux
         
         console.log('🎬 STREAM INTERCEPTOR: Service initialized');
     }

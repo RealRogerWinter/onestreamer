@@ -15,6 +15,7 @@ class VisualFxDebugPanel {
         this.activeEffects = [];
         this.stats = {};
         this.currentStreamId = null;
+        this.keyboardListenerAdded = false;
         
         this.initialize();
     }
@@ -27,7 +28,7 @@ class VisualFxDebugPanel {
             await this.checkAdminStatus();
             
             if (!this.isAdmin) {
-                console.warn('VisualFX Debug Panel: Admin access required');
+                // Silently fail for security
                 return;
             }
             
@@ -52,9 +53,8 @@ class VisualFxDebugPanel {
             const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
             
             if (!token) {
-                // For development/testing, you can temporarily set this to true
-                // In production, this should always validate against your auth system
-                this.isAdmin = true; // Change this based on your auth system
+                // No token means no admin access
+                this.isAdmin = false;
                 return;
             }
 
@@ -79,6 +79,9 @@ class VisualFxDebugPanel {
 
     setupKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
+            // Double-check admin status on every keypress
+            if (!this.isAdmin) return;
+            
             // Ctrl+Shift+V to toggle debug panel
             if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') {
                 e.preventDefault();
@@ -406,7 +409,7 @@ class VisualFxDebugPanel {
 
     togglePanel() {
         if (!this.isAdmin) {
-            console.warn('VisualFX Debug Panel: Admin access required');
+            // Silently fail for security
             return;
         }
 
@@ -418,6 +421,12 @@ class VisualFxDebugPanel {
     }
 
     openPanel() {
+        // Additional admin check
+        if (!this.isAdmin) {
+            // Silently fail for security
+            return;
+        }
+        
         if (!this.panel) return;
         
         this.panel.style.display = 'flex';

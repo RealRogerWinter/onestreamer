@@ -23,7 +23,8 @@
 .hls-remote-video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain !important; /* Changed from cover to contain - ensures full frame visible */
+  background: #000; /* Black letterbox */
 }
 
 .hls-viewer {
@@ -36,7 +37,8 @@
 .hls-video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain !important; /* Changed from cover to contain - ensures full frame visible */
+  background: #000; /* Black letterbox */
 }
 
 .hls-loading {

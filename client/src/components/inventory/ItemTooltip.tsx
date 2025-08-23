@@ -23,23 +23,20 @@ const ItemTooltip: React.FC<ItemTooltipProps> = ({ item, position, cooldownRemai
     const tooltipHeight = 200; // Approximate tooltip height
     const padding = 10; // Padding from screen edges
     
-    // Default position: to the right of the element
-    let x = position.x + 60; // Offset to the right of the item
+    // Since the inventory panel is narrow and on the right,
+    // always position tooltip to the left of the item
+    let x = position.x - tooltipWidth - 10; // Position to the left of the element
     let y = position.y;
     
-    // Check if tooltip would go off the right edge
-    if (x + tooltipWidth > window.innerWidth - padding) {
-      x = position.x - tooltipWidth - 10; // Position to the left of the element
+    // Check if tooltip would go off the left edge
+    if (x < padding) {
+      // If it would, position it just inside the viewport
+      x = padding;
     }
     
     // Check if tooltip would go off the bottom edge
     if (y + tooltipHeight > window.innerHeight - padding) {
-      y = position.y - tooltipHeight + 60; // Position above, but keep some of the element visible
-    }
-    
-    // Ensure tooltip doesn't go off the left edge
-    if (x < padding) {
-      x = padding;
+      y = window.innerHeight - tooltipHeight - padding; // Position to fit within viewport
     }
     
     // Ensure tooltip doesn't go off the top edge

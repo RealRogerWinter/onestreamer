@@ -54,13 +54,43 @@ class VisualFxService extends EventEmitter {
         this.sessionService = sessionService;
         this.streamInterceptorService = streamInterceptorService;
         console.log(`🎬 VISUALFX: Dependencies set - io: ${!!io}, sessionService: ${!!sessionService}`);
-        console.log(`🎬 VISUALFX: Socket.io instance:`, this.io ? `Connected (${this.io.engine.clientsCount} clients)` : 'NOT SET');
+        console.log(`🎬 VISUALFX: Socket.io instance:`, this.io ? `Connected (${this.io.engine?.clientsCount || 0} clients)` : 'NOT SET');
+        console.log(`🎬 VISUALFX: Socket.io object type:`, typeof this.io);
+        console.log(`🎬 VISUALFX: Socket.io has emit method:`, typeof this.io?.emit);
         
         // Hook into buff service events if available
         if (this.buffDebuffService) {
             console.log(`🎬 VISUALFX: Setting up buff-applied event listener`);
-            this.buffDebuffService.on('buff-applied', this.handleBuffApplied.bind(this));
-            this.buffDebuffService.on('buff-expired', this.handleBuffExpired.bind(this));
+            console.log(`🎬 VISUALFX: BuffDebuffService instance:`, this.buffDebuffService ? 'SET' : 'NOT SET');
+            console.log(`🎬 VISUALFX: BuffDebuffService is EventEmitter:`, this.buffDebuffService instanceof require('events').EventEmitter);
+            
+            // Remove any existing listeners first to prevent duplicates
+            this.buffDebuffService.removeAllListeners('buff-applied');
+            this.buffDebuffService.removeAllListeners('buff-expired');
+            
+            // Add event listener for buff-applied
+            const handleBuffAppliedBound = this.handleBuffApplied.bind(this);
+            const handleBuffExpiredBound = this.handleBuffExpired.bind(this);
+            
+            this.buffDebuffService.on('buff-applied', handleBuffAppliedBound);
+            this.buffDebuffService.on('buff-expired', handleBuffExpiredBound);
+            
+            // Verify listeners are registered
+            const buffAppliedListeners = this.buffDebuffService.listeners('buff-applied');
+            const buffExpiredListeners = this.buffDebuffService.listeners('buff-expired');
+            
+            console.log(`✅ VISUALFX: Event listeners registered:`);
+            console.log(`   - buff-applied: ${buffAppliedListeners.length} listener(s)`);
+            console.log(`   - buff-expired: ${buffExpiredListeners.length} listener(s)`);
+            
+            // Test the connection with a ping
+            console.log(`🔧 VISUALFX: Testing buff service connection...`);
+            this.buffDebuffService.once('test-visualfx-ping', () => {
+                console.log(`✅ VISUALFX: Buff service connection verified!`);
+            });
+            this.buffDebuffService.emit('test-visualfx-ping');
+        } else {
+            console.log(`⚠️ VISUALFX: No BuffDebuffService provided!`);
         }
     }
     
@@ -696,10 +726,14 @@ class VisualFxService extends EventEmitter {
                     effectConfig: effectConfig
                 };
                 console.log(`🎬 VISUALFX: Emitting visual-effect-applied event:`, eventData);
+                console.log(`🎬 VISUALFX: Socket.IO engine clients: ${this.io.engine?.clientsCount || 0}`);
+                console.log(`🎬 VISUALFX: Socket.IO connected: ${!!this.io.sockets}`);
                 this.io.emit('visual-effect-applied', eventData);
                 console.log(`📡 VISUALFX: Emitted visual-effect-applied for ${effectId}`);
             } else {
                 console.log(`⚠️ VISUALFX: Cannot emit visual-effect-applied - io not available`);
+                console.log(`⚠️ VISUALFX: this.io is: ${this.io}`);
+                console.log(`⚠️ VISUALFX: typeof this.io: ${typeof this.io}`);
             }
             
             console.log(`✅ VISUALFX: Effect ${effectId} applied successfully`);
@@ -1513,6 +1547,7 @@ class VisualFxService extends EventEmitter {
     
     // Buff integration handlers
     async handleBuffApplied(buffData) {
+        console.log(`🎬 VISUALFX: ===== BUFF APPLIED EVENT RECEIVED =====`);
         console.log(`🥔 VISUALFX: handleBuffApplied called with buffData:`, {
             item_name: buffData.item_name,
             stream_id: buffData.stream_id,

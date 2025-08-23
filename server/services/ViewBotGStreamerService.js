@@ -8,7 +8,10 @@ const path = require('path');
  */
 class ViewBotGStreamerService {
   constructor() {
-    this.gstreamerPath = 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe';
+    // GStreamer path - detect based on platform
+    this.gstreamerPath = process.platform === 'win32'
+      ? 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe'
+      : 'gst-launch-1.0'; // Use system PATH on Linux
     this.activeStreams = new Map();
   }
 

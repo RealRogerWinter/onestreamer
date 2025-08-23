@@ -121,6 +121,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       // Build audio constraints with new device
       const audioConstraints: any = {
         deviceId: { exact: newDeviceId },
+        // Standard W3C constraints
         echoCancellation: audioSettings.echoCancellation,
         noiseSuppression: audioSettings.noiseSuppression,
         autoGainControl: audioSettings.autoGainControl,
@@ -128,9 +129,14 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         channelCount: { ideal: audioSettings.channelCount },
         sampleSize: { ideal: 16 },
         latency: { ideal: 0.01 },
+        
+        // Disable all voice activity detection
         voiceActivityDetection: false
       };
 
+      // Log constraints to debug
+      console.log('🎤 Replacing audio with constraints:', audioConstraints);
+      
       // Get new audio stream
       const newStream = await navigator.mediaDevices.getUserMedia({
         audio: audioConstraints,
@@ -153,7 +159,12 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         // Stop old track
         oldAudioTrack.stop();
         
-        console.log('✅ Audio track replaced successfully');
+        // Log the actual settings applied to the track
+        if (newAudioTrack.getSettings) {
+          console.log('✅ Audio track replaced successfully with settings:', newAudioTrack.getSettings());
+        } else {
+          console.log('✅ Audio track replaced successfully');
+        }
       }
     } catch (error) {
       console.error('❌ Failed to replace audio track:', error);
@@ -294,9 +305,23 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     }
     console.log('🎵 Audio settings saved:', newSettings);
     
-    // If streaming and device changed, replace the track in real-time (for local settings only)
-    if (!externalOnAudioSettingsChange && isStreaming && oldSettings.inputDeviceId !== newSettings.inputDeviceId && newSettings.inputDeviceId) {
-      await replaceAudioTrack(newSettings.inputDeviceId);
+    // If streaming and any audio setting changed that requires track replacement (for local settings only)
+    if (!externalOnAudioSettingsChange && isStreaming) {
+      // Check if any audio processing setting changed or device changed
+      const processingChanged = 
+        oldSettings.echoCancellation !== newSettings.echoCancellation ||
+        oldSettings.noiseSuppression !== newSettings.noiseSuppression ||
+        oldSettings.autoGainControl !== newSettings.autoGainControl;
+      
+      const deviceChanged = oldSettings.inputDeviceId !== newSettings.inputDeviceId && newSettings.inputDeviceId;
+      
+      if (processingChanged || deviceChanged) {
+        // Use the current device ID or the new one if changed
+        const deviceId = newSettings.inputDeviceId || oldSettings.inputDeviceId;
+        if (deviceId) {
+          await replaceAudioTrack(deviceId);
+        }
+      }
     }
   };
   
@@ -378,6 +403,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       
       // Build audio constraints with device selection
       const audioConstraints: any = {
+        // Standard W3C constraints
         echoCancellation: audioSettings.echoCancellation,
         noiseSuppression: audioSettings.noiseSuppression,
         autoGainControl: audioSettings.autoGainControl,
@@ -385,15 +411,6 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         channelCount: { ideal: audioSettings.channelCount },
         sampleSize: { ideal: 16 },
         latency: { ideal: 0.01 }, // Low latency for real-time
-        
-        // Chrome-specific - inherit from main settings
-        googEchoCancellation: audioSettings.echoCancellation,
-        googAutoGainControl: audioSettings.autoGainControl,
-        googNoiseSuppression: audioSettings.noiseSuppression,
-        googHighpassFilter: false,
-        googTypingNoiseDetection: false,
-        googNoiseReduction: audioSettings.noiseSuppression,
-        googAudioMirroring: false,
         
         // Always disable VAD to prevent audio cutoff
         voiceActivityDetection: false
@@ -440,6 +457,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         throw new Error('WebRTC requires HTTPS or localhost. See the opened tab for solutions.');
       }
 
+      // Log the constraints being requested
+      console.log('🎤 WEBRTC STREAMER: Requesting getUserMedia with audio constraints:', audioConstraints);
+      
       const stream = await navigator.mediaDevices.getUserMedia({
         video: videoConstraints,
         audio: audioConstraints
@@ -448,6 +468,17 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       console.log('📷 WEBRTC STREAMER: Got media stream:', stream);
       console.log('📷 WEBRTC STREAMER: Video tracks:', stream.getVideoTracks().length);
       console.log('📷 WEBRTC STREAMER: Audio tracks:', stream.getAudioTracks().length);
+      
+      // Log actual audio track settings to verify what was applied
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack && audioTrack.getSettings) {
+        const actualSettings = audioTrack.getSettings();
+        console.log('🎤 WEBRTC STREAMER: Actual audio track settings:', actualSettings);
+        console.log('🎤 WEBRTC STREAMER: Requested vs Actual:');
+        console.log('   echoCancellation: requested=' + audioSettings.echoCancellation + ', actual=' + actualSettings.echoCancellation);
+        console.log('   noiseSuppression: requested=' + audioSettings.noiseSuppression + ', actual=' + actualSettings.noiseSuppression);
+        console.log('   autoGainControl: requested=' + audioSettings.autoGainControl + ', actual=' + actualSettings.autoGainControl);
+      }
 
       streamRef.current = stream;
 
@@ -637,10 +668,10 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
           width: '100%',
           height: '100%',
           backgroundColor: '#000',
-          objectFit: 'cover',
-          transform: 'scaleX(-1)', // Always mirror the streamer view for consistency
+          objectFit: 'contain', // Changed to contain to show full frame without cropping
+          // Removed horizontal flip - streamer now sees themselves as viewers see them
           // Mobile Chrome specific fixes
-          WebkitTransform: 'scaleX(-1) translateZ(0)', // Force hardware acceleration with mirror
+          WebkitTransform: 'translateZ(0)', // Force hardware acceleration without mirror
           WebkitBackfaceVisibility: 'hidden',
           backfaceVisibility: 'hidden'
         }}

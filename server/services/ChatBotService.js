@@ -6,10 +6,20 @@ class ChatBotService {
     constructor() {
         this.bots = new Map(); // botId -> BotInstance
         this.llmService = new ChatBotLLMService();
-        this.chatServiceUrl = process.env.CHAT_SERVICE_URL || 'http://localhost:8081';
+        this.chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
         this.isInitialized = false;
         this.io = null; // Reference to Socket.IO server instance for managing connections
         this.movieBotService = null; // Reference to MovieBotService for chat history
+        
+        // Auto-initialize after a short delay to ensure server is ready
+        setTimeout(() => {
+            if (!this.isInitialized) {
+                console.log('🤖 AUTO-INIT: Starting delayed ChatBot initialization...');
+                this.initialize().catch(err => {
+                    console.error('❌ AUTO-INIT: Failed to auto-initialize ChatBots:', err);
+                });
+            }
+        }, 10000); // 10 second delay to let server stabilize
         
         // Animal names for random usernames (matching chat service)
         this.ANIMALS = [
@@ -254,7 +264,8 @@ class ChatBotService {
         const username = useAssignedName ? 
             botData.name : 
             this.generateUsername(null);
-        const color = this.generateColor();
+        // Use consistent color based on bot ID
+        const color = this.COLORS[botData.id % this.COLORS.length];
         
         const botInstance = {
             id: botData.id,
@@ -271,17 +282,22 @@ class ChatBotService {
         // Connect to chat service
         console.log(`🤖 Attempting to connect bot ${botData.name} to ${this.chatServiceUrl}`);
         const socket = ioClient(this.chatServiceUrl, {
+            path: '/chat/socket.io',
             transports: ['websocket'],
             query: {
                 isBot: true,
                 botId: botData.id
-            }
+            },
+            rejectUnauthorized: false // Allow self-signed certificates
         });
+        
+        // Store socket immediately for tracking
+        botInstance.socket = socket;
 
         socket.on('connect', async () => {
             console.log(`🤖 Bot ${botData.name} connected as ${username} to chat service`);
+            console.log(`🤖 Socket ID: ${socket.id}, Connected: ${socket.connected}`);
             botInstance.connected = true;
-            botInstance.socket = socket;
             
             // Store session in database
             const session = await database.runAsync(
@@ -299,6 +315,7 @@ class ChatBotService {
             });
             
             // Start response cycle
+            console.log(`🤖 Bot ${botData.name} starting response cycle`);
             this.scheduleNextResponse(botInstance);
         });
 
@@ -377,21 +394,26 @@ class ChatBotService {
     }
 
     scheduleNextResponse(botInstance) {
+        console.log(`🤖 scheduleNextResponse called for bot ${botInstance.id}: connected=${botInstance.connected}, enabled=${botInstance.data.is_enabled}`);
         if (!botInstance.connected || !botInstance.data.is_enabled) {
+            console.log(`🤖 Bot ${botInstance.id} not scheduling - connected: ${botInstance.connected}, enabled: ${botInstance.data.is_enabled}`);
             return;
         }
 
-        // If moviebot mode is enabled, disable normal messaging intervals
-        if (botInstance.data.moviebot_enabled === 1 || botInstance.data.moviebot_enabled === true) {
-            console.log(`🎬 Bot ${botInstance.id} has moviebot mode enabled - disabling normal messaging intervals`);
+        // Skip scheduling regular responses for MovieBot-enabled bots
+        // They should only respond to movie transcriptions
+        if (botInstance.data.moviebot_enabled) {
+            console.log(`🎬 Bot ${botInstance.id} has MovieBot enabled, skipping regular chat responses`);
             return;
         }
 
         const minInterval = botInstance.data.response_interval_min * 1000;
         const maxInterval = botInstance.data.response_interval_max * 1000;
         const interval = Math.random() * (maxInterval - minInterval) + minInterval;
+        console.log(`🤖 Bot ${botInstance.id} scheduled to send message in ${Math.round(interval/1000)} seconds`);
 
         botInstance.responseTimer = setTimeout(async () => {
+            console.log(`🤖 Bot ${botInstance.id} timer fired, generating message`);
             await this.generateAndSendMessage(botInstance);
             this.scheduleNextResponse(botInstance);
         }, interval);
@@ -405,9 +427,10 @@ class ChatBotService {
                 return;
             }
             
-            // If moviebot mode is enabled, skip normal message generation (only respond to moviebot prompts)
-            if (botInstance.data.moviebot_enabled === 1 || botInstance.data.moviebot_enabled === true) {
-                console.log(`🎬 Bot ${botInstance.id} has moviebot mode enabled - skipping normal message generation`);
+            // Skip regular messages for MovieBot-enabled bots
+            // They should only respond to movie transcriptions
+            if (botInstance.data.moviebot_enabled) {
+                console.log(`🎬 Bot ${botInstance.id} has MovieBot enabled, should not be sending regular messages`);
                 return;
             }
             
@@ -418,7 +441,8 @@ class ChatBotService {
                 botInstance.data.prompt,
                 botInstance.messageHistory,
                 personality,
-                botInstance.data.llm_model  // Pass bot-specific model
+                botInstance.data.llm_model,  // Pass bot-specific model
+                botInstance.username  // Pass bot's username
             );
 
             // Double-check enabled state before sending (in case it changed during LLM generation)
@@ -672,6 +696,7 @@ class ChatBotService {
                 
                 const { io: ioClient } = require('socket.io-client');
                 const socket = ioClient(this.chatServiceUrl, {
+                    path: '/chat/socket.io',
                     transports: ['websocket'],
                     query: {
                         isBot: true,
@@ -922,7 +947,8 @@ class ChatBotService {
                 moviePrompt,  // The movie transcript/prompt to comment on
                 chatHistory || [],
                 personality,
-                botInstance.data.llm_model
+                botInstance.data.llm_model,
+                botInstance.username  // Pass bot's username for self-awareness
             );
             
             // Send the message through the bot's socket

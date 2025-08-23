@@ -1,0 +1,144 @@
+/* Mobile Chat Wrapper */
+.mobile-chat-wrapper {
+  position: fixed;
+  bottom: -100%;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 40vh;
+  z-index: 998;
+  transition: bottom 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), height 0.3s ease;
+  will-change: transform, bottom, height;
+  touch-action: none; /* Prevent default touch behaviors */
+}
+
+.mobile-chat-wrapper.open {
+  bottom: 76px; /* Above bottom nav with margin */
+}
+
+.mobile-chat-wrapper.expanded {
+  height: 85vh !important;
+  max-height: none;
+}
+
+/* Swipe indicator */
+.swipe-indicator {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: transparent;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: grab;
+  touch-action: none;
+  z-index: 10;
+}
+
+.swipe-indicator:active {
+  cursor: grabbing;
+}
+
+.swipe-handle {
+  width: 40px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+.mobile-chat-wrapper.open .swipe-handle {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.swipe-hint {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  opacity: 0;
+  animation: fadeInOut 3s ease-in-out;
+}
+
+@keyframes fadeInOut {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.7; }
+}
+
+/* Chat content adjustments */
+.mobile-chat-content {
+  height: 100%;
+  border-radius: 20px 20px 0 0;
+  overflow: hidden;
+}
+
+/* Override chat container styles for mobile wrapper */
+.mobile-chat-wrapper .chat-container {
+  position: relative !important;
+  bottom: auto !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  height: 100% !important;
+  width: 100% !important;
+  max-height: none !important;
+  border-radius: 20px 20px 0 0;
+  transition: none !important; /* We handle transitions in the wrapper */
+}
+
+/* Make header draggable */
+.mobile-chat-wrapper .chat-header {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mobile-chat-wrapper .chat-header:active {
+  cursor: grabbing;
+}
+
+/* Visual feedback during drag */
+.mobile-chat-wrapper.dragging {
+  transition: none !important;
+}
+
+.mobile-chat-wrapper.dragging .swipe-handle {
+  background: rgba(78, 205, 196, 0.6);
+  transform: scaleX(1.5);
+}
+
+/* Ensure chat content is not cut off */
+.mobile-chat-wrapper .chat-messages {
+  max-height: calc(100% - 120px) !important; /* Account for header and input */
+}
+
+/* Prevent body scroll when chat is open on mobile */
+@media (max-width: 768px) {
+  body.mobile-chat-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+}
+
+/* Animation for closing */
+@keyframes slideDown {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+.mobile-chat-wrapper.closing {
+  animation: slideDown 0.3s ease-out forwards;
+}

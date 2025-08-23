@@ -16,6 +16,180 @@
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
+/* Desktop-only enhanced backpack button */
+@media (min-width: 769px) {
+  .inventory-toggle-btn {
+    width: 70px;
+    height: 70px;
+    font-size: 36px;
+    bottom: 120px;
+    right: 30px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 
+      0 6px 25px rgba(102, 126, 234, 0.5),
+      inset 0 0 20px rgba(255, 255, 255, 0.1);
+    animation: 
+      subtleBounce 4s ease-in-out infinite,
+      glowPulse 3s ease-in-out infinite,
+      occasionalWiggle 15s ease-in-out infinite;
+    position: fixed;
+    overflow: visible;
+  }
+  
+  .inventory-toggle-btn::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    right: -5px;
+    bottom: -5px;
+    background: linear-gradient(45deg, #ff6ec4, #7873f5, #4a9eff, #00d4ff);
+    border-radius: 50%;
+    opacity: 0;
+    z-index: -1;
+    animation: rainbowGlow 6s linear infinite;
+    filter: blur(10px);
+  }
+  
+  .inventory-toggle-btn::after {
+    content: '✨';
+    position: absolute;
+    top: -10px;
+    right: -5px;
+    font-size: 20px;
+    animation: sparkleFloat 6s ease-in-out infinite;
+    opacity: 0;
+  }
+  
+  .inventory-toggle-btn:hover {
+    transform: scale(1.15) rotate(10deg);
+    box-shadow: 
+      0 10px 40px rgba(102, 126, 234, 0.7),
+      inset 0 0 30px rgba(255, 255, 255, 0.2);
+    animation: 
+      hoverShake 0.5s ease-in-out,
+      glowPulse 1s ease-in-out infinite;
+  }
+  
+  .inventory-toggle-btn:hover::before {
+    opacity: 0.6;
+  }
+  
+  .inventory-toggle-btn:hover::after {
+    opacity: 1;
+  }
+}
+
+/* Keyframe Animations for Desktop Backpack */
+@keyframes subtleBounce {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-5px); }
+  75% { transform: translateY(3px); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { 
+    box-shadow: 
+      0 6px 25px rgba(102, 126, 234, 0.5),
+      inset 0 0 20px rgba(255, 255, 255, 0.1);
+  }
+  50% { 
+    box-shadow: 
+      0 8px 35px rgba(102, 126, 234, 0.8),
+      inset 0 0 25px rgba(255, 255, 255, 0.2);
+  }
+}
+
+@keyframes occasionalWiggle {
+  0%, 94%, 100% { transform: rotate(0deg); }
+  95% { transform: rotate(-8deg); }
+  96% { transform: rotate(8deg); }
+  97% { transform: rotate(-5deg); }
+  98% { transform: rotate(5deg); }
+}
+
+@keyframes rainbowGlow {
+  0% { 
+    transform: rotate(0deg);
+    filter: blur(10px) hue-rotate(0deg);
+  }
+  100% { 
+    transform: rotate(360deg);
+    filter: blur(10px) hue-rotate(360deg);
+  }
+}
+
+@keyframes sparkleFloat {
+  0%, 100% { 
+    transform: translate(0, 0) scale(0);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-5px, -10px) scale(1);
+    opacity: 1;
+  }
+  40% {
+    transform: translate(5px, -20px) scale(1.2);
+    opacity: 0.8;
+  }
+  60% {
+    transform: translate(-3px, -30px) scale(0.8);
+    opacity: 0.5;
+  }
+  80% {
+    transform: translate(2px, -35px) scale(0.5);
+    opacity: 0.2;
+  }
+}
+
+@keyframes hoverShake {
+  0%, 100% { transform: scale(1.15) rotate(10deg); }
+  25% { transform: scale(1.15) rotate(15deg); }
+  75% { transform: scale(1.15) rotate(5deg); }
+}
+
+/* Notification badge animation for desktop */
+@media (min-width: 769px) {
+  .inventory-toggle-btn.has-new-items::before {
+    content: '!';
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 25px;
+    height: 25px;
+    background: radial-gradient(circle, #ff6b6b, #ff4444);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: bold;
+    color: white;
+    border: 2px solid white;
+    animation: 
+      notificationPulse 1s ease-in-out infinite,
+      notificationBounce 2s ease-in-out infinite;
+    box-shadow: 0 0 15px rgba(255, 68, 68, 0.8);
+  }
+}
+
+@keyframes notificationPulse {
+  0%, 100% { 
+    transform: scale(1);
+    box-shadow: 0 0 15px rgba(255, 68, 68, 0.8);
+  }
+  50% { 
+    transform: scale(1.1);
+    box-shadow: 0 0 25px rgba(255, 68, 68, 1);
+  }
+}
+
+@keyframes notificationBounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-10px); }
+}
+
 /* Move inventory button when shop is open */
 .inventory-toggle-btn.shop-open {
   right: 160px; /* Move left by shop width + margin */
@@ -26,46 +200,58 @@
   box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
 }
 
-/* Inventory Panel */
+/* Inventory Panel - Desktop by default */
 .inventory-panel {
   position: fixed;
-  right: -140px; /* Very narrow to avoid chat overlap */
+  right: -200px; /* Narrow panel for desktop */
   top: 0;
-  width: 140px; /* Much narrower panel */
+  bottom: 0;
+  width: 200px; /* Skinny panel that won't cover chat */
   height: 100vh;
+  min-height: 100vh;
   background: #1a1a1a;
   border-left: 1px solid #333;
   transition: right 0.3s ease;
-  z-index: 999;
+  z-index: 1100; /* Higher than header (1000) to appear on top */
   display: flex;
   flex-direction: column;
   box-shadow: -2px 0 10px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
+  overflow: visible; /* Allow tooltips to show on desktop */
 }
 
-.inventory-panel.open {
+/* Desktop specific styles */
+.inventory-panel.desktop {
+  /* Ensure desktop always uses full height */
+  height: 100vh !important;
+  min-height: 100vh !important;
+  top: 0;
+  bottom: 0;
+}
+
+.inventory-panel.desktop.open {
   right: 0; /* Stay on right edge */
 }
 
 /* When shop is also open, move inventory left */
 .inventory-panel.open.shop-also-open {
-  right: 140px; /* Move left by shop width */
+  right: 200px; /* Move left by shop width */
 }
 
 /* Inventory Header */
 .inventory-header {
-  padding: 8px 10px;
+  padding: 10px 12px;
   background: #2a2a2a;
   border-bottom: 1px solid #444;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .inventory-header h2 {
   margin: 0;
   color: #fff;
-  font-size: 14px; /* Larger, more readable header text */
+  font-size: 16px; /* Moderate size for narrow panel */
   font-weight: 600;
   letter-spacing: 0.3px;
 }
@@ -74,11 +260,11 @@
   background: none;
   border: none;
   color: #999;
-  font-size: 24px; /* Smaller close button */
+  font-size: 24px;
   cursor: pointer;
   padding: 0;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -92,10 +278,11 @@
 /* Inventory Main Tabs */
 .inventory-main-tabs {
   display: flex;
-  padding: 6px;
+  padding: 8px;
   gap: 4px;
   background: #333;
   border-bottom: 1px solid #444;
+  flex-shrink: 0;
 }
 
 .inventory-main-tab {
@@ -107,10 +294,10 @@
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.3s ease;
-  font-size: 12px; /* Larger, more readable font */
+  font-size: 12px;
   font-weight: 600;
   text-align: center;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
 }
 
 .inventory-main-tab:hover {
@@ -138,23 +325,24 @@
 
 /* Inventory Sub Tabs */
 .inventory-tabs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   padding: 6px;
   gap: 4px;
   background: #222;
   border-bottom: 1px solid #333;
+  flex-shrink: 0;
 }
 
 .inventory-tab {
-  padding: 5px 3px;
+  padding: 5px 8px;
   background: #2a2a2a;
   color: #aaa;
   border: 1px solid #333;
   border-radius: 3px;
   cursor: pointer;
   transition: all 0.2s;
-  font-size: 10px; /* Balanced size for narrow panel */
+  font-size: 11px;
   font-weight: 500;
   text-align: center;
   white-space: nowrap;
@@ -182,14 +370,14 @@
 }
 
 .inventory-admin-button {
-  padding: 5px 4px;
+  padding: 5px 8px;
   background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
   color: #fff;
   border: 1px solid transparent;
   border-radius: 3px;
   cursor: pointer;
   transition: all 0.2s;
-  font-size: 9px; /* Compact admin button text */
+  font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
   box-shadow: 0 1px 4px rgba(255, 107, 107, 0.3);
@@ -212,7 +400,12 @@
   padding: 40px 20px;
   text-align: center;
   color: #999;
-  font-size: 16px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
 }
 
 .inventory-guest-prompt {
@@ -221,6 +414,7 @@
   align-items: center;
   justify-content: center;
   flex: 1;
+  height: 100%;
 }
 
 .inventory-error {
@@ -232,16 +426,35 @@
   border: 1px solid rgba(255, 68, 68, 0.3);
 }
 
+/* Inventory content wrapper - fills remaining space */
+.inventory-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0; /* Important for flexbox overflow */
+  overflow: hidden;
+}
+
+/* Desktop: Allow overflow visible for tooltips */
+.inventory-panel.desktop .inventory-content {
+  overflow: visible;
+}
+
+/* Mobile: Keep overflow hidden for proper scrolling */
+.inventory-panel.mobile .inventory-content {
+  overflow: hidden;
+}
+
 /* Inventory Grid */
 .inventory-grid {
   padding: 8px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr); /* 2 columns for very narrow panel */
-  grid-auto-rows: 55px; /* Smaller items */
-  gap: 6px; /* Smaller gap */
+  grid-template-columns: repeat(3, 1fr); /* 3 columns for narrow panel */
+  grid-auto-rows: 55px; /* Smaller items to fit more vertically */
+  gap: 6px;
   overflow-y: auto;
   flex: 1;
-  max-height: calc(100vh - 240px);
+  min-height: 0; /* Important for proper scrolling */
   align-content: start;
 }
 
@@ -255,7 +468,7 @@
   max-width: 55px;
   background: #2a2a2a;
   border: 2px solid #444;
-  border-radius: 8px; /* Smaller radius */
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -281,7 +494,7 @@
 
 /* Item Emoji */
 .item-emoji {
-  font-size: 22px; /* Even smaller for very narrow panel */
+  font-size: 24px; /* Moderate emoji size for narrow panel */
   user-select: none;
   display: flex;
   align-items: center;
@@ -297,9 +510,9 @@
   color: #fff;
   padding: 1px 4px;
   border-radius: 3px;
-  font-size: 9px; /* Very small font */
+  font-size: 10px;
   font-weight: bold;
-  min-width: 16px;
+  min-width: 18px;
   text-align: center;
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -321,7 +534,7 @@
 
 .cooldown-text {
   color: #ff9999;
-  font-size: 10px; /* Smaller cooldown text */
+  font-size: 11px;
   font-weight: bold;
 }
 
@@ -388,6 +601,216 @@
   justify-content: center;
 }
 
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  /* Override desktop styles completely for mobile */
+  .inventory-panel.mobile {
+    position: fixed !important;
+    bottom: -100% !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    width: 100% !important;
+    height: 40vh !important;
+    min-height: unset !important;
+    border-radius: 20px 20px 0 0 !important;
+    transition: bottom 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), height 0.3s ease !important;
+    border-left: none !important;
+    border-top: 3px solid #444 !important;
+    background: rgba(26, 26, 26, 0.98) !important;
+    backdrop-filter: blur(10px) !important;
+    z-index: 998 !important;
+    overflow: hidden !important;
+  }
+  
+  /* Make inventory toggle button much larger on mobile */
+  .inventory-toggle-btn {
+    position: fixed;
+    right: 15px;
+    bottom: 70px; /* Above bottom nav */
+    width: 65px;
+    height: 65px;
+    font-size: 32px;
+    border-width: 3px;
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+    animation: mobile-pulse 2s infinite;
+  }
+  
+  @keyframes mobile-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+  }
+  
+  /* Mobile-specific open state */
+  .inventory-panel.mobile.open {
+    bottom: 76px !important; /* Above bottom nav, leaving space for stream */
+    right: 0 !important;
+  }
+  
+  /* Mobile-specific expanded state */
+  .inventory-panel.mobile.expanded {
+    height: 85vh !important;
+    max-height: 85vh !important;
+  }
+  
+  /* Swipe indicator for mobile - visual cue for dragging */
+  .inventory-panel.mobile::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    z-index: 1;
+  }
+  
+  /* Larger header for mobile - draggable area for swipe gestures */
+  .inventory-header {
+    padding: 16px 20px;
+    padding-top: 20px; /* Extra space for swipe indicator */
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(116, 75, 162, 0.2) 100%);
+    border-bottom: 2px solid #444;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    flex-shrink: 0;
+  }
+  
+  .inventory-header:active {
+    cursor: grabbing;
+  }
+  
+  .inventory-header h2 {
+    font-size: 20px;
+    font-weight: 700;
+  }
+  
+  .inventory-close-btn {
+    font-size: 32px;
+    width: 44px;
+    height: 44px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+  }
+  
+  /* Larger tabs for mobile */
+  .inventory-main-tabs {
+    padding: 12px;
+    gap: 8px;
+  }
+  
+  .inventory-main-tab {
+    padding: 14px 12px;
+    font-size: 14px;
+    border-radius: 8px;
+    min-height: 48px;
+  }
+  
+  /* Better sub-tabs layout for mobile */
+  .inventory-tabs {
+    display: flex;
+    overflow-x: auto;
+    padding: 10px;
+    gap: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .inventory-tab {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    font-size: 13px;
+    border-radius: 20px;
+    white-space: nowrap;
+    min-height: 40px;
+  }
+  
+  /* Larger inventory grid for mobile */
+  .inventory-content {
+    padding: 12px;
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    padding: 8px;
+  }
+  
+  .inventory-item {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 12px;
+    border-width: 2px;
+  }
+  
+  .item-emoji {
+    font-size: 32px;
+  }
+  
+  .item-name {
+    font-size: 11px;
+    padding: 0 2px;
+  }
+  
+  .item-quantity {
+    font-size: 12px;
+    padding: 2px 6px;
+    min-width: 20px;
+  }
+  
+  /* Pagination controls for mobile */
+  .inventory-pagination {
+    padding: 12px;
+    gap: 12px;
+  }
+  
+  .pagination-btn {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 14px;
+  }
+  
+  .pagination-info {
+    font-size: 14px;
+  }
+  
+  /* Swipe hint for mobile */
+  .inventory-panel::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Even more compact for small phones */
+  .inventory-panel {
+    /* Height handled dynamically by JavaScript */
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  
+  .item-emoji {
+    font-size: 28px;
+  }
+  
+  .item-name {
+    font-size: 10px;
+  }
+}
+
 /* Item Tooltip */
 .item-tooltip {
   position: fixed;
@@ -397,9 +820,11 @@
   padding: 15px;
   min-width: 250px;
   max-width: 350px;
-  z-index: 10000;
+  z-index: 11000 !important; /* Above everything including header and modals */
   pointer-events: none;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+  display: block;
+  opacity: 1;
 }
 
 .tooltip-header {
@@ -502,84 +927,79 @@
   color: #666;
 }
 
-/* When layout becomes columnar (chat goes below main content) */
-@media (max-width: 1024px) {
+/* Large desktop screens - maintain narrow width */
+@media (min-width: 1440px) {
   .inventory-panel {
     width: 220px;
     right: -220px;
   }
   
+  .inventory-panel.open.shop-also-open {
+    right: 220px;
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 65px;
+  }
+}
+
+/* Medium screens - maintain narrow width */
+@media (min-width: 1025px) and (max-width: 1439px) {
+  .inventory-panel {
+    width: 200px;
+    right: -200px;
+  }
+  
+  .inventory-panel.open.shop-also-open {
+    right: 200px;
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* When layout becomes columnar (chat goes below main content) */
+@media (max-width: 1024px) {
+  .inventory-panel {
+    width: 200px;
+    right: -200px;
+  }
+  
   .inventory-panel.open {
     right: 0;
   }
   
   .inventory-panel.open.shop-also-open {
-    right: 220px; /* Move left by shop width on tablets */
+    right: 200px; /* Move left by shop width on tablets */
   }
   
-  /* Adjust grid for wider panel on smaller screens */
+  /* Adjust grid for narrow panel on smaller screens */
   .inventory-grid {
     grid-template-columns: repeat(3, 1fr);
   }
   
   .inventory-tabs {
-    grid-template-columns: repeat(auto-fit, minmax(65px, 1fr));
+    flex-wrap: wrap;
   }
   
   .inventory-tab {
     font-size: 11px;
-    padding: 6px 4px;
+    padding: 5px 8px;
   }
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-  .inventory-panel {
-    width: 280px;
-    right: -280px;
-  }
-  
-  .inventory-panel.open {
-    right: 0;
-  }
-  
-  .inventory-panel.open.shop-also-open {
-    right: 280px; /* Move left by shop width on mobile */
-  }
-  
-  /* Adjust grid for wider panel on mobile */
-  .inventory-grid {
-    grid-template-columns: repeat(4, 1fr);
-    grid-auto-rows: 65px;
-    padding: 14px;
-    gap: 12px;
-  }
-  
-  .inventory-tabs {
-    grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
-  }
-  
-  .inventory-tab {
-    font-size: 10px;
-    padding: 5px 3px;
-  }
-  
-  .inventory-item {
-    min-height: 65px;
-    min-width: 65px;
-    max-height: 78px;
-    max-width: 78px;
-  }
-}
 
 @media (max-width: 480px) {
   .inventory-panel {
     width: 100%;
-    right: -100%;
+    right: auto;
+    /* Height handled by JavaScript */
   }
   
   .inventory-panel.open {
-    right: 0;
+    right: auto;
   }
   
   .inventory-grid {
@@ -614,10 +1034,10 @@
   border-top: 1px solid #333;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
   flex-shrink: 0;
-  min-height: 55px;
+  height: auto;
 }
 
 .inventory-pagination .pagination-info {
@@ -635,11 +1055,11 @@
 }
 
 .inventory-pagination .pagination-btn {
-  padding: 6px 10px;
+  padding: 5px 10px;
   background: #2a2a2a;
   color: #fff;
   border: 1px solid #444;
-  border-radius: 5px;
+  border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
   font-size: 11px;
@@ -664,16 +1084,16 @@
 }
 
 .inventory-pagination .pagination-page {
-  padding: 6px 10px;
+  padding: 5px 8px;
   background: #2a2a2a;
   color: #fff;
   border: 1px solid #444;
-  border-radius: 5px;
+  border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
   font-size: 11px;
   font-weight: 500;
-  min-width: 32px;
+  min-width: 30px;
 }
 
 .inventory-pagination .pagination-page:hover {

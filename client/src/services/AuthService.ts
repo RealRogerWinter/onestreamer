@@ -84,6 +84,9 @@ class AuthService {
       this.refreshToken = response.data.refreshToken;
       this.user = response.data.user;
       this.saveToStorage();
+      
+      // Re-setup interceptors with new token
+      this.setupAxiosInterceptors();
 
       return response.data;
     } catch (error: any) {
@@ -93,6 +96,8 @@ class AuthService {
 
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
+      console.log('🔐 Attempting login with:', { email, passwordLength: password.length });
+      
       const response = await axios.post<AuthResponse>(`${API_URL}/auth/login`, {
         email,
         password
@@ -102,9 +107,14 @@ class AuthService {
       this.refreshToken = response.data.refreshToken;
       this.user = response.data.user;
       this.saveToStorage();
+      
+      // Re-setup interceptors with new token
+      this.setupAxiosInterceptors();
 
+      console.log('✅ Login successful for user:', this.user.username);
       return response.data;
     } catch (error: any) {
+      console.error('❌ Login failed:', error.response?.status, error.response?.data);
       throw new Error(error.response?.data?.error || 'Login failed');
     }
   }
@@ -229,6 +239,75 @@ class AuthService {
     }
   }
 
+  async changeUsername(newUsername: string): Promise<{ success: boolean; username?: string; message?: string }> {
+    if (!this.token) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await axios.put<{ success: boolean; username: string; token: string; refreshToken: string; message?: string }>(
+        `${API_URL}/auth/change-username`,
+        { newUsername },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.token}`
+          }
+        }
+      );
+
+      // Update tokens with new username
+      if (response.data.token && response.data.refreshToken) {
+        this.token = response.data.token;
+        this.refreshToken = response.data.refreshToken;
+        this.saveToStorage();
+        
+        // Update user object with new username
+        if (this.user) {
+          this.user.username = response.data.username;
+          this.saveToStorage();
+        }
+      }
+
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        const newToken = await this.refreshAccessToken();
+        if (newToken) {
+          return this.changeUsername(newUsername);
+        }
+      }
+      throw new Error(error.response?.data?.error || 'Failed to change username');
+    }
+  }
+
+  async resendVerificationEmail(): Promise<{ success: boolean; message?: string }> {
+    if (!this.token) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await axios.post<{ success: boolean; message: string }>(
+        `${API_URL}/auth/resend-verification`,
+        {},
+        {
+          headers: {
+            'Authorization': `Bearer ${this.token}`
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        const newToken = await this.refreshAccessToken();
+        if (newToken) {
+          return this.resendVerificationEmail();
+        }
+      }
+      throw new Error(error.response?.data?.error || 'Failed to resend verification email');
+    }
+  }
+
   googleLogin() {
     window.location.href = `${API_URL}/auth/google`;
   }
@@ -328,10 +407,22 @@ class AuthService {
     });
   }
 
+  private requestInterceptor: number | null = null;
+  private responseInterceptor: number | null = null;
+
   setupAxiosInterceptors() {
-    axios.interceptors.request.use(
+    // Remove existing interceptors if any
+    if (this.requestInterceptor !== null) {
+      axios.interceptors.request.eject(this.requestInterceptor);
+    }
+    if (this.responseInterceptor !== null) {
+      axios.interceptors.response.eject(this.responseInterceptor);
+    }
+    
+    this.requestInterceptor = axios.interceptors.request.use(
       (config) => {
-        if (this.token && !config.headers['Authorization']) {
+        // Always add token if available, update existing Authorization header
+        if (this.token) {
           config.headers['Authorization'] = `Bearer ${this.token}`;
         }
         return config;
@@ -339,7 +430,7 @@ class AuthService {
       (error) => Promise.reject(error)
     );
 
-    axios.interceptors.response.use(
+    this.responseInterceptor = axios.interceptors.response.use(
       (response) => response,
       async (error) => {
         const originalRequest = error.config;

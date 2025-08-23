@@ -8,6 +8,14 @@ let chatBotService = null;
 // Initialize service reference
 function initializeChatBotRoutes(service) {
     chatBotService = service;
+    
+    // Auto-initialize bots after routes are set up
+    setTimeout(() => {
+        console.log('🤖 ROUTES: Auto-initializing ChatBot service...');
+        chatBotService.initialize().catch(err => {
+            console.error('❌ ROUTES: Failed to auto-initialize ChatBots:', err);
+        });
+    }, 3000);
 }
 
 // Get all chatbots

@@ -59,9 +59,11 @@ class CanvasFxService extends EventEmitter {
     
     // Handle buff applied event from BuffDebuffService
     async handleBuffApplied(buffData) {
+        console.log(`🎨 CANVASFX: handleBuffApplied called with buffData:`, JSON.stringify(buffData, null, 2));
         try {
             // Check if this buff has visual effects
             const item = await this.itemService.getItemById(buffData.item_id);
+            console.log(`🎨 CANVASFX: Retrieved item:`, item ? item.name : 'null');
             if (item && this.hasVisualEffect(item)) {
                 console.log(`🎨 CANVASFX: Triggering visual effect for ${item.name}`);
                 console.log(`🎨 CANVASFX: Buff data for ${item.name}:`, JSON.stringify(buffData, null, 2));
@@ -684,7 +686,9 @@ class CanvasFxService extends EventEmitter {
     // Trigger visual effect from item usage
     async triggerItemEffect(userId, itemId, streamId, effectParams = {}) {
         try {
+            console.log(`🎨 CANVASFX: === TRIGGERING ITEM EFFECT ===`);
             console.log(`🎨 CANVASFX DEBUG: triggerItemEffect called - userId: ${userId}, itemId: ${itemId}, streamId: ${streamId}`);
+            console.log(`🎨 CANVASFX DEBUG: effectParams:`, JSON.stringify(effectParams, null, 2));
             
             // Check concurrent effect limit
             if (this.activeEffects.size >= this.config.maxConcurrentEffects) {
@@ -740,8 +744,12 @@ class CanvasFxService extends EventEmitter {
             
             // Broadcast to all viewers
             if (this.io) {
+                console.log(`📡 CANVASFX: About to broadcast canvas-effect-trigger for ${item.display_name}`);
+                console.log(`📡 CANVASFX: Effect data being sent:`, JSON.stringify(effect, null, 2));
                 this.io.emit('canvas-effect-trigger', effect);
                 console.log(`📡 CANVASFX: Broadcasted effect ${effect.type} for item ${item.display_name}`);
+            } else {
+                console.error(`❌ CANVASFX: No io instance available to broadcast effect!`);
             }
             
             // Emit local event
@@ -838,7 +846,7 @@ class CanvasFxService extends EventEmitter {
             if (!this.isBuffSyncedEffect(item)) {
                 setTimeout(() => {
                     this.cleanupEffect(effect.id);
-                }, effectConfig.duration);
+                }, effectDuration);
             } else {
                 console.log(`🎨 CANVASFX: Buff-synced positioned effect ${effect.id} will be managed by buff lifecycle`);
             }

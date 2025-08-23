@@ -15,24 +15,14 @@ class MovieBotService extends EventEmitter {
         this.recentChatMessages = [];
         this.MAX_CHAT_HISTORY = 50;
         
-        // Configuration
-        this.config = {
-            enabled: false,
-            transcriptionDuration: 15, // 15-second chunks (increased from 10)
-            minInterval: 60000, // 60 seconds minimum between cycles
-            maxInterval: 120000, // 120 seconds maximum between cycles
-            chatHistoryLimit: 30, // Last 30 messages
-            transcriptionsPerCycle: 3, // Number of transcriptions per cycle
-            timeBetweenTranscriptions: 25000, // 25 seconds between transcriptions (ensures batches don't overlap)
-            messageDelay: {
-                min: 4000, // 4 seconds minimum delay between bot messages
-                max: 8000  // 8 seconds maximum delay between bot messages
-            },
-            batchSpacing: 20000, // 20 seconds minimum between batch completions
-            moviePromptTemplate: `You are watching a film. Your core identity is that you are currently a viewer of this stream who is watching the film. You will actively comment on the film as it progresses. Read through the chatlogs above to pick out details about what people think about the movie. Respond to those or respond to what is actively happening in the film. The most important information you need is the last 15-seconds of audio from the film. Incorporate a direct response to this transcription, or incorporate the context of it within your next message. Here is the transcription:
+        // Set up direct listener for chat messages
+        this.setupChatListener();
+        
+        // Configuration - will be loaded from database or use defaults
+        this.config = null; // Will be initialized from database in loadConfigFromDatabase()
+        this.defaultPromptTemplate = `You are watching a stream. Your core identity is that you are currently a viewer of this stream watching the content. You will actively comment on what's happening in the stream. Read through the chatlogs above to pick out details about what people think about the stream content. Respond to those comments or respond to what is actively happening in the stream. The most important information you need is the last 45-seconds of audio from the stream. Incorporate a direct response to this transcription, or incorporate the context of it within your next message. Here is the transcription:
 
-[TRANSCRIPTION_DATA]`
-        };
+[TRANSCRIPTION_DATA]`;
         
         // Bot categorization for batching - will be dynamically assigned
         this.botCategories = {
@@ -63,6 +53,12 @@ class MovieBotService extends EventEmitter {
         this.logDir = path.join(__dirname, '..', '..', 'logs', 'moviebot');
         this.ensureLogDirectory();
         
+        // Load configuration from database on initialization
+        // Delay loading to ensure database is ready
+        setTimeout(() => {
+            this.loadConfigFromDatabase();
+        }, 100);
+        
         console.log('🎬 MovieBotService: Initialized');
     }
     
@@ -70,6 +66,135 @@ class MovieBotService extends EventEmitter {
         if (!fs.existsSync(this.logDir)) {
             fs.mkdirSync(this.logDir, { recursive: true });
         }
+    }
+    
+    loadConfigFromDatabase() {
+        if (!this.db) {
+            console.log('⚠️ MovieBotService: Database not ready, using defaults');
+            this.config = {
+                enabled: false,
+                transcriptionDuration: 45,
+                transcriptionFrequency: 120,
+                chatHistoryLimit: 30,
+                useGroq: false,
+                messageDelay: {
+                    min: 4000,
+                    max: 8000
+                },
+                moviePromptTemplate: this.defaultPromptTemplate
+            };
+            return;
+        }
+        
+        this.db.get(`SELECT * FROM moviebot_config WHERE id = 1`, (err, row) => {
+            if (err) {
+                console.error('❌ MovieBotService: Error loading config from database:', err);
+                return;
+            }
+            
+            if (row) {
+                console.log('📚 MovieBotService: Loading config from database, row:', row);
+                this.config = {
+                    enabled: this.config?.enabled || false, // Keep runtime enabled state if exists
+                    transcriptionDuration: row.transcription_duration || 45,
+                    transcriptionFrequency: row.transcription_frequency || 120,
+                    chatHistoryLimit: row.chat_history_limit || 30,
+                    useGroq: row.use_groq === 1,
+                    messageDelay: {
+                        min: row.message_delay_min || 4000,
+                        max: row.message_delay_max || 8000
+                    },
+                    moviePromptTemplate: row.movie_prompt_template || this.defaultPromptTemplate
+                };
+                
+                // Also update the Groq API key if present
+                if (row.groq_api_key && this.chatBotService?.llmService) {
+                    this.chatBotService.llmService.groqApiKey = row.groq_api_key;
+                    if (this.config.useGroq) {
+                        this.chatBotService.llmService.enableGroq(row.groq_api_key);
+                        console.log('✅ MovieBotService: Groq enabled from database config');
+                    }
+                }
+                
+                console.log('✅ MovieBotService: Config loaded from database', {
+                    useGroq: this.config.useGroq,
+                    hasApiKey: !!row.groq_api_key,
+                    rowUseGroq: row.use_groq,
+                    hasChatBotService: !!this.chatBotService,
+                    hasLLMService: !!this.chatBotService?.llmService
+                });
+            } else {
+                console.log('📝 MovieBotService: No saved config found, creating defaults');
+                // Create default config
+                this.config = {
+                    enabled: false,
+                    transcriptionDuration: 45,
+                    transcriptionFrequency: 120,
+                    chatHistoryLimit: 30,
+                    useGroq: false,
+                    messageDelay: {
+                        min: 4000,
+                        max: 8000
+                    },
+                    moviePromptTemplate: this.defaultPromptTemplate
+                };
+                this.saveConfigToDatabase();
+            }
+        });
+    }
+    
+    saveConfigToDatabase(includeApiKey = false, apiKey = null) {
+        if (!this.db) {
+            console.log('⚠️ MovieBotService: Database not ready, cannot save config');
+            return;
+        }
+        
+        const query = includeApiKey && apiKey ? `
+            INSERT OR REPLACE INTO moviebot_config (
+                id, use_groq, groq_api_key, transcription_duration, 
+                transcription_frequency, chat_history_limit, 
+                message_delay_min, message_delay_max, movie_prompt_template,
+                updated_at
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        ` : `
+            UPDATE moviebot_config SET
+                use_groq = ?,
+                transcription_duration = ?,
+                transcription_frequency = ?,
+                chat_history_limit = ?,
+                message_delay_min = ?,
+                message_delay_max = ?,
+                movie_prompt_template = ?,
+                updated_at = datetime('now')
+            WHERE id = 1
+        `;
+        
+        const params = includeApiKey && apiKey ? [
+            this.config.useGroq ? 1 : 0,
+            apiKey,
+            this.config.transcriptionDuration,
+            this.config.transcriptionFrequency,
+            this.config.chatHistoryLimit,
+            this.config.messageDelay.min,
+            this.config.messageDelay.max,
+            this.config.moviePromptTemplate || this.defaultPromptTemplate
+        ] : [
+            this.config.useGroq ? 1 : 0,
+            this.config.transcriptionDuration,
+            this.config.transcriptionFrequency,
+            this.config.chatHistoryLimit,
+            this.config.messageDelay.min,
+            this.config.messageDelay.max,
+            this.config.moviePromptTemplate || this.defaultPromptTemplate
+        ];
+        
+        this.db.run(query, params, (err) => {
+            if (err) {
+                console.error('❌ MovieBotService: Error saving config to database:', err);
+            } else {
+                console.log('💾 MovieBotService: Config saved to database');
+            }
+        });
     }
     
     async enable(streamerId) {
@@ -152,59 +277,20 @@ class MovieBotService extends EventEmitter {
             return;
         }
         
-        // Random interval between min and max
-        const delay = Math.floor(
-            Math.random() * (this.config.maxInterval - this.config.minInterval) + 
-            this.config.minInterval
-        );
+        // Use the frequency setting (convert seconds to milliseconds)
+        const delay = this.config.transcriptionFrequency * 1000;
         
-        console.log(`⏱️ MovieBotService: Next transcription cycle in ${delay / 1000}s`);
-        console.log(`🔧 MovieBotService: Will capture ${this.config.transcriptionsPerCycle} transcriptions with ${this.config.timeBetweenTranscriptions/1000}s between them`);
+        console.log(`⏱️ MovieBotService: Next transcription in ${this.config.transcriptionFrequency}s`);
         
         this.transcriptionTimer = setTimeout(() => {
-            console.log(`🔥 MovieBotService: Timer executed! Starting transcription cycle`);
-            this.startTranscriptionCycle();
+            console.log(`🔥 MovieBotService: Timer executed! Starting transcription`);
+            this.captureAndProcessTranscription();
         }, delay);
         
         console.log(`🔧 MovieBotService: Timer ID: ${this.transcriptionTimer}`);
     }
     
-    async startTranscriptionCycle() {
-        if (!this.isActive || !this.currentStreamerId) {
-            console.log('⚠️ MovieBotService: Not active or no streamer during cycle start');
-            return;
-        }
-        
-        console.log(`🎬 MovieBotService: Starting transcription cycle (${this.config.transcriptionsPerCycle} transcriptions)`);
-        console.log(`   Transcriptions will be captured every ${this.config.timeBetweenTranscriptions/1000}s`);
-        console.log(`   Bot responses will be staggered ${this.config.messageDelay.min/1000}-${this.config.messageDelay.max/1000}s apart`);
-        
-        // Reset cycle index
-        this.currentCycleIndex = 0;
-        
-        // Start the first transcription immediately
-        await this.captureAndProcessTranscription();
-        
-        // Schedule remaining transcriptions in the cycle with proper spacing
-        for (let i = 1; i < this.config.transcriptionsPerCycle; i++) {
-            setTimeout(async () => {
-                if (this.isActive && this.currentStreamerId) {
-                    this.currentCycleIndex = i;
-                    await this.captureAndProcessTranscription();
-                }
-            }, i * this.config.timeBetweenTranscriptions);
-        }
-        
-        // Calculate when all batches will be complete (including message delays)
-        const totalCycleTime = this.config.transcriptionsPerCycle * this.config.timeBetweenTranscriptions;
-        const bufferTime = this.config.batchSpacing; // Extra time to ensure all messages are sent
-        
-        // Schedule the next complete cycle
-        setTimeout(() => {
-            console.log(`⏰ MovieBotService: Cycle complete, scheduling next cycle`);
-            this.scheduleNextTranscription();
-        }, totalCycleTime + bufferTime);
-    }
+    // Simplified - no longer using cycles, just single transcriptions on a frequency
     
     async captureAndProcessTranscription() {
         if (!this.isActive || !this.currentStreamerId) {
@@ -212,10 +298,10 @@ class MovieBotService extends EventEmitter {
             return;
         }
         
-        console.log(`🎙️ MovieBotService: Starting ${this.config.transcriptionDuration}-second transcription (cycle ${this.currentCycleIndex + 1}/${this.config.transcriptionsPerCycle})`);
+        console.log(`🎙️ MovieBotService: Starting ${this.config.transcriptionDuration}-second transcription`);
         
         try {
-            // Start a timed transcription for 15 seconds
+            // Start a timed transcription
             const transcriptionResult = await this.transcriptionService.startTimedTranscription(
                 this.currentStreamerId,
                 this.config.transcriptionDuration,
@@ -227,16 +313,20 @@ class MovieBotService extends EventEmitter {
             
             if (!transcriptionResult.success) {
                 console.error('❌ MovieBotService: Failed to start transcription:', transcriptionResult.error);
-                return; // Don't reschedule here, let the cycle complete
+                // Schedule next transcription anyway
+                this.scheduleNextTranscription();
+                return;
             }
             
             const sessionId = transcriptionResult.sessionId;
             this.currentSessions.push(sessionId);
             
-            // Wait for transcription to complete (will auto-stop after 15 seconds)
+            // Wait for transcription to complete
+            console.log(`🎧 MovieBotService: Waiting for transcription to complete (session ${sessionId})`);
             this.transcriptionService.once('transcription-stopped', async (data) => {
+                console.log(`🔔 MovieBotService: Received transcription-stopped event:`, data.sessionId);
                 if (data.sessionId === sessionId) {
-                    console.log(`📝 MovieBotService: Transcription ${this.currentCycleIndex + 1} completed (${data.wordCount} words)`);
+                    console.log(`📝 MovieBotService: Transcription completed (${data.wordCount} words)`);
                     
                     // Remove from active sessions
                     const sessionIndex = this.currentSessions.indexOf(sessionId);
@@ -248,14 +338,19 @@ class MovieBotService extends EventEmitter {
                     const transcription = await this.getTranscriptionText(data.sessionId);
                     
                     if (transcription) {
-                        // Process the transcription and trigger chatbot with bot batching
-                        await this.processTranscriptionWithBatching(transcription, this.currentCycleIndex);
+                        // Process the transcription and trigger chatbots
+                        await this.processTranscriptionWithBatching(transcription, 0);
                     }
+                    
+                    // Schedule the next transcription
+                    this.scheduleNextTranscription();
                 }
             });
             
         } catch (error) {
             console.error('❌ MovieBotService: Error capturing transcription:', error);
+            // Schedule next transcription anyway
+            this.scheduleNextTranscription();
         }
     }
     
@@ -458,30 +553,10 @@ class MovieBotService extends EventEmitter {
                 return;
             }
             
-            // Dynamically assign bots to categories based on who's currently online
-            this.assignBotsToCategories(allMovieBotEnabledBots);
+            // Use ALL enabled MovieBots (no more category system)
+            const targetBots = allMovieBotEnabledBots;
             
-            // Determine which bot category to use for this cycle
-            const categoryNames = Object.keys(this.botCategories).filter(cat => this.botCategories[cat].length > 0);
-            if (categoryNames.length === 0) {
-                console.log('⚠️ MovieBotService: No categories have bots assigned');
-                return;
-            }
-            
-            const selectedCategory = categoryNames[cycleIndex % categoryNames.length];
-            const categoryBots = this.botCategories[selectedCategory];
-            
-            // Filter to only bots that are both in the category and enabled
-            const targetBots = allMovieBotEnabledBots.filter(bot => 
-                categoryBots.includes(bot.name)
-            );
-            
-            if (targetBots.length === 0) {
-                console.log(`⚠️ MovieBotService: No enabled bots found for category '${selectedCategory}'`);
-                return;
-            }
-            
-            console.log(`🎯 MovieBotService: Targeting category '${selectedCategory}' with bots: ${targetBots.map(b => b.name).join(', ')}`);
+            console.log(`🎯 MovieBotService: Using all ${targetBots.length} enabled MovieBots: ${targetBots.map(b => b.name).join(', ')}`);
             
             // Build the movie commentary prompt
             const moviePrompt = this.buildMoviePrompt(cleanText, chatHistory);
@@ -508,9 +583,6 @@ class MovieBotService extends EventEmitter {
                     try {
                         console.log(`🤖 MovieBotService: Sending delayed prompt to bot: ${bot.username} (${botDelay}ms delay)`);
                         
-                        // Log the full prompt for this bot
-                        this.logPrompt(bot.username, moviePrompt, cleanText);
-                        
                         // Trigger the chatbot with the movie prompt
                         const response = await this.chatBotService.generateMovieComment(
                             bot,
@@ -534,7 +606,6 @@ class MovieBotService extends EventEmitter {
                                 transcription: cleanText,
                                 comment: response.message,
                                 timestamp: new Date(),
-                                category: selectedCategory,
                                 cycleIndex: cycleIndex
                             });
                         } else {
@@ -550,7 +621,7 @@ class MovieBotService extends EventEmitter {
             }
             
             const totalBatchTime = cumulativeDelay / 1000;
-            console.log(`🎬 MovieBotService: Scheduled ${targetBots.length} bots from category '${selectedCategory}'`);
+            console.log(`🎬 MovieBotService: Scheduled ${targetBots.length} MovieBots to respond`);
             console.log(`   Total batch duration: ~${totalBatchTime}s (last bot responds after ${cumulativeDelay}ms)`);
             
         } catch (error) {
@@ -569,6 +640,8 @@ class MovieBotService extends EventEmitter {
             chatHistory.forEach(msg => {
                 chatContext += `${msg.username}: ${msg.message}\n`;
             });
+        } else {
+            chatContext = '\n\nRecent chat messages:\n(No recent messages available)\n';
         }
         
         // Replace placeholder with actual transcription
@@ -580,14 +653,44 @@ class MovieBotService extends EventEmitter {
         // Combine all prompts
         const fullPrompt = `${globalPrompt}${chatContext}\n\n${moviePrompt}`;
         
+        // Debug log the prompt
+        console.log('🎬 MovieBotService: Building movie prompt:');
+        console.log('   - Transcription length:', transcriptionText.length);
+        console.log('   - Chat history count:', chatHistory ? chatHistory.length : 0);
+        console.log('   - Full prompt preview:', fullPrompt.substring(0, 200) + '...');
+        
         return fullPrompt;
     }
     
     async getChatHistory(limit = 30) {
         try {
-            // Return the most recent chat messages
-            const messages = this.recentChatMessages.slice(-limit);
+            // First try to get messages from memory
+            let messages = this.recentChatMessages.slice(-limit);
+            
+            // If no messages in memory, try to get from database
+            if (messages.length === 0) {
+                console.log('💬 MovieBotService: No messages in memory, fetching from database...');
+                messages = await this.getChatHistoryFromDatabase(limit);
+            }
+            
             console.log(`💬 MovieBotService: Returning ${messages.length} chat messages for context`);
+            
+            // Debug: Log the actual messages
+            if (messages.length > 0) {
+                console.log('   Recent messages:');
+                messages.slice(-5).forEach(msg => {
+                    console.log(`     - ${msg.username}: ${msg.message.substring(0, 50)}${msg.message.length > 50 ? '...' : ''}`);
+                });
+            } else {
+                console.log('   ⚠️ No recent chat messages available!');
+                // Return some default context
+                messages = [
+                    { username: 'viewer1', message: 'watching the stream', timestamp: new Date() },
+                    { username: 'viewer2', message: 'cool content', timestamp: new Date() }
+                ];
+                console.log('   Using default context messages');
+            }
+            
             return messages;
         } catch (error) {
             console.error('❌ MovieBotService: Failed to get chat history:', error);
@@ -595,10 +698,59 @@ class MovieBotService extends EventEmitter {
         }
     }
     
+    async getChatHistoryFromDatabase(limit = 30) {
+        try {
+            // Try to get recent messages from the database
+            const query = `
+                SELECT username, message, created_at as timestamp 
+                FROM messages 
+                WHERE username NOT LIKE '%🤖%'
+                ORDER BY created_at DESC 
+                LIMIT ?
+            `;
+            
+            return new Promise((resolve) => {
+                this.db.all(query, [limit], (err, rows) => {
+                    if (err) {
+                        console.error('❌ MovieBotService: Error fetching messages from database:', err);
+                        resolve([]);
+                    } else {
+                        const messages = rows ? rows.reverse().map(row => ({
+                            username: row.username,
+                            message: row.message,
+                            timestamp: row.timestamp
+                        })) : [];
+                        console.log(`   Fetched ${messages.length} messages from database`);
+                        resolve(messages);
+                    }
+                });
+            });
+        } catch (error) {
+            console.error('❌ MovieBotService: Failed to query database:', error);
+            return [];
+        }
+    }
+    
+    setupChatListener() {
+        // Set up a listener for chat service if available
+        if (this.chatService && this.chatService.on) {
+            console.log('🎬 MovieBotService: Setting up chat listener');
+            this.chatService.on('message', (data) => {
+                if (data.username && data.message && !data.username.includes('🤖')) {
+                    this.addChatMessage(data.username, data.message);
+                }
+            });
+        } else {
+            console.log('⚠️ MovieBotService: Chat service not available for listener setup');
+        }
+    }
+    
     // Method to add chat messages from the chat service
     addChatMessage(username, message) {
         // Don't store bot messages to avoid recursive responses
         if (!username.includes('🤖')) {
+            console.log(`📝 MovieBotService: Adding chat message from ${username}: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`);
+            
             this.recentChatMessages.push({
                 username: username,
                 message: message,
@@ -609,6 +761,10 @@ class MovieBotService extends EventEmitter {
             if (this.recentChatMessages.length > this.MAX_CHAT_HISTORY) {
                 this.recentChatMessages = this.recentChatMessages.slice(-this.MAX_CHAT_HISTORY);
             }
+            
+            console.log(`   Total messages stored: ${this.recentChatMessages.length}`);
+        } else {
+            console.log(`🤖 MovieBotService: Skipping bot message from ${username}`);
         }
     }
     
@@ -751,25 +907,59 @@ class MovieBotService extends EventEmitter {
     }
     
     getStatus() {
+        // If config not initialized, load from database first
+        if (!this.config) {
+            this.loadConfigFromDatabase();
+        }
+        
+        // Always return a valid status with config from database or defaults
         return {
-            enabled: this.config.enabled,
-            isActive: this.isActive,
-            currentStreamerId: this.currentStreamerId,
-            currentSession: this.currentSession,
-            config: this.config,
-            recentPrompts: this.promptHistory.slice(-10)
+            enabled: this.config?.enabled || false,
+            isActive: this.isActive || false,
+            currentStreamerId: this.currentStreamerId || null,
+            currentSession: this.currentSession || null,
+            config: this.config || {
+                enabled: false,
+                transcriptionDuration: 45,
+                transcriptionFrequency: 120,
+                chatHistoryLimit: 30,
+                useGroq: false,
+                messageDelay: {
+                    min: 4000,
+                    max: 8000
+                }
+            },
+            recentPrompts: this.promptHistory?.slice(-10) || []
         };
     }
     
     updateConfig(newConfig) {
+        // Initialize config from database if it doesn't exist
+        if (!this.config) {
+            this.loadConfigFromDatabase();
+            // If still no config after loading, use defaults
+            if (!this.config) {
+                this.config = {
+                    enabled: false,
+                    transcriptionDuration: 45,
+                    transcriptionFrequency: 120,
+                    chatHistoryLimit: 30,
+                    useGroq: false,
+                    messageDelay: {
+                        min: 4000,
+                        max: 8000
+                    }
+                };
+            }
+        }
+        
+        console.log('🔧 MovieBotService: Updating config with:', newConfig);
+        
         if (newConfig.transcriptionDuration !== undefined) {
             this.config.transcriptionDuration = newConfig.transcriptionDuration;
         }
-        if (newConfig.minInterval !== undefined) {
-            this.config.minInterval = newConfig.minInterval;
-        }
-        if (newConfig.maxInterval !== undefined) {
-            this.config.maxInterval = newConfig.maxInterval;
+        if (newConfig.transcriptionFrequency !== undefined) {
+            this.config.transcriptionFrequency = newConfig.transcriptionFrequency;
         }
         if (newConfig.chatHistoryLimit !== undefined) {
             this.config.chatHistoryLimit = newConfig.chatHistoryLimit;
@@ -777,8 +967,40 @@ class MovieBotService extends EventEmitter {
         if (newConfig.moviePromptTemplate !== undefined) {
             this.config.moviePromptTemplate = newConfig.moviePromptTemplate;
         }
+        if (newConfig.groqApiKey !== undefined && this.chatBotService && this.chatBotService.llmService) {
+            // Update the API key
+            this.chatBotService.llmService.groqApiKey = newConfig.groqApiKey;
+            console.log('🔑 MovieBotService: Groq API key updated');
+        }
         
-        console.log('🎬 MovieBotService: Configuration updated');
+        if (newConfig.useGroq !== undefined) {
+            this.config.useGroq = newConfig.useGroq;
+            console.log(`🚀 MovieBotService: useGroq changed to ${newConfig.useGroq}`);
+            
+            // Enable/disable Groq in the ChatBotService
+            if (this.chatBotService && this.chatBotService.llmService) {
+                if (newConfig.useGroq) {
+                    const success = this.chatBotService.llmService.enableGroq(newConfig.groqApiKey);
+                    if (success) {
+                        console.log('✅ MovieBotService: Groq API enabled successfully');
+                    } else {
+                        console.log('⚠️ MovieBotService: Failed to enable Groq (API key missing?)');
+                        this.config.useGroq = false; // Revert if failed
+                    }
+                } else {
+                    this.chatBotService.llmService.disableGroq();
+                    console.log('✅ MovieBotService: Groq API disabled');
+                }
+            } else {
+                console.log('⚠️ MovieBotService: ChatBotService or LLMService not available yet');
+            }
+        }
+        
+        // Save configuration to database
+        const saveWithApiKey = newConfig.groqApiKey !== undefined;
+        this.saveConfigToDatabase(saveWithApiKey, newConfig.groqApiKey);
+        
+        console.log('🎬 MovieBotService: Configuration updated, current config:', this.config);
         this.logEvent('CONFIG_UPDATED', newConfig);
         
         return { success: true, config: this.config };

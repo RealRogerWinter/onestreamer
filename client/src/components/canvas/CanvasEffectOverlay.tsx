@@ -44,6 +44,7 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
     username: string;
     streamId: string;
     interactionConfig?: any;
+    interactionId?: string;
   } | null>(null);
   const [drawingMode, setDrawingMode] = useState<{
     active: boolean;
@@ -53,6 +54,7 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
     streamId: string;
     interactionConfig?: any;
     itemConsumed?: boolean;
+    interactionId?: string;
   } | null>(null);
 
   // Log mount/unmount (verbose level)
@@ -301,6 +303,12 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
     const handleCanvasEffectMode = async (data: any) => {
       debug.canvas('🎮 MODE: Received canvas effect mode', data, 'normal');
       
+      // Check if this component is active - prevents duplicate handling
+      if (!isActive) {
+        debug.canvas('🚫 MODE: Component not active, ignoring canvas effect mode', { isActive }, 'normal');
+        return;
+      }
+      
       if (data.mode === 'click-to-throw' || data.mode === 'click-to-draw') {
         // Check if the current user is the one who activated the item
         try {
@@ -321,13 +329,35 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
             return; // Don't activate interactive mode for other users
           }
           
+          // Check if this interaction has already been claimed by another instance
+          if (data.interactionId) {
+            const claimedKey = `interaction-claimed-${data.interactionId}`;
+            const alreadyClaimed = sessionStorage.getItem(claimedKey);
+            
+            if (alreadyClaimed) {
+              debug.canvas(`🚫 MODE: Interaction ${data.interactionId} already claimed by another instance`, undefined, 'normal');
+              return; // Don't activate if another instance is handling this
+            }
+            
+            // Claim this interaction for this instance
+            sessionStorage.setItem(claimedKey, 'true');
+            
+            // Clean up after 30 seconds to prevent memory leak
+            setTimeout(() => {
+              sessionStorage.removeItem(claimedKey);
+            }, 30000);
+            
+            debug.canvas(`✅ MODE: Claimed interaction ${data.interactionId} for this instance`, undefined, 'normal');
+          }
+          
           const newMode = {
             active: true,
             item: data.item,
             userId: data.userId,
             username: data.username,
             streamId: data.streamId,
-            interactionConfig: data.interactionConfig
+            interactionConfig: data.interactionConfig,
+            interactionId: data.interactionId  // Store the unique interaction ID
           };
           
           if (data.mode === 'click-to-draw') {
@@ -417,7 +447,7 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
       socket.off('canvas-effect-force-clear', handleForceClear);
       socket.off('canvas-effect-force-clear-item', handleForceItemClear);
     };
-  }, [socket]);
+  }, [socket, isActive]);
 
   // Handle canvas resize
   useEffect(() => {
@@ -578,6 +608,18 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
 
       const result = await response.json();
       debug.canvas('Item thrown successfully', result, 'verbose');
+
+      // Update cooldown in UI if the item has one
+      if (result.item && result.item.cooldown && (window as any).updateItemCooldown) {
+        debug.canvas(`Updating cooldown for ${result.item.displayName}: ${result.item.cooldown}s`, undefined, 'normal');
+        (window as any).updateItemCooldown({
+          itemId: result.item.id,
+          name: result.item.name,
+          displayName: result.item.displayName,
+          emoji: result.item.emoji,
+          cooldown: result.item.cooldown
+        });
+      }
 
       // Deactivate click-to-throw mode after successful throw
       setClickToThrowMode(null);
@@ -834,7 +876,7 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
       <canvas
         ref={canvasRef}
         className="effect-overlay-canvas"
-        onClick={isCanvasInteractive ? handleCanvasClick : undefined}
+        // onClick handler removed - using direct addEventListener instead to avoid double calls
         onMouseMove={undefined}
         onMouseEnter={undefined}
         onMouseLeave={undefined}

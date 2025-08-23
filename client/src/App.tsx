@@ -4,12 +4,11 @@ import './App.css';
 import StreamViewer from './components/StreamViewer';
 import StreamControls from './components/StreamControls';
 import StreamerSettings, { AudioSettingsConfig, VideoSettingsConfig, StreamerSettingsConfig } from './components/StreamerSettings';
-import ViewerStats from './components/ViewerStats';
-import AdminPanel from './components/AdminPanel';
+import AdminPanelV3 from './components/AdminPanelV3';
 import Chat from './components/Chat';
+import MobileChat from './components/MobileChat';
 import Login from './components/Login';
 import Signup from './components/Signup';
-import UserProfile from './components/UserProfile';
 import ProfileSettings from './components/ProfileSettings';
 import Tutorial from './components/Tutorial';
 import InventoryPanel from './components/inventory/InventoryPanel';
@@ -18,7 +17,14 @@ import BuffDisplay from './components/BuffDisplay';
 import NotificationManager from './components/notifications/NotificationManager';
 import SoundFxPlayer from './components/soundfx/SoundFxPlayer';
 import { FloatingPointsManager } from './components/FloatingPoints';
-import AnimatedNumber from './components/AnimatedNumber';
+import MobileBottomNav from './components/MobileBottomNav';
+import MobileHeader from './components/MobileHeader';
+import DesktopHeaderV2 from './components/DesktopHeaderV2';
+import OAuthCallback from './components/OAuthCallback';
+import BugReportModal from './components/BugReportModal';
+import EmailVerification from './components/EmailVerification';
+import ModerationPanel from './components/ModerationPanel';
+import BotsPanel from './components/BotsPanel';
 import authService from './services/AuthService';
 import SocketManager from './services/SocketManager';
 
@@ -44,8 +50,25 @@ let appContentInstanceCount = 0;
 function AppContent() {
   const instanceId = useRef(++appContentInstanceCount);
   
+  // Check if we're on the OAuth callback page
+  const isOAuthCallback = window.location.pathname === '/auth/success' || 
+                         window.location.pathname === '/auth/error';
+  
+  // Check if we're on the email verification page
+  const currentPath = window.location.pathname;
+  const isEmailVerification = /^\/verify-email\/[a-fA-F0-9]+$/i.test(currentPath);
+  const [showEmailVerification, setShowEmailVerification] = useState(isEmailVerification);
+  
   useEffect(() => {
     console.log(`🔴 AppContent Instance #${instanceId.current} created`);
+    console.log('📧 Email Verification Check - Path:', currentPath, 'Is verification?:', isEmailVerification);
+    
+    // Check on mount if we need to show email verification
+    if (currentPath.startsWith('/verify-email/')) {
+      console.log('📧 Setting showEmailVerification to true');
+      setShowEmailVerification(true);
+    }
+    
     return () => {
       console.log(`🟢 AppContent Instance #${instanceId.current} destroyed`);
     };
@@ -74,6 +97,7 @@ function AppContent() {
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [adminPanelTab, setAdminPanelTab] = useState<string>('dashboard');
   const [isShopOpen, setIsShopOpen] = useState(false);
   const streamSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastStreamSwitchRef = useRef<number>(0);
@@ -98,6 +122,23 @@ function AppContent() {
   // Profile Settings state
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   
+  // Mobile-specific states
+  const [showMobileChat, setShowMobileChat] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  
+  // Reliable mobile detection
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobileCheck = window.innerWidth <= 768 || 
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      setIsMobile(mobileCheck);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
   // Tutorial state
   const [showTutorial, setShowTutorial] = useState(false);
 
@@ -106,15 +147,18 @@ function AppContent() {
 
   // Canvas effects
   const [streamerBuffs, setStreamerBuffs] = useState<any[]>([]);
+  
+  // Bug Report state
+  const [showBugReportModal, setShowBugReportModal] = useState(false);
 
   // Settings state
   const [audioSettings, setAudioSettings] = useState<AudioSettingsConfig>({
-    echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true,
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
     sampleRate: 48000,
     channelCount: 2,
-    profile: 'microphone'
+    profile: 'raw'
   });
 
   const [videoSettings, setVideoSettings] = useState<VideoSettingsConfig>({
@@ -184,18 +228,15 @@ function AppContent() {
     socket.emit('join-as-viewer');
 
     socket.on('stream-status', (status: StreamStatus) => {
-      console.log('📊 CLIENT: Received stream status:', status);
       setStreamStatus(status);
 
       if (status.hasActiveStream && isStreaming && socket.id !== status.streamerId) {
-        console.log('🚫 CLIENT: Another user is streaming, stopping my stream');
         setIsStreaming(false);
         setWasStreamingBeforeTakeover(false);
       }
     });
 
     socket.on('stream-started', (data: any) => {
-      console.log('🎥 CLIENT: Stream started event:', data);
       
       // Clear any pending stream switch timeout
       if (streamSwitchTimeoutRef.current) {
@@ -214,7 +255,6 @@ function AppContent() {
       }));
 
       if (data.streamerId !== socket.id && isStreaming) {
-        console.log('🔄 CLIENT: Being taken over by:', data.streamerId);
         setIsStreaming(false);
         setWasStreamingBeforeTakeover(true);
         
@@ -232,7 +272,6 @@ function AppContent() {
     });
 
     socket.on('stream-ended', () => {
-      console.log('🛑 CLIENT: Stream ended event received');
       setStreamStatus({
         hasActiveStream: false,
         streamerId: null,
@@ -248,7 +287,6 @@ function AppContent() {
       const timeSinceLastSwitch = now - lastStreamSwitchRef.current;
       
       if (wasStreamingBeforeTakeover && timeSinceLastSwitch > minSwitchInterval) {
-        console.log('🔄 CLIENT: Was streaming before takeover, preparing to resume...');
         lastStreamSwitchRef.current = now;
         
         if (streamSwitchTimeoutRef.current) {
@@ -256,7 +294,6 @@ function AppContent() {
         }
         
         streamSwitchTimeoutRef.current = setTimeout(() => {
-          console.log('🎬 CLIENT: Attempting to resume streaming after takeover ended');
           setWasStreamingBeforeTakeover(false);
           setIsStreaming(true);
         }, 2000);
@@ -264,12 +301,10 @@ function AppContent() {
     });
 
     socket.on('viewer-count-update', (count: number) => {
-      console.log('👥 CLIENT: Viewer count update:', count);
       setStreamStatus(prev => ({ ...prev, viewerCount: count }));
     });
 
     socket.on('global-cooldown', (data: { cooldownRemaining: number }) => {
-      console.log('⏳ CLIENT: Global cooldown update:', data.cooldownRemaining);
       setCooldownRemaining(data.cooldownRemaining);
       startCooldownTimer(data.cooldownRemaining);
     });
@@ -339,7 +374,6 @@ function AppContent() {
     });
 
     socket.on('streamer-buffs-update', (data: { buffs: any[] }) => {
-      console.log('🎭 CLIENT: Received streamer buffs update:', data.buffs);
       setStreamerBuffs(data.buffs || []);
     });
 
@@ -352,7 +386,6 @@ function AppContent() {
     });
 
     socket.on('time-stats-update', (data: any) => {
-      console.log('📊 CLIENT: Received time-stats-update:', data);
       // Only process updates for the current user
       if (currentUser && data.userId && data.userId !== currentUser.id) {
         console.log('📊 CLIENT: Ignoring update for different user', data.userId, '!==', currentUser?.id);
@@ -508,7 +541,7 @@ function AppContent() {
 
   const fetchUserPoints = async () => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_SERVER_URL}/api/auth/me`, {
+      const response = await fetch(`${process.env.REACT_APP_SERVER_URL}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${authService.getToken()}`
         }
@@ -568,13 +601,29 @@ function AppContent() {
   };
 
 
+  // Listen for custom event to open admin panel with specific tab
+  useEffect(() => {
+    const handleOpenAdminPanel = (e: CustomEvent) => {
+      if (isAdmin && e.detail?.tab) {
+        setAdminPanelTab(e.detail.tab);
+        setShowAdminPanel(true);
+      }
+    };
+
+    window.addEventListener('openAdminPanel', handleOpenAdminPanel as EventListener);
+    return () => window.removeEventListener('openAdminPanel', handleOpenAdminPanel as EventListener);
+  }, [isAdmin]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      // Admin panel shortcut (Ctrl+Shift+A)
+      // Admin panel shortcut (Ctrl+Shift+A) - only for admins
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
         e.preventDefault();
-        setShowAdminPanel(!showAdminPanel);
+        // Only toggle if user is admin
+        if (isAdmin) {
+          setShowAdminPanel(!showAdminPanel);
+        }
       }
       // Inventory shortcut (B key)
       else if (e.key && e.key.toLowerCase() === 'b' && isAuthenticated && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -589,10 +638,48 @@ function AppContent() {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [showAdminPanel, showInventory, isAuthenticated]);
+  }, [showAdminPanel, showInventory, isAuthenticated, isAdmin]);
+
+  // If we're on the OAuth callback page, show the callback handler
+  if (isOAuthCallback) {
+    return <OAuthCallback />;
+  }
 
   return (
     <div className="App">
+      {/* Help Button - Bottom Left, above Bug Report */}
+      <button 
+        className="help-button-bottom"
+        onClick={() => setShowTutorial(true)}
+        title="Tutorial & Help"
+      >
+        ?
+      </button>
+      
+      {/* Bug Report Button - Bottom Left, above Discord */}
+      <button 
+        className="bug-report-button"
+        onClick={() => setShowBugReportModal(true)}
+        title="Report a Bug"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 8h-1.81c-.45-.78-1.07-1.45-1.82-1.96l.93-.93a.996.996 0 1 0-1.41-1.41l-1.47 1.47C12.96 5.06 12.49 5 12 5s-.96.06-1.41.17L9.11 3.7A.996.996 0 1 0 7.7 5.11l.92.93C7.88 6.55 7.26 7.22 6.81 8H5c-.55 0-1 .45-1 1s.45 1 1 1h1.09c-.05.33-.09.66-.09 1v1H5c-.55 0-1 .45-1 1s.45 1 1 1h1v1c0 .34.04.67.09 1H5c-.55 0-1 .45-1 1s.45 1 1 1h1.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H19c.55 0 1-.45 1-1s-.45-1-1-1h-1.09c.05-.33.09-.66.09-1v-1h1c.55 0 1-.45 1-1s-.45-1-1-1h-1v-1c0-.34-.04-.67-.09-1H19c.55 0 1-.45 1-1s-.45-1-1-1zm-6 8h-2c-.55 0-1-.45-1-1s.45-1 1-1h2c.55 0 1 .45 1 1s-.45 1-1 1zm0-4h-2c-.55 0-1-.45-1-1s.45-1 1-1h2c.55 0 1 .45 1 1s-.45 1-1 1z"/>
+        </svg>
+      </button>
+      
+      {/* Discord Link - Bottom Left */}
+      <a 
+        href="https://discord.gg/As5CA3ekYA" 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="discord-link"
+        title="Join our Discord"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515a.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.839 19.839 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.956-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.946 2.418-2.157 2.418z"/>
+        </svg>
+      </a>
+      
       {/* Takeover Overlay - When someone takes over your stream */}
       {showTakeoverOverlay && (
         <div className="takeover-overlay">
@@ -625,109 +712,86 @@ function AppContent() {
         </div>
       )}
       
-      <header className="App-header">
-        {/* Help Button */}
-        <button 
-          className="help-button"
-          onClick={() => setShowTutorial(true)}
-          title="Tutorial & Help"
-        >
-          ?
-        </button>
-        
-        <div className="header-center">
-          <ViewerStats 
-            viewerCount={streamStatus.viewerCount}
-            hasActiveStream={streamStatus.hasActiveStream}
-            streamDuration={streamStatus.streamDuration}
-            streamStartTime={streamStatus.streamStartTime}
-            streamerDisplayName={streamStatus.streamerDisplayName}
-          />
-        </div>
-        <div className="header-right">
-          <div className="auth-buttons">
-            {isAuthenticated ? (
-              <>
-                <div className="user-points points-counter">
-                  <span className="points-icon">💎</span>
-                  <AnimatedNumber value={userPoints} />
-                  <span className="points-label">Points</span>
-                </div>
-                <UserProfile 
-                  socket={socket}
-                  onLogout={() => {
-                    handleLogout();
-                  }}
-                  onOpenProfileSettings={() => setShowProfileSettings(true)}
-                  onUserProfileUpdate={(profile) => {
-                    const prevPoints = userPoints;
-                    setUserPoints(profile.points);
-                    
-                    // Trigger floating points animation if points increased
-                    if (profile.points > prevPoints) {
-                      let pointsGained: number;
-                      let source: string = 'general';
-                      
-                      // Use server-provided values or calculate based on known multipliers
-                      if (profile.pointsEarned) {
-                        pointsGained = profile.pointsEarned;
-                        source = profile.updateType || 'general';
-                      } else {
-                        // Calculate difference and determine likely source
-                        const totalDiff = profile.points - prevPoints;
-                        
-                        // Map server pointSource/updateType to animation sources
-                        if (profile.updateType === 'chat' || (profile as any).pointSource === 'chatting') {
-                          source = 'chatting';
-                          // Chat messages give 2 points each, show exact amount or reasonable estimate
-                          pointsGained = totalDiff <= 10 ? totalDiff : 2; // Cap at reasonable chat points
-                        } else if ((profile as any).pointSource === 'streaming' || (profile as any).sessionType === 'streaming') {
-                          source = 'streaming';
-                          pointsGained = totalDiff;
-                        } else if ((profile as any).pointSource === 'viewing' || (profile as any).sessionType === 'viewing') {
-                          source = 'viewing';
-                          pointsGained = totalDiff;
-                          console.log('🎯 Viewing session detected! SessionTime:', (profile as any).currentSessionTime, 'seconds');
-                        } else {
-                          source = 'general';
-                          pointsGained = totalDiff;
-                        }
-                      }
-                      
-                      console.log('🎯 Points increased!', prevPoints, '->', profile.points, '(+' + pointsGained + ')', 'Source:', source, 'UpdateType:', profile.updateType, 'PointSource:', (profile as any).pointSource, 'SessionType:', (profile as any).sessionType, 'SessionTime:', (profile as any).currentSessionTime);
-                      
-                      if (window.showFloatingPoints) {
-                        console.log('🎯 Triggering floating points animation for', source);
-                        window.showFloatingPoints(pointsGained, source);
-                      } else {
-                        console.log('❌ window.showFloatingPoints not available');
-                      }
-                    }
-                  }}
-                />
-              </>
-            ) : (
-              <>
-                <button className="auth-button login-button" onClick={() => setShowLogin(true)}>
-                  Login
-                </button>
-                <button className="auth-button signup-button" onClick={() => setShowSignup(true)}>
-                  Sign Up
-                </button>
-              </>
-            )}
-            {isAuthenticated && isAdmin && (
-              <button 
-                className="auth-button admin-button" 
-                onClick={() => setShowAdminPanel(!showAdminPanel)}
-                title="Admin Panel (Ctrl+Shift+A)"
-              >
-                ⚙️ Admin
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
+      {/* Mobile Header V2 */}
+      {isMobile ? (
+        <MobileHeader
+          viewerCount={streamStatus.viewerCount}
+          hasActiveStream={streamStatus.hasActiveStream}
+          streamDuration={streamStatus.streamDuration}
+          streamStartTime={streamStatus.streamStartTime}
+          streamerDisplayName={streamStatus.streamerDisplayName}
+          isAuthenticated={isAuthenticated}
+          currentUser={currentUser}
+          userPoints={userPoints}
+          onLogin={() => setShowLogin(true)}
+          onLogout={handleLogout}
+          onProfileSettings={() => setShowProfileSettings(true)}
+        />
+      ) : (
+        /* Desktop Header V2 - Modern Design */
+        <DesktopHeaderV2
+          viewerCount={streamStatus.viewerCount}
+          hasActiveStream={streamStatus.hasActiveStream}
+          streamDuration={streamStatus.streamDuration}
+          streamStartTime={streamStatus.streamStartTime}
+          streamerDisplayName={streamStatus.streamerDisplayName}
+          isAuthenticated={isAuthenticated}
+          currentUser={currentUser}
+          userPoints={userPoints}
+          isAdmin={isAdmin}
+          socket={socket}
+          onLogin={() => setShowLogin(true)}
+          onSignup={() => setShowSignup(true)}
+          onLogout={handleLogout}
+          onProfileSettings={() => setShowProfileSettings(true)}
+          onAdminPanel={() => setShowAdminPanel(!showAdminPanel)}
+          onUserProfileUpdate={(profile) => {
+            const prevPoints = userPoints;
+            setUserPoints(profile.points);
+            
+            // Trigger floating points animation if points increased
+            if (profile.points > prevPoints) {
+              let pointsGained: number;
+              let source: string = 'general';
+              
+              // Use server-provided values or calculate based on known multipliers
+              if (profile.pointsEarned) {
+                pointsGained = profile.pointsEarned;
+                source = profile.updateType || 'general';
+              } else {
+                // Calculate difference and determine likely source
+                const totalDiff = profile.points - prevPoints;
+                
+                // Map server pointSource/updateType to animation sources
+                if (profile.updateType === 'chat' || (profile as any).pointSource === 'chatting') {
+                  source = 'chatting';
+                  // Chat messages give 2 points each, show exact amount or reasonable estimate
+                  pointsGained = totalDiff <= 10 ? totalDiff : 2; // Cap at reasonable chat points
+                } else if ((profile as any).pointSource === 'streaming' || (profile as any).sessionType === 'streaming') {
+                  source = 'streaming';
+                  pointsGained = totalDiff;
+                } else if ((profile as any).pointSource === 'viewing' || (profile as any).sessionType === 'viewing') {
+                  source = 'viewing';
+                  pointsGained = totalDiff;
+                  console.log('🎯 Viewing session detected! SessionTime:', (profile as any).currentSessionTime, 'seconds');
+                } else {
+                  source = 'general';
+                  pointsGained = totalDiff;
+                }
+              }
+              
+              console.log('🎯 Points increased!', prevPoints, '->', profile.points, '(+' + pointsGained + ')', 'Source:', source, 'UpdateType:', profile.updateType, 'PointSource:', (profile as any).pointSource, 'SessionType:', (profile as any).sessionType, 'SessionTime:', (profile as any).currentSessionTime);
+              
+              if (window.showFloatingPoints) {
+                console.log('🎯 Triggering floating points animation for', source);
+                window.showFloatingPoints(pointsGained, source);
+              } else {
+                console.log('❌ window.showFloatingPoints not available');
+              }
+            }
+          }}
+        />
+      )}
 
       <main className="App-main">
         {error && !isForceDisconnected && (
@@ -754,6 +818,10 @@ function AppContent() {
         )}
 
         <div className="main-content">
+          {/* Moderation Panel - Only visible to admins */}
+          <BotsPanel />
+          <ModerationPanel streamStatus={streamStatus} />
+          
           <div className="stream-layout-container">
             <div className="status-effects-sidebar-left">
               <BuffDisplay 
@@ -761,6 +829,7 @@ function AppContent() {
                 className="streamer-buffs-sidebar-left"
                 isCurrentUserStreaming={isStreaming}
                 currentUserId={currentUser?.id?.toString()}
+                initialBuffs={streamerBuffs}
               />
             </div>
             <div className="stream-viewer-container">
@@ -801,6 +870,9 @@ function AppContent() {
               isConnected={connected && !!socket}
               isForceDisconnected={isForceDisconnected}
               disconnectionReason={disconnectionReason}
+              isMobile={isMobile}
+              onShowTutorial={() => setShowTutorial(true)}
+              onShowBugReport={() => setShowBugReportModal(true)}
               onTakeOver={() => {
                 if (!socket) {
                   console.warn('Cannot take over stream: Socket not connected');
@@ -829,15 +901,22 @@ function AppContent() {
           </div>
         </div>
 
-        <div className="chat-sidebar">
-          <Chat />
-          <BuffDisplay 
-            showPersonalBuffs={true}
-            className="personal-buffs-below-chat"
-            isCurrentUserStreaming={isStreaming}
-            currentUserId={currentUser?.id?.toString()}
-          />
-        </div>
+        {/* Chat and Status Effects Container - Desktop only, mobile uses bottom nav */}
+        {!isMobile && (
+          <div className="chat-and-status-container">
+            <div className="chat-sidebar">
+              <Chat />
+            </div>
+            <div className="status-effects-sidebar-right">
+              <BuffDisplay 
+                showPersonalBuffs={true}
+                className="personal-buffs-right-sidebar"
+                isCurrentUserStreaming={isStreaming}
+                currentUserId={currentUser?.id?.toString()}
+              />
+            </div>
+          </div>
+        )}
 
         <FloatingPointsManager>
           <div />
@@ -871,6 +950,16 @@ function AppContent() {
             setShowLogin(true);
           }}
           onClose={() => setShowSignup(false)}
+        />
+      )}
+
+      {showEmailVerification && (
+        <EmailVerification
+          onClose={() => setShowEmailVerification(false)}
+          onSuccess={() => {
+            setShowEmailVerification(false);
+            handleLogin(); // Refresh user data after verification
+          }}
         />
       )}
 
@@ -913,10 +1002,69 @@ function AppContent() {
         />
       )}
 
-      <AdminPanel 
+      <AdminPanelV3 
         isVisible={showAdminPanel}
         onClose={() => setShowAdminPanel(false)}
+        initialTab={adminPanelTab}
       />
+      
+      {/* Bug Report Modal */}
+      <BugReportModal
+        isOpen={showBugReportModal}
+        onClose={() => setShowBugReportModal(false)}
+        socket={socket}
+        isAuthenticated={isAuthenticated}
+        currentUser={currentUser}
+      />
+      
+      {/* Mobile Chat Panel with swipe gesture */}
+      {isMobile && (
+        <MobileChat 
+          isOpen={showMobileChat} 
+          onClose={() => setShowMobileChat(false)} 
+        />
+      )}
+      
+      {/* Mobile Bottom Navigation */}
+      {isMobile && (
+        <MobileBottomNav
+          isAuthenticated={isAuthenticated}
+          userPoints={userPoints}
+          showInventory={showInventory}
+          showChat={showMobileChat}
+          showShop={isShopOpen}
+          onInventoryToggle={() => {
+            setShowInventory(!showInventory);
+            setShowMobileChat(false);
+            setIsShopOpen(false);
+          }}
+          onChatToggle={() => {
+            setShowMobileChat(!showMobileChat);
+            setShowInventory(false);
+            setIsShopOpen(false);
+          }}
+          onShopToggle={() => {
+            setIsShopOpen(!isShopOpen);
+            setShowInventory(false);
+            setShowMobileChat(false);
+          }}
+          onStreamToggle={
+            isStreaming 
+              ? () => {
+                  if (!socket) {
+                    console.warn('Cannot stop stream: Socket not connected');
+                    return;
+                  }
+                  console.log('Emitting stop-streaming event');
+                  socket.emit('stop-streaming');
+                  setIsStreaming(false);
+                }
+              : undefined // Start stream is more complex, would need to be implemented
+          }
+          isStreaming={isStreaming}
+          hasActiveStream={streamStatus.hasActiveStream}
+        />
+      )}
     </div>
   );
 }

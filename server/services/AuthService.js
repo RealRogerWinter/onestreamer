@@ -243,6 +243,31 @@ class AuthService {
     async transferSessionToUser(userId, ipAddress, sessionData) {
         await this.accountService.transferIPSessionToUser(userId, ipAddress, sessionData);
     }
+
+    async resendVerificationEmail(userId) {
+        const user = await this.accountService.getUserById(userId);
+        
+        if (!user) {
+            throw new Error('User not found');
+        }
+        
+        if (user.is_verified) {
+            throw new Error('Email is already verified');
+        }
+        
+        // Generate new verification token
+        const newToken = await this.accountService.regenerateVerificationToken(userId);
+        
+        // Send verification email
+        try {
+            await this.emailService.sendVerificationEmail(user.email, user.username, newToken);
+            console.log(`📧 AUTH: Resent verification email to ${user.email}`);
+            return newToken;
+        } catch (emailError) {
+            console.error('📧 AUTH: Failed to resend verification email:', emailError);
+            throw new Error('Failed to send verification email');
+        }
+    }
 }
 
 module.exports = AuthService;

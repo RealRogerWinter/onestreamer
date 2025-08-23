@@ -6,11 +6,11 @@
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.3); /* Subtle backdrop for visual separation */
-  z-index: 1000;
+  z-index: 1100; /* Higher than header (1000) to appear on top */
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 10px; /* Reduced padding to allow modal to be larger */
   pointer-events: none; /* Allow clicks to pass through to elements behind */
   animation: fadeIn 0.3s ease-out;
 }
@@ -29,16 +29,24 @@
   background: #1a1a1a;
   border: 2px solid #333;
   border-radius: 16px;
-  width: 90%;
-  max-width: 1200px;
-  height: 85vh;
-  max-height: 800px;
+  width: 95%; /* Use more screen width */
+  max-width: 1600px; /* Even wider for desktop */
+  height: calc(100vh - 40px); /* Nearly full height with small margin */
+  max-height: calc(100vh - 40px); /* Ensure it doesn't exceed viewport */
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
   animation: slideUp 0.3s ease-out;
   pointer-events: auto; /* Re-enable pointer events for the actual panel */
+}
+
+/* Desktop-specific overrides to ensure full height */
+@media (min-width: 1025px) {
+  .modal-shop-panel {
+    height: calc(100vh - 40px) !important;
+    max-height: calc(100vh - 40px) !important;
+  }
 }
 
 @keyframes slideUp {
@@ -209,11 +217,11 @@
   background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
 }
 
-/* Items Grid */
+/* Items Grid - Desktop optimized */
 .shop-items-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); /* Larger cards on desktop */
+  gap: 25px; /* More spacing on desktop */
   margin-bottom: 30px;
 }
 
@@ -221,7 +229,7 @@
   background: #2a2a2a;
   border: 2px solid #444;
   border-radius: 12px;
-  padding: 20px;
+  padding: 25px; /* More padding on desktop */
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
@@ -229,7 +237,7 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  min-height: 320px;
+  min-height: 380px; /* Taller cards for desktop */
 }
 
 .shop-item-card:hover:not(.disabled) {
@@ -282,8 +290,8 @@
 
 /* Item Content */
 .item-emoji {
-  font-size: 48px;
-  margin-bottom: 15px;
+  font-size: 56px; /* Larger emoji on desktop */
+  margin-bottom: 20px;
   user-select: none;
   line-height: 1;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
@@ -780,8 +788,8 @@
   }
 }
 
-/* Responsive Design */
-@media (max-width: 1024px) {
+/* Responsive Design - Tablets */
+@media (min-width: 769px) and (max-width: 1024px) {
   .modal-shop-panel {
     width: 95%;
     height: 90vh;
@@ -802,13 +810,77 @@
 }
 
 @media (max-width: 768px) {
+  /* Remove overlay on mobile - use bottom sheet instead */
   .modal-shop-overlay {
-    padding: 10px;
+    background: transparent;
+    padding: 0;
+    pointer-events: none;
   }
   
+  /* Bottom sheet shop panel on mobile - matches chat behavior */
   .modal-shop-panel {
+    position: fixed !important;
+    bottom: 76px !important; /* Above bottom nav with margin */
+    left: 0;
+    right: 0;
+    top: auto;
     width: 100%;
-    height: 95vh;
+    height: 40vh !important; /* Same as chat panel */
+    max-height: none !important; /* Allow expansion */
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+    margin: 0;
+    pointer-events: auto;
+    z-index: 998; /* Same as chat */
+    animation: slideUpMobile 0.3s ease-out;
+    transition: height 0.3s ease;
+    will-change: height, transform;
+    -webkit-transform: translateZ(0); /* Force GPU acceleration */
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  
+  @keyframes slideUpMobile {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  
+  /* Swipe indicator for mobile */
+  .modal-shop-panel::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    z-index: 1;
+  }
+  
+  /* Make header draggable */
+  .modal-shop-header {
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    padding-top: 20px; /* Extra space for swipe indicator */
+  }
+  
+  .modal-shop-header:active {
+    cursor: grabbing;
+  }
+  
+  /* Expanded state */
+  .modal-shop-panel.expanded {
+    height: 85vh !important;
+    max-height: none !important;
   }
   
   .shop-items-grid {

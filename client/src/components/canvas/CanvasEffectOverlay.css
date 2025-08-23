@@ -5,7 +5,12 @@
   right: 0;
   bottom: 0;
   pointer-events: none; /* Default to none, JavaScript will override when needed */
-  z-index: 1000; /* High z-index to ensure canvas effects render above all overlays */
+  z-index: 10; /* Lower z-index to prevent blocking video controls but still above video */
+  /* Mobile-specific fixes for transparency */
+  background: transparent !important;
+  background-color: transparent !important;
+  -webkit-tap-highlight-color: transparent;
+  isolation: isolate; /* Create new stacking context */
 }
 
 .canvas-effect-overlay-container .effect-overlay-canvas {
@@ -18,7 +23,7 @@
   background: none !important;
   opacity: 1 !important;
   pointer-events: inherit; /* Inherit from container */
-  z-index: 1001; /* Above container to ensure canvas receives events when enabled */
+  z-index: 11; /* Just above container */
   image-rendering: optimizeSpeed;
   image-rendering: -moz-crisp-edges;
   image-rendering: -webkit-optimize-contrast;
@@ -27,6 +32,12 @@
   /* Ensure canvas never shows any background */
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  /* Mobile-specific rendering fixes */
+  -webkit-transform: translateZ(0); /* Force hardware acceleration */
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: contents; /* Optimize for content changes, not transforms */
 }
 
 .canvas-debug-info {

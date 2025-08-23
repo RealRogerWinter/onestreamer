@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import authService from '../services/AuthService';
 import './ChatBotManagement.css';
 
@@ -43,6 +43,10 @@ interface MovieBotStatus {
     minInterval: number;
     maxInterval: number;
     chatHistoryLimit: number;
+    transcriptionsPerCycle?: number;
+    timeBetweenTranscriptions?: number;
+    transcriptionFrequency?: number;
+    useGroq?: boolean;
   };
   recentPrompts: any[];
 }
@@ -65,6 +69,15 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
   const [movieBotStatus, setMovieBotStatus] = useState<MovieBotStatus | null>(null);
   const [movieBotLogs, setMovieBotLogs] = useState<any[]>([]);
   const [movieBotLogsModal, setMovieBotLogsModal] = useState(false);
+  const [groqEnabled, setGroqEnabled] = useState(false);
+  const [groqApiKey, setGroqApiKey] = useState(localStorage.getItem('groqApiKey') || '');
+  const [groqModel, setGroqModel] = useState('llama-3.1-8b-instant');
+  const [groqModels, setGroqModels] = useState<any[]>([]);
+  const [transcriptionDuration, setTranscriptionDuration] = useState(45);
+  const [transcriptionFrequency, setTranscriptionFrequency] = useState(120);
+  
+  // Track if initial values have been set from movieBotStatus
+  const initialValuesSet = useRef(false);
   
   const [formData, setFormData] = useState<{
     name: string;
@@ -103,7 +116,27 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
     fetchGlobalPrompt();
     fetchAvailableModels();
     fetchMovieBotStatus();
+    fetchGroqStatus(); // Fetch global Groq status
   }, []);
+
+  // Initialize Groq setting
+  useEffect(() => {
+    const storedGroqEnabled = localStorage.getItem('groqEnabled');
+    if (storedGroqEnabled !== null) {
+      setGroqEnabled(storedGroqEnabled === 'true');
+    } else if (movieBotStatus?.config?.useGroq !== undefined) {
+      setGroqEnabled(movieBotStatus.config.useGroq);
+    }
+  }, [movieBotStatus?.config?.useGroq]);
+
+  // Set initial transcription values only once when movieBotStatus first loads
+  useEffect(() => {
+    if (movieBotStatus?.config && !initialValuesSet.current) {
+      setTranscriptionDuration(movieBotStatus.config.transcriptionDuration || 45);
+      setTranscriptionFrequency(movieBotStatus.config.transcriptionFrequency || 120);
+      initialValuesSet.current = true;
+    }
+  }, [movieBotStatus?.config]);
 
   const fetchChatbots = async () => {
     try {
@@ -199,6 +232,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
       
       if (response.ok) {
         const data = await response.json();
+        console.log('MovieBot status fetched:', data);
         setMovieBotStatus(data);
       } else {
         console.error('MovieBot status fetch failed:', response.status, await response.text());
@@ -255,6 +289,145 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
     } catch (error) {
       console.error('Error disabling MovieBot:', error);
       addLog('Failed to disable MovieBot');
+    }
+  };
+
+  // Global Groq API functions
+  const fetchGroqStatus = async () => {
+    try {
+      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      const response = await fetch(`${serverUrl}/admin/groq/status`, {
+        headers: {
+          'Authorization': `Bearer ${authService.getToken()}`,
+          'x-admin-key': adminKey
+        }
+      });
+      
+      if (response.ok) {
+        const status = await response.json();
+        setGroqEnabled(status.enabled);
+        setGroqModel(status.model || 'llama-3.1-8b-instant');
+        if (status.availableModels) {
+          setGroqModels(status.availableModels);
+        }
+        if (status.hasApiKey) {
+          // Don't overwrite local API key if server has one
+          console.log('Server has Groq API key configured');
+        }
+        console.log('Global Groq status:', status);
+      }
+    } catch (error) {
+      console.error('Error fetching Groq status:', error);
+    }
+  };
+  
+  const updateGroqConfig = async (enabled: boolean, apiKey?: string, model?: string) => {
+    try {
+      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      const body: any = { enabled };
+      
+      if (apiKey !== undefined) {
+        body.apiKey = apiKey;
+      }
+      
+      if (model !== undefined) {
+        body.model = model;
+      }
+      
+      const response = await fetch(`${serverUrl}/admin/groq/config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authService.getToken()}`,
+          'x-admin-key': adminKey
+        },
+        body: JSON.stringify(body)
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (model) {
+          addLog(`Groq model changed to: ${model}`);
+        } else {
+          addLog(`Global Groq ${enabled ? 'enabled' : 'disabled'} for ALL chatbots`);
+        }
+        console.log('Global Groq config updated:', result);
+        
+        // Also update MovieBot config to match
+        if (movieBotStatus?.config) {
+          updateMovieBotConfig('useGroq', enabled);
+        }
+      } else {
+        const error = await response.json();
+        addLog(`Failed to update Groq config: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error updating Groq config:', error);
+      addLog('Failed to update Groq configuration');
+    }
+  };
+
+  const updateMovieBotConfig = async (key: string, value: number | boolean | string) => {
+    try {
+      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      
+      // Add debugging
+      console.log('Updating MovieBot config:', { key, value });
+      console.log('Current movieBotStatus:', movieBotStatus);
+      
+      // Use existing config or default values
+      const currentConfig = movieBotStatus?.config || {
+        transcriptionDuration: 45,
+        transcriptionFrequency: 120,
+        chatHistoryLimit: 30,
+        useGroq: false,
+        messageDelay: {
+          min: 4000,
+          max: 8000
+        }
+      };
+      
+      const updatedConfig = {
+        ...currentConfig,
+        [key]: value
+      };
+      
+      console.log('Sending config update:', updatedConfig);
+      
+      const response = await fetch(`${serverUrl}/admin/moviebot/config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authService.getToken()}`,
+          'x-admin-key': adminKey
+        },
+        body: JSON.stringify(updatedConfig)
+      });
+      
+      console.log('Response status:', response.status);
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Config update result:', result);
+        addLog(`MovieBot config updated: ${key} = ${value}`);
+        
+        // Don't update movieBotStatus here as it might interfere with local state
+        // The server has the updated config now
+        
+        // Don't fetch status again - it will reset our local state!
+      } else {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        try {
+          const error = JSON.parse(errorText);
+          addLog(`Failed to update MovieBot config: ${error.error}`);
+        } catch {
+          addLog(`Failed to update MovieBot config: ${errorText}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error updating MovieBot config:', error);
+      addLog(`Error updating MovieBot config: ${error}`);
     }
   };
 
@@ -776,6 +949,148 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
                 </div>
               </>
             )}
+          </div>
+          
+          {/* MovieBot Timing Configuration */}
+          <div className="moviebot-config">
+            <h4>Timing Configuration</h4>
+            <div className="config-grid">
+              <div className="config-item">
+                <label>Transcription Duration:</label>
+                <input
+                  type="number"
+                  min="10"
+                  max="120"
+                  value={transcriptionDuration}
+                  onChange={(e) => {
+                    setTranscriptionDuration(parseInt(e.target.value) || 45);
+                  }}
+                  onBlur={(e) => {
+                    const value = parseInt(e.target.value) || 45;
+                    setTranscriptionDuration(value);
+                    updateMovieBotConfig('transcriptionDuration', value);
+                  }}
+                  className="config-input"
+                />
+                <small>How long to record audio (seconds)</small>
+              </div>
+              
+              <div className="config-item">
+                <label>Transcription Frequency:</label>
+                <input
+                  type="number"
+                  min="30"
+                  max="600"
+                  value={transcriptionFrequency}
+                  onChange={(e) => {
+                    setTranscriptionFrequency(parseInt(e.target.value) || 120);
+                  }}
+                  onBlur={(e) => {
+                    const value = parseInt(e.target.value) || 120;
+                    setTranscriptionFrequency(value);
+                    updateMovieBotConfig('transcriptionFrequency', value);
+                  }}
+                  className="config-input"
+                />
+                <small>How often to run transcriptions (seconds)</small>
+              </div>
+              
+              <div className="config-item" style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <input
+                    type="checkbox"
+                    checked={groqEnabled}
+                    onChange={(e) => {
+                      const newValue = e.target.checked;
+                      console.log('Global Groq checkbox clicked:', newValue);
+                      setGroqEnabled(newValue);
+                      localStorage.setItem('groqEnabled', String(newValue));
+                      // Update global Groq settings for ALL chatbots
+                      updateGroqConfig(newValue);
+                    }}
+                    style={{ width: 'auto' }}
+                  />
+                  Use Groq API for ALL Chatbots (Ultra-Fast Responses)
+                </label>
+                <small>Enable Groq API globally for ALL chatbots and MovieBots - ~500ms response times instead of 10-30s with local models</small>
+                
+                <div style={{ marginTop: '10px' }}>
+                  <label>Groq API Key:</label>
+                  <input
+                    type="password"
+                    placeholder="gsk_..."
+                    value={groqApiKey}
+                    onChange={(e) => {
+                      const newKey = e.target.value;
+                      setGroqApiKey(newKey);
+                      // Store in localStorage for persistence
+                      localStorage.setItem('groqApiKey', newKey);
+                    }}
+                    onBlur={(e) => {
+                      // Send to server when user finishes typing (on blur)
+                      const key = e.target.value;
+                      if (key && key.startsWith('gsk_')) {
+                        console.log('Sending Groq API key globally...');
+                        updateGroqConfig(groqEnabled, key, groqModel);
+                      } else if (key) {
+                        console.error('Invalid Groq API key format - should start with gsk_');
+                        addLog('Invalid Groq API key format - should start with gsk_');
+                      }
+                    }}
+                    className="config-input"
+                    style={{ width: '100%', opacity: groqEnabled ? 1 : 0.5 }}
+                    disabled={!groqEnabled}
+                  />
+                  <small>Get your API key from <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com/keys</a></small>
+                  
+                  {/* Groq Model Selection */}
+                  {groqEnabled && (
+                    <div style={{ marginTop: '15px' }}>
+                      <label>Groq Model:</label>
+                      <select
+                        value={groqModel}
+                        onChange={(e) => {
+                          const newModel = e.target.value;
+                          setGroqModel(newModel);
+                          console.log('Groq model changed to:', newModel);
+                          updateGroqConfig(true, undefined, newModel);
+                        }}
+                        className="config-input"
+                        style={{ width: '100%' }}
+                      >
+                        {groqModels.map(model => (
+                          <option key={model.id} value={model.id}>
+                            {model.name} - {model.speed} ({model.contextWindow} tokens)
+                          </option>
+                        ))}
+                      </select>
+                      <small style={{ display: 'block', marginTop: '5px' }}>
+                        {groqModels.find(m => m.id === groqModel)?.description || ''}
+                      </small>
+                    </div>
+                  )}
+                  
+                  {groqEnabled && groqApiKey && (
+                    <button 
+                      className="btn btn-primary btn-small"
+                      onClick={() => {
+                        console.log('Saving Groq API key globally...');
+                        updateGroqConfig(true, groqApiKey);
+                        addLog('Groq API key saved globally for ALL chatbots');
+                      }}
+                      style={{ marginTop: '10px', display: 'block' }}
+                    >
+                      Save API Key Globally
+                    </button>
+                  )}
+                  {!groqEnabled && (
+                    <small style={{ color: '#ff9800', display: 'block', marginTop: '5px' }}>
+                      ⚠️ Check "Use Groq API" above to enable this field
+                    </small>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
           
           <div className="moviebot-actions">

@@ -1,61 +1,59 @@
+#!/usr/bin/env node
 /**
- * Simple ViewBot test - creates a ViewBot and immediately starts streaming
+ * Simple test to verify viewbots don't trigger global cooldown
  */
 
-const axios = require('axios');
+const io = require('socket.io-client');
 
-const SERVER_URL = 'http://localhost:8080';
-const ADMIN_KEY = 'your-secret-admin-key-123';
+const API_URL = 'https://127.0.0.1:8443';
+const socketOptions = {
+  rejectUnauthorized: false,
+  transports: ['websocket', 'polling']
+};
 
-async function startViewBot() {
-  try {
-    console.log('🤖 Creating and starting ViewBot...');
-    
-    // Create a ViewBot that starts streaming immediately
-    const response = await axios.post(`${SERVER_URL}/admin/viewbot-client/create-streamer`, {
-      config: {
-        contentType: 'testPattern',
-        testPattern: 'color-bars',
-        width: 1280,
-        height: 720,
-        frameRate: 30,
-        autoStart: true
-      }
-    }, {
-      headers: {
-        'x-admin-key': ADMIN_KEY
-      }
-    });
-    
-    if (response.data.success) {
-      console.log(`✅ ViewBot created and streaming: ${response.data.botId}`);
-      console.log(`📺 Pattern: color-bars`);
-      console.log(`🌐 View at: http://localhost:3000`);
-      console.log('\nViewBot should now be streaming test pattern to viewers!');
-      console.log('Check your browser - the stream should show color bars instead of black screen.');
-      console.log('\nPress Ctrl+C when done testing\n');
-      
-      // Keep running
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-      process.stdin.on('data', process.exit.bind(process, 0));
-      
-    } else {
-      console.error('❌ Failed to create ViewBot:', response.data.message);
-      process.exit(1);
-    }
-  } catch (error) {
-    console.error('❌ Error:', error.response?.data || error.message);
-    
-    if (error.response?.data?.message?.includes('FFmpeg')) {
-      console.log('\n📋 FFmpeg Installation Required:');
-      console.log('   Windows: winget install ffmpeg');
-      console.log('   Or download from: https://ffmpeg.org/download.html');
-      console.log('   Make sure FFmpeg is in your PATH');
-    }
-    
-    process.exit(1);
-  }
+async function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-startViewBot();
+async function test() {
+  console.log('🧪 Test: Viewbot should NOT trigger global cooldown\n');
+  
+  // Create viewbot
+  const viewbot = io(API_URL, socketOptions);
+  
+  await new Promise((resolve) => {
+    viewbot.on('connect', () => {
+      console.log(`✅ Viewbot connected: ${viewbot.id}`);
+      resolve();
+    });
+  });
+  
+  // Listen for events
+  viewbot.on('streaming-approved', () => {
+    console.log('✅ Viewbot got streaming-approved');
+  });
+  
+  viewbot.on('takeover-denied', (data) => {
+    console.log(`❌ Viewbot denied: ${data.reason}`);
+  });
+  
+  // Request to stream as viewbot
+  console.log('📡 Viewbot requesting to stream...');
+  viewbot.emit('request-to-stream', {
+    isViewBot: true,
+    streamType: 'viewbot'
+  }, (ack) => {
+    console.log('📡 Request acknowledged:', ack);
+  });
+  
+  await sleep(3000);
+  
+  console.log('\n✅ Check server logs for:');
+  console.log('   - "🤖 TAKEOVER: Skipping takeover recording for viewbot"');
+  console.log('   - NO "🔒 TAKEOVER: Recording takeover for real user"');
+  
+  viewbot.disconnect();
+  process.exit(0);
+}
+
+test().catch(console.error);

@@ -194,6 +194,11 @@ class MediasoupService {
       initialAvailableOutgoingBitrate: 1000000, // 1 Mbps initial
       minimumAvailableOutgoingBitrate: 300000, // 300 kbps minimum
       maxIncomingBitrate: 5000000, // 5 Mbps max incoming
+      // Fix ICE consent timeout issue - increase from default 30s
+      iceConsentTimeout: 60, // 60 seconds instead of default 30
+      // Enable ICE-Lite mode for more stable connections
+      enableSctp: true,
+      numSctpStreams: { OS: 1024, MIS: 1024 },
       iceServers: process.env.NODE_ENV === 'production' ? [] : [ // Skip TURN in local dev
         {
           urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']
@@ -456,6 +461,22 @@ class MediasoupService {
           this.cleanupSocketResources(socketId);
           cleanupCount++;
         }
+      }
+    }
+
+    // Also clean up any transports without active producers (likely from failed rotations)
+    for (const [socketId, transport] of this.transports.entries()) {
+      // Skip current streamer
+      if (socketId === this.currentStreamer) continue;
+      
+      // Check if transport has any active consumers
+      const hasConsumers = this.consumers.has(socketId) && this.consumers.get(socketId).size > 0;
+      
+      // If transport exists but no producers AND no consumers, and it's older than 30 seconds, clean it up
+      if (!this.producers.has(socketId) && !hasConsumers && transport.appData?.createdAt && (now - transport.appData.createdAt) > 30000) {
+        console.log(`🧹 MEDIASOUP: Cleaning up orphaned transport for ${socketId} (no producers or consumers)`);
+        this.cleanupSocketResources(socketId);
+        cleanupCount++;
       }
     }
 

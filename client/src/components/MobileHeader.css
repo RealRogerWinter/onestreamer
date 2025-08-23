@@ -1,0 +1,345 @@
+/* Mobile Header V2 - Modern Streaming App Design */
+.mobile-header-v2 {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: rgba(18, 18, 18, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 1000;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+}
+
+.mobile-header-content {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Header Stats - Common Styles */
+.header-stat {
+  display: flex;
+  align-items: center;
+  height: 36px;
+}
+
+/* Stat Pills - Glassmorphism Effect */
+.stat-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  transition: all 0.2s ease;
+}
+
+.stat-pill:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.stat-icon {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.stat-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.3px;
+}
+
+/* Viewers Section */
+.viewers-stat .stat-pill {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.viewers-stat .stat-value {
+  color: #93bbff;
+}
+
+/* Streamer Section - Center Focus */
+.streamer-stat {
+  flex: 1;
+  justify-content: center;
+  max-width: 180px;
+}
+
+.streamer-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-badge {
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #ff3b30 0%, #ff6b6b 100%);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-radius: 12px;
+  animation: pulse 2s infinite;
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.4);
+}
+
+@keyframes pulse {
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.9;
+    transform: scale(0.98);
+  }
+}
+
+.streamer-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+
+.offline-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.offline-badge {
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Duration Section */
+.duration-stat .stat-pill {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.duration-stat .stat-value {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* User Profile Section */
+.header-user-section {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.user-profile-button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  transition: all 0.2s ease;
+}
+
+.user-profile-button:active .user-avatar {
+  transform: scale(0.95);
+  box-shadow: 0 1px 4px rgba(102, 126, 234, 0.2);
+}
+
+/* Login Button */
+.mobile-login-button {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-login-button:active {
+  transform: scale(0.98);
+  box-shadow: 0 1px 4px rgba(102, 126, 234, 0.2);
+}
+
+/* User Dropdown Menu */
+.user-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: rgba(30, 30, 30, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  animation: slideDown 0.2s ease;
+  z-index: 1001;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-header {
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-username {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.dropdown-points {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.dropdown-points .points-icon {
+  font-size: 14px;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-item {
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dropdown-item:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-icon {
+  font-size: 16px;
+  opacity: 0.8;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 380px) {
+  .mobile-header-v2 {
+    padding: 0 8px;
+  }
+  
+  .mobile-header-content {
+    gap: 4px;
+  }
+  
+  .stat-pill {
+    padding: 5px 8px;
+  }
+  
+  .streamer-name {
+    max-width: 80px;
+    font-size: 13px;
+  }
+  
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+  }
+  
+  .mobile-login-button {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
+
+/* iPhone SE and smaller */
+@media (max-width: 320px) {
+  .streamer-stat {
+    max-width: 140px;
+  }
+  
+  .streamer-name {
+    max-width: 60px;
+  }
+  
+  .duration-stat {
+    display: none; /* Hide duration on very small screens */
+  }
+}
+
+/* Safe area padding for notched devices */
+@supports (padding: max(0px)) {
+  .mobile-header-v2 {
+    padding-top: max(0px, env(safe-area-inset-top));
+    height: calc(56px + max(0px, env(safe-area-inset-top)));
+  }
+}

@@ -39,14 +39,18 @@ const RecordingService = require('./services/RecordingService');
 const FileCompressionService = require('./services/FileCompressionService');
 const RecordingStorageService = require('./services/RecordingStorageService');
 const TranscriptionService = require('./services/TranscriptionService');
+const IPBanService = require('./services/IPBanService');
 const authRoutes = require('./routes/auth');
 const itemRoutes = require('./routes/items');
 const buffRoutes = require('./routes/buffs');
 const soundfxRoutes = require('./routes/soundfx');
 const visualfxRoutes = require('./routes/visualfx');
 const { router: chatbotRoutes, initializeChatBotRoutes } = require('./routes/chatbots');
-const viewbotApiRoutes = require('./routes/viewbot-api');
+// ViewBot API routes will be initialized after services are created
+let viewbotApiRoutes;
+const bugReportsRoutes = require('./routes/bug-reports');
 const database = require('./database/database');
+const { runAsync, getAsync, allAsync } = database;
 
 const app = express();
 
@@ -248,9 +252,12 @@ app.use(session({
   }
 }));
 
+// Initialize AuthService early to register passport strategies
+const authService = new AuthService();
+
 // Initialize Passport
 app.use(passport.initialize());
-app.use(passport.session());
+// Note: Not using passport.session() as we're using JWT tokens
 
 // Auth routes
 app.use('/auth', authRoutes);
@@ -265,19 +272,31 @@ app.use('/api', (req, res, next) => {
 app.use('/api', itemRoutes);
 app.use('/api/buffs', buffRoutes);
 app.use('/api/soundfx', soundfxRoutes);
-app.use('/api', viewbotApiRoutes);
+// ViewBot API routes will be added after services are initialized
 app.use('/api/visualfx', visualfxRoutes);
 app.use('/api/chatbots', chatbotRoutes);
+app.use('/api/bug-reports', bugReportsRoutes);
 
 // Tutorial API endpoints
 app.get('/api/tutorial', (req, res) => {
   try {
-    const tutorialPath = path.join(__dirname, 'data', 'tutorial.txt');
-    if (fs.existsSync(tutorialPath)) {
-      const content = fs.readFileSync(tutorialPath, 'utf8');
-      res.json({ content });
+    const dataDir = path.join(__dirname, 'data');
+    
+    // Try to load new tabbed format first
+    const tabsPath = path.join(dataDir, 'tutorial-tabs.json');
+    if (fs.existsSync(tabsPath)) {
+      const tabsContent = fs.readFileSync(tabsPath, 'utf8');
+      const tabs = JSON.parse(tabsContent);
+      res.json({ tabs });
     } else {
-      res.json({ content: '' });
+      // Fallback to old single content format
+      const tutorialPath = path.join(dataDir, 'tutorial.txt');
+      if (fs.existsSync(tutorialPath)) {
+        const content = fs.readFileSync(tutorialPath, 'utf8');
+        res.json({ content });
+      } else {
+        res.json({ content: '' });
+      }
     }
   } catch (error) {
     console.error('Failed to load tutorial:', error);
@@ -298,20 +317,39 @@ app.post('/api/tutorial', async (req, res) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const { content } = req.body;
-    if (typeof content !== 'string') {
-      return res.status(400).json({ error: 'Content must be a string' });
-    }
-
+    const { content, tabs } = req.body;
+    
     // Ensure data directory exists
     const dataDir = path.join(__dirname, 'data');
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    // Save tutorial content
-    const tutorialPath = path.join(dataDir, 'tutorial.txt');
-    fs.writeFileSync(tutorialPath, content, 'utf8');
+    if (tabs) {
+      // New tabbed format
+      if (typeof tabs !== 'object' || !tabs.about || !tabs.support || !tabs.tutorial) {
+        return res.status(400).json({ error: 'Tabs must contain about, support, and tutorial sections' });
+      }
+      
+      // Save tabbed content
+      const tabsPath = path.join(dataDir, 'tutorial-tabs.json');
+      fs.writeFileSync(tabsPath, JSON.stringify(tabs, null, 2), 'utf8');
+      
+      // Also save the tutorial tab content to the old file for backward compatibility
+      const tutorialPath = path.join(dataDir, 'tutorial.txt');
+      fs.writeFileSync(tutorialPath, tabs.tutorial, 'utf8');
+    } else if (content) {
+      // Old single content format
+      if (typeof content !== 'string') {
+        return res.status(400).json({ error: 'Content must be a string' });
+      }
+      
+      // Save tutorial content
+      const tutorialPath = path.join(dataDir, 'tutorial.txt');
+      fs.writeFileSync(tutorialPath, content, 'utf8');
+    } else {
+      return res.status(400).json({ error: 'Either content or tabs must be provided' });
+    }
 
     res.json({ success: true, message: 'Tutorial content saved successfully' });
   } catch (error) {
@@ -432,6 +470,7 @@ async function initializeRedis() {
 }
 
 const streamService = new StreamService();
+global.streamService = streamService;  // Make it globally accessible for SimpleViewBotMediaSoup
 const sessionService = new SessionService();
 const takeoverService = new TakeoverService(redisClient, sessionService);
 const testStreamService = new TestStreamService();
@@ -440,7 +479,7 @@ const mediasoupService = new MediasoupService();
 const audioOptimizationService = new AudioOptimizationService();
 const resourceMonitor = new ResourceMonitor();
 const accountService = new AccountService();
-const authService = new AuthService();
+// authService already initialized earlier for passport strategies
 const timeTrackingService = new TimeTrackingService();
 const itemService = new ItemService();
 const inventoryService = new InventoryService(itemService);
@@ -1291,7 +1330,7 @@ app.get('/api/internal/bonus-status/:userId', async (req, res) => {
   }
 });
 
-// Auth endpoint to get current user info
+// Auth endpoint to get current user info - properly authenticate and get real data
 app.get('/api/auth/me', async (req, res) => {
   try {
     // Get authorization header
@@ -1302,26 +1341,26 @@ app.get('/api/auth/me', async (req, res) => {
 
     const token = authHeader.substring(7);
     
-    // For now, return a mock user with points_balance
-    // In production, you would verify the JWT token and get real user data
-    const mockUser = {
-      user: {
-        id: 1,
-        username: 'testuser',
-        email: 'test@example.com',
-        isAdmin: false,
-        points_balance: 0
-      },
-      stats: {
-        points_balance: 0,
-        total_stream_time: 0,
-        total_view_time: 0,
-        stream_count: 0,
-        chat_message_count: 0
-      }
-    };
-    
-    res.json(mockUser);
+    // Verify JWT token and get user data
+    try {
+      const decoded = authService.verifyToken(token);
+      const user = await authService.accountService.getUserById(decoded.id);
+      const stats = await authService.accountService.getUserStats(decoded.id);
+      
+      // Use points_balance from stats
+      const points = stats?.points_balance || 0;
+      
+      res.json({
+        user,
+        stats: {
+          ...stats,
+          points  // Include points for backward compatibility
+        }
+      });
+    } catch (tokenError) {
+      console.error('Token verification error:', tokenError);
+      return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    }
   } catch (error) {
     console.error('Error in /api/auth/me:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
@@ -2103,9 +2142,23 @@ app.get('/health', (req, res) => {
 app.get('/api/stream/status', (req, res) => {
   const status = streamService.getStreamStatus();
   const mediaInfo = mediaStreamService.getStreamInfo();
+  
+  // Add MediaSoup producer info if available
+  let producerInfo = null;
+  if (mediasoupService.currentStreamer) {
+    const producers = mediasoupService.producers.get(mediasoupService.currentStreamer);
+    if (producers) {
+      producerInfo = {
+        videoProducerId: producers.get('video')?.id || null,
+        audioProducerId: producers.get('audio')?.id || null
+      };
+    }
+  }
+  
   res.json({
     ...status,
-    mediaStream: mediaInfo
+    mediaStream: mediaInfo,
+    producers: producerInfo
   });
 });
 
@@ -2547,12 +2600,25 @@ app.get('/api/user/:userId/chat-color', async (req, res) => {
 
 // Fallback auth middleware for ViewBot endpoints - try JWT first, then admin key
 const viewBotAuth = (req, res, next) => {
+  console.log('🔐 ViewBot Auth - Request path:', req.path);
+  console.log('🔐 ViewBot Auth - Headers:', {
+    'x-admin-key': req.headers['x-admin-key'],
+    'authorization': req.headers['authorization'],
+    'admin_key_query': req.query.admin_key
+  });
+  
   // Check for admin key first (simpler auth for ViewBot operations)
   const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
   const correctKey = process.env.ADMIN_KEY || '***REMOVED-ADMIN-KEY***';
   
+  console.log('🔐 ViewBot Auth - Admin key check:', { 
+    provided: adminKey, 
+    expected: correctKey,
+    matches: adminKey === correctKey 
+  });
+  
   if (adminKey === correctKey) {
-    console.log('🔐 ViewBot: Using admin key authentication');
+    console.log('✅ ViewBot: Using admin key authentication');
     // Create a mock user object for compatibility
     req.user = { id: 'admin-key-user' };
     req.userRecord = { username: 'admin-key', is_admin: true };
@@ -2567,7 +2633,7 @@ const viewBotAuth = (req, res, next) => {
     // Try JWT authentication synchronously
     const decoded = authService.verifyToken(token);
     if (decoded) {
-      console.log('🔐 ViewBot: Using JWT authentication');
+      console.log('✅ ViewBot: Using JWT authentication');
       req.user = decoded;
       return next();
     }
@@ -2917,7 +2983,9 @@ app.post('/admin/viewbot-client/:botId/start', viewBotAuth, async (req, res) => 
   }
   
   const { botId } = req.params;
+  console.log(`📡 API: Starting ViewBot ${botId} via HTTP endpoint`);
   const result = await viewBotClientService.startBotStreaming(botId);
+  console.log(`📡 API: ViewBot ${botId} start result:`, result);
   res.json(result);
 });
 
@@ -3118,12 +3186,30 @@ app.get('/debug/rotation-status', (req, res) => {
   res.json(status);
 });
 
+// Test endpoint with simple auth check
+app.get('/admin/test-rotation-auth', (req, res) => {
+  const adminKey = req.headers['x-admin-key'];
+  console.log('🔍 Test rotation auth - admin key:', adminKey);
+  if (adminKey === '***REMOVED-ADMIN-KEY***') {
+    if (!viewBotClientService) {
+      return res.status(503).json({ error: 'ViewBotClientService not initialized' });
+    }
+    const status = viewBotClientService.getRotationStatus();
+    return res.json({ success: true, status });
+  }
+  return res.status(401).json({ error: 'Admin key required' });
+});
+
 app.get('/admin/viewbot-client/rotation/status', viewBotAuth, (req, res) => {
+  console.log('📊 Rotation status endpoint hit');
+  
   if (!viewBotClientService) {
+    console.log('❌ ViewBotClientService not initialized');
     return res.status(503).json({ error: 'ViewBotClientService not initialized' });
   }
   
   const status = viewBotClientService.getRotationStatus();
+  console.log('📊 Rotation status:', JSON.stringify(status));
   
   // Add debug info to help diagnose the issue
   if (status.currentLiveBot && viewBotClientService.activeBots) {
@@ -3144,18 +3230,163 @@ app.get('/admin/viewbot-client/rotation/status', viewBotAuth, (req, res) => {
   res.json(status);
 });
 
+app.post('/admin/viewbot-client/rotation/probability', viewBotAuth, async (req, res) => {
+  if (!viewBotClientService) {
+    return res.status(503).json({ error: 'ViewBotClientService not initialized' });
+  }
+  
+  const { probability } = req.body;
+  const result = viewBotClientService.updateRotationProbability(probability);
+  res.json(result);
+});
+
+app.post('/admin/viewbot-client/rotation/interval', viewBotAuth, async (req, res) => {
+  if (!viewBotClientService) {
+    return res.status(503).json({ error: 'ViewBotClientService not initialized' });
+  }
+  
+  const { minInterval, maxInterval } = req.body;
+  const result = viewBotClientService.updateRotationInterval(minInterval, maxInterval);
+  res.json(result);
+});
+
 app.post('/admin/viewbot-client/rotation/force', viewBotAuth, async (req, res) => {
   if (!viewBotClientService) {
     return res.status(503).json({ error: 'ViewBotClientService not initialized' });
   }
   
-  const { currentBotId } = req.body;
-  if (!currentBotId) {
-    return res.status(400).json({ error: 'currentBotId is required' });
+  // Use the new forceRotation method
+  const result = await viewBotClientService.forceRotation();
+  res.json(result);
+});
+
+// ViewBot Rotation endpoints (new Socket.IO-based system)
+app.get('/admin/simple-rotation/status', viewBotAuth, (req, res) => {
+  // Use new rotation service
+  if (!global.viewBotRotation) {
+    return res.status(503).json({ error: 'ViewBot rotation not initialized' });
+  }
+  res.json(global.viewBotRotation.getStatus());
+});
+
+app.post('/admin/simple-rotation/start', viewBotAuth, async (req, res) => {
+  if (!global.viewBotRotation) {
+    return res.status(503).json({ error: 'ViewBot rotation not initialized' });
+  }
+  await global.viewBotRotation.startRotation();
+  res.json({ success: true, message: 'ViewBot rotation started' });
+});
+
+app.post('/admin/simple-rotation/stop', viewBotAuth, async (req, res) => {
+  if (!global.viewBotRotation) {
+    return res.status(503).json({ error: 'ViewBot rotation not initialized' });
+  }
+  await global.viewBotRotation.stopRotation();
+  res.json({ success: true, message: 'ViewBot rotation stopped' });
+});
+
+app.post('/admin/simple-rotation/force', viewBotAuth, async (req, res) => {
+  if (!global.viewBotRotation) {
+    return res.status(503).json({ error: 'ViewBot rotation not initialized' });
+  }
+  await global.viewBotRotation.forceRotation();
+  res.json({ success: true, message: 'Rotation forced' });
+});
+
+app.post('/admin/simple-rotation/settings', viewBotAuth, (req, res) => {
+  if (!global.viewBotRotation) {
+    return res.status(503).json({ error: 'ViewBot rotation not initialized' });
+  }
+  global.viewBotRotation.updateSettings(req.body);
+  res.json({ success: true, settings: global.viewBotRotation.settings });
+});
+
+// Modern ViewBot rotation endpoints (used by UI)
+app.get('/admin/viewbot/rotation/status', viewBotAuth, (req, res) => {
+  if (!global.viewBotRotation) {
+    return res.status(503).json({ error: 'ViewBot rotation not initialized' });
+  }
+  const status = global.viewBotRotation.getStatus();
+  res.json({ 
+    success: true, 
+    status: {
+      ...status,
+      totalVideos: global.viewBotRotation.bots.length,
+      nextRotationIn: 60000 // Placeholder
+    }
+  });
+});
+
+app.post('/admin/viewbot/rotation/force', viewBotAuth, async (req, res) => {
+  if (!global.viewBotRotation) {
+    return res.status(503).json({ error: 'ViewBot rotation not initialized' });
+  }
+  await global.viewBotRotation.forceRotation();
+  res.json({ success: true, message: 'Forced rotation to next video' });
+});
+
+app.post('/admin/viewbot/rotation/enable', viewBotAuth, async (req, res) => {
+  if (!global.viewBotRotation) {
+    return res.status(503).json({ error: 'ViewBot rotation not initialized' });
+  }
+  await global.viewBotRotation.startRotation();
+  res.json({ success: true, message: 'ViewBot rotation enabled' });
+});
+
+app.post('/admin/viewbot/rotation/disable', viewBotAuth, async (req, res) => {
+  if (!global.viewBotRotation) {
+    return res.status(503).json({ error: 'ViewBot rotation not initialized' });
+  }
+  await global.viewBotRotation.stopRotation();
+  res.json({ success: true, message: 'ViewBot rotation disabled' });
+});
+
+app.post('/admin/viewbot-client/rotation/manual-takeover', viewBotAuth, async (req, res) => {
+  if (!viewBotClientService) {
+    return res.status(503).json({ error: 'ViewBotClientService not initialized' });
   }
   
-  const result = await viewBotClientService.handleRotationRequest(currentBotId, 'manual-force');
+  // Manually trigger a ViewBot takeover (useful when automatic takeover fails)
+  const result = await viewBotClientService.manualTriggerTakeover();
   res.json(result);
+});
+
+// Debug endpoint to simulate real streamer connect/disconnect
+app.post('/admin/viewbot-client/debug/simulate-streamer', viewBotAuth, (req, res) => {
+  if (!viewBotClientService) {
+    return res.status(503).json({ error: 'ViewBotClientService not initialized' });
+  }
+  
+  const { action } = req.body; // 'connect' or 'disconnect'
+  
+  if (action === 'connect') {
+    console.log('🔧 DEBUG: Simulating real streamer connect');
+    viewBotClientService.setRealStreamerStatus(true);
+    res.json({ success: true, message: 'Simulated real streamer connect', realStreamerActive: true });
+  } else if (action === 'disconnect') {
+    console.log('🔧 DEBUG: Simulating real streamer disconnect');
+    viewBotClientService.setRealStreamerStatus(false);
+    res.json({ success: true, message: 'Simulated real streamer disconnect', realStreamerActive: false });
+  } else {
+    res.status(400).json({ error: 'Invalid action. Use "connect" or "disconnect"' });
+  }
+});
+
+// Debug endpoint to manually trigger presence maintenance
+app.post('/admin/viewbot-client/debug/check-presence', viewBotAuth, async (req, res) => {
+  if (!viewBotClientService) {
+    return res.status(503).json({ error: 'ViewBotClientService not initialized' });
+  }
+  
+  console.log('🔧 DEBUG: Manually triggering presence check');
+  await viewBotClientService.maintainViewBotPresence();
+  
+  const status = viewBotClientService.getRotationStatus();
+  res.json({ 
+    success: true, 
+    message: 'Presence check completed',
+    currentStatus: status
+  });
 });
 
 // Debug endpoint to clear stuck real streamer status
@@ -3546,6 +3777,365 @@ app.get('/admin/performance-stats', authenticateAdmin, (req, res) => {
   } catch (error) {
     console.error('❌ ADMIN: Failed to get performance stats:', error);
     res.status(500).json({ error: 'Failed to get performance stats' });
+  }
+});
+
+// Stream Moderation Endpoints
+app.get('/api/admin/verify', authenticateAdmin, (req, res) => {
+  res.json({ success: true, isAdmin: true });
+});
+
+app.get('/api/admin/stream-details/:streamerId', authenticateAdmin, (req, res) => {
+  try {
+    const { streamerId } = req.params;
+    const socket = io.sockets.sockets.get(streamerId);
+    
+    if (!socket) {
+      return res.status(404).json({ error: 'Stream not found' });
+    }
+    
+    const ipAddress = IPBanService.getIPFromSocket(socket);
+    const startTime = socket.handshake.time || new Date().toISOString();
+    
+    res.json({
+      streamerId,
+      ipAddress,
+      startTime,
+      connectionTime: socket.handshake.time
+    });
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get stream details:', error);
+    res.status(500).json({ error: 'Failed to get stream details' });
+  }
+});
+
+app.post('/api/admin/stream/disconnect', authenticateAdmin, async (req, res) => {
+  try {
+    const { streamerId } = req.body;
+    
+    if (!streamerId) {
+      return res.status(400).json({ error: 'Streamer ID required' });
+    }
+    
+    const currentStreamer = streamService.getCurrentStreamer();
+    if (currentStreamer !== streamerId) {
+      return res.status(400).json({ error: 'Specified streamer is not currently streaming' });
+    }
+    
+    // Get the socket
+    const socket = io.sockets.sockets.get(streamerId);
+    if (!socket) {
+      return res.status(404).json({ error: 'Streamer socket not found' });
+    }
+    
+    console.log(`🔨 MODERATION: Admin disconnecting stream ${streamerId}`);
+    
+    // Clear the streamer
+    streamService.clearStreamer();
+    mediasoupService.currentStreamer = null;
+    
+    // Cleanup MediaSoup resources
+    mediasoupService.cleanup(streamerId);
+    
+    // Notify the streamer they've been disconnected
+    socket.emit('stream-disconnected-by-admin', { 
+      reason: 'Disconnected by administrator',
+      timestamp: new Date().toISOString()
+    });
+    
+    // Disconnect the socket
+    socket.disconnect(true);
+    
+    // Notify all viewers
+    io.emit('stream-ended', { reason: 'admin_disconnect' });
+    
+    res.json({ 
+      success: true, 
+      message: 'Stream disconnected successfully',
+      streamerId 
+    });
+  } catch (error) {
+    console.error('❌ MODERATION: Failed to disconnect stream:', error);
+    res.status(500).json({ error: 'Failed to disconnect stream' });
+  }
+});
+
+app.post('/api/admin/stream/ban-ip', authenticateAdmin, async (req, res) => {
+  try {
+    const { streamerId, ip, reason } = req.body;
+    
+    if (!streamerId) {
+      return res.status(400).json({ error: 'Streamer ID required' });
+    }
+    
+    // Get the socket to extract IP if not provided
+    const socket = io.sockets.sockets.get(streamerId);
+    let ipToBan = ip;
+    
+    if (!ipToBan && socket) {
+      ipToBan = IPBanService.getIPFromSocket(socket);
+    }
+    
+    if (!ipToBan) {
+      return res.status(400).json({ error: 'Could not determine IP address to ban' });
+    }
+    
+    // Ban the IP
+    const banResult = await IPBanService.banIP(
+      ipToBan,
+      req.user.id,
+      req.userRecord.username,
+      reason || 'Banned by admin moderation',
+      true // permanent ban
+    );
+    
+    if (!banResult.success) {
+      return res.status(500).json({ error: 'Failed to ban IP', details: banResult.error });
+    }
+    
+    console.log(`🚫 MODERATION: IP ${ipToBan} banned by ${req.userRecord.username}`);
+    
+    // If the streamer is currently streaming, disconnect them
+    const currentStreamer = streamService.getCurrentStreamer();
+    if (currentStreamer === streamerId) {
+      streamService.clearStreamer();
+      mediasoupService.currentStreamer = null;
+      mediasoupService.cleanup(streamerId);
+      
+      if (socket) {
+        socket.emit('banned', { 
+          reason: reason || 'Your IP has been banned',
+          timestamp: new Date().toISOString()
+        });
+        socket.disconnect(true);
+      }
+      
+      io.emit('stream-ended', { reason: 'streamer_banned' });
+    }
+    
+    // Disconnect any other sockets from this IP
+    io.sockets.sockets.forEach((otherSocket) => {
+      const socketIP = IPBanService.getIPFromSocket(otherSocket);
+      if (socketIP === ipToBan) {
+        otherSocket.emit('banned', { 
+          reason: 'Your IP has been banned',
+          timestamp: new Date().toISOString()
+        });
+        otherSocket.disconnect(true);
+      }
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'IP banned and connections terminated',
+      ip: ipToBan,
+      streamerId 
+    });
+  } catch (error) {
+    console.error('❌ MODERATION: Failed to ban IP:', error);
+    res.status(500).json({ error: 'Failed to ban IP' });
+  }
+});
+
+app.get('/api/admin/banned-ips', authenticateAdmin, async (req, res) => {
+  try {
+    const bannedIPs = await IPBanService.getBannedIPs();
+    res.json({ success: true, bannedIPs });
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get banned IPs:', error);
+    res.status(500).json({ error: 'Failed to get banned IPs' });
+  }
+});
+
+app.post('/api/admin/unban-ip', authenticateAdmin, async (req, res) => {
+  try {
+    const { ip } = req.body;
+    
+    if (!ip) {
+      return res.status(400).json({ error: 'IP address required' });
+    }
+    
+    const result = await IPBanService.unbanIP(ip);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: 'Failed to unban IP', details: result.error });
+    }
+    
+    console.log(`✅ MODERATION: IP ${ip} unbanned by ${req.userRecord.username}`);
+    
+    res.json({ 
+      success: true, 
+      message: 'IP unbanned successfully',
+      ip 
+    });
+  } catch (error) {
+    console.error('❌ MODERATION: Failed to unban IP:', error);
+    res.status(500).json({ error: 'Failed to unban IP' });
+  }
+});
+
+// Manual IP ban endpoint
+app.post('/api/admin/ban-ip-manual', authenticateAdmin, async (req, res) => {
+  try {
+    const { ip, reason, permanent, expiresAt } = req.body;
+    
+    if (!ip) {
+      return res.status(400).json({ error: 'IP address required' });
+    }
+    
+    // Basic IP validation
+    const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!ipRegex.test(ip)) {
+      return res.status(400).json({ error: 'Invalid IP address format' });
+    }
+    
+    const result = await IPBanService.banIP(
+      ip, 
+      req.userRecord.id, 
+      req.userRecord.username, 
+      reason || 'Manual ban by admin',
+      permanent !== false, // default to permanent
+      expiresAt || null
+    );
+    
+    if (!result.success) {
+      return res.status(500).json({ error: 'Failed to ban IP', details: result.error });
+    }
+    
+    console.log(`🚫 MODERATION: IP ${ip} manually banned by ${req.userRecord.username} - Reason: ${reason}`);
+    
+    res.json({ 
+      success: true, 
+      message: 'IP banned successfully',
+      ip,
+      reason 
+    });
+  } catch (error) {
+    console.error('❌ MODERATION: Failed to manually ban IP:', error);
+    res.status(500).json({ error: 'Failed to ban IP' });
+  }
+});
+
+// Get streamer connection history
+app.get('/api/admin/streamer-connections', authenticateAdmin, async (req, res) => {
+  try {
+    const { limit = 100, offset = 0, streamerId, ip } = req.query;
+    
+    let query = `
+      SELECT * FROM streamer_connections 
+      WHERE 1=1
+      AND ip_address NOT IN ('127.0.0.1', '::1', 'localhost')
+    `;
+    const params = [];
+    
+    if (streamerId) {
+      query += ` AND streamer_id = ?`;
+      params.push(streamerId);
+    }
+    
+    if (ip) {
+      query += ` AND ip_address = ?`;
+      params.push(ip);
+    }
+    
+    query += ` ORDER BY connected_at DESC LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), parseInt(offset));
+    
+    const connections = await allAsync(query, params);
+    
+    res.json({ 
+      success: true, 
+      connections,
+      count: connections.length 
+    });
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get streamer connections:', error);
+    res.status(500).json({ error: 'Failed to get streamer connections' });
+  }
+});
+
+// Streaming Logs endpoints
+const streamingLogsService = require('./services/StreamingLogsService');
+
+// Get streaming logs
+app.get('/api/admin/streaming-logs', authenticateAdmin, async (req, res) => {
+  try {
+    const filters = {
+      limit: parseInt(req.query.limit) || 100,
+      offset: parseInt(req.query.offset) || 0,
+      excludeViewbots: req.query.includeViewbots !== 'true',
+      ipAddress: req.query.ip,
+      userId: req.query.userId ? parseInt(req.query.userId) : undefined,
+      activeOnly: req.query.activeOnly === 'true',
+      startDate: req.query.startDate,
+      endDate: req.query.endDate
+    };
+    
+    const result = await streamingLogsService.getLogs(filters);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get streaming logs:', error);
+    res.status(500).json({ error: 'Failed to get streaming logs' });
+  }
+});
+
+// Get streaming logs statistics
+app.get('/api/admin/streaming-logs/stats', authenticateAdmin, async (req, res) => {
+  try {
+    const result = await streamingLogsService.getStats();
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get streaming stats:', error);
+    res.status(500).json({ error: 'Failed to get streaming stats' });
+  }
+});
+
+// Ban IP from streaming log
+app.post('/api/admin/streaming-logs/ban-ip', authenticateAdmin, async (req, res) => {
+  try {
+    const { ip, sessionId, reason } = req.body;
+    
+    if (!ip) {
+      return res.status(400).json({ error: 'IP address required' });
+    }
+    
+    // Ban the IP
+    const result = await IPBanService.banIP(
+      ip,
+      req.userRecord.id,
+      req.userRecord.username,
+      reason || `Banned from streaming logs (Session: ${sessionId})`,
+      true, // permanent by default
+      null
+    );
+    
+    if (!result.success) {
+      return res.status(500).json({ error: 'Failed to ban IP', details: result.error });
+    }
+    
+    // Mark session as banned
+    await streamingLogsService.markSessionBanned(ip);
+    
+    console.log(`🚫 STREAMING LOGS: IP ${ip} banned by ${req.userRecord.username} from logs`);
+    
+    res.json({ 
+      success: true, 
+      message: 'IP banned successfully',
+      ip
+    });
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to ban IP from logs:', error);
+    res.status(500).json({ error: 'Failed to ban IP' });
   }
 });
 
@@ -4331,6 +4921,24 @@ function notifyViewersStreamEnded() {
     timeTrackingService.endViewingSessionBySocket(socketId);
     console.log(`📊 TIME: Stopped view tracking for viewer socket ${socketId}`);
   }
+  
+  // Trigger ViewBot rotation after a delay when stream ends
+  if (global.viewBotRotation && global.viewBotRotation.enabled) {
+    console.log('🔄 ROTATION: Stream ended, scheduling ViewBot rotation after delay...');
+    setTimeout(async () => {
+      // Check if still no active streamer
+      if (!streamService.getCurrentStreamer() && global.viewBotRotation && global.viewBotRotation.enabled) {
+        console.log('🔄 ROTATION: No active streamer, starting ViewBot rotation...');
+        try {
+          await global.viewBotRotation.rotateToNextBot();
+        } catch (error) {
+          console.error('❌ ROTATION: Failed to start rotation after stream end:', error);
+        }
+      } else {
+        console.log('🔄 ROTATION: Active streamer found or rotation disabled, skipping rotation');
+      }
+    }, 5000); // 5 second delay before starting rotation
+  }
 }
 
 // Transcription API endpoints
@@ -4713,6 +5321,36 @@ app.get('/admin/moviebot/logs', adminKeyAuth, async (req, res) => {
   }
 });
 
+// Global Groq API endpoints for ALL chatbots
+app.get('/admin/groq/status', adminKeyAuth, async (req, res) => {
+  try {
+    const status = chatBotService.llmService.getGroqStatus();
+    res.json(status);
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get Groq status:', error);
+    res.status(500).json({ error: 'Failed to get Groq status' });
+  }
+});
+
+app.post('/admin/groq/config', adminKeyAuth, async (req, res) => {
+  try {
+    const { enabled, apiKey, model } = req.body;
+    
+    // Update Groq settings in LLM service
+    const result = chatBotService.llmService.updateGroqSettings(
+      enabled,
+      apiKey || null,
+      model || null
+    );
+    
+    console.log('🚀 ADMIN: Updated global Groq settings:', result);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to update Groq config:', error);
+    res.status(500).json({ error: 'Failed to update Groq config' });
+  }
+});
+
 // Forward transcription events to clients
 transcriptionService.on('transcription-chunk', (data) => {
   io.emit('transcription-update', data);
@@ -4755,7 +5393,23 @@ movieBotService.on('prompt-logged', (data) => {
   console.log(`📋 MOVIEBOT: Prompt logged for ${data.bot}`);
 });
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
+  console.log(`🆕 NEW CONNECTION: Socket ${socket.id} connected at ${new Date().toISOString()}`);
+  
+  // Check if IP is banned
+  const clientIP = IPBanService.getIPFromSocket(socket);
+  const isBanned = await IPBanService.isIPBanned(clientIP);
+  
+  if (isBanned) {
+    console.log(`🚫 CONNECTION: Banned IP attempted to connect: ${clientIP}`);
+    socket.emit('banned', { 
+      reason: 'Your IP address has been banned from this service',
+      timestamp: new Date().toISOString()
+    });
+    socket.disconnect(true);
+    return;
+  }
+  
   // Handle authentication if token is provided
   const token = socket.handshake.auth?.token;
   console.log(`🔑 SOCKET AUTH: Token provided for ${socket.id}:`, !!token);
@@ -4788,6 +5442,14 @@ io.on('connection', (socket) => {
   }
   
   console.log(`📡 SOCKET: User connected: ${socket.id} from IP: ${ip}, session: ${JSON.stringify(session)}`);
+
+  // Debug: Log all events for ViewBot connections
+  socket.onAny((eventName, ...args) => {
+    console.log(`🔴 DEBUG: Socket ${socket.id} received event '${eventName}'`);
+    if (eventName === 'request-to-stream') {
+      console.log(`🔴 DEBUG: request-to-stream args:`, args);
+    }
+  });
 
   socket.on('join-as-viewer', async () => {
     streamService.addViewer(socket.id);
@@ -4827,7 +5489,35 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('request-to-stream', async (data) => {
+  socket.on('request-to-stream', async (data, callback) => {
+    console.log(`📥 STREAMING: Received request-to-stream from socket ${socket.id} at ${new Date().toISOString()}`);
+    console.log(`📥 STREAMING: Request data:`, JSON.stringify(data));
+    console.log(`📥 STREAMING: Callback type:`, typeof callback);
+    console.log(`📥 STREAMING: Current streamer:`, streamService.getCurrentStreamer());
+    console.log(`📥 STREAMING: Server state - hasStreamer:`, !!streamService.getCurrentStreamer());
+    
+    // Check if IP is banned before allowing streaming
+    const clientIP = IPBanService.getIPFromSocket(socket);
+    const isBanned = await IPBanService.isIPBanned(clientIP);
+    
+    if (isBanned) {
+      console.log(`🚫 STREAMING: Banned IP ${clientIP} attempted to stream`);
+      socket.emit('stream-denied', { 
+        reason: 'Your IP address has been banned from streaming',
+        timestamp: new Date().toISOString()
+      });
+      if (callback && typeof callback === 'function') {
+        callback(false);
+      }
+      return;
+    }
+    
+    // Send acknowledgment if callback provided
+    if (callback && typeof callback === 'function') {
+      callback(true);
+      console.log(`✅ STREAMING: Sent acknowledgment for request-to-stream`);
+    }
+    
     try {
       // Check if this is a viewbot or real user
       const isViewBot = data.isViewBot || data.streamType === 'viewbot';
@@ -4866,15 +5556,21 @@ io.on('connection', (socket) => {
         return;
       }
       
-      // Check normal takeover cooldown rules (for real users and viewbot-to-viewbot)
-      const canTakeOver = await takeoverService.canTakeOver(socket.id);
-      
-      if (!canTakeOver.allowed) {
-        socket.emit('takeover-denied', { 
-          reason: canTakeOver.reason,
-          cooldownRemaining: canTakeOver.cooldownRemaining 
-        });
-        return;
+      // CRITICAL FIX: ViewBots should completely bypass cooldown checks
+      // Only check cooldowns for real users
+      if (!isViewBot) {
+        console.log(`🔍 COOLDOWN: Checking cooldown for real user ${socket.id}`);
+        const canTakeOver = await takeoverService.canTakeOver(socket.id);
+        
+        if (!canTakeOver.allowed) {
+          socket.emit('takeover-denied', { 
+            reason: canTakeOver.reason,
+            cooldownRemaining: canTakeOver.cooldownRemaining 
+          });
+          return;
+        }
+      } else {
+        console.log(`🤖 COOLDOWN: Skipping cooldown check for viewbot ${socket.id} - viewbots bypass all cooldowns`);
       }
 
       // If real user is taking over, set the realStreamerActive flag
@@ -4896,9 +5592,22 @@ io.on('connection', (socket) => {
             viewBotClientService.setRealStreamerStatus(true);
           }
         } else {
-          // Set cooldown for the previous human streamer
-          await takeoverService.setSocketCooldown(currentStreamer, 'stream_taken_over');
-          const cooldownInfo = await takeoverService.getSocketCooldown(currentStreamer);
+          // Check if the current streamer being taken over is a viewbot
+          // Use the same detection pattern as elsewhere in the code
+          const isOldViewBot = viewbotService && viewbotService.isViewbotStream(currentStreamer);
+          const userId = sessionService.getUserIdBySocketId(currentStreamer);
+          const isNewViewBot = userId && userId < 0;
+          const currentIsViewbot = isOldViewBot || isNewViewBot;
+          
+          // Only set cooldown for real users, not viewbots
+          let cooldownInfo = null;
+          if (!currentIsViewbot) {
+            console.log(`🔒 TAKEOVER: Setting cooldown for real user ${currentStreamer} being taken over`);
+            await takeoverService.setSocketCooldown(currentStreamer, 'stream_taken_over');
+            cooldownInfo = await takeoverService.getSocketCooldown(currentStreamer);
+          } else {
+            console.log(`🤖 TAKEOVER: Skipping cooldown for viewbot ${currentStreamer} being taken over`);
+          }
           
           // Emit takeover event with cooldown information
           io.to(currentStreamer).emit('stream-takeover', { 
@@ -4931,6 +5640,9 @@ io.on('connection', (socket) => {
         
         // Clear from notified streamers to allow fresh notifications
         notifiedStreamers.delete(currentStreamer);
+      } else {
+        // CRITICAL FIX: No current streamer - this is a fresh start (e.g., after server restart)
+        console.log(`🚀 STREAMING: No current streamer - ${socket.id} starting fresh stream (isViewBot: ${isViewBot})`);
       }
 
       streamService.setStreamer(socket.id, data.streamType);
@@ -4959,16 +5671,86 @@ io.on('connection', (socket) => {
       io.emit('stream-status', enrichedStatus);
       console.log(`📡 TAKEOVER: Broadcasted updated stream status with streamer: ${enrichedStatus.streamerDisplayName}`);
       
-      await takeoverService.recordTakeover();
+      // Only record takeover (and trigger global cooldown) for real users, not viewbots
+      console.log(`🔍 CRITICAL: Checking if we should record takeover - isViewBot: ${isViewBot}, data: ${JSON.stringify(data)}`);
+      if (!isViewBot) {
+        console.log(`🔒 TAKEOVER: Recording takeover for real user ${socket.id} - global cooldown will be triggered`);
+        await takeoverService.recordTakeover();
+      } else {
+        console.log(`🤖 TAKEOVER: Viewbot ${socket.id} starting - NOT triggering any cooldown`);
+      }
       
       socket.join('streamer');
       socket.leave('viewers');
       
+      console.log(`✅ STREAMING: Sending streaming-approved to socket ${socket.id} (isViewBot: ${isViewBot})`);
+      console.log(`📡 STREAMING: Socket state - connected: ${socket.connected}, transport: ${socket.conn?.transport?.name}`);
+      console.log(`📡 STREAMING: Socket rooms:`, Array.from(socket.rooms));
+      
+      // CRITICAL: Emit the streaming-approved event with multiple attempts
       socket.emit('streaming-approved');
       
-      // Start time tracking for streaming session if user is authenticated
+      // Try volatile emit as well
+      socket.volatile.emit('streaming-approved');
+      
+      // For ViewBots, also directly call their handler if they have one
+      if (isViewBot) {
+        console.log(`🔄 STREAMING: Attempting direct ViewBot notification for ${socket.id}`);
+        // Send a different event that ViewBots might be listening to
+        socket.emit('viewbot-stream-approved', { approved: true });
+        
+        // Try with timeout to ensure event is delivered
+        setTimeout(() => {
+          socket.emit('streaming-approved');
+          socket.emit('viewbot-stream-approved', { approved: true });
+        }, 100);
+      }
+      
+      // Also try sending with acknowledgment to verify delivery
+      socket.emit('streaming-approved-ack', {}, (ack) => {
+        if (ack) {
+          console.log(`✅ STREAMING: ViewBot acknowledged streaming-approved`);
+        } else {
+          console.log(`⚠️ STREAMING: No acknowledgment from ViewBot for streaming-approved`);
+        }
+      });
+      
+      // Track streamer connection in database for IP ban management
+      const clientIP = IPBanService.getIPFromSocket(socket);
+      const userAgent = socket.handshake.headers['user-agent'] || 'Unknown';
+      const streamerName = enrichedStatus.streamerDisplayName || socket.id;
+      
+      try {
+        await runAsync(`
+          INSERT INTO streamer_connections 
+          (streamer_id, streamer_name, ip_address, connection_type, user_agent)
+          VALUES (?, ?, ?, ?, ?)
+        `, [socket.id, streamerName, clientIP, 'websocket', userAgent]);
+        console.log(`📝 IP TRACKING: Recorded streamer connection for ${streamerName} from IP ${clientIP}`);
+      } catch (error) {
+        console.error('❌ IP TRACKING: Failed to record streamer connection:', error);
+      }
+      
+      // Start streaming log session
       const ip = sessionService.getIpAddress(socket);
       const session = sessionService.getSessionByIp(ip);
+      const userId = session?.userId || null;
+      
+      // Start streaming log session for real streamers
+      if (!isViewBot) {
+        await streamingLogsService.startSession(
+          socket.id,
+          streamerName,
+          userId,
+          clientIP,
+          userAgent,
+          data.streamType || 'standard',
+          false // not a viewbot
+        );
+        console.log(`📝 STREAMING LOGS: Started session for ${streamerName} (${clientIP})`);
+      }
+      
+      // Start time tracking for streaming session if user is authenticated
       console.log(`📊 TIME DEBUG: request-to-stream approved - IP: ${ip}, session: ${JSON.stringify(session)}`);
       if (session && session.userId) {
         // End any viewing session first
@@ -5011,14 +5793,17 @@ io.on('connection', (socket) => {
         }
         
         // Check if ViewBot has producers ready
+        // CRITICAL FIX: ViewBots use GStreamer, not MediaSoup producers
+        // Always treat ViewBot producers as ready since they stream via RTP/FFmpeg
         const producerMap = mediasoupService.producers.get(socket.id);
-        const hasVideo = producerMap && producerMap.has('video');
-        const hasAudio = producerMap && producerMap.has('audio');
+        const hasVideo = data.isViewBot ? true : (producerMap && producerMap.has('video'));
+        const hasAudio = data.isViewBot ? true : (producerMap && producerMap.has('audio'));
         
-        if (hasVideo && hasAudio && !notifiedStreamers.has(socket.id)) {
+        // For ViewBots, immediately mark as ready since they handle their own media pipeline
+        if ((data.isViewBot || (hasVideo && hasAudio)) && !notifiedStreamers.has(socket.id)) {
           notifiedStreamers.add(socket.id);
           
-          console.log(`🎬 TAKEOVER: ViewBot ${socket.id} ready - notifying viewers immediately`);
+          console.log(`🎬 TAKEOVER: ViewBot ${socket.id} ready - notifying viewers immediately (GStreamer mode)`);
           const streamerDisplayName = await getStreamerDisplayName(socket.id);
           io.emit('stream-ready', {
             streamerId: socket.id,
@@ -5026,8 +5811,8 @@ io.on('connection', (socket) => {
             isWebRTC: true,
             streamType: 'viewbot',
             isViewBot: true,
-            hasVideo: hasVideo,
-            hasAudio: hasAudio,
+            hasVideo: true,  // ViewBots always have video via GStreamer
+            hasAudio: true,  // ViewBots always have audio via GStreamer
             producerVerified: true,
             streamStartTime: Date.now(),
             timestamp: Date.now(),
@@ -5047,8 +5832,12 @@ io.on('connection', (socket) => {
       
       io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
       
-      // Broadcast global cooldown to all other users
-      await broadcastGlobalCooldown(socket.id);
+      // Only broadcast global cooldown for real users, not viewbots
+      if (!isViewBot) {
+        await broadcastGlobalCooldown(socket.id);
+      } else {
+        console.log(`🤖 COOLDOWN: Skipping global cooldown broadcast for viewbot ${socket.id}`);
+      }
       
       console.log(`Stream taken over by: ${socket.id}`);
     } catch (error) {
@@ -5353,6 +6142,24 @@ io.on('connection', (socket) => {
 
   socket.on('stop-streaming', async () => {
     if (streamService.getCurrentStreamer() === socket.id) {
+      // Update streamer connection disconnect time
+      try {
+        const clientIP = IPBanService.getIPFromSocket(socket);
+        const result = await runAsync(`
+          UPDATE streamer_connections 
+          SET disconnected_at = datetime('now'),
+              stream_duration = (strftime('%s', 'now') - strftime('%s', connected_at)),
+              disconnect_reason = 'voluntary_stop'
+          WHERE streamer_id = ? AND disconnected_at IS NULL
+        `, [socket.id]);
+        console.log(`📝 IP TRACKING: Updated disconnect for streamer ${socket.id}`);
+      } catch (error) {
+        console.error('❌ IP TRACKING: Failed to update disconnect:', error);
+      }
+      
+      // End streaming log session
+      await streamingLogsService.endSession(socket.id, 'voluntary_stop');
+      
       // End streaming time tracking if user is authenticated
       const ip = sessionService.getIpAddress(socket);
       const session = sessionService.getSessionByIp(ip);
@@ -5392,6 +6199,160 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Handle stop-stream event (used by ViewBots during rotation)
+  socket.on('stop-stream', async (data) => {
+    console.log(`🛑 STOP-STREAM: Received from ${socket.id} (ViewBot: ${data?.isViewBot}, BotId: ${data?.botId})`);
+    
+    // Clean up MediaSoup resources immediately
+    if (mediasoupService) {
+      console.log(`🧹 MEDIASOUP: Cleaning up resources for ${socket.id} on stop-stream`);
+      await mediasoupService.cleanupSocketResources(socket.id);
+    }
+    
+    // Clean up Plain Transport resources for ViewBots
+    if (data?.isViewBot && data?.botId && plainTransportService) {
+      console.log(`🧹 PLAIN TRANSPORT: Cleaning up resources for ViewBot ${data.botId}`);
+      await plainTransportService.cleanup(data.botId);
+    }
+    
+    // If this is the current streamer, clear it
+    if (streamService.getCurrentStreamer() === socket.id) {
+      streamService.clearStreamer();
+      mediasoupService.currentStreamer = null;
+      
+      // Only emit stream-ended if it's not a ViewBot rotation
+      if (!data?.isViewBot) {
+        io.emit('stream-ended');
+        notifyViewersStreamEnded();
+      }
+      
+      console.log(`📺 STOP-STREAM: Cleared streamer ${socket.id} from services`);
+    }
+  });
+
+  // ViewBot request to create Plain RTP transport
+  socket.on('viewbot-create-transport', async (data, callback) => {
+    console.log(`🚚 SERVER: ViewBot ${data.botId} requesting Plain RTP transports`);
+    
+    try {
+      // Create TWO Plain RTP transports - one for video, one for audio
+      const videoTransport = await mediasoupService.router.createPlainTransport({
+        listenIp: {
+          ip: '127.0.0.1',
+          announcedIp: null
+        },
+        rtcpMux: false,
+        comedia: true  // Auto-detect source
+      });
+      
+      const audioTransport = await mediasoupService.router.createPlainTransport({
+        listenIp: {
+          ip: '127.0.0.1',
+          announcedIp: null
+        },
+        rtcpMux: false,
+        comedia: true  // Auto-detect source
+      });
+      
+      console.log(`✅ SERVER: Created Plain RTP transports for ViewBot ${data.botId}`);
+      console.log(`📡 SERVER: Video RTP port: ${videoTransport.tuple.localPort}`);
+      console.log(`📡 SERVER: Audio RTP port: ${audioTransport.tuple.localPort}`);
+      
+      // Store both transports for this socket
+      if (!mediasoupService.transports) {
+        mediasoupService.transports = new Map();
+      }
+      mediasoupService.transports.set(socket.id, {
+        video: videoTransport,
+        audio: audioTransport
+      });
+      console.log(`📦 SERVER: Stored transports for socket ${socket.id}`);
+      
+      callback({
+        videoTransportId: videoTransport.id,
+        audioTransportId: audioTransport.id,
+        videoPort: videoTransport.tuple.localPort,
+        audioPort: audioTransport.tuple.localPort
+      });
+    } catch (error) {
+      console.error(`❌ SERVER: Failed to create Plain RTP transports:`, error);
+      callback({ error: error.message });
+    }
+  });
+  
+  // ViewBot request to create producers
+  socket.on('viewbot-create-producers', async (data, callback) => {
+    console.log(`🎤 SERVER: ViewBot ${data.botId} requesting to create producers`);
+    console.log(`🔍 SERVER: Looking for transports for socket ${socket.id}`);
+    console.log(`🔍 SERVER: Available transports: ${mediasoupService.transports ? mediasoupService.transports.size : 0}`);
+    
+    try {
+      const transports = mediasoupService.transports?.get(socket.id);
+      if (!transports || !transports.video || !transports.audio) {
+        console.error(`❌ SERVER: Transports not found for socket ${socket.id}`);
+        console.error(`   Available sockets: ${mediasoupService.transports ? Array.from(mediasoupService.transports.keys()).join(', ') : 'none'}`);
+        throw new Error('Transports not found');
+      }
+      
+      // Create video producer on video transport
+      const videoProducer = await transports.video.produce({
+        kind: 'video',
+        rtpParameters: {
+          codecs: [{
+            mimeType: 'video/h264',
+            payloadType: 102,
+            clockRate: 90000,
+            parameters: {
+              'level-asymmetry-allowed': 1,
+              'packetization-mode': 1,
+              'profile-level-id': '42e01f'
+            }
+          }],
+          encodings: [{ ssrc: 11111111 }]
+        }
+      });
+      
+      // Create audio producer on audio transport  
+      const audioProducer = await transports.audio.produce({
+        kind: 'audio',
+        rtpParameters: {
+          codecs: [{
+            mimeType: 'audio/opus',
+            payloadType: 101,
+            clockRate: 48000,
+            channels: 2,
+            parameters: {
+              'sprop-stereo': 1,
+              'useinbandfec': 1
+            }
+          }],
+          encodings: [{ ssrc: 22222222 }]
+        }
+      });
+      
+      // Store producers for this socket
+      if (!mediasoupService.producers.has(socket.id)) {
+        mediasoupService.producers.set(socket.id, new Map());
+      }
+      const producerMap = mediasoupService.producers.get(socket.id);
+      producerMap.set('video', videoProducer);
+      producerMap.set('audio', audioProducer);
+      
+      console.log(`✅ SERVER: Created producers for ViewBot ${data.botId}`);
+      console.log(`   Video Producer ID: ${videoProducer.id}`);
+      console.log(`   Audio Producer ID: ${audioProducer.id}`);
+      
+      callback({
+        success: true,
+        videoProducerId: videoProducer.id,
+        audioProducerId: audioProducer.id
+      });
+    } catch (error) {
+      console.error(`❌ SERVER: Failed to create producers:`, error);
+      callback({ error: error.message });
+    }
+  });
+  
   // ViewBot stream ready notification
   socket.on('viewbot-stream-ready', async (data) => {
     console.log(`📺 SERVER: ViewBot ${data.botId} reports stream ready, triggering stream switch`);
@@ -5447,6 +6408,40 @@ io.on('connection', (socket) => {
       
     } catch (error) {
       console.error(`❌ SERVER: Failed to handle ViewBot rotation request from ${data.botId}:`, error);
+    }
+  });
+
+  // Handle when a ViewBot video file ends naturally
+  socket.on('viewbot-video-ended', async (data) => {
+    console.log(`🎬 SERVER: ViewBot ${data.botId} video file ended: ${data.videoFile}`);
+    
+    // Use the global viewBotRotation service
+    if (!global.viewBotRotation) {
+      console.error(`❌ SERVER: ViewBotRotation service not available for video-ended event`);
+      return;
+    }
+    
+    // Only trigger rotation if rotation is enabled
+    if (!global.viewBotRotation.enabled) {
+      console.log(`🚫 SERVER: ViewBot video ended but rotation is disabled`);
+      return;
+    }
+    
+    try {
+      // Force a rotation to the next video
+      console.log(`🔄 SERVER: Triggering rotation after video ended for ViewBot ${data.botId}`);
+      await global.viewBotRotation.rotateToNextBot();
+      
+      console.log(`✅ SERVER: Rotation triggered successfully after video end`);
+      
+      // Notify admins
+      io.emit('viewbot-rotation-after-video-end', {
+        previousBot: data.botId,
+        previousVideo: data.videoFile,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      console.error(`❌ SERVER: Error handling video-ended event:`, error);
     }
   });
 
@@ -5932,6 +6927,27 @@ io.on('connection', (socket) => {
   });
   
   socket.on('disconnect', async () => {
+    // Clean up ViewBot Plain RTP transports if exist
+    if (mediasoupService.transports?.has(socket.id)) {
+      const transports = mediasoupService.transports.get(socket.id);
+      try {
+        // Handle both single transport and dual transport cases
+        if (transports.video && transports.audio) {
+          // Dual transport case (ViewBots)
+          transports.video.close();
+          transports.audio.close();
+          console.log(`🧹 SERVER: Closed Plain RTP transports (video & audio) for socket ${socket.id}`);
+        } else if (typeof transports.close === 'function') {
+          // Single transport case
+          transports.close();
+          console.log(`🧹 SERVER: Closed Plain RTP transport for socket ${socket.id}`);
+        }
+      } catch (e) {
+        console.error('Error closing transports:', e);
+      }
+      mediasoupService.transports.delete(socket.id);
+    }
+    
     // Handle time tracking cleanup for authenticated users
     const ip = sessionService.getIpAddress(socket);
     const session = sessionService.getSessionByIp(ip);
@@ -5950,6 +6966,15 @@ io.on('connection', (socket) => {
     // Clean up ViewBot tracking and username cache if this was a ViewBot
     if (viewbotSocketIds.has(socket.id)) {
       cleanupViewbotUsername(socket.id);
+      
+      // Clean up Plain Transport resources for disconnected ViewBot
+      if (viewBotClientService && plainTransportService) {
+        const botId = viewBotClientService.getBotIdBySocketId(socket.id);
+        if (botId) {
+          console.log(`🧹 DISCONNECT: Cleaning up Plain Transport for ViewBot ${botId}`);
+          await plainTransportService.cleanup(botId);
+        }
+      }
     }
     
     // Clean up mediasoup resources
@@ -5969,15 +6994,24 @@ io.on('connection', (socket) => {
       console.log(`   New ViewBot: ${isNewViewBot} (userID: ${userId})`);
       console.log(`   Is ViewBot: ${isViewbot}, Is Real User: ${isRealUser}`);
       
+      // End streaming log session for real streamers
+      if (isRealUser) {
+        await streamingLogsService.endSession(socket.id, 'disconnect');
+      }
+      
       // If real user is disconnecting, clear the protection flag
       if (isRealUser && viewBotClientService) {
         console.log(`🔓 PRIORITY: Real user ${socket.id} disconnected - clearing viewbot protection`);
         viewBotClientService.setRealStreamerStatus(false);
       }
       
-      // Apply individual cooldown when current streamer disconnects
-      await takeoverService.setSocketCooldown(socket.id, 'streamer_disconnect');
-      console.log(`🔒 COOLDOWN: Applied individual cooldown to ${socket.id} for streamer disconnect`);
+      // Only apply individual cooldown for real users, not viewbots
+      if (!isViewbot) {
+        await takeoverService.setSocketCooldown(socket.id, 'streamer_disconnect');
+        console.log(`🔒 COOLDOWN: Applied individual cooldown to real user ${socket.id} for streamer disconnect`);
+      } else {
+        console.log(`🤖 COOLDOWN: Skipping individual cooldown for viewbot ${socket.id} disconnect`);
+      }
       
       streamService.clearStreamer();
       // CRITICAL FIX: Also clear MediasoupService currentStreamer
@@ -6202,8 +7236,96 @@ async function startServer() {
     
     // Initialize ViewBotClientService with environment-aware URL
     // Pass null as serverUrl to let ViewBotClientService use environment variables
+    console.log('🚀 VIEWBOT CLIENT: Creating ViewBotClientService...');
     viewBotClientService = new ViewBotClientService(null, mediasoupService, streamService, viewbotService);
-    console.log('✅ VIEWBOT CLIENT: ViewBotClientService initialized');
+    
+    // CRITICAL: Give ViewbotService a reference to ViewBotClientService for rotation handling
+    viewbotService.viewBotClientService = viewBotClientService;
+    
+    // CRITICAL: Initialize the service to restore state from database
+    try {
+      console.log('🚀 VIEWBOT CLIENT: Initializing ViewBotClientService...');
+      await viewBotClientService.initialize();
+      console.log('✅ VIEWBOT CLIENT: ViewBotClientService initialized and state restored');
+    } catch (error) {
+      console.error('❌ VIEWBOT CLIENT: Failed to initialize ViewBotClientService:', error);
+      console.log('⚠️ VIEWBOT CLIENT: Continuing without ViewBotClientService');
+      viewBotClientService = null;
+    }
+    
+    // CRITICAL FIX: Set global objects so SimpleViewBotMediaSoup can emit events and manage streams
+    global.io = io;
+    global.streamService = streamService;
+    global.streamManager = streamService;  // streamManager and streamService are same
+    console.log('✅ GLOBAL OBJECTS: Set global.io and global.streamService for event emission');
+    console.log('🔍 DEBUG: global.io test:', typeof global.io);
+    console.log('🔍 DEBUG: io.emit test:', typeof io.emit);
+    
+    // Test emit
+    setTimeout(() => {
+      if (global.io) {
+        console.log('🔍 DEBUG: Testing global.io.emit after 5 seconds');
+        global.io.emit('test-event', { test: true });
+      }
+    }, 5000);
+    
+    // Initialize NEW ViewBot Rotation System with Socket.IO clients
+    console.log('🚀 VIEWBOT ROTATION: Starting initialization...');
+    try {
+      const ViewBotRotationService = require('./services/ViewBotRotationService');
+      console.log('✅ VIEWBOT ROTATION: Service module loaded');
+      
+      const viewBotRotation = new ViewBotRotationService('https://127.0.0.1:8443');
+      console.log('✅ VIEWBOT ROTATION: Service instance created');
+      
+      // Store globally for admin routes
+      global.viewBotRotation = viewBotRotation;
+      
+      // Initialize with media files
+      await viewBotRotation.initialize();
+      console.log('✅ VIEWBOT ROTATION: Service initialized');
+      
+      // Update settings to achieve ~3.5 minute average
+      // Average = (min + max) / 2, so for 3.5 min avg: min + max = 7 min
+      // Using 1 min minimum and 6 min maximum gives 3.5 min average
+      viewBotRotation.updateSettings({
+        minRotationInterval: 60000,   // 1 minute minimum
+        maxRotationInterval: 360000,  // 6 minutes maximum (avg = 3.5 min)
+        cooldownDuration: 600000      // 10 minutes
+      });
+      
+      // Enable rotation
+      viewBotRotation.enabled = true;
+      
+      // Delay rotation start to ensure server is fully ready
+      setTimeout(async () => {
+        console.log('🚀 VIEWBOT ROTATION: Starting rotation after delay...');
+        await viewBotRotation.startRotation();
+      }, 10000); // 10 second delay
+      
+      console.log('✅ VIEWBOT ROTATION: New Socket.IO-based rotation system initialized');
+      
+      // Keep SimpleViewBotMediaSoup disabled but available for fallback
+      global.simpleMediaSoupRotation = null;
+      
+    } catch (error) {
+      console.error('❌ VIEWBOT ROTATION: Failed to initialize:', error);
+      console.error(error.stack);
+    }
+    
+    // ViewBots are now persisted in database and restored automatically
+    // No need to recreate from uploads on every startup
+    // To add new viewbots from uploads, run: node /root/onestreamer/create-viewbots-from-uploads.js
+    
+    // Initialize ViewBot API routes with the service instance
+    const viewbotApiRoutesFactory = require('./routes/viewbot-api');
+    const viewbotVideoApi = require('./routes/viewbot-video-api');
+    viewbotApiRoutes = viewbotApiRoutesFactory(viewBotClientService);
+    app.use('/api', viewbotApiRoutes);
+    
+    // Add new video management API routes
+    app.use('/admin/viewbot', viewbotVideoApi);
+    console.log('✅ VIEWBOT API: Routes initialized with service instance');
   } catch (error) {
     console.error('❌ MEDIASOUP: Initialization failed:', error);
     console.log('⚠️ Continuing without mediasoup and viewbot services...');
@@ -6300,8 +7422,8 @@ process.on('SIGINT', async () => {
     // 2. Stop all media streams (GStreamer and FFmpeg)
     console.log('🎬 Stopping all media streams...');
     
-    // Stop ViewBot GStreamer streams
-    if (viewBotGStreamerService) {
+    // Stop ViewBot GStreamer streams (check if service exists first)
+    if (typeof viewBotGStreamerService !== 'undefined' && viewBotGStreamerService) {
       console.log('   Stopping ViewBot GStreamer streams...');
       if (viewBotGStreamerService.stopAll) {
         await viewBotGStreamerService.stopAll();
@@ -6317,11 +7439,8 @@ process.on('SIGINT', async () => {
       }
     }
     
-    // Stop ViewBot FFmpeg streams
-    if (viewBotFFmpegService) {
-      console.log('   Stopping ViewBot FFmpeg streams...');
-      viewBotFFmpegService.stopAll();
-    }
+    // Stop ViewBot FFmpeg streams (service removed - handled by ViewBotClientService)
+    // viewBotFFmpegService was removed - FFmpeg/GStreamer streams are now handled by ViewBotClientService
     
     // Stop ViewBot Client Service streams
     if (viewBotClientService) {
@@ -6329,20 +7448,8 @@ process.on('SIGINT', async () => {
       await viewBotClientService.cleanup();
     }
     
-    // Stop ViewBot Muxed streams
-    if (viewBotMuxedStreamService && viewBotMuxedStreamService.activeStreams) {
-      console.log('   Stopping ViewBot Muxed streams...');
-      for (const [botId, stream] of viewBotMuxedStreamService.activeStreams) {
-        if (stream.ffmpeg && !stream.ffmpeg.killed) {
-          console.log(`   - Killing FFmpeg for muxed bot ${botId}`);
-          stream.ffmpeg.kill('SIGTERM');
-        }
-        if (stream.tsReceiver) {
-          stream.tsReceiver.close();
-        }
-      }
-      viewBotMuxedStreamService.activeStreams.clear();
-    }
+    // Stop ViewBot Muxed streams (service removed - handled by ViewBotClientService)
+    // viewBotMuxedStreamService was removed - muxed streams are now handled by ViewBotClientService
     
     // Stop Stream Interceptor Service GStreamer processes
     if (streamInterceptorService && streamInterceptorService.activeIntercepts) {
@@ -6368,7 +7475,7 @@ process.on('SIGINT', async () => {
     }
     
     // Stop Simple Media Stream Service
-    if (simpleMediaStreamService && simpleMediaStreamService.ffmpegProcess) {
+    if (typeof simpleMediaStreamService !== 'undefined' && simpleMediaStreamService && simpleMediaStreamService.ffmpegProcess) {
       console.log('   Stopping Simple Media Stream FFmpeg...');
       if (!simpleMediaStreamService.ffmpegProcess.killed) {
         simpleMediaStreamService.ffmpegProcess.kill('SIGTERM');

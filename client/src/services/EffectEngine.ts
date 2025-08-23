@@ -68,8 +68,9 @@ export class EffectEngine extends EventEmitter {
     // Transparency tests disabled - working now
     // this.performTransparencyUnitTest();
     
-    // SOLUTION: Move canvas to document.body to escape container stacking context
-    this.escapeContainerContext();
+    // DISABLED: Moving canvas to document.body causes issues on mobile
+    // The canvas should stay within its container for proper stacking
+    // this.escapeContainerContext();
     
     // Force immediate resize to ensure proper sizing
     this.forceCanvasResize();
@@ -83,6 +84,10 @@ export class EffectEngine extends EventEmitter {
   }
 
   private setupCanvas(): void {
+    // Get the parent container first (most reliable for viewbot streams)
+    const parentElement = this.canvas.parentElement;
+    const parentRect = parentElement?.getBoundingClientRect();
+    
     // Match canvas size to video element
     const rect = this.videoElement.getBoundingClientRect();
     
@@ -108,16 +113,25 @@ export class EffectEngine extends EventEmitter {
     //   }
     // });
     
-    // Use best available dimensions, with priority: rect > computed style > client > offset > defaults
-    let width = rect.width;
-    let height = rect.height;
+    // Prioritize parent container dimensions (most reliable for viewbot streams)
+    let width = parentRect?.width || 0;
+    let height = parentRect?.height || 0;
     
+    // Fall back to video element rect if parent not available or too small
+    if (width <= 100 || height <= 100) {
+      width = rect.width;
+      height = rect.height;
+    }
+    
+    // Then try computed style dimensions
     if (width <= 0) width = styleWidth;
     if (height <= 0) height = styleHeight;
     
+    // Then try video element client dimensions
     if (width <= 0) width = this.videoElement.clientWidth;
     if (height <= 0) height = this.videoElement.clientHeight;
     
+    // Then try video element offset dimensions
     if (width <= 0) width = this.videoElement.offsetWidth;
     if (height <= 0) height = this.videoElement.offsetHeight;
     
@@ -129,9 +143,14 @@ export class EffectEngine extends EventEmitter {
     this.canvas.width = width;
     this.canvas.height = height;
     
-    // CRITICAL: Set CSS dimensions to match canvas dimensions to prevent scaling issues
-    this.canvas.style.width = `${width}px`;
-    this.canvas.style.height = `${height}px`;
+    // CRITICAL: Set CSS dimensions to 100% to fill the parent container
+    this.canvas.style.width = '100%';
+    this.canvas.style.height = '100%';
+    
+    // Ensure canvas is properly positioned
+    this.canvas.style.position = 'absolute';
+    this.canvas.style.top = '0';
+    this.canvas.style.left = '0';
     
     // Set up canvas rendering context
     this.ctx.imageSmoothingEnabled = true;
@@ -604,32 +623,22 @@ export class EffectEngine extends EventEmitter {
   private createTransparentContext(): CanvasRenderingContext2D | null {
 // console.log('🎨 EffectEngine: Creating transparent canvas context...');
     
-    // Try multiple context creation approaches
-    const contextOptions = [
-      { alpha: true, desynchronized: true, willReadFrequently: false },
-      { alpha: true, desynchronized: false, willReadFrequently: false },
-      { alpha: true, premultipliedAlpha: false },
-      { alpha: true }
-    ];
+    // Use simple alpha: true for best mobile compatibility
+    // Complex options can cause issues on mobile browsers
+    const ctx = this.canvas.getContext('2d', { 
+      alpha: true,
+      // Avoid desynchronized on mobile as it can cause rendering issues
+      desynchronized: false
+    }) as CanvasRenderingContext2D | null;
     
-    for (let i = 0; i < contextOptions.length; i++) {
-      const options = contextOptions[i];
-// console.log(`🎨 EffectEngine: Trying context creation attempt ${i + 1}:`, options);
+    if (ctx) {
+// console.log('✅ EffectEngine: Successfully created context with alpha support');
       
-      // Get context with current options
-      const ctx = this.canvas.getContext('2d', options) as CanvasRenderingContext2D | null;
+      // Ensure transparency is properly set
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
       
-      if (ctx) {
-// console.log(`✅ EffectEngine: Successfully created context on attempt ${i + 1}`);
-        
-        // Test if context supports transparency
-        if (this.testContextTransparency(ctx)) {
-// console.log('✅ EffectEngine: Context supports transparency');
-          return ctx;
-        } else {
-          console.warn(`⚠️ EffectEngine: Context does not support transparency on attempt ${i + 1}`);
-        }
-      }
+      return ctx;
     }
     
     console.error('❌ EffectEngine: Failed to create transparent context after all attempts');
@@ -1083,26 +1092,13 @@ export class EffectEngine extends EventEmitter {
       }
     }
     
-    // CRITICAL: Clear canvas with explicit transparency operations
-    this.ctx.save();
-    
-    // Method 1: Clear with transparent composite operation
-    this.ctx.globalCompositeOperation = 'copy';
-    this.ctx.globalAlpha = 0;
-    this.ctx.fillStyle = '#000000'; // Color doesn't matter with alpha=0
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    
-    this.ctx.restore();
-    
-    // Method 2: Standard clear
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    
-    // Method 3: Explicit transparent fill
+    // CRITICAL: Clear canvas properly for mobile compatibility
+    // Use standard clearRect which works best on mobile browsers
+    // The multiple clear methods were causing black overlay on mobile
     this.ctx.save();
     this.ctx.globalCompositeOperation = 'source-over';
-    this.ctx.globalAlpha = 0;
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.globalAlpha = 1;
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.ctx.restore();
     
     // Log transparency debug info every 60 frames when effects are active

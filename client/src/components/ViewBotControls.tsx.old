@@ -86,6 +86,7 @@ const ViewBotControls: React.FC<ViewBotControlsProps> = ({ makeApiCall, addLog }
   
   // Bot creation form state
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [botName, setBotName] = useState(''); // Separate state for bot name
   const [createConfig, setCreateConfig] = useState<Partial<ViewBotConfig>>(() => ({
     contentType: 'testPattern',
     testPattern: 'color-bars',
@@ -248,8 +249,9 @@ const ViewBotControls: React.FC<ViewBotControlsProps> = ({ makeApiCall, addLog }
         setRotationStatus({
           rotationEnabled: healthResult.rotationEnabled,
           currentLiveBot: healthResult.currentLiveBot,
+          currentLiveBotName: healthResult.currentLiveBotName,
           realStreamerActive: healthResult.realStreamerActive,
-          availableBots: statusResult.bots?.filter((bot: ViewBot) => bot.isConnected && !bot.isStreaming).length || 0,
+          availableBots: healthResult.availableBotsTotal || statusResult.totalBots || 0,
           totalBots: statusResult.totalBots,
           nextRotationTime: healthResult.nextRotationTime,
           timeToNextRotation: healthResult.timeToNextRotation,
@@ -412,12 +414,13 @@ const ViewBotControls: React.FC<ViewBotControlsProps> = ({ makeApiCall, addLog }
       
       const result = await makeApiCall('/admin/viewbot-client/create', {
         method: 'POST',
-        body: JSON.stringify(createConfig)
+        body: JSON.stringify({ ...createConfig, name: botName || undefined })
       });
       
       if (result.success) {
-        addLog(`✅ ViewBot created: ${result.botId}`);
+        addLog(`✅ ViewBot created: ${result.botId}${botName ? ` (${botName})` : ''}`);
         setShowCreateForm(false);
+        setBotName(''); // Reset bot name
         await fetchStatus();
       } else {
         // Enhanced error handling
@@ -459,12 +462,13 @@ const ViewBotControls: React.FC<ViewBotControlsProps> = ({ makeApiCall, addLog }
       
       const result = await makeApiCall('/admin/viewbot-client/create-streamer', {
         method: 'POST',
-        body: JSON.stringify({ ...createConfig, autoStart: true })
+        body: JSON.stringify({ ...createConfig, autoStart: true, name: botName || undefined })
       });
       
       if (result.success) {
-        addLog(`✅ Streamer ViewBot created and started: ${result.botId}`);
+        addLog(`✅ Streamer ViewBot created and started: ${result.botId}${botName ? ` (${botName})` : ''}`);
         setShowCreateForm(false);
+        setBotName(''); // Reset bot name
         await fetchStatus();
       } else {
         // Enhanced error handling
@@ -781,9 +785,9 @@ const ViewBotControls: React.FC<ViewBotControlsProps> = ({ makeApiCall, addLog }
               </div>
               
               <div className="table-row">
-                <span>Current Live Bot</span>
+                <span>Current Bot</span>
                 <span className={rotationStatus.currentLiveBot ? 'active' : 'inactive'}>
-                  {rotationStatus.currentLiveBot ? rotationStatus.currentLiveBot.substring(0, 12) + '...' : 'None'}
+                  {rotationStatus.currentLiveBotName || (rotationStatus.currentLiveBot ? rotationStatus.currentLiveBot.substring(0, 12) + '...' : 'None')}
                 </span>
                 <span>
                   {rotationStatus.currentLiveBot ? 'Currently broadcasting' : 'No active ViewBot'}
@@ -791,9 +795,9 @@ const ViewBotControls: React.FC<ViewBotControlsProps> = ({ makeApiCall, addLog }
               </div>
               
               <div className="table-row">
-                <span>Available Bots</span>
+                <span>Available</span>
                 <span>{rotationStatus.availableBots}</span>
-                <span>Ready for rotation</span>
+                <span>Total bots for rotation</span>
               </div>
               
               {rotationEnabled && rotationStatus.timeToNextRotation > 0 && (
@@ -846,7 +850,12 @@ const ViewBotControls: React.FC<ViewBotControlsProps> = ({ makeApiCall, addLog }
           <h4>🎛️ Bot Management</h4>
           <div className="section-actions">
             <button 
-              onClick={() => setShowCreateForm(!showCreateForm)}
+              onClick={() => {
+                setShowCreateForm(!showCreateForm);
+                if (!showCreateForm) {
+                  setBotName(''); // Reset bot name when opening form
+                }
+              }}
               className="create-button"
               disabled={loading}
             >
@@ -870,6 +879,17 @@ const ViewBotControls: React.FC<ViewBotControlsProps> = ({ makeApiCall, addLog }
             <h5>Create New ViewBot</h5>
             
             <div className="config-grid">
+              <div className="config-group">
+                <label>Bot Name (Optional):</label>
+                <input
+                  type="text"
+                  value={botName}
+                  onChange={(e) => setBotName(e.target.value)}
+                  placeholder="Enter a name for this bot"
+                  maxLength={50}
+                />
+              </div>
+
               <div className="config-group">
                 <label>Content Type:</label>
                 <select

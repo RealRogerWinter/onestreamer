@@ -13,6 +13,7 @@ interface UserData {
   email: string;
   isVerified?: boolean;
   is_verified?: boolean;
+  canChangeUsername?: boolean;
 }
 
 interface UserStats {
@@ -31,6 +32,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
   const [userData, setUserData] = useState<UserData | null>(null);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [editMode, setEditMode] = useState(false);
+  const [editingUsername, setEditingUsername] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -38,9 +40,11 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
     newPassword: '',
     confirmPassword: ''
   });
+  const [newUsername, setNewUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [resendingVerification, setResendingVerification] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -134,6 +138,45 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
     }
   };
 
+  const handleUsernameChange = async () => {
+    if (!newUsername || newUsername === userData?.username) {
+      setEditingUsername(false);
+      return;
+    }
+
+    // Validate username
+    if (newUsername.length < 3 || newUsername.length > 20) {
+      setError('Username must be between 3 and 20 characters');
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(newUsername)) {
+      setError('Username can only contain letters, numbers, and underscores');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await authService.changeUsername(newUsername);
+      
+      if (response.success) {
+        setSuccess('Username changed successfully! This was your one-time username change.');
+        setEditingUsername(false);
+        await loadUserProfile();
+        if (onProfileUpdate) {
+          onProfileUpdate();
+        }
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to change username');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCancel = () => {
     setEditMode(false);
     setError(null);
@@ -146,6 +189,24 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
         newPassword: '',
         confirmPassword: ''
       });
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setResendingVerification(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await authService.resendVerificationEmail();
+      
+      if (response.success) {
+        setSuccess(response.message || 'Verification email has been resent. Please check your email.');
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to resend verification email');
+    } finally {
+      setResendingVerification(false);
     }
   };
 
@@ -182,7 +243,54 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
             <h3>Account Information</h3>
             <div className="profile-field">
               <label>Username</label>
-              <span className="field-value">{userData?.username}</span>
+              {editingUsername ? (
+                <div className="username-edit-container">
+                  <input
+                    type="text"
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value)}
+                    placeholder="Enter new username"
+                    disabled={loading}
+                    maxLength={20}
+                  />
+                  <div className="username-edit-buttons">
+                    <button 
+                      className="btn-save-username"
+                      onClick={handleUsernameChange}
+                      disabled={loading}
+                    >
+                      Save
+                    </button>
+                    <button 
+                      className="btn-cancel-username"
+                      onClick={() => {
+                        setEditingUsername(false);
+                        setNewUsername(userData?.username || '');
+                        setError(null);
+                      }}
+                      disabled={loading}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="field-value-with-action">
+                  <span className="field-value">{userData?.username}</span>
+                  {userData?.canChangeUsername && (
+                    <button 
+                      className="btn-change-username"
+                      onClick={() => {
+                        setEditingUsername(true);
+                        setNewUsername(userData?.username || '');
+                      }}
+                      title="You can change your username once (OAuth users only)"
+                    >
+                      Change (One-time)
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="profile-field">
@@ -199,7 +307,17 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
                 <div className="field-value-with-status">
                   <span className="field-value">{userData?.email}</span>
                   {userData && !(userData.isVerified || userData.is_verified) && (
-                    <span className="verification-warning">⚠️ Not verified</span>
+                    <>
+                      <span className="verification-warning">⚠️ Not verified</span>
+                      <button 
+                        className="btn-resend-verification"
+                        onClick={handleResendVerification}
+                        disabled={resendingVerification}
+                        title="Resend verification email"
+                      >
+                        {resendingVerification ? 'Sending...' : 'Resend Verification'}
+                      </button>
+                    </>
                   )}
                 </div>
               )}
