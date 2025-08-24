@@ -23,17 +23,17 @@ class MediasoupService {
       listenIps: [
         {
           ip: '0.0.0.0',
-          announcedIp: process.env.ANNOUNCED_IP || null
+          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>'
         }
       ],
       enableUdp: true,
       enableTcp: true,
       preferUdp: true,
       enableSctp: false, // Disable SCTP as we don't use DataChannels
-      initialAvailableOutgoingBitrate: 600000,
-      minimumAvailableOutgoingBitrate: 200000,
+      initialAvailableOutgoingBitrate: 150000, // 150kbps for mobile
+      minimumAvailableOutgoingBitrate: 50000,  // 50kbps minimum
       maxSctpMessageSize: 262144,
-      maxIncomingBitrate: 5000000
+      maxIncomingBitrate: 500000  // 500kbps max for mobile
     }
     
     // Start periodic cleanup
@@ -188,22 +188,18 @@ class MediasoupService {
       listenIps: [
         {
           ip: '0.0.0.0',
-          announcedIp: process.env.ANNOUNCED_IP || '127.0.0.1', // Use env var for production
+          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>', // Use actual server IP
         },
       ],
-      initialAvailableOutgoingBitrate: 1000000, // 1 Mbps initial
-      minimumAvailableOutgoingBitrate: 300000, // 300 kbps minimum
-      maxIncomingBitrate: 5000000, // 5 Mbps max incoming
+      initialAvailableOutgoingBitrate: 150000, // 150kbps for mobile
+      minimumAvailableOutgoingBitrate: 50000, // 50kbps minimum  
+      maxIncomingBitrate: 500000, // 500kbps max for mobile
       // Fix ICE consent timeout issue - increase from default 30s
       iceConsentTimeout: 60, // 60 seconds instead of default 30
       // Enable ICE-Lite mode for more stable connections
       enableSctp: true,
       numSctpStreams: { OS: 1024, MIS: 1024 },
-      iceServers: process.env.NODE_ENV === 'production' ? [] : [ // Skip TURN in local dev
-        {
-          urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']
-        }
-      ],
+      // Note: MediaSoup server doesn't use iceServers - that's for the client side only
       appData: {
         socketId,
         createdAt: Date.now()

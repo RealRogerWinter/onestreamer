@@ -11,7 +11,7 @@ console.log('Starting production server on port 3443...');
 console.log('Serving from:', buildDir);
 
 const serve = spawn('serve', [
-  '-s', buildDir,
+  buildDir,  // Remove -s flag to serve all files directly
   '-l', '3443',
   '--ssl-cert', certPath,
   '--ssl-key', keyPath,

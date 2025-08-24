@@ -1,6 +1,7 @@
 import * as mediasoupClient from 'mediasoup-client';
 import { Device } from 'mediasoup-client';
 import { Socket } from 'socket.io-client';
+import * as crypto from 'crypto-js';
 
 export interface MediasoupClientConfig {
   socket: Socket;
@@ -21,7 +22,7 @@ export class MediasoupClient {
   private consumers: Map<string, mediasoupClient.types.Consumer> = new Map();
   private isDestroyed: boolean = false;
   private isProcessing: boolean = false;
-  private operationTimeout: number = 10000; // 10 seconds
+  private operationTimeout: number = 30000; // 30 seconds for mobile networks
   private reconnectionAttempts: number = 0;
   private maxReconnectionAttempts: number = 5;
   private reconnectionDelay: number = 1000; // Start with 1 second
@@ -45,6 +46,13 @@ export class MediasoupClient {
     
     // Set up connection monitoring
     this.setupConnectionMonitoring();
+  }
+
+  private generateTurnCredential(username: string): string {
+    // Generate time-limited TURN credentials using HMAC-SHA1
+    const secret = '***REMOVED-TURN-SECRET***';
+    const hash = crypto.HmacSHA1(username, secret);
+    return crypto.enc.Base64.stringify(hash);
   }
 
   private withTimeout<T>(promise: Promise<T>, ms: number = this.operationTimeout): Promise<T> {
@@ -427,26 +435,32 @@ export class MediasoupClient {
       const transportOptions = await response.json();
       
       // Optimized ICE servers configuration with priority
+      const turnUsername = `${Date.now()}:webrtc`;
+      const turnCredential = this.generateTurnCredential(turnUsername);
+      
+      console.log('🔐 TURN Config:', {
+        username: turnUsername,
+        credential: turnCredential,
+        urls: ['turn:onestreamer.live:3478', 'turn:onestreamer.live:8080']
+      });
+      
       const sendTransportOptions = {
         ...transportOptions,
-        iceServers: process.env.NODE_ENV === 'production' ? [
-          // Production: prioritize low-latency STUN servers
+        iceServers: [
+          // STUN servers for NAT discovery
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' }
-        ] : [
-          // Development: include TURN for NAT traversal
-          { urls: 'stun:stun.l.google.com:19302' },
+          // Our TURN server - using direct IP to bypass Cloudflare
           {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
+            urls: 'turn:<SERVER_IP>:3478?transport=tcp',
+            username: turnUsername,
+            credential: turnCredential
           }
         ],
-        iceTransportPolicy: 'all', // Use all available candidates
+        iceTransportPolicy: 'relay', // Force TURN relay for mobile networks
         iceCandidatePoolSize: 10, // Pre-gather ICE candidates
-        rtcpMuxPolicy: 'require' // Multiplex RTP and RTCP
+        rtcpMuxPolicy: 'require', // Multiplex RTP and RTCP
+        bundlePolicy: 'max-bundle' // Bundle media streams
       };
       
       // Create send transport
@@ -546,22 +560,31 @@ export class MediasoupClient {
       const transportOptions = await response.json();
       
       // Add ICE servers to transport options for client-side WebRTC
+      const recvTurnUsername = `${Date.now()}:webrtc`;
+      const recvTurnCredential = this.generateTurnCredential(recvTurnUsername);
+      
+      console.log('🔐 Receive TURN Config:', {
+        username: recvTurnUsername,
+        credential: recvTurnCredential
+      });
+      
       const recvTransportOptions = {
         ...transportOptions,
         iceServers: [
+          // STUN servers for NAT discovery
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
+          // Our TURN server - using direct IP to bypass Cloudflare
           {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
+            urls: 'turn:<SERVER_IP>:3478?transport=tcp',
+            username: recvTurnUsername,
+            credential: recvTurnCredential
           }
-        ]
+        ],
+        iceTransportPolicy: 'relay', // Force TURN relay for mobile networks
+        iceCandidatePoolSize: 10,
+        rtcpMuxPolicy: 'require',
+        bundlePolicy: 'max-bundle'
       };
       
       // Create receive transport
@@ -747,9 +770,9 @@ export class MediasoupClient {
         this.consumeTrack('audio')
       ];
       
-      // Add overall timeout for both tracks
+      // Add overall timeout for both tracks (longer for mobile)
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Overall consume timeout after 15 seconds')), 15000);
+        setTimeout(() => reject(new Error('Overall consume timeout after 45 seconds')), 45000);
       });
       
       const [videoStream, audioStream] = await Promise.race([
