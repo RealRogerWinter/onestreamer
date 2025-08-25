@@ -99,8 +99,8 @@
 
 .logo-icon {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -118,12 +118,97 @@
 }
 
 .logo-icon .header-logo-img {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   object-fit: contain;
   z-index: 2;
   position: relative;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  filter: drop-shadow(0 2px 8px rgba(102, 126, 234, 0.3));
+  animation: logoFloat 3s ease-in-out infinite;
+}
+
+@keyframes logoFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* Glowing ring animation */
+.logo-glow-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: linear-gradient(45deg, #667eea, #764ba2, #ff6b6b, #667eea);
+  background-size: 300% 300%;
+  animation: glowRotate 4s linear infinite;
+  opacity: 0.6;
+  filter: blur(4px);
+  z-index: 1;
+}
+
+@keyframes glowRotate {
+  0% {
+    background-position: 0% 50%;
+    transform: rotate(0deg);
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+    transform: rotate(360deg);
+  }
+}
+
+/* Sparkle effects */
+.logo-sparkles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.sparkle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: white;
+  border-radius: 50%;
+  opacity: 0;
+  animation: sparkleAnimation 3s ease-in-out infinite;
+}
+
+.sparkle-1 {
+  top: 0;
+  right: 5px;
+  animation-delay: 0s;
+}
+
+.sparkle-2 {
+  bottom: 5px;
+  left: 0;
+  animation-delay: 1s;
+}
+
+.sparkle-3 {
+  top: 50%;
+  right: -2px;
+  animation-delay: 2s;
+}
+
+@keyframes sparkleAnimation {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+  }
 }
 
 .logo-pulse {

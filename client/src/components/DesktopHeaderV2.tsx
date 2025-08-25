@@ -119,7 +119,12 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
           <div className="brand-logo-modern">
             <div className="logo-wrapper">
               <div className="logo-icon">
-                <span className="logo-pulse"></span>
+                <div className="logo-glow-ring"></div>
+                <div className="logo-sparkles">
+                  <span className="sparkle sparkle-1"></span>
+                  <span className="sparkle sparkle-2"></span>
+                  <span className="sparkle sparkle-3"></span>
+                </div>
                 <img 
                   src="/logo-transparent.png" 
                   alt="OneStreamer Logo" 
