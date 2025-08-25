@@ -349,8 +349,8 @@ app.post('/api/tutorial', async (req, res) => {
 
     if (tabs) {
       // New tabbed format
-      if (typeof tabs !== 'object' || !tabs.about || !tabs.support || !tabs.tutorial) {
-        return res.status(400).json({ error: 'Tabs must contain about, support, and tutorial sections' });
+      if (typeof tabs !== 'object' || !tabs.about || !tabs.support || !tabs.tutorial || !tabs.terms) {
+        return res.status(400).json({ error: 'Tabs must contain about, support, tutorial, and terms sections' });
       }
       
       // Save tabbed content
@@ -4109,7 +4109,8 @@ app.post('/api/admin/unban-ip', authenticateModerator, async (req, res) => {
       return res.status(400).json({ error: 'IP address required' });
     }
     
-    const result = await IPBanService.unbanIP(ip);
+    // Pass the Socket.IO instance to properly notify unbanned clients
+    const result = await IPBanService.unbanIP(ip, io);
     
     if (!result.success) {
       return res.status(500).json({ error: 'Failed to unban IP', details: result.error });

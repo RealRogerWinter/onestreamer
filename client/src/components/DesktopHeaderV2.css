@@ -99,8 +99,8 @@
 
 .logo-icon {
   position: relative;
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -118,8 +118,8 @@
 }
 
 .logo-icon .header-logo-img {
-  width: 44px;
-  height: 44px;
+  width: 60px;
+  height: 60px;
   object-fit: contain;
   z-index: 2;
   position: relative;
@@ -819,8 +819,13 @@
 }
 
 .desktop-header-v2.scrolled .logo-icon {
-  width: 36px;
-  height: 36px;
+  width: 52px;
+  height: 52px;
+}
+
+.desktop-header-v2.scrolled .logo-icon .header-logo-img {
+  width: 48px;
+  height: 48px;
 }
 
 /* Special Effects for Points Counter */

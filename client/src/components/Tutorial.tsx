@@ -4,14 +4,16 @@ import './Tutorial.css';
 interface TutorialProps {
   isOpen: boolean;
   onClose: () => void;
+  defaultTab?: TabType;
 }
 
-type TabType = 'about' | 'support' | 'tutorial';
+type TabType = 'about' | 'support' | 'tutorial' | 'terms';
 
 interface TabContent {
   about: string;
   support: string;
   tutorial: string;
+  terms: string;
 }
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
@@ -62,41 +64,102 @@ const parseMarkdown = (text: string): React.ReactElement => {
   return <div>{elements}</div>;
 };
 
-// Format inline text with bold and code formatting
+// Format inline text with markdown formatting
 const formatInlineText = (text: string): React.ReactNode => {
-  // Handle bold text **text**
-  const boldFormatted = text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={`bold-${index}`}>{part.slice(2, -2)}</strong>;
-    }
-    return part;
-  });
+  const elements: React.ReactNode[] = [];
+  let remaining = text;
+  let keyCounter = 0;
   
-  // Handle code `code` - need to process each part
-  const finalElements: React.ReactNode[] = [];
-  boldFormatted.forEach((part, partIndex) => {
-    if (typeof part === 'string') {
-      const codeFormatted = part.split(/(`[^`]+`)/g).map((codePart, codeIndex) => {
-        if (codePart.startsWith('`') && codePart.endsWith('`')) {
-          return <code key={`code-${partIndex}-${codeIndex}`}>{codePart.slice(1, -1)}</code>;
-        }
-        return codePart;
-      });
-      finalElements.push(...codeFormatted);
-    } else {
-      finalElements.push(part);
+  // Process the text sequentially to handle all markdown elements
+  while (remaining.length > 0) {
+    let matched = false;
+    
+    // Check for links [text](url) - check this first before bold
+    const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+    if (linkMatch) {
+      const [fullMatch, linkText, url] = linkMatch;
+      elements.push(
+        <a key={`link-${keyCounter++}`} href={url} target="_blank" rel="noopener noreferrer">
+          {linkText}
+        </a>
+      );
+      remaining = remaining.slice(fullMatch.length);
+      matched = true;
     }
-  });
+    
+    // Check for bold **text** - now properly handle nested content
+    if (!matched) {
+      const boldMatch = remaining.match(/^\*\*(.+?)\*\*/);
+      if (boldMatch) {
+        const [fullMatch, boldText] = boldMatch;
+        // Recursively parse the content inside bold markers
+        elements.push(<strong key={`bold-${keyCounter++}`}>{formatInlineText(boldText)}</strong>);
+        remaining = remaining.slice(fullMatch.length);
+        matched = true;
+      }
+    }
+    
+    // Check for italics *text* or _text_
+    if (!matched) {
+      // Check for asterisk italics (but not if it's part of bold **)
+      const italicMatch = remaining.match(/^(?!\*\*)\*([^*]+?)\*(?!\*)/);
+      if (italicMatch) {
+        const [fullMatch, italicText] = italicMatch;
+        // Recursively parse the content inside italic markers
+        elements.push(<em key={`italic-${keyCounter++}`}>{formatInlineText(italicText)}</em>);
+        remaining = remaining.slice(fullMatch.length);
+        matched = true;
+      }
+    }
+    
+    // Check for underscore italics _text_
+    if (!matched) {
+      const underscoreMatch = remaining.match(/^_([^_]+?)_/);
+      if (underscoreMatch) {
+        const [fullMatch, italicText] = underscoreMatch;
+        // Recursively parse the content inside italic markers
+        elements.push(<em key={`italic-${keyCounter++}`}>{formatInlineText(italicText)}</em>);
+        remaining = remaining.slice(fullMatch.length);
+        matched = true;
+      }
+    }
+    
+    // Check for code `code`
+    if (!matched) {
+      const codeMatch = remaining.match(/^`([^`]+)`/);
+      if (codeMatch) {
+        const [fullMatch, codeText] = codeMatch;
+        // Code blocks should not have nested formatting
+        elements.push(<code key={`code-${keyCounter++}`}>{codeText}</code>);
+        remaining = remaining.slice(fullMatch.length);
+        matched = true;
+      }
+    }
+    
+    // If no markdown matched, take the next character as plain text
+    if (!matched) {
+      // Find the next potential markdown character
+      const nextSpecial = remaining.search(/[\[*_`]/);
+      if (nextSpecial > 0) {
+        elements.push(remaining.slice(0, nextSpecial));
+        remaining = remaining.slice(nextSpecial);
+      } else {
+        elements.push(remaining);
+        remaining = '';
+      }
+    }
+  }
   
-  return <>{finalElements}</>;
+  return <>{elements}</>;
 };
 
-const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('tutorial');
+const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose, defaultTab = 'tutorial' }) => {
+  const [activeTab, setActiveTab] = useState<TabType>(defaultTab);
   const [content, setContent] = useState<TabContent>({
     about: '',
     support: '',
-    tutorial: ''
+    tutorial: '',
+    terms: ''
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +169,12 @@ const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
       loadTutorialContent();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (defaultTab) {
+      setActiveTab(defaultTab);
+    }
+  }, [defaultTab]);
 
   const loadTutorialContent = async () => {
     setLoading(true);
@@ -120,21 +189,24 @@ const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           setContent({
             about: data.tabs.about || getDefaultAboutContent(),
             support: data.tabs.support || getDefaultSupportContent(),
-            tutorial: data.tabs.tutorial || getDefaultTutorialContent()
+            tutorial: data.tabs.tutorial || getDefaultTutorialContent(),
+            terms: data.tabs.terms || getDefaultTermsContent()
           });
         } else {
           // Fallback to old single content format
           setContent({
             about: getDefaultAboutContent(),
             support: getDefaultSupportContent(),
-            tutorial: data.content || getDefaultTutorialContent()
+            tutorial: data.content || getDefaultTutorialContent(),
+            terms: getDefaultTermsContent()
           });
         }
       } else {
         setContent({
           about: getDefaultAboutContent(),
           support: getDefaultSupportContent(),
-          tutorial: getDefaultTutorialContent()
+          tutorial: getDefaultTutorialContent(),
+          terms: getDefaultTermsContent()
         });
       }
     } catch (err) {
@@ -142,7 +214,8 @@ const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
       setContent({
         about: getDefaultAboutContent(),
         support: getDefaultSupportContent(),
-        tutorial: getDefaultTutorialContent()
+        tutorial: getDefaultTutorialContent(),
+        terms: getDefaultTermsContent()
       });
     } finally {
       setLoading(false);
@@ -435,6 +508,138 @@ Admins have access to additional tools:
 *Pro Tip: Join our Discord for advanced tutorials and community events!*`;
   };
 
+  const getDefaultTermsContent = () => {
+    return `# Terms of Service
+
+## 1. Acceptance of Terms
+
+By accessing and using OneStreamer ("the Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, please do not use the Service.
+
+## 2. Use of the Service
+
+### 2.1 Eligibility
+- You must be at least 13 years old to use this Service
+- You must provide accurate and complete registration information
+- You are responsible for maintaining the security of your account
+
+### 2.2 Acceptable Use
+You agree not to:
+- Violate any laws or regulations
+- Post harmful, offensive, or inappropriate content
+- Harass, abuse, or harm other users
+- Attempt to gain unauthorized access to the Service
+- Use the Service for any illegal or unauthorized purpose
+
+## 3. Content
+
+### 3.1 User Content
+- You retain ownership of content you create
+- You grant OneStreamer a license to use, display, and distribute your content
+- You are responsible for the content you stream or post
+
+### 3.2 Prohibited Content
+The following content is strictly prohibited:
+- Copyrighted material without permission
+- Explicit or adult content
+- Hate speech or discriminatory content
+- Content that violates any applicable laws
+
+## 4. Virtual Currency and Items
+
+### 4.1 Points System
+- Points have no real-world value
+- Points cannot be exchanged for real currency
+- OneStreamer reserves the right to modify point balances
+
+### 4.2 Virtual Items
+- Virtual items are for use within the Service only
+- No refunds for virtual item purchases
+- Items may be modified or removed at our discretion
+
+## 5. Privacy
+
+### 5.1 Data Collection
+- We collect data as described in our Privacy Policy
+- Your use of the Service constitutes consent to data collection
+
+### 5.2 Data Protection
+- We implement reasonable security measures
+- We do not sell personal data to third parties
+
+## 6. Intellectual Property
+
+### 6.1 Service Content
+- OneStreamer owns all rights to the Service and its original content
+- You may not copy, modify, or distribute Service content without permission
+
+### 6.2 User Rights
+- You retain rights to your original content
+- You grant other users the right to view your public streams
+
+## 7. Disclaimers
+
+### 7.1 Service Availability
+- The Service is provided "as is" without warranties
+- We do not guarantee uninterrupted or error-free service
+
+### 7.2 Limitation of Liability
+- OneStreamer is not liable for any indirect or consequential damages
+- Our total liability is limited to the amount you paid for the Service
+
+## 8. Account Termination
+
+### 8.1 Termination by User
+- You may terminate your account at any time
+- Termination does not entitle you to any refunds
+
+### 8.2 Termination by OneStreamer
+- We may terminate accounts that violate these Terms
+- We may terminate accounts that are inactive for extended periods
+
+## 9. Modifications
+
+### 9.1 Terms Updates
+- We may update these Terms at any time
+- Continued use after updates constitutes acceptance
+
+### 9.2 Service Changes
+- We reserve the right to modify or discontinue the Service
+- We will provide notice of significant changes when possible
+
+## 10. Dispute Resolution
+
+### 10.1 Governing Law
+- These Terms are governed by applicable local laws
+- Disputes will be resolved in appropriate jurisdictions
+
+### 10.2 Arbitration
+- Disputes will be resolved through binding arbitration when applicable
+- Class action waivers may apply
+
+## 11. Contact Information
+
+For questions about these Terms, contact us at:
+- Email: legal@onestreamer.live
+- In-app: Contact an administrator
+
+## 12. Miscellaneous
+
+### 12.1 Entire Agreement
+- These Terms constitute the entire agreement between you and OneStreamer
+
+### 12.2 Severability
+- If any provision is found invalid, other provisions remain in effect
+
+### 12.3 Waiver
+- Failure to enforce any provision does not constitute a waiver
+
+---
+
+*Last Updated: ${new Date().toLocaleDateString()}*
+
+*By using OneStreamer, you acknowledge that you have read, understood, and agree to be bound by these Terms of Service.*`;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -463,6 +668,12 @@ Admins have access to additional tools:
             onClick={() => setActiveTab('tutorial')}
           >
             Tutorial
+          </button>
+          <button 
+            className={`tutorial-tab ${activeTab === 'terms' ? 'active' : ''}`}
+            onClick={() => setActiveTab('terms')}
+          >
+            Terms
           </button>
         </div>
         

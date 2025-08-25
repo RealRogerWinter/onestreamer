@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import authService from '../services/AuthService';
 import CloudflareTurnstile from './CloudflareTurnstile';
 import { TURNSTILE_SITE_KEY } from '../config/turnstile';
+import Tutorial from './Tutorial';
 import './Auth.css';
 
 interface SignupProps {
@@ -19,6 +20,7 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
   const [loading, setLoading] = useState(false);
   const [showVerificationMessage, setShowVerificationMessage] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [showTermsModal, setShowTermsModal] = useState(false);
 
   const validateForm = (): boolean => {
     if (!email || !username || !password || !confirmPassword) {
@@ -85,6 +87,15 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
 
   const handleGoogleSignup = () => {
     authService.googleLogin();
+  };
+
+  const handleShowTerms = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setShowTermsModal(true);
+  };
+
+  const handleCloseTerms = () => {
+    setShowTermsModal(false);
   };
 
   if (showVerificationMessage) {
@@ -177,6 +188,19 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
             size="normal"
           />
 
+          <div className="auth-terms-agreement">
+            <p style={{ fontSize: '12px', color: '#666', textAlign: 'center', margin: '10px 0' }}>
+              By signing up you agree to the OneStreamer{' '}
+              <a 
+                href="#" 
+                onClick={handleShowTerms}
+                style={{ color: '#0066cc', textDecoration: 'underline' }}
+              >
+                Terms of Service
+              </a>
+            </p>
+          </div>
+
           <button 
             type="submit" 
             className="auth-button auth-button-primary"
@@ -217,6 +241,14 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
           </p>
         </div>
       </div>
+      
+      {showTermsModal && (
+        <Tutorial 
+          isOpen={showTermsModal} 
+          onClose={handleCloseTerms}
+          defaultTab="terms"
+        />
+      )}
     </div>
   );
 };

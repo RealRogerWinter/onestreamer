@@ -18,18 +18,50 @@ class IPBanService {
       this.bannedIPs.clear();
       bans.forEach(ban => this.bannedIPs.add(ban.ip_address));
       console.log(`🚫 Loaded ${this.bannedIPs.size} banned IPs`);
+      return true;
     } catch (error) {
       console.error('❌ Failed to load banned IPs:', error);
+      return false;
     }
   }
 
+  async forceReloadCache() {
+    console.log('🔄 Force reloading IP ban cache...');
+    return await this.loadBannedIPs();
+  }
+
   async isIPBanned(ip) {
-    // Quick check from memory cache
+    // Normalize IP address
+    if (!ip) return false;
+    
+    // Quick check from memory cache first
     if (this.bannedIPs.has(ip)) {
-      return true;
+      // Still verify with database to ensure cache is accurate
+      try {
+        const query = `
+          SELECT COUNT(*) as count 
+          FROM ip_bans 
+          WHERE ip_address = ? 
+            AND (permanent = 1 OR expires_at > datetime('now'))
+        `;
+        const result = await getAsync(query, [ip]);
+        const isBanned = result.count > 0;
+        
+        // If database says not banned but cache says banned, update cache
+        if (!isBanned) {
+          console.log(`🔄 Cache sync: Removing ${ip} from banned cache (no longer banned in DB)`);
+          this.bannedIPs.delete(ip);
+          return false;
+        }
+        return true;
+      } catch (error) {
+        console.error('❌ Failed to verify IP ban from database:', error);
+        // If DB check fails, trust the cache
+        return true;
+      }
     }
 
-    // Double-check database for recent bans or expired bans
+    // Not in cache, check database
     try {
       const query = `
         SELECT COUNT(*) as count 
@@ -40,15 +72,15 @@ class IPBanService {
       const result = await getAsync(query, [ip]);
       const isBanned = result.count > 0;
       
-      if (isBanned && !this.bannedIPs.has(ip)) {
+      if (isBanned) {
+        console.log(`🔄 Cache sync: Adding ${ip} to banned cache (found in DB)`);
         this.bannedIPs.add(ip);
-      } else if (!isBanned && this.bannedIPs.has(ip)) {
-        this.bannedIPs.delete(ip);
       }
       
       return isBanned;
     } catch (error) {
       console.error('❌ Failed to check IP ban:', error);
+      // On error, be conservative and don't ban
       return false;
     }
   }
@@ -74,13 +106,27 @@ class IPBanService {
     }
   }
 
-  async unbanIP(ip) {
+  async unbanIP(ip, io = null) {
     try {
       const query = `DELETE FROM ip_bans WHERE ip_address = ?`;
       await runAsync(query, [ip]);
       
-      // Update cache
+      // Update cache - IMPORTANT: This must happen immediately
       this.bannedIPs.delete(ip);
+      
+      // If Socket.IO instance is provided, notify any connected clients from this IP
+      // that they are now unbanned and can reconnect properly
+      if (io) {
+        io.sockets.sockets.forEach((socket) => {
+          const socketIP = this.getIPFromSocket(socket);
+          if (socketIP === ip) {
+            socket.emit('unbanned', { 
+              message: 'Your IP has been unbanned. Please refresh to reconnect.',
+              timestamp: new Date().toISOString()
+            });
+          }
+        });
+      }
       
       console.log(`✅ IP unbanned: ${ip}`);
       return { success: true, ip };
