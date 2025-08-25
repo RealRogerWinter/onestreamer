@@ -146,7 +146,8 @@ export const COOKIE_NAMES = {
   MUTED: 'onestreamer_muted',
   STREAMER_SETTINGS: 'onestreamer_settings',
   AUDIO_SETTINGS: 'onestreamer_audio_settings',
-  VIDEO_SETTINGS: 'onestreamer_video_settings'
+  VIDEO_SETTINGS: 'onestreamer_video_settings',
+  CHAT_SETTINGS: 'onestreamer_chat_settings'
 };
 
 export default CookieService;

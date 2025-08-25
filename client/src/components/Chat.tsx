@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
 import { useChatSocket } from '../contexts/SocketContext';
 import authService from '../services/AuthService';
+import CookieService, { COOKIE_NAMES } from '../services/CookieService';
 import EmojiPicker from './EmojiPicker';
 import ChatSettings, { ChatUserSettings } from './ChatSettings';
 import DOMPurify from 'dompurify';
@@ -61,11 +62,21 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [chatSettings, setChatSettings] = useState<ChatUserSettings>(() => {
-    // Load settings from localStorage
-    const saved = localStorage.getItem('chatSettings');
+    // Load settings from cookies
+    const saved = CookieService.getCookie(COOKIE_NAMES.CHAT_SETTINGS);
     if (saved) {
+      return saved;
+    }
+    // Try localStorage as fallback for migration
+    const legacySaved = localStorage.getItem('chatSettings');
+    if (legacySaved) {
       try {
-        return JSON.parse(saved);
+        const settings = JSON.parse(legacySaved);
+        // Migrate to cookies
+        CookieService.setCookie(COOKIE_NAMES.CHAT_SETTINGS, settings);
+        // Clean up localStorage
+        localStorage.removeItem('chatSettings');
+        return settings;
       } catch {
         // Default settings if parse fails
       }
@@ -426,7 +437,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       if (data.color !== chatSettings.userColor) {
         const newSettings = { ...chatSettings, userColor: data.color };
         setChatSettings(newSettings);
-        localStorage.setItem('chatSettings', JSON.stringify(newSettings));
+        CookieService.setCookie(COOKIE_NAMES.CHAT_SETTINGS, newSettings);
       }
     };
     
@@ -859,7 +870,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   // Handle settings changes
   const handleSettingsChange = (newSettings: ChatUserSettings) => {
     setChatSettings(newSettings);
-    localStorage.setItem('chatSettings', JSON.stringify(newSettings));
+    CookieService.setCookie(COOKIE_NAMES.CHAT_SETTINGS, newSettings);
   };
 
   // Handle color change from settings

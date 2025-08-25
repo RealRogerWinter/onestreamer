@@ -141,6 +141,12 @@ class CookieConsentService {
                         domain: window.location.hostname,
                         duration: '1 year',
                         description: 'Stores your video quality preferences'
+                      },
+                      {
+                        name: 'onestreamer_chat_settings',
+                        domain: window.location.hostname,
+                        duration: '1 year',
+                        description: 'Stores your chat preferences including timestamp format and username color'
                       }
                     ]
                   }
