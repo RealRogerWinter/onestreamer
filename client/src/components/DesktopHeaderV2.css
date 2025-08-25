@@ -123,8 +123,8 @@
   object-fit: contain;
   z-index: 2;
   position: relative;
-  filter: drop-shadow(0 2px 8px rgba(102, 126, 234, 0.3));
-  animation: logoFloat 3s ease-in-out infinite;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2));
+  animation: logoFloat 6s ease-in-out infinite;
 }
 
 @keyframes logoFloat {
@@ -132,20 +132,20 @@
     transform: translateY(0px);
   }
   50% {
-    transform: translateY(-3px);
+    transform: translateY(-1px);
   }
 }
 
-/* Glowing ring animation */
+/* Glowing ring animation - subtle */
 .logo-glow-ring {
   position: absolute;
-  inset: -4px;
+  inset: -2px;
   border-radius: 50%;
-  background: linear-gradient(45deg, #667eea, #764ba2, #ff6b6b, #667eea);
-  background-size: 300% 300%;
-  animation: glowRotate 4s linear infinite;
-  opacity: 0.6;
-  filter: blur(4px);
+  background: linear-gradient(45deg, rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3));
+  background-size: 200% 200%;
+  animation: glowRotate 8s linear infinite;
+  opacity: 0.25;
+  filter: blur(2px);
   z-index: 1;
 }
 
@@ -154,16 +154,13 @@
     background-position: 0% 50%;
     transform: rotate(0deg);
   }
-  50% {
-    background-position: 100% 50%;
-  }
   100% {
-    background-position: 0% 50%;
+    background-position: 100% 50%;
     transform: rotate(360deg);
   }
 }
 
-/* Sparkle effects */
+/* Sparkle effects - subtle */
 .logo-sparkles {
   position: absolute;
   inset: 0;
@@ -173,30 +170,30 @@
 
 .sparkle {
   position: absolute;
-  width: 4px;
-  height: 4px;
-  background: white;
+  width: 2px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.6);
   border-radius: 50%;
   opacity: 0;
-  animation: sparkleAnimation 3s ease-in-out infinite;
+  animation: sparkleAnimation 6s ease-in-out infinite;
 }
 
 .sparkle-1 {
-  top: 0;
-  right: 5px;
+  top: 2px;
+  right: 8px;
   animation-delay: 0s;
 }
 
 .sparkle-2 {
-  bottom: 5px;
-  left: 0;
-  animation-delay: 1s;
+  bottom: 8px;
+  left: 2px;
+  animation-delay: 2s;
 }
 
 .sparkle-3 {
   top: 50%;
-  right: -2px;
-  animation-delay: 2s;
+  right: 0;
+  animation-delay: 4s;
 }
 
 @keyframes sparkleAnimation {
@@ -205,9 +202,9 @@
     transform: scale(0);
   }
   50% {
-    opacity: 1;
+    opacity: 0.4;
     transform: scale(1);
-    box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 2px rgba(255, 255, 255, 0.3);
   }
 }
 
