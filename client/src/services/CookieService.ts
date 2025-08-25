@@ -1,6 +1,8 @@
 /**
- * Cookie Service for persisting user settings
+ * Cookie Service for persisting user settings with consent management
  */
+
+import CookieConsentService from './CookieConsentService';
 
 interface CookieOptions {
   expires?: number; // days
@@ -10,11 +12,45 @@ interface CookieOptions {
   sameSite?: 'strict' | 'lax' | 'none';
 }
 
+// Memory storage fallback for when consent is denied
+class MemoryStorage {
+  private static storage: Map<string, any> = new Map();
+
+  static set(key: string, value: any): void {
+    this.storage.set(key, value);
+  }
+
+  static get(key: string): any {
+    return this.storage.get(key) || null;
+  }
+
+  static remove(key: string): void {
+    this.storage.delete(key);
+  }
+
+  static has(key: string): boolean {
+    return this.storage.has(key);
+  }
+}
+
 class CookieService {
   /**
-   * Set a cookie
+   * Set a cookie (checks for consent first)
    */
   static setCookie(name: string, value: any, options: CookieOptions = {}): void {
+    // Try to check consent, but if service isn't initialized yet, proceed with cookie setting
+    // The CookieConsentService will clear non-consented cookies when initialized
+    try {
+      if (CookieConsentService.isInitialized() && !CookieConsentService.hasConsent('functional')) {
+        // Use memory storage as fallback
+        MemoryStorage.set(name, value);
+        return;
+      }
+    } catch (e) {
+      // If consent service isn't ready, proceed with setting cookie
+      // It will be managed when consent is initialized
+    }
+
     const {
       expires = 365, // Default to 1 year
       path = '/',
@@ -50,9 +86,18 @@ class CookieService {
   }
 
   /**
-   * Get a cookie value
+   * Get a cookie value (checks memory storage if no consent)
    */
   static getCookie(name: string): any {
+    // Try to check consent, but if service isn't initialized, try to get cookie normally
+    try {
+      if (CookieConsentService.isInitialized() && !CookieConsentService.hasConsent('functional')) {
+        return MemoryStorage.get(name);
+      }
+    } catch (e) {
+      // If consent service isn't ready, try to get cookie normally
+    }
+
     const nameEQ = encodeURIComponent(name) + '=';
     const cookies = document.cookie.split(';');
     
@@ -69,7 +114,8 @@ class CookieService {
       }
     }
     
-    return null;
+    // Fallback to memory storage if cookie not found
+    return MemoryStorage.get(name);
   }
 
   /**
@@ -83,6 +129,13 @@ class CookieService {
    * Check if a cookie exists
    */
   static hasCookie(name: string): boolean {
+    try {
+      if (CookieConsentService.isInitialized() && !CookieConsentService.hasConsent('functional')) {
+        return MemoryStorage.has(name);
+      }
+    } catch (e) {
+      // If consent service isn't ready, check cookie normally
+    }
     return CookieService.getCookie(name) !== null;
   }
 }

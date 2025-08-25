@@ -31,6 +31,9 @@ import BotsPanel from './components/BotsPanel';
 import authService from './services/AuthService';
 import SocketManager from './services/SocketManager';
 import CookieService, { COOKIE_NAMES } from './services/CookieService';
+import CookieConsentService from './services/CookieConsentService';
+import 'vanilla-cookieconsent/dist/cookieconsent.css';
+import './styles/cookieconsent.css';
 
 // Declare global showFloatingPoints function
 declare global {
@@ -78,6 +81,9 @@ function AppContent() {
   useEffect(() => {
     // console.log(`🔴 AppContent Instance #${instanceId.current} created`);
     // console.log('📧 Email Verification Check - Path:', currentPath, 'Is verification?:', isEmailVerification);
+    
+    // Initialize Cookie Consent
+    CookieConsentService.initialize();
     
     // Check on mount if we need to show email verification
     if (currentPath.startsWith('/verify-email/')) {
@@ -168,6 +174,7 @@ function AppContent() {
   
   // Tutorial state
   const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialDefaultTab, setTutorialDefaultTab] = useState<'about' | 'support' | 'tutorial' | 'terms' | 'privacy' | undefined>(undefined);
 
   // Points state
   const [userPoints, setUserPoints] = useState(0);
@@ -713,6 +720,27 @@ function AppContent() {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [showAdminPanel, showInventory, isAuthenticated, isAdmin, isModerator]);
 
+  // Listen for privacy policy and terms of service events from cookie consent
+  useEffect(() => {
+    const handleOpenPrivacy = () => {
+      setTutorialDefaultTab('privacy');
+      setShowTutorial(true);
+    };
+
+    const handleOpenTerms = () => {
+      setTutorialDefaultTab('terms');
+      setShowTutorial(true);
+    };
+
+    window.addEventListener('openPrivacyPolicy', handleOpenPrivacy);
+    window.addEventListener('openTermsOfService', handleOpenTerms);
+
+    return () => {
+      window.removeEventListener('openPrivacyPolicy', handleOpenPrivacy);
+      window.removeEventListener('openTermsOfService', handleOpenTerms);
+    };
+  }, []);
+
   // If we're on the OAuth callback page, show the callback handler
   if (isOAuthCallback) {
     return <OAuthCallback />;
@@ -1098,7 +1126,11 @@ function AppContent() {
 
       <Tutorial
         isOpen={showTutorial}
-        onClose={() => setShowTutorial(false)}
+        onClose={() => {
+          setShowTutorial(false);
+          setTutorialDefaultTab(undefined);
+        }}
+        defaultTab={tutorialDefaultTab}
       />
 
 

@@ -1,0 +1,241 @@
+/* Cookie Consent Custom Styles */
+
+/* Main modal styling */
+.cc__modal {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif !important;
+}
+
+/* Dark theme adjustments - Much darker colors with higher specificity */
+#cc-main .cm,
+#cc-main .pm {
+  --cc-bg: #0a0a0a !important;
+  --cc-primary-color: #b0b0b0 !important;
+  --cc-text: #b0b0b0 !important;
+  --cc-secondary-color: #808080 !important;
+  --cc-btn-primary-bg: #2d5a2d !important;
+  --cc-btn-primary-color: #e0e0e0 !important;
+  --cc-btn-primary-text: #e0e0e0 !important;
+  --cc-btn-primary-border-color: #2d5a2d !important;
+  --cc-btn-primary-hover-bg: #3a6b3a !important;
+  --cc-btn-primary-hover-color: #ffffff !important;
+  --cc-btn-primary-hover-border-color: #3a6b3a !important;
+  --cc-btn-secondary-bg: #1a1a1a !important;
+  --cc-btn-secondary-color: #a0a0a0 !important;
+  --cc-btn-secondary-text: #a0a0a0 !important;
+  --cc-btn-secondary-border-color: #1a1a1a !important;
+  --cc-btn-secondary-hover-bg: #252525 !important;
+  --cc-btn-secondary-hover-color: #c0c0c0 !important;
+  --cc-btn-secondary-hover-border-color: #252525 !important;
+  --cc-toggle-bg-off: #2a2a2a !important;
+  --cc-toggle-bg-on: #2d5a2d !important;
+  --cc-toggle-bg-readonly: #151515 !important;
+  --cc-toggle-knob-bg: #808080 !important;
+  --cc-toggle-on-knob-bg: #808080 !important;
+  --cc-toggle-off-knob-bg: #808080 !important;
+  --cc-toggle-knob-icon-color: #0a0a0a !important;
+  --cc-separator-border-color: #1a1a1a !important;
+  --cc-footer-text: #666666 !important;
+  --cc-footer-bg: #0a0a0a !important;
+  --cc-footer-border-color: #1a1a1a !important;
+  --cc-footer-link: #4a9eff !important;
+  --cc-footer-link-hover: #6bb3ff !important;
+  --cc-overlay-bg: rgba(0, 0, 0, 0.95) !important;
+  --cc-section-border: #1a1a1a !important;
+  --cc-section-category-border: #1a1a1a !important;
+  --cc-cookie-table-border: #1a1a1a !important;
+  --cc-cookie-category-block-bg: #151515 !important;
+  --cc-cookie-category-block-border: #1a1a1a !important;
+  --cc-cookie-category-block-hover-bg: #1a1a1a !important;
+  --cc-cookie-category-expanded-block-bg: transparent !important;
+  --cc-cookie-category-expanded-block-hover-bg: #1a1a1a !important;
+  background: #0a0a0a !important;
+  color: #b0b0b0 !important;
+}
+
+/* Consent modal positioning and animation */
+.cc__modal.cc__modal--consent {
+  animation: slideUp 0.3s ease-out;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.8);
+  border-top: 1px solid #2d5a2d;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Preferences modal styling */
+.cc__modal.cc__modal--preferences {
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.9);
+  background: #0a0a0a !important;
+}
+
+/* Custom scrollbar for preferences modal */
+.cc__modal.cc__modal--preferences::-webkit-scrollbar {
+  width: 8px;
+}
+
+.cc__modal.cc__modal--preferences::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+.cc__modal.cc__modal--preferences::-webkit-scrollbar-thumb {
+  background: #2d5a2d;
+  border-radius: 4px;
+}
+
+.cc__modal.cc__modal--preferences::-webkit-scrollbar-thumb:hover {
+  background: #3a6b3a;
+}
+
+/* Button styling */
+.cc__button {
+  font-weight: 600;
+  padding: 12px 24px !important;
+  border-radius: 4px !important;
+  transition: all 0.2s ease !important;
+  text-transform: none !important;
+  font-size: 14px !important;
+}
+
+.cc__button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Equal weight buttons container */
+.cc__buttons {
+  gap: 12px !important;
+}
+
+/* Toggle switch styling */
+.cc__toggle {
+  width: 50px !important;
+  height: 26px !important;
+  border-radius: 13px !important;
+}
+
+.cc__toggle-knob {
+  width: 22px !important;
+  height: 22px !important;
+  top: 2px !important;
+}
+
+/* Section headers */
+.cc__section-title {
+  color: #4a9eff !important;
+  font-weight: 600 !important;
+  margin-bottom: 12px !important;
+}
+
+/* Badge styling */
+.pm__badge {
+  background: #2d5a2d !important;
+  color: #b0b0b0 !important;
+  padding: 2px 8px !important;
+  border-radius: 3px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  margin-left: 8px !important;
+  text-transform: uppercase !important;
+}
+
+/* Cookie table styling */
+.cc__cookie-table {
+  margin-top: 16px;
+  border: 1px solid var(--cc-cookie-table-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cc__cookie-table-head {
+  background: #0d0d0d;
+  font-weight: 600;
+  color: #808080;
+}
+
+.cc__cookie-table-row {
+  border-bottom: 1px solid var(--cc-cookie-table-border);
+}
+
+.cc__cookie-table-row:last-child {
+  border-bottom: none;
+}
+
+.cc__cookie-table-cell {
+  padding: 12px !important;
+  font-size: 13px !important;
+}
+
+/* Links styling */
+.cc__modal a {
+  color: var(--cc-footer-link) !important;
+  text-decoration: none !important;
+  transition: color 0.2s ease !important;
+}
+
+.cc__modal a:hover {
+  color: var(--cc-footer-link-hover) !important;
+  text-decoration: underline !important;
+}
+
+/* Footer styling */
+.cc__footer {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--cc-separator-border-color);
+  font-size: 13px;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .cc__modal.cc__modal--consent {
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    border-top-left-radius: 12px !important;
+    border-top-right-radius: 12px !important;
+  }
+
+  .cc__modal.cc__modal--preferences {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  .cc__buttons {
+    flex-direction: column !important;
+  }
+
+  .cc__button {
+    width: 100% !important;
+  }
+}
+
+
+/* Accessibility improvements */
+.cc__button:focus,
+.cc__toggle:focus {
+  outline: 2px solid #4CAF50 !important;
+  outline-offset: 2px !important;
+}
+
+/* Hide consent modal when printing */
+@media print {
+  .cc__modal {
+    display: none !important;
+  }
+}
