@@ -24,10 +24,13 @@ import OAuthCallback from './components/OAuthCallback';
 import BugReportModal from './components/BugReportModal';
 import EmailVerification from './components/EmailVerification';
 import PasswordReset from './components/PasswordReset';
+import DeletionConfirmation from './components/DeletionConfirmation';
+import AccountRestoration from './components/AccountRestoration';
 import ModerationPanel from './components/ModerationPanel';
 import BotsPanel from './components/BotsPanel';
 import authService from './services/AuthService';
 import SocketManager from './services/SocketManager';
+import CookieService, { COOKIE_NAMES } from './services/CookieService';
 
 // Declare global showFloatingPoints function
 declare global {
@@ -64,6 +67,14 @@ function AppContent() {
   const isPasswordReset = /^\/reset-password\/[a-fA-F0-9]+$/i.test(currentPath);
   const [showPasswordReset, setShowPasswordReset] = useState(isPasswordReset);
   
+  // Check if we're on the deletion confirmation page
+  const isDeletionConfirmation = /^\/confirm-deletion\/[a-fA-F0-9]+$/i.test(currentPath);
+  const [showDeletionConfirmation, setShowDeletionConfirmation] = useState(isDeletionConfirmation);
+  
+  // State for showing account restoration modal
+  const [showAccountRestoration, setShowAccountRestoration] = useState(false);
+  const [pendingDeletionUser, setPendingDeletionUser] = useState<any>(null);
+  
   useEffect(() => {
     // console.log(`🔴 AppContent Instance #${instanceId.current} created`);
     // console.log('📧 Email Verification Check - Path:', currentPath, 'Is verification?:', isEmailVerification);
@@ -77,6 +88,11 @@ function AppContent() {
     // Check on mount if we need to show password reset
     if (currentPath.startsWith('/reset-password/')) {
       setShowPasswordReset(true);
+    }
+    
+    // Check on mount if we need to show deletion confirmation
+    if (currentPath.startsWith('/confirm-deletion/')) {
+      setShowDeletionConfirmation(true);
     }
     
     return () => {
@@ -162,28 +178,37 @@ function AppContent() {
   // Bug Report state
   const [showBugReportModal, setShowBugReportModal] = useState(false);
 
-  // Settings state
-  const [audioSettings, setAudioSettings] = useState<AudioSettingsConfig>({
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl: false,
-    sampleRate: 48000,
-    channelCount: 2,
-    profile: 'raw'
+  // Settings state - Initialize from cookies or use defaults
+  const [audioSettings, setAudioSettings] = useState<AudioSettingsConfig>(() => {
+    const savedAudioSettings = CookieService.getCookie(COOKIE_NAMES.AUDIO_SETTINGS);
+    return savedAudioSettings || {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      sampleRate: 48000,
+      channelCount: 2,
+      profile: 'raw'
+    };
   });
 
-  const [videoSettings, setVideoSettings] = useState<VideoSettingsConfig>({
-    resolution: '720p',
-    frameRate: 30,
-    facingMode: 'user',
-    bitrate: 2000,
-    videoEnabled: true,
-    mirror: false
+  const [videoSettings, setVideoSettings] = useState<VideoSettingsConfig>(() => {
+    const savedVideoSettings = CookieService.getCookie(COOKIE_NAMES.VIDEO_SETTINGS);
+    return savedVideoSettings || {
+      resolution: '720p',
+      frameRate: 30,
+      facingMode: 'user',
+      bitrate: 2000,
+      videoEnabled: true,
+      mirror: false
+    };
   });
 
-  const [streamerSettings, setStreamerSettings] = useState<StreamerSettingsConfig>({
-    audio: audioSettings,
-    video: videoSettings
+  const [streamerSettings, setStreamerSettings] = useState<StreamerSettingsConfig>(() => {
+    const savedSettings = CookieService.getCookie(COOKIE_NAMES.STREAMER_SETTINGS);
+    return savedSettings || {
+      audio: audioSettings,
+      video: videoSettings
+    };
   });
 
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -578,9 +603,40 @@ function AppContent() {
     }
   }, [isAuthenticated]);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+    // First check if the user is pending deletion
+    const user = authService.getUser();
+    
+    if (user && (user.accountStatus === 'pending_deletion' || (user as any).account_status === 'pending_deletion')) {
+      // Show restoration modal instead of normal login flow
+      setPendingDeletionUser(user);
+      setShowAccountRestoration(true);
+      // Don't set authenticated or fetch data yet
+      return;
+    }
+    
     setIsAuthenticated(true);
-    setCurrentUser(authService.getUser());
+    
+    // Fetch fresh profile data to ensure we have the latest verification status
+    try {
+      const profile = await authService.getProfile();
+      if (profile) {
+        // Check again after fetching profile
+        if (profile.user.accountStatus === 'pending_deletion' || (profile.user as any).account_status === 'pending_deletion') {
+          setPendingDeletionUser(profile.user);
+          setShowAccountRestoration(true);
+          setIsAuthenticated(false);
+          return;
+        }
+        setCurrentUser(profile.user);
+      } else {
+        setCurrentUser(authService.getUser());
+      }
+    } catch (error) {
+      console.error('Failed to fetch profile:', error);
+      setCurrentUser(authService.getUser());
+    }
+    
     fetchUserPoints();
     
     // Update socket connections with new auth token
@@ -588,7 +644,11 @@ function AppContent() {
     SocketManager.updateAuth(token);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Call the AuthService logout method to properly clear tokens and make API call
+    await authService.logout();
+    
+    // Update local state
     setIsAuthenticated(false);
     setCurrentUser(null);
     setUserPoints(0);
@@ -854,17 +914,25 @@ function AppContent() {
                 streamType={streamStatus.streamType}
                 audioSettings={streamerSettings.audio}
                 onAudioSettingsChange={(newAudioSettings) => {
-                  setStreamerSettings({
+                  const newSettings = {
                     ...streamerSettings,
                     audio: newAudioSettings
-                  });
+                  };
+                  setStreamerSettings(newSettings);
+                  // Save to cookies
+                  CookieService.setCookie(COOKIE_NAMES.AUDIO_SETTINGS, newAudioSettings);
+                  CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
                 }}
                 videoSettings={streamerSettings.video}
                 onVideoSettingsChange={(newVideoSettings) => {
-                  setStreamerSettings({
+                  const newSettings = {
                     ...streamerSettings,
                     video: newVideoSettings
-                  });
+                  };
+                  setStreamerSettings(newSettings);
+                  // Save to cookies
+                  CookieService.setCookie(COOKIE_NAMES.VIDEO_SETTINGS, newVideoSettings);
+                  CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
                 }}
               />
             </div>
@@ -873,7 +941,10 @@ function AppContent() {
           <div className="stream-controls-container">
             <StreamerSettings 
               settings={streamerSettings}
-              onSettingsChange={setStreamerSettings}
+              onSettingsChange={(newSettings) => {
+                setStreamerSettings(newSettings);
+                // Settings are already saved to cookies by StreamerSettings component
+              }}
               isStreaming={isStreaming}
               compact={true}
             />
@@ -983,6 +1054,33 @@ function AppContent() {
           onSuccess={() => {
             setShowPasswordReset(false);
             // Password reset successful, user can now login
+          }}
+        />
+      )}
+
+      {showDeletionConfirmation && (
+        <DeletionConfirmation
+          onClose={() => setShowDeletionConfirmation(false)}
+        />
+      )}
+
+      {showAccountRestoration && pendingDeletionUser && (
+        <AccountRestoration
+          userEmail={pendingDeletionUser.email}
+          onRestore={() => {
+            // Account restored, continue with normal login
+            setShowAccountRestoration(false);
+            setPendingDeletionUser(null);
+            setIsAuthenticated(true);
+            setCurrentUser(authService.getUser());
+            fetchUserPoints();
+            const token = authService.getToken();
+            SocketManager.updateAuth(token);
+          }}
+          onCancel={() => {
+            setShowAccountRestoration(false);
+            setPendingDeletionUser(null);
+            authService.logout();
           }}
         />
       )}

@@ -14,6 +14,8 @@ interface User {
   is_admin?: boolean;
   is_moderator?: boolean;
   is_banned?: boolean;
+  accountStatus?: string;
+  account_status?: string;
 }
 
 interface AuthResponse {
@@ -21,6 +23,7 @@ interface AuthResponse {
   token: string;
   refreshToken: string;
   message?: string;
+  accountStatus?: string;
 }
 
 interface UserStats {
@@ -110,10 +113,13 @@ class AuthService {
       this.token = response.data.token;
       this.refreshToken = response.data.refreshToken;
       this.user = response.data.user;
-      this.saveToStorage();
       
-      // Re-setup interceptors with new token
-      this.setupAxiosInterceptors();
+      // Check if account is pending deletion before saving
+      if (response.data.accountStatus !== 'pending_deletion') {
+        this.saveToStorage();
+        // Re-setup interceptors with new token
+        this.setupAxiosInterceptors();
+      }
 
       // console.log('✅ Login successful for user:', this.user.username);
       return response.data;
@@ -135,10 +141,35 @@ class AuthService {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      // Clear all auth data from memory
       this.token = null;
       this.refreshToken = null;
       this.user = null;
-      this.saveToStorage();
+      
+      // Clear all auth-related data from localStorage
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('user');
+      
+      // Also clear any other potential auth-related items
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('auth') || key.includes('token') || key.includes('user'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      
+      // Remove axios interceptors to prevent any lingering auth attempts
+      if (this.requestInterceptor !== null) {
+        axios.interceptors.request.eject(this.requestInterceptor);
+        this.requestInterceptor = null;
+      }
+      if (this.responseInterceptor !== null) {
+        axios.interceptors.response.eject(this.responseInterceptor);
+        this.responseInterceptor = null;
+      }
     }
   }
 
@@ -441,6 +472,48 @@ class AuthService {
     await axios.delete(`${API_URL}/api/admin/users/${userId}`, {
       headers: { 'Authorization': `Bearer ${this.token}` }
     });
+  }
+
+  // Account deletion methods
+  async requestAccountDeletion(): Promise<any> {
+    try {
+      const response = await axios.post(`${API_URL}/auth/request-deletion`, {}, {
+        headers: { 'Authorization': `Bearer ${this.token}` }
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to request account deletion');
+    }
+  }
+
+  async confirmAccountDeletion(token: string): Promise<any> {
+    try {
+      const response = await axios.post(`${API_URL}/auth/confirm-deletion`, { token });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to confirm account deletion');
+    }
+  }
+
+  async restoreAccount(email: string, password: string): Promise<any> {
+    try {
+      const response = await axios.post(`${API_URL}/auth/restore-account`, {
+        email,
+        password
+      });
+      
+      if (response.data.token) {
+        this.token = response.data.token;
+        this.refreshToken = response.data.refreshToken;
+        this.user = response.data.user;
+        this.saveToStorage();
+        this.setupAxiosInterceptors();
+      }
+      
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to restore account');
+    }
   }
 
   private requestInterceptor: number | null = null;

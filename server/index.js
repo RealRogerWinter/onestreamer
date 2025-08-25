@@ -12,6 +12,12 @@ const session = require('express-session');
 const passport = require('passport');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
+// Log environment variables on startup for debugging
+console.log('🔧 Environment Check on Server Start:');
+console.log('  SMTP_HOST:', process.env.SMTP_HOST ? 'configured' : 'NOT SET');
+console.log('  SMTP_USER:', process.env.SMTP_USER ? 'configured' : 'NOT SET');
+console.log('  FROM_EMAIL:', process.env.FROM_EMAIL || 'NOT SET');
+
 const StreamService = require('./services/StreamService');
 const TakeoverService = require('./services/TakeoverService');
 const TestStreamService = require('./services/TestStreamService');
@@ -348,7 +354,7 @@ app.post('/api/tutorial', async (req, res) => {
     }
 
     if (tabs) {
-      // New tabbed format
+      // New tabbed format - privacy is optional for backward compatibility
       if (typeof tabs !== 'object' || !tabs.about || !tabs.support || !tabs.tutorial || !tabs.terms) {
         return res.status(400).json({ error: 'Tabs must contain about, support, tutorial, and terms sections' });
       }
@@ -7867,6 +7873,14 @@ async function startServer() {
     }
     res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
   }); */
+
+  // Start account deletion scheduler after a delay to ensure database is ready
+  setTimeout(() => {
+    const AccountDeletionScheduler = require('./services/AccountDeletionScheduler');
+    const deletionScheduler = new AccountDeletionScheduler();
+    deletionScheduler.start();
+    console.log('🗑️ Account deletion scheduler started');
+  }, 5000); // Wait 5 seconds for database to initialize
 
   // Start HTTP server
   httpServer.listen(PORT, '0.0.0.0', () => {

@@ -144,7 +144,8 @@ const BotsPanel: React.FC<BotsPanelProps> = () => {
       // Fetch MovieBot status
       const movieBotResponse = await fetch('/admin/moviebot/status', {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'x-admin-key': '***REMOVED-ADMIN-KEY***'  // Add admin key header for moviebot endpoints
         }
       });
       
@@ -240,26 +241,36 @@ const BotsPanel: React.FC<BotsPanelProps> = () => {
     
     try {
       const endpoint = chatBotStatus.movieBotEnabled ? '/admin/moviebot/disable' : '/admin/moviebot/enable';
+      
+      // For enable endpoint, optionally provide streamerId if available
+      const requestBody = endpoint.includes('enable') 
+        ? { streamerId: socket?.id || undefined }
+        : {};
+      
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'x-admin-key': '***REMOVED-ADMIN-KEY***',  // Add admin key header for moviebot endpoints
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({})
+        body: JSON.stringify(requestBody)
       });
 
       if (response.ok) {
+        const result = await response.json();
         setChatBotStatus(prev => ({
           ...prev,
           movieBotEnabled: !prev.movieBotEnabled
         }));
-        showNotification('success', `MovieBot ${chatBotStatus.movieBotEnabled ? 'disabled' : 'enabled'}`);
+        showNotification('success', result.message || `MovieBot ${chatBotStatus.movieBotEnabled ? 'disabled' : 'enabled'}`);
         fetchBotStatus(); // Refresh status
       } else {
-        showNotification('error', 'Failed to toggle MovieBot');
+        const error = await response.json().catch(() => ({}));
+        showNotification('error', error.error || error.message || 'Failed to toggle MovieBot');
       }
     } catch (error) {
+      console.error('Failed to toggle MovieBot:', error);
       showNotification('error', 'Failed to toggle MovieBot');
     } finally {
       setLoading(false);

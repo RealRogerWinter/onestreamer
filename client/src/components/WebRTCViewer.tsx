@@ -5,6 +5,7 @@ import PerformanceMonitorComponent from './PerformanceMonitor';
 import { StreamSwitchManager, StreamSwitchState } from '../services/StreamSwitchManager';
 import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
 import { useVisualFxProcessor } from '../hooks/useVisualFxProcessor';
+import CookieService, { COOKIE_NAMES } from '../services/CookieService';
 import './WebRTCViewer.css';
 
 interface WebRTCViewerProps {
@@ -41,7 +42,19 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const [isFallbackMode, setIsFallbackMode] = useState(false);
   const streamSwitchManagerRef = useRef<StreamSwitchManager | null>(null);
   const [isPaused, setIsPaused] = useState(false);
-  const [volume, setVolume] = useState(0.8);
+  
+  // Initialize volume from cookie or default
+  const [volume, setVolume] = useState(() => {
+    const savedVolume = CookieService.getCookie(COOKIE_NAMES.VOLUME);
+    return savedVolume !== null ? savedVolume : 0.8;
+  });
+  
+  // Initialize muted state from cookie
+  const [isMuted, setIsMuted] = useState(() => {
+    const savedMuted = CookieService.getCookie(COOKIE_NAMES.MUTED);
+    return savedMuted !== null ? savedMuted : false;
+  });
+  
   const [showControls, setShowControls] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -121,11 +134,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     video.addEventListener('pause', handlePause);
     video.addEventListener('loadeddata', handleLoadedData);
     
-    // Apply volume and muted state
+    // Apply volume and muted state from saved settings
     video.volume = volume;
-    // Only mute if volume is 0 or explicitly required
-    // Allow unmuted autoplay to be attempted first
-    video.muted = volume === 0;
+    // Use saved muted state or mute if volume is 0
+    video.muted = isMuted || volume === 0;
     
     // Initial state sync
     const initialPaused = video.paused;
@@ -1306,9 +1318,18 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
   const handleVolumeChange = (newVolume: number) => {
     setVolume(newVolume);
+    
+    // Save volume to cookie
+    CookieService.setCookie(COOKIE_NAMES.VOLUME, newVolume);
+    
+    // Update muted state
+    const muted = newVolume === 0;
+    setIsMuted(muted);
+    CookieService.setCookie(COOKIE_NAMES.MUTED, muted);
+    
     if (videoRef.current) {
       videoRef.current.volume = newVolume;
-      videoRef.current.muted = newVolume === 0;
+      videoRef.current.muted = muted;
       
       // First time volume is changed, ensure user has interacted
       if (!userInteracted) {

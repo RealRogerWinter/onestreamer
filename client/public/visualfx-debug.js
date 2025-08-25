@@ -686,20 +686,3 @@ window.visualFxDebugPanel = visualFxDebugPanel;
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = VisualFxDebugPanel;
 }
-
-// Show initialization message in console
-console.log(`
-🎬 VisualFX Debug Panel loaded!
-   
-📋 Quick Commands:
-   • Ctrl+Shift+V - Toggle debug panel
-   • ESC - Close panel (when open)
-   • Ctrl+Shift+C - Clear all effects (when panel is open)
-
-🔧 Available via console:
-   • visualFxDebugPanel.togglePanel()
-   • visualFxDebugPanel.applyEffect('effect_id')
-   • visualFxDebugPanel.clearAllEffects()
-
-ℹ️  Loading admin status...
-`);

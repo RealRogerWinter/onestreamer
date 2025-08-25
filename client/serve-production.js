@@ -11,7 +11,8 @@ console.log('Starting production server on port 3443...');
 console.log('Serving from:', buildDir);
 
 const serve = spawn('serve', [
-  buildDir,  // Remove -s flag to serve all files directly
+  buildDir,
+  '-s',  // Enable single-page application mode for client-side routing
   '-l', '3443',
   '--ssl-cert', certPath,
   '--ssl-key', keyPath,

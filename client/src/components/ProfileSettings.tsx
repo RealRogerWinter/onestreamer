@@ -45,6 +45,9 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [resendingVerification, setResendingVerification] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletionRequested, setDeletionRequested] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -214,6 +217,45 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${hours}h ${minutes}m`;
+  };
+
+  const handleDeleteAccountRequest = async () => {
+    const isVerified = userData?.isVerified || userData?.is_verified;
+    
+    if (!isVerified) {
+      setError('Your email must be verified to delete your account. Please verify your email first or contact an administrator for assistance.');
+      setShowDeleteModal(false);
+      return;
+    }
+
+    if (deleteConfirmText !== 'DELETE MY ACCOUNT') {
+      setError('Please type "DELETE MY ACCOUNT" exactly to confirm');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await authService.requestAccountDeletion();
+      
+      if (response.success) {
+        setSuccess('A confirmation email has been sent. Please check your email to confirm account deletion.');
+        setShowDeleteModal(false);
+        setDeleteConfirmText('');
+        setDeletionRequested(true);
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to request account deletion');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelDeletion = () => {
+    setShowDeleteModal(false);
+    setDeleteConfirmText('');
+    setError(null);
   };
 
   if (!isOpen) return null;
@@ -420,8 +462,96 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
               </button>
             )}
           </div>
+
+          <div className="profile-section danger-zone">
+            <h3>Danger Zone</h3>
+            <div className="danger-zone-content">
+              <div className="danger-zone-item">
+                <div className="danger-zone-info">
+                  <h4>Delete Account</h4>
+                  <p>Once you delete your account, there is a 15-day grace period before your data is permanently removed. You can restore your account within this period by logging in.</p>
+                </div>
+                <button 
+                  className="btn btn-danger"
+                  onClick={() => setShowDeleteModal(true)}
+                  disabled={deletionRequested}
+                >
+                  {deletionRequested ? 'Deletion Requested' : 'Delete Account'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
+      {showDeleteModal && (
+        <div className="delete-modal-overlay" onClick={handleCancelDeletion}>
+          <div className="delete-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Delete Account</h3>
+            
+            {(userData?.isVerified || userData?.is_verified) ? (
+              <>
+                <div className="delete-modal-warning">
+                  <p><strong>Warning:</strong> This action will delete your account and all associated data.</p>
+                  <ul>
+                    <li>Your account will be flagged for deletion immediately</li>
+                    <li>You will receive an email to confirm this action</li>
+                    <li>After confirmation, you have 15 days to restore your account</li>
+                    <li>After 15 days, all your data will be permanently deleted</li>
+                  </ul>
+                </div>
+
+                <div className="delete-confirmation-input">
+                  <label>Type <strong>DELETE MY ACCOUNT</strong> to confirm:</label>
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="Type here to confirm"
+                    disabled={loading}
+                  />
+                </div>
+
+                {error && (
+                  <div className="alert alert-error">
+                    {error}
+                  </div>
+                )}
+
+                <div className="delete-modal-actions">
+                  <button 
+                    className="btn btn-danger"
+                    onClick={handleDeleteAccountRequest}
+                    disabled={loading || deleteConfirmText !== 'DELETE MY ACCOUNT'}
+                  >
+                    {loading ? 'Processing...' : 'Request Deletion'}
+                  </button>
+                  <button 
+                    className="btn btn-secondary"
+                    onClick={handleCancelDeletion}
+                    disabled={loading}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="delete-modal-unverified">
+                <p>Your email address must be verified before you can delete your account.</p>
+                <p>Please verify your email first or contact an administrator at support@onestreamer.live for assistance with account deletion.</p>
+                <div className="delete-modal-actions">
+                  <button 
+                    className="btn btn-secondary"
+                    onClick={handleCancelDeletion}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

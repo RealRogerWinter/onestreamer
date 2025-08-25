@@ -1,7 +1,7 @@
 # 📺 OneStreamer Tutorial
 ## 🎮 How It Works
 
-OneStreamer is a platform where only **one user can be live at a time** 📹. Want to stream? You can take over the stream at any time by pressing the **🔴 "Take Over Stream"** button and then you'll become the streamer yourself.
+OneStreamer is a platform where only **one user can be live at a time**. Want to stream? You can take over the stream at any time by pressing the **"Take Over Stream"** button and then you'll become the streamer yourself.
 
 Since anyone can go live and disrupt the stream at any time, you'll have to come up with novel and interesting ways to capture the audience's attention and not be booted offline.
 
@@ -20,7 +20,7 @@ The items that you can purchase using your points can be used to enhance or disr
 
 🛡️ **Guard Items:** Purchase Guard items to increase the global streaming cooldown timer ⏰ and prevent other users from taking over your stream. 
 
-⚔️ **Attack Items:** Use Attack items as weapons to reduce the Global Cooldown timer while other streamers are live, speeding up their inevitable takeover ⚡.
+⚔️ **Attack Items:** Use Attack items as weapons to reduce the Global Cooldown timer while other streamers are live, speeding up their inevitable takeover.
 
 ## 🎊 Fun Stream Effects
 

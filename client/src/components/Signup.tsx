@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import authService from '../services/AuthService';
 import CloudflareTurnstile from './CloudflareTurnstile';
 import { TURNSTILE_SITE_KEY } from '../config/turnstile';
@@ -21,6 +21,7 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
   const [showVerificationMessage, setShowVerificationMessage] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [turnstileKey, setTurnstileKey] = useState(0); // Add key to force re-render of Turnstile
 
   const validateForm = (): boolean => {
     if (!email || !username || !password || !confirmPassword) {
@@ -79,7 +80,9 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
       }
     } catch (err: any) {
       setError(err.message || 'Signup failed. Please try again.');
-      setTurnstileToken(null); // Reset token on error
+      // Reset Turnstile widget by changing its key, which forces a re-render
+      setTurnstileToken(null);
+      setTurnstileKey(prev => prev + 1); // Force Turnstile widget to re-render
     } finally {
       setLoading(false);
     }
@@ -180,6 +183,7 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
           </div>
 
           <CloudflareTurnstile
+            key={turnstileKey}
             siteKey={TURNSTILE_SITE_KEY}
             onVerify={(token) => setTurnstileToken(token)}
             onError={(error) => setError('Security verification failed. Please try again.')}
@@ -204,7 +208,7 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
           <button 
             type="submit" 
             className="auth-button auth-button-primary"
-            disabled={loading || !turnstileToken}
+            disabled={loading}
           >
             {loading ? 'Creating Account...' : 'Sign Up'}
           </button>

@@ -178,7 +178,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ socket, onLogout, onOpenProfi
           <div className="user-profile-info">
             <h4>{user.username}</h4>
             <p>{user.email}</p>
-            {!user.isVerified && (
+            {!user.isVerified && !user.is_verified && (
               <p style={{ color: '#f90', fontSize: '12px', marginTop: '8px' }}>
                 ⚠️ Email not verified
               </p>

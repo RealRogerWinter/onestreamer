@@ -6,13 +6,14 @@ interface TutorialEditorProps {
   addLog: (message: string) => void;
 }
 
-type TabType = 'about' | 'support' | 'tutorial' | 'terms';
+type TabType = 'about' | 'support' | 'tutorial' | 'terms' | 'privacy';
 
 interface TabContent {
   about: string;
   support: string;
   tutorial: string;
   terms: string;
+  privacy: string;
 }
 
 const API_URL = process.env.REACT_APP_API_URL || process.env.REACT_APP_SERVER_URL || '';
@@ -98,7 +99,8 @@ const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
     about: '',
     support: '',
     tutorial: '',
-    terms: ''
+    terms: '',
+    privacy: ''
   });
   const [isPreview, setIsPreview] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -121,7 +123,8 @@ const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
             about: data.tabs.about || getDefaultAboutContent(),
             support: data.tabs.support || getDefaultSupportContent(),
             tutorial: data.tabs.tutorial || getDefaultTutorialContent(),
-            terms: data.tabs.terms || getDefaultTermsContent()
+            terms: data.tabs.terms || getDefaultTermsContent(),
+            privacy: data.tabs.privacy || getDefaultPrivacyContent()
           });
         } else {
           // Fallback to old single content format
@@ -129,7 +132,8 @@ const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
             about: getDefaultAboutContent(),
             support: getDefaultSupportContent(),
             tutorial: data.content || getDefaultTutorialContent(),
-            terms: getDefaultTermsContent()
+            terms: getDefaultTermsContent(),
+            privacy: getDefaultPrivacyContent()
           });
         }
         addLog('Tutorial content loaded successfully');
@@ -138,7 +142,8 @@ const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
           about: getDefaultAboutContent(),
           support: getDefaultSupportContent(),
           tutorial: getDefaultTutorialContent(),
-          terms: getDefaultTermsContent()
+          terms: getDefaultTermsContent(),
+          privacy: getDefaultPrivacyContent()
         });
         addLog('Using default tutorial content (no saved content found)');
       }
@@ -148,7 +153,8 @@ const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
         about: getDefaultAboutContent(),
         support: getDefaultSupportContent(),
         tutorial: getDefaultTutorialContent(),
-        terms: getDefaultTermsContent()
+        terms: getDefaultTermsContent(),
+        privacy: getDefaultPrivacyContent()
       });
       addLog('Failed to load tutorial content - using defaults');
     } finally {
@@ -429,6 +435,205 @@ A: Admin privileges are granted by existing administrators. Contact an admin if 
 *Last updated: ${new Date().toLocaleDateString()}*`;
   };
 
+  const getDefaultPrivacyContent = () => {
+    return `# Privacy Policy
+
+## Introduction
+
+OneStreamer ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our live streaming platform.
+
+## Information We Collect
+
+### Personal Information
+When you create an account, we collect:
+- Username and email address
+- Password (encrypted and secured)
+- Profile information you choose to provide
+- Display preferences and settings
+
+### Usage Information
+We automatically collect:
+- Streaming and viewing activity
+- Chat messages and interactions
+- Points earned and spent
+- IP addresses and device information
+- Browser type and operating system
+
+### Stream Content
+- Video and audio from your streams
+- Chat messages during streams
+- User-generated content and media
+
+## How We Use Your Information
+
+### To Provide Services
+- Enable streaming and viewing functionality
+- Process points and virtual transactions
+- Facilitate chat and user interactions
+- Maintain and improve platform performance
+
+### To Communicate
+- Send system notifications
+- Respond to support requests
+- Inform about platform updates
+- Deliver security alerts
+
+### For Safety and Security
+- Detect and prevent fraud
+- Enforce community guidelines
+- Investigate violations
+- Protect user safety
+
+## Data Sharing and Disclosure
+
+### We DO NOT:
+- Sell your personal information
+- Share data with advertisers
+- Transfer data to third parties for marketing
+
+### We MAY Share Data:
+- When required by law or legal process
+- To protect rights and safety
+- With your explicit consent
+- For essential service operations
+
+## Data Retention
+
+### Active Accounts
+- Profile data retained while account is active
+- Stream recordings deleted after 30 days
+- Chat logs retained for 90 days
+- Points history kept for 1 year
+
+### Deleted Accounts
+- Personal data removed within 30 days
+- Some data may be retained for legal compliance
+- Anonymized data may be kept for analytics
+
+## Your Rights and Choices
+
+### Account Management
+- Access and update your profile
+- Delete your account at any time
+- Export your data upon request
+- Control privacy settings
+
+### Communication Preferences
+- Opt-out of non-essential communications
+- Manage notification settings
+- Control chat visibility
+
+### Data Requests
+- Request copy of your data
+- Request data correction
+- Request data deletion
+- Object to data processing
+
+## Security Measures
+
+### Technical Safeguards
+- SSL/TLS encryption for data transmission
+- Encrypted password storage
+- Regular security audits
+- Secure server infrastructure
+
+### Administrative Controls
+- Limited data access
+- Employee training
+- Incident response procedures
+- Regular security updates
+
+## Children's Privacy
+
+- Service is not intended for users under 13
+- We do not knowingly collect data from children
+- Parents may contact us to remove child's data
+- Age verification may be required
+
+## Cookies and Tracking
+
+### Essential Cookies
+- Session management
+- Authentication
+- Security features
+- User preferences
+
+### Analytics
+- Anonymous usage statistics
+- Performance monitoring
+- Feature usage tracking
+- Error reporting
+
+## International Data
+
+- Data may be processed in different countries
+- We ensure appropriate safeguards
+- You consent to international data transfer
+- EU users have additional rights under GDPR
+
+## Changes to Privacy Policy
+
+- We may update this policy periodically
+- Users will be notified of significant changes
+- Continued use implies acceptance
+- Review policy regularly
+
+## Contact Information
+
+For privacy concerns or questions:
+- Email: privacy@onestreamer.live
+- In-app: Contact an administrator
+- Response time: Within 48 hours
+
+## Data Protection Officer
+
+For formal privacy requests:
+- Email: dpo@onestreamer.live
+- Include "Privacy Request" in subject
+
+## Legal Basis for Processing
+
+We process your data based on:
+- Contract performance (providing services)
+- Legitimate interests (platform improvement)
+- Legal obligations (compliance)
+- Your consent (optional features)
+
+## Third-Party Services
+
+We may use third-party services for:
+- Infrastructure hosting
+- Security monitoring
+- Payment processing (if applicable)
+- Analytics (anonymized)
+
+All third parties are vetted for privacy compliance.
+
+## Your California Privacy Rights
+
+California residents have additional rights:
+- Right to know about data collection
+- Right to delete personal information
+- Right to opt-out of data sales (we don't sell data)
+- Right to non-discrimination
+
+## EU Data Subject Rights
+
+Under GDPR, EU residents have:
+- Right to access
+- Right to rectification
+- Right to erasure
+- Right to restrict processing
+- Right to data portability
+- Right to object
+
+---
+
+*Last Updated: ${new Date().toLocaleDateString()}*
+
+*By using OneStreamer, you acknowledge that you have read and understood this Privacy Policy.*`;
+  };
+
   const getDefaultTermsContent = () => {
     return `# Terms of Service
 
@@ -626,6 +831,12 @@ For questions about these Terms, contact us at:
           onClick={() => setActiveTab('terms')}
         >
           Terms
+        </button>
+        <button 
+          className={`tutorial-editor-tab ${activeTab === 'privacy' ? 'active' : ''}`}
+          onClick={() => setActiveTab('privacy')}
+        >
+          Privacy
         </button>
       </div>
 

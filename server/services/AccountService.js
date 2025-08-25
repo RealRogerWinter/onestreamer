@@ -1,10 +1,11 @@
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
-const { runAsync, getAsync, allAsync } = require('../database/database');
+const { db, runAsync, getAsync, allAsync } = require('../database/database');
 
 class AccountService {
     constructor() {
         this.saltRounds = 10;
+        this.db = db; // Add database reference for raw queries
     }
 
     async createUser(email, username, password, oauthProvider = null, oauthId = null) {
@@ -512,6 +513,198 @@ class AccountService {
         // 1. They signed up via OAuth
         // 2. They haven't changed it yet
         return user.oauth_provider && (user.username_changed === 0 || user.username_changed === false || user.username_changed === null);
+    }
+
+    // Account deletion methods
+    async requestDeletion(userId, deletionToken, tokenExpires) {
+        return new Promise((resolve, reject) => {
+            const now = new Date().toISOString();
+            const scheduledFor = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(); // 15 days from now
+            
+            const query = `
+                UPDATE users 
+                SET deletion_requested_at = ?,
+                    deletion_token = ?,
+                    deletion_token_expires = ?,
+                    deletion_scheduled_for = ?,
+                    account_status = 'pending_deletion'
+                WHERE id = ?
+            `;
+            
+            this.db.run(query, [now, deletionToken, tokenExpires.toISOString(), scheduledFor, userId], async (err) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    // Log the deletion request
+                    await this.logDeletionAction(userId, 'deletion_requested');
+                    resolve(true);
+                }
+            });
+        });
+    }
+
+    async confirmDeletion(token) {
+        return new Promise((resolve, reject) => {
+            // First, find the user with this token
+            const query = `
+                SELECT * FROM users 
+                WHERE deletion_token = ? 
+                AND deletion_token_expires > datetime('now')
+                AND account_status = 'pending_deletion'
+            `;
+            
+            this.db.get(query, [token], (err, user) => {
+                if (err) {
+                    resolve({ success: false, error: 'Database error' });
+                } else if (!user) {
+                    resolve({ success: false, error: 'Invalid or expired deletion token' });
+                } else {
+                    // Update the confirmation timestamp
+                    const updateQuery = `
+                        UPDATE users 
+                        SET deletion_confirmed_at = datetime('now')
+                        WHERE id = ?
+                    `;
+                    
+                    this.db.run(updateQuery, [user.id], async (updateErr) => {
+                        if (updateErr) {
+                            resolve({ success: false, error: 'Failed to confirm deletion' });
+                        } else {
+                            // Log the confirmation
+                            await this.logDeletionAction(user.id, 'deletion_confirmed');
+                            resolve({ success: true, userId: user.id });
+                        }
+                    });
+                }
+            });
+        });
+    }
+
+    async restoreAccount(userId) {
+        return new Promise((resolve, reject) => {
+            const query = `
+                UPDATE users 
+                SET deletion_requested_at = NULL,
+                    deletion_confirmed_at = NULL,
+                    deletion_scheduled_for = NULL,
+                    deletion_token = NULL,
+                    deletion_token_expires = NULL,
+                    account_status = 'active'
+                WHERE id = ? AND account_status = 'pending_deletion'
+            `;
+            
+            const self = this; // Store reference to AccountService instance
+            this.db.run(query, [userId], async function(err) {
+                if (err) {
+                    reject(err);
+                } else if (this.changes === 0) {
+                    resolve(false); // No rows updated
+                } else {
+                    // Log the restoration
+                    await self.logDeletionAction(userId, 'account_restored');
+                    resolve(true);
+                }
+            });
+        });
+    }
+
+    async logDeletionAction(userId, action, ipAddress = null, userAgent = null) {
+        return new Promise((resolve, reject) => {
+            // First get user info for logging
+            this.getUserById(userId).then(user => {
+                if (!user) {
+                    resolve(false);
+                    return;
+                }
+                
+                const query = `
+                    INSERT INTO account_deletion_logs 
+                    (user_id, username, email, action, ip_address, user_agent, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                `;
+                
+                this.db.run(query, [userId, user.username, user.email, action, ipAddress, userAgent], (err) => {
+                    if (err) {
+                        console.error('Failed to log deletion action:', err);
+                        resolve(false);
+                    } else {
+                        resolve(true);
+                    }
+                });
+            });
+        });
+    }
+
+    async getAccountsPendingDeletion() {
+        return new Promise((resolve, reject) => {
+            const query = `
+                SELECT * FROM users 
+                WHERE account_status = 'pending_deletion' 
+                AND deletion_confirmed_at IS NOT NULL
+                AND deletion_scheduled_for <= datetime('now')
+            `;
+            
+            this.db.all(query, [], (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(rows || []);
+                }
+            });
+        });
+    }
+
+    async permanentlyDeleteAccount(userId) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                // Log the permanent deletion
+                await this.logDeletionAction(userId, 'data_purged');
+                
+                // Delete user data from all related tables
+                const tables = [
+                    'user_sessions',
+                    'user_stats',
+                    'ip_to_user_transfers',
+                    'user_inventory',
+                    'item_usage_history',
+                    'user_points_log',
+                    'account_deletion_logs'
+                ];
+                
+                for (const table of tables) {
+                    await new Promise((res, rej) => {
+                        this.db.run(`DELETE FROM ${table} WHERE user_id = ?`, [userId], (err) => {
+                            if (err) rej(err);
+                            else res(true);
+                        });
+                    });
+                }
+                
+                // Finally, mark the user as deleted (keep record for audit)
+                const updateQuery = `
+                    UPDATE users 
+                    SET account_status = 'deleted',
+                        email = 'deleted_' || id || '@deleted.com',
+                        username = 'deleted_user_' || id,
+                        password = NULL,
+                        oauth_id = NULL,
+                        verification_token = NULL,
+                        reset_token = NULL,
+                        deletion_token = NULL
+                    WHERE id = ?
+                `;
+                
+                this.db.run(updateQuery, [userId], (err) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(true);
+                    }
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
     }
 }
 

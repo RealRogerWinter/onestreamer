@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import CookieService, { COOKIE_NAMES } from '../services/CookieService';
 import './StreamerSettings.css';
 
 export interface VideoSettingsConfig {
@@ -46,16 +47,29 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
   const [expanded, setExpanded] = useState(!compact);
   const [activeTab, setActiveTab] = useState<'audio' | 'video'>('audio');
   
+  // Wrapper function to save settings to cookies when they change
+  const handleSettingsChange = (newSettings: StreamerSettingsConfig) => {
+    // Save individual settings to cookies
+    CookieService.setCookie(COOKIE_NAMES.AUDIO_SETTINGS, newSettings.audio);
+    CookieService.setCookie(COOKIE_NAMES.VIDEO_SETTINGS, newSettings.video);
+    CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
+    
+    // Call the original onSettingsChange prop
+    onSettingsChange(newSettings);
+  };
+  
   // Preview and test states
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
   const [audioLevel, setAudioLevel] = useState<number>(0);
+  const [peakLevel, setPeakLevel] = useState<number>(0);
   const [isMicTesting, setIsMicTesting] = useState(false);
   const [isCameraPreview, setIsCameraPreview] = useState(false);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const peakHoldTimeRef = useRef<number>(0);
 
   // Cleanup function for media streams
   const cleanupStreams = () => {
@@ -77,6 +91,8 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
     }
     setIsMicTesting(false);
     setIsCameraPreview(false);
+    setAudioLevel(0);
+    setPeakLevel(0);
   };
 
   useEffect(() => {
@@ -123,7 +139,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
         }
         
         if (needsUpdate) {
-          onSettingsChange(updatedSettings);
+          handleSettingsChange(updatedSettings);
         }
       } catch (error) {
         console.error('Failed to enumerate devices:', error);
@@ -155,7 +171,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
 
   const handleAudioToggle = (setting: keyof AudioSettingsConfig) => {
     if (typeof settings.audio[setting] === 'boolean') {
-      onSettingsChange({
+      handleSettingsChange({
         ...settings,
         audio: {
           ...settings.audio,
@@ -167,7 +183,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
 
   const handleVideoToggle = (setting: keyof VideoSettingsConfig) => {
     if (typeof settings.video[setting] === 'boolean') {
-      onSettingsChange({
+      handleSettingsChange({
         ...settings,
         video: {
           ...settings.video,
@@ -178,7 +194,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
   };
 
   const handleAudioSelectChange = (setting: keyof AudioSettingsConfig, value: string | number) => {
-    onSettingsChange({
+    handleSettingsChange({
       ...settings,
       audio: {
         ...settings.audio,
@@ -188,7 +204,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
   };
 
   const handleVideoSelectChange = (setting: keyof VideoSettingsConfig, value: string | number) => {
-    onSettingsChange({
+    handleSettingsChange({
       ...settings,
       video: {
         ...settings.video,
@@ -303,6 +319,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
       }
       setIsMicTesting(false);
       setAudioLevel(0);
+      setPeakLevel(0);
     } else {
       // Start test
       try {
@@ -330,10 +347,39 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
         // Start monitoring audio levels
         const updateLevel = () => {
           if (analyserRef.current) {
-            const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-            analyserRef.current.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-            setAudioLevel(average / 255);
+            // Use time domain data for accurate level measurement
+            const bufferLength = analyserRef.current.fftSize;
+            const dataArray = new Float32Array(bufferLength);
+            analyserRef.current.getFloatTimeDomainData(dataArray);
+            
+            // Calculate RMS (Root Mean Square) for accurate level
+            let sum = 0;
+            let peak = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              const value = Math.abs(dataArray[i]);
+              sum += value * value;
+              peak = Math.max(peak, value);
+            }
+            const rms = Math.sqrt(sum / dataArray.length);
+            
+            // Convert to 0-1 range with appropriate scaling
+            // RMS values typically range from 0 to ~0.7 for normal speech
+            // Use peak for better visual feedback
+            const scaledLevel = Math.min(1, Math.max(rms * 5, peak * 2));
+            
+            // Update peak hold
+            const currentTime = Date.now();
+            if (scaledLevel > peakLevel || currentTime - peakHoldTimeRef.current > 2000) {
+              setPeakLevel(scaledLevel);
+              peakHoldTimeRef.current = currentTime;
+            }
+            
+            // Debug logging to check if audio is being detected
+            if (scaledLevel > 0.01) {
+              console.log('🎤 Audio detected - RMS:', rms.toFixed(4), 'Peak:', peak.toFixed(4), 'Level:', scaledLevel.toFixed(2));
+            }
+            
+            setAudioLevel(scaledLevel);
             animationFrameRef.current = requestAnimationFrame(updateLevel);
           }
         };
@@ -381,7 +427,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
       }
     };
 
-    onSettingsChange({
+    handleSettingsChange({
       ...settings,
       audio: {
         ...settings.audio,
@@ -404,7 +450,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
       }
     };
 
-    onSettingsChange({
+    handleSettingsChange({
       ...settings,
       video: {
         ...settings.video,
@@ -548,15 +594,58 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
                 </button>
                 {isMicTesting && (
                   <div className="audio-level-meter">
-                    <div className="level-label">Audio Level:</div>
+                    <div className="meter-header">
+                      <span className="level-label">Audio Level</span>
+                      <span className="db-value">
+                        {audioLevel > 0.001 
+                          ? `${Math.round(20 * Math.log10(audioLevel))} dB` 
+                          : '-∞ dB'}
+                      </span>
+                    </div>
+                    
+                    <div className="db-scale">
+                      <span>-60</span>
+                      <span>-48</span>
+                      <span>-36</span>
+                      <span>-24</span>
+                      <span>-12</span>
+                      <span>-6</span>
+                      <span>0</span>
+                    </div>
+                    
                     <div className="level-bar-container">
+                      {/* Simple gradient bar for now */}
                       <div 
-                        className="level-bar" 
-                        style={{ 
-                          width: `${audioLevel * 100}%`,
-                          backgroundColor: audioLevel > 0.7 ? '#ff4444' : audioLevel > 0.4 ? '#ffaa00' : '#00ff00'
+                        className="level-bar-fill"
+                        style={{
+                          width: `${Math.max(1, audioLevel * 100)}%`,
+                          background: `linear-gradient(90deg, 
+                            #00ff00 0%, 
+                            #00ff00 50%, 
+                            #ffff00 65%, 
+                            #ff8800 80%, 
+                            #ff0000 95%)`
                         }}
                       />
+                      
+                      {/* Peak indicator */}
+                      <div 
+                        className="peak-indicator"
+                        style={{
+                          left: `${Math.min(98, peakLevel * 100)}%`
+                        }}
+                      />
+                    </div>
+                    
+                    {/* Tick marks below */}
+                    <div className="meter-ticks">
+                      <div className="tick" style={{ left: '0%' }} />
+                      <div className="tick" style={{ left: '20%' }} />
+                      <div className="tick" style={{ left: '40%' }} />
+                      <div className="tick" style={{ left: '60%' }} />
+                      <div className="tick" style={{ left: '80%' }} />
+                      <div className="tick" style={{ left: '90%' }} />
+                      <div className="tick major" style={{ left: '100%' }} />
                     </div>
                   </div>
                 )}

@@ -7,11 +7,21 @@ const EmailService = require('./EmailService');
 
 class AuthService {
     constructor() {
+        console.log('🔐 AUTH: Initializing AuthService...');
         this.accountService = new AccountService();
-        this.emailService = new EmailService();
+        this._emailService = null; // Lazy load EmailService
         this.jwtSecret = process.env.JWT_SECRET || '***REMOVED-JWT-DEFAULT***';
         this.jwtExpiry = '24h';
         this.initializePassport();
+        console.log('🔐 AUTH: AuthService initialized');
+    }
+    
+    get emailService() {
+        if (!this._emailService) {
+            console.log('🔐 AUTH: Lazy loading EmailService...');
+            this._emailService = new EmailService();
+        }
+        return this._emailService;
     }
 
     initializePassport() {
@@ -171,6 +181,29 @@ class AuthService {
                 throw new Error('Invalid email or password');
             }
 
+            // Check if account is pending deletion
+            if (user.account_status === 'pending_deletion') {
+                // Still allow login but include status
+                const token = this.generateToken(user);
+                const refreshToken = this.generateRefreshToken(user);
+
+                return {
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        username: user.username,
+                        isVerified: user.is_verified,
+                        isAdmin: user.is_admin === 1,
+                        isModerator: user.is_moderator === 1,
+                        accountStatus: user.account_status,
+                        deletionScheduledFor: user.deletion_scheduled_for
+                    },
+                    token,
+                    refreshToken,
+                    accountStatus: 'pending_deletion'
+                };
+            }
+
             const token = this.generateToken(user);
             const refreshToken = this.generateRefreshToken(user);
 
@@ -181,7 +214,8 @@ class AuthService {
                     username: user.username,
                     isVerified: user.is_verified,
                     isAdmin: user.is_admin === 1,
-                    isModerator: user.is_moderator === 1
+                    isModerator: user.is_moderator === 1,
+                    accountStatus: user.account_status || 'active'
                 },
                 token,
                 refreshToken
@@ -270,6 +304,112 @@ class AuthService {
         } catch (emailError) {
             console.error('📧 AUTH: Failed to resend verification email:', emailError);
             throw new Error('Failed to send verification email');
+        }
+    }
+
+    async requestAccountDeletion(userId) {
+        const user = await this.accountService.getUserById(userId);
+        
+        console.log('🔍 DELETION REQUEST - User data:', {
+            id: user?.id,
+            username: user?.username,
+            email: user?.email,
+            oauth_provider: user?.oauth_provider,
+            is_verified: user?.is_verified
+        });
+        
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        if (!user.is_verified) {
+            throw new Error('Email must be verified to delete account');
+        }
+
+        // Generate deletion token
+        const crypto = require('crypto');
+        const deletionToken = crypto.randomBytes(32).toString('hex');
+        const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+        // Update user record with deletion request
+        await this.accountService.requestDeletion(userId, deletionToken, tokenExpires);
+
+        // Send confirmation email
+        console.log('📧 DELETION EMAIL - Attempting to send to:', user.email);
+        try {
+            await this.emailService.sendAccountDeletionEmail(
+                user.email, 
+                user.username, 
+                deletionToken
+            );
+            console.log('📧 DELETION EMAIL - Successfully sent to:', user.email);
+        } catch (emailError) {
+            console.error('📧 DELETION EMAIL - Failed to send to:', user.email, 'Error:', emailError);
+            throw new Error('Failed to send confirmation email. Please try again.');
+        }
+
+        return { success: true };
+    }
+
+    async confirmAccountDeletion(token) {
+        if (!token) {
+            throw new Error('Invalid deletion token');
+        }
+
+        const result = await this.accountService.confirmDeletion(token);
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to confirm account deletion');
+        }
+
+        return result;
+    }
+
+    async restoreAccount(email, password) {
+        try {
+            // Verify credentials
+            const user = await this.accountService.verifyPassword(email, password);
+            
+            if (!user) {
+                return { 
+                    success: false, 
+                    error: 'Invalid email or password' 
+                };
+            }
+
+            // Check if account is pending deletion
+            if (user.account_status !== 'pending_deletion') {
+                return { 
+                    success: false, 
+                    error: 'Account is not pending deletion' 
+                };
+            }
+
+            // Restore the account
+            const restored = await this.accountService.restoreAccount(user.id);
+            
+            if (restored) {
+                const token = this.generateToken(user);
+                const refreshToken = this.generateRefreshToken(user);
+                
+                return {
+                    success: true,
+                    user: user,
+                    token: token,
+                    refreshToken: refreshToken
+                };
+            }
+
+            return { 
+                success: false, 
+                error: 'Failed to restore account' 
+            };
+        } catch (error) {
+            console.error('Account restoration error:', error);
+            return { 
+                success: false, 
+                error: error.message || 'Failed to restore account' 
+            };
         }
     }
 }

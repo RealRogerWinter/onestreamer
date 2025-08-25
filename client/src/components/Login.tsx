@@ -38,9 +38,19 @@ const Login: React.FC<LoginProps> = ({ onSuccess, onSwitchToSignup, onClose }) =
     setLoading(true);
 
     try {
-      await authService.login(email, password, turnstileToken);
-      if (onSuccess) {
-        onSuccess();
+      const response = await authService.login(email, password, turnstileToken);
+      
+      // Check if account is pending deletion
+      if (response.accountStatus === 'pending_deletion' || response.user?.accountStatus === 'pending_deletion') {
+        // Don't call onSuccess, instead trigger restoration flow
+        // The App component should handle this
+        if (onSuccess) {
+          onSuccess();
+        }
+      } else {
+        if (onSuccess) {
+          onSuccess();
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
