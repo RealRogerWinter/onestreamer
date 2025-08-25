@@ -516,109 +516,6 @@ const buffDebuffService = new BuffDebuffService(io, streamService, timeTrackingS
 const canvasFxService = new CanvasFxService(io, itemService, buffDebuffService);
 const soundFxService = new SoundFxService();
 const plainTransportService = new MediasoupPlainTransportService(mediasoupService);
-
-// Visual Effects Synchronization System
-// Get all active visual effects that should be applied to the stream
-async function getActiveVisualEffects() {
-  try {
-    // Get ALL active buffs with visual effects
-    const visualEffectBuffs = await database.allAsync(`
-      SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data,
-             ab.user_id, ab.remaining_seconds, ab.item_id, ab.buff_type
-      FROM active_buffs ab
-      JOIN items i ON ab.item_id = i.id
-      WHERE ab.is_active = 1 
-        AND ab.remaining_seconds > 0
-        AND i.name IN (
-          'smoke_bomb', 'pixelate', 'emboss', 'thermal_vision', 'rotate_90',
-          'potato', 'upside_down', 'mirror', 'invert_colors', 'darkness',
-          'overexposed', 'glitch_bomb', 'motion_blur', 'freeze_frame',
-          'spotlight', 'disco_ball', 'confetti_cannon', 'rainbow_effect',
-          'stream_reducer'
-        )
-      ORDER BY ab.applied_at DESC
-    `);
-    
-    return visualEffectBuffs || [];
-  } catch (error) {
-    console.error('❌ Error getting active visual effects:', error);
-    return [];
-  }
-}
-
-// Periodically sync visual effects with active buffs
-let visualEffectSyncInterval = null;
-
-function startVisualEffectSync() {
-  if (visualEffectSyncInterval) {
-    clearInterval(visualEffectSyncInterval);
-  }
-  
-  visualEffectSyncInterval = setInterval(async () => {
-    try {
-      const currentStreamer = streamService.getCurrentStreamer();
-      if (!currentStreamer) return;
-      
-      const activeVisualEffects = await getActiveVisualEffects();
-      if (activeVisualEffects.length > 0) {
-        // Only log periodically to avoid spam
-        if (Math.random() < 0.1) { // 10% chance to log
-          console.log(`🔄 VISUAL FX SYNC: ${activeVisualEffects.length} active effects in sync`);
-        }
-        
-        // Broadcast current visual effects state
-        io.emit('visual-effects-sync-pulse', {
-          effects: activeVisualEffects.map(buff => ({
-            effectId: buff.item_name,
-            itemName: buff.item_name,
-            displayName: buff.display_name,
-            remainingSeconds: buff.remaining_seconds,
-            effectData: buff.effect_data
-          })),
-          streamId: currentStreamer,
-          timestamp: Date.now()
-        });
-      }
-    } catch (error) {
-      console.error('❌ VISUAL FX SYNC: Error in periodic sync:', error);
-    }
-  }, 5000); // Sync every 5 seconds
-  
-  console.log('🔄 VISUAL FX SYNC: Started periodic synchronization');
-}
-
-// Sync will be started after server initialization
-
-// When a buff is applied, ensure visual effects are triggered for all viewers
-buffDebuffService.on('buff-applied', async (buffData) => {
-  try {
-    // Check if this is a visual effect buff
-    const visualEffectItems = [
-      'smoke_bomb', 'pixelate', 'emboss', 'thermal_vision', 'rotate_90',
-      'potato', 'upside_down', 'mirror', 'invert_colors', 'darkness',
-      'overexposed', 'glitch_bomb', 'motion_blur', 'freeze_frame',
-      'spotlight', 'disco_ball', 'confetti_cannon', 'rainbow_effect',
-      'stream_reducer'
-    ];
-    
-    if (buffData.item_name && visualEffectItems.includes(buffData.item_name)) {
-      console.log(`🎨 VISUAL FX: Buff ${buffData.item_name} applied, ensuring visual sync`);
-      
-      // Broadcast to all viewers to apply this effect
-      io.emit('visual-effect-apply-sync', {
-        effectId: buffData.item_name,
-        itemName: buffData.item_name,
-        displayName: buffData.display_name,
-        duration: (buffData.remaining_seconds || buffData.duration_seconds || 60) * 1000,
-        effectData: buffData.effect_data,
-        buffId: buffData.id,
-        isNewBuff: true
-      });
-    }
-  } catch (error) {
-    console.error('❌ VISUAL FX: Error syncing buff-applied visual effect:', error);
-  }
-});
 const streamInterceptorService = new StreamInterceptorService(mediasoupService, plainTransportService);
 const visualFxService = new VisualFxService(mediasoupService, buffDebuffService, streamInterceptorService);
 const chatBotService = new ChatBotService();
@@ -5727,31 +5624,6 @@ io.on('connection', async (socket) => {
     const enrichedStatus = await enrichStreamStatus(status);
     socket.emit('stream-status', enrichedStatus);
     
-    // Visual effects sync temporarily disabled to debug rotate_90 issue
-    // try {
-    //   const activeVisualEffects = await getActiveVisualEffects();
-    //   if (activeVisualEffects.length > 0) {
-    //     console.log(`🎨 VISUAL FX: Sending ${activeVisualEffects.length} active effects to new viewer ${socket.id}`);
-    //     
-    //     // Send each effect to the viewer with a small delay to prevent overwhelming
-    //     activeVisualEffects.forEach((buff, index) => {
-    //       setTimeout(() => {
-    //         socket.emit('visual-effect-sync', {
-    //           effectId: buff.item_name,
-    //           itemName: buff.item_name,
-    //           displayName: buff.display_name,
-    //           duration: buff.remaining_seconds * 1000,
-    //           remainingSeconds: buff.remaining_seconds,
-    //           effectData: buff.effect_data,
-    //           isSyncEvent: true
-    //         });
-    //       }, index * 100); // 100ms between each effect
-    //     });
-    //   }
-    // } catch (error) {
-    //   console.error(`❌ VISUAL FX: Error sending effects to viewer ${socket.id}:`, error);
-    // }
-    
     // Emit unique viewer count based on IPs
     io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
     
@@ -5946,11 +5818,68 @@ io.on('connection', async (socket) => {
       
       // Emit streamer buff updates when user becomes current streamer
       try {
+        // First, get buffs that should be displayed (might be from previous streamer)
         const streamerBuffs = await buffDebuffService.getActiveBuffsForCurrentStreamer();
         console.log(`🎭 BUFF: Emitting streamer buffs for new streamer ${socket.id}: ${streamerBuffs.length} buffs`);
         io.emit('streamer-buffs-update', { buffs: streamerBuffs });
         
-        // NOTE: Visual effects re-application moved to stream-ready event for better timing
+        // Re-apply visual effects for ANY active stream-affecting buffs
+        // This includes buffs from the previous streamer that should still be visible
+        console.log(`🎨 VISUAL FX: Checking for active visual effect buffs to re-apply...`);
+        
+        // Get ALL active buffs that have visual effects, not just for current user
+        const allActiveBuffs = await runAsync(`
+          SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data,
+                 ab.user_id, ab.remaining_seconds
+          FROM active_buffs ab
+          JOIN items i ON ab.item_id = i.id
+          WHERE ab.is_active = 1 AND ab.remaining_seconds > 0
+          ORDER BY ab.applied_at DESC
+        `);
+        
+        if (allActiveBuffs && allActiveBuffs.length > 0) {
+          console.log(`🎨 VISUAL FX: Found ${allActiveBuffs.length} total active buffs in database`);
+          
+          // Visual effect items that should re-apply to the stream
+          const visualEffectItems = [
+            'emboss', 'pixelate', 'motion_blur', 'glitch_bomb', 
+            'thermal_vision', 'rotate_90', 'potato', 'smoke_bomb', 
+            'spotlight', 'disco_ball', 'confetti_cannon', 
+            'rainbow_effect', 'freeze_frame'
+          ];
+          
+          // Re-apply visual effects for ALL visual buffs (they affect the stream, not just the user)
+          for (const buff of allActiveBuffs) {
+            if (visualEffectItems.includes(buff.item_name)) {
+              console.log(`🎨 VISUAL FX: Re-triggering ${buff.display_name} (from user ${buff.user_id}) for new stream`);
+              
+              // Re-emit the buff-applied event to trigger visual effects
+              const buffData = {
+                id: buff.id,
+                user_id: buff.user_id, // Original user who applied the buff
+                item_id: buff.item_id,
+                item_name: buff.item_name,
+                display_name: buff.display_name,
+                buff_type: buff.buff_type,
+                remaining_seconds: buff.remaining_seconds,
+                stream_id: socket.id, // NEW streamer's socket ID
+                isResumed: true, // Flag to indicate this is a resumed effect
+                isTakeover: true // Additional flag for takeover scenario
+              };
+              
+              // Emit to the BuffDebuffService to trigger visual effects
+              if (buffDebuffService) {
+                buffDebuffService.emit('buff-applied', buffData);
+                console.log(`✅ VISUAL FX: Re-triggered ${buff.item_name} effect for takeover stream`);
+              }
+              
+              // Note: Direct service calls removed - the emit above will trigger the effects
+              // through the proper event system which both services listen to
+            }
+          }
+        } else {
+          console.log(`🎨 VISUAL FX: No active buffs found to re-apply`);
+        }
       } catch (error) {
         console.error('❌ BUFF: Error emitting streamer buffs on stream start:', error);
       }
@@ -7066,28 +6995,6 @@ io.on('connection', async (socket) => {
               });
               console.log(`📡 STREAM-READY: Regular streamer ${socket.id} ready with display name: ${streamerDisplayName}`);
               
-              // Visual effects sync temporarily disabled to debug rotate_90 issue
-              // try {
-              //   const activeVisualEffects = await getActiveVisualEffects();
-              //   if (activeVisualEffects.length > 0) {
-              //     console.log(`🎨 VISUAL FX: Broadcasting ${activeVisualEffects.length} active effects with stream-ready`);
-              //     
-              //     // Broadcast visual effects state to all clients
-              //     io.emit('visual-effects-state', {
-              //       effects: activeVisualEffects.map(buff => ({
-              //         effectId: buff.item_name,
-              //         itemName: buff.item_name,
-              //         displayName: buff.display_name,
-              //         remainingSeconds: buff.remaining_seconds,
-              //         effectData: buff.effect_data
-              //       })),
-              //       streamId: socket.id
-              //     });
-              //   }
-              // } catch (error) {
-              //   console.error('❌ VISUAL FX: Error broadcasting effects with stream-ready:', error);
-              // }
-              
               // Handle continuous recording now that producers are ready
               if (recordingService) {
                 recordingService.handleStreamStart(socket.id).catch(error => {
@@ -8053,17 +7960,6 @@ async function startServer() {
       console.log('⚠️  Note: Using self-signed certificate. Browser will show security warning.');
     });
   }
-
-  // Visual effects sync temporarily disabled to debug rotate_90 issue
-  // setTimeout(() => {
-  //   console.log('🔄 VISUAL FX SYNC: Starting visual effects synchronization...');
-  //   try {
-  //     startVisualEffectSync();
-  //     console.log('🔄 VISUAL FX SYNC: Successfully started!');
-  //   } catch (error) {
-  //     console.error('❌ VISUAL FX SYNC: Failed to start:', error);
-  //   }
-  // }, 2000);
 
   // Test the getStreamerDisplayName function when server starts
     setTimeout(async () => {

@@ -461,11 +461,7 @@ export class MediasoupClient {
       const turnUsername = `${turnExpiry}:webrtc`;
       const turnCredential = this.generateTurnCredential(turnUsername);
       
-      console.log('🔐 TURN Config:', {
-        username: turnUsername,
-        credential: turnCredential,
-        urls: ['turn:onestreamer.live:3478', 'turn:onestreamer.live:8080']
-      });
+      // TURN Config set
       
       const sendTransportOptions = {
         ...transportOptions,
@@ -497,7 +493,7 @@ export class MediasoupClient {
       this.sendTransport = this.device.createSendTransport(transportOptions);
       
       // Configure TURN servers on send transport too
-      console.log('🔄 MEDIASOUP CLIENT: Configuring TURN servers on send transport...');
+      // Configuring TURN servers on send transport
       try {
         const sendIceServers = [
           { urls: 'stun:stun.l.google.com:19302' },
@@ -514,7 +510,7 @@ export class MediasoupClient {
           }
         ];
         await this.sendTransport.updateIceServers({ iceServers: sendIceServers });
-        console.log('✅ MEDIASOUP CLIENT: TURN servers configured on send transport');
+        // TURN servers configured on send transport
       } catch (error) {
         console.error('❌ MEDIASOUP CLIENT: Failed to configure TURN on send transport:', error);
       }

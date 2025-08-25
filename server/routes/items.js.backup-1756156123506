@@ -159,21 +159,13 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             console.log(`🎯 ITEMS: Taking interactive item path for ${item.display_name}`);
             
             // Check if there's an active stream for interactive items
-            // Allow anonymous streamers too - check both hasActiveStream and MediaSoup
-            const mediasoupService = req.app.get('mediasoupService');
-            const hasMediaSoupStreamer = mediasoupService && mediasoupService.currentStreamer;
-            
-            if (!streamStatus.hasActiveStream && !hasMediaSoupStreamer) {
+            if (!streamStatus.hasActiveStream) {
                 console.log(`❌ ITEMS: No active stream for interactive item ${item.display_name}`);
-                console.log(`   StreamService hasActiveStream: ${streamStatus.hasActiveStream}`);
-                console.log(`   MediasoupService currentStreamer: ${hasMediaSoupStreamer}`);
                 return res.status(400).json({ 
                     error: 'No active stream', 
                     message: 'Interactive items can only be used when someone is streaming. Please wait for a streamer to start.',
                     requiresStream: true 
                 });
-            } else if (!streamStatus.hasActiveStream && hasMediaSoupStreamer) {
-                console.log(`⚠️ ITEMS: StreamService says no stream but MediaSoup has streamer - allowing for anonymous`);
             }
             
             // For interactive items, only validate but don't consume the item yet

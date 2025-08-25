@@ -1624,11 +1624,18 @@ class VisualFxService extends EventEmitter {
     // Buff integration handlers
     async handleBuffApplied(buffData) {
         console.log(`🎬 VISUALFX: ===== BUFF APPLIED EVENT RECEIVED =====`);
+        
+        // Check if this is a resumed buff (streamer coming back online with active buff)
+        if (buffData.isResumed) {
+            console.log(`🎬 VISUALFX: This is a RESUMED buff for ${buffData.item_name} - re-applying visual effect`);
+        }
+        
         console.log(`🥔 VISUALFX: handleBuffApplied called with buffData:`, {
             item_name: buffData.item_name,
             stream_id: buffData.stream_id,
             user_id: buffData.user_id,
-            duration_seconds: buffData.duration_seconds
+            duration_seconds: buffData.duration_seconds,
+            isResumed: buffData.isResumed || false
         });
         console.log(`🥔 VISUALFX: CRITICAL DEBUG - io availability: ${!!this.io}`);
         if (this.io) {

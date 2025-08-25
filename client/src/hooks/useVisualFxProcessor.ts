@@ -138,17 +138,80 @@ export const useVisualFxProcessor = (
         }
       };
 
+      // Handle sync events for persistent visual effects
+      const handleVisualEffectSync = (data: any) => {
+        console.log('🎨 VISUAL FX SYNC: Received effect sync:', data);
+        if (data.isSyncEvent && processorRef.current) {
+          processorRef.current.applyEffect(data.effectId || data.itemName, {
+            duration: data.duration || (data.remainingSeconds * 1000),
+            effectData: data.effectData
+          });
+        }
+      };
+
+      const handleVisualEffectsState = (data: any) => {
+        console.log('🎨 VISUAL FX STATE: Received bulk effects state:', data);
+        if (data.effects && processorRef.current) {
+          // Apply all effects from the state
+          data.effects.forEach((effect: any, index: number) => {
+            setTimeout(() => {
+              processorRef.current?.applyEffect(effect.effectId || effect.itemName, {
+                duration: effect.remainingSeconds * 1000,
+                effectData: effect.effectData
+              });
+            }, index * 100);
+          });
+        }
+      };
+
+      const handleVisualEffectsSyncPulse = (data: any) => {
+        // Only log occasionally
+        if (Math.random() < 0.1) {
+          console.log('🔄 VISUAL FX PULSE: Sync pulse received');
+        }
+        if (data.effects && processorRef.current) {
+          // Ensure all effects are applied
+          data.effects.forEach((effect: any) => {
+            // Check if effect exists, if not apply it
+            processorRef.current?.applyEffect(effect.effectId || effect.itemName, {
+              duration: effect.remainingSeconds * 1000,
+              effectData: effect.effectData
+            });
+          });
+        }
+      };
+
+      const handleVisualEffectApplySync = (data: any) => {
+        console.log('🎨 VISUAL FX APPLY: New buff effect to apply:', data);
+        if (data.isNewBuff && processorRef.current) {
+          processorRef.current.applyEffect(data.effectId || data.itemName, {
+            duration: data.duration,
+            effectData: data.effectData
+          });
+        }
+      };
+
       // Add event listeners
       // console.log(`🎨 VISUAL FX HOOK: Setting up socket listeners for ${isStreamer ? 'streamer' : 'viewer'}`, socket.id);
       socket.on('visual-effect-applied', handleVisualEffectApplied);
       socket.on('visual-effect-removed', handleVisualEffectRemoved);
       socket.on('visual-effects-cleared', handleVisualEffectsCleared);
+      
+      // New sync events
+      socket.on('visual-effect-sync', handleVisualEffectSync);
+      socket.on('visual-effects-state', handleVisualEffectsState);
+      socket.on('visual-effects-sync-pulse', handleVisualEffectsSyncPulse);
+      socket.on('visual-effect-apply-sync', handleVisualEffectApplySync);
 
       // Cleanup function for socket listeners
       return () => {
         socket.off('visual-effect-applied', handleVisualEffectApplied);
         socket.off('visual-effect-removed', handleVisualEffectRemoved);
         socket.off('visual-effects-cleared', handleVisualEffectsCleared);
+        socket.off('visual-effect-sync', handleVisualEffectSync);
+        socket.off('visual-effects-state', handleVisualEffectsState);
+        socket.off('visual-effects-sync-pulse', handleVisualEffectsSyncPulse);
+        socket.off('visual-effect-apply-sync', handleVisualEffectApplySync);
       };
     };
 

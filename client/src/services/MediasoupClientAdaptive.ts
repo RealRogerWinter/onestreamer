@@ -93,8 +93,7 @@ export class MediasoupClientAdaptive {
     this.socket = socket;
     this.serverUrl = serverUrl;
     
-    console.log('🎯 MediaSoup Adaptive Client initialized');
-    console.log(`📊 Connection config:`, this.config);
+    // MediaSoup Adaptive Client initialized
     
     // Load TURN configuration
     this.loadTurnConfig();
@@ -106,7 +105,7 @@ export class MediasoupClientAdaptive {
       const config = await response.json();
       if (config.turnDomain) {
         this.turnDomain = config.turnDomain;
-        console.log('🔧 TURN domain loaded:', this.turnDomain);
+        // TURN domain loaded
       }
     } catch (error) {
       console.warn('⚠️ Failed to load TURN config, using default:', error);
@@ -122,7 +121,7 @@ export class MediasoupClientAdaptive {
       const { rtpCapabilities } = await response.json();
       
       await this.device.load({ routerRtpCapabilities: rtpCapabilities });
-      console.log('✅ MediaSoup device initialized');
+      // MediaSoup device initialized
     } catch (error) {
       console.error('❌ Failed to initialize MediaSoup device:', error);
       throw error;
@@ -133,7 +132,7 @@ export class MediasoupClientAdaptive {
    * Test TURN server connectivity before attempting main connection
    */
   private async testTurnConnectivity(): Promise<boolean> {
-    console.log('🔍 Testing TURN server connectivity...');
+    // Testing TURN server connectivity
     this.updateConnectionState(ConnectionState.TESTING_TURN);
     
     return new Promise((resolve) => {
@@ -162,7 +161,7 @@ export class MediasoupClientAdaptive {
           if (event.candidate) {
             const cand = event.candidate.candidate;
             if (cand.includes('relay')) {
-              console.log('✅ TURN relay candidate found:', cand);
+              // TURN relay candidate found
               relayFound = true;
               clearTimeout(timeout);
               pc.close();
@@ -203,7 +202,7 @@ export class MediasoupClientAdaptive {
    * Create receive transport with adaptive ICE configuration
    */
   async createRecvTransport(forceRelay: boolean = false): Promise<void> {
-    console.log(`📡 Creating receive transport (forceRelay: ${forceRelay})`);
+    // Creating receive transport
     
     // Reset ICE statistics for new attempt
     this.iceStats = {
@@ -243,11 +242,7 @@ export class MediasoupClientAdaptive {
         bundlePolicy: 'max-bundle' as RTCBundlePolicy
       };
 
-      console.log(`🔧 ICE Configuration:`, {
-        policy: recvTransportOptions.iceTransportPolicy,
-        serverCount: iceServers.length,
-        attempt: this.iceStats.attemptCount
-      });
+      // ICE Configuration set
 
       // Create receive transport
       this.recvTransport = this.device.createRecvTransport(recvTransportOptions);
@@ -261,7 +256,7 @@ export class MediasoupClientAdaptive {
       // Handle transport events
       this.recvTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
         try {
-          console.log('🔗 Connecting receive transport...');
+          // Connecting receive transport
           const connectResponse = await fetch(`${this.serverUrl}/api/mediasoup/connect-transport`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -276,7 +271,7 @@ export class MediasoupClientAdaptive {
           }
 
           callback();
-          console.log('✅ Receive transport connected');
+          // Receive transport connected
         } catch (error) {
           console.error('❌ Failed to connect receive transport:', error);
           errback(error as Error);
@@ -302,17 +297,17 @@ export class MediasoupClientAdaptive {
 
     // Monitor ICE gathering state
     pc.onicegatheringstatechange = () => {
-      console.log(`🧊 ${type} transport ICE gathering state: ${pc.iceGatheringState}`);
+      // ICE gathering state changed
       
       if (pc.iceGatheringState === 'complete') {
-        console.log(`📊 ICE Gathering Complete - Statistics:`, this.iceStats.candidates);
+        // ICE Gathering Complete
         this.analyzeICECandidates();
       }
     };
 
     // Monitor ICE connection state
     pc.oniceconnectionstatechange = () => {
-      console.log(`🔌 ${type} transport ICE connection state: ${pc.iceConnectionState}`);
+      // ICE connection state changed
       
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         this.handleSuccessfulConnection(pc);
@@ -324,7 +319,7 @@ export class MediasoupClientAdaptive {
       if (event.candidate) {
         this.processICECandidate(event.candidate);
       } else {
-        console.log(`🏁 ${type} transport ICE gathering finished`);
+        // ICE gathering finished
       }
     };
 
@@ -340,16 +335,16 @@ export class MediasoupClientAdaptive {
     
     if (cand.includes('typ host')) {
       this.iceStats.candidates.host++;
-      console.log(`🏠 Host candidate: ${this.extractCandidateInfo(cand)}`);
+      // Host candidate found
     } else if (cand.includes('typ srflx')) {
       this.iceStats.candidates.srflx++;
-      console.log(`🌐 STUN reflexive candidate: ${this.extractCandidateInfo(cand)}`);
+      // STUN reflexive candidate found
     } else if (cand.includes('typ relay')) {
       this.iceStats.candidates.relay++;
-      console.log(`🔄 TURN relay candidate: ${this.extractCandidateInfo(cand)}`);
+      // TURN relay candidate found
     } else if (cand.includes('typ prflx')) {
       this.iceStats.candidates.prflx++;
-      console.log(`🔍 Peer reflexive candidate: ${this.extractCandidateInfo(cand)}`);
+      // Peer reflexive candidate found
     }
   }
 
@@ -376,12 +371,7 @@ export class MediasoupClientAdaptive {
         const stats = await pc.getStats();
         stats.forEach((report) => {
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-            console.log(`✅ ${type} transport selected candidate pair:`, {
-              local: report.localCandidateId,
-              remote: report.remoteCandidateId,
-              state: report.state,
-              nominated: report.nominated
-            });
+            // Selected candidate pair found
             
             // Store connection path info
             this.iceStats.connectionPath = `${report.localCandidateId} -> ${report.remoteCandidateId}`;
@@ -400,15 +390,14 @@ export class MediasoupClientAdaptive {
     const connectionTime = Date.now() - this.iceStats.startTime;
     this.iceStats.connectionLatency = connectionTime;
     
-    console.log(`✅ Connection established in ${connectionTime}ms`);
-    console.log(`📊 Connection statistics:`, this.iceStats);
+    // Connection established successfully
     
     // Learn from successful connection
     if (this.iceStats.lastAttemptPolicy === 'relay' && this.iceStats.candidates.relay > 0) {
-      console.log('📝 Learning: Network requires TURN relay');
+      // Network requires TURN relay
       this.preferredICEPolicy = 'relay';
     } else if (connectionTime < 3000 && this.iceStats.candidates.srflx > 0) {
-      console.log('📝 Learning: STUN works well for this network');
+      // STUN works well for this network
       this.preferredICEPolicy = 'all';
     }
     
@@ -425,7 +414,7 @@ export class MediasoupClientAdaptive {
     this.startConnectionTimeout();
     
     transport.on('connectionstatechange', async (state) => {
-      console.log(`📡 Transport connection state: ${state}`);
+      // Transport connection state changed
       
       switch (state) {
         case 'connecting':
@@ -458,7 +447,7 @@ export class MediasoupClientAdaptive {
       ? this.config.relayTimeout 
       : this.config.initialTimeout;
     
-    console.log(`⏱️ Starting connection timeout: ${timeout}ms`);
+    // Starting connection timeout
     
     this.connectionTimeout = setTimeout(async () => {
       console.warn(`⏱️ Connection timeout after ${timeout}ms`);
@@ -480,7 +469,7 @@ export class MediasoupClientAdaptive {
    * Handle connection timeout - implement fallback strategy
    */
   private async handleConnectionTimeout(): Promise<void> {
-    console.log('⏱️ Connection timeout - implementing fallback strategy');
+    // Connection timeout - implementing fallback strategy
     
     // Analyze what we've gathered so far
     this.analyzeICECandidates();
@@ -488,7 +477,7 @@ export class MediasoupClientAdaptive {
     if (this.iceStats.lastAttemptPolicy === 'all') {
       // First attempt with 'all' failed - try relay only
       if (this.iceStats.candidates.relay > 0 || !this.turnServerValidated) {
-        console.log('🔄 Falling back to TURN relay only mode');
+        // Falling back to TURN relay only mode
         await this.reconnectWithRelay();
       } else {
         console.error('❌ No TURN relay candidates available');
@@ -505,7 +494,7 @@ export class MediasoupClientAdaptive {
    * Reconnect with relay-only policy
    */
   private async reconnectWithRelay(): Promise<void> {
-    console.log('🔄 Reconnecting with relay-only policy...');
+    // Reconnecting with relay-only policy
     
     // Clean up existing transport
     if (this.recvTransport) {
@@ -542,7 +531,7 @@ export class MediasoupClientAdaptive {
       if (response.ok) {
         const { iceParameters } = await response.json();
         await this.recvTransport.restartIce({ iceParameters });
-        console.log('✅ ICE restart successful');
+        // ICE restart successful
       } else {
         throw new Error('ICE restart request failed');
       }
@@ -559,7 +548,7 @@ export class MediasoupClientAdaptive {
     console.error('❌ Connection failed');
     
     if (this.iceStats.attemptCount < this.config.maxAttempts) {
-      console.log(`🔄 Retrying connection (attempt ${this.iceStats.attemptCount + 1}/${this.config.maxAttempts})`);
+      // Retrying connection
       await this.reconnectWithRelay();
     } else {
       console.error('❌ Max connection attempts reached');
@@ -578,12 +567,7 @@ export class MediasoupClientAdaptive {
     const stats = this.iceStats.candidates;
     const total = stats.host + stats.srflx + stats.relay + stats.prflx;
     
-    console.log('📊 ICE Candidate Analysis:');
-    console.log(`  Total candidates: ${total}`);
-    console.log(`  Host (local): ${stats.host}`);
-    console.log(`  STUN (reflexive): ${stats.srflx}`);
-    console.log(`  TURN (relay): ${stats.relay}`);
-    console.log(`  Peer reflexive: ${stats.prflx}`);
+    // ICE Candidate Analysis complete
     
     if (stats.relay === 0 && this.iceStats.lastAttemptPolicy === 'all') {
       console.warn('⚠️ No TURN relay candidates gathered - TURN server may be unreachable');
@@ -632,7 +616,7 @@ export class MediasoupClientAdaptive {
    */
   private updateConnectionState(state: ConnectionState): void {
     this.connectionState = state;
-    console.log(`📱 Connection state: ${state}`);
+    // Connection state updated
     
     if (this.onConnectionStateChange) {
       this.onConnectionStateChange(state, this.iceStats);
@@ -666,11 +650,11 @@ export class MediasoupClientAdaptive {
    * Public method to start adaptive connection
    */
   async connect(): Promise<void> {
-    console.log('🚀 Starting adaptive connection process...');
+    // Starting adaptive connection process
     
     // Test TURN connectivity first (optional but recommended)
     this.turnServerValidated = await this.testTurnConnectivity();
-    console.log(`🔍 TURN server validated: ${this.turnServerValidated}`);
+    // TURN server validation complete
     
     // Start with preferred policy based on previous learnings
     const useRelay = this.preferredICEPolicy === 'relay' && this.turnServerValidated;

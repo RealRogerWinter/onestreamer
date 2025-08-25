@@ -47,24 +47,9 @@ class StreamService {
   }
 
   getStreamStatus() {
-    // Check both local currentStreamer and MediaSoup service as fallback
-    let hasActiveStream = !!this.currentStreamer;
-    let streamerId = this.currentStreamer;
-    
-    // Fallback to MediaSoup service if we don't have a currentStreamer
-    // This handles cases where anonymous streamers might not properly sync
-    if (!hasActiveStream && global.mediasoupService) {
-      const mediasoupStreamer = global.mediasoupService.currentStreamer;
-      if (mediasoupStreamer) {
-        console.log(`⚠️ STREAM: Using MediaSoup fallback for stream status (found: ${mediasoupStreamer})`);
-        hasActiveStream = true;
-        streamerId = mediasoupStreamer;
-      }
-    }
-    
     return {
-      hasActiveStream,
-      streamerId,
+      hasActiveStream: !!this.currentStreamer,
+      streamerId: this.currentStreamer,
       streamType: this.streamType,
       viewerCount: this.viewers.size,
       streamStartTime: this.streamStartTime,

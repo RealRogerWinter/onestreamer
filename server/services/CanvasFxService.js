@@ -60,6 +60,12 @@ class CanvasFxService extends EventEmitter {
     // Handle buff applied event from BuffDebuffService
     async handleBuffApplied(buffData) {
         console.log(`🎨 CANVASFX: handleBuffApplied called with buffData:`, JSON.stringify(buffData, null, 2));
+        
+        // Check if this is a resumed buff (streamer coming back online with active buff)
+        if (buffData.isResumed) {
+            console.log(`🎨 CANVASFX: This is a RESUMED buff for ${buffData.item_name} - re-applying visual effect`);
+        }
+        
         try {
             // Check if this buff has visual effects
             const item = await this.itemService.getItemById(buffData.item_id);

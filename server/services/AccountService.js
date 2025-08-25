@@ -706,6 +706,131 @@ class AccountService {
             }
         });
     }
+
+    async verifyUserPassword(userId, password) {
+        try {
+            console.log('Verifying password for user:', userId);
+            const user = await getAsync(
+                `SELECT password FROM users WHERE id = ?`,
+                [userId]
+            );
+            
+            if (!user || !user.password) {
+                console.log('User not found or no password set for user:', userId);
+                return false;
+            }
+            
+            const isValid = await bcrypt.compare(password, user.password);
+            console.log('Password comparison result for user', userId, ':', isValid);
+            return isValid;
+        } catch (error) {
+            console.error('Error verifying user password:', error);
+            return false;
+        }
+    }
+
+    async changePassword(userId, newPassword) {
+        try {
+            console.log('Changing password for user:', userId);
+            const hashedPassword = await bcrypt.hash(newPassword, this.saltRounds);
+            console.log('Password hashed successfully');
+            
+            const result = await runAsync(
+                `UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [hashedPassword, userId]
+            );
+            console.log('Database update result:', result);
+            
+            return true;
+        } catch (error) {
+            console.error('Error changing password:', error);
+            throw new Error('Failed to change password');
+        }
+    }
+
+    async updateProfile(userId, profileData) {
+        try {
+            const { bio, website, location, displayName } = profileData;
+            
+            // Build update query dynamically based on provided fields
+            const updateFields = [];
+            const values = [];
+            
+            if (bio !== undefined) {
+                updateFields.push('bio = ?');
+                values.push(bio);
+            }
+            
+            if (website !== undefined) {
+                updateFields.push('website = ?');
+                values.push(website);
+            }
+            
+            if (location !== undefined) {
+                updateFields.push('location = ?');
+                values.push(location);
+            }
+            
+            if (displayName !== undefined) {
+                updateFields.push('display_name = ?');
+                values.push(displayName);
+            }
+            
+            if (updateFields.length === 0) {
+                // No fields to update
+                return await this.getUserProfile(userId);
+            }
+            
+            // Add updated_at field
+            updateFields.push('updated_at = CURRENT_TIMESTAMP');
+            
+            // Add userId for WHERE clause
+            values.push(userId);
+            
+            const updateQuery = `UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`;
+            
+            await runAsync(updateQuery, values);
+            
+            // Return the updated profile
+            return await this.getUserProfile(userId);
+        } catch (error) {
+            console.error('Error updating user profile:', error);
+            throw new Error('Failed to update user profile');
+        }
+    }
+
+    async getUserProfile(userId) {
+        try {
+            const user = await getAsync(
+                `SELECT id, email, username, bio, website, location, display_name, 
+                        created_at, updated_at, is_verified, is_admin, is_moderator 
+                 FROM users WHERE id = ?`,
+                [userId]
+            );
+            
+            if (!user) {
+                throw new Error('User not found');
+            }
+            
+            return {
+                id: user.id,
+                email: user.email,
+                username: user.username,
+                bio: user.bio,
+                website: user.website,
+                location: user.location,
+                displayName: user.display_name || user.username,
+                createdAt: user.created_at,
+                updatedAt: user.updated_at,
+                isVerified: user.is_verified,
+                isAdmin: user.is_admin,
+                isModerator: user.is_moderator
+            };
+        } catch (error) {
+            console.error('Error getting user profile:', error);
+            throw error;
+        }
+    }
 }
 
 module.exports = AccountService;

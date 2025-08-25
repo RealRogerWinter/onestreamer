@@ -248,6 +248,61 @@ router.put('/change-username', authenticateToken, async (req, res) => {
     }
 });
 
+router.put('/profile', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { bio, website, location, displayName, currentPassword, newPassword } = req.body;
+        
+        console.log('Profile update request:', { 
+            userId, 
+            hasCurrentPassword: !!currentPassword,
+            hasNewPassword: !!newPassword,
+            hasBio: !!bio,
+            hasWebsite: !!website,
+            hasLocation: !!location,
+            hasDisplayName: !!displayName
+        });
+        
+        // Update user profile
+        const user = await authService.accountService.getUserById(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Handle password change if requested
+        if (currentPassword && newPassword) {
+            console.log('Attempting password change for user:', userId);
+            // Verify current password
+            const isValidPassword = await authService.accountService.verifyUserPassword(userId, currentPassword);
+            console.log('Current password validation result:', isValidPassword);
+            if (!isValidPassword) {
+                return res.status(400).json({ error: 'Current password is incorrect' });
+            }
+            
+            // Update password
+            await authService.accountService.changePassword(userId, newPassword);
+            console.log('Password changed successfully for user:', userId);
+        }
+        
+        // Update profile fields
+        const updatedProfile = await authService.accountService.updateProfile(userId, {
+            bio,
+            website,
+            location,
+            displayName
+        });
+        
+        res.json({
+            success: true,
+            message: 'Profile updated successfully',
+            profile: updatedProfile
+        });
+    } catch (error) {
+        console.error('Profile update error:', error);
+        res.status(500).json({ error: 'Failed to update profile' });
+    }
+});
+
 router.get('/google',
     passport.authenticate('google', { scope: ['profile', 'email'] })
 );
