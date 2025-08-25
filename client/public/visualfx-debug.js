@@ -688,7 +688,7 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 // Show initialization message in console
-/* console.log(`
+console.log(`
 🎬 VisualFX Debug Panel loaded!
    
 📋 Quick Commands:

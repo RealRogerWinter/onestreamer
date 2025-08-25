@@ -1,0 +1,46 @@
+{
+  "viewbots": {
+    "useWebRTCViewBots": false,
+    "comment": "Set to true to enable WebRTC viewbots (mobile compatible), false for Plain RTP (desktop only)",
+    
+    "webrtc": {
+      "enabled": false,
+      "headless": true,
+      "browserPath": null,
+      "maxConcurrentBots": 3,
+      "comment": "WebRTC viewbots use headless Chrome with Puppeteer"
+    },
+    
+    "plainRtp": {
+      "enabled": true,
+      "useGStreamer": true,
+      "maxConcurrentBots": 5,
+      "comment": "Plain RTP viewbots use GStreamer (desktop only)"
+    },
+    
+    "rotation": {
+      "enabled": true,
+      "intervalMin": 60000,
+      "intervalMax": 180000,
+      "cooldownDuration": 600000,
+      "comment": "Rotation settings for both WebRTC and Plain RTP modes"
+    },
+    
+    "media": {
+      "videoFolder": "/root/onestreamer/server/uploads",
+      "supportedFormats": [".mp4", ".webm", ".mkv", ".avi", ".mov"],
+      "preferredCodec": "h264",
+      "comment": "Media file settings"
+    },
+    
+    "performance": {
+      "maxBitrate": 2000000,
+      "targetFps": 30,
+      "resolution": {
+        "width": 1280,
+        "height": 720
+      },
+      "comment": "Performance settings for streaming"
+    }
+  }
+}

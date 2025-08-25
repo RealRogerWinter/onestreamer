@@ -22,7 +22,7 @@ class SocketManager {
 
   private constructor() {
     // console.log('🔧 SocketManager: Singleton instance created at', new Date().toISOString());
-    console.trace('SocketManager constructor called from:');
+    // console.trace('SocketManager constructor called from:');
     // Make it accessible globally for debugging
     (window as any).__SOCKET_MANAGER__ = this;
     (window as any).__SOCKET_CONNECTIONS__ = [];

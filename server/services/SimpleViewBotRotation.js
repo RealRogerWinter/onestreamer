@@ -9,6 +9,7 @@
  */
 
 const SimpleViewBotSocket = require('./SimpleViewBotSocket');
+const { spawn } = require('child_process');
 
 class SimpleViewBotRotation {
   constructor() {
@@ -28,7 +29,7 @@ class SimpleViewBotRotation {
       minRotationInterval: 30000,  // 30 seconds minimum
       maxRotationInterval: 180000, // 3 minutes maximum
       cooldownDuration: 600000,    // 10 minute cooldown per bot
-      enabled: true
+      enabled: false  // Disabled by default, will be enabled when needed
     };
     
     // MediaSoup RTP ports (should match server config)
@@ -150,10 +151,10 @@ class SimpleViewBotRotation {
       });
       
       // Track with ProcessManager if available
-      if (processManager && typeof processManager.trackProcess === 'function') {
-        processManager.trackProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
-      } else if (processManager && typeof processManager.addProcess === 'function') {
-        processManager.addProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
+      if (global.processManager && typeof global.processManager.trackProcess === 'function') {
+        global.processManager.trackProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
+      } else if (global.processManager && typeof global.processManager.addProcess === 'function') {
+        global.processManager.addProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
       }
       
       // Handle process events
@@ -204,8 +205,8 @@ class SimpleViewBotRotation {
     if (this.gstreamerProcess) {
       try {
         // Use ProcessManager if available
-        if (processManager && processManager.killProcessGroup) {
-          await processManager.killProcessGroup(this.gstreamerProcess.pid);
+        if (global.processManager && global.processManager.killProcessGroup) {
+          await global.processManager.killProcessGroup(this.gstreamerProcess.pid);
         } else {
           this.gstreamerProcess.kill('SIGTERM');
           // Force kill after timeout
@@ -290,8 +291,10 @@ class SimpleViewBotRotation {
     // Mark bot with extended cooldown
     this.cooldowns.set(bot.id, Date.now() + this.settings.cooldownDuration);
     
-    // Immediately rotate to next bot
-    this.rotateToNextBot();
+    // Delay before rotating to prevent CPU spike from rapid retries
+    setTimeout(() => {
+      this.rotateToNextBot();
+    }, 5000); // Wait 5 seconds before retry
   }
   
   /**

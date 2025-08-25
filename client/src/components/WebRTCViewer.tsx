@@ -45,6 +45,21 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const [showControls, setShowControls] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Debug info for mobile 5G issues
+  const [debugInfo, setDebugInfo] = useState<{
+    iceState?: string;
+    candidates?: string[];
+    turnStatus?: string;
+    transportState?: string;
+    error?: string;
+    timestamp?: string;
+    browser?: string;
+    browserEngine?: string;
+    gatheringState?: string;
+    turnUrls?: any;
+    lastCandidate?: string;
+  }>({});
 
   useEffect(() => {
     // Clear any pending initialization
@@ -233,45 +248,22 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           // console.log('📡 WEBRTC: MediaSoup connection lost');
           setConnectionState('disconnected');
           setError('Connection lost - attempting recovery...');
+          setDebugInfo(prev => ({ ...prev, error: 'Connection lost', timestamp: new Date().toISOString() }));
         },
         onConnectionRecovered: async () => {
           // console.log('🎉 WEBRTC: MediaSoup connection recovered');
           setConnectionState('reconnecting');
           setError(null);
-          
-          // Attempt to restart stream consumption
-          try {
-            // console.log('🔄 WEBRTC: Restarting stream consumption after recovery...');
-            
-            // Re-consume the stream
-            if (mediasoupClientRef.current && isActive) {
-              const stream = await mediasoupClientRef.current.consume();
-              
-              if (stream && videoRef.current) {
-                // console.log('✅ WEBRTC: Stream re-consumed successfully after recovery');
-                videoRef.current.srcObject = stream;
-                
-                // Attempt to restart playback
-                await retryPlayback();
-                setConnectionState('connected');
-                
-                // Restart viewing session for points tracking
-                // console.log('🎯 WEBRTC: Restarted viewing session for points tracking after recovery');
-                socket.emit('start-viewing', { timestamp: Date.now() });
-              }
-            }
-          } catch (error) {
-            console.error('❌ WEBRTC: Failed to restart stream after recovery:', error);
-            setError('Failed to restart stream after recovery');
-            setConnectionState('disconnected');
-          }
+          setDebugInfo(prev => ({ ...prev, error: 'Recovering...', timestamp: new Date().toISOString() }));
         },
-        onReconnectionFailed: (error) => {
-          console.error('❌ WEBRTC: MediaSoup reconnection failed:', error);
-          setConnectionState('disconnected');
-          setError(`Connection failed: ${error.message}`);
+        onDebugInfo: (info: any) => {
+          setDebugInfo(prev => ({ 
+            ...prev, 
+            ...info, 
+            timestamp: new Date().toISOString() 
+          }));
         }
-      });
+      } as any);
 
       // Create StreamSwitchManager for graceful degradation
       streamSwitchManagerRef.current = new StreamSwitchManager(
@@ -1439,6 +1431,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           </button>
         </div>
       )}
+
 
       {/* Playback Status Overlay */}
       {isConnected && playbackState === 'paused' && (

@@ -1,0 +1,9 @@
+{
+  "turnDomain": "turn.onestreamer.live",
+  "turnPorts": {
+    "udp": 3478,
+    "tcp": 3478,
+    "tcpAlt": 3479,
+    "tls": 5349
+  }
+}

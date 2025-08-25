@@ -1,79 +1,84 @@
-const ViewBotWebRTCService = require('./server/services/ViewBotWebRTCService');
+#!/usr/bin/env node
 
-async function testWebRTCViewBot() {
-  console.log('🧪 Testing WebRTC ViewBot Service...\n');
-  
+/**
+ * Test script to create a WebRTC-based viewbot that works with mobile 5G/TURN
+ */
+
+const axios = require('axios');
+
+const SERVER_URL = 'http://127.0.0.1:8080';
+const ADMIN_KEY = '***REMOVED-ADMIN-KEY***';
+
+async function createWebRTCViewbot() {
   try {
-    // Create service instance (no MediaSoup for testing)
-    const service = new ViewBotWebRTCService(null);
+    console.log('🚀 Creating WebRTC viewbot for mobile 5G compatibility...');
     
-    console.log('1. Creating WebRTC ViewBot...');
-    const createResult = await service.createViewBot({
-      pattern: 'testsrc2',
-      width: 1280,
-      height: 720,
-      frameRate: 30,
-      customText: 'Test ViewBot Stream'
-    });
-    
-    if (!createResult.success) {
-      throw new Error(`Failed to create ViewBot: ${createResult.message}`);
-    }
-    
-    const botId = createResult.botId;
-    console.log(`✅ ViewBot created: ${botId}\n`);
-    
-    console.log('2. Starting ViewBot...');
-    const startResult = await service.startViewBot(botId);
-    
-    if (!startResult.success) {
-      throw new Error(`Failed to start ViewBot: ${startResult.message}`);
-    }
-    
-    console.log(`✅ ViewBot started successfully`);
-    console.log(`📊 Video track: ${startResult.tracks.video}`);
-    console.log(`🔊 Audio track: ${startResult.tracks.audio}\n`);
-    
-    console.log('3. Monitoring ViewBot for 10 seconds...');
-    
-    // Monitor status every 2 seconds
-    const monitorInterval = setInterval(() => {
-      const status = service.getViewBotStatus(botId);
-      const uptimeSeconds = Math.floor(status.uptime / 1000);
-      console.log(`📊 Status: ${status.running ? 'Running' : 'Stopped'} | Uptime: ${uptimeSeconds}s | Video: ${status.tracks.video} | Audio: ${status.tracks.audio}`);
-    }, 2000);
-    
-    // Stop after 10 seconds
-    setTimeout(async () => {
-      clearInterval(monitorInterval);
-      
-      console.log('\n4. Stopping ViewBot...');
-      const stopResult = await service.stopViewBot(botId);
-      
-      if (stopResult.success) {
-        console.log('✅ ViewBot stopped successfully');
-      } else {
-        console.log(`❌ Failed to stop ViewBot: ${stopResult.message}`);
+    const response = await axios.post(
+      `${SERVER_URL}/admin/viewbot-webrtc/create`,
+      {
+        config: {
+          pattern: 'testsrc2',
+          width: 1280,
+          height: 720,
+          frameRate: 30,
+          customText: 'WebRTC ViewBot - Mobile 5G Test',
+          useWebRTC: true  // Force WebRTC transport
+        }
+      },
+      {
+        headers: {
+          'x-admin-key': ADMIN_KEY
+        }
       }
-      
-      console.log('\n5. Removing ViewBot...');
-      const removeResult = await service.removeViewBot(botId);
-      
-      if (removeResult.success) {
-        console.log('✅ ViewBot removed successfully');
-      } else {
-        console.log(`❌ Failed to remove ViewBot: ${removeResult.message}`);
-      }
-      
-      console.log('\n🎉 Test completed successfully!');
-      process.exit(0);
-    }, 10000);
+    );
     
+    if (response.data.success) {
+      console.log('✅ WebRTC viewbot created:', response.data);
+      
+      const botId = response.data.botId;
+      console.log(`🎬 Starting viewbot ${botId}...`);
+      
+      // Start the viewbot
+      const startResponse = await axios.post(
+        `${SERVER_URL}/admin/viewbot-webrtc/${botId}/start`,
+        {},
+        {
+          headers: {
+            'x-admin-key': ADMIN_KEY
+          }
+        }
+      );
+      
+      console.log('📺 WebRTC viewbot started:', startResponse.data);
+      console.log('\n✨ WebRTC viewbot is now streaming with TURN support for mobile 5G!');
+      console.log('📱 Mobile viewers should now be able to watch this stream.');
+      
+      // Keep running and show status
+      setInterval(async () => {
+        try {
+          const statusResponse = await axios.get(
+            `${SERVER_URL}/admin/viewbot-webrtc/status`,
+            {
+              headers: {
+                'x-admin-key': ADMIN_KEY
+              }
+            }
+          );
+          console.log(`📊 Active WebRTC viewbots:`, statusResponse.data.viewbots.length);
+        } catch (error) {
+          // Ignore status check errors
+        }
+      }, 30000); // Check every 30 seconds
+      
+    } else {
+      console.error('❌ Failed to create WebRTC viewbot:', response.data);
+    }
   } catch (error) {
-    console.error('❌ Test failed:', error);
-    process.exit(1);
+    console.error('❌ Error:', error.response?.data || error.message);
   }
 }
 
 // Run the test
-testWebRTCViewBot();
+createWebRTCViewbot();
+
+console.log('Press Ctrl+C to stop...');

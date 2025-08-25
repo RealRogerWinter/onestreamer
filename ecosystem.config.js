@@ -19,7 +19,8 @@ module.exports = {
         MAIN_SERVER_URL: 'https://127.0.0.1:8443',
         SERVER_HOST: 'onestreamer.live',
         VIEWBOT_SERVER_URL: 'https://127.0.0.1:8443',
-        ANNOUNCED_IP: '<SERVER_IP>'
+        ANNOUNCED_IP: '<SERVER_IP>',
+        TURN_DOMAIN: 'turn.onestreamer.live'
       },
       error_file: './logs/server-error.log',
       out_file: './logs/server-out.log',

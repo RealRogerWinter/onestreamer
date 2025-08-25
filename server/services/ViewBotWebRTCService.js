@@ -1,6 +1,7 @@
 const wrtc = require('@roamhq/wrtc');
 const { createCanvas } = require('canvas');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 /**
  * ViewBot service using native WebRTC with server-side media generation
@@ -13,6 +14,16 @@ class ViewBotWebRTCService {
     this.frameRate = 30;
     this.sampleRate = 48000;
     this.audioChannels = 2;
+  }
+
+  /**
+   * Generate TURN credentials matching coturn's use-auth-secret format
+   */
+  generateTurnCredential(username) {
+    const secret = '***REMOVED-TURN-SECRET***';
+    const hmac = crypto.createHmac('sha1', secret);
+    hmac.update(username);
+    return hmac.digest('base64');
   }
 
   /**
@@ -69,9 +80,37 @@ class ViewBotWebRTCService {
   async initializeBot(bot) {
     console.log(`🔧 Initializing WebRTC components for ${bot.id}`);
     
-    // Create WebRTC peer connection
+    // Create WebRTC peer connection with TURN support for mobile 5G
+    const turnUsername = `${Math.floor(Date.now() / 1000) + 86400}:webrtc`;
+    const turnCredential = this.generateTurnCredential(turnUsername);
+    
     bot.peerConnection = new wrtc.RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      iceServers: [
+        // Our TURN server for mobile/5G support - matching regular user config
+        {
+          urls: [
+            `turn:${process.env.TURN_DOMAIN || '<SERVER_IP>'}:3478?transport=udp`,
+            `turn:${process.env.TURN_DOMAIN || '<SERVER_IP>'}:3478?transport=tcp`,
+            `turn:${process.env.TURN_DOMAIN || '<SERVER_IP>'}:3479?transport=tcp`  // Alternative port for mobile 5G
+          ],
+          username: turnUsername,
+          credential: turnCredential
+        },
+        // STUN for direct connections
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ],
+      iceTransportPolicy: 'all',  // Allow both direct and relay connections
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require',
+      // Add codec preferences to match regular users
+      encodings: [
+        {
+          maxBitrate: 300000,  // 300kbps to match regular users
+          minBitrate: 100000,  // 100kbps minimum
+          maxFramerate: 30
+        }
+      ]
     });
 
     // Create canvas for video generation

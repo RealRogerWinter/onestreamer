@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import authService from '../services/AuthService';
 import './TutorialEditor.css';
 
 interface TutorialEditorProps {
@@ -13,7 +14,7 @@ interface TabContent {
   tutorial: string;
 }
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+const API_URL = process.env.REACT_APP_API_URL || process.env.REACT_APP_SERVER_URL || '';
 
 // Simple markdown parser for basic formatting (same as Tutorial component)
 const parseMarkdown = (text: string): React.ReactElement => {
@@ -152,7 +153,7 @@ const TutorialEditor: React.FC<TutorialEditorProps> = ({ addLog }) => {
   const saveTutorialContent = async () => {
     setSaving(true);
     try {
-      const token = localStorage.getItem('auth_token');
+      const token = authService.getToken();
       const response = await fetch(`${API_URL}/api/tutorial`, {
         method: 'POST',
         headers: {

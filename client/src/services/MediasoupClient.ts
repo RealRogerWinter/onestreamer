@@ -35,6 +35,7 @@ export class MediasoupClient {
   private currentStreamerId: string | null = null;
   private onConnectionLost?: () => void;
   private onReconnectionFailed?: (error: Error) => void;
+  public onDebugInfo?: (info: any) => void;
   
   constructor(config: MediasoupClientConfig) {
     this.socket = config.socket;
@@ -43,6 +44,7 @@ export class MediasoupClient {
     this.onConnectionRecovered = config.onConnectionRecovered;
     this.onConnectionLost = config.onConnectionLost;
     this.onReconnectionFailed = config.onReconnectionFailed;
+    this.onDebugInfo = (config as any).onDebugInfo;
     
     // Set up connection monitoring
     this.setupConnectionMonitoring();
@@ -373,13 +375,24 @@ export class MediasoupClient {
       throw new Error('MediasoupClient is in invalid state for initialization');
     }
 
+    // Check if we already have a healthy transport
+    if (this.device?.loaded && this.recvTransport && !this.recvTransport.closed) {
+      const state = this.recvTransport.connectionState;
+      if (state === 'connected' || state === 'connecting') {
+        console.log('🔄 MEDIASOUP CLIENT: Already initialized with healthy transport, skipping');
+        return;
+      }
+    }
+
     this.setProcessing(true);
     // console.log('🎬 MEDIASOUP CLIENT: Initializing device...');
     
     try {
       // Check if device is already loaded
-      if (this.device.loaded) {
-        // console.log('🔄 MEDIASOUP CLIENT: Device already loaded, skipping initialization');
+      if (this.device.loaded && !this.recvTransport) {
+        // console.log('🔄 MEDIASOUP CLIENT: Device already loaded, creating transport');
+      } else if (this.device.loaded) {
+        // console.log('🔄 MEDIASOUP CLIENT: Device already loaded, checking transport');
         return;
       }
 
@@ -400,10 +413,12 @@ export class MediasoupClient {
       
       // console.log('📊 MEDIASOUP CLIENT: Received RTP capabilities from server');
       
-      // Load the device with router capabilities
-      await this.withTimeout(
-        this.device.load({ routerRtpCapabilities: rtpCapabilities })
-      );
+      // Load the device with router capabilities (only if not already loaded)
+      if (!this.device.loaded) {
+        await this.withTimeout(
+          this.device.load({ routerRtpCapabilities: rtpCapabilities })
+        );
+      }
       
       // console.log('✅ MEDIASOUP CLIENT: Device loaded successfully');
       // console.log('📊 MEDIASOUP CLIENT: RTP Capabilities:', this.device.rtpCapabilities);
@@ -425,17 +440,25 @@ export class MediasoupClient {
     // console.log(`📡 MEDIASOUP CLIENT: Using socket ID: ${this.socket.id}`);
     
     try {
-      // Request transport creation from server
+      // Detect if this is a mobile client
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      
+      // Request transport creation from server with mobile flag
       const response = await fetch(`${this.serverUrl}/api/mediasoup/create-transport`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ socketId: this.socket.id })
+        body: JSON.stringify({ 
+          socketId: this.socket.id,
+          isMobile: isMobile
+        })
       });
       
       const transportOptions = await response.json();
       
       // Optimized ICE servers configuration with priority
-      const turnUsername = `${Date.now()}:webrtc`;
+      // TURN username must be timestamp:username where timestamp is when it expires
+      const turnExpiry = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
+      const turnUsername = `${turnExpiry}:webrtc`;
       const turnCredential = this.generateTurnCredential(turnUsername);
       
       console.log('🔐 TURN Config:', {
@@ -452,19 +475,49 @@ export class MediasoupClient {
           { urls: 'stun:stun1.l.google.com:19302' },
           // Our TURN server - using direct IP to bypass Cloudflare
           {
-            urls: 'turn:<SERVER_IP>:3478?transport=tcp',
+            urls: 'turn:<SERVER_IP>:3478',
+            username: turnUsername,
+            credential: turnCredential
+          },
+          {
+            urls: 'turn:<SERVER_IP>:3479',
             username: turnUsername,
             credential: turnCredential
           }
         ],
-        iceTransportPolicy: 'relay', // Force TURN relay for mobile networks
+        // CRITICAL: Android Chrome needs relay when consuming from Plain RTP producers (viewbots)
+        // Detect if we're likely consuming from a viewbot based on context
+        iceTransportPolicy: 'all', // Will be overridden for viewbot consumption
         iceCandidatePoolSize: 10, // Pre-gather ICE candidates
         rtcpMuxPolicy: 'require', // Multiplex RTP and RTCP
         bundlePolicy: 'max-bundle' // Bundle media streams
       };
       
-      // Create send transport
-      this.sendTransport = this.device.createSendTransport(sendTransportOptions);
+      // Create send transport (MediaSoup ignores iceServers in options)
+      this.sendTransport = this.device.createSendTransport(transportOptions);
+      
+      // Configure TURN servers on send transport too
+      console.log('🔄 MEDIASOUP CLIENT: Configuring TURN servers on send transport...');
+      try {
+        const sendIceServers = [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          {
+            urls: 'turn:<SERVER_IP>:3478',
+            username: turnUsername,
+            credential: turnCredential
+          },
+          {
+            urls: 'turn:<SERVER_IP>:3478?transport=tcp',
+            username: turnUsername,
+            credential: turnCredential
+          }
+        ];
+        await this.sendTransport.updateIceServers({ iceServers: sendIceServers });
+        console.log('✅ MEDIASOUP CLIENT: TURN servers configured on send transport');
+      } catch (error) {
+        console.error('❌ MEDIASOUP CLIENT: Failed to configure TURN on send transport:', error);
+      }
       
       // Handle transport events
       this.sendTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
@@ -549,24 +602,38 @@ export class MediasoupClient {
   async createRecvTransport(): Promise<void> {
     // console.log('📡 MEDIASOUP CLIENT: Creating receive transport...');
     
+    // Check if transport already exists and is connected
+    if (this.recvTransport && !this.recvTransport.closed) {
+      const state = this.recvTransport.connectionState;
+      if (state === 'connected' || state === 'connecting') {
+        console.log('📡 MEDIASOUP CLIENT: Receive transport already exists and is active, skipping creation');
+        return;
+      }
+    }
+    
     try {
-      // Request transport creation from server
+      // Detect if this is a mobile client
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      
+      // Request transport creation from server with mobile flag
       const response = await fetch(`${this.serverUrl}/api/mediasoup/create-transport`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ socketId: this.socket.id })
+        body: JSON.stringify({ 
+          socketId: this.socket.id,
+          isMobile: isMobile
+        })
       });
       
       const transportOptions = await response.json();
       
       // Add ICE servers to transport options for client-side WebRTC
-      const recvTurnUsername = `${Date.now()}:webrtc`;
+      // TURN username must be timestamp:username where timestamp is when it expires
+      const turnExpiry = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
+      const recvTurnUsername = `${turnExpiry}:webrtc`;
       const recvTurnCredential = this.generateTurnCredential(recvTurnUsername);
       
-      console.log('🔐 Receive TURN Config:', {
-        username: recvTurnUsername,
-        credential: recvTurnCredential
-      });
+      // Debug: Receive TURN Config
       
       const recvTransportOptions = {
         ...transportOptions,
@@ -576,41 +643,286 @@ export class MediasoupClient {
           { urls: 'stun:stun1.l.google.com:19302' },
           // Our TURN server - using direct IP to bypass Cloudflare
           {
+            urls: 'turn:<SERVER_IP>:3478',
+            username: recvTurnUsername,
+            credential: recvTurnCredential
+          },
+          {
             urls: 'turn:<SERVER_IP>:3478?transport=tcp',
             username: recvTurnUsername,
             credential: recvTurnCredential
           }
         ],
-        iceTransportPolicy: 'relay', // Force TURN relay for mobile networks
+        // CRITICAL: Android Chrome needs relay when consuming from Plain RTP producers (viewbots)
+        // Detect if we're likely consuming from a viewbot based on context
+        iceTransportPolicy: 'all', // Will be overridden for viewbot consumption
         iceCandidatePoolSize: 10,
         rtcpMuxPolicy: 'require',
         bundlePolicy: 'max-bundle'
       };
       
-      // Create receive transport
-      this.recvTransport = this.device.createRecvTransport(recvTransportOptions);
+      // Create receive transport (MediaSoup ignores iceServers in options)
+      this.recvTransport = this.device.createRecvTransport(transportOptions);
+      
+      // CRITICAL: Configure TURN servers on the transport AFTER creation
+      // MediaSoup-client provides updateIceServers() to configure TURN
+      // Detect if we're likely connecting to a viewbot (mobile on cellular)
+      const isAndroidDevice = /Android/i.test(navigator.userAgent);
+      const isCellular = isMobile && !navigator.onLine; // Simple heuristic
+      // DON'T force relay - MediaSoup ICE-lite cannot receive from TURN relay
+      // Instead, let the browser choose the best path (TURN will be used if needed)
+      const forceRelay = false;
+      
+      const iceServers = [
+        // STUN servers for NAT discovery
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        // Our TURN server with proper credentials - multiple URLs for redundancy
+        {
+          urls: ['turn:<SERVER_IP>:3478', 'turn:<SERVER_IP>:3478?transport=udp'],
+          username: recvTurnUsername,
+          credential: recvTurnCredential
+        },
+        {
+          urls: 'turn:<SERVER_IP>:3478?transport=tcp',
+          username: recvTurnUsername,
+          credential: recvTurnCredential
+        }
+      ];
+      
+      // Configure ICE transport policy based on client type
+      const iceConfig = {
+        iceServers,
+        iceTransportPolicy: forceRelay ? 'relay' : 'all' as RTCIceTransportPolicy,
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle' as RTCBundlePolicy
+      };
+      
+      // Update ICE servers on the transport
+      // Configuring TURN servers on receive transport...
+      const iceStartTime = Date.now();
+      
+      try {
+        await this.recvTransport.updateIceServers(iceConfig);
+        // TURN servers configured successfully
+      } catch (error) {
+        console.error('❌ MEDIASOUP CLIENT: Failed to configure TURN servers:', error);
+      }
+      
+      // Collect debug info for mobile 5G issues with timestamps
+      const debugCandidates: string[] = [];
+      let turnCandidateFound = false;
+      let relayCandidate: string | null = null;
+      const candidateTimestamps: { type: string; time: number; candidate: string }[] = [];
+      
+      // Debug browser and connection info
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const isSafari = /Safari/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent);
+      
+      if (this.onDebugInfo) {
+        this.onDebugInfo({
+          browser: isAndroid ? 'Android' : (isIOS ? 'iOS' : 'Desktop'),
+          browserEngine: isSafari ? 'Safari' : 'Chrome',
+          turnUrls: recvTransportOptions.iceServers?.[2]?.urls || 'No TURN'
+        });
+      }
+      
+      // Wait a moment for the PC to be created, then access it
+      const configurePeerConnection = async () => {
+        // Try multiple times to get the PC as it might not be immediately available
+        let pc: any = null;
+        for (let i = 0; i < 10; i++) {
+          pc = (this.recvTransport as any)._handler?._pc || (this.recvTransport as any)._pc;
+          if (pc) break;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        
+        if (!pc) {
+          console.warn('⚠️ Could not access internal RTCPeerConnection');
+          return;
+        }
+        
+        // Accessing internal RTCPeerConnection for debugging
+        
+        // Configure TURN on the RTCPeerConnection but don't force relay
+        // MediaSoup ICE-lite cannot receive from TURN relay
+        if (isAndroidDevice) {
+          try {
+            const currentConfig = pc.getConfiguration();
+            // Current ICE config check
+            
+            // Set the configuration with TURN servers but allow all candidates
+            pc.setConfiguration({
+              iceServers,
+              iceTransportPolicy: 'all', // Allow all types - browser will use TURN if needed
+              iceCandidatePoolSize: 10,
+              bundlePolicy: 'max-bundle'
+            });
+            
+            const newConfig = pc.getConfiguration();
+            // Configured TURN servers on RTCPeerConnection for Android
+          } catch (e) {
+            console.error('Failed to configure TURN:', e);
+          }
+        }
+        
+        // Monitor real ICE connection state with timing
+        let lastStateChange = Date.now();
+        pc.oniceconnectionstatechange = () => {
+          const now = Date.now();
+          const timeSinceStart = (now - iceStartTime) / 1000;
+          const timeSinceLastChange = (now - lastStateChange) / 1000;
+          lastStateChange = now;
+          
+          // ICE State Change: ${pc.iceConnectionState}
+          
+          if (this.onDebugInfo) {
+            this.onDebugInfo({
+              iceState: pc.iceConnectionState,
+              gatheringState: pc.iceGatheringState,
+              connectionTime: `${timeSinceStart}s`
+            });
+          }
+          
+          // Log stats when connected
+          if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+            pc.getStats().then((stats: any) => {
+              stats.forEach((stat: any) => {
+                if (stat.type === 'candidate-pair' && stat.state === 'succeeded') {
+                  // Active ICE candidate pair found
+                }
+                if (stat.type === 'local-candidate' && stat.isRemote === false) {
+                  if (stat.candidateType === 'relay') {
+                    // Using TURN relay
+                  }
+                }
+              });
+            });
+          }
+        };
+        
+        // Monitor ICE candidates directly from RTCPeerConnection
+        pc.onicecandidate = (event: any) => {
+          if (event.candidate) {
+            const cand = event.candidate.candidate;
+            const elapsed = (Date.now() - iceStartTime) / 1000;
+            
+            let candType = 'unknown';
+            if (cand.includes('typ relay')) {
+              candType = 'RELAY';
+              debugCandidates.push('TURN');
+              turnCandidateFound = true;
+              relayCandidate = cand;
+              // TURN RELAY candidate found
+            } else if (cand.includes('typ srflx')) {
+              candType = 'SRFLX';
+              debugCandidates.push('STUN');
+              // STUN candidate found
+            } else if (cand.includes('typ host')) {
+              candType = 'HOST';
+              debugCandidates.push('HOST');
+              // HOST candidate found
+            }
+            
+            candidateTimestamps.push({
+              type: candType,
+              time: elapsed,
+              candidate: cand.substring(0, 100)
+            });
+            
+            if (this.onDebugInfo) {
+              this.onDebugInfo({
+                candidates: debugCandidates,
+                turnStatus: turnCandidateFound ? 'TURN found' : 'No TURN',
+                lastCandidate: `${candType} at ${elapsed}s`,
+                candidateCount: candidateTimestamps.length
+              });
+            }
+          } else {
+            // ICE gathering complete
+            const elapsed = (Date.now() - iceStartTime) / 1000;
+            // ICE gathering complete
+            
+            if (!turnCandidateFound) {
+              // WARNING: No TURN relay candidates found! Connection may fail on mobile networks.
+            }
+          }
+        };
+        
+        // Monitor gathering state
+        pc.onicegatheringstatechange = () => {
+          const elapsed = (Date.now() - iceStartTime) / 1000;
+          // ICE Gathering State: ${pc.iceGatheringState}
+        };
+      };
+      
+      // Execute the peer connection configuration
+      configurePeerConnection();
+      
+      // Monitor ICE candidates for debugging (backup method)
+      (this.recvTransport as any).on('icecandidate', (candidate: any) => {
+        if (candidate && candidate.candidate) {
+          const cand = candidate.candidate;
+          if (cand.includes('relay')) {
+            debugCandidates.push('TURN-RELAY: ' + cand.substring(0, 50));
+            turnCandidateFound = true;
+            if (this.onDebugInfo) {
+              this.onDebugInfo({
+                turnStatus: 'TURN relay found',
+                candidates: debugCandidates
+              });
+            }
+          } else if (cand.includes('srflx')) {
+            debugCandidates.push('STUN: ' + cand.substring(0, 50));
+          } else if (cand.includes('host')) {
+            debugCandidates.push('HOST: ' + cand.substring(0, 50));
+          }
+        }
+      });
+      
+      // Monitor ICE gathering state
+      (this.recvTransport as any).on('icegatheringstatechange', (state: string) => {
+        if (this.onDebugInfo) {
+          this.onDebugInfo({
+            iceState: state,
+            turnStatus: turnCandidateFound ? 'TURN ready' : 'No TURN yet',
+            candidates: debugCandidates
+          });
+        }
+      });
       
       // Handle connection state changes to detect issues
       this.recvTransport.on('connectionstatechange', (state) => {
+        if (this.onDebugInfo) {
+          this.onDebugInfo({
+            transportState: state,
+            iceState: (this.recvTransport as any).iceConnectionState,
+            turnStatus: turnCandidateFound ? 'TURN active' : 'No TURN'
+          });
+        }
         // console.log(`📡 MEDIASOUP CLIENT: Receive transport connection state changed to: ${state}`);
         
         // Don't close transport on temporary disconnections
         if (state === 'disconnected') {
-          // console.log('⚠️ MEDIASOUP CLIENT: Transport disconnected, waiting for reconnection...');
-          // Give it time to reconnect before considering it failed
+          console.log('⚠️ MEDIASOUP CLIENT: Transport disconnected, waiting for reconnection...');
+          // For mobile/relay connections, give more time to reconnect
+          const isAndroid = /Android/i.test(navigator.userAgent);
+          const timeout = isAndroid ? 15000 : 5000; // 15s for Android, 5s for others
+          
           setTimeout(async () => {
             if (this.recvTransport?.connectionState === 'disconnected') {
-              // console.log('❌ MEDIASOUP CLIENT: Transport still disconnected after timeout');
+              console.log('❌ MEDIASOUP CLIENT: Transport still disconnected after timeout');
               // Trigger reconnection
               await this.handleTransportFailure();
             }
-          }, 5000);
+          }, timeout);
         } else if (state === 'failed') {
           console.error('❌ MEDIASOUP CLIENT: Transport connection failed');
           // Immediately trigger reconnection on failure
           this.handleTransportFailure();
         } else if (state === 'connected') {
-          // console.log('✅ MEDIASOUP CLIENT: Transport reconnected successfully');
+          // Transport connected successfully
         }
       });
       
@@ -772,7 +1084,7 @@ export class MediasoupClient {
       
       // Add overall timeout for both tracks (longer for mobile)
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Overall consume timeout after 45 seconds')), 45000);
+        setTimeout(() => reject(new Error('Overall consume timeout after 10 seconds')), 10000);
       });
       
       const [videoStream, audioStream] = await Promise.race([
@@ -899,7 +1211,33 @@ export class MediasoupClient {
         }
 
         try {
-          const { consumer: consumerData, streamerId } = response;
+          const { consumer: consumerData, streamerId, isViewbotStream } = response;
+          
+          // CRITICAL FIX: Android Chrome needs TURN relay for viewbot streams
+          if (isViewbotStream && /Android/i.test(navigator.userAgent)) {
+            console.warn('🤖 Android detected consuming viewbot stream - forcing TURN relay');
+            if (this.onDebugInfo) {
+              this.onDebugInfo({
+                androidViewbotFix: 'Forcing TURN relay for viewbot stream'
+              });
+            }
+            
+            // Force ICE restart with relay-only policy for this consumer
+            if (this.recvTransport) {
+              // Set relay policy on the transport's underlying PC
+              const pc = (this.recvTransport as any)._handler?._pc || (this.recvTransport as any)._pc;
+              if (pc && pc.setConfiguration) {
+                try {
+                  pc.setConfiguration({
+                    iceTransportPolicy: 'relay'
+                  });
+                  console.log('✅ Forced TURN relay for Android viewbot consumption');
+                } catch (e) {
+                  console.error('Failed to force relay:', e);
+                }
+              }
+            }
+          }
           
           // Store the streamer ID
           if (streamerId) {

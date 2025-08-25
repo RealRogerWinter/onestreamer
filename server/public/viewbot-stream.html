@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViewBot WebRTC Streamer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #000;
+            color: #fff;
+            font-family: monospace;
+        }
+        #status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #0f0;
+            border-radius: 5px;
+        }
+        #videoPlayer {
+            width: 100%;
+            max-width: 1280px;
+            height: auto;
+            background: #111;
+        }
+        .log {
+            margin: 5px 0;
+            padding: 5px;
+            background: rgba(0, 255, 0, 0.1);
+            border-left: 3px solid #0f0;
+        }
+        .error {
+            background: rgba(255, 0, 0, 0.1);
+            border-left-color: #f00;
+        }
+    </style>
+</head>
+<body>
+    <div id="status">
+        <h3>ViewBot WebRTC Streamer</h3>
+        <div>Bot ID: <span id="botId">-</span></div>
+        <div>Status: <span id="streamStatus">Initializing...</span></div>
+        <div>Connection: <span id="connectionStatus">Disconnected</span></div>
+    </div>
+    
+    <video id="videoPlayer" controls muted autoplay playsinline></video>
+    
+    <div id="logs"></div>
+
+    <!-- Socket.IO Client -->
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <!-- MediaSoup Client -->
+    <script src="https://cdn.jsdelivr.net/npm/mediasoup-client@3/lib/mediasoup-client.min.js"></script>
+    
+    <script>
+        // Get bot ID from URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        const botId = urlParams.get('botId') || `viewbot-${Date.now()}`;
+        document.getElementById('botId').textContent = botId;
+        
+        // Global variables
+        let socket = null;
+        let device = null;
+        let sendTransport = null;
+        let videoProducer = null;
+        let audioProducer = null;
+        let videoStream = null;
+        let isStreaming = false;
+        
+        // Logging
+        function log(message, isError = false) {
+            console.log(`[ViewBot ${botId}] ${message}`);
+            const logDiv = document.createElement('div');
+            logDiv.className = isError ? 'log error' : 'log';
+            logDiv.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+            document.getElementById('logs').prepend(logDiv);
+            
+            // Keep only last 20 logs
+            const logs = document.getElementById('logs').children;
+            while (logs.length > 20) {
+                logs[logs.length - 1].remove();
+            }
+        }
+        
+        // Update status
+        function updateStatus(status) {
+            document.getElementById('streamStatus').textContent = status;
+        }
+        
+        function updateConnectionStatus(status) {
+            document.getElementById('connectionStatus').textContent = status;
+        }
+        
+        /**
+         * Initialize Socket.IO connection
+         */
+        async function initializeSocket() {
+            return new Promise((resolve, reject) => {
+                log('Connecting to server...');
+                
+                socket = io('/', {
+                    transports: ['websocket'],
+                    query: {
+                        isViewBot: true,
+                        botId: botId
+                    }
+                });
+                
+                socket.on('connect', () => {
+                    log('Connected to server');
+                    updateConnectionStatus('Connected');
+                    resolve();
+                });
+                
+                socket.on('disconnect', () => {
+                    log('Disconnected from server', true);
+                    updateConnectionStatus('Disconnected');
+                });
+                
+                socket.on('error', (error) => {
+                    log(`Socket error: ${error}`, true);
+                    reject(error);
+                });
+                
+                // Handle stream approval/denial
+                socket.on('streaming-approved', () => {
+                    log('Stream approved by server');
+                });
+                
+                socket.on('stream-denied', (data) => {
+                    log(`Stream denied: ${data.reason}`, true);
+                    updateStatus('Stream Denied');
+                });
+            });
+        }
+        
+        /**
+         * Request to stream (like a real user)
+         */
+        async function requestToStream() {
+            return new Promise((resolve, reject) => {
+                log('Requesting stream takeover...');
+                
+                socket.emit('request-to-stream', {
+                    isViewBot: true,
+                    streamType: 'webrtc-viewbot',
+                    botId: botId
+                }, (response) => {
+                    if (response && response.acknowledged) {
+                        log('Stream request acknowledged');
+                        resolve();
+                    } else {
+                        reject(new Error('Stream request not acknowledged'));
+                    }
+                });
+            });
+        }
+        
+        /**
+         * Initialize MediaSoup device
+         */
+        async function initializeMediaSoup() {
+            log('Initializing MediaSoup device...');
+            
+            // Get router RTP capabilities
+            const response = await fetch('/api/mediasoup/rtp-capabilities');
+            const { rtpCapabilities } = await response.json();
+            
+            // Create device
+            device = new mediasoupClient.Device();
+            await device.load({ routerRtpCapabilities: rtpCapabilities });
+            
+            log('MediaSoup device initialized');
+        }
+        
+        /**
+         * Create send transport
+         */
+        async function createSendTransport() {
+            return new Promise((resolve, reject) => {
+                log('Creating WebRTC send transport...');
+                
+                socket.emit('mediasoup:create-transport', {
+                    type: 'send'
+                }, async (transportOptions) => {
+                    if (!transportOptions) {
+                        reject(new Error('Failed to create transport'));
+                        return;
+                    }
+                    
+                    // Create local transport
+                    sendTransport = device.createSendTransport(transportOptions);
+                    
+                    // Handle transport events
+                    sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
+                        socket.emit('mediasoup:connect-transport', {
+                            transportId: sendTransport.id,
+                            dtlsParameters
+                        }, (response) => {
+                            if (response.success) {
+                                callback();
+                            } else {
+                                errback(new Error('Failed to connect transport'));
+                            }
+                        });
+                    });
+                    
+                    sendTransport.on('produce', ({ kind, rtpParameters }, callback, errback) => {
+                        socket.emit('mediasoup:produce', {
+                            transportId: sendTransport.id,
+                            kind,
+                            rtpParameters
+                        }, (response) => {
+                            if (response.success) {
+                                callback({ id: response.producer.id });
+                            } else {
+                                errback(new Error('Failed to produce'));
+                            }
+                        });
+                    });
+                    
+                    log('Send transport created');
+                    resolve();
+                });
+            });
+        }
+        
+        /**
+         * Start streaming from video file
+         */
+        window.startViewBotStream = async function(videoPath, botId) {
+            try {
+                updateStatus('Starting stream...');
+                
+                // Initialize connections
+                await initializeSocket();
+                await requestToStream();
+                await initializeMediaSoup();
+                await createSendTransport();
+                
+                // Load video file
+                const video = document.getElementById('videoPlayer');
+                video.src = videoPath;
+                
+                // Wait for video to be ready
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = resolve;
+                });
+                
+                log(`Video loaded: ${video.videoWidth}x${video.videoHeight}`);
+                
+                // Start playing
+                await video.play();
+                
+                // Capture stream from video element
+                videoStream = video.captureStream(30); // 30 FPS
+                
+                // Get tracks
+                const videoTrack = videoStream.getVideoTracks()[0];
+                const audioTrack = videoStream.getAudioTracks()[0];
+                
+                // Produce video
+                if (videoTrack) {
+                    log('Producing video track...');
+                    videoProducer = await sendTransport.produce({
+                        track: videoTrack,
+                        encodings: [
+                            { maxBitrate: 2000000 } // 2 Mbps
+                        ]
+                    });
+                    log('Video producer created');
+                }
+                
+                // Produce audio
+                if (audioTrack) {
+                    log('Producing audio track...');
+                    audioProducer = await sendTransport.produce({
+                        track: audioTrack
+                    });
+                    log('Audio producer created');
+                }
+                
+                isStreaming = true;
+                updateStatus('Streaming');
+                
+                // Notify server that stream is ready
+                socket.emit('viewbot-stream-ready', {
+                    botId: botId,
+                    hasVideo: !!videoProducer,
+                    hasAudio: !!audioProducer,
+                    isWebRTC: true
+                });
+                
+                log('Stream started successfully');
+                return { success: true };
+                
+            } catch (error) {
+                log(`Failed to start stream: ${error.message}`, true);
+                updateStatus('Error');
+                return { success: false, error: error.message };
+            }
+        };
+        
+        /**
+         * Stop streaming
+         */
+        window.stopViewBotStream = async function() {
+            try {
+                log('Stopping stream...');
+                
+                if (videoProducer) {
+                    videoProducer.close();
+                    videoProducer = null;
+                }
+                
+                if (audioProducer) {
+                    audioProducer.close();
+                    audioProducer = null;
+                }
+                
+                if (sendTransport) {
+                    sendTransport.close();
+                    sendTransport = null;
+                }
+                
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                    videoStream = null;
+                }
+                
+                const video = document.getElementById('videoPlayer');
+                video.pause();
+                video.src = '';
+                
+                if (socket) {
+                    socket.emit('stop-stream', { botId });
+                    socket.disconnect();
+                    socket = null;
+                }
+                
+                isStreaming = false;
+                updateStatus('Stopped');
+                log('Stream stopped');
+                
+                return { success: true };
+                
+            } catch (error) {
+                log(`Error stopping stream: ${error.message}`, true);
+                return { success: false, error: error.message };
+            }
+        };
+        
+        // Handle video ended
+        document.getElementById('videoPlayer').onended = () => {
+            log('Video playback ended');
+            if (isStreaming) {
+                // Trigger rotation or loop
+                socket.emit('viewbot-video-ended', { botId });
+            }
+        };
+        
+        // Initialize on page load
+        updateStatus('Ready');
+        log('ViewBot WebRTC Streamer initialized');
+    </script>
+</body>
+</html>

@@ -8,7 +8,9 @@ import {
   RefreshCw,
   Clock,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Wifi,
+  Monitor
 } from 'lucide-react';
 import '../styles/ViewBotVideoManager.css';
 
@@ -25,6 +27,8 @@ interface RotationStatus {
   enabled: boolean;
   currentBot?: string;
   nextRotationIn?: number;
+  mode?: 'plainrtp' | 'webrtc';
+  mobileCompatible?: boolean;
   settings: {
     minRotationInterval: number;
     maxRotationInterval: number;
@@ -44,6 +48,7 @@ const ViewBotTab: React.FC<ViewBotVideoManagerProps> = ({ makeApiCall, addLog })
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [isTogglingMode, setIsTogglingMode] = useState(false);
 
   // Fetch video list and rotation status
   const fetchData = async () => {
@@ -203,6 +208,32 @@ const ViewBotTab: React.FC<ViewBotVideoManagerProps> = ({ makeApiCall, addLog })
     }
   };
 
+  // Toggle between Plain RTP and WebRTC mode
+  const toggleMode = async () => {
+    if (!makeApiCall) return;
+    setIsTogglingMode(true);
+    
+    try {
+      const newMode = rotationStatus?.mode === 'webrtc' ? 'plainrtp' : 'webrtc';
+      const response = await makeApiCall('/admin/viewbot-manager/toggle-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ useWebRTC: newMode === 'webrtc' })
+      });
+      
+      if (response.success) {
+        const modeLabel = newMode === 'webrtc' ? 'WebRTC (Mobile Compatible)' : 'Plain RTP (Desktop Only)';
+        addLog?.(`🔄 Switched to ${modeLabel} mode`);
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Toggle mode error:', error);
+      addLog?.('❌ Failed to toggle viewbot mode');
+    } finally {
+      setIsTogglingMode(false);
+    }
+  };
+
   // Format file size
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return bytes + ' B';
@@ -295,6 +326,32 @@ const ViewBotTab: React.FC<ViewBotVideoManagerProps> = ({ makeApiCall, addLog })
               </>
             )}
           </span>
+        </div>
+
+        <div className="status-item mode-toggle">
+          <span className="status-label">Mode:</span>
+          <button
+            className={`mode-switch ${isTogglingMode ? 'toggling' : ''}`}
+            onClick={toggleMode}
+            disabled={isTogglingMode}
+            title={rotationStatus?.mode === 'webrtc' 
+              ? 'Switch to Plain RTP (Desktop Only)' 
+              : 'Switch to WebRTC (Mobile Compatible)'}
+          >
+            {rotationStatus?.mode === 'webrtc' ? (
+              <>
+                <Wifi size={14} />
+                WebRTC
+                <span className="mode-badge mobile">Mobile ✓</span>
+              </>
+            ) : (
+              <>
+                <Monitor size={14} />
+                Plain RTP
+                <span className="mode-badge desktop">Desktop</span>
+              </>
+            )}
+          </button>
         </div>
 
         {rotationStatus?.currentBot && (

@@ -17,6 +17,7 @@ const TakeoverService = require('./services/TakeoverService');
 const TestStreamService = require('./services/TestStreamService');
 const ViewbotService = require('./services/ViewbotService');
 const ViewBotClientService = require('./services/ViewBotClientService');
+const ViewBotWebRTCService = require('./services/ViewBotWebRTCService');
 const SimpleMediaStreamService = require('./services/SimpleMediaStreamService');
 const MediasoupService = require('./services/MediasoupService');
 const AudioOptimizationService = require('./services/AudioOptimizationService');
@@ -269,6 +270,16 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// ViewBot Manager routes (WebRTC/Plain RTP toggle)
+app.use('/api/viewbot-manager', (req, res, next) => {
+  if (global.viewBotManager) {
+    const viewBotManagerRoutes = require('./routes/viewbot-manager');
+    viewBotManagerRoutes(global.viewBotManager)(req, res, next);
+  } else {
+    res.status(503).json({ error: 'ViewBot Manager not initialized' });
+  }
+});
+
 // API routes
 app.use('/api/admin', adminRoutes);
 app.use('/api', itemRoutes);
@@ -314,7 +325,16 @@ app.post('/api/tutorial', async (req, res) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const user = await AuthService.verifyToken(token);
+    const decoded = authService.verifyToken(token);
+    if (!decoded) {
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+
+    // Fetch the actual user record to check admin status
+    const AccountService = require('./services/AccountService');
+    const accountService = new AccountService();
+    const user = await accountService.getUserById(decoded.id);
+    
     if (!user || !user.is_admin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
@@ -1771,6 +1791,7 @@ app.get('/api/internal/user/:userId/admin-status', express.json(), async (req, r
 
 // Initialize ViewbotService after MediasoupService
 let viewbotService;
+let viewBotWebRTCService;
 let viewBotClientService;
 
 // Track which streamers have already been notified to prevent duplicates
@@ -2208,9 +2229,9 @@ app.get('/api/mediasoup/router-capabilities', async (req, res) => {
 
 app.post('/api/mediasoup/create-transport', async (req, res) => {
   try {
-    const { socketId } = req.body;
-    console.log(`📡 API: Creating transport for ${socketId} (current streamer: ${mediasoupService.getCurrentStreamer()})`);
-    const transportOptions = await mediasoupService.createWebRtcTransport(socketId);
+    const { socketId, isMobile } = req.body;
+    console.log(`📡 API: Creating transport for ${socketId} (mobile: ${isMobile}) (current streamer: ${mediasoupService.getCurrentStreamer()})`);
+    const transportOptions = await mediasoupService.createWebRtcTransport(socketId, isMobile);
     console.log(`✅ API: Transport created successfully for ${socketId}`);
     res.json(transportOptions);
   } catch (error) {
@@ -2226,6 +2247,24 @@ app.post('/api/mediasoup/connect-transport', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('❌ Failed to connect transport:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ICE restart endpoint for handling network changes (WiFi to 5G, etc)
+app.post('/api/mediasoup/restart-ice', async (req, res) => {
+  try {
+    const { socketId, transportId } = req.body;
+    
+    if (!socketId || !transportId) {
+      return res.status(400).json({ error: 'Socket ID and Transport ID required' });
+    }
+    
+    const iceParameters = await mediasoupService.restartTransportIce(socketId, transportId);
+    console.log(`🔄 ICE restart for ${socketId}`);
+    res.json({ success: true, iceParameters });
+  } catch (error) {
+    console.error('❌ ICE restart failed:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2950,6 +2989,64 @@ app.get('/admin/viewbot/health', adminKeyAuth, (req, res) => {
   
   const health = viewbotService.isHealthy();
   res.json(health);
+});
+
+// ViewBotWebRTCService endpoints (for mobile 5G/TURN support)
+// ViewBotManager mode toggle endpoint
+app.post('/admin/viewbot-manager/toggle-mode', viewBotAuth, async (req, res) => {
+  if (!global.viewBotManager) {
+    return res.status(503).json({ error: 'ViewBot Manager not initialized' });
+  }
+  
+  try {
+    const { useWebRTC } = req.body;
+    const result = await global.viewBotManager.toggleMode(useWebRTC);
+    res.json(result);
+  } catch (error) {
+    console.error('Error toggling viewbot mode:', error);
+    res.status(500).json({ error: 'Failed to toggle mode' });
+  }
+});
+
+app.post('/admin/viewbot-webrtc/create', viewBotAuth, async (req, res) => {
+  if (!viewBotWebRTCService) {
+    return res.status(503).json({ error: 'ViewBotWebRTCService not initialized' });
+  }
+  
+  const config = req.body.config || req.body;
+  config.useWebRTC = true; // Force WebRTC for TURN support
+  
+  const result = await viewBotWebRTCService.createViewBot(config);
+  res.json(result);
+});
+
+app.post('/admin/viewbot-webrtc/:botId/start', viewBotAuth, async (req, res) => {
+  if (!viewBotWebRTCService) {
+    return res.status(503).json({ error: 'ViewBotWebRTCService not initialized' });
+  }
+  
+  const { botId } = req.params;
+  const result = await viewBotWebRTCService.startViewBot(botId);
+  res.json(result);
+});
+
+app.post('/admin/viewbot-webrtc/:botId/stop', viewBotAuth, async (req, res) => {
+  if (!viewBotWebRTCService) {
+    return res.status(503).json({ error: 'ViewBotWebRTCService not initialized' });
+  }
+  
+  const { botId } = req.params;
+  const result = await viewBotWebRTCService.stopViewBot(botId);
+  res.json(result);
+});
+
+app.get('/admin/viewbot-webrtc/status', viewBotAuth, async (req, res) => {
+  if (!viewBotWebRTCService) {
+    return res.status(503).json({ error: 'ViewBotWebRTCService not initialized' });
+  }
+  
+  const status = viewBotWebRTCService.listViewBots();
+  res.json({ viewbots: status });
 });
 
 // ViewBotClientService endpoints
@@ -5912,7 +6009,119 @@ io.on('connection', async (socket) => {
     io.to(streamerId).emit('viewer-requesting-stream', { viewerId: socket.id });
   });
 
-  // Handle ViewBot plain RTP transport creation (receives FFmpeg RTP streams)
+  // Handle ViewBot Plain RTP bridge creation (for FFmpeg/GStreamer to WebRTC producer)
+  socket.on('viewbot-create-plain-bridge', async (data, callback) => {
+    const { botId, producerId, kind, rtpParameters } = data;
+    console.log(`🤖 SERVER: ViewBot ${botId} creating Plain RTP bridge for ${kind} producer ${producerId}`);
+    
+    try {
+      // Generate a fixed SSRC for this producer
+      const ssrc = kind === 'video' ? 11111111 : 22222222;
+      
+      // Create Plain RTP transport for FFmpeg/GStreamer to send to
+      const plainTransport = await mediasoupService.router.createPlainTransport({
+        listenIp: { 
+          ip: '0.0.0.0', 
+          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>'  // Public IP
+        },
+        rtcpMux: false,
+        comedia: true,
+        enableSrtp: false
+      });
+      
+      const listenPort = plainTransport.tuple.localPort;
+      console.log(`✅ SERVER: Plain RTP bridge created on port ${listenPort} for ${kind}`);
+      
+      // Store the Plain transport
+      if (!mediasoupService.plainBridges) {
+        mediasoupService.plainBridges = new Map();
+      }
+      mediasoupService.plainBridges.set(`${botId}-${kind}`, plainTransport);
+      
+      // When RTP arrives, forward it to the WebRTC producer
+      // This is handled automatically by MediaSoup's transport routing
+      
+      callback({
+        success: true,
+        rtpPort: listenPort,
+        ssrc: ssrc
+      });
+      
+    } catch (error) {
+      console.error(`❌ SERVER: Failed to create Plain RTP bridge:`, error);
+      callback({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+  
+  // Handle ViewBot WebRTC transport creation for mobile 5G/TURN support (legacy - kept for compatibility)
+  socket.on('viewbot-create-webrtc-transport', async (data) => {
+    const { botId, kind, rtpParameters } = data;
+    console.log(`🤖 SERVER: ViewBot ${botId} creating WebRTC transport for ${kind} (LEGACY METHOD)`);
+    
+    try {
+      // Create WebRTC transport like regular users for TURN support
+      const transportOptions = await mediasoupService.createWebRtcTransport(`viewbot-${botId}-${kind}`);
+      
+      // Store transport for later use
+      if (!mediasoupService.viewbotTransports) {
+        mediasoupService.viewbotTransports = new Map();
+      }
+      mediasoupService.viewbotTransports.set(`${botId}-${kind}`, transportOptions);
+      
+      // Create producer on the transport
+      const transport = mediasoupService.transports.get(`viewbot-${botId}-${kind}`);
+      if (!transport) {
+        throw new Error('Transport not found after creation');
+      }
+      
+      // Create producer with appropriate RTP parameters
+      const producer = await transport.produce({
+        kind: kind,
+        rtpParameters: rtpParameters,
+        paused: false,
+        appData: {
+          isViewBot: true,
+          botId: botId
+        }
+      });
+      
+      console.log(`✅ SERVER: ViewBot ${botId} WebRTC ${kind} producer created: ${producer.id}`);
+      
+      // Store producer
+      if (!mediasoupService.producers) {
+        mediasoupService.producers = new Map();
+      }
+      const producerKey = `viewbot-${botId}-${kind}`;
+      const producerMap = mediasoupService.producers.get(producerKey) || new Map();
+      producerMap.set(kind, producer);
+      mediasoupService.producers.set(producerKey, producerMap);
+      
+      // Send success response
+      socket.emit('viewbot-producer-created', {
+        botId: botId,
+        kind: kind,
+        producerId: producer.id,
+        transportId: transportOptions.id,
+        iceParameters: transportOptions.iceParameters,
+        iceCandidates: transportOptions.iceCandidates,
+        dtlsParameters: transportOptions.dtlsParameters,
+        rtpPort: 0 // Not used for WebRTC
+      });
+      
+    } catch (error) {
+      console.error(`❌ SERVER: Failed to create WebRTC transport for ViewBot ${botId}:`, error);
+      socket.emit('viewbot-producer-error', {
+        botId: botId,
+        kind: kind,
+        error: error.message
+      });
+    }
+  });
+  
+  // Handle ViewBot plain RTP transport creation
   socket.on('viewbot-create-plain-transport', async (data) => {
     const { botId, kind, rtpParameters } = data;
     console.log(`🤖 SERVER: ViewBot ${botId} creating plain RTP transport for ${kind}`);
@@ -5925,7 +6134,7 @@ io.on('connection', async (socket) => {
       const plainTransport = await mediasoupService.router.createPlainTransport({
         listenIp: { 
           ip: '0.0.0.0', 
-          announcedIp: process.env.ANNOUNCED_IP || process.env.SERVER_HOST || null
+          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>'  // Public IP
         },
         rtcpMux: false, // Separate ports for RTP and RTCP
         comedia: true, // Auto-detect source IP and port from first RTP packet
@@ -6287,16 +6496,39 @@ io.on('connection', async (socket) => {
     }
   });
 
-  // ViewBot request to create Plain RTP transport
+  // ViewBot request to create WebRTC transport (mobile-compatible)
+  socket.on('viewbot-create-webrtc-transport', async (data, callback) => {
+    console.log(`🚀 SERVER: ViewBot ${data.botId} requesting WebRTC transport (mobile-compatible)`);
+    
+    try {
+      // Create WebRTC transport exactly like normal users
+      const transportOptions = await mediasoupService.createWebRtcTransport(socket.id, false);
+      
+      console.log(`✅ SERVER: Created WebRTC transport for ViewBot ${data.botId}`);
+      console.log(`   Transport ID: ${transportOptions.id}`);
+      console.log(`   ICE candidates: ${transportOptions.iceCandidates?.length || 0}`);
+      
+      callback({
+        success: true,
+        transportOptions
+      });
+      
+    } catch (error) {
+      console.error(`❌ SERVER: Failed to create WebRTC transport for ViewBot:`, error);
+      callback({ success: false, error: error.message });
+    }
+  });
+  
+  // ViewBot request to create Plain RTP transport (legacy, not mobile-compatible)
   socket.on('viewbot-create-transport', async (data, callback) => {
-    console.log(`🚚 SERVER: ViewBot ${data.botId} requesting Plain RTP transports`);
+    console.log(`🚚 SERVER: ViewBot ${data.botId} requesting Plain RTP transports (LEGACY - not mobile compatible)`);
     
     try {
       // Create TWO Plain RTP transports - one for video, one for audio
       const videoTransport = await mediasoupService.router.createPlainTransport({
         listenIp: {
-          ip: '127.0.0.1',
-          announcedIp: null
+          ip: '0.0.0.0',  // Listen on all interfaces
+          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>'  // CRITICAL: Announce public IP for mobile/TURN
         },
         rtcpMux: false,
         comedia: true  // Auto-detect source
@@ -6304,8 +6536,8 @@ io.on('connection', async (socket) => {
       
       const audioTransport = await mediasoupService.router.createPlainTransport({
         listenIp: {
-          ip: '127.0.0.1',
-          announcedIp: null
+          ip: '0.0.0.0',  // Listen on all interfaces
+          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>'  // CRITICAL: Announce public IP for mobile/TURN
         },
         rtcpMux: false,
         comedia: true  // Auto-detect source
@@ -6335,6 +6567,78 @@ io.on('connection', async (socket) => {
     } catch (error) {
       console.error(`❌ SERVER: Failed to create Plain RTP transports:`, error);
       callback({ error: error.message });
+    }
+  });
+  
+  // ViewBot request to produce to WebRTC transport (mobile-compatible)
+  socket.on('viewbot-webrtc-produce', async (data, callback) => {
+    console.log(`🎬 SERVER: ViewBot ${data.botId} producing to WebRTC transport`);
+    
+    try {
+      const transport = mediasoupService.transports.get(socket.id);
+      if (!transport) {
+        throw new Error('WebRTC transport not found');
+      }
+      
+      // Create producers with predefined RTP parameters for viewbots
+      // These match what GStreamer will send
+      const videoRtpParameters = {
+        codecs: [{
+          mimeType: 'video/h264',
+          payloadType: 102,
+          clockRate: 90000,
+          parameters: {
+            'level-asymmetry-allowed': 1,
+            'packetization-mode': 1,
+            'profile-level-id': '42e01f'
+          }
+        }],
+        encodings: [{
+          ssrc: 11111111,
+          dtx: false
+        }]
+      };
+      
+      const audioRtpParameters = {
+        codecs: [{
+          mimeType: 'audio/opus',
+          payloadType: 101,
+          clockRate: 48000,
+          channels: 2,
+          parameters: {
+            'sprop-stereo': 1,
+            'useinbandfec': 1
+          }
+        }],
+        encodings: [{
+          ssrc: 22222222,
+          dtx: false
+        }]
+      };
+      
+      // Create producers
+      const videoProducer = await mediasoupService.createProducer(socket.id, videoRtpParameters, 'video');
+      const audioProducer = await mediasoupService.createProducer(socket.id, audioRtpParameters, 'audio');
+      
+      console.log(`✅ SERVER: Created WebRTC producers for ViewBot ${data.botId}`);
+      
+      // Mark as viewbot producers
+      if (videoProducer && videoProducer.producer) {
+        videoProducer.producer.appData = { ...videoProducer.producer.appData, isViewBot: true };
+      }
+      if (audioProducer && audioProducer.producer) {
+        audioProducer.producer.appData = { ...audioProducer.producer.appData, isViewBot: true };
+      }
+      
+      callback({
+        success: true,
+        videoProducerId: videoProducer?.producer?.id,
+        audioProducerId: audioProducer?.producer?.id
+      });
+      
+    } catch (error) {
+      console.error(`❌ SERVER: Failed to create WebRTC producers for ViewBot:`, error);
+      callback({ success: false, error: error.message });
     }
   });
   
@@ -6531,7 +6835,9 @@ io.on('connection', async (socket) => {
   // Handle MediaSoup transport connection (for ViewBots and regular clients) 
   socket.on('mediasoup:connect-transport', async (data, callback) => {
     try {
-      const { dtlsParameters } = data;
+      const { dtlsParameters, transportId } = data;
+      
+      // All clients including viewbots use the same connection flow
       await mediasoupService.connectTransport(socket.id, dtlsParameters);
       console.log(`🔗 MEDIASOUP: Transport connected for ${socket.id}`);
       callback({ success: true });
@@ -6543,12 +6849,13 @@ io.on('connection', async (socket) => {
 
   socket.on('mediasoup:produce', async (data, callback) => {
     try {
-      const { kind, rtpParameters } = data;
+      const { kind, rtpParameters, transportId } = data;
       
       // Check if this is a new streamer BEFORE updating services
       const wasNewStreamer = streamService.getCurrentStreamer() !== socket.id;
       console.log(`🔍 MEDIASOUP: Before producer creation - current streamer: ${streamService.getCurrentStreamer()}, this socket: ${socket.id}, wasNewStreamer: ${wasNewStreamer}`);
       
+      // ViewBots now use the same producer creation as regular users
       const result = await mediasoupService.createProducer(socket.id, rtpParameters, kind);
       
       // Update stream service to reflect new streamer
@@ -6749,8 +7056,19 @@ io.on('connection', async (socket) => {
       );
       
       if (result) {
-        callback({ success: true, consumer: result, streamerId: currentStreamer });
-        console.log(`✅ MEDIASOUP: ${socket.id} successfully consuming ${kind || 'media'} from ${currentStreamer}`);
+        // Check if the producer is a viewbot (Plain RTP)
+        const isViewbotProducer = currentStreamer.includes('viewbot') || 
+                                 currentStreamer.includes('bot-') ||
+                                 // Check producer metadata
+                                 producerMap?.values()?.next()?.value?.appData?.isViewBot;
+        
+        callback({ 
+          success: true, 
+          consumer: result, 
+          streamerId: currentStreamer,
+          isViewbotStream: isViewbotProducer 
+        });
+        console.log(`✅ MEDIASOUP: ${socket.id} successfully consuming ${kind || 'media'} from ${currentStreamer} (viewbot: ${isViewbotProducer})`);
       } else {
         callback({ success: false, error: `Cannot create consumer for ${kind || 'media'}` });
       }
@@ -7341,6 +7659,10 @@ async function startServer() {
     viewbotService = new ViewbotService(mediasoupService);
     console.log('✅ VIEWBOT: ViewbotService initialized');
     
+    // Initialize ViewBotWebRTCService for proper WebRTC connections (TURN support)
+    viewBotWebRTCService = new ViewBotWebRTCService(mediasoupService);
+    console.log('✅ VIEWBOT: ViewBotWebRTCService initialized for mobile 5G/TURN support');
+    
     // Make viewbotService available to routes
     app.locals.viewbotService = viewbotService;
     
@@ -7370,6 +7692,9 @@ async function startServer() {
     // CRITICAL: Give ViewbotService a reference to ViewBotClientService for rotation handling
     viewbotService.viewBotClientService = viewBotClientService;
     
+    // Set global reference for ViewBotClientService (needed for GStreamer WebRTC)
+    global.viewBotClientService = viewBotClientService;
+    
     // CRITICAL: Initialize the service to restore state from database
     try {
       console.log('🚀 VIEWBOT CLIENT: Initializing ViewBotClientService...');
@@ -7397,6 +7722,20 @@ async function startServer() {
       }
     }, 5000);
     
+    // Helper function to get video files
+    async function getVideoFiles() {
+      const uploadsDir = path.join(__dirname, 'uploads');
+      try {
+        const files = await fs.promises.readdir(uploadsDir);
+        return files
+          .filter(file => ['.mp4', '.webm', '.mkv', '.avi', '.mov'].includes(path.extname(file).toLowerCase()))
+          .map(file => path.join(uploadsDir, file));
+      } catch (error) {
+        console.error('Failed to read video files:', error);
+        return [];
+      }
+    }
+    
     // Initialize NEW ViewBot Rotation System with Socket.IO clients
     console.log('🚀 VIEWBOT ROTATION: Starting initialization...');
     try {
@@ -7413,6 +7752,40 @@ async function startServer() {
       // Initialize with media files
       await viewBotRotation.initialize();
       console.log('✅ VIEWBOT ROTATION: Service initialized');
+      
+      // Initialize Unified ViewBot Rotation with WebRTC support
+      console.log('🌐 Initializing WebRTC ViewBot support...');
+      try {
+        const UnifiedViewBotRotation = require('./services/UnifiedViewBotRotation');
+        const ViewBotManager = require('./services/ViewBotManager');
+        const viewBotConfig = fs.existsSync(path.join(__dirname, 'config', 'viewbot-config.json')) 
+          ? require('./config/viewbot-config.json') 
+          : { viewbots: { useWebRTCViewBots: false } };
+        
+        // Create ViewBot Manager for WebRTC/Plain RTP toggle
+        const viewBotManager = new ViewBotManager(viewBotConfig.viewbots);
+        await viewBotManager.initialize();
+        global.viewBotManager = viewBotManager;
+        
+        // Create Unified Rotation controller
+        const unifiedRotation = new UnifiedViewBotRotation(io, streamService, mediasoupService);
+        const videoFiles = await getVideoFiles();
+        await unifiedRotation.initialize(videoFiles);
+        global.unifiedViewBotRotation = unifiedRotation;
+        
+        // Set initial mode based on config
+        if (viewBotConfig.viewbots.useWebRTCViewBots) {
+          await unifiedRotation.setMode('webrtc');
+          console.log('✅ WebRTC ViewBot mode enabled (mobile compatible)');
+        } else {
+          console.log('ℹ️ Using Plain RTP ViewBot mode (desktop only)');
+        }
+        
+        console.log('✅ Unified ViewBot Rotation initialized');
+      } catch (error) {
+        console.warn('⚠️ WebRTC ViewBot support not available:', error.message);
+        console.log('ℹ️ Continuing with Plain RTP viewbots only');
+      }
       
       // Update settings to achieve ~3.5 minute average
       // Average = (min + max) / 2, so for 3.5 min avg: min + max = 7 min
@@ -7703,6 +8076,15 @@ process.on('SIGINT', async () => {
     console.log('🧹 Cleaning up MediaSoup resources...');
     if (mediasoupService) {
       mediasoupService.cleanupAll();
+    }
+    
+    // 3.5. Clean up WebRTC ViewBot systems
+    console.log('🧹 Cleaning up ViewBot systems...');
+    if (global.unifiedViewBotRotation) {
+      await global.unifiedViewBotRotation.shutdown();
+    }
+    if (global.viewBotManager) {
+      await global.viewBotManager.cleanup();
     }
     
     // 4. Clear all sessions

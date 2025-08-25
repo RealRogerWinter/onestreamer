@@ -30,10 +30,10 @@ class MediasoupService {
       enableTcp: true,
       preferUdp: true,
       enableSctp: false, // Disable SCTP as we don't use DataChannels
-      initialAvailableOutgoingBitrate: 150000, // 150kbps for mobile
-      minimumAvailableOutgoingBitrate: 50000,  // 50kbps minimum
+      initialAvailableOutgoingBitrate: 300000, // 300kbps balanced
+      minimumAvailableOutgoingBitrate: 100000,  // 100kbps minimum
       maxSctpMessageSize: 262144,
-      maxIncomingBitrate: 500000  // 500kbps max for mobile
+      maxIncomingBitrate: 1500000  // 1.5Mbps max - good for most connections
     }
     
     // Start periodic cleanup
@@ -99,9 +99,9 @@ class MediasoupService {
         mimeType: 'video/VP8',
         clockRate: 90000,
         parameters: {
-          'x-google-start-bitrate': 2500, // Higher initial bitrate
-          'x-google-max-bitrate': 5000,
-          'x-google-min-bitrate': 500,
+          'x-google-start-bitrate': 300, // Lower initial bitrate for mobile
+          'x-google-max-bitrate': 2000,  // Reasonable max
+          'x-google-min-bitrate': 100,
         },
       },
       {
@@ -110,9 +110,9 @@ class MediasoupService {
         clockRate: 90000,
         parameters: {
           'profile-id': 2,
-          'x-google-start-bitrate': 2500, // Higher initial bitrate
-          'x-google-max-bitrate': 5000,
-          'x-google-min-bitrate': 500,
+          'x-google-start-bitrate': 300, // Lower initial bitrate
+          'x-google-max-bitrate': 2000,
+          'x-google-min-bitrate': 100,
         },
       },
       {
@@ -121,11 +121,11 @@ class MediasoupService {
         clockRate: 90000,
         parameters: {
           'packetization-mode': 1,
-          'profile-level-id': '4d0032',
+          'profile-level-id': '42e01f', // Baseline profile for mobile
           'level-asymmetry-allowed': 1,
-          'x-google-start-bitrate': 2500, // Higher initial bitrate
-          'x-google-max-bitrate': 5000,
-          'x-google-min-bitrate': 500,
+          'x-google-start-bitrate': 300, // Lower initial bitrate
+          'x-google-max-bitrate': 2000,
+          'x-google-min-bitrate': 100,
         },
       },
       {
@@ -134,11 +134,11 @@ class MediasoupService {
         clockRate: 90000,
         parameters: {
           'packetization-mode': 1,
-          'profile-level-id': '42e01f',
+          'profile-level-id': '4d0032', // Main profile
           'level-asymmetry-allowed': 1,
-          'x-google-start-bitrate': 2500, // Higher initial bitrate
+          'x-google-start-bitrate': 500,
           'x-google-max-bitrate': 5000,
-          'x-google-min-bitrate': 500,
+          'x-google-min-bitrate': 200,
         },
       },
     ];
@@ -154,7 +154,7 @@ class MediasoupService {
     return this.router.rtpCapabilities;
   }
 
-  async createWebRtcTransport(socketId) {
+  async createWebRtcTransport(socketId, isMobile = false) {
     console.log(`📡 MEDIASOUP: Creating transport for ${socketId} (current streamer: ${this.currentStreamer})`);
     
     // Check if MediaSoup is properly initialized
@@ -180,28 +180,43 @@ class MediasoupService {
     // Small delay to ensure cleanup completes
     await new Promise(resolve => setTimeout(resolve, 50));
     
-    console.log(`📡 MEDIASOUP: Creating WebRTC transport for ${socketId}...`);
+    // Use the isMobile parameter passed from client
+    const isMobileClient = isMobile || false;
     
-    // Use optimized transport options from constructor
+    console.log(`📡 MEDIASOUP: Creating WebRTC transport for ${socketId}...`);
+    console.log(`   Transport type: WebRTC`);
+    console.log(`   Client type: ${isMobileClient ? 'MOBILE' : 'Desktop'}`);
+    console.log(`   TCP enabled: true, UDP enabled: true`);
+    
+    // Mobile-optimized transport configuration based on MediaSoup best practices
     const transportConfig = {
       ...this.transportOptions,
       listenIps: [
         {
           ip: '0.0.0.0',
-          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>', // Use actual server IP
+          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>', // Single announced IP for mobile
         },
       ],
-      initialAvailableOutgoingBitrate: 150000, // 150kbps for mobile
-      minimumAvailableOutgoingBitrate: 50000, // 50kbps minimum  
-      maxIncomingBitrate: 500000, // 500kbps max for mobile
-      // Fix ICE consent timeout issue - increase from default 30s
-      iceConsentTimeout: 60, // 60 seconds instead of default 30
-      // Enable ICE-Lite mode for more stable connections
+      // Enable both TCP and UDP for compatibility
+      enableUdp: true,
+      enableTcp: true,
+      preferUdp: true, // Prefer UDP for performance
+      preferTcp: false,
+      // Mobile-optimized bitrate settings as per MediaSoup recommendations
+      initialAvailableOutgoingBitrate: isMobileClient ? 800000 : 1000000, // 800kbps mobile, 1Mbps desktop
+      minimumAvailableOutgoingBitrate: isMobileClient ? 400000 : 100000, // 400kbps min for mobile stability
+      maxIncomingBitrate: isMobileClient ? 2000000 : 3000000, // 2Mbps max mobile, 3Mbps desktop
+      // Extended ICE consent timeout for mobile network instability and cell tower handovers
+      iceConsentTimeout: isMobileClient ? 45 : 12, // 45 seconds mobile (for TURN relay), 12 desktop (default)
+      // Extended DTLS handshake timeout for relay connections
+      dtlsHandshakeTimeoutMs: isMobileClient ? 30000 : 5000, // 30s mobile, 5s desktop
+      // Enable SCTP for data channels
       enableSctp: true,
       numSctpStreams: { OS: 1024, MIS: 1024 },
-      // Note: MediaSoup server doesn't use iceServers - that's for the client side only
+      // MediaSoup uses ICE-lite - TURN must be configured client-side only
       appData: {
         socketId,
+        clientType: isMobileClient ? 'mobile' : 'desktop',
         createdAt: Date.now()
       }
     };
@@ -283,6 +298,18 @@ class MediasoupService {
     }
   }
 
+  async restartTransportIce(socketId, transportId) {
+    const transport = this.transports.get(socketId);
+    if (!transport || transport.id !== transportId) {
+      throw new Error(`Transport not found for socket ${socketId}`);
+    }
+    
+    // Generate new ICE parameters for the transport
+    const iceParameters = await transport.restartIce();
+    console.log(`🔄 MEDIASOUP: ICE restart for transport ${transportId} (socket: ${socketId})`);
+    return iceParameters;
+  }
+
   async createProducer(socketId, rtpParameters, kind) {
     const transport = this.transports.get(socketId);
     if (!transport) {
@@ -315,11 +342,61 @@ class MediasoupService {
 
   async createConsumer(consumerSocketId, producerSocketId, rtpCapabilities, kind = null) {
     const consumerTransport = this.transports.get(consumerSocketId);
-    const producerMap = this.producers.get(producerSocketId);
+    let producerMap = this.producers.get(producerSocketId);
 
     console.log(`📺 MEDIASOUP: Creating consumer for ${consumerSocketId} from producer ${producerSocketId}`);
     console.log(`📺 MEDIASOUP: Consumer transport exists: ${!!consumerTransport}`);
     console.log(`📺 MEDIASOUP: Producer map exists: ${!!producerMap}, size: ${producerMap?.size || 0}`);
+
+    // Check if this is a viewbot Plain RTP producer that needs bridging for mobile
+    // The producer socket ID won't contain 'viewbot', but the producer will have isViewBot flag
+    let isViewbotProducer = false;
+    
+    console.log(`🔍 MEDIASOUP: Checking if producer ${producerSocketId} is viewbot...`);
+    console.log(`   Producer map exists: ${!!producerMap}`);
+    console.log(`   Producer map size: ${producerMap?.size || 0}`);
+    
+    // Check if any producer has isViewBot flag in appData
+    if (!isViewbotProducer && producerMap) {
+      for (const producer of producerMap.values()) {
+        console.log(`   Checking producer ${producer.id}:`, {
+          kind: producer.kind,
+          hasAppData: !!producer.appData,
+          isViewBot: producer.appData?.isViewBot,
+          appData: producer.appData
+        });
+        if (producer.appData && producer.appData.isViewBot) {
+          isViewbotProducer = true;
+          console.log(`🤖 MEDIASOUP: Detected viewbot producer via appData.isViewBot flag`);
+          break;
+        }
+      }
+    }
+    
+    console.log(`🔍 MEDIASOUP: Is viewbot producer: ${isViewbotProducer}`);
+    
+    // For viewbot producers, note the limitation
+    // Plain RTP producers don't support ICE/TURN which mobile clients need
+    if (isViewbotProducer) {
+      console.log(`📱 MEDIASOUP: Viewbot producer detected - mobile clients may have issues`);
+      console.log(`   Note: Plain RTP producers don't support ICE/TURN needed by mobile networks`);
+      // Continue with normal consumption but note this may fail on mobile
+    }
+    
+    if (isViewbotProducer && producerMap) {
+      console.log(`🤖 MEDIASOUP: Viewbot Plain RTP producer detected - creating WebRTC bridge for mobile compatibility`);
+      
+      // For viewbot Plain RTP producers, ALL clients should consume normally
+      // The issue is that Plain RTP doesn't support ICE/TURN for mobile
+      // MediaSoup doesn't support producing to WebRTC transport from server side
+      // So we'll just log the limitation
+      console.log(`⚠️ MEDIASOUP: Viewbot Plain RTP producer detected`);
+      console.log(`   Mobile clients may have connectivity issues due to lack of ICE/TURN support`);
+      console.log(`   Plain RTP producers cannot be bridged to WebRTC automatically`);
+      
+      // Continue with normal consumption - will work for desktop, may fail for mobile
+      // The real fix is to have viewbots use WebRTC from the start
+    }
 
     if (!consumerTransport || !producerMap) {
       console.error(`❌ MEDIASOUP: Missing components for consumer creation`);

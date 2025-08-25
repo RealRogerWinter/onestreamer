@@ -121,14 +121,42 @@ class ViewBotSocketClient {
       // Step 1: Request stream takeover (like real users)
       await this.requestStreamTakeover();
       
-      // Step 2: Create MediaSoup Plain RTP transport and get ports
-      const rtpPorts = await this.createMediaSoupTransport();
+      // Step 2: Decide whether to use WebRTC (mobile-compatible) or Plain RTP
+      // NOTE: WebRTC is not possible for viewbots because:
+      // 1. GStreamer outputs Plain RTP, not WebRTC
+      // 2. WebRTC requires ICE/DTLS negotiation which GStreamer doesn't support
+      // 3. WebRTC producers need a connected client peer to negotiate with
+      // Therefore, viewbots MUST use Plain RTP, which means mobile clients can't view them
+      const USE_WEBRTC = false; // Can't use WebRTC with GStreamer
       
-      // Step 3: Start GStreamer sending to MediaSoup ports
-      await this.startGStreamer(rtpPorts);
-      
-      // Step 4: Create MediaSoup producers 
-      await this.createProducers(rtpPorts);
+      if (USE_WEBRTC) {
+        console.log(`📱 ViewBot ${this.botId}: Using WebRTC transport (mobile-compatible)`);
+        
+        // Step 2a: Create WebRTC transport
+        const transportOptions = await this.createWebRtcTransport();
+        
+        // Step 2b: We still need Plain RTP locally for GStreamer
+        // Create a local Plain RTP transport for GStreamer to send to
+        const rtpPorts = await this.createLocalRtpPorts();
+        
+        // Step 3: Start GStreamer sending to local RTP ports
+        await this.startGStreamer(rtpPorts);
+        
+        // Step 4: Create WebRTC producers and pipe GStreamer to them
+        await this.createWebRtcProducers();
+        
+      } else {
+        console.log(`🖥️ ViewBot ${this.botId}: Using Plain RTP transport (desktop only)`);
+        
+        // Step 2: Create MediaSoup Plain RTP transport and get ports
+        const rtpPorts = await this.createMediaSoupTransport();
+        
+        // Step 3: Start GStreamer sending to MediaSoup ports
+        await this.startGStreamer(rtpPorts);
+        
+        // Step 4: Create MediaSoup producers 
+        await this.createProducers(rtpPorts);
+      }
       
       this.isStreaming = true;
       console.log(`✅ ViewBot ${this.botId}: Streaming started successfully`);
@@ -221,11 +249,41 @@ class ViewBotSocketClient {
   }
   
   /**
-   * Create MediaSoup Plain RTP transport
+   * Create MediaSoup WebRTC transport (mobile-compatible)
+   */
+  async createWebRtcTransport() {
+    return new Promise((resolve, reject) => {
+      console.log(`🚀 ViewBot ${this.botId}: Requesting WebRTC transport (mobile-compatible)...`);
+      
+      this.socket.emit('viewbot-create-webrtc-transport', {
+        botId: this.botId
+      }, (response) => {
+        if (response && response.success && response.transportOptions) {
+          console.log(`✅ ViewBot ${this.botId}: Got WebRTC transport`);
+          console.log(`   Transport ID: ${response.transportOptions.id}`);
+          console.log(`   ICE candidates: ${response.transportOptions.iceCandidates?.length || 0}`);
+          
+          this.webrtcTransport = response.transportOptions;
+          this.useWebRtc = true;
+          
+          // For WebRTC, we need to handle this differently
+          // We'll create a Plain RTP transport locally to receive from GStreamer
+          // Then pipe it to the WebRTC transport
+          resolve(response.transportOptions);
+        } else {
+          console.error(`❌ ViewBot ${this.botId}: WebRTC transport creation failed:`, response);
+          reject(new Error('Failed to create WebRTC transport'));
+        }
+      });
+    });
+  }
+  
+  /**
+   * Create MediaSoup Plain RTP transport (legacy, not mobile-compatible)
    */
   async createMediaSoupTransport() {
     return new Promise((resolve, reject) => {
-      console.log(`🚚 ViewBot ${this.botId}: Requesting MediaSoup Plain RTP transport...`);
+      console.log(`🚚 ViewBot ${this.botId}: Requesting MediaSoup Plain RTP transport (LEGACY)...`);
       
       this.socket.emit('viewbot-create-transport', {
         botId: this.botId
@@ -342,7 +400,56 @@ class ViewBotSocketClient {
   }
   
   /**
-   * Create MediaSoup producers and notify server
+   * Create local RTP ports for GStreamer (when using WebRTC)
+   */
+  async createLocalRtpPorts() {
+    // For now, use fixed local ports - in production should be dynamic
+    const ports = {
+      video: 5004,
+      audio: 5006
+    };
+    console.log(`🔌 ViewBot ${this.botId}: Using local RTP ports - Video: ${ports.video}, Audio: ${ports.audio}`);
+    return ports;
+  }
+  
+  /**
+   * Create WebRTC producers (mobile-compatible)
+   */
+  async createWebRtcProducers() {
+    console.log(`🎬 ViewBot ${this.botId}: Creating WebRTC producers...`);
+    
+    return new Promise((resolve, reject) => {
+      this.socket.emit('viewbot-webrtc-produce', {
+        botId: this.botId,
+        transportId: this.webrtcTransport?.id
+      }, (response) => {
+        if (response && response.success) {
+          console.log(`✅ ViewBot ${this.botId}: WebRTC producers created`);
+          console.log(`   Video producer: ${response.videoProducerId}`);
+          console.log(`   Audio producer: ${response.audioProducerId}`);
+          
+          // Emit stream-ready event
+          console.log(`📢 ViewBot ${this.botId}: Emitting viewbot-stream-ready event`);
+          this.socket.emit('viewbot-stream-ready', {
+            botId: this.botId,
+            timestamp: new Date().toISOString(),
+            hasVideo: true,
+            hasAudio: true,
+            isWebRTC: true
+          });
+          
+          console.log(`✅ ViewBot ${this.botId}: Stream ready notification sent`);
+          resolve();
+        } else {
+          console.error(`❌ ViewBot ${this.botId}: Failed to create WebRTC producers:`, response);
+          reject(new Error('Failed to create WebRTC producers'));
+        }
+      });
+    });
+  }
+  
+  /**
+   * Create MediaSoup producers and notify server (Plain RTP - legacy)
    */
   async createProducers(rtpPorts) {
     console.log(`🎤 ViewBot ${this.botId}: Creating MediaSoup producers...`);

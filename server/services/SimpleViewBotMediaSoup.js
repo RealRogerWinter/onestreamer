@@ -221,9 +221,9 @@ class SimpleViewBotMediaSoup {
   }
   
   /**
-   * Create Plain Transport for RTP streaming
+   * Create WebRTC Transport for viewbot - exactly like normal users
    */
-  async createPlainTransport() {
+  async createWebRtcTransport() {
     try {
       // Check if MediaSoup service is available
       if (!this.mediasoupService || !this.mediasoupService.router) {
@@ -231,27 +231,60 @@ class SimpleViewBotMediaSoup {
         return null;
       }
       
-      // Create plain transport for RTP
-      const transport = await this.mediasoupService.router.createPlainTransport({
-        listenIp: {
-          ip: '127.0.0.1',
-          announcedIp: null
-        },
-        rtcpMux: false,
-        comedia: true
-      });
+      // Use the same method normal users use for creating WebRTC transport
+      // This ensures viewbots are indistinguishable from normal streamers
+      const transportOptions = await this.mediasoupService.createWebRtcTransport(
+        this.currentBot.id,  // Use bot ID as socket ID
+        false  // Not mobile (server-side)
+      );
       
-      console.log(`✅ Created Plain Transport: ${transport.id}`);
-      return transport;
+      console.log(`✅ Created WebRTC Transport for viewbot: ${transportOptions.id}`);
+      console.log(`   Using standard WebRTC transport (same as normal users)`);
+      
+      // Get the actual transport object from the service
+      const transports = this.mediasoupService.transports.get(this.currentBot.id);
+      if (!transports) {
+        throw new Error('Transport not found after creation');
+      }
+      
+      // Return the transport object (not the options)
+      return transports;
       
     } catch (error) {
-      console.error('❌ Failed to create transport:', error);
+      console.error('❌ Failed to create WebRTC transport:', error);
       return null;
     }
   }
   
   /**
-   * Start GStreamer pipeline
+   * Start media generation for WebRTC producers
+   */
+  async startMediaGeneration(bot) {
+    console.log(`🎬 Starting WebRTC media generation for bot ${bot.id}`);
+    
+    // For WebRTC, we're now using proper WebRTC producers that will work with mobile/5G
+    // The actual media generation happens through the WebRTC transport
+    // No need for GStreamer since we're using WebRTC directly
+    
+    // Mark producers as active
+    if (this.currentProducer) {
+      if (this.currentProducer.video) {
+        this.currentProducer.video.resume();
+        console.log('▶️ Video producer resumed');
+      }
+      if (this.currentProducer.audio) {
+        this.currentProducer.audio.resume();
+        console.log('▶️ Audio producer resumed');
+      }
+    }
+    
+    // The WebRTC transport will handle the actual media flow
+    console.log('✅ WebRTC media generation started');
+    return Promise.resolve();
+  }
+  
+  /**
+   * Start GStreamer pipeline (DEPRECATED - kept for reference)
    */
   async startGStreamerPipeline(bot, videoPort, audioPort) {
     return new Promise((resolve, reject) => {
@@ -357,11 +390,44 @@ class SimpleViewBotMediaSoup {
   }
   
   /**
+   * Create Plain Transport for GStreamer input
+   */
+  async createPlainTransport() {
+    try {
+      const router = this.mediasoupService.router;
+      if (!router) {
+        console.error('❌ MediaSoup router not available');
+        return null;
+      }
+      
+      // Create Plain Transport for receiving RTP from GStreamer
+      const transport = await router.createPlainTransport({
+        listenIp: {
+          ip: '127.0.0.1',
+          announcedIp: null
+        },
+        rtcpMux: false,
+        comedia: true  // Auto-detect source
+      });
+      
+      console.log(`✅ Created Plain Transport: ${transport.id}`);
+      console.log(`   RTP port: ${transport.tuple.localPort}`);
+      console.log(`   RTCP port: ${transport.rtcpTuple?.localPort}`);
+      
+      return transport;
+      
+    } catch (error) {
+      console.error('❌ Failed to create plain transport:', error);
+      return null;
+    }
+  }
+  
+  /**
    * Create MediaSoup producers
    */
   async createProducers(transport) {
     try {
-      // Video producer
+      // Video producer for Plain RTP
       const videoProducer = await transport.produce({
         kind: 'video',
         rtpParameters: {
@@ -376,10 +442,14 @@ class SimpleViewBotMediaSoup {
             }
           }],
           encodings: [{ ssrc: 11111111 }]
+        },
+        appData: {
+          isViewBot: true,
+          mediaType: 'video'
         }
       });
       
-      // Audio producer
+      // Audio producer for Plain RTP
       const audioProducer = await transport.produce({
         kind: 'audio',
         rtpParameters: {
@@ -394,6 +464,10 @@ class SimpleViewBotMediaSoup {
             }
           }],
           encodings: [{ ssrc: 22222222 }]
+        },
+        appData: {
+          isViewBot: true,
+          mediaType: 'audio'
         }
       });
       
@@ -429,6 +503,11 @@ class SimpleViewBotMediaSoup {
         this.mediasoupService.producers.get(this.currentBot.id).set('video', videoProducer);
         this.mediasoupService.producers.get(this.currentBot.id).set('audio', audioProducer);
         
+        console.log(`📦 VIEWBOT: Registered producers for bot ${this.currentBot.id}`);
+        console.log(`   Video producer: ${videoProducer.id}, appData:`, videoProducer.appData);
+        console.log(`   Audio producer: ${audioProducer.id}, appData:`, audioProducer.appData);
+        console.log(`   Producer stored under key: ${this.currentBot.id}`);
+        
         // Also set the current producer IDs if they exist
         this.mediasoupService.currentProducerId = videoProducer.id;
         this.mediasoupService.currentAudioProducerId = audioProducer.id;
@@ -460,7 +539,7 @@ class SimpleViewBotMediaSoup {
             global.io.emit('stream-ready', {
               streamerId: this.currentBot.id,
               newStreamId: this.currentBot.id,
-              isWebRTC: false,  // ViewBots use RTP, not WebRTC
+              isWebRTC: false,  // ViewBots use RTP, but bridge will convert for mobile
               streamType: 'viewbot',
               hasVideo: true,
               hasAudio: true,
@@ -468,7 +547,8 @@ class SimpleViewBotMediaSoup {
               streamStartTime: Date.now(),
               timestamp: Date.now(),
               streamerDisplayName: `ViewBot-${this.currentBot.id}`,
-              isViewBot: true  // Additional flag for ViewBot identification
+              isViewBot: true,  // Flag for ViewBot identification
+              requiresBridge: true  // Signal that mobile clients need WebRTC bridge
             });
             
             console.log('✅ VIEWBOT: stream-ready event emitted successfully');

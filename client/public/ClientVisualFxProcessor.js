@@ -278,7 +278,7 @@ if (typeof ClientVisualFxProcessor === 'undefined') {
             return false;
         }
 
-        // // console.log('🎨 CLIENT VISUALFX: Video element found:', {
+        console.log('🎨 CLIENT VISUALFX: Video element found:', {
             tagName: this.videoElement.tagName,
             className: this.videoElement.className,
             id: this.videoElement.id,

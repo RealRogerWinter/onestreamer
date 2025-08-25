@@ -182,20 +182,17 @@ class ViewbotService {
       const transportOptions = await this.mediasoupService.createWebRtcTransport(this.viewbotStreamId);
       console.log('✅ VIEWBOT: Transport created:', transportOptions.id);
 
-      // Step 2: Connect transport with DTLS parameters
+      // Step 2: Connect transport with proper DTLS parameters
       console.log('🔗 VIEWBOT: Connecting transport...');
-      const dtlsParameters = {
-        role: 'server',
-        fingerprints: [
-          {
-            algorithm: 'sha-256',
-            value: 'E5:F5:CA:A7:2D:93:E6:16:AC:21:09:9F:23:51:62:8C:D0:66:E9:0C:22:54:2B:82:0C:DF:E0:C5:2C:7E:CD:53'
-          }
-        ]
-      };
+      // Get the actual DTLS parameters from the transport
+      const dtlsParameters = transportOptions.dtlsParameters;
       
-      await this.mediasoupService.connectTransport(this.viewbotStreamId, dtlsParameters);
-      console.log('✅ VIEWBOT: Transport connected');
+      if (dtlsParameters) {
+        await this.mediasoupService.connectTransport(this.viewbotStreamId, dtlsParameters);
+        console.log('✅ VIEWBOT: Transport connected with valid DTLS parameters');
+      } else {
+        console.log('⚠️ VIEWBOT: No DTLS parameters available, skipping connection');
+      }
 
       // Step 3: Create producers for video and audio
       console.log('🎬 VIEWBOT: Creating video producer...');
@@ -554,8 +551,8 @@ class ViewbotService {
       encodings: [
         {
           ssrc: Math.floor(Math.random() * 1000000000),
-          maxBitrate: 1000000,
-          minBitrate: 100000,
+          maxBitrate: 300000,  // 300kbps - matches regular users for mobile compatibility
+          minBitrate: 100000,  // 100kbps minimum
           maxFramerate: this.viewbotConfig.frameRate
         }
       ],

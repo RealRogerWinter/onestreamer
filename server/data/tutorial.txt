@@ -1,0 +1,42 @@
+# 📺 OneStreamer Tutorial
+## 🎮 How It Works
+
+OneStreamer is a platform where only **one user can be live at a time** 📹. Want to stream? You can take over the stream at any time by pressing the **🔴 "Take Over Stream"** button and then you'll become the streamer yourself.
+
+Since anyone can go live and disrupt the stream at any time, you'll have to come up with novel and interesting ways to capture the audience's attention and not be booted offline.
+
+## 💎 Earning Points
+
+You can buy a variety of different items using **points** (💎). Points are earned as you:
+- 👀 Watch the stream 
+- 💬 Send messages in the chat
+- 🎤 **Go live and stream** (fastest way!)
+
+⚠️ *Note: only users who are registered and logged in can earn points and buy/use items.*
+
+## 🏰 Strategic Items
+
+The items that you can purchase using your points can be used to enhance or disrupt the stream! 
+
+🛡️ **Guard Items:** Purchase Guard items to increase the global streaming cooldown timer ⏰ and prevent other users from taking over your stream. 
+
+⚔️ **Attack Items:** Use Attack items as weapons to reduce the Global Cooldown timer while other streamers are live, speeding up their inevitable takeover ⚡.
+
+## 🎊 Fun Stream Effects
+
+You'll also find fun items that create effects on the stream:
+- 🖍️ Draw on the streamer with **markers**
+- 🍅 Throw a **tomato** at them  
+- 🪩 Party under a **disco ball**
+- 🌡️ Apply **thermal vision** filters
+- 🙃 Flip the stream **upside down**
+
+You can also trigger TTS and sound effects using specific items, such as the **📢 Megaphone** which enables TTS.
+
+## 🎰 Chat Commands & Gambling
+
+In addition, you can use your points to gamble in the chat 🎲. Type **!help** in the chat to see a full list of commands.
+
+---
+
+*Ready to join the chaos? The stream is waiting for someone bold enough to take it over!* 

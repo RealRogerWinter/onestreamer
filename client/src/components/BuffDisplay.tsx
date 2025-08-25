@@ -294,11 +294,6 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
     return buffType === 'buff' ? 'buff-positive' : 'buff-negative';
   };
 
-  const removeBuff = (buffId: string) => {
-    if (socket && showPersonalBuffs) {
-      socket.emit('remove-my-buff', { buffId });
-    }
-  };
 
   if (!isConnected) {
     return <div className={`buff-display ${className}`}>
@@ -349,15 +344,6 @@ const BuffDisplay: React.FC<BuffDisplayProps> = ({
                   />
                 </div>
               </div>
-              {showPersonalBuffs && (
-                <button 
-                  className="buff-remove"
-                  onClick={() => removeBuff(buff.id)}
-                  title="Remove effect"
-                >
-                  ✕
-                </button>
-              )}
             </div>
           ))
         )}

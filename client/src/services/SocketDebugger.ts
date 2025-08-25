@@ -29,7 +29,7 @@ class SocketDebugger {
     
     this.creationAttempts.push(attempt);
     // console.log(`🚨 SOCKET CREATION ATTEMPT #${this.creationAttempts.length}:`, type, url);
-    console.trace('Creation stack trace');
+    // console.trace('Creation stack trace');
     
     // Log to window for debugging
     (window as any).__SOCKET_ATTEMPTS__ = this.creationAttempts;
