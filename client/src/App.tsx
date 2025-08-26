@@ -159,18 +159,28 @@ function AppContent() {
   // Mobile-specific states
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(false);
+  const [chatCollapsedLandscape, setChatCollapsedLandscape] = useState(true); // Start collapsed in landscape
   
-  // Reliable mobile detection
+  // Reliable mobile detection and orientation
   useEffect(() => {
-    const checkMobile = () => {
+    const checkMobileAndOrientation = () => {
       const mobileCheck = window.innerWidth <= 768 || 
         /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       setIsMobile(mobileCheck);
+      
+      // Check if in landscape mode
+      const landscapeCheck = window.innerWidth > window.innerHeight && mobileCheck;
+      setIsLandscape(landscapeCheck);
     };
     
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    checkMobileAndOrientation();
+    window.addEventListener('resize', checkMobileAndOrientation);
+    window.addEventListener('orientationchange', checkMobileAndOrientation);
+    return () => {
+      window.removeEventListener('resize', checkMobileAndOrientation);
+      window.removeEventListener('orientationchange', checkMobileAndOrientation);
+    };
   }, []);
   
   // Tutorial state
@@ -185,6 +195,10 @@ function AppContent() {
   
   // Bug Report state
   const [showBugReportModal, setShowBugReportModal] = useState(false);
+  
+  // Theatre Mode state
+  const [theatreMode, setTheatreMode] = useState(false);
+  const [theatreChatCollapsed, setTheatreChatCollapsed] = useState(false);
 
   // Settings state - Initialize from cookies or use defaults
   const [audioSettings, setAudioSettings] = useState<AudioSettingsConfig>(() => {
@@ -748,7 +762,8 @@ function AppContent() {
   }
 
   return (
-    <div className="App">
+    <div className={`App ${theatreMode ? 'theatre-mode' : ''}`}>
+      
       {/* Help Button - Bottom Left, above Bug Report */}
       <button 
         className="help-button-bottom"
@@ -814,41 +829,54 @@ function AppContent() {
         </div>
       )}
       
-      {/* Mobile Header V2 */}
-      {isMobile ? (
-        <MobileHeader
-          viewerCount={streamStatus.viewerCount}
-          hasActiveStream={streamStatus.hasActiveStream}
-          streamDuration={streamStatus.streamDuration}
-          streamStartTime={streamStatus.streamStartTime}
-          streamerDisplayName={streamStatus.streamerDisplayName}
-          isAuthenticated={isAuthenticated}
-          currentUser={currentUser}
-          userPoints={userPoints}
-          onLogin={() => setShowLogin(true)}
-          onLogout={handleLogout}
-          onProfileSettings={() => setShowProfileSettings(true)}
-        />
-      ) : (
+      {/* Mobile Header V2 - Hide in landscape */}
+      {isMobile && !isLandscape ? (
+        <>
+          <MobileHeader
+            viewerCount={streamStatus.viewerCount}
+            hasActiveStream={streamStatus.hasActiveStream}
+            streamDuration={streamStatus.streamDuration}
+            streamStartTime={streamStatus.streamStartTime}
+            streamerDisplayName={streamStatus.streamerDisplayName}
+            isAuthenticated={isAuthenticated}
+            currentUser={currentUser}
+            userPoints={userPoints}
+            onLogin={() => setShowLogin(true)}
+            onLogout={handleLogout}
+            onProfileSettings={() => setShowProfileSettings(true)}
+          />
+          {/* Inventory button in header - only in theatre mode on mobile */}
+          {theatreMode && isAuthenticated && (
+            <button
+              className="theatre-inventory-btn mobile"
+              onClick={() => setShowInventory(!showInventory)}
+              title="Inventory"
+            >
+              🎒
+            </button>
+          )}
+        </>
+      ) : !isMobile ? (
         /* Desktop Header V2 - Modern Design */
-        <DesktopHeaderV2
-          viewerCount={streamStatus.viewerCount}
-          hasActiveStream={streamStatus.hasActiveStream}
-          streamDuration={streamStatus.streamDuration}
-          streamStartTime={streamStatus.streamStartTime}
-          streamerDisplayName={streamStatus.streamerDisplayName}
-          isAuthenticated={isAuthenticated}
-          currentUser={currentUser}
-          userPoints={userPoints}
-          isAdmin={isAdmin}
-          isModerator={isModerator}
-          socket={socket}
-          onLogin={() => setShowLogin(true)}
-          onSignup={() => setShowSignup(true)}
-          onLogout={handleLogout}
-          onProfileSettings={() => setShowProfileSettings(true)}
-          onAdminPanel={() => setShowAdminPanel(!showAdminPanel)}
-          onUserProfileUpdate={(profile) => {
+        <>
+          <DesktopHeaderV2
+            viewerCount={streamStatus.viewerCount}
+            hasActiveStream={streamStatus.hasActiveStream}
+            streamDuration={streamStatus.streamDuration}
+            streamStartTime={streamStatus.streamStartTime}
+            streamerDisplayName={streamStatus.streamerDisplayName}
+            isAuthenticated={isAuthenticated}
+            currentUser={currentUser}
+            userPoints={userPoints}
+            isAdmin={isAdmin}
+            isModerator={isModerator}
+            socket={socket}
+            onLogin={() => setShowLogin(true)}
+            onSignup={() => setShowSignup(true)}
+            onLogout={handleLogout}
+            onProfileSettings={() => setShowProfileSettings(true)}
+            onAdminPanel={() => setShowAdminPanel(!showAdminPanel)}
+            onUserProfileUpdate={(profile) => {
             const prevPoints = userPoints;
             setUserPoints(profile.points);
             
@@ -893,8 +921,19 @@ function AppContent() {
               }
             }
           }}
-        />
-      )}
+          />
+          {/* Inventory button in header - only in theatre mode */}
+          {theatreMode && isAuthenticated && (
+            <button
+              className="theatre-inventory-btn"
+              onClick={() => setShowInventory(!showInventory)}
+              title="Inventory"
+            >
+              🎒
+            </button>
+          )}
+        </>
+      ) : null}
 
       <main className="App-main">
         {error && !isForceDisconnected && (
@@ -921,20 +960,22 @@ function AppContent() {
         )}
 
         <div className="main-content">
-          {/* Moderation Panel - Only visible to admins */}
-          <BotsPanel />
-          <ModerationPanel streamStatus={streamStatus} />
+          {/* Moderation Panel - Only visible to admins - Hide in theatre mode */}
+          {!theatreMode && <BotsPanel />}
+          {!theatreMode && <ModerationPanel streamStatus={streamStatus} />}
           
           <div className="stream-layout-container">
-            <div className="status-effects-sidebar-left">
-              <BuffDisplay 
+            {!theatreMode && (
+              <div className="status-effects-sidebar-left">
+                <BuffDisplay 
                 showStreamerBuffs={true}
                 className="streamer-buffs-sidebar-left"
                 isCurrentUserStreaming={isStreaming}
                 currentUserId={currentUser?.id?.toString()}
                 initialBuffs={streamerBuffs}
-              />
-            </div>
+                />
+              </div>
+            )}
             <div className="stream-viewer-container">
               <StreamViewer 
                 socket={socket}
@@ -967,7 +1008,29 @@ function AppContent() {
             </div>
           </div>
 
-          <div className="stream-controls-container">
+          {/* Show stream controls always, but with different styling in theatre mode */}
+          <div className={`stream-controls-container ${theatreMode ? 'theatre-mode-controls' : ''}`}>
+            {!theatreMode && (
+              <button 
+                className="theatre-mode-btn"
+                onClick={() => setTheatreMode(true)}
+                title="Theatre Mode"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                </svg>
+                Theatre
+              </button>
+            )}
+            {theatreMode && (
+              <button 
+                className="exit-theatre-btn"
+                onClick={() => setTheatreMode(false)}
+                title="Exit Theatre Mode"
+              >
+                ✕ Exit Theatre
+              </button>
+            )}
             <StreamerSettings 
               settings={streamerSettings}
               onSettingsChange={(newSettings) => {
@@ -1015,8 +1078,8 @@ function AppContent() {
           </div>
         </div>
 
-        {/* Chat and Status Effects Container - Desktop only, mobile uses bottom nav */}
-        {!isMobile && (
+        {/* Chat and Status Effects Container - Different layout for theatre mode */}
+        {!isMobile && !theatreMode && (
           <div className="chat-and-status-container">
             <div className="chat-sidebar">
               <Chat />
@@ -1030,6 +1093,24 @@ function AppContent() {
               />
             </div>
           </div>
+        )}
+        
+        {/* Theatre Mode Chat - Right side, full height, collapsible */}
+        {!isMobile && theatreMode && (
+          <>
+            <div className={`theatre-mode-chat ${theatreChatCollapsed ? 'collapsed' : ''}`}>
+              <div className="theatre-chat-content">
+                <Chat />
+              </div>
+            </div>
+            <button 
+              className={`theatre-chat-toggle ${theatreChatCollapsed ? 'collapsed' : ''}`}
+              onClick={() => setTheatreChatCollapsed(!theatreChatCollapsed)}
+              title={theatreChatCollapsed ? "Show Chat" : "Hide Chat"}
+            >
+              {theatreChatCollapsed ? '◀' : '▶'}
+            </button>
+          </>
         )}
 
         <FloatingPointsManager>
@@ -1148,6 +1229,7 @@ function AppContent() {
         }}
         onLogin={() => setShowLogin(true)}
         onSignup={() => setShowSignup(true)}
+        hideToggleButton={theatreMode}
       />
 
       {isShopOpen && (
@@ -1175,16 +1257,24 @@ function AppContent() {
         currentUser={currentUser}
       />
       
-      {/* Mobile Chat Panel with swipe gesture */}
-      {isMobile && (
+      {/* Mobile Chat Panel - Different behavior for landscape */}
+      {isMobile && !isLandscape && (
         <MobileChat 
           isOpen={showMobileChat} 
           onClose={() => setShowMobileChat(false)} 
         />
       )}
       
-      {/* Mobile Bottom Navigation */}
-      {isMobile && (
+      {/* Landscape Mode - Only show user info, no chat */}
+      {isMobile && isLandscape && isAuthenticated && (
+        <div className="landscape-user-info">
+          <span>{currentUser?.username || 'User'}</span>
+          <span className="points-value">🪙 {userPoints}</span>
+        </div>
+      )}
+      
+      {/* Mobile Bottom Navigation - Hide in landscape */}
+      {isMobile && !isLandscape && (
         <MobileBottomNav
           isAuthenticated={isAuthenticated}
           userPoints={userPoints}

@@ -42,6 +42,7 @@ interface InventoryPanelProps {
   onToggleShop?: () => void;
   onLogin?: () => void;
   onSignup?: () => void;
+  hideToggleButton?: boolean;
 }
 
 const InventoryPanel: React.FC<InventoryPanelProps> = ({ 
@@ -52,7 +53,8 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
   onToggle, 
   onToggleShop,
   onLogin,
-  onSignup
+  onSignup,
+  hideToggleButton = false
 }) => {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [cooldowns, setCooldowns] = useState<ItemCooldown[]>([]);
@@ -560,8 +562,8 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
   return (
     <>
-      {/* Hide floating button on mobile since we have bottom nav */}
-      {!isOpen && !isMobile && (
+      {/* Hide floating button on mobile since we have bottom nav, and in theatre mode */}
+      {!isOpen && !isMobile && !hideToggleButton && (
         <button 
           className="inventory-toggle-btn"
           onClick={onToggle}

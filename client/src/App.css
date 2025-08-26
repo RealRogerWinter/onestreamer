@@ -1393,6 +1393,261 @@
   }
 }
 
+/* Landscape Mode Optimizations for Mobile */
+@media (max-width: 768px) and (orientation: landscape) {
+  /* Completely hide header in landscape */
+  .App-header,
+  .mobile-header,
+  .desktop-header-v2 {
+    display: none !important;
+  }
+  
+  /* No header means no top padding needed */
+  .App-main {
+    padding-top: 5px !important; /* Minimal top padding with no header */
+    padding-bottom: 5px !important;
+  }
+  
+  /* True fullscreen stream viewer with no header */
+  .stream-viewer {
+    max-height: calc(100vh - 10px) !important; /* Almost full viewport height */
+    min-height: 150px !important;
+    position: relative;
+    z-index: 1;
+  }
+  
+  /* Add fullscreen mode for stream */
+  .stream-viewer.fullscreen-landscape {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    max-height: 100vh !important;
+    width: 100% !important;
+    z-index: 9999 !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  
+  /* Hide all chat elements in landscape mode */
+  .chat-and-status-container,
+  .chat-sidebar,
+  .mobile-chat,
+  .chat-container {
+    display: none !important;
+  }
+  
+  /* Add a minimal user info indicator in landscape since header is hidden */
+  .landscape-user-info {
+    position: fixed !important;
+    top: 5px !important;
+    right: 5px !important;
+    background: rgba(0, 0, 0, 0.6) !important;
+    color: white !important;
+    padding: 4px 8px !important;
+    border-radius: 4px !important;
+    font-size: 0.7rem !important;
+    z-index: 98;
+    display: flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+  }
+  
+  .landscape-user-info:hover {
+    opacity: 1;
+  }
+  
+  .landscape-user-info .points-value {
+    color: gold !important;
+    font-weight: bold !important;
+  }
+  
+  /* Floating compact stream controls in landscape */
+  .stream-controls-container {
+    position: fixed !important;
+    bottom: 10px !important;
+    right: 10px !important;
+    left: auto !important;
+    width: auto !important;
+    padding: 0.25rem;
+    background: rgba(0, 0, 0, 0.8);
+    border-radius: 8px;
+    z-index: 99;
+    transition: all 0.3s ease;
+  }
+  
+  /* Auto-hide controls after inactivity */
+  .stream-controls-container.auto-hidden {
+    opacity: 0.3;
+    transform: translateY(calc(100% - 20px));
+  }
+  
+  .stream-controls-container:hover,
+  .stream-controls-container.auto-hidden:hover {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  
+  .control-button {
+    min-height: 35px !important;
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  }
+  
+  .control-button:hover {
+    background: rgba(255, 255, 255, 0.2) !important;
+  }
+  
+  /* Hide less critical elements in landscape to save space */
+  .help-button,
+  .help-button-bottom,
+  .bug-report-button,
+  .discord-link {
+    display: none !important;
+  }
+  
+  /* Hide theatre mode controls in landscape mobile */
+  .theatre-mode-btn,
+  .theatre-mode-toggle {
+    display: none !important;
+  }
+  
+  /* Optimize buff display in landscape */
+  .streamer-buffs-sidebar-left {
+    max-height: 80px; /* Reduced for landscape */
+  }
+  
+  .streamer-buffs-sidebar-left .buff-list {
+    max-height: 60px;
+  }
+}
+
+/* Small screen landscape (phones in landscape) */
+@media (max-width: 480px) and (orientation: landscape) {
+  /* Ensure header is completely hidden on small screens too */
+  .App-header,
+  .mobile-header,
+  .desktop-header-v2 {
+    display: none !important;
+  }
+  
+  /* Maximum space with no header */
+  .App-main {
+    padding-top: 3px !important; /* No header = minimal padding */
+    padding-bottom: 3px !important;
+    gap: 0.2rem;
+  }
+  
+  /* Absolute fullscreen video area */
+  .stream-viewer {
+    max-height: calc(100vh - 8px) !important; /* Nearly 100% viewport */
+    border-radius: 3px;
+  }
+  
+  /* Double-tap to enter fullscreen mode */
+  .stream-viewer.fullscreen-hint::after {
+    content: "Double-tap for fullscreen";
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    pointer-events: none;
+    animation: fade-out 3s ease-out forwards;
+  }
+  
+  @keyframes fade-out {
+    0% { opacity: 0; }
+    20% { opacity: 1; }
+    80% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  
+  /* No chat in landscape on small screens either */
+  .chat-and-status-container,
+  .chat-sidebar,
+  .chat-toggle-landscape {
+    display: none !important;
+  }
+  
+  /* Ultra-compact floating controls */
+  .stream-controls-container {
+    bottom: 5px !important;
+    right: 5px !important;
+    padding: 0.2rem;
+    border-radius: 6px;
+  }
+  
+  .control-button {
+    min-height: 30px !important;
+    padding: 4px 10px !important;
+    font-size: 11px !important;
+  }
+  
+  /* Hide status effects sidebar in small landscape */
+  .status-effects-sidebar-left {
+    display: none;
+  }
+  
+  /* Inline buff display if needed */
+  .streamer-buffs-sidebar-left {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    background: rgba(0, 0, 0, 0.6);
+    max-width: 150px;
+    max-height: 60px;
+    z-index: 5;
+  }
+}
+
+/* Tablet landscape optimizations */
+@media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
+  /* Side-by-side layout for tablets in landscape */
+  .App-main {
+    flex-direction: row;
+    gap: 1rem;
+  }
+  
+  .main-content {
+    flex: 1;
+    order: 1;
+  }
+  
+  .chat-and-status-container {
+    width: 320px;
+    height: calc(100vh - 120px);
+    position: sticky;
+    top: 1rem;
+    order: 2;
+    flex-direction: column;
+  }
+  
+  .chat-sidebar {
+    height: 100%;
+    width: 100%;
+  }
+  
+  /* Optimize stream viewer for tablet landscape */
+  .stream-viewer {
+    max-height: 75vh;
+  }
+  
+  /* Show status effects on tablets */
+  .status-effects-sidebar-right {
+    display: block;
+  }
+}
+
 /* Stream Controls Container - Settings on left, controls centered */
 .stream-controls-container {
   display: flex;
@@ -1402,6 +1657,69 @@
   margin-top: -10px;
   position: relative;
   width: 100%;
+}
+
+/* Theatre mode stream controls positioning */
+.stream-controls-container.theatre-mode-controls {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 10px 20px;
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: auto;
+  margin-top: 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Adjust streamer settings modal position in theatre mode - MORE SPECIFIC */
+.App.theatre-mode .stream-controls-container .streamer-settings.compact-expanded,
+.App.theatre-mode .theatre-mode-controls .streamer-settings.compact-expanded,
+.App.theatre-mode .streamer-settings.compact.compact-expanded {
+  position: fixed !important; /* Break out of container */
+  bottom: auto !important; /* Remove bottom positioning */
+  top: 100px !important; /* Fixed distance from top, below header */
+  left: 50% !important; /* Center horizontally */
+  transform: translateX(-50%) translateY(0) !important; /* Only horizontal centering, NO vertical transform */
+  max-height: 70vh !important; /* Height to fit viewport */
+  overflow-y: auto !important; /* Ensure scrolling if content is too long */
+  z-index: 10001 !important; /* Above everything including stream */
+  width: 600px !important; /* Ensure proper width */
+  max-width: 90vw !important; /* Responsive width */
+  margin: 0 !important; /* Remove any margins */
+}
+
+/* Ensure backdrop is above stream in theatre mode */
+.App.theatre-mode .streamer-settings-backdrop {
+  z-index: 10000 !important; /* Just below the modal */
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+}
+
+/* Fix emoji picker positioning in theatre mode */
+.App.theatre-mode .emoji-picker {
+  z-index: 10000 !important; /* Higher than other theatre mode elements */
+  position: fixed !important; /* Use fixed positioning */
+  bottom: auto !important;
+  top: 50% !important;
+  right: auto !important;
+  left: calc(100% - 360px) !important; /* Position from right edge */
+  transform: translateY(-50%) !important; /* Center vertically */
+}
+
+/* Show theatre controls on stream hover */
+.App.theatre-mode .stream-viewer-container:hover ~ .theatre-mode-controls,
+.App.theatre-mode .stream-layout-container:hover ~ .theatre-mode-controls,
+.App.theatre-mode .theatre-mode-controls:hover {
+  opacity: 1;
 }
 
 .stream-controls-container .streamer-settings {
@@ -1541,5 +1859,339 @@
   }
   50% {
     transform: translateY(10px);
+  }
+}
+
+/* Theatre Mode Styles */
+.theatre-mode-btn {
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  margin-right: 1rem;
+}
+
+.theatre-mode-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.05);
+}
+
+.theatre-mode-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theatre-mode-toggle:hover {
+  background: rgba(0, 0, 0, 0.9);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: scale(1.1);
+}
+
+/* Theatre Mode Layout Changes */
+.App.theatre-mode {
+  background: #000;
+}
+
+.App.theatre-mode .App-main {
+  max-width: 100%;
+  padding: 0;
+  padding-top: 64px; /* Space for header */
+  display: flex;
+  flex-direction: row;
+  height: calc(100vh - 64px); /* Subtract header height */
+  gap: 0;
+  overflow-x: hidden; /* Prevent horizontal scroll */
+  position: relative;
+}
+
+.App.theatre-mode .main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: all 0.3s ease; /* Smooth transition when chat collapses */
+  margin-right: 320px; /* Space for chat when expanded */
+}
+
+.App.theatre-mode .stream-layout-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0; /* No padding for full height */
+  transition: width 0.3s ease; /* Smooth transition */
+  height: 100%; /* Full height */
+}
+
+.App.theatre-mode .stream-viewer-container {
+  width: 100%;
+  height: 100%;
+  max-height: calc(100vh - 64px); /* Only account for header */
+  transition: all 0.3s ease; /* Smooth transition */
+}
+
+.App.theatre-mode .stream-viewer {
+  height: 100%;
+  max-height: calc(100vh - 64px); /* Only account for header */
+  border-radius: 0;
+  background: #000;
+  transition: all 0.3s ease; /* Smooth transition */
+  margin: 0; /* Remove any margins */
+  margin-bottom: 0 !important; /* Force remove bottom margin */
+}
+
+/* Make video fill the entire viewer in theatre mode */
+.App.theatre-mode .webrtc-viewer,
+.App.theatre-mode .webrtc-video,
+.App.theatre-mode video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain; /* Maintain aspect ratio while filling space */
+}
+
+
+/* Exit theatre mode button in controls */
+.exit-theatre-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.3s ease;
+}
+
+.exit-theatre-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Theatre Mode Chat - Right sidebar */
+.theatre-mode-chat {
+  width: 320px; /* Slightly smaller to give more room to video */
+  height: calc(100vh - 64px); /* Account for header */
+  background: rgba(0, 0, 0, 0.95);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  position: fixed; /* Fixed positioning */
+  right: 0; /* Stick to right edge */
+  top: 64px; /* Position below header */
+  transition: transform 0.3s ease;
+  z-index: 100; /* Above stream but below header elements */
+}
+
+/* Collapsed state for theatre chat */
+.theatre-mode-chat.collapsed {
+  transform: translateX(320px); /* Fully hide the chat off-screen */
+}
+
+/* Toggle button for theatre chat */
+.theatre-chat-toggle {
+  position: fixed; /* Use fixed positioning */
+  right: 320px; /* Position at left edge of chat when expanded */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 60px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: right 0.3s ease, background 0.3s ease;
+  z-index: 101; /* Above chat panel */
+}
+
+/* Move toggle button when chat is collapsed */
+.theatre-chat-toggle.collapsed {
+  right: 0; /* Move to right edge when collapsed */
+}
+
+.theatre-chat-toggle:hover {
+  background: rgba(0, 0, 0, 0.9);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.theatre-chat-content {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.theatre-mode-chat .chat-container {
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* When chat is collapsed, give more space to stream */
+.App.theatre-mode:has(.theatre-mode-chat.collapsed) .main-content {
+  margin-right: 0; /* No margin needed when chat is hidden */
+}
+
+/* Expand stream when chat is collapsed */
+.App.theatre-mode:has(.theatre-mode-chat.collapsed) .stream-layout-container {
+  width: 100%; /* Full width */
+}
+
+.App.theatre-mode:has(.theatre-mode-chat.collapsed) .stream-viewer-container {
+  width: 100%;
+  max-width: calc(100vw - 10px); /* Small padding */
+}
+
+.App.theatre-mode:has(.theatre-mode-chat.collapsed) .stream-viewer {
+  width: 100%;
+  max-width: calc(100vw - 10px);
+}
+
+/* Compact header in theatre mode */
+.App.theatre-mode .desktop-header-v2 {
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Desktop header wrapper for theatre mode additions */
+.desktop-header-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+/* Inventory button in header - theatre mode only */
+.theatre-inventory-btn {
+  position: fixed; /* Use fixed positioning */
+  top: 12px; /* Position from top of viewport */
+  left: 50%; /* Start from center */
+  transform: translateX(calc(-50% + 250px)); /* Positioned to the right of center */
+  background: transparent; /* No background */
+  border: none; /* No border */
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: white;
+  font-size: 28px; /* Slightly larger for visibility */
+  cursor: pointer;
+  transition: opacity 0.3s ease, text-shadow 0.3s ease; /* Only transition opacity and shadow */
+  z-index: 10005; /* Very high z-index to ensure visibility */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); /* Add shadow for visibility */
+}
+
+.theatre-inventory-btn:hover {
+  opacity: 1;
+  transform: translateX(calc(-50% + 250px)); /* Keep same position on hover */
+  text-shadow: 0 3px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Mobile header wrapper */
+.mobile-header-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+/* Mobile inventory button adjustments */
+.theatre-inventory-btn.mobile {
+  top: 10px;
+  left: 50%;
+  transform: translateX(calc(-50% + 120px)); /* Offset from center on mobile */
+  padding: 6px 10px;
+  font-size: 24px;
+  background: transparent;
+  border: none;
+  opacity: 0.8;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  z-index: 10005;
+}
+
+/* Ensure inventory panel appears above theatre mode elements */
+.App.theatre-mode .inventory-panel {
+  z-index: 10001; /* Above theatre mode elements */
+}
+
+/* Responsive positioning for theatre inventory button */
+@media (max-width: 1200px) {
+  .theatre-inventory-btn:not(.mobile) {
+    transform: translateX(calc(-50% + 200px)); /* Slightly less offset on smaller screens */
+  }
+  .theatre-inventory-btn:not(.mobile):hover {
+    transform: translateX(calc(-50% + 200px)); /* Keep same position on hover */
+  }
+}
+
+@media (max-width: 768px) {
+  .theatre-inventory-btn:not(.mobile) {
+    transform: translateX(calc(-50% + 150px)); /* Even less offset for tablets */
+  }
+  .theatre-inventory-btn:not(.mobile):hover {
+    transform: translateX(calc(-50% + 150px)); /* Keep same position on hover */
+  }
+}
+
+/* Hide elements in theatre mode */
+.App.theatre-mode .help-button-bottom,
+.App.theatre-mode .bug-report-button,
+.App.theatre-mode .discord-link {
+  display: none;
+}
+
+/* Responsive Theatre Mode */
+@media (max-width: 1024px) {
+  .theatre-mode-chat {
+    width: 280px;
+  }
+}
+
+@media (max-width: 768px) {
+  .App.theatre-mode .App-main {
+    flex-direction: column;
+    padding-top: 56px; /* Mobile header height */
+    height: calc(100vh - 56px);
+  }
+  
+  .theatre-mode-chat {
+    width: 100%;
+    height: 180px; /* Smaller on mobile */
+    border-left: none; /* Remove left border on mobile */
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    order: 1;
+  }
+  
+  .App.theatre-mode .stream-layout-container {
+    height: calc(100vh - 236px); /* Account for header + chat */
+  }
+  
+  .App.theatre-mode .stream-viewer-container,
+  .App.theatre-mode .stream-viewer {
+    max-height: calc(100vh - 236px);
   }
 }

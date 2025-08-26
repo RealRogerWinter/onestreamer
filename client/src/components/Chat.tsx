@@ -44,10 +44,22 @@ declare global {
 
 const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   const { socket: chatSocket, connected: isConnected } = useChatSocket();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    // Restore messages from session storage
+    const stored = sessionStorage.getItem('chatMessages');
+    return stored ? JSON.parse(stored) : [];
+  });
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(() => {
+    // Restore user info from session storage
+    const stored = sessionStorage.getItem('chatUserInfo');
+    return stored ? JSON.parse(stored) : null;
+  });
   const [currentMessage, setCurrentMessage] = useState('');
-  const [userCount, setUserCount] = useState(0);
+  const [userCount, setUserCount] = useState(() => {
+    // Restore user count from session storage
+    const stored = sessionStorage.getItem('chatUserCount');
+    return stored ? parseInt(stored, 10) : 0;
+  });
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [newMessagesCount, setNewMessagesCount] = useState(0);
@@ -377,6 +389,11 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
   }, [isConnected]);
 
+  // Save messages to session storage whenever they change
+  useEffect(() => {
+    sessionStorage.setItem('chatMessages', JSON.stringify(messages));
+  }, [messages]);
+
   // Fetch custom emojis for parsing
   useEffect(() => {
     const fetchEmojis = async () => {
@@ -429,10 +446,16 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
 
     // console.log('💬 CLIENT: Setting up chat event handlers');
     
+    // Request current user info and viewer count when component mounts
+    chatSocket.emit('request-user-info');
+    chatSocket.emit('request-viewer-count');
+    
     // Chat event handlers
     const handleUserAssigned = (data: UserInfo) => {
       // console.log('💬 CLIENT: Assigned username:', data.username, 'color:', data.color);
       setUserInfo(data);
+      // Save to session storage
+      sessionStorage.setItem('chatUserInfo', JSON.stringify(data));
       // Update settings with the assigned color if it's different
       if (data.color !== chatSettings.userColor) {
         const newSettings = { ...chatSettings, userColor: data.color };
@@ -473,16 +496,22 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     
     const handleUserCountUpdate = (data: { count: number }) => {
       setUserCount(data.count);
+      // Save to session storage
+      sessionStorage.setItem('chatUserCount', data.count.toString());
     };
     
     const handleChatCleared = (data: any) => {
       // console.log('💬 CLIENT: Chat cleared by admin:', data.message);
       setMessages([]);
+      // Clear from session storage
+      sessionStorage.setItem('chatMessages', JSON.stringify([]));
     };
     
     const handleChatClearUI = (data: any) => {
       // console.log('💬 CLIENT: Chat UI clear requested:', data.message);
       setMessages([]);
+      // Clear from session storage
+      sessionStorage.setItem('chatMessages', JSON.stringify([]));
     };
     
     const handleBanned = (data: any) => {
@@ -878,7 +907,10 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     if (userInfo && chatSocket) {
       // Send color update to server
       chatSocket.emit('update-user-color', { color });
-      setUserInfo({ ...userInfo, color });
+      const updatedUserInfo = { ...userInfo, color };
+      setUserInfo(updatedUserInfo);
+      // Save to session storage
+      sessionStorage.setItem('chatUserInfo', JSON.stringify(updatedUserInfo));
     }
   };
 
