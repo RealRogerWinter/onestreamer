@@ -561,6 +561,17 @@ class ItemService {
                     visual_effect: 'resolution_360p'
                 }),
                 stack_behavior: 'replace'
+            },
+            {
+                name: 'heart_swarm',
+                display_name: 'Heart Swarm',
+                emoji: '💕',
+                description: 'Releases a swarm of floating hearts across the stream',
+                item_type: 'utility',
+                rarity: 'common',
+                base_price: 100,
+                cooldown_seconds: 30,
+                max_stack: 0
             }
         ];
 

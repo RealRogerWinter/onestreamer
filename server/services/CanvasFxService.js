@@ -128,7 +128,12 @@ class CanvasFxService extends EventEmitter {
             'pink_marker',
             'black_marker',
             'white_marker',
-            'rainbow_marker'
+            'rainbow_marker',
+            'heart_swarm',
+            'arrow',
+            'molotov',
+            'lsd',
+            'bugs'
         ];
         
         return visualEffectItems.includes(item.name);
@@ -484,7 +489,12 @@ class CanvasFxService extends EventEmitter {
             'pink_marker',
             'black_marker',
             'white_marker',
-            'rainbow_marker'
+            'rainbow_marker',
+            'heart_swarm',
+            'arrow',
+            'molotov',
+            'lsd',
+            'bugs'
         ];
         
         return interactiveItems.includes(item.name);
@@ -674,6 +684,46 @@ class CanvasFxService extends EventEmitter {
                 drawingMode: true,
                 drawDuration: 10000,
                 displayDuration: 10000
+            },
+            'heart_swarm': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '💕 Click anywhere to release hearts!',
+                chatMessage: '{username} released a heart swarm! 💕',
+                borderColor: 'rgba(255, 105, 180, 0.8)',
+                glowColor: 'rgba(255, 105, 180, 0.5)'
+            },
+            'arrow': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🏹 Click anywhere to fire an arrow!',
+                chatMessage: '{username} fired an arrow! 🏹',
+                borderColor: 'rgba(139, 69, 19, 0.8)',
+                glowColor: 'rgba(139, 69, 19, 0.5)'
+            },
+            'molotov': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🔥 Click anywhere to throw a Molotov cocktail!',
+                chatMessage: '{username} threw a Molotov cocktail! 🔥',
+                borderColor: 'rgba(255, 69, 0, 0.8)',
+                glowColor: 'rgba(255, 69, 0, 0.5)'
+            },
+            'lsd': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🌈 Click anywhere to drop acid!',
+                chatMessage: '{username} is taking everyone on a trip! 🌈',
+                borderColor: 'rgba(255, 0, 255, 0.8)',
+                glowColor: 'rgba(255, 0, 255, 0.5)'
+            },
+            'bugs': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🐛 Click to release the bugs!',
+                chatMessage: '{username} released a bug infestation! 🐛',
+                borderColor: 'rgba(101, 67, 33, 0.8)',
+                glowColor: 'rgba(101, 67, 33, 0.5)'
             }
         };
         
@@ -1509,6 +1559,128 @@ class CanvasFxService extends EventEmitter {
                             }
                         }
                     ]
+                }
+            },
+            'heart_swarm': {
+                type: 'particles',
+                duration: 15000, // 15 seconds for full animation
+                config: {
+                    particleType: 'hearts',
+                    hearts: ['❤️', '💕', '💖', '💗', '💓', '💜', '💙', '💚', '💛', '🧡'],
+                    particleCount: 85,
+                    spread: 35, // Tighter spread
+                    startVelocity: 5, // Much slower initial upward velocity
+                    gravity: -0.015, // Gentler upward force
+                    gravityShiftTime: 2000, // Start falling after just 2 seconds!
+                    fallGravity: 0.12, // Strong downward gravity for quick fall
+                    drift: true,
+                    driftSpeed: 0.4, // More sideways drift for floating effect
+                    rotation: true,
+                    rotationSpeed: 0.08, // Gentle rotation
+                    sizeVariation: true,
+                    minSize: 0.8,
+                    maxSize: 1.5,
+                    fadeOut: true,
+                    fadeStartTime: 10000, // Start fading at 10 seconds
+                    animation: 'heart-swarm',
+                    sound: 'love',
+                    waveMotion: true,
+                    waveAmplitude: 40, // Larger wave for more floating
+                    waveFrequency: 0.0025, // Slightly faster wave
+                    floatPattern: 'rise-and-fall', // Special pattern
+                    spawnPattern: 'burst' // All hearts spawn at once from click point
+                }
+            },
+            'arrow': {
+                type: 'projectile',
+                duration: 8500, // 500ms flight + 8000ms stuck
+                config: {
+                    projectileType: 'arrow',
+                    emoji: '🏹',
+                    size: 80,
+                    flightDuration: 500,
+                    stickDuration: 8000,
+                    animation: 'arrow-flight',
+                    sound: 'whoosh',
+                    color: '#8B4513',
+                    trailEffect: true,
+                    trailColor: 'rgba(139, 69, 19, 0.3)',
+                    rotateToTarget: true,
+                    impactEffect: true,
+                    wobbleOnStick: true,
+                    fadeOut: true,
+                    fadeStartTime: 7000
+                }
+            },
+            'molotov': {
+                type: 'fire',
+                duration: 12000, // 12 seconds of burning
+                config: {
+                    fireType: 'molotov',
+                    emoji: '🔥',
+                    spreadRadius: 120,
+                    flameHeight: 80,
+                    flameCount: 25,
+                    animation: 'burning',
+                    sound: 'fire-crackle',
+                    colors: ['#FF4500', '#FF6347', '#FF8C00', '#FFD700', '#FFA500'],
+                    smokeEffect: true,
+                    smokeColor: 'rgba(50, 50, 50, 0.4)',
+                    sparkles: true,
+                    fadeOut: true,
+                    fadeStartTime: 10000,
+                    heatDistortion: true,
+                    glowEffect: true,
+                    glowRadius: 150,
+                    glowColor: 'rgba(255, 69, 0, 0.3)'
+                }
+            },
+            'lsd': {
+                type: 'psychedelic',
+                duration: 20000, // 20 seconds trip
+                config: {
+                    tripType: 'lsd',
+                    emoji: '🌈',
+                    animation: 'psychedelic-trip',
+                    sound: 'psychedelic',
+                    intensity: 'high',
+                    waveAmplitude: 30,
+                    waveFrequency: 0.02,
+                    colorShiftSpeed: 0.001,
+                    hueRotationSpeed: 2,
+                    saturationBoost: 1.5,
+                    fractalDepth: 5,
+                    kaleidoscopeSegments: 6,
+                    trailLength: 10,
+                    pulseSpeed: 0.005,
+                    chromaShift: true,
+                    melting: true,
+                    breathing: true,
+                    fadeIn: true,
+                    fadeOut: true,
+                    fadeInDuration: 2000,
+                    fadeOutDuration: 3000
+                }
+            },
+            'bugs': {
+                type: 'bugs',
+                duration: 15000, // 15 seconds of bugs crawling
+                config: {
+                    bugType: 'infestation',
+                    bugCount: 15,
+                    bugTypes: ['🐛', '🐜', '🕷️', '🦗', '🪲', '🪳', '🦟', '🐞'],
+                    animation: 'crawling',
+                    sound: 'creepy-crawly',
+                    minSpeed: 0.5,
+                    maxSpeed: 2,
+                    wiggleAmount: 5,
+                    turnSpeed: 0.02,
+                    sizeVariation: 0.5,
+                    opacity: 0.9,
+                    shadowEffect: true,
+                    scatterOnClick: false,
+                    fadeOut: true,
+                    fadeStartTime: 13000
                 }
             }
         };

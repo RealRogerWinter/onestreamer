@@ -16,6 +16,7 @@ import ModalShopPanel from './components/shop/ModalShopPanel';
 import BuffDisplay from './components/BuffDisplay';
 import NotificationManager from './components/notifications/NotificationManager';
 import SoundFxPlayer from './components/soundfx/SoundFxPlayer';
+import SafariTTSNotice from './components/soundfx/SafariTTSNotice';
 import { FloatingPointsManager } from './components/FloatingPoints';
 import MobileBottomNav from './components/MobileBottomNav';
 import MobileHeader from './components/MobileHeader';
@@ -1036,6 +1037,7 @@ function AppContent() {
         </FloatingPointsManager>
         <NotificationManager />
         <SoundFxPlayer socket={socket} />
+        <SafariTTSNotice />
       </main>
 
       {showLogin && (

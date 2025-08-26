@@ -700,6 +700,12 @@
 }
 
 /* Custom emoji styles */
+.chat-emoji-picture {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 3px;
+}
+
 .chat-emoji {
   display: inline-block;
   width: 40px;
@@ -712,6 +718,12 @@
 .message-text .chat-emoji {
   position: relative;
   top: -2px;
+}
+
+/* Ensure picture elements display properly inline */
+.message-text picture {
+  display: inline-block;
+  vertical-align: middle;
 }
 
 /* Turnstile verification modal */

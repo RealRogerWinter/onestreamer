@@ -28,15 +28,32 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
   useEffect(() => {
     fetchEmojis();
     
+    // Check if mobile
+    const isMobile = window.innerWidth <= 768;
+    
     // Close picker when clicking outside
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
         onClose();
       }
     };
     
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    // Prevent body scroll on mobile when picker is open
+    if (isMobile) {
+      document.body.style.overflow = 'hidden';
+      document.addEventListener('touchstart', handleClickOutside as EventListener);
+    } else {
+      document.addEventListener('mousedown', handleClickOutside as EventListener);
+    }
+    
+    return () => {
+      if (isMobile) {
+        document.body.style.overflow = '';
+        document.removeEventListener('touchstart', handleClickOutside as EventListener);
+      } else {
+        document.removeEventListener('mousedown', handleClickOutside as EventListener);
+      }
+    };
   }, [onClose]);
 
   const fetchEmojis = async () => {
@@ -96,9 +113,13 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
     setCurrentPage(1);
   }, [selectedCategory, searchTerm]);
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+
   return (
-    <div className="emoji-picker" ref={pickerRef}>
-      <div className="emoji-picker-header">
+    <>
+      {isMobile && <div className="emoji-picker-backdrop" onClick={onClose} />}
+      <div className="emoji-picker" ref={pickerRef}>
+        <div className="emoji-picker-header">
         <input
           type="text"
           className="emoji-search"
@@ -178,6 +199,7 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => 
         </div>
       )}
     </div>
+    </>
   );
 };
 

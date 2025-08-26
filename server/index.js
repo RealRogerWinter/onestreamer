@@ -196,9 +196,17 @@ app.use('/uploads/emojis', express.static(path.join(__dirname, 'uploads', 'emoji
   etag: true,
   lastModified: true,
   setHeaders: (res, filePath) => {
-    // Set proper MIME type for AVIF files
+    // Set proper MIME types for all image formats
     if (filePath.endsWith('.avif')) {
       res.setHeader('Content-Type', 'image/avif');
+    } else if (filePath.endsWith('.webp')) {
+      res.setHeader('Content-Type', 'image/webp');
+    } else if (filePath.endsWith('.png')) {
+      res.setHeader('Content-Type', 'image/png');
+    } else if (filePath.endsWith('.gif')) {
+      res.setHeader('Content-Type', 'image/gif');
+    } else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
+      res.setHeader('Content-Type', 'image/jpeg');
     }
   }
 }));
@@ -2573,12 +2581,90 @@ app.post('/api/admin/emojis', authenticateAdmin, emojiUpload.single('emoji'), as
         // Ensure code is formatted correctly (without colons)
         const cleanCode = code.replace(/^:+|:+$/g, '');
         
-        const url = `/uploads/emojis/${req.file.filename}`;
+        const { exec } = require('child_process');
+        const util = require('util');
+        const execPromise = util.promisify(exec);
+        
+        const fileExt = path.extname(req.file.filename).toLowerCase();
+        let finalFilePath = req.file.path;
+        let finalFilename = req.file.filename;
+        
+        // Convert all uploaded images to Safari-compatible AVIF format
+        try {
+            if (fileExt === '.avif') {
+                // Re-encode existing AVIF with Safari-compatible settings
+                console.log('Re-encoding AVIF file for Safari compatibility:', req.file.filename);
+                
+                // First decode to PNG
+                const tempPng = req.file.path.replace('.avif', '_temp.png');
+                await execPromise(`avifdec "${req.file.path}" "${tempPng}" 2>/dev/null`);
+                
+                // Re-encode with Safari-compatible settings
+                const tempAvif = req.file.path + '.new';
+                await execPromise(`avifenc --qcolor 85 --speed 6 --yuv 420 --range limited --cicp 1/13/6 --autotiling --jobs all "${tempPng}" "${tempAvif}" 2>/dev/null`);
+                
+                // Replace original with converted version
+                if (fs.existsSync(tempAvif) && fs.statSync(tempAvif).size > 0) {
+                    fs.unlinkSync(req.file.path);
+                    fs.renameSync(tempAvif, req.file.path);
+                    console.log('Successfully re-encoded AVIF for Safari compatibility');
+                }
+                
+                // Clean up temp files
+                if (fs.existsSync(tempPng)) fs.unlinkSync(tempPng);
+                if (fs.existsSync(tempAvif)) fs.unlinkSync(tempAvif);
+            } else {
+                // Convert PNG/JPG/GIF/WebP to Safari-compatible AVIF
+                console.log('Converting', fileExt, 'to Safari-compatible AVIF:', req.file.filename);
+                
+                const avifPath = req.file.path.replace(fileExt, '.avif');
+                const avifFilename = req.file.filename.replace(fileExt, '.avif');
+                
+                // For GIF, extract first frame to PNG first
+                let sourceFile = req.file.path;
+                if (fileExt === '.gif') {
+                    const tempPng = req.file.path.replace('.gif', '_frame.png');
+                    await execPromise(`ffmpeg -i "${req.file.path}" -vframes 1 -y "${tempPng}" 2>/dev/null`);
+                    if (fs.existsSync(tempPng)) {
+                        sourceFile = tempPng;
+                    }
+                }
+                
+                // Convert to AVIF with Safari-compatible settings
+                await execPromise(`avifenc --qcolor 85 --speed 6 --yuv 420 --range limited --cicp 1/13/6 --autotiling --jobs all "${sourceFile}" "${avifPath}" 2>/dev/null`);
+                
+                // Check if conversion succeeded
+                if (fs.existsSync(avifPath) && fs.statSync(avifPath).size > 0) {
+                    // Delete original file
+                    fs.unlinkSync(req.file.path);
+                    
+                    // Clean up temp PNG if it was created for GIF
+                    if (fileExt === '.gif' && sourceFile !== req.file.path) {
+                        fs.unlinkSync(sourceFile);
+                    }
+                    
+                    finalFilePath = avifPath;
+                    finalFilename = avifFilename;
+                    console.log('Successfully converted to Safari-compatible AVIF');
+                } else {
+                    // Clean up temp PNG if it was created for GIF
+                    if (fileExt === '.gif' && sourceFile !== req.file.path) {
+                        fs.unlinkSync(sourceFile);
+                    }
+                    console.log('Warning: AVIF conversion failed, using original file');
+                }
+            }
+        } catch (conversionError) {
+            console.error('Warning: Image conversion failed, using original file:', conversionError.message);
+            // Continue with original file if conversion fails
+        }
+        
+        const url = `/uploads/emojis/${finalFilename}`;
         
         const result = await database.runAsync(`
             INSERT INTO custom_emojis (name, code, file_path, url, category, created_by)
             VALUES (?, ?, ?, ?, ?, ?)
-        `, [name, cleanCode, req.file.path, url, category || 'general', user.id]);
+        `, [name, cleanCode, finalFilePath, url, category || 'general', user.id]);
         
         res.json({ 
             id: result.id,
@@ -5941,6 +6027,64 @@ io.on('connection', async (socket) => {
       // Ensure the new streamer is also cleared from notifiedStreamers to allow fresh notifications
       notifiedStreamers.delete(socket.id);
       console.log(`🎯 TAKEOVER: Set ${socket.id} as current streamer in both services, cleared from notified set`);
+      
+      // Send StreamBot announcement about the stream takeover or new stream
+      if (!isViewBot) {
+        try {
+          // Get username for the new streamer
+          let streamerName = 'Anonymous';
+          const userId = sessionService.getUserIdBySocketId(socket.id);
+          
+          if (userId && userId > 0) {
+            // Real authenticated user
+            try {
+              const userQuery = `SELECT username FROM users WHERE id = ?`;
+              const rows = await database.allAsync(userQuery, [userId]);
+              if (rows && rows.length > 0 && rows[0].username) {
+                streamerName = rows[0].username;
+              }
+            } catch (err) {
+              console.error('Error fetching username:', err);
+            }
+          } else {
+            // Anonymous user - get chat username from session
+            const session = sessionService.getSessionBySocketId(socket.id);
+            if (session && session.chatUsername) {
+              streamerName = session.chatUsername;
+            } else {
+              // Fallback to "Anonymous" if no username set yet
+              streamerName = 'Anonymous';
+            }
+          }
+          
+          // Determine the appropriate message based on whether this is a takeover or fresh start
+          let announcementMessage;
+          if (currentStreamer) {
+            announcementMessage = `🎬 ${streamerName} took over the stream! They're going live!`;
+          } else {
+            announcementMessage = `🎬 ${streamerName} is going live!`;
+          }
+          
+          // Send announcement to chat service
+          const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
+          
+          axios.post(`${chatServiceUrl}/api/system-message`, {
+            message: announcementMessage,
+            type: currentStreamer ? 'stream_takeover' : 'stream_start'
+          }, {
+            httpsAgent: new https.Agent({
+              rejectUnauthorized: false
+            }),
+            timeout: 5000
+          }).then(response => {
+            console.log(`📢 STREAM: Sent StreamBot announcement for ${streamerName}`);
+          }).catch(error => {
+            console.error('❌ STREAM: Failed to send StreamBot announcement:', error.message);
+          });
+        } catch (error) {
+          console.error('❌ STREAM: Error sending stream announcement:', error);
+        }
+      }
       
       // Recording will be handled when stream-ready is emitted (after producers are created)
       

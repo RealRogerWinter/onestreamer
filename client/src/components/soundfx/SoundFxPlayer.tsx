@@ -30,6 +30,13 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
     const saved = localStorage.getItem('soundfx_volume');
     return saved ? parseFloat(saved) : 0.8;
   });
+  
+  // Detect Safari iOS for special handling
+  const isSafariIOS = useRef<boolean>(
+    /iPad|iPhone|iPod/.test(navigator.userAgent) && 
+    !(window as any).MSStream && 
+    /Safari/.test(navigator.userAgent)
+  );
 
   useEffect(() => {
     if (!socket) return;
@@ -93,7 +100,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
 
   const playTTS = async (text: string, voiceId: string) => {
     return new Promise<void>((resolve, reject) => {
-      // console.log(`🎤 SOUNDFX CLIENT: Starting TTS playback - Text: "${text}", Voice: ${voiceId}`);
+      console.log(`🎤 SOUNDFX CLIENT: Starting TTS playback - Text: "${text}", Voice: ${voiceId}`);
       
       if (!('speechSynthesis' in window)) {
         console.error('❌ SOUNDFX CLIENT: Speech synthesis not supported in this browser');
@@ -101,81 +108,81 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
         return;
       }
 
-      // Check if speech synthesis is available and not blocked
-      if (speechSynthesis.speaking || speechSynthesis.pending) {
-        // console.log('⏳ SOUNDFX CLIENT: Speech synthesis busy, canceling previous...');
-        speechSynthesis.cancel();
-      }
-
-      // Check if user has interacted with the page (required for TTS)
-      if (!document.hasFocus()) {
-        console.warn('⚠️ SOUNDFX CLIENT: Page not focused - TTS may be blocked');
-      }
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      synthRef.current = utterance;
-
-      // Configure voice
-      const voices = speechSynthesis.getVoices();
-      let selectedVoice: SpeechSynthesisVoice | null = null;
-
-      // Map our voice IDs to browser voices
-      const voiceMap: { [key: string]: string[] } = {
-        'alloy': ['Microsoft David', 'Google US English', 'Alex'],
-        'echo': ['Microsoft Mark', 'Google UK English Male', 'Daniel'],
-        'fable': ['Microsoft Hazel', 'Google UK English Female', 'Kate'],
-        'onyx': ['Microsoft Zira', 'Google US English', 'Samantha'],
-        'nova': ['Microsoft David', 'Google US English', 'Karen'],
-        'shimmer': ['Microsoft Zira', 'Google US English', 'Moira']
-      };
-
-      // Try to find a matching voice
-      const preferredVoices = voiceMap[voiceId] || voiceMap['alloy'];
-      for (const voiceName of preferredVoices) {
-        const voice = voices.find(v => v.name.includes(voiceName));
-        if (voice) {
-          selectedVoice = voice;
-          break;
-        }
-      }
-
-      // Fallback to default voice if no match found
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
-
-      utterance.volume = volume;
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-
-      utterance.onstart = () => {
-        // console.log(`▶️ SOUNDFX CLIENT: TTS started playing - "${text}"`);
-      };
-
-      utterance.onend = () => {
-        // console.log(`✅ SOUNDFX CLIENT: TTS finished playing - "${text}"`);
-        synthRef.current = null;
-        resolve();
-      };
-
-      utterance.onerror = (event) => {
-        console.error('❌ SOUNDFX CLIENT: TTS error:', event);
-        if (event.error === 'not-allowed') {
-          console.warn('⚠️ SOUNDFX CLIENT: TTS blocked by browser - user interaction required');
-          // console.info('💡 SOUNDFX CLIENT: Click anywhere on the page to enable TTS audio');
-        }
-        synthRef.current = null;
-        reject(event);
-      };
-
-      // Cancel any ongoing speech and speak
+      // Safari iOS fix: Always cancel first to clear any stuck state
       speechSynthesis.cancel();
       
-      // Small delay to ensure cancel completed
+      // Small delay after cancel for Safari iOS
       setTimeout(() => {
-        speechSynthesis.speak(utterance);
-        // console.log(`🗣️ SOUNDFX CLIENT: Speaking TTS - Voice: ${selectedVoice?.name || 'default'}, Text: "${text}"`);
-      }, 100);
+        const utterance = new SpeechSynthesisUtterance(text);
+        // IMPORTANT: Keep reference to prevent garbage collection on Safari iOS
+        synthRef.current = utterance;
+
+        // Configure voice - Safari iOS specific handling
+        const voices = speechSynthesis.getVoices();
+        console.log(`🔊 SOUNDFX CLIENT: Available voices: ${voices.length}`);
+        
+        // Safari iOS: Set lang even if no voices available
+        utterance.lang = 'en-US'; // Default to US English
+        
+        if (voices && voices.length > 0) {
+          // Try to find an English voice for Safari iOS
+          let selectedVoice = voices.find(v => v.lang.startsWith('en-'));
+          
+          // If no English voice, use first available
+          if (!selectedVoice) {
+            selectedVoice = voices[0];
+          }
+          
+          if (selectedVoice) {
+            utterance.voice = selectedVoice;
+            utterance.lang = selectedVoice.lang; // Match the voice's language
+            console.log(`🎯 SOUNDFX CLIENT: Selected voice: ${selectedVoice.name} (${selectedVoice.lang})`);
+          }
+        }
+
+        utterance.volume = volume;
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+
+        utterance.onstart = () => {
+          console.log(`▶️ SOUNDFX CLIENT: TTS started playing - "${text}"`);
+        };
+
+        utterance.onend = () => {
+          console.log(`✅ SOUNDFX CLIENT: TTS finished playing - "${text}"`);
+          synthRef.current = null;
+          resolve();
+        };
+
+        utterance.onerror = (event) => {
+          console.error('❌ SOUNDFX CLIENT: TTS error:', event);
+          if (event.error === 'not-allowed') {
+            console.warn('⚠️ SOUNDFX CLIENT: TTS blocked - user interaction required');
+            if (isSafariIOS.current) {
+              console.warn('🍎 SOUNDFX CLIENT: Safari iOS - tap the Enable Audio button');
+            }
+          }
+          synthRef.current = null;
+          reject(event);
+        };
+
+        // Speak the utterance
+        try {
+          speechSynthesis.speak(utterance);
+          console.log(`🗣️ SOUNDFX CLIENT: Called speak() for: "${text}"`);
+          
+          // Safari iOS: Check if speaking actually started
+          setTimeout(() => {
+            if (!speechSynthesis.speaking && !speechSynthesis.pending) {
+              console.error('❌ SOUNDFX CLIENT: Speech not started - may need user interaction');
+              reject(new Error('Speech synthesis failed to start'));
+            }
+          }, 500);
+        } catch (e) {
+          console.error('❌ SOUNDFX CLIENT: Exception calling speak():', e);
+          reject(e);
+        }
+      }, 50); // Delay after cancel
     });
   };
 
@@ -222,40 +229,74 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
   // Load voices and initialize TTS permissions
   useEffect(() => {
     if ('speechSynthesis' in window) {
-      // Chrome loads voices asynchronously
+      // Safari iOS fix: Try multiple times to load voices
+      let voiceLoadAttempts = 0;
+      const maxAttempts = 5;
+      
+      const loadVoices = () => {
+        const voices = speechSynthesis.getVoices();
+        if (voices.length > 0 || voiceLoadAttempts >= maxAttempts) {
+          // console.log(`🎤 SOUNDFX: Loaded ${voices.length} TTS voices after ${voiceLoadAttempts} attempts`);
+        } else {
+          voiceLoadAttempts++;
+          setTimeout(loadVoices, 500);
+        }
+      };
+      
+      // Chrome and other browsers load voices asynchronously
       speechSynthesis.onvoiceschanged = () => {
         const voices = speechSynthesis.getVoices();
         // console.log(`🎤 SOUNDFX: Loaded ${voices.length} TTS voices`);
       };
       
-      // Try to load voices immediately as well
-      speechSynthesis.getVoices();
+      // Try to load voices immediately
+      loadVoices();
 
       // Initialize TTS permissions on first user interaction
       const initializeTTS = () => {
-        if (!speechSynthesis.speaking) {
-          // Create a silent utterance to initialize TTS permissions
+        try {
+          console.log('🎤 SOUNDFX: Initializing TTS with user interaction');
+          
+          // Safari iOS: Cancel any stuck state first
+          speechSynthesis.cancel();
+          
+          // Load voices
+          const voices = speechSynthesis.getVoices();
+          console.log(`🔊 SOUNDFX: Voices available on init: ${voices.length}`);
+          
+          // Create empty utterance to prime the system
           const testUtterance = new SpeechSynthesisUtterance('');
           testUtterance.volume = 0;
-          speechSynthesis.speak(testUtterance);
-          // console.log('🎤 SOUNDFX: TTS permissions initialized');
           
-          // Remove the event listener after first use
+          // Must speak immediately in user interaction handler
+          speechSynthesis.speak(testUtterance);
+          console.log('✅ SOUNDFX: TTS initialized with empty utterance');
+          
+          // Store that we've initialized
+          localStorage.setItem('tts_initialized', 'true');
+          
+          // Remove all event listeners
           document.removeEventListener('click', initializeTTS);
           document.removeEventListener('keydown', initializeTTS);
           document.removeEventListener('touchstart', initializeTTS);
+          document.removeEventListener('touchend', initializeTTS);
+        } catch (e) {
+          console.error('❌ SOUNDFX: Failed to initialize TTS:', e);
         }
       };
 
       // Add event listeners for user interaction
+      // Safari iOS needs both touchstart and touchend
       document.addEventListener('click', initializeTTS, { once: true });
       document.addEventListener('keydown', initializeTTS, { once: true });
       document.addEventListener('touchstart', initializeTTS, { once: true });
+      document.addEventListener('touchend', initializeTTS, { once: true });
 
       return () => {
         document.removeEventListener('click', initializeTTS);
         document.removeEventListener('keydown', initializeTTS);
         document.removeEventListener('touchstart', initializeTTS);
+        document.removeEventListener('touchend', initializeTTS);
       };
     }
   }, []);

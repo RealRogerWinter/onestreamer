@@ -6,6 +6,10 @@ import { ConfettiEffect } from './effects/ConfettiEffect';
 import { DiscoEffect } from './effects/DiscoEffect';
 import { SmokeEffect } from './effects/SmokeEffect';
 import { DrawingEffect } from './effects/DrawingEffect';
+import { ProjectileEffect } from './effects/ProjectileEffect';
+import { FireEffect } from './effects/FireEffect';
+import { PsychedelicEffect } from './effects/PsychedelicEffect';
+import { BugsEffect } from './effects/BugsEffect';
 import { BaseEffect } from './effects/BaseEffect';
 
 export interface EffectData {
@@ -917,6 +921,34 @@ export class EffectEngine extends EventEmitter {
           existingPaths: sharedPaths, // Pass the shared paths to display phase
           effectId: effectData.id,
           socket: this.socket
+        });
+      
+      case 'projectile':
+        // console.log('🏹 ENGINE: Creating ProjectileEffect', effectData.config);
+        return new ProjectileEffect({
+          ...commonConfig,
+          config: effectData.config
+        });
+      
+      case 'fire':
+        // console.log('🔥 ENGINE: Creating FireEffect', effectData.config);
+        return new FireEffect({
+          ...commonConfig,
+          config: effectData.config
+        });
+      
+      case 'psychedelic':
+        // console.log('🌈 ENGINE: Creating PsychedelicEffect', effectData.config);
+        return new PsychedelicEffect({
+          ...commonConfig,
+          config: effectData.config
+        });
+      
+      case 'bugs':
+        // console.log('🐛 ENGINE: Creating BugsEffect', effectData.config);
+        return new BugsEffect({
+          ...commonConfig,
+          config: effectData.config
         });
       
       default:

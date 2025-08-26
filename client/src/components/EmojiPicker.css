@@ -278,3 +278,191 @@
   border-color: #007bff;
   background: rgba(0, 123, 255, 0.1);
 }
+
+/* Mobile backdrop */
+.emoji-picker-backdrop {
+  display: none;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  .emoji-picker-backdrop {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .emoji-picker {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 16px 16px 0 0;
+    animation: slideUpMobile 0.25s ease-out;
+  }
+
+  @keyframes slideUpMobile {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .emoji-picker-header {
+    padding: 12px;
+    position: sticky;
+    top: 0;
+    background: #1a1a1a;
+    z-index: 1;
+  }
+
+  .emoji-search {
+    font-size: 16px; /* Prevent zoom on iOS */
+    padding: 8px 12px;
+  }
+
+  .emoji-picker-close {
+    font-size: 28px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .emoji-categories {
+    padding: 8px;
+    gap: 6px;
+    position: sticky;
+    top: 53px;
+    background: #1a1a1a;
+    z-index: 1;
+  }
+
+  .emoji-category {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  .emoji-grid {
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+    gap: 6px;
+    padding: 12px;
+    max-height: calc(70vh - 180px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .emoji-item {
+    width: 44px;
+    height: 44px;
+    padding: 6px;
+  }
+
+  .emoji-item:hover {
+    transform: none; /* Disable scale on mobile */
+  }
+
+  .emoji-item:active {
+    background: #333;
+    transform: scale(0.95);
+  }
+
+  .emoji-item img {
+    width: 100%;
+    height: 100%;
+    max-width: 36px;
+    max-height: 36px;
+  }
+
+  .emoji-tooltip {
+    display: none; /* Hide tooltips on mobile */
+  }
+
+  .emoji-pagination {
+    padding: 12px;
+    gap: 16px;
+    position: sticky;
+    bottom: 0;
+    background: #1a1a1a;
+  }
+
+  .pagination-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+
+  .pagination-info {
+    font-size: 14px;
+  }
+
+  .emoji-picker-footer {
+    padding: 10px 12px;
+    font-size: 12px;
+    position: sticky;
+    bottom: 0;
+    background: #1a1a1a;
+  }
+}
+
+/* Small mobile devices */
+@media (max-width: 480px) {
+  .emoji-picker {
+    max-height: 80vh;
+  }
+
+  .emoji-grid {
+    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+    gap: 4px;
+    padding: 8px;
+    max-height: calc(80vh - 160px);
+  }
+
+  .emoji-item {
+    width: 40px;
+    height: 40px;
+    padding: 4px;
+  }
+
+  .emoji-categories {
+    padding: 6px;
+    gap: 4px;
+  }
+
+  .emoji-category {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+}
+
+/* Landscape orientation on mobile */
+@media (max-width: 768px) and (orientation: landscape) {
+  .emoji-picker {
+    max-height: 90vh;
+  }
+
+  .emoji-grid {
+    grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+    max-height: calc(90vh - 140px);
+  }
+
+  .emoji-item {
+    width: 38px;
+    height: 38px;
+  }
+}
