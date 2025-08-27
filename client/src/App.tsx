@@ -4,6 +4,7 @@ import './App.css';
 import StreamViewer from './components/StreamViewer';
 import StreamControls from './components/StreamControls';
 import StreamerSettings, { AudioSettingsConfig, VideoSettingsConfig, StreamerSettingsConfig } from './components/StreamerSettings';
+import TheatreControls from './components/TheatreControls';
 import AdminPanelV3 from './components/AdminPanelV3';
 import Chat from './components/Chat';
 import MobileChat from './components/MobileChat';
@@ -196,9 +197,21 @@ function AppContent() {
   // Bug Report state
   const [showBugReportModal, setShowBugReportModal] = useState(false);
   
-  // Theatre Mode state
-  const [theatreMode, setTheatreMode] = useState(false);
+  // Theatre Mode state - Default to true for desktop users
+  const [theatreMode, setTheatreMode] = useState(() => {
+    // Check if desktop (not mobile)
+    const mobileCheck = window.innerWidth <= 768 || 
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return !mobileCheck; // Theatre mode ON for desktop, OFF for mobile
+  });
   const [theatreChatCollapsed, setTheatreChatCollapsed] = useState(false);
+  const [theatreDropdownOpen, setTheatreDropdownOpen] = useState(false);
+  const [theatreControlsVisible, setTheatreControlsVisible] = useState(false);
+  
+  // Modal states for About, Terms, Privacy
+  const [showAbout, setShowAbout] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   // Settings state - Initialize from cookies or use defaults
   const [audioSettings, setAudioSettings] = useState<AudioSettingsConfig>(() => {
@@ -735,6 +748,21 @@ function AppContent() {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [showAdminPanel, showInventory, isAuthenticated, isAdmin, isModerator]);
 
+  // Close theatre dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const dropdown = document.querySelector('.theatre-dropdown-container');
+      if (dropdown && !dropdown.contains(event.target as Node)) {
+        setTheatreDropdownOpen(false);
+      }
+    };
+
+    if (theatreDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [theatreDropdownOpen]);
+
   // Listen for privacy policy and terms of service events from cookie consent
   useEffect(() => {
     const handleOpenPrivacy = () => {
@@ -845,16 +873,6 @@ function AppContent() {
             onLogout={handleLogout}
             onProfileSettings={() => setShowProfileSettings(true)}
           />
-          {/* Inventory button in header - only in theatre mode on mobile */}
-          {theatreMode && isAuthenticated && (
-            <button
-              className="theatre-inventory-btn mobile"
-              onClick={() => setShowInventory(!showInventory)}
-              title="Inventory"
-            >
-              🎒
-            </button>
-          )}
         </>
       ) : !isMobile ? (
         /* Desktop Header V2 - Modern Design */
@@ -870,12 +888,34 @@ function AppContent() {
             userPoints={userPoints}
             isAdmin={isAdmin}
             isModerator={isModerator}
+            isTheatreMode={theatreMode}
+            showInventory={showInventory}
+            theatreDropdownOpen={theatreDropdownOpen}
             socket={socket}
             onLogin={() => setShowLogin(true)}
             onSignup={() => setShowSignup(true)}
             onLogout={handleLogout}
             onProfileSettings={() => setShowProfileSettings(true)}
             onAdminPanel={() => setShowAdminPanel(!showAdminPanel)}
+            onInventoryToggle={() => setShowInventory(!showInventory)}
+            onTheatreDropdownToggle={() => setTheatreDropdownOpen(!theatreDropdownOpen)}
+            onShowAbout={() => {
+              setTutorialDefaultTab('about');
+              setShowTutorial(true);
+            }}
+            onShowTerms={() => {
+              setTutorialDefaultTab('terms');
+              setShowTutorial(true);
+            }}
+            onShowPrivacy={() => {
+              setTutorialDefaultTab('privacy');
+              setShowTutorial(true);
+            }}
+            onShowTutorial={() => {
+              setTutorialDefaultTab('tutorial');
+              setShowTutorial(true);
+            }}
+            onShowBugReport={() => setShowBugReportModal(true)}
             onUserProfileUpdate={(profile) => {
             const prevPoints = userPoints;
             setUserPoints(profile.points);
@@ -922,16 +962,6 @@ function AppContent() {
             }
           }}
           />
-          {/* Inventory button in header - only in theatre mode */}
-          {theatreMode && isAuthenticated && (
-            <button
-              className="theatre-inventory-btn"
-              onClick={() => setShowInventory(!showInventory)}
-              title="Inventory"
-            >
-              🎒
-            </button>
-          )}
         </>
       ) : null}
 
@@ -959,10 +989,16 @@ function AppContent() {
           </div>
         )}
 
-        <div className="main-content">
-          {/* Moderation Panel - Only visible to admins - Hide in theatre mode */}
-          {!theatreMode && <BotsPanel />}
-          {!theatreMode && <ModerationPanel streamStatus={streamStatus} />}
+        <div className={`main-content ${theatreMode ? 'theatre-mode-active' : ''} ${theatreMode && showInventory ? 'inventory-open' : ''} ${theatreMode && theatreChatCollapsed ? 'chat-collapsed' : ''}`}>
+          {/* Admin Controls - Show in regular mode, or in theatre mode for admins */}
+          {(!theatreMode || (theatreMode && isAdmin)) && (
+            <>
+              <div className={theatreMode ? `theatre-admin-controls ${theatreControlsVisible ? 'visible' : ''}` : ''}>
+                <BotsPanel />
+                <ModerationPanel streamStatus={streamStatus} />
+              </div>
+            </>
+          )}
           
           <div className="stream-layout-container">
             {!theatreMode && (
@@ -1005,77 +1041,102 @@ function AppContent() {
                   CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
                 }}
               />
+              
+              {/* Theatre Mode Controls - Only show in theatre mode */}
+              {theatreMode && (
+                <TheatreControls
+                  isStreaming={isStreaming}
+                  hasActiveStream={streamStatus.hasActiveStream}
+                  cooldownRemaining={cooldownRemaining}
+                  isConnected={connected && !!socket}
+                  streamerSettings={streamerSettings}
+                  currentUserId={currentUser?.id?.toString()}
+                  streamerBuffs={streamerBuffs}
+                  onVisibilityChange={(visible) => setTheatreControlsVisible(visible)}
+                  onSettingsChange={(newSettings) => {
+                    setStreamerSettings(newSettings);
+                    CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
+                  }}
+                  onExitTheatre={() => setTheatreMode(false)}
+                  onTakeOver={() => {
+                    if (!socket) {
+                      console.warn('Cannot take over stream: Socket not connected');
+                      return;
+                    }
+                    socket.emit('request-to-stream', {
+                      streamType: 'webcam',
+                      timestamp: Date.now()
+                    });
+                  }}
+                  onStopStream={() => {
+                    if (!socket) {
+                      console.warn('Cannot stop stream: Socket not connected');
+                      return;
+                    }
+                    socket.emit('stop-streaming');
+                    setIsStreaming(false);
+                  }}
+                />
+              )}
             </div>
           </div>
 
-          {/* Show stream controls always, but with different styling in theatre mode */}
-          <div className={`stream-controls-container ${theatreMode ? 'theatre-mode-controls' : ''}`}>
-            {!theatreMode && (
-              <button 
-                className="theatre-mode-btn"
-                onClick={() => setTheatreMode(true)}
-                title="Theatre Mode"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-                </svg>
-                Theatre
-              </button>
-            )}
-            {theatreMode && (
-              <button 
-                className="exit-theatre-btn"
-                onClick={() => setTheatreMode(false)}
-                title="Exit Theatre Mode"
-              >
-                ✕ Exit Theatre
-              </button>
-            )}
-            <StreamerSettings 
-              settings={streamerSettings}
-              onSettingsChange={(newSettings) => {
-                setStreamerSettings(newSettings);
-                // Settings are already saved to cookies by StreamerSettings component
-              }}
-              isStreaming={isStreaming}
-              compact={true}
-            />
-            <StreamControls 
-              isStreaming={isStreaming}
-              hasActiveStream={streamStatus.hasActiveStream}
-              cooldownRemaining={cooldownRemaining}
-              isConnected={connected && !!socket}
-              isForceDisconnected={isForceDisconnected}
-              disconnectionReason={disconnectionReason}
-              isMobile={isMobile}
-              onShowTutorial={() => setShowTutorial(true)}
-              onShowBugReport={() => setShowBugReportModal(true)}
-              onTakeOver={() => {
-                if (!socket) {
-                  console.warn('Cannot take over stream: Socket not connected');
-                  return;
-                }
-                // console.log('Emitting request-to-stream event', { 
-                //   hasActiveStream: streamStatus.hasActiveStream,
-                //   currentStreamerId: streamStatus.streamerId 
-                // });
-                // Always emit request-to-stream - the server handles both new streams and takeovers
-                socket.emit('request-to-stream', {
-                  streamType: 'webcam',
-                  timestamp: Date.now()
-                });
-              }}
-              onStopStream={() => {
-                if (!socket) {
-                  console.warn('Cannot stop stream: Socket not connected');
-                  return;
-                }
-                // console.log('Emitting stop-streaming event');
-                socket.emit('stop-streaming');
-                setIsStreaming(false);
-              }}
-            />
-          </div>
+          {/* Show stream controls only when NOT in theatre mode (theatre mode has its own overlay) */}
+          {!theatreMode && (
+            <div className="stream-controls-container">
+              {/* Theatre mode button - only show on desktop */}
+              {!isMobile && (
+                <button 
+                  className="theatre-mode-btn"
+                  onClick={() => setTheatreMode(true)}
+                  title="Theatre Mode"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                  </svg>
+                  Theatre
+                </button>
+              )}
+              <StreamerSettings 
+                settings={streamerSettings}
+                onSettingsChange={(newSettings) => {
+                  setStreamerSettings(newSettings);
+                  // Settings are already saved to cookies by StreamerSettings component
+                }}
+                isStreaming={isStreaming}
+                compact={true}
+              />
+              <StreamControls 
+                isStreaming={isStreaming}
+                hasActiveStream={streamStatus.hasActiveStream}
+                cooldownRemaining={cooldownRemaining}
+                isConnected={connected && !!socket}
+                isForceDisconnected={isForceDisconnected}
+                disconnectionReason={disconnectionReason}
+                isMobile={isMobile}
+                onShowTutorial={() => setShowTutorial(true)}
+                onShowBugReport={() => setShowBugReportModal(true)}
+                onTakeOver={() => {
+                  if (!socket) {
+                    console.warn('Cannot take over stream: Socket not connected');
+                    return;
+                  }
+                  socket.emit('request-to-stream', {
+                    streamType: 'webcam',
+                    timestamp: Date.now()
+                  });
+                }}
+                onStopStream={() => {
+                  if (!socket) {
+                    console.warn('Cannot stop stream: Socket not connected');
+                    return;
+                  }
+                  socket.emit('stop-streaming');
+                  setIsStreaming(false);
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Chat and Status Effects Container - Different layout for theatre mode */}
@@ -1095,16 +1156,38 @@ function AppContent() {
           </div>
         )}
         
-        {/* Theatre Mode Chat - Right side, full height, collapsible */}
+        {/* Theatre Mode Chat and Inventory - Right side panels */}
         {!isMobile && theatreMode && (
           <>
-            <div className={`theatre-mode-chat ${theatreChatCollapsed ? 'collapsed' : ''}`}>
-              <div className="theatre-chat-content">
-                <Chat />
+            <div className={`theatre-mode-sidebar ${showInventory ? 'inventory-open' : ''} ${theatreChatCollapsed ? 'collapsed' : ''}`}>
+              {/* Inventory Panel - Shows when open */}
+              {showInventory && (
+                <div className="theatre-mode-inventory">
+                  <InventoryPanel 
+                    socket={socket}
+                    isAuthenticated={isAuthenticated}
+                    userProfile={{ points: userPoints }}
+                    isOpen={true}
+                    onToggle={() => setShowInventory(!showInventory)}
+                    onToggleShop={() => {
+                      setShowInventory(false);
+                      setIsShopOpen(true);
+                    }}
+                    onLogin={() => setShowLogin(true)}
+                    onSignup={() => setShowSignup(true)}
+                    hideToggleButton={true}
+                  />
+                </div>
+              )}
+              {/* Chat Panel */}
+              <div className="theatre-mode-chat">
+                <div className="theatre-chat-content">
+                  <Chat />
+                </div>
               </div>
             </div>
             <button 
-              className={`theatre-chat-toggle ${theatreChatCollapsed ? 'collapsed' : ''}`}
+              className={`theatre-chat-toggle ${theatreChatCollapsed ? 'collapsed' : ''} ${showInventory ? 'inventory-open' : ''}`}
               onClick={() => setTheatreChatCollapsed(!theatreChatCollapsed)}
               title={theatreChatCollapsed ? "Show Chat" : "Hide Chat"}
             >
@@ -1217,20 +1300,23 @@ function AppContent() {
       />
 
 
-      <InventoryPanel 
-        socket={socket}
-        isAuthenticated={isAuthenticated}
-        userProfile={{ points: userPoints }}
-        isOpen={showInventory}
-        onToggle={() => setShowInventory(!showInventory)}
-        onToggleShop={() => {
-          setShowInventory(false);
-          setIsShopOpen(true);
-        }}
-        onLogin={() => setShowLogin(true)}
-        onSignup={() => setShowSignup(true)}
-        hideToggleButton={theatreMode}
-      />
+      {/* Only show standalone inventory panel when NOT in theatre mode */}
+      {!theatreMode && (
+        <InventoryPanel 
+          socket={socket}
+          isAuthenticated={isAuthenticated}
+          userProfile={{ points: userPoints }}
+          isOpen={showInventory}
+          onToggle={() => setShowInventory(!showInventory)}
+          onToggleShop={() => {
+            setShowInventory(false);
+            setIsShopOpen(true);
+          }}
+          onLogin={() => setShowLogin(true)}
+          onSignup={() => setShowSignup(true)}
+          hideToggleButton={false}
+        />
+      )}
 
       {isShopOpen && (
         <ModalShopPanel

@@ -1483,13 +1483,13 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         </div>
       )}
 
-      {/* Muted Audio Indicator - Show when video is playing but muted and user hasn't interacted */}
-      {isConnected && playbackState === 'playing' && videoRef.current?.muted && !userInteracted && (
+      {/* Muted Audio Indicator - Show in non-theatre mode, TheatreMuteIndicator handles theatre mode */}
+      {isConnected && playbackState === 'playing' && videoRef.current?.muted && !userInteracted && !document.querySelector('.App.theatre-mode') && (
         <div 
           className="muted-audio-indicator" 
           style={{
             position: 'absolute',
-            bottom: '80px',
+            bottom: '250px', // Moved much higher to avoid any overlap
             left: '50%',
             transform: 'translateX(-50%)',
             background: 'rgba(0, 0, 0, 0.9)',
@@ -1500,9 +1500,13 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             alignItems: 'center',
             gap: '12px',
             cursor: 'pointer',
-            zIndex: 20,
+            zIndex: 500,
             animation: 'pulse 2s infinite',
-            backdropFilter: 'blur(4px)'
+            backdropFilter: 'blur(4px)',
+            pointerEvents: 'auto',
+            width: 'auto',
+            height: 'auto',
+            maxWidth: '300px'
           }}
           onClick={() => {
             if (videoRef.current) {
@@ -1512,10 +1516,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             }
           }}
         >
-          <span style={{ fontSize: '24px' }}>🔇</span>
-          <div>
-            <p style={{ margin: 0, fontSize: '14px', fontWeight: 'bold' }}>Click to unmute</p>
-            <p style={{ margin: 0, fontSize: '12px', opacity: 0.8 }}>Audio is currently muted</p>
+          <span style={{ fontSize: '24px', flexShrink: 0 }}>🔇</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <p style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>Click to unmute</p>
+            <p style={{ margin: 0, fontSize: '12px', opacity: 0.8, whiteSpace: 'nowrap' }}>Audio is currently muted</p>
           </div>
         </div>
       )}

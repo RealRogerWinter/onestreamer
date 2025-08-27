@@ -6,6 +6,7 @@
   background: #1a1a1a;
   border-left: 1px solid #333;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  position: relative;
 }
 
 /* Chat Header */
@@ -250,6 +251,8 @@
   background: #2a2a2a;
   padding: 12px;
   position: relative;
+  z-index: 100; /* Ensure input container has proper stacking context */
+  overflow: visible; /* Allow emoji picker to overflow */
 }
 
 .user-info {

@@ -869,9 +869,22 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
     return null;
   }
 
+  // Check if we're in theatre mode
+  const isTheatreMode = document.body.classList.contains('theatre-mode') || 
+                        document.querySelector('.App.theatre-mode') !== null;
+
   return (
     <div className={`canvas-effect-overlay-container ${className}`} style={{
-      pointerEvents: isCanvasInteractive ? 'auto' : 'none'
+      pointerEvents: isCanvasInteractive ? 'auto' : 'none',
+      // Force z-index when interactive in theatre mode
+      ...(isTheatreMode && isCanvasInteractive ? {
+        zIndex: 250,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0
+      } : {})
     }}>
       <canvas
         ref={canvasRef}
@@ -895,7 +908,16 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
           background: 'transparent',
           boxShadow: clickToThrowMode?.active 
             ? `0 0 10px ${clickToThrowMode.interactionConfig?.glowColor || 'rgba(255, 0, 0, 0.5)'}` 
-            : 'none'
+            : 'none',
+          // Force z-index when interactive in theatre mode
+          ...(isTheatreMode && isCanvasInteractive ? {
+            zIndex: 251,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%'
+          } : {})
         }}
       />
       

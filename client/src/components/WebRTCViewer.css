@@ -38,6 +38,11 @@
   pointer-events: none; /* Ensure it doesn't block interactions by default */
 }
 
+/* Override z-index in theatre mode when canvas needs interaction */
+.theatre-mode .webrtc-viewer .stream-effects-overlay:has(.canvas-effect-overlay-container[style*="pointer-events: auto"]) {
+  z-index: 150 !important; /* Above theatre controls when interactive */
+}
+
 /* WebRTC Streamer Styles */
 .webrtc-streamer {
   position: relative;
@@ -102,17 +107,32 @@
 
 /* Additional mobile optimizations */
 @media (max-width: 768px) {
+  .webrtc-viewer {
+    /* Take up maximum available space */
+    min-height: 50vh !important;
+    height: 55vh !important;
+    max-height: 70vh !important;
+    /* Prevent overscroll issues on mobile */
+    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
+    /* Ensure proper sizing */
+    width: 100%;
+    max-width: 100%;
+    position: relative;
+    background: #000;
+  }
+  
   .webrtc-video {
     /* Optimize for mobile performance */
     -webkit-optimize-contrast: optimizeSpeed;
     image-rendering: optimizeSpeed;
     image-rendering: -webkit-optimize-contrast;
-  }
-  
-  .webrtc-viewer {
-    /* Prevent overscroll issues on mobile */
-    -webkit-overflow-scrolling: touch;
-    overflow: hidden;
+    /* Fill the container properly */
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 50vh !important;
+    max-width: 100% !important;
+    object-fit: contain !important; /* Prevent stretching but fill space */
   }
   
   /* Ensure canvas overlay works on mobile */

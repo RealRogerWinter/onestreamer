@@ -33,36 +33,49 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({
     // Get available audio devices
     const getDevices = async () => {
       try {
-        // Request permissions first if needed
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Only request permissions when the settings panel is expanded
+        if (expanded || !compact) {
+          // Request permissions first if needed
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          // Stop the stream immediately, we just needed permissions
+          stream.getTracks().forEach(track => track.stop());
+        }
         
         const devices = await navigator.mediaDevices.enumerateDevices();
         const inputs = devices.filter(device => device.kind === 'audioinput');
         const outputs = devices.filter(device => device.kind === 'audiooutput');
         
-        setAudioInputs(inputs);
-        setAudioOutputs(outputs);
-        
-        // Set default devices if not already set
-        if (!settings.inputDeviceId && inputs.length > 0) {
-          onSettingsChange({ ...settings, inputDeviceId: inputs[0].deviceId });
-        }
-        if (!settings.outputDeviceId && outputs.length > 0) {
-          onSettingsChange({ ...settings, outputDeviceId: outputs[0].deviceId });
+        // Only update if we have actual device labels (means we have permissions)
+        if (inputs.length > 0 && (inputs[0].label || expanded || !compact)) {
+          setAudioInputs(inputs);
+          setAudioOutputs(outputs);
+          
+          // Set default devices if not already set
+          if (!settings.inputDeviceId && inputs.length > 0) {
+            onSettingsChange({ ...settings, inputDeviceId: inputs[0].deviceId });
+          }
+          if (!settings.outputDeviceId && outputs.length > 0) {
+            onSettingsChange({ ...settings, outputDeviceId: outputs[0].deviceId });
+          }
         }
       } catch (error) {
         console.error('Failed to enumerate devices:', error);
       }
     };
 
-    getDevices();
+    // Only get devices if the settings panel is expanded or not in compact mode
+    if (expanded || !compact) {
+      getDevices();
+    }
 
     // Listen for device changes
-    navigator.mediaDevices.addEventListener('devicechange', getDevices);
-    return () => {
-      navigator.mediaDevices.removeEventListener('devicechange', getDevices);
-    };
-  }, []);
+    if (navigator.mediaDevices) {
+      navigator.mediaDevices.addEventListener('devicechange', getDevices);
+      return () => {
+        navigator.mediaDevices.removeEventListener('devicechange', getDevices);
+      };
+    }
+  }, [expanded, compact]);
   const handleToggle = (setting: keyof AudioSettingsConfig) => {
     if (typeof settings[setting] === 'boolean') {
       onSettingsChange({

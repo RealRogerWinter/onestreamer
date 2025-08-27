@@ -1,8 +1,7 @@
 .emoji-picker {
-  position: absolute;
-  bottom: 100%;
-  right: 10px;  /* Align with right side buttons */
-  margin-bottom: 10px;
+  position: fixed; /* Changed to fixed to prevent clipping */
+  bottom: 60px; /* Position above chat input */
+  right: calc(300px + 20px); /* Account for chat sidebar width + padding */
   width: 340px;
   max-height: 420px;
   background: #1a1a1a;
@@ -11,7 +10,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
-  z-index: 1000;
+  z-index: 10000; /* Increased z-index to ensure it appears above stream elements */
   animation: slideUp 0.2s ease-out;
 }
 

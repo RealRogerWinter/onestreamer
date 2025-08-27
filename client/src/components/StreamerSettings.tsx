@@ -95,58 +95,91 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
     setPeakLevel(0);
   };
 
+  // Function to request permissions and get devices when user opens settings
+  const requestPermissionsAndGetDevices = async () => {
+    // Check if mediaDevices is available (requires HTTPS or localhost)
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.warn('Media devices not available. HTTPS or localhost required for WebRTC.');
+      return;
+    }
+    
+    try {
+      // Request permissions first if needed
+      await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+        .then(stream => {
+          // Stop the stream immediately, we just needed permissions
+          stream.getTracks().forEach(track => track.stop());
+        });
+      
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioIns = devices.filter(device => device.kind === 'audioinput');
+      const audioOuts = devices.filter(device => device.kind === 'audiooutput');
+      const videoIns = devices.filter(device => device.kind === 'videoinput');
+      
+      setAudioInputs(audioIns);
+      setAudioOutputs(audioOuts);
+      setVideoInputs(videoIns);
+      
+      // Set default devices if not already set
+      let updatedSettings = { ...settings };
+      let needsUpdate = false;
+      
+      if (!settings.audio.inputDeviceId && audioIns.length > 0) {
+        updatedSettings.audio = { ...updatedSettings.audio, inputDeviceId: audioIns[0].deviceId };
+        needsUpdate = true;
+      }
+      if (!settings.audio.outputDeviceId && audioOuts.length > 0) {
+        updatedSettings.audio = { ...updatedSettings.audio, outputDeviceId: audioOuts[0].deviceId };
+        needsUpdate = true;
+      }
+      if (!settings.video.videoDeviceId && videoIns.length > 0) {
+        updatedSettings.video = { ...updatedSettings.video, videoDeviceId: videoIns[0].deviceId };
+        needsUpdate = true;
+      }
+      
+      if (needsUpdate) {
+        handleSettingsChange(updatedSettings);
+      }
+    } catch (error) {
+      console.error('Failed to enumerate devices:', error);
+    }
+  };
+
   useEffect(() => {
-    // Get available devices
+    // Get available devices without requesting permissions
     const getDevices = async () => {
       // Check if mediaDevices is available (requires HTTPS or localhost)
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (!navigator.mediaDevices) {
         console.warn('Media devices not available. HTTPS or localhost required for WebRTC.');
         return;
       }
       
       try {
-        // Request permissions first if needed
-        await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-          .then(stream => {
-            // Stop the stream immediately, we just needed permissions
-            stream.getTracks().forEach(track => track.stop());
-          });
-        
+        // Try to get devices without permissions first
         const devices = await navigator.mediaDevices.enumerateDevices();
         const audioIns = devices.filter(device => device.kind === 'audioinput');
         const audioOuts = devices.filter(device => device.kind === 'audiooutput');
         const videoIns = devices.filter(device => device.kind === 'videoinput');
         
-        setAudioInputs(audioIns);
-        setAudioOutputs(audioOuts);
-        setVideoInputs(videoIns);
-        
-        // Set default devices if not already set
-        let updatedSettings = { ...settings };
-        let needsUpdate = false;
-        
-        if (!settings.audio.inputDeviceId && audioIns.length > 0) {
-          updatedSettings.audio = { ...updatedSettings.audio, inputDeviceId: audioIns[0].deviceId };
-          needsUpdate = true;
-        }
-        if (!settings.audio.outputDeviceId && audioOuts.length > 0) {
-          updatedSettings.audio = { ...updatedSettings.audio, outputDeviceId: audioOuts[0].deviceId };
-          needsUpdate = true;
-        }
-        if (!settings.video.videoDeviceId && videoIns.length > 0) {
-          updatedSettings.video = { ...updatedSettings.video, videoDeviceId: videoIns[0].deviceId };
-          needsUpdate = true;
-        }
-        
-        if (needsUpdate) {
-          handleSettingsChange(updatedSettings);
+        // Only update if we have actual device labels (means we have permissions)
+        if (audioIns.length > 0 && audioIns[0].label) {
+          setAudioInputs(audioIns);
+          setAudioOutputs(audioOuts);
+          setVideoInputs(videoIns);
         }
       } catch (error) {
         console.error('Failed to enumerate devices:', error);
       }
     };
 
-    getDevices();
+    // Only get devices if the settings panel is expanded
+    if (expanded || !compact) {
+      // If we're expanded, request permissions and get devices
+      requestPermissionsAndGetDevices();
+    } else {
+      // If not expanded, just try to get devices without permissions
+      getDevices();
+    }
 
     // Listen for device changes (only if mediaDevices is available)
     if (navigator.mediaDevices) {
@@ -160,7 +193,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
         cleanupStreams();
       };
     }
-  }, []);
+  }, [expanded, compact]);
   
   // Cleanup streams when panel closes
   useEffect(() => {
