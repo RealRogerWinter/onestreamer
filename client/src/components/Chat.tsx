@@ -8,6 +8,7 @@ import ChatSettings, { ChatUserSettings } from './ChatSettings';
 import DOMPurify from 'dompurify';
 import CloudflareTurnstile from './CloudflareTurnstile';
 import { TURNSTILE_SITE_KEY } from '../config/turnstile';
+import ExternalLinkModal from './ExternalLinkModal';
 import './Chat.css';
 
 interface ChatMessage {
@@ -73,6 +74,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [externalLinkModal, setExternalLinkModal] = useState<{ isOpen: boolean; url: string }>({ isOpen: false, url: '' });
   const [chatSettings, setChatSettings] = useState<ChatUserSettings>(() => {
     // Load settings from cookies
     const saved = CookieService.getCookie(COOKIE_NAMES.CHAT_SETTINGS);
@@ -638,6 +640,39 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       return () => chatContainer.removeEventListener('scroll', handleScroll);
     }
   }, []);
+
+  // Add click event listener for external links
+  useEffect(() => {
+    const handleLinkClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'A' && target.classList.contains('chat-link')) {
+        e.preventDefault();
+        const url = target.getAttribute('data-external-url') || target.getAttribute('href') || '';
+        
+        // Check if it's an external link
+        try {
+          const urlObj = new URL(url);
+          const isExternal = !['onestreamer.com', 'www.onestreamer.com', 'onestreamer.live', 'www.onestreamer.live'].includes(urlObj.hostname);
+          
+          if (isExternal) {
+            setExternalLinkModal({ isOpen: true, url });
+          } else {
+            // Internal link, open directly
+            window.open(url, '_blank', 'noopener,noreferrer');
+          }
+        } catch {
+          // Invalid URL, don't open
+          console.error('Invalid URL:', url);
+        }
+      }
+    };
+
+    const chatContainer = chatContainerRef.current;
+    if (chatContainer) {
+      chatContainer.addEventListener('click', handleLinkClick);
+      return () => chatContainer.removeEventListener('click', handleLinkClick);
+    }
+  }, []);
   
   // Setup ResizeObserver to handle container size changes (e.g., keyboard on mobile)
   useEffect(() => {
@@ -835,7 +870,8 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       return part.replace(urlRegex, (match, url) => {
         // Sanitize the URL to prevent XSS
         const safeUrl = DOMPurify.sanitize(url);
-        return `{{LINK_START}}<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>{{LINK_END}}`;
+        // Add a data attribute with the URL for the click handler
+        return `{{LINK_START}}<a href="${safeUrl}" data-external-url="${safeUrl}" class="chat-link" target="_blank" rel="noopener noreferrer">${safeUrl}</a>{{LINK_END}}`;
       });
     }).join('');
     
@@ -1143,6 +1179,19 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
           </div>
         </div>
       )}
+
+      {/* External Link Warning Modal */}
+      <ExternalLinkModal
+        isOpen={externalLinkModal.isOpen}
+        url={externalLinkModal.url}
+        onConfirm={() => {
+          window.open(externalLinkModal.url, '_blank', 'noopener,noreferrer');
+          setExternalLinkModal({ isOpen: false, url: '' });
+        }}
+        onCancel={() => {
+          setExternalLinkModal({ isOpen: false, url: '' });
+        }}
+      />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { Socket } from 'socket.io-client';
 import InventoryGrid from './InventoryGrid';
 import authService from '../../services/AuthService';
 import TTSInputModal from '../soundfx/TTSInputModal';
+import SoundboardInputModal from '../soundfx/SoundboardInputModal';
 import './InventoryStyles.css';
 
 interface InventoryItem {
@@ -65,6 +66,8 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
   const [isAdmin, setIsAdmin] = useState(false);
   const [ttsModalOpen, setTtsModalOpen] = useState(false);
   const [ttsItem, setTtsItem] = useState<InventoryItem | null>(null);
+  const [soundboardModalOpen, setSoundboardModalOpen] = useState(false);
+  const [soundboardItem, setSoundboardItem] = useState<InventoryItem | null>(null);
   const inventoryItemsPerPage = 45; // Show many more items in full height panel
 
   // Check if mobile - using useMemo to ensure it's available for all hooks
@@ -381,12 +384,22 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
         return;
       }
       
+      // Check if this is a soundboard item that needs URL input
+      if (result.soundboardMode) {
+        const item = inventory.find(item => item.item_id === itemId);
+        if (item) {
+          setSoundboardItem(item);
+          setSoundboardModalOpen(true);
+        }
+        return;
+      }
+      
       // Don't show any notifications when using items - interactive items have click-to-throw UI
       // and non-interactive items will show notifications via socket events
       // console.log('🔇 INVENTORY: Skipping immediate use notification for item:', inventory.find(item => item.item_id === itemId)?.display_name);
       
       // Update local inventory - only if item was actually consumed
-      if (!result.interactiveMode && !result.ttsMode) {
+      if (!result.interactiveMode && !result.ttsMode && !result.soundboardMode) {
         setInventory(prev => prev.map(item => 
           item.item_id === itemId 
             ? { ...item, quantity: result.remainingQuantity }
@@ -548,6 +561,62 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
   const paginatedInventory = getPaginatedInventory();
   const inventoryTotalPages = getInventoryTotalPages();
+
+  const handleSoundboardSubmit = async (soundUrl: string) => {
+    if (!soundboardItem) return;
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('/api/soundfx/item/soundboard', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          itemId: soundboardItem.item_id,
+          soundUrl
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to play soundboard');
+      }
+
+      const result = await response.json();
+      
+      // Update inventory
+      setInventory(prev => prev.map(item => 
+        item.item_id === soundboardItem.item_id 
+          ? { ...item, quantity: result.remainingQuantity }
+          : item
+      ).filter(item => item.quantity > 0));
+
+      // Add cooldown
+      if (result.item.cooldown) {
+        setCooldowns(prev => {
+          const newCooldowns = [
+            ...prev.filter(cd => cd.itemId !== soundboardItem.item_id),
+            {
+              itemId: soundboardItem.item_id,
+              name: result.item.name,
+              displayName: result.item.displayName,
+              emoji: result.item.emoji,
+              cooldownRemaining: result.item.cooldown,
+              cooldownEnd: Date.now() + (result.item.cooldown * 1000)
+            }
+          ];
+          return newCooldowns;
+        });
+      }
+
+      setError(null);
+    } catch (err: any) {
+      setError(err.message);
+      throw err; // Re-throw to notify modal
+    }
+  };
 
   const getCooldownForItem = (itemId: number) => {
     const cooldown = cooldowns.find(cd => cd.itemId === itemId);
@@ -795,6 +864,20 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
           itemId={ttsItem.item_id}
           itemName={ttsItem.display_name}
           itemEmoji={ttsItem.emoji}
+        />
+      )}
+      
+      {soundboardItem && (
+        <SoundboardInputModal
+          isOpen={soundboardModalOpen}
+          onClose={() => {
+            setSoundboardModalOpen(false);
+            setSoundboardItem(null);
+          }}
+          onSubmit={handleSoundboardSubmit}
+          itemId={soundboardItem.item_id}
+          itemName={soundboardItem.display_name}
+          itemEmoji={soundboardItem.emoji}
         />
       )}
     </>

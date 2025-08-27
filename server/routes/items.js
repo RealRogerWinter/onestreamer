@@ -135,6 +135,9 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
         // Check if this is a TTS item that needs text input
         const isTTSItem = item.name === 'megaphone' || item.name === 'tts_message';
         
+        // Check if this is a soundboard item that needs URL input
+        const isSoundboardItem = item.name === '101soundboards';
+        
         // Check if this is an interactive item that needs click-to-throw
         const isInteractiveItem = canvasFxService && canvasFxService.isInteractiveItem(item);
         
@@ -462,6 +465,37 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 remainingQuantity: inventoryItem.quantity,
                 ttsMode: true,
                 message: 'TTS input required'
+            };
+            
+            res.json(result);
+        } else if (isSoundboardItem) {
+            console.log(`🎯 ITEMS: Taking soundboard path for ${item.display_name}`);
+            // For soundboard items, validate but don't consume yet - need URL input first
+            const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+            if (!inventoryItem || inventoryItem.quantity < 1) {
+                return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
+            }
+            
+            // Validate item usage (cooldown check)
+            const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+            if (!validation.valid) {
+                return res.status(429).json({ error: validation.error || 'Cannot use item' });
+            }
+            
+            // Return success with soundboard mode flag - client should show URL input UI
+            const result = {
+                success: true,
+                item: {
+                    id: item.id,
+                    name: item.name,
+                    displayName: item.display_name,
+                    emoji: item.emoji,
+                    type: item.item_type
+                    // Don't include cooldown - it should only be applied when sound is actually played
+                },
+                remainingQuantity: inventoryItem.quantity,
+                soundboardMode: true,
+                message: 'Soundboard URL input required'
             };
             
             res.json(result);

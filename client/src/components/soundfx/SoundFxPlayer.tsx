@@ -3,7 +3,7 @@ import { Socket } from 'socket.io-client';
 
 interface SoundEffect {
   id: string;
-  type: 'tts' | 'audio-file';
+  type: 'tts' | 'audio-file' | '101soundboard';
   userId: string;
   username: string;
   text?: string;
@@ -13,6 +13,11 @@ interface SoundEffect {
     name: string;
   };
   fileName?: string;
+  soundFileUrl?: string;
+  soundName?: string;
+  boardName?: string;
+  duration?: number;
+  maxDuration?: number;
   audioData?: any;
   timestamp: number;
 }
@@ -89,6 +94,8 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
         await playTTS(effect.text, effect.voiceId || 'alloy');
       } else if (effect.type === 'audio-file' && effect.fileName) {
         await playAudioFile(effect.fileName);
+      } else if (effect.type === '101soundboard' && effect.soundFileUrl) {
+        await play101Soundboard(effect.soundFileUrl, effect.duration, effect.maxDuration);
       }
     } catch (error) {
       console.error('❌ SOUNDFX: Error playing effect:', error);
@@ -207,6 +214,52 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       audio.play().catch(reject);
       
       // console.log(`🔊 SOUNDFX: Playing audio file: ${fileName}`);
+    });
+  };
+
+  const play101Soundboard = async (soundFileUrl: string, duration?: number, maxDuration?: number) => {
+    return new Promise<void>((resolve, reject) => {
+      console.log(`📣 SOUNDFX CLIENT: Playing 101soundboard: ${soundFileUrl}`);
+      console.log(`📣 SOUNDFX CLIENT: Duration: ${duration}ms, Max: ${maxDuration}ms`);
+      
+      const audio = new Audio(soundFileUrl);
+      audioRef.current = audio;
+      
+      audio.volume = volume;
+      // No need for crossOrigin since we're using our proxy
+      
+      // If duration exceeds max, set a timeout to stop playback
+      let maxDurationTimeout: NodeJS.Timeout | null = null;
+      if (maxDuration && duration && duration > maxDuration) {
+        maxDurationTimeout = setTimeout(() => {
+          console.log(`⏱️ SOUNDFX CLIENT: Stopping playback at ${maxDuration}ms limit`);
+          if (audioRef.current === audio) {
+            audio.pause();
+            audioRef.current = null;
+            resolve();
+          }
+        }, maxDuration);
+      }
+      
+      audio.onended = () => {
+        if (maxDurationTimeout) clearTimeout(maxDurationTimeout);
+        audioRef.current = null;
+        console.log(`✅ SOUNDFX CLIENT: 101soundboard playback ended`);
+        resolve();
+      };
+
+      audio.onerror = (error) => {
+        if (maxDurationTimeout) clearTimeout(maxDurationTimeout);
+        console.error('❌ SOUNDFX CLIENT: 101soundboard playback error:', error);
+        audioRef.current = null;
+        reject(error);
+      };
+
+      audio.play().catch((err) => {
+        if (maxDurationTimeout) clearTimeout(maxDurationTimeout);
+        console.error('❌ SOUNDFX CLIENT: Failed to play 101soundboard:', err);
+        reject(err);
+      });
     });
   };
 

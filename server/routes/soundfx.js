@@ -177,6 +177,45 @@ router.post('/stop-all', authenticateAdmin, (req, res) => {
     }
 });
 
+// Proxy audio from 101soundboards to bypass CORS
+router.get('/proxy/soundboard', async (req, res) => {
+    try {
+        const { url } = req.query;
+        
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+        
+        // Validate it's a 101soundboards URL
+        if (!url.includes('101soundboards.com')) {
+            return res.status(400).json({ error: 'Invalid soundboard URL' });
+        }
+        
+        const axios = require('axios');
+        
+        // Fetch the audio file
+        const response = await axios.get(url, {
+            responseType: 'stream',
+            headers: {
+                'User-Agent': 'OneStreamer/1.0',
+                'Referer': 'https://www.101soundboards.com'
+            },
+            timeout: 30000
+        });
+        
+        // Set appropriate headers
+        res.setHeader('Content-Type', response.headers['content-type'] || 'audio/mpeg');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        
+        // Stream the audio to the client
+        response.data.pipe(res);
+    } catch (error) {
+        console.error('Error proxying soundboard audio:', error.message);
+        res.status(500).json({ error: 'Failed to fetch audio' });
+    }
+});
+
 // Get active sound effects
 router.get('/active', (req, res) => {
     try {
@@ -226,6 +265,112 @@ router.get('/files/:fileName', async (req, res) => {
     } catch (error) {
         console.error('Error serving audio file:', error);
         res.status(500).json({ error: 'Failed to serve audio file' });
+    }
+});
+
+// Trigger 101soundboards item (from inventory use)
+router.post('/item/soundboard', authenticateToken, async (req, res) => {
+    try {
+        const { itemId, soundUrl } = req.body;
+        
+        if (!itemId || !soundUrl) {
+            return res.status(400).json({ error: 'Item ID and sound URL are required' });
+        }
+
+        const itemService = req.app.get('itemService');
+        const inventoryService = req.app.get('inventoryService');
+        const soundFxService = req.app.get('soundFxService');
+        const streamService = req.app.get('streamService');
+
+        // Validate item
+        const item = await itemService.getItemById(itemId);
+        if (!item || item.name !== '101soundboards') {
+            return res.status(400).json({ error: 'Invalid soundboard item' });
+        }
+
+        // Check inventory
+        const inventoryItem = await inventoryService.getInventoryItem(req.user.id, itemId);
+        if (!inventoryItem || inventoryItem.quantity < 1) {
+            return res.status(400).json({ error: 'Item not in inventory' });
+        }
+
+        // Validate item usage (cooldown)
+        const validation = await itemService.validateItemUsage(req.user.id, itemId);
+        if (!validation.valid) {
+            return res.status(429).json({ 
+                error: validation.error || 'Cannot use item',
+                cooldownRemaining: validation.cooldownRemaining
+            });
+        }
+
+        // Get stream status
+        const streamStatus = streamService.getStreamStatus();
+        const streamId = streamStatus.hasActiveStream ? streamStatus.streamerId : null;
+
+        // Use the item
+        const useResult = await inventoryService.useItem(req.user.id, itemId, streamId);
+
+        // Queue the soundboard
+        const soundboardRequest = await soundFxService.queue101Soundboard(
+            req.user.id,
+            req.user.username,
+            soundUrl,
+            {
+                itemId,
+                itemName: item.display_name,
+                streamId
+            }
+        );
+
+        // Emit socket events
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('item-used', {
+                userId: req.user.id,
+                username: req.user.username,
+                item: useResult.item,
+                streamId,
+                soundboardData: {
+                    soundUrl,
+                    requestId: soundboardRequest.id
+                }
+            });
+        }
+
+        res.json({
+            success: true,
+            item: useResult.item,
+            remainingQuantity: useResult.remainingQuantity,
+            soundboardRequest,
+            queueStatus: soundFxService.getSoundboardQueueStatus()
+        });
+    } catch (error) {
+        console.error('Error using soundboard item:', error);
+        res.status(500).json({ error: error.message || 'Failed to use soundboard item' });
+    }
+});
+
+// Get soundboard queue status
+router.get('/soundboard/queue', authenticateToken, (req, res) => {
+    try {
+        const soundFxService = req.app.get('soundFxService');
+        const status = soundFxService.getSoundboardQueueStatus();
+        res.json(status);
+    } catch (error) {
+        console.error('Error fetching soundboard queue status:', error);
+        res.status(500).json({ error: 'Failed to fetch queue status' });
+    }
+});
+
+// Clear soundboard queue (admin only)
+router.delete('/soundboard/queue', authenticateAdmin, (req, res) => {
+    try {
+        const soundFxService = req.app.get('soundFxService');
+        const cleared = soundFxService.clearSoundboardQueue();
+        res.json({ success: true, cleared });
+    } catch (error) {
+        console.error('Error clearing soundboard queue:', error);
+        res.status(500).json({ error: 'Failed to clear queue' });
     }
 });
 
