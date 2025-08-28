@@ -25,6 +25,13 @@ class SoundFxService extends EventEmitter {
         this.isProcessingSoundboard = false;
         this.soundboardQueueDelay = 2000; // 2 seconds between soundboard sounds
         this.lastSoundboardTime = 0;
+        
+        // Item-specific sounds that can play simultaneously (not queued)
+        this.itemSpecificSounds = new Set([
+            'https://www.101soundboards.com/sounds/23972494-fart-reverb',  // Fart item
+            'https://www.101soundboards.com/sounds/74377-thunderstorm'     // Thunderstorm item
+        ]);
+        
         this.initializeService();
     }
 
@@ -41,6 +48,17 @@ class SoundFxService extends EventEmitter {
 
     getAvailableVoices() {
         return this.availableVoices;
+    }
+
+    // Register a new item-specific sound that can play simultaneously
+    registerItemSound(soundUrl) {
+        this.itemSpecificSounds.add(soundUrl);
+        console.log(`🎵 SOUNDFX: Registered item sound for simultaneous playback: ${soundUrl}`);
+    }
+
+    // Check if a sound URL is an item-specific sound
+    isItemSound(soundUrl) {
+        return this.itemSpecificSounds.has(soundUrl);
     }
 
     async queueTTS(userId, username, text, voiceId = 'alloy', metadata = {}) {
@@ -379,6 +397,9 @@ class SoundFxService extends EventEmitter {
             throw new Error('Sound URL is required');
         }
 
+        // Check if this is an item-specific sound
+        const isItemSound = this.itemSpecificSounds.has(soundUrl);
+
         const soundboardRequest = {
             id: `soundboard_${userId}_${Date.now()}`,
             userId,
@@ -386,16 +407,36 @@ class SoundFxService extends EventEmitter {
             soundUrl,
             timestamp: Date.now(),
             status: 'queued',
-            metadata
+            metadata,
+            isItemSound  // Mark if this is an item-specific sound
         };
 
-        this.soundboardQueue.push(soundboardRequest);
-        console.log(`📣 SOUNDFX: 101soundboards queued - User: ${username}, URL: ${soundUrl}`);
+        if (isItemSound) {
+            // Item-specific sounds play immediately without queuing
+            console.log(`🔊 SOUNDFX: Item sound playing immediately - User: ${username}, URL: ${soundUrl}`);
+            
+            // Process immediately without affecting the queue
+            this.processSoundboardRequest(soundboardRequest)
+                .then(() => {
+                    soundboardRequest.status = 'completed';
+                    this.emit('soundboard-completed', soundboardRequest);
+                })
+                .catch(error => {
+                    console.error(`❌ SOUNDFX: Failed to play item sound:`, error);
+                    soundboardRequest.status = 'failed';
+                    soundboardRequest.error = error.message;
+                    this.emit('soundboard-failed', soundboardRequest);
+                });
+        } else {
+            // Regular soundboard sounds go through the queue
+            this.soundboardQueue.push(soundboardRequest);
+            console.log(`📣 SOUNDFX: 101soundboards queued - User: ${username}, URL: ${soundUrl}`);
 
-        this.emit('soundboard-queued', soundboardRequest);
+            this.emit('soundboard-queued', soundboardRequest);
 
-        if (!this.isProcessingSoundboard) {
-            this.processSoundboardQueue();
+            if (!this.isProcessingSoundboard) {
+                this.processSoundboardQueue();
+            }
         }
 
         return soundboardRequest;
@@ -438,7 +479,8 @@ class SoundFxService extends EventEmitter {
     }
 
     async processSoundboardRequest(request) {
-        console.log(`🔊 SOUNDFX: Processing 101soundboard - User: ${request.username}, URL: ${request.soundUrl}`);
+        const soundType = request.isItemSound ? 'Item sound (simultaneous)' : 'Queued soundboard';
+        console.log(`🔊 SOUNDFX: Processing ${soundType} - User: ${request.username}, URL: ${request.soundUrl}`);
         
         // Parse the URL to extract sound info
         const soundInfo = await this.parse101SoundboardUrl(request.soundUrl);
@@ -475,7 +517,8 @@ class SoundFxService extends EventEmitter {
             duration: limitedDuration,
             maxDuration: maxDuration,
             timestamp: Date.now(),
-            metadata: request.metadata
+            metadata: request.metadata,
+            isItemSound: request.isItemSound || false  // Include the flag from the request
         };
 
         // Send to chat

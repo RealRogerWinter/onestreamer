@@ -20,6 +20,7 @@ interface SoundEffect {
   maxDuration?: number;
   audioData?: any;
   timestamp: number;
+  isItemSound?: boolean;  // Flag from server indicating if this is an item sound
 }
 
 interface SoundFxPlayerProps {
@@ -31,6 +32,8 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
   const [currentEffect, setCurrentEffect] = useState<SoundEffect | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
+  // Track multiple simultaneous item sounds
+  const itemSoundsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const [volume, setVolume] = useState(() => {
     const saved = localStorage.getItem('soundfx_volume');
     return saved ? parseFloat(saved) : 0.8;
@@ -64,7 +67,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
     };
 
     const handleStopAll = () => {
-      stopCurrentEffect();
+      stopAllEffects();
     };
 
     socket.on('sound-effect-play', handleSoundEffect);
@@ -83,11 +86,16 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
   }, [volume]);
 
   const playEffect = async (effect: SoundEffect) => {
-    // Stop any currently playing effect
-    stopCurrentEffect();
-
-    setCurrentEffect(effect);
-    setIsPlaying(true);
+    // Only stop current effect if this is NOT an item sound
+    // Item sounds can play simultaneously
+    const isItem = effect.isItemSound === true;
+    
+    if (!isItem) {
+      // Stop any currently playing non-item effect
+      stopCurrentEffect();
+      setCurrentEffect(effect);
+      setIsPlaying(true);
+    }
 
     try {
       if (effect.type === 'tts' && effect.text) {
@@ -95,13 +103,15 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       } else if (effect.type === 'audio-file' && effect.fileName) {
         await playAudioFile(effect.fileName);
       } else if (effect.type === '101soundboard' && effect.soundFileUrl) {
-        await play101Soundboard(effect.soundFileUrl, effect.duration, effect.maxDuration);
+        await play101Soundboard(effect.soundFileUrl, effect.duration, effect.maxDuration, effect.isItemSound);
       }
     } catch (error) {
       console.error('❌ SOUNDFX: Error playing effect:', error);
     } finally {
-      setIsPlaying(false);
-      setCurrentEffect(null);
+      if (!isItem) {
+        setIsPlaying(false);
+        setCurrentEffect(null);
+      }
     }
   };
 
@@ -217,13 +227,30 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
     });
   };
 
-  const play101Soundboard = async (soundFileUrl: string, duration?: number, maxDuration?: number) => {
+  const play101Soundboard = async (soundFileUrl: string, duration?: number, maxDuration?: number, isItemSound?: boolean) => {
     return new Promise<void>((resolve, reject) => {
-      console.log(`📣 SOUNDFX CLIENT: Playing 101soundboard: ${soundFileUrl}`);
+      const isItem = isItemSound === true;
+      console.log(`📣 SOUNDFX CLIENT: Playing 101soundboard${isItem ? ' (Item Sound - Simultaneous)' : ''}: ${soundFileUrl}`);
       console.log(`📣 SOUNDFX CLIENT: Duration: ${duration}ms, Max: ${maxDuration}ms`);
       
       const audio = new Audio(soundFileUrl);
-      audioRef.current = audio;
+      
+      // For item sounds, track them separately to allow simultaneous playback
+      if (isItem) {
+        const soundId = `item_${Date.now()}_${Math.random()}`;
+        itemSoundsRef.current.set(soundId, audio);
+        
+        // Clean up when sound ends
+        audio.addEventListener('ended', () => {
+          itemSoundsRef.current.delete(soundId);
+        });
+        audio.addEventListener('error', () => {
+          itemSoundsRef.current.delete(soundId);
+        });
+      } else {
+        // For regular sounds, use the single audioRef
+        audioRef.current = audio;
+      }
       
       audio.volume = volume;
       // No need for crossOrigin since we're using our proxy
@@ -233,9 +260,12 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       if (maxDuration && duration && duration > maxDuration) {
         maxDurationTimeout = setTimeout(() => {
           console.log(`⏱️ SOUNDFX CLIENT: Stopping playback at ${maxDuration}ms limit`);
-          if (audioRef.current === audio) {
+          if (!isItem && audioRef.current === audio) {
             audio.pause();
             audioRef.current = null;
+            resolve();
+          } else if (isItem) {
+            audio.pause();
             resolve();
           }
         }, maxDuration);
@@ -243,15 +273,19 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       
       audio.onended = () => {
         if (maxDurationTimeout) clearTimeout(maxDurationTimeout);
-        audioRef.current = null;
-        console.log(`✅ SOUNDFX CLIENT: 101soundboard playback ended`);
+        if (!isItem) {
+          audioRef.current = null;
+        }
+        console.log(`✅ SOUNDFX CLIENT: 101soundboard playback ended${isItem ? ' (Item Sound)' : ''}`);
         resolve();
       };
 
       audio.onerror = (error) => {
         if (maxDurationTimeout) clearTimeout(maxDurationTimeout);
         console.error('❌ SOUNDFX CLIENT: 101soundboard playback error:', error);
-        audioRef.current = null;
+        if (!isItem) {
+          audioRef.current = null;
+        }
         reject(error);
       };
 
@@ -275,8 +309,22 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       audioRef.current = null;
     }
 
+    // Note: We don't stop item sounds here since they should play simultaneously
+    // Only stop them if explicitly requested via stopAllEffects
+
     setIsPlaying(false);
     setCurrentEffect(null);
+  };
+
+  const stopAllEffects = () => {
+    stopCurrentEffect();
+    
+    // Also stop all item sounds
+    itemSoundsRef.current.forEach((audio) => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+    itemSoundsRef.current.clear();
   };
 
   // Load voices and initialize TTS permissions
