@@ -110,11 +110,51 @@ function AppContent() {
   
   // Handle initial authentication on app load
   useEffect(() => {
-    const token = authService.getToken();
-    if (token && isAuthenticated) {
-      // console.log('🔑 App: Initializing socket authentication on app load');
-      SocketManager.updateAuth(token);
-    }
+    const initializeAuthentication = async () => {
+      const token = authService.getToken();
+      if (token) {
+        try {
+          // Fetch fresh profile data to ensure we have the latest user info
+          const profile = await authService.getProfile();
+          if (profile) {
+            // Check if account is pending deletion
+            if (profile.user.accountStatus === 'pending_deletion' || (profile.user as any).account_status === 'pending_deletion') {
+              setPendingDeletionUser(profile.user);
+              setShowAccountRestoration(true);
+              setIsAuthenticated(false);
+              authService.logout(); // Clear invalid session
+              return;
+            }
+            
+            // Update local state with fresh data
+            setCurrentUser(profile.user);
+            setUserPoints(profile.stats?.points || 0);
+            setIsAuthenticated(true);
+            
+            // Update socket authentication
+            SocketManager.updateAuth(token);
+            
+            console.log('✅ App: Restored authenticated session for user:', profile.user.username, 'Points:', profile.stats?.points || 0);
+          } else {
+            // If profile fetch fails, clear invalid session
+            console.log('❌ App: Failed to restore session, clearing invalid authentication');
+            authService.logout();
+            setIsAuthenticated(false);
+            setCurrentUser(null);
+            setUserPoints(0);
+          }
+        } catch (error) {
+          console.error('❌ App: Error restoring authentication:', error);
+          // Clear invalid session on error
+          authService.logout();
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          setUserPoints(0);
+        }
+      }
+    };
+    
+    initializeAuthentication();
   }, []); // Only run once on mount
 
   const { socket, connected, error: socketError } = useMainSocket();

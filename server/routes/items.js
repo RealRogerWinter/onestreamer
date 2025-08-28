@@ -36,15 +36,44 @@ async function sendSystemMessage(message, username = '🤖 StreamBot') {
     }
 }
 
+// Debug middleware for all item routes
+router.use((req, res, next) => {
+    if (req.path.includes('/inventory/use/')) {
+        console.log(`🔴🔴🔴 FART DEBUG MIDDLEWARE: ${req.method} ${req.path}`);
+        console.log(`🔴🔴🔴 FART DEBUG: Full URL: ${req.originalUrl}`);
+    }
+    next();
+});
+
 // Items endpoints
 router.get('/items', async (req, res) => {
     try {
         const itemService = req.app.get('itemService');
-        const items = await itemService.getAllItems();
+        const { category } = req.query;
+        
+        let items;
+        if (category && category !== 'all') {
+            items = await itemService.getItemsByCategory(category);
+        } else {
+            items = await itemService.getAllItems();
+        }
+        
         res.json(items);
     } catch (error) {
         console.error('Error fetching items:', error);
         res.status(500).json({ error: 'Failed to fetch items' });
+    }
+});
+
+// Get all unique categories
+router.get('/items/categories/list', async (req, res) => {
+    try {
+        const itemService = req.app.get('itemService');
+        const categories = await itemService.getAllCategories();
+        res.json(categories);
+    } catch (error) {
+        console.error('Error fetching categories:', error);
+        res.status(500).json({ error: 'Failed to fetch categories' });
     }
 });
 
@@ -110,8 +139,11 @@ router.get('/inventory', authenticateToken, async (req, res) => {
 });
 
 router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
+    console.log(`🚨🚨🚨 FART DEBUG: Request received at /inventory/use/${req.params.itemId}`);
+    console.log(`🚨🚨🚨 FART DEBUG: User: ${req.user?.username || 'unknown'}, Method: ${req.method}`);
+    console.log(`🚨🚨🚨 FART DEBUG: Headers:`, req.headers);
     console.log(`🚀 ITEMS: ===== ITEM USAGE REQUEST RECEIVED =====`);
-    console.log(`🚀 ITEMS: Starting item usage for item ID ${req.params.itemId} by user ${req.user.id}`);
+    console.log(`🚀 ITEMS: Starting item usage for item ID ${req.params.itemId} by user ${req.user.id} (${req.user.username})`);
     console.log(`🚀 ITEMS: User: ${req.user.username}`);
     try {
         const inventoryService = req.app.get('inventoryService');
@@ -141,7 +173,19 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
         // Check if this is an interactive item that needs click-to-throw
         const isInteractiveItem = canvasFxService && canvasFxService.isInteractiveItem(item);
         
-        console.log(`🎯 ITEMS DEBUG: Item ${item.name} - isInteractiveItem: ${isInteractiveItem}, isTTSItem: ${isTTSItem}, item_type: ${item.item_type}`);
+        // But first check if it's an auto-trigger item that should fire immediately
+        // Special case for fart and thunderstorm which are auto-trigger but not interactive
+        let isAutoTrigger = false;
+        if (item.name === 'fart' || item.name === 'thunderstorm') {
+            isAutoTrigger = true; // Fart and thunderstorm always auto-trigger
+            console.log(`🌩️ ITEMS: ${item.name} detected - setting autoTrigger to true`);
+        } else if (isInteractiveItem && canvasFxService) {
+            const interactionConfig = canvasFxService.getInteractionConfig(item);
+            isAutoTrigger = interactionConfig && interactionConfig.autoTrigger;
+            console.log(`🔍 ITEMS: Item ${item.name} - autoTrigger: ${isAutoTrigger}`);
+        }
+        
+        console.log(`🎯 ITEMS DEBUG: Item ${item.name} - isInteractiveItem: ${isInteractiveItem}, isAutoTrigger: ${isAutoTrigger}, isTTSItem: ${isTTSItem}, item_type: ${item.item_type}`);
         
         // Check if this is a buff/debuff item
         const isBuffDebuffItem = itemService.isBuffOrDebuffItem(item);
@@ -156,9 +200,117 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             console.log(`🏰 FORTRESS DEBUG: Should take cooldown modifier path`);
         }
         
-        // IMPORTANT: Check interactive items FIRST before buff/debuff
-        // Some items like smoke_bomb are both interactive AND buff/debuff
-        if (isInteractiveItem) {
+        // IMPORTANT: Check auto-trigger FIRST, then interactive items
+        // Auto-trigger items should fire immediately without user interaction
+        if (isAutoTrigger) {
+            console.log(`🔥 ITEMS: Auto-trigger item ${item.display_name} - consuming immediately`);
+            
+            // Consume the item
+            const usageResult = await inventoryService.useItem(
+                req.user.id, 
+                req.params.itemId,
+                streamId
+            );
+            
+            // Special handling for Fart item
+            if (item.name === 'fart') {
+                console.log(`💨 ITEMS: Fart item auto-triggered by ${req.user.username}`);
+                
+                const soundFxService = req.app.get('soundFxService');
+                
+                // Queue the sound effect first
+                if (soundFxService) {
+                    soundFxService.queue101Soundboard(
+                        req.user.id,
+                        req.user.username,
+                        'https://www.101soundboards.com/sounds/23972494-fart-reverb',
+                        { streamId }
+                    ).then(() => {
+                        console.log(`🔊 ITEMS: Fart sound effect queued`);
+                    }).catch(error => {
+                        console.error('❌ ITEMS: Failed to play fart sound:', error);
+                    });
+                }
+                
+                // Delay the visual effect by 1 second to sync with sound
+                setTimeout(() => {
+                    if (canvasFxService) {
+                        canvasFxService.triggerItemEffect(
+                            req.user.id,
+                            usageResult.item.id,
+                            streamId,
+                            {
+                                position: { x: 0.5, y: 0.7 } // Center-bottom of screen
+                            }
+                        ).then(() => {
+                            console.log(`💨 ITEMS: Fart visual effect triggered (after 1000ms delay)`);
+                        }).catch(error => {
+                            console.error('❌ ITEMS: Failed to trigger fart visual:', error);
+                        });
+                    }
+                }, 2000); // 2 second delay to sync with sound
+                
+                // Send chat message
+                await sendSystemMessage(`💨 ${req.user.username} let one rip!`, '💨 Fart Bot');
+            }
+            
+            // Special handling for Thunderstorm item
+            if (item.name === 'thunderstorm') {
+                console.log(`⛈️ ITEMS: Thunderstorm item auto-triggered by ${req.user.username}`);
+                
+                const soundFxService = req.app.get('soundFxService');
+                
+                // Queue the thunderstorm sound effect
+                if (soundFxService) {
+                    soundFxService.queue101Soundboard(
+                        req.user.id,
+                        req.user.username,
+                        'https://www.101soundboards.com/sounds/74377-thunderstorm',
+                        { streamId }
+                    ).then(() => {
+                        console.log(`🔊 ITEMS: Thunderstorm sound effect queued`);
+                    }).catch(error => {
+                        console.error('❌ ITEMS: Failed to play thunderstorm sound:', error);
+                    });
+                }
+                
+                // Wait 2 seconds then trigger the visual effect (covers whole screen)
+                setTimeout(() => {
+                    if (canvasFxService) {
+                        canvasFxService.triggerItemEffect(
+                            req.user.id,
+                            usageResult.item.id,
+                            streamId,
+                            {
+                                position: { x: 0.5, y: 0.5 } // Center of screen
+                            }
+                        ).then(() => {
+                            console.log(`⛈️ ITEMS: Thunderstorm visual effect triggered (after 2 second delay)`);
+                        }).catch(error => {
+                            console.error('❌ ITEMS: Failed to trigger thunderstorm visual:', error);
+                        });
+                    }
+                }, 2000); // 2 second delay to sync with sound
+                
+                // Send chat message
+                await sendSystemMessage(`⛈️ ${req.user.username} summoned a thunderstorm!`, '⛈️ Storm Bot');
+            }
+            
+            // Get interaction config for response
+            const interactionConfig = canvasFxService ? canvasFxService.getInteractionConfig(item) : null;
+            
+            // Return success with item consumed
+            const result = {
+                success: true,
+                item: usageResult.item,
+                remainingQuantity: usageResult.remainingQuantity,
+                interactionMode: 'auto-trigger',
+                interactionConfig,
+                message: 'Auto-trigger item activated'
+            };
+            
+            return res.json(result);
+        } else if (isInteractiveItem) {
             console.log(`🎯 ITEMS: Taking interactive item path for ${item.display_name}`);
             
             // Check if there's an active stream for interactive items
@@ -499,7 +651,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             };
             
             res.json(result);
-        } else if (isInteractiveItem) {
+        } else if (isInteractiveItem && !isAutoTrigger) {
             console.log(`🎯 ITEMS: Taking interactive item path for ${item.display_name}`);
             
             // Check if there's an active stream for interactive items
@@ -657,7 +809,8 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 });
             }
             
-            // Return success without consuming the item
+            
+            // Return success without consuming the item (for click-to-throw items)
             const result = {
                 success: true,
                 item: {
@@ -684,6 +837,50 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     streamId
                 );
                 console.log(`🔍 ITEMS DEBUG: inventoryService.useItem completed for ${item.display_name}, result:`, result);
+                
+                // Special handling for Fart item (automatic sound + visual)
+                if (item.name === 'fart') {
+                    console.log(`💨 ITEMS: Fart item activated by ${req.user.username}`);
+                    
+                    const soundFxService = req.app.get('soundFxService');
+                    const canvasFxService = req.app.get('canvasFxService');
+                    
+                    // Trigger the sound effect automatically
+                    if (soundFxService) {
+                        try {
+                            await soundFxService.queue101Soundboard(
+                                req.user.id,
+                                req.user.username,
+                                'https://www.101soundboards.com/sounds/23972494-fart-reverb',
+                                { streamId }
+                            );
+                            console.log(`🔊 ITEMS: Fart sound effect queued`);
+                        } catch (error) {
+                            console.error('❌ ITEMS: Failed to play fart sound:', error);
+                        }
+                    }
+                    
+                    // Wait 2 seconds then trigger the visual effect
+                    setTimeout(() => {
+                        if (canvasFxService) {
+                            canvasFxService.triggerItemEffect(
+                                req.user.id,
+                                result.item.id,
+                                streamId,
+                                {
+                                    position: { x: 0.5, y: 0.7 } // Center-bottom of screen
+                                }
+                            ).then(() => {
+                                console.log(`💨 ITEMS: Fart visual effect triggered (after 2 second delay)`);
+                            }).catch(error => {
+                                console.error('❌ ITEMS: Failed to trigger fart visual:', error);
+                            });
+                        }
+                    }, 2000); // 2 second delay to sync with sound
+                    
+                    // Send chat message
+                    await sendSystemMessage(`💨 ${req.user.username} let one rip!`, '💨 Fart Bot');
+                }
                 
                 // Special handling for Kill Switch after item consumption
                 if (item.name === 'kill_switch') {
@@ -1423,6 +1620,44 @@ router.post('/admin/items', authenticateAdmin, async (req, res) => {
     } catch (error) {
         console.error('Error creating admin item:', error);
         res.status(500).json({ error: 'Failed to create item' });
+    }
+});
+
+router.get('/admin/items/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const itemService = req.app.get('itemService');
+        const item = await itemService.getItemById(req.params.id);
+        
+        if (!item) {
+            return res.status(404).json({ error: 'Item not found' });
+        }
+        
+        res.json(item);
+    } catch (error) {
+        console.error('Error fetching admin item:', error);
+        res.status(500).json({ error: 'Failed to fetch item' });
+    }
+});
+
+router.put('/admin/items/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const itemService = req.app.get('itemService');
+        const item = await itemService.updateItem(req.params.id, req.body);
+        res.json(item);
+    } catch (error) {
+        console.error('Error updating admin item:', error);
+        res.status(500).json({ error: 'Failed to update item' });
+    }
+});
+
+router.delete('/admin/items/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const itemService = req.app.get('itemService');
+        await itemService.deleteItem(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting admin item:', error);
+        res.status(500).json({ error: 'Failed to delete item' });
     }
 });
 

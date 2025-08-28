@@ -54,6 +54,7 @@ class ShopService {
                 i.emoji,
                 i.description,
                 i.item_type,
+                i.category,
                 i.rarity,
                 i.cooldown_seconds,
                 i.max_stack
@@ -89,6 +90,7 @@ class ShopService {
                 i.emoji,
                 i.description,
                 i.item_type,
+                i.category,
                 i.rarity,
                 i.cooldown_seconds,
                 i.max_stack

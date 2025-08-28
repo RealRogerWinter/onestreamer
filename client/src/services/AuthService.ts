@@ -186,6 +186,17 @@ class AuthService {
       this.token = response.data.token;
       this.refreshToken = response.data.refreshToken;
       this.saveToStorage();
+      
+      // After refreshing tokens, also fetch fresh profile data to ensure user info is up to date
+      try {
+        const profile = await this.getProfile();
+        if (profile) {
+          this.user = profile.user;
+          this.saveToStorage();
+        }
+      } catch (profileError) {
+        console.error('Failed to refresh profile after token refresh:', profileError);
+      }
 
       return this.token;
     } catch (error) {

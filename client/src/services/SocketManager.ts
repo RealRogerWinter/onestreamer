@@ -151,6 +151,11 @@ class SocketManager {
   public updateAuth(token: string | null): void {
     // console.log('🔑 SocketManager: Updating authentication...');
     
+    // Update localStorage first to ensure consistency
+    if (token) {
+      localStorage.setItem('auth_token', token);
+    }
+    
     if (this.mainSocket) {
       this.mainSocket.disconnect();
       this.mainSocket.auth = { token };

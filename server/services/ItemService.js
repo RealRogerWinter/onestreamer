@@ -588,6 +588,7 @@ class ItemService {
             emoji,
             description,
             item_type,
+            category = 'misc',
             rarity,
             base_price = 0,
             is_purchasable = true,
@@ -602,12 +603,12 @@ class ItemService {
         try {
             const result = await runAsync(
                 `INSERT INTO items (
-                    name, display_name, emoji, description, item_type, 
+                    name, display_name, emoji, description, item_type, category,
                     rarity, base_price, is_purchasable, is_active, 
                     cooldown_seconds, max_stack, duration_seconds, effect_data, stack_behavior
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                    name, display_name, emoji, description, item_type,
+                    name, display_name, emoji, description, item_type, category,
                     rarity, base_price, is_purchasable, is_active,
                     cooldown_seconds, max_stack, duration_seconds, effect_data, stack_behavior
                 ]
@@ -653,6 +654,39 @@ class ItemService {
         );
     }
 
+    async getItemsByCategory(category) {
+        return await allAsync(
+            'SELECT * FROM items WHERE category = ? AND is_active = 1 ORDER BY display_name',
+            [category]
+        );
+    }
+
+    async getAllCategories() {
+        const result = await allAsync(
+            'SELECT DISTINCT category FROM items WHERE is_active = 1 AND category IS NOT NULL ORDER BY category'
+        );
+        
+        // Transform to a more useful format
+        const categories = result.map(row => ({
+            value: row.category,
+            label: row.category.split('_').map(word => 
+                word.charAt(0).toUpperCase() + word.slice(1)
+            ).join(' '),
+            count: 0
+        }));
+        
+        // Get counts for each category
+        for (const cat of categories) {
+            const countResult = await getAsync(
+                'SELECT COUNT(*) as count FROM items WHERE category = ? AND is_active = 1',
+                [cat.value]
+            );
+            cat.count = countResult.count;
+        }
+        
+        return categories;
+    }
+
     async getItemsByRarity(rarity) {
         return await allAsync(
             'SELECT * FROM items WHERE rarity = ? AND is_active = 1',
@@ -664,7 +698,7 @@ class ItemService {
         const allowedFields = [
             'display_name', 'emoji', 'description', 'base_price',
             'is_purchasable', 'is_active', 'cooldown_seconds', 'max_stack',
-            'duration_seconds', 'item_type', 'rarity', 'name'
+            'duration_seconds', 'item_type', 'rarity', 'name', 'category'
         ];
 
         const fields = Object.keys(updates).filter(field => allowedFields.includes(field));

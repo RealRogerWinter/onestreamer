@@ -9,6 +9,7 @@ interface Item {
   emoji: string;
   description: string;
   item_type: 'buff' | 'debuff' | 'utility';
+  category?: string;
   rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
   cooldown_seconds: number;
   duration_seconds: number;
@@ -60,6 +61,7 @@ const ItemManagement: React.FC<ItemManagementProps> = ({ addLog }) => {
     emoji: '',
     description: '',
     item_type: 'utility' as 'buff' | 'debuff' | 'utility',
+    category: 'misc',
     rarity: 'common' as 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary',
     base_price: 100,
     cooldown_seconds: 0,
@@ -146,6 +148,7 @@ const ItemManagement: React.FC<ItemManagementProps> = ({ addLog }) => {
         emoji: '',
         description: '',
         item_type: 'utility',
+        category: 'misc',
         rarity: 'common',
         base_price: 100,
         cooldown_seconds: 0,
@@ -587,6 +590,23 @@ const ItemManagement: React.FC<ItemManagementProps> = ({ addLog }) => {
                                   <option value="utility">🔧 Utility</option>
                                 </select>
                                 <select
+                                  value={editValues.category || 'misc'}
+                                  onChange={(e) => handleFieldChange(item.id, 'category', e.target.value)}
+                                  className="category-select"
+                                  title="Shop category"
+                                >
+                                  <option value="utility">Utility</option>
+                                  <option value="powerups">Powerups</option>
+                                  <option value="debuffs">Debuffs</option>
+                                  <option value="visual_effects">Visual Effects</option>
+                                  <option value="sound_effects">Sound Effects</option>
+                                  <option value="drawing_tools">Drawing Tools</option>
+                                  <option value="protection">Protection</option>
+                                  <option value="combat">Combat</option>
+                                  <option value="general">General</option>
+                                  <option value="misc">Misc</option>
+                                </select>
+                                <select
                                   value={editValues.rarity}
                                   onChange={(e) => handleFieldChange(item.id, 'rarity', e.target.value)}
                                   className="rarity-select"
@@ -608,6 +628,9 @@ const ItemManagement: React.FC<ItemManagementProps> = ({ addLog }) => {
                               <div className="item-meta">
                                 <span className="item-type">
                                   {getTypeIcon(item.item_type)} {item.item_type}
+                                </span>
+                                <span className="item-category" title="Shop category">
+                                  📁 {item.category || 'misc'}
                                 </span>
                                 <span className="item-rarity" style={{ color: getRarityColor(item.rarity) }}>
                                   {item.rarity}
@@ -900,6 +923,28 @@ const ItemManagement: React.FC<ItemManagementProps> = ({ addLog }) => {
                     <option value="legendary">Legendary</option>
                   </select>
                 </div>
+                <div className="form-group">
+                  <label>Shop Category:</label>
+                  <select
+                    value={newItem.category}
+                    onChange={(e) => setNewItem({...newItem, category: e.target.value})}
+                    title="Category for shop organization"
+                  >
+                    <option value="utility">Utility</option>
+                    <option value="powerups">Powerups</option>
+                    <option value="debuffs">Debuffs</option>
+                    <option value="visual_effects">Visual Effects</option>
+                    <option value="sound_effects">Sound Effects</option>
+                    <option value="drawing_tools">Drawing Tools</option>
+                    <option value="protection">Protection</option>
+                    <option value="combat">Combat</option>
+                    <option value="general">General</option>
+                    <option value="misc">Misc</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-row">
                 <div className="form-group">
                   <label>Cooldown (seconds):</label>
                   <input

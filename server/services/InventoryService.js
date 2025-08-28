@@ -39,6 +39,7 @@ class InventoryService {
                 i.emoji,
                 i.description,
                 i.item_type,
+                i.category,
                 i.rarity,
                 i.cooldown_seconds,
                 i.max_stack

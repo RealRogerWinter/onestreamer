@@ -724,6 +724,16 @@ class CanvasFxService extends EventEmitter {
                 chatMessage: '{username} released a bug infestation! 🐛',
                 borderColor: 'rgba(101, 67, 33, 0.8)',
                 glowColor: 'rgba(101, 67, 33, 0.5)'
+            },
+            'fart': {
+                mode: 'auto-trigger',
+                cursor: 'default',
+                indicator: '💨 Releasing fart cloud!',
+                chatMessage: '{username} let one rip! 💨',
+                borderColor: 'rgba(139, 90, 43, 0.6)',
+                glowColor: 'rgba(107, 142, 35, 0.4)',
+                autoTrigger: true,
+                triggerDelay: 500
             }
         };
         
@@ -1681,6 +1691,43 @@ class CanvasFxService extends EventEmitter {
                     scatterOnClick: false,
                     fadeOut: true,
                     fadeStartTime: 13000
+                }
+            },
+            'fart': {
+                type: 'fart_clouds',
+                duration: 8000, // 8 seconds total animation
+                config: {
+                    cloudType: 'fart',
+                    emoji: '💨',
+                    cloudCount: 12,
+                    animation: 'fart-dispersion',
+                    sound: 'fart',
+                    minSize: 40,
+                    maxSize: 120,
+                    startOpacity: 0.7,
+                    endOpacity: 0,
+                    cloudColor: 'rgba(139, 90, 43, 0.4)', // Brown-green gas color
+                    dispersionSpeed: 1.5,
+                    riseSpeed: -0.8, // Negative for upward movement
+                    driftSpeed: 0.6,
+                    rotationSpeed: 0.02,
+                    fadeStartTime: 3000,
+                    fadeOutDuration: 5000,
+                    spawnRadius: 50,
+                    spawnPattern: 'explosion', // Clouds burst outward
+                    wobbleAmount: 15,
+                    greenTint: true,
+                    particleTrail: true,
+                    trailColor: 'rgba(107, 142, 35, 0.2)' // Olive green trail
+                }
+            },
+            'thunderstorm': {
+                type: 'thunderstorm_rain',
+                duration: 68000, // 68 seconds to match sound effect
+                config: {
+                    rainIntensity: 200,
+                    lightningFrequency: 'moderate',
+                    opacity: 0.8
                 }
             }
         };

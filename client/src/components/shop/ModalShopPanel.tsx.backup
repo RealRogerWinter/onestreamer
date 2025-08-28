@@ -47,12 +47,10 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [showQuantitySelector, setShowQuantitySelector] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ShopItemData | null>(null);
-  const [searchTerm, setSearchTerm] = useState(''); // Add search term state
   const itemsPerPage = 15; // More items for larger layout
 
   // Reference to panel (no swipe handling needed for full screen mobile)
   const panelRef = useRef<HTMLDivElement>(null);
-  const shopContentRef = useRef<HTMLDivElement>(null); // Add ref for shop content area
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const startYRef = useRef<number>(0);
@@ -309,41 +307,18 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
     }
   };
 
-  // Reset to page 1 when tab or search changes
+  // Reset to page 1 when tab changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, searchTerm]);
-
-  // Function to handle page changes with scroll to top
-  const handlePageChange = (newPage: number) => {
-    setCurrentPage(newPage);
-    // Scroll shop content to top when changing pages
-    if (shopContentRef.current) {
-      shopContentRef.current.scrollTop = 0;
-    }
-  };
+  }, [activeTab]);
 
   const getFilteredItems = () => {
-    let filtered = shopItems;
-    
-    // Filter by category
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(item => item.category === activeTab);
+    switch (activeTab) {
+      case 'all':
+        return shopItems;
+      default:
+        return shopItems.filter(item => item.item_type === activeTab);
     }
-    
-    // Filter by search term
-    if (searchTerm.trim()) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(item => 
-        item.display_name.toLowerCase().includes(searchLower) ||
-        item.name.toLowerCase().includes(searchLower) ||
-        item.description?.toLowerCase().includes(searchLower) ||
-        item.item_type.toLowerCase().includes(searchLower) ||
-        item.category?.toLowerCase().includes(searchLower)
-      );
-    }
-    
-    return filtered;
   };
 
   const getPaginatedItems = () => {
@@ -363,8 +338,9 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
       return { canPurchase: false, status: 'login-required', message: 'Login Required' };
     }
     
-    // stock_limit: 0 = unlimited, -1 = not available, positive = limited stock
-    // No need to check for out of stock here since 0 means unlimited
+    if (item.stock_limit < 0) {
+      return { canPurchase: false, status: 'out-of-stock', message: 'Out of Stock' };
+    }
     
     const discountedPrice = item.discount_percentage > 0 
       ? Math.floor(item.price * (1 - item.discount_percentage / 100))
@@ -415,25 +391,6 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
           </div>
         </div>
 
-        <div className="shop-search-bar">
-          <input
-            type="text"
-            className="shop-search-input"
-            placeholder="🔍 Search items by name, type, or category..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          {searchTerm && (
-            <button 
-              className="search-clear-btn"
-              onClick={() => setSearchTerm('')}
-              title="Clear search"
-            >
-              ×
-            </button>
-          )}
-        </div>
-
         <div className="shop-categories">
           <button 
             className={`category-btn ${activeTab === 'all' ? 'active' : ''}`}
@@ -442,46 +399,40 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
             All
           </button>
           <button 
-            className={`category-btn ${activeTab === 'sound_effects' ? 'active' : ''}`}
-            onClick={() => setActiveTab('sound_effects')}
+            className={`category-btn ${activeTab === 'buff' ? 'active' : ''}`}
+            onClick={() => setActiveTab('buff')}
           >
-            Sound Effects
+            Buffs
           </button>
           <button 
-            className={`category-btn ${activeTab === 'visual_effects' ? 'active' : ''}`}
-            onClick={() => setActiveTab('visual_effects')}
+            className={`category-btn ${activeTab === 'debuff' ? 'active' : ''}`}
+            onClick={() => setActiveTab('debuff')}
           >
-            Visual Effects
-          </button>
-          <button 
-            className={`category-btn ${activeTab === 'drawing_tools' ? 'active' : ''}`}
-            onClick={() => setActiveTab('drawing_tools')}
-          >
-            Drawing Tools
-          </button>
-          <button 
-            className={`category-btn ${activeTab === 'powerups' ? 'active' : ''}`}
-            onClick={() => setActiveTab('powerups')}
-          >
-            Power-ups
-          </button>
-          <button 
-            className={`category-btn ${activeTab === 'protection' ? 'active' : ''}`}
-            onClick={() => setActiveTab('protection')}
-          >
-            Protection
-          </button>
-          <button 
-            className={`category-btn ${activeTab === 'combat' ? 'active' : ''}`}
-            onClick={() => setActiveTab('combat')}
-          >
-            Combat
+            Debuffs
           </button>
           <button 
             className={`category-btn ${activeTab === 'utility' ? 'active' : ''}`}
             onClick={() => setActiveTab('utility')}
           >
             Utility
+          </button>
+          <button 
+            className={`category-btn ${activeTab === 'guard' ? 'active' : ''}`}
+            onClick={() => setActiveTab('guard')}
+          >
+            Guards
+          </button>
+          <button 
+            className={`category-btn ${activeTab === 'weapon' ? 'active' : ''}`}
+            onClick={() => setActiveTab('weapon')}
+          >
+            Weapons
+          </button>
+          <button 
+            className={`category-btn ${activeTab === 'marker' ? 'active' : ''}`}
+            onClick={() => setActiveTab('marker')}
+          >
+            Markers
           </button>
         </div>
 
@@ -497,7 +448,7 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
           </div>
         )}
 
-        <div className="shop-content" ref={shopContentRef}>
+        <div className="shop-content">
           {!isAuthenticated ? (
             <div className="shop-guest-section">
               <div className="guest-welcome">
@@ -561,8 +512,8 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
                     <div
                       key={item.item_id}
                       className={`shop-item-card ${!purchaseStatus.canPurchase ? 'disabled' : ''} ${
-                        item.is_featured ? 'featured' : ''
-                      } rarity-${item.rarity} ${
+                        item.stock_limit < 0 ? 'out-of-stock' : ''
+                      } ${item.is_featured ? 'featured' : ''} rarity-${item.rarity} ${
                         purchasedItemId === item.item_id ? 'just-purchased' : ''
                       }`}
                       onClick={() => purchaseStatus.canPurchase && handlePurchaseItem(item.item_id)}
@@ -621,7 +572,7 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
                   <div className="pagination-controls">
                     <button 
                       className={`pagination-btn ${currentPage === 1 ? 'disabled' : ''}`}
-                      onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                       disabled={currentPage === 1}
                     >
                       ← Previous
@@ -632,7 +583,7 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
                         <button
                           key={page}
                           className={`page-number ${currentPage === page ? 'active' : ''}`}
-                          onClick={() => handlePageChange(page)}
+                          onClick={() => setCurrentPage(page)}
                         >
                           {page}
                         </button>
@@ -641,7 +592,7 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
                     
                     <button 
                       className={`pagination-btn ${currentPage === totalPages ? 'disabled' : ''}`}
-                      onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                       disabled={currentPage === totalPages}
                     >
                       Next →

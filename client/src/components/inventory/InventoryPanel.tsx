@@ -15,6 +15,7 @@ interface InventoryItem {
   emoji: string;
   description: string;
   item_type: 'buff' | 'debuff' | 'utility' | 'guard' | 'weapon' | 'marker';
+  category?: string;
   rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
   cooldown_seconds: number;
   max_stack: number;
@@ -59,7 +60,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 }) => {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [cooldowns, setCooldowns] = useState<ItemCooldown[]>([]);
-  const [inventorySubTab, setInventorySubTab] = useState<'all' | 'buff' | 'debuff' | 'utility' | 'guard' | 'weapon' | 'marker'>('all');
+  const [inventorySubTab, setInventorySubTab] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentInventoryPage, setCurrentInventoryPage] = useState(1);
@@ -394,12 +395,23 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
         return;
       }
       
+      // Check if this is an auto-trigger item (like fart)
+      if (result.interactionMode === 'auto-trigger') {
+        // For auto-trigger items, the server already handled the effect
+        // Just update the local inventory
+        setInventory(prev => prev.map(item => 
+          item.item_id === itemId 
+            ? { ...item, quantity: result.remainingQuantity }
+            : item
+        ).filter(item => item.quantity > 0));
+      }
+      
       // Don't show any notifications when using items - interactive items have click-to-throw UI
       // and non-interactive items will show notifications via socket events
       // console.log('🔇 INVENTORY: Skipping immediate use notification for item:', inventory.find(item => item.item_id === itemId)?.display_name);
       
       // Update local inventory - only if item was actually consumed
-      if (!result.interactiveMode && !result.ttsMode && !result.soundboardMode) {
+      if (!result.interactiveMode && !result.ttsMode && !result.soundboardMode && result.interactionMode !== 'auto-trigger') {
         setInventory(prev => prev.map(item => 
           item.item_id === itemId 
             ? { ...item, quantity: result.remainingQuantity }
@@ -547,7 +559,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
   const filteredInventory = isMobile || inventorySubTab === 'all' 
     ? inventory 
-    : inventory.filter(item => item.item_type === inventorySubTab);
+    : inventory.filter(item => item.category === inventorySubTab);
 
   const getPaginatedInventory = () => {
     const startIndex = (currentInventoryPage - 1) * inventoryItemsPerPage;
@@ -683,16 +695,16 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
               All
             </button>
             <button 
-              className={`inventory-tab ${inventorySubTab === 'buff' ? 'active' : ''}`}
-              onClick={() => setInventorySubTab('buff')}
+              className={`inventory-tab ${inventorySubTab === 'sound_effects' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('sound_effects')}
             >
-              Buff
+              Sound FX
             </button>
             <button 
-              className={`inventory-tab ${inventorySubTab === 'debuff' ? 'active' : ''}`}
-              onClick={() => setInventorySubTab('debuff')}
+              className={`inventory-tab ${inventorySubTab === 'visual_effects' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('visual_effects')}
             >
-              Debuff
+              Visual FX
             </button>
             <button 
               className={`inventory-tab ${inventorySubTab === 'utility' ? 'active' : ''}`}
@@ -701,28 +713,32 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
               Utility
             </button>
             <button 
-              className={`inventory-tab ${inventorySubTab === 'guard' ? 'active' : ''}`}
-              onClick={() => setInventorySubTab('guard')}
-              title="Items that protect the current streamer by increasing cooldowns"
+              className={`inventory-tab ${inventorySubTab === 'powerups' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('powerups')}
+            >
+              <span>⚡</span>
+              <span>Power-ups</span>
+            </button>
+            <button 
+              className={`inventory-tab ${inventorySubTab === 'protection' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('protection')}
             >
               <span>🛡️</span>
-              <span>Guard</span>
+              <span>Protection</span>
             </button>
             <button 
-              className={`inventory-tab ${inventorySubTab === 'weapon' ? 'active' : ''}`}
-              onClick={() => setInventorySubTab('weapon')}
-              title="Items that help other viewers by reducing cooldowns"
+              className={`inventory-tab ${inventorySubTab === 'combat' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('combat')}
             >
               <span>⚔️</span>
-              <span>Weapon</span>
+              <span>Combat</span>
             </button>
             <button 
-              className={`inventory-tab ${inventorySubTab === 'marker' ? 'active' : ''}`}
-              onClick={() => setInventorySubTab('marker')}
-              title="Markers for highlighting moments"
+              className={`inventory-tab ${inventorySubTab === 'drawing_tools' ? 'active' : ''}`}
+              onClick={() => setInventorySubTab('drawing_tools')}
             >
-              <span>📍</span>
-              <span>Marker</span>
+              <span>🎨</span>
+              <span>Drawing</span>
             </button>
             {isAdmin && (
               <button 

@@ -10,6 +10,7 @@ import { ProjectileEffect } from './effects/ProjectileEffect';
 import { FireEffect } from './effects/FireEffect';
 import { PsychedelicEffect } from './effects/PsychedelicEffect';
 import { BugsEffect } from './effects/BugsEffect';
+import { RainEffect } from './effects/RainEffect';
 import { BaseEffect } from './effects/BaseEffect';
 
 export interface EffectData {
@@ -779,6 +780,31 @@ export class EffectEngine extends EventEmitter {
           particleCount: effectData.config.particleCount || 50,
           colors: effectData.config.colors,
           spread: effectData.config.spread || 60
+        });
+      
+      case 'fart_clouds':
+        // Fart clouds effect - massive cartoonish green clouds
+        return new ParticleEffect({
+          ...commonConfig,
+          duration: 12000, // Last 12 seconds
+          particleCount: 20, // Lots of clouds for maximum effect
+          colors: ['#6B8E23', '#556B2F', '#8FBC8F', '#9ACD32', '#7CFC00'], // Various green shades
+          animation: 'float-up', // Clouds float upward
+          startVelocity: 4, // Very slow for massive clouds
+          gravity: -0.012, // Very gentle upward float
+          fadeOut: true,
+          particleSize: { min: 200, max: 350 }, // Massive cloud sizes (200-350px)
+          spread: 200, // Very wide spread for massive clouds
+          opacity: 0.45 // Semi-transparent clouds
+        });
+      
+      case 'thunderstorm_rain':
+        // Thunderstorm effect - rain and lightning
+        return new RainEffect({
+          ...commonConfig,
+          duration: 68000, // 68 seconds to match sound effect
+          rainIntensity: 200, // Number of raindrops
+          opacity: 0.8
         });
       
       case 'particles':
