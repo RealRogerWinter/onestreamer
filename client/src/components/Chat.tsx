@@ -9,7 +9,9 @@ import DOMPurify from 'dompurify';
 import CloudflareTurnstile from './CloudflareTurnstile';
 import { TURNSTILE_SITE_KEY } from '../config/turnstile';
 import ExternalLinkModal from './ExternalLinkModal';
+import { openPopoutChat } from './PopoutChat';
 import './Chat.css';
+import './PopoutChat.css';
 
 interface ChatMessage {
   id: string;
@@ -75,6 +77,15 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [externalLinkModal, setExternalLinkModal] = useState<{ isOpen: boolean; url: string }>({ isOpen: false, url: '' });
+  const [isPoppedOut, setIsPoppedOut] = useState(() => {
+    // Don't show popped out state if we ARE the popout window
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('popout') === 'true') {
+      return false;
+    }
+    return sessionStorage.getItem('chatPoppedOut') === 'true';
+  });
+  const popoutWindowRef = useRef<Window | null>(null);
   const [chatSettings, setChatSettings] = useState<ChatUserSettings>(() => {
     // Load settings from cookies
     const saved = CookieService.getCookie(COOKIE_NAMES.CHAT_SETTINGS);
@@ -391,10 +402,54 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
   }, [isConnected]);
 
+  // Listen for messages from popout window
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'POPOUT_CLOSED') {
+        setIsPoppedOut(false);
+        popoutWindowRef.current = null;
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    
+    // Check if popout window is still open on mount
+    if (isPoppedOut && popoutWindowRef.current) {
+      if (popoutWindowRef.current.closed) {
+        setIsPoppedOut(false);
+        sessionStorage.removeItem('chatPoppedOut');
+        popoutWindowRef.current = null;
+      }
+    }
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [isPoppedOut]);
+
   // Save messages to session storage whenever they change
   useEffect(() => {
     sessionStorage.setItem('chatMessages', JSON.stringify(messages));
   }, [messages]);
+
+  // Reset scroll state when returning from popout
+  useEffect(() => {
+    if (!isPoppedOut && chatContainerRef.current) {
+      // Chat is back in main window, ensure scroll works
+      setIsScrolledUp(false);
+      setNewMessagesCount(0);
+      autoScrollEnabledRef.current = true;
+      
+      // Re-attach scroll listener and scroll to bottom
+      const chatContainer = chatContainerRef.current;
+      if (chatContainer) {
+        // Ensure we're at the bottom
+        setTimeout(() => {
+          scrollToBottom(true);
+        }, 100);
+      }
+    }
+  }, [isPoppedOut]);
 
   // Fetch custom emojis for parsing
   useEffect(() => {
@@ -651,7 +706,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
         clearTimeout(scrollDebounceRef.current);
       }
     };
-  }, [isScrolledUp]); // Only re-create observer when isScrolledUp changes
+  }, [isScrolledUp, isPoppedOut]); // Re-create observer when isScrolledUp or isPoppedOut changes
   
   // Initial scroll to bottom when messages first load
   useEffect(() => {
@@ -667,11 +722,12 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   // Add scroll event listener to detect when user scrolls up
   useEffect(() => {
     const chatContainer = chatContainerRef.current;
-    if (chatContainer) {
+    if (chatContainer && !isPoppedOut) {
+      // Only attach scroll listener when not popped out
       chatContainer.addEventListener('scroll', handleScroll);
       return () => chatContainer.removeEventListener('scroll', handleScroll);
     }
-  }, []);
+  }, [isPoppedOut]); // Re-attach when isPoppedOut changes
 
   // Add click event listener for external links
   useEffect(() => {
@@ -970,6 +1026,34 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     CookieService.setCookie(COOKIE_NAMES.CHAT_SETTINGS, newSettings);
   };
 
+  // Handle popout button click
+  const handlePopoutClick = () => {
+    const popoutWindow = openPopoutChat();
+    if (popoutWindow) {
+      popoutWindowRef.current = popoutWindow;
+      setIsPoppedOut(true);
+    }
+  };
+
+  // Handle returning chat to main window
+  const handleReturnToMain = () => {
+    if (popoutWindowRef.current && !popoutWindowRef.current.closed) {
+      popoutWindowRef.current.close();
+    }
+    sessionStorage.removeItem('chatPoppedOut');
+    setIsPoppedOut(false);
+    
+    // Reset scroll state when returning to main
+    setIsScrolledUp(false);
+    setNewMessagesCount(0);
+    autoScrollEnabledRef.current = true;
+    
+    // Force scroll to bottom after a brief delay to ensure DOM is ready
+    setTimeout(() => {
+      scrollToBottom(true);
+    }, 100);
+  };
+
   // Handle color change from settings
   const handleColorChange = (color: string) => {
     if (userInfo && chatSocket) {
@@ -1028,12 +1112,40 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
   };
 
+  // If chat is popped out, show indicator instead
+  if (isPoppedOut && !window.location.search.includes('popout=true')) {
+    return (
+      <div className={`chat-container ${className}`}>
+        <div className="chat-popped-out-indicator">
+          <h3>Chat Opened in New Window</h3>
+          <p>Your chat is open in a separate window.</p>
+          <p>You can continue chatting there or return it here.</p>
+          <button onClick={handleReturnToMain}>
+            Return Chat to Main Window
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`chat-container ${className}`}>
       {/* Chat Header */}
       <div className="chat-header">
         <h3>Live Chat</h3>
         <div className="chat-status">
+          {!window.location.search.includes('popout=true') && (
+            <button 
+              className="chat-popout-button"
+              onClick={handlePopoutClick}
+              title="Open chat in new window"
+            >
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z" />
+              </svg>
+              Pop Out
+            </button>
+          )}
           <div className={`connection-indicator ${connectionStatus}`}></div>
           <span className="user-count">{userCount} viewer{userCount !== 1 ? 's' : ''}</span>
         </div>

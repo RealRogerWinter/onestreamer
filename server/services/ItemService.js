@@ -590,6 +590,24 @@ class ItemService {
                     max_name_length: 30,
                     max_prompt_length: 200
                 })
+            },
+            {
+                name: 'summon_lesser_bot',
+                display_name: 'Summon Lesser Bot',
+                emoji: '🤖',
+                description: 'Summon a custom AI bot to chat for 15 minutes',
+                item_type: 'utility',
+                rarity: 'uncommon',
+                base_price: 300,
+                cooldown_seconds: 900,
+                max_stack: 0,
+                effect_data: JSON.stringify({
+                    effect_type: 'summon_bot',
+                    requires_input: true,
+                    bot_duration: 900,
+                    max_name_length: 30,
+                    max_prompt_length: 200
+                })
             }
         ];
 

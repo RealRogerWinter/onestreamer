@@ -173,7 +173,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
         const isSoundboardItem = item.name === '101soundboards';
         
         // Check if this is a summon bot item
-        const isSummonBotItem = item.name === 'summon_bot';
+        const isSummonBotItem = item.name === 'summon_bot' || item.name === 'summon_lesser_bot';
         
         // Check if this is an interactive item that needs click-to-throw
         const isInteractiveItem = canvasFxService && canvasFxService.isInteractiveItem(item);
@@ -1750,7 +1750,7 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
         
         // Get item details
         const item = await itemService.getItemById(req.params.itemId);
-        if (!item || item.name !== 'summon_bot') {
+        if (!item || (item.name !== 'summon_bot' && item.name !== 'summon_lesser_bot')) {
             return res.status(400).json({ error: 'Invalid item' });
         }
         
@@ -1808,8 +1808,14 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
         console.log(`✅ SUMMON BOT: Bot "${botName}" created successfully by ${req.user.username}`);
         
         // Send a chat notification with all details
-        const durationInHours = Math.round(botDuration / 3600);
-        const durationText = durationInHours === 1 ? '1 hour' : `${durationInHours} hours`;
+        let durationText;
+        if (botDuration < 3600) {
+            const durationInMinutes = Math.round(botDuration / 60);
+            durationText = durationInMinutes === 1 ? '1 minute' : `${durationInMinutes} minutes`;
+        } else {
+            const durationInHours = Math.round(botDuration / 3600);
+            durationText = durationInHours === 1 ? '1 hour' : `${durationInHours} hours`;
+        }
         
         const chatMessage = `🤖 ${req.user.username} has summoned "${botName}" to the chat!\n` +
             `⏱️ Duration: ${durationText}\n` +

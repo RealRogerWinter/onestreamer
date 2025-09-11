@@ -6,6 +6,7 @@ import { StreamSwitchManager, StreamSwitchState } from '../services/StreamSwitch
 import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
 import { useVisualFxProcessor } from '../hooks/useVisualFxProcessor';
 import CookieService, { COOKIE_NAMES } from '../services/CookieService';
+import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../utils/browserDetection';
 import './WebRTCViewer.css';
 
 interface WebRTCViewerProps {
@@ -195,12 +196,22 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   }, []);
 
   const initializeViewer = async (forceInit: boolean = false) => {
+    const browserInfo = getBrowserInfo();
+    
+    // iOS-specific: Clear stuck states first
+    if (browserInfo.isIOS && (switchState === 'switching' || switchState === 'retrying')) {
+      console.log('📱 WEBRTC: iOS detected with stuck state, clearing...');
+      setSwitchState('idle');
+      setError(null);
+    }
+    
     // Prevent multiple simultaneous initializations
     if (isInitializingRef.current) {
       // console.log('📺 WEBRTC: Already initializing, waiting for completion...');
       // Wait for current initialization to complete
       let waitTime = 0;
-      while (isInitializingRef.current && waitTime < 10000) { // 10 second max wait
+      const maxWaitTime = browserInfo.isIOS ? 15000 : 10000; // iOS needs more time
+      while (isInitializingRef.current && waitTime < maxWaitTime) {
         await new Promise(resolve => setTimeout(resolve, 100));
         waitTime += 100;
       }
@@ -219,7 +230,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     // Basic rate limiting - prevent rapid reinitialization
     const now = Date.now();
     const timeSinceLastInit = now - lastInitTimeRef.current;
-    const minInterval = (forceInitialize || forceInit) ? 50 : 200; // Very short intervals
+    const minInterval = (forceInitialize || forceInit) ? 50 : (browserInfo.isIOS ? 500 : 200); // iOS needs longer intervals
     if (timeSinceLastInit < minInterval && !forceInitialize && !forceInit) {
       // console.log(`📺 WEBRTC: Rate limiting init (${timeSinceLastInit}ms < ${minInterval}ms), skipping...`);
       return;
@@ -481,18 +492,32 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     } catch (error) {
       console.error('❌ WEBRTC: Failed to initialize viewer:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to connect to stream';
-      setError(errorMessage);
+      
+      // iOS-specific error handling
+      if (browserInfo.isIOS) {
+        if (errorMessage.includes('transport') || errorMessage.includes('ICE') || errorMessage.includes('failed')) {
+          setError('Connection failed. iOS Safari may have restrictions. Tap to retry or wait for fallback.');
+          // Could implement HLS fallback here
+          console.log('📱 WEBRTC: iOS Safari connection failed, consider HLS fallback');
+        } else {
+          setError(errorMessage);
+        }
+      } else {
+        setError(errorMessage);
+      }
+      
       setIsLoading(false);
       
       // Retry initialization for certain types of errors
       if (errorMessage.includes('No active stream') || errorMessage.includes('consume')) {
-        // console.log('🔄 WEBRTC: Will retry initialization in 3 seconds...');
+        const retryDelay = browserInfo.isIOS ? 5000 : 3000; // iOS needs longer delay
+        // console.log(`🔄 WEBRTC: Will retry initialization in ${retryDelay/1000} seconds...`);
         setTimeout(() => {
           if (isActive && !isInitializingRef.current && !isSwitchingRef.current) {
             // console.log('🔄 WEBRTC: Retrying initialization...');
             initializeViewer(true); // Force retry
           }
-        }, 3000);
+        }, retryDelay);
       }
     } finally {
       isInitializingRef.current = false;
@@ -502,6 +527,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const attemptVideoPlayback = async (video: HTMLVideoElement): Promise<void> => {
     const maxAttempts = 3;
     let attempts = 0;
+    const browserInfo = getBrowserInfo();
     
     const tryPlay = async (): Promise<boolean> => {
       attempts++;
@@ -510,8 +536,28 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       try {
         // console.log(`🎬 WEBRTC: Attempting video playback (attempt ${attempts}/${maxAttempts})`);
         
-        // Strategy 1: Try unmuted autoplay first
-        if (attempts === 1 && !video.muted) {
+        // iOS Safari specific strategy - always start muted
+        if (browserInfo.isIOS) {
+          // console.log('📱 WEBRTC: iOS detected, using muted autoplay strategy');
+          video.muted = true;
+          video.setAttribute('playsinline', 'true');
+          video.setAttribute('webkit-playsinline', 'true');
+          
+          // Try to play muted
+          await video.play();
+          setPlaybackState('playing');
+          
+          // Show iOS-specific unmute prompt
+          if (!userInteracted) {
+            setError('Tap to unmute audio');
+          }
+          
+          // console.log('✅ WEBRTC: iOS muted autoplay successful');
+          return true;
+        }
+        
+        // Strategy 1: Try unmuted autoplay first (non-iOS)
+        if (attempts === 1 && !video.muted && !browserInfo.isIOS) {
           // console.log('🔊 WEBRTC: Attempting unmuted autoplay...');
           video.muted = false;
           await video.play();
@@ -618,17 +664,51 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   };
 
   const handleForceReconnection = async () => {
-    if (mediasoupClientRef.current) {
+    const browserInfo = getBrowserInfo();
+    
+    // iOS-specific reconnection handling
+    if (browserInfo.isIOS) {
+      console.log('📱 WEBRTC: iOS force reconnection initiated');
+      
+      // Clear all states first on iOS
+      setSwitchState('idle');
+      setConnectionState('disconnected');
+      setError(null);
+      setIsLoading(true);
+      
+      // Clean up completely before reconnecting
+      await cleanupSync();
+      
+      // Wait a bit for cleanup to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Check if user has interacted (required for iOS)
+      if (!userInteracted) {
+        setError('Tap anywhere to connect');
+        setIsLoading(false);
+        return;
+      }
+    }
+    
+    if (mediasoupClientRef.current || browserInfo.isIOS) {
       try {
         setIsLoading(true);
-        setError('Attempting manual reconnection...');
-        await mediasoupClientRef.current.forceReconnection();
+        setError('Reconnecting...');
+        
+        if (mediasoupClientRef.current && !browserInfo.isIOS) {
+          await mediasoupClientRef.current.forceReconnection();
+        }
         
         // Try to reinitialize the viewer
-        await initializeViewer();
+        await initializeViewer(true); // Force init
       } catch (error) {
         console.error('❌ WEBRTC: Manual reconnection failed:', error);
-        setError(`Manual reconnection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        
+        if (browserInfo.isIOS) {
+          setError('Connection failed. Tap to retry.');
+        } else {
+          setError(`Manual reconnection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -1468,11 +1548,23 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       {error && (
         <div className="webrtc-error">
           <p>⚠️ {error}</p>
+          {/* iOS-specific error handling */}
+          {isIOS() && (
+            <p style={{ fontSize: '14px', opacity: 0.8, marginTop: '10px' }}>
+              {error.includes('Tap') ? '👆 Tap anywhere on the screen' : 
+               'iOS Safari requires user interaction to start streaming'}
+            </p>
+          )}
           <button 
             onClick={handleRetry}
             className="retry-button"
+            style={isIOS() ? { 
+              padding: '12px 24px', 
+              fontSize: '16px',
+              backgroundColor: '#007AFF' // iOS blue
+            } : {}}
           >
-            Retry Connection
+            {isIOS() ? 'Tap to Connect' : 'Retry Connection'}
           </button>
         </div>
       )}
@@ -1499,10 +1591,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         >
           <div style={{ fontSize: '48px', marginBottom: '20px' }}>▶️</div>
           <p style={{ textAlign: 'center', margin: '10px', fontSize: '18px' }}>
-            Click to play stream
+            {isIOS() ? 'Tap to start stream' : 'Click to play stream'}
           </p>
           <p style={{ textAlign: 'center', margin: '5px', fontSize: '14px', opacity: 0.7 }}>
-            Auto-play was blocked by your browser
+            {isIOS() ? 'iOS requires user interaction to play video' : 'Auto-play was blocked by your browser'}
           </p>
         </div>
       )}
@@ -1570,10 +1662,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
              switchState === 'fallback' ? '🔧' : '❌'}
           </div>
           <p style={{ textAlign: 'center', margin: '10px', fontSize: '18px' }}>
-            {switchState === 'switching' ? 'Switching Stream...' :
-             switchState === 'retrying' ? 'Retrying Stream Switch...' :
+            {switchState === 'switching' ? (isIOS() ? 'Connecting...' : 'Switching Stream...') :
+             switchState === 'retrying' ? (isIOS() ? 'Reconnecting...' : 'Retrying Stream Switch...') :
              switchState === 'fallback' ? 'Fallback Mode Active' :
-             'Stream Switch Failed'}
+             (isIOS() ? 'Connection Failed' : 'Stream Switch Failed')}
           </p>
           {isFallbackMode && (
             <p style={{ textAlign: 'center', margin: '5px', fontSize: '14px', opacity: 0.8 }}>
@@ -1708,8 +1800,11 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         controls={false}
         autoPlay
         playsInline
-        muted={volume === 0 || !userInteracted}
-        webkit-playsinline="true"
+        muted={volume === 0 || !userInteracted || isIOS()} // Always mute on iOS initially
+        {...(isIOS() && { 
+          'x-webkit-airplay': 'allow',
+          'webkitPlaysinline': true 
+        } as any)}
         crossOrigin="anonymous"
         preload="auto"
         onClick={(e) => {

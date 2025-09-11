@@ -420,22 +420,27 @@ class ChatBotService {
         const bot = this.bots.get(id);
         if (!bot) return;
 
+        console.log(`🛑 Stopping bot ${id} (${bot.data?.name})`);
+
         if (bot.responseTimer) {
             clearTimeout(bot.responseTimer);
+            bot.responseTimer = null;
         }
 
         if (bot.socket) {
             bot.socket.disconnect();
+            bot.socket = null;
         }
+
+        // Remove bot from the Map - CRITICAL FIX
+        this.bots.delete(id);
+        console.log(`🗑️ Bot ${id} removed from bots Map. Remaining bots: ${this.bots.size}`);
 
         // Clean up session
         await database.runAsync(
             'DELETE FROM chatbot_sessions WHERE chatbot_id = ?',
             [id]
         );
-
-        this.bots.delete(id);
-        console.log(`🤖 Bot ${id} stopped`);
     }
 
     scheduleNextResponse(botInstance) {
@@ -1116,8 +1121,19 @@ class ChatBotService {
     // MovieBot integration methods
     getActiveBots() {
         const activeBots = [];
+        const now = new Date();
+        
         for (const [id, bot] of this.bots) {
             if (bot.connected && bot.data.is_enabled) {
+                // Check if temporary bot has expired
+                if (bot.data.is_temporary && bot.data.expires_at) {
+                    const expiresAt = new Date(bot.data.expires_at);
+                    if (now >= expiresAt) {
+                        console.log(`🚫 Skipping expired bot ${bot.data.id} (${bot.data.name}) from active bots list`);
+                        continue;
+                    }
+                }
+                
                 activeBots.push({
                     id: bot.data.id,
                     username: bot.username,
@@ -1137,9 +1153,20 @@ class ChatBotService {
             );
             
             const activeBots = [];
+            const now = new Date();
+            
             for (const bot of bots) {
                 const botInstance = this.bots.get(bot.id);
                 if (botInstance && botInstance.connected) {
+                    // Check if temporary bot has expired
+                    if (bot.is_temporary && bot.expires_at) {
+                        const expiresAt = new Date(bot.expires_at);
+                        if (now >= expiresAt) {
+                            console.log(`🚫 Skipping expired bot ${bot.id} (${bot.name}) from MovieBot list`);
+                            continue;
+                        }
+                    }
+                    
                     activeBots.push({
                         id: bot.id,
                         username: botInstance.username,
@@ -1179,6 +1206,18 @@ class ChatBotService {
             if (!botInstance.connected) {
                 console.error(`❌ ChatBotService: Bot ${bot.id} (${bot.username}) not connected to chat service`);
                 return { success: false, error: 'Bot not connected to chat service' };
+            }
+            
+            // Check if this is a temporary bot that has expired
+            if (botInstance.data.is_temporary && botInstance.data.expires_at) {
+                const now = new Date();
+                const expiresAt = new Date(botInstance.data.expires_at);
+                if (now >= expiresAt) {
+                    console.log(`🚫 ChatBotService: Bot ${bot.id} (${bot.username}) has expired, cannot send movie comment`);
+                    // Trigger cleanup
+                    this.cleanupExpiredBots();
+                    return { success: false, error: 'Bot has expired' };
+                }
             }
             
             // Get bot's personality traits

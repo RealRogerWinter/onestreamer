@@ -119,9 +119,20 @@ class ProfanityFilterService {
         }
         
         // Check for impersonation attempts
-        const restrictedNames = ['admin', 'moderator', 'mod', 'owner', 'system', 'bot', 'ai'];
-        if (restrictedNames.some(restricted => name.toLowerCase().includes(restricted))) {
-            return { isValid: false, error: 'Name contains restricted terms' };
+        // Note: 'bot' and 'ai' are allowed as they're common in bot names
+        const restrictedNames = ['admin', 'moderator', 'mod', 'owner', 'system'];
+        const lowerName = name.toLowerCase();
+        
+        // Check if the name is EXACTLY a restricted term (not just contains it)
+        if (restrictedNames.some(restricted => lowerName === restricted)) {
+            return { isValid: false, error: 'Name cannot be a restricted term' };
+        }
+        
+        // Check for obvious impersonation attempts
+        if (lowerName.startsWith('admin_') || lowerName.startsWith('mod_') || 
+            lowerName.startsWith('system_') || lowerName.endsWith('_admin') || 
+            lowerName.endsWith('_mod') || lowerName.endsWith('_system')) {
+            return { isValid: false, error: 'Name appears to be an impersonation attempt' };
         }
         
         return { isValid: true };

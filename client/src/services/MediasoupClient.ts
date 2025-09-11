@@ -2,6 +2,7 @@ import * as mediasoupClient from 'mediasoup-client';
 import { Device } from 'mediasoup-client';
 import { Socket } from 'socket.io-client';
 import * as crypto from 'crypto-js';
+import { isIOSSafari, isIOS, isMobile } from '../utils/browserDetection';
 
 export interface MediasoupClientConfig {
   socket: Socket;
@@ -58,10 +59,13 @@ export class MediasoupClient {
   }
 
   private withTimeout<T>(promise: Promise<T>, ms: number = this.operationTimeout): Promise<T> {
+    // iOS Safari needs longer timeouts for WebRTC operations
+    const timeout = isIOS() ? Math.max(ms, 45000) : ms;
+    
     return Promise.race([
       promise,
       new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error(`Operation timeout after ${ms}ms`)), ms)
+        setTimeout(() => reject(new Error(`Operation timeout after ${timeout}ms`)), timeout)
       )
     ]);
   }
@@ -502,29 +506,31 @@ export class MediasoupClient {
       const turnUsername = `${turnExpiry}:webrtc`;
       const turnCredential = this.generateTurnCredential(turnUsername);
       
-      // TURN Config set
+      // TURN Config set - Enhanced for iOS Safari
+      const iceServersConfig = [
+        // STUN servers for NAT discovery
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        // Our TURN server - using direct IP to bypass Cloudflare
+        {
+          urls: 'turn:<SERVER_IP>:3478',
+          username: turnUsername,
+          credential: turnCredential
+        },
+        {
+          urls: 'turn:<SERVER_IP>:3478?transport=tcp',
+          username: turnUsername,
+          credential: turnCredential
+        }
+      ];
+      
+      // iOS Safari needs explicit TURN relay in some cases
+      const iceTransportPolicyValue = isIOS() ? 'all' : 'all'; // Keep 'all' but iOS may need 'relay' in some cases
       
       const sendTransportOptions = {
         ...transportOptions,
-        iceServers: [
-          // STUN servers for NAT discovery
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          // Our TURN server - using direct IP to bypass Cloudflare
-          {
-            urls: 'turn:<SERVER_IP>:3478',
-            username: turnUsername,
-            credential: turnCredential
-          },
-          {
-            urls: 'turn:<SERVER_IP>:3479',
-            username: turnUsername,
-            credential: turnCredential
-          }
-        ],
-        // CRITICAL: Android Chrome needs relay when consuming from Plain RTP producers (viewbots)
-        // Detect if we're likely consuming from a viewbot based on context
-        iceTransportPolicy: 'all', // Will be overridden for viewbot consumption
+        iceServers: iceServersConfig,
+        iceTransportPolicy: iceTransportPolicyValue as RTCIceTransportPolicy,
         iceCandidatePoolSize: 10, // Pre-gather ICE candidates
         rtcpMuxPolicy: 'require', // Multiplex RTP and RTCP
         bundlePolicy: 'max-bundle' // Bundle media streams
@@ -1296,10 +1302,11 @@ export class MediasoupClient {
     }
     
     return new Promise((resolve, reject) => {
-      // Add timeout to prevent hanging
+      // Add timeout to prevent hanging - iOS needs longer timeouts
+      const timeoutMs = isIOS() ? 10000 : 5000; // 10s for iOS, 5s for others
       const timeout = setTimeout(() => {
         reject(new Error(`Consume timeout for ${kind} on attempt ${attempt}`));
-      }, 5000); // Increased to 5 second timeout for slower connections
+      }, timeoutMs);
       
       this.socket.emit('mediasoup:consume', { 
         rtpCapabilities: this.device.rtpCapabilities,
