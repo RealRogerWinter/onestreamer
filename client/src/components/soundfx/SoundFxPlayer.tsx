@@ -25,19 +25,18 @@ interface SoundEffect {
 
 interface SoundFxPlayerProps {
   socket: Socket | null;
+  volume?: number;
 }
 
-const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
+const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket, volume = 0.8 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentEffect, setCurrentEffect] = useState<SoundEffect | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
   // Track multiple simultaneous item sounds
   const itemSoundsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
-  const [volume, setVolume] = useState(() => {
-    const saved = localStorage.getItem('soundfx_volume');
-    return saved ? parseFloat(saved) : 0.8;
-  });
+  // Use ref to always have current volume value
+  const volumeRef = useRef(volume);
   
   // Detect Safari iOS for special handling
   const isSafariIOS = useRef<boolean>(
@@ -45,6 +44,27 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
     !(window as any).MSStream && 
     /Safari/.test(navigator.userAgent)
   );
+
+  // Update volume of existing audio elements when volume prop changes
+  useEffect(() => {
+    // Update ref to always have current value
+    volumeRef.current = volume;
+    
+    // Update current playing audio
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+    
+    // Update all item sounds
+    itemSoundsRef.current.forEach((audio) => {
+      audio.volume = volumeRef.current;
+    });
+    
+    // Update speech synthesis if playing
+    if (synthRef.current) {
+      synthRef.current.volume = volume;
+    }
+  }, [volume]);
 
   useEffect(() => {
     if (!socket) return;
@@ -80,10 +100,6 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       socket.off('sound-effect-stop-all');
     };
   }, [socket, currentEffect]);
-
-  useEffect(() => {
-    localStorage.setItem('soundfx_volume', volume.toString());
-  }, [volume]);
 
   const playEffect = async (effect: SoundEffect) => {
     // Only stop current effect if this is NOT an item sound
@@ -157,7 +173,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
           }
         }
 
-        utterance.volume = volume;
+        utterance.volume = volumeRef.current;
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
 
@@ -208,7 +224,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
       const audio = new Audio(`/api/soundfx/files/${fileName}`);
       audioRef.current = audio;
       
-      audio.volume = volume;
+      audio.volume = volumeRef.current;
       
       audio.onended = () => {
         audioRef.current = null;
@@ -252,7 +268,7 @@ const SoundFxPlayer: React.FC<SoundFxPlayerProps> = ({ socket }) => {
         audioRef.current = audio;
       }
       
-      audio.volume = volume;
+      audio.volume = volumeRef.current;
       // No need for crossOrigin since we're using our proxy
       
       // If duration exceeds max, set a timeout to stop playback

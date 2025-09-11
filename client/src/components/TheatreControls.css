@@ -35,7 +35,8 @@
 .theatre-controls-wrapper .theatre-fullscreen-btn,
 .theatre-controls-wrapper .theatre-status-effects .buff-item,
 .theatre-controls-wrapper .theatre-settings-close,
-.theatre-controls-wrapper .tooltip-close-btn {
+.theatre-controls-wrapper .tooltip-close-btn,
+.theatre-controls-wrapper .permission-status-indicator {
   pointer-events: auto !important;
 }
 
@@ -838,4 +839,69 @@
   .theatre-volume-slider {
     width: 80px;
   }
+}
+
+/* Permission Status Indicator */
+.permission-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-right: 12px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.permission-status-indicator span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.permission-ready {
+  color: #4caf50;
+}
+
+.permission-denied {
+  color: #f44336;
+}
+
+.permission-checking {
+  color: #2196f3;
+  animation: pulse 1.5s infinite;
+}
+
+.permission-required {
+  color: #ff9800;
+}
+
+/* Permission Required Button Style */
+.theatre-control-btn.permission-required {
+  background: linear-gradient(135deg, #ff9800 0%, #ff6b00 100%);
+  border: 2px solid rgba(255, 152, 0, 0.3);
+  animation: permission-pulse 2s infinite;
+}
+
+@keyframes permission-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 152, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 152, 0, 0.4);
+  }
+}
+
+.theatre-control-btn.permission-required:hover {
+  background: linear-gradient(135deg, #ffab00 0%, #ff7c00 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(255, 152, 0, 0.4);
+}
+
+.permission-icon {
+  font-size: 18px;
+  margin-right: 8px;
 }

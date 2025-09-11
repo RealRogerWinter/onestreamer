@@ -369,17 +369,41 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           lastError = error as Error;
           console.warn(`⚠️ WEBRTC: Consume attempt ${consumeAttempts} failed:`, error);
           
-          // Check for specific error types that indicate we should give up
+          // Check for specific error types that indicate we should give up or wait longer
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          
+          // No active streamer - give up quickly
           if (errorMessage.includes('No active streamer') && consumeAttempts >= 2) {
             // console.log('🛑 WEBRTC: No active streamer after multiple attempts, stopping retries');
             break;
           }
+          
+          // Producers not ready - wait longer before retry
+          if (errorMessage.includes('producers still initializing') || 
+              errorMessage.includes('is not ready yet') ||
+              errorMessage.includes('preparing stream') ||
+              errorMessage.includes('no producers are ready')) {
+            console.log('⏳ WEBRTC: Producers still initializing, will wait longer before retry...');
+            // Don't count this as a full attempt if producers aren't ready
+            if (consumeAttempts > 1) {
+              consumeAttempts--; // Give more chances for producer readiness issues
+            }
+          }
+          
+          // Transport issues - may be recoverable
+          if (errorMessage.includes('transport') || errorMessage.includes('Transport')) {
+            console.log('🔄 WEBRTC: Transport issue detected, will retry with backoff');
+          }
         }
         
-        // Progressive backoff: 500ms, 1s, 1.5s, 2s, 2.5s
+        // Progressive backoff with extra delay for "not ready" errors
         if (!stream && consumeAttempts < maxConsumeAttempts) {
-          const delay = consumeAttempts * 500;
+          const baseDelay = consumeAttempts * 500;
+          // Add extra delay for "not ready" errors
+          const extraDelay = lastError?.message?.includes('not ready') || 
+                            lastError?.message?.includes('initializing') ||
+                            lastError?.message?.includes('preparing') ? 1500 : 0;
+          const delay = baseDelay + extraDelay;
           // console.log(`⏳ WEBRTC: Waiting ${delay}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, delay));
           

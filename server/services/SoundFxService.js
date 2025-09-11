@@ -563,18 +563,40 @@ class SoundFxService extends EventEmitter {
                 timeout: 10000
             });
 
+            // Handle the new API response structure where data is nested
             if (response.data) {
-                // Convert relative URLs to absolute if needed
-                const data = response.data;
-                if (data.sound_file_url && !data.sound_file_url.startsWith('http')) {
-                    data.sound_file_url = `https://www.101soundboards.com${data.sound_file_url}`;
+                // Check if response has the new structure with success flag and nested data
+                if (response.data.success === true && response.data.data) {
+                    const soundData = response.data.data;
+                    
+                    // The new API already provides full URLs, so no need to convert
+                    // but keep backward compatibility check just in case
+                    if (soundData.sound_file_url && !soundData.sound_file_url.startsWith('http')) {
+                        soundData.sound_file_url = `https://www.101soundboards.com${soundData.sound_file_url}`;
+                    }
+                    
+                    console.log(`✅ SOUNDFX: Successfully fetched sound data - ID: ${soundData.id}, Title: "${soundData.sound_transcript}"`);
+                    return soundData;
+                } 
+                // Fallback for old API structure (backward compatibility)
+                else if (response.data.sound_file_url) {
+                    const data = response.data;
+                    if (data.sound_file_url && !data.sound_file_url.startsWith('http')) {
+                        data.sound_file_url = `https://www.101soundboards.com${data.sound_file_url}`;
+                    }
+                    console.log(`✅ SOUNDFX: Successfully fetched sound data (legacy format)`);
+                    return data;
                 }
-                return data;
             }
             
+            console.error('❌ SOUNDFX: Invalid API response structure:', response.data);
             return null;
         } catch (error) {
             console.error('❌ SOUNDFX: Failed to fetch from 101soundboards:', error.message);
+            if (error.response) {
+                console.error('❌ SOUNDFX: API Response status:', error.response.status);
+                console.error('❌ SOUNDFX: API Response data:', error.response.data);
+            }
             return null;
         }
     }

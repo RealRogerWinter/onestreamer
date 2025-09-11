@@ -4,6 +4,7 @@ import InventoryGrid from './InventoryGrid';
 import authService from '../../services/AuthService';
 import TTSInputModal from '../soundfx/TTSInputModal';
 import SoundboardInputModal from '../soundfx/SoundboardInputModal';
+import SummonBotModal from '../soundfx/SummonBotModal';
 import './InventoryStyles.css';
 
 interface InventoryItem {
@@ -69,6 +70,8 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
   const [ttsItem, setTtsItem] = useState<InventoryItem | null>(null);
   const [soundboardModalOpen, setSoundboardModalOpen] = useState(false);
   const [soundboardItem, setSoundboardItem] = useState<InventoryItem | null>(null);
+  const [summonBotModalOpen, setSummonBotModalOpen] = useState(false);
+  const [summonBotItem, setSummonBotItem] = useState<InventoryItem | null>(null);
   const inventoryItemsPerPage = 45; // Show many more items in full height panel
 
   // Check if mobile - using useMemo to ensure it's available for all hooks
@@ -395,6 +398,16 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
         return;
       }
       
+      // Check if this is a summon bot item that needs input
+      if (result.summonBotMode) {
+        const item = inventory.find(item => item.item_id === itemId);
+        if (item) {
+          setSummonBotItem(item);
+          setSummonBotModalOpen(true);
+        }
+        return;
+      }
+      
       // Check if this is an auto-trigger item (like fart)
       if (result.interactionMode === 'auto-trigger') {
         // For auto-trigger items, the server already handled the effect
@@ -626,6 +639,74 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
       setError(null);
     } catch (err: any) {
       setError(err.message);
+      throw err; // Re-throw to notify modal
+    }
+  };
+
+  const handleSummonBotSubmit = async (botName: string, personalityPrompt: string) => {
+    if (!summonBotItem) return;
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`/api/inventory/summon-bot/${summonBotItem.item_id}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          botName,
+          personalityPrompt
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to summon bot');
+      }
+
+      const result = await response.json();
+      
+      // Update inventory
+      setInventory(prev => prev.map(item => 
+        item.item_id === summonBotItem.item_id 
+          ? { ...item, quantity: result.remainingQuantity }
+          : item
+      ).filter(item => item.quantity > 0));
+
+      // Add cooldown
+      if (summonBotItem) {
+        setCooldowns(prev => {
+          const newCooldowns = [
+            ...prev.filter(cd => cd.itemId !== summonBotItem.item_id),
+            {
+              itemId: summonBotItem.item_id,
+              name: summonBotItem.name,
+              displayName: summonBotItem.display_name,
+              emoji: summonBotItem.emoji,
+              cooldownRemaining: 3600, // 1 hour cooldown
+              cooldownEnd: Date.now() + (3600 * 1000)
+            }
+          ];
+          return newCooldowns;
+        });
+      }
+
+      // Show success notification
+      if ((window as any).showItemNotification) {
+        (window as any).showItemNotification({
+          emoji: '🤖',
+          itemName: `Bot "${botName}" summoned!`,
+          type: 'success'
+        });
+      }
+
+      setSummonBotModalOpen(false);
+      setSummonBotItem(null);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message);
+      console.error('Error summoning bot:', err);
       throw err; // Re-throw to notify modal
     }
   };
@@ -894,6 +975,19 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
           itemId={soundboardItem.item_id}
           itemName={soundboardItem.display_name}
           itemEmoji={soundboardItem.emoji}
+        />
+      )}
+      
+      {summonBotItem && (
+        <SummonBotModal
+          isOpen={summonBotModalOpen}
+          onClose={() => {
+            setSummonBotModalOpen(false);
+            setSummonBotItem(null);
+          }}
+          onSubmit={handleSummonBotSubmit}
+          itemName={summonBotItem.display_name}
+          itemEmoji={summonBotItem.emoji}
         />
       )}
     </>

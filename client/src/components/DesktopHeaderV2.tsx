@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './DesktopHeaderV2.css';
 import AnimatedNumber from './AnimatedNumber';
 import UserProfile from './UserProfile';
+import SoundVolumeControl from './SoundVolumeControl';
 import { Socket } from 'socket.io-client';
 
 interface DesktopHeaderV2Props {
@@ -39,6 +40,10 @@ interface DesktopHeaderV2Props {
   onShowTutorial?: () => void;
   onShowBugReport?: () => void;
   
+  // Sound volume
+  soundVolume?: number;
+  onSoundVolumeChange?: (volume: number) => void;
+  
   // Socket
   socket?: Socket | null;
 }
@@ -70,6 +75,8 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
   onShowPrivacy,
   onShowTutorial,
   onShowBugReport,
+  soundVolume = 0.8,
+  onSoundVolumeChange,
   socket
 }) => {
   const [streamDuration, setStreamDuration] = useState(initialDuration);
@@ -267,6 +274,14 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
                   >
                     🎒
                   </button>
+
+                  {/* Sound Volume Control */}
+                  {onSoundVolumeChange && (
+                    <SoundVolumeControl
+                      volume={soundVolume}
+                      onVolumeChange={onSoundVolumeChange}
+                    />
+                  )}
 
                   {/* Theatre Dropdown Menu */}
                   <div className="theatre-dropdown-container">

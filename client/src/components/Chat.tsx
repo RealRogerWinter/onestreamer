@@ -405,8 +405,28 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
         if (response.ok) {
           const emojis = await response.json();
           const emojiMap = new Map<string, string>();
+          
+          // Detect browser support for AVIF animation
+          const supportsAnimatedAvif = CSS.supports('background-image', 'url("test.avif")');
+          const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+          const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+          
           emojis.forEach((emoji: any) => {
-            emojiMap.set(emoji.code, `${apiUrl}${emoji.url}`);
+            let preferredUrl = emoji.url;
+            
+            // If we have formats object, choose the best format
+            if (emoji.formats) {
+              // For browsers with poor AVIF animation support, prefer GIF for animated emojis
+              if ((isFirefox || isSafari) && emoji.formats.gif) {
+                preferredUrl = emoji.formats.gif;
+              } else if (!supportsAnimatedAvif && emoji.formats.gif) {
+                preferredUrl = emoji.formats.gif;
+              } else if (emoji.formats.webp && !supportsAnimatedAvif) {
+                preferredUrl = emoji.formats.webp;
+              }
+            }
+            
+            emojiMap.set(emoji.code, `${apiUrl}${preferredUrl}`);
           });
           setCustomEmojis(emojiMap);
         }
@@ -529,6 +549,16 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       setCurrentMessage('');
     };
 
+    const handleDeleteMessages = (data: { messageIds: string[], reason: string }) => {
+      // console.log('💬 CLIENT: Deleting messages:', data.messageIds.length, 'messages, reason:', data.reason);
+      setMessages(prevMessages => {
+        const filtered = prevMessages.filter(msg => !data.messageIds.includes(msg.id));
+        // Update session storage with filtered messages
+        sessionStorage.setItem('chatMessages', JSON.stringify(filtered));
+        return filtered;
+      });
+    };
+
     // Register event handlers
     chatSocket.on('user-assigned', handleUserAssigned);
     chatSocket.on('chat-history', handleChatHistory);
@@ -538,6 +568,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     chatSocket.on('chat-clear-ui', handleChatClearUI);
     chatSocket.on('banned', handleBanned);
     chatSocket.on('timeout', handleTimeout);
+    chatSocket.on('delete-messages', handleDeleteMessages);
     
     // Cleanup
     return () => {
@@ -550,6 +581,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       chatSocket.off('chat-clear-ui', handleChatClearUI);
       chatSocket.off('banned', handleBanned);
       chatSocket.off('timeout', handleTimeout);
+      chatSocket.off('delete-messages', handleDeleteMessages);
     };
   }, [chatSocket]);
 

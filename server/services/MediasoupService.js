@@ -74,46 +74,41 @@ class MediasoupService {
       return;
     }
 
-    // Create router
+    // Create router with comprehensive codec support for all browsers and viewbots
     const mediaCodecs = [
       {
         kind: 'audio',
         mimeType: 'audio/opus',
         clockRate: 48000,
         channels: 2,
-        parameters: {
-          'minptime': 10,
-          'useinbandfec': 1,
-          'usedtx': 0,  // Disabled DTX to prevent audio cutoff
-          'sprop-maxcapturerate': 48000,
-          'stereo': 1,
-          'sprop-stereo': 1,
-          'cbr': 0,
-          'maxaveragebitrate': 128000,
-          'maxplaybackrate': 48000,
-          'ptime': 20
-        }
+        rtcpFeedback: [
+          { type: 'nack' },
+          { type: 'transport-cc' }
+        ]
       },
       {
         kind: 'video',
         mimeType: 'video/VP8',
         clockRate: 90000,
-        parameters: {
-          'x-google-start-bitrate': 300, // Lower initial bitrate for mobile
-          'x-google-max-bitrate': 2000,  // Reasonable max
-          'x-google-min-bitrate': 100,
-        },
+        rtcpFeedback: [
+          { type: 'nack' },
+          { type: 'nack', parameter: 'pli' },
+          { type: 'ccm', parameter: 'fir' },
+          { type: 'goog-remb' },
+          { type: 'transport-cc' }
+        ]
       },
       {
         kind: 'video',
         mimeType: 'video/VP9',
         clockRate: 90000,
-        parameters: {
-          'profile-id': 2,
-          'x-google-start-bitrate': 300, // Lower initial bitrate
-          'x-google-max-bitrate': 2000,
-          'x-google-min-bitrate': 100,
-        },
+        rtcpFeedback: [
+          { type: 'nack' },
+          { type: 'nack', parameter: 'pli' },
+          { type: 'ccm', parameter: 'fir' },
+          { type: 'goog-remb' },
+          { type: 'transport-cc' }
+        ]
       },
       {
         kind: 'video',
@@ -121,26 +116,51 @@ class MediasoupService {
         clockRate: 90000,
         parameters: {
           'packetization-mode': 1,
-          'profile-level-id': '42e01f', // Baseline profile for mobile
-          'level-asymmetry-allowed': 1,
-          'x-google-start-bitrate': 300, // Lower initial bitrate
-          'x-google-max-bitrate': 2000,
-          'x-google-min-bitrate': 100,
+          'profile-level-id': '42e01f',
+          'level-asymmetry-allowed': 1
         },
+        rtcpFeedback: [
+          { type: 'nack' },
+          { type: 'nack', parameter: 'pli' },
+          { type: 'ccm', parameter: 'fir' },
+          { type: 'goog-remb' },
+          { type: 'transport-cc' }
+        ]
       },
       {
         kind: 'video',
-        mimeType: 'video/H264',
+        mimeType: 'video/h264',
         clockRate: 90000,
         parameters: {
           'packetization-mode': 1,
-          'profile-level-id': '4d0032', // Main profile
-          'level-asymmetry-allowed': 1,
-          'x-google-start-bitrate': 500,
-          'x-google-max-bitrate': 5000,
-          'x-google-min-bitrate': 200,
+          'profile-level-id': '4d0032',
+          'level-asymmetry-allowed': 1
         },
+        rtcpFeedback: [
+          { type: 'nack' },
+          { type: 'nack', parameter: 'pli' },
+          { type: 'ccm', parameter: 'fir' },
+          { type: 'goog-remb' },
+          { type: 'transport-cc' }
+        ]
       },
+      {
+        kind: 'video',
+        mimeType: 'video/h264',
+        clockRate: 90000,
+        parameters: {
+          'packetization-mode': 1,
+          'profile-level-id': '640032',
+          'level-asymmetry-allowed': 1
+        },
+        rtcpFeedback: [
+          { type: 'nack' },
+          { type: 'nack', parameter: 'pli' },
+          { type: 'ccm', parameter: 'fir' },
+          { type: 'goog-remb' },
+          { type: 'transport-cc' }
+        ]
+      }
     ];
 
     this.router = await this.worker.createRouter({ mediaCodecs });
@@ -152,6 +172,11 @@ class MediasoupService {
       throw new Error('MediaSoup router not available');
     }
     return this.router.rtpCapabilities;
+  }
+
+  // Add method to get router for debugging
+  getRouter() {
+    return this.router;
   }
 
   async createWebRtcTransport(socketId, isMobile = false) {
@@ -194,7 +219,11 @@ class MediasoupService {
       listenIps: [
         {
           ip: '0.0.0.0',
-          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>', // Single announced IP for mobile
+          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>', // IPv4 address
+        },
+        {
+          ip: '::',
+          announcedIp: process.env.ANNOUNCED_IPV6 || '2001:db8::1', // IPv6 address for IPv6 clients
         },
       ],
       // Enable both TCP and UDP for compatibility
@@ -310,6 +339,60 @@ class MediasoupService {
     return iceParameters;
   }
 
+  async produce(socketId, kind, rtpParameters, appData) {
+    console.log('=== MEDIASOUP PRODUCE METHOD ===');
+    console.log('Socket ID:', socketId);
+    console.log('Kind:', kind);
+    console.log('RTP Parameters MID:', rtpParameters?.mid);
+    console.log('RTP Codecs:', rtpParameters?.codecs?.map(c => c.mimeType));
+    
+    const transport = this.transports.get(socketId);
+    if (!transport) {
+      console.error(`Transport not found for ${socketId}. Available transports:`, Array.from(this.transports.keys()));
+      throw new Error(`Transport not found for ${socketId}`);
+    }
+
+    console.log('Transport found, attempting to produce...');
+    console.log('Transport ID:', transport.id);
+    console.log('Transport closed:', transport.closed);
+    
+    try {
+      const producer = await transport.produce({
+        kind,
+        rtpParameters,
+        appData
+      });
+
+      console.log('Producer created successfully!');
+      console.log('Producer ID:', producer.id);
+      console.log('Producer MID:', producer.rtpParameters?.mid);
+
+      producer.on('transportclose', () => {
+        console.log(`Producer ${producer.id} closed due to transport close`);
+        producer.close();
+      });
+
+      // Store producer by socketId and kind
+      if (!this.producers.has(socketId)) {
+        this.producers.set(socketId, new Map());
+      }
+      this.producers.get(socketId).set(kind, producer);
+      this.currentStreamer = socketId;
+
+      console.log(`📺 MEDIASOUP: Producer created for ${socketId} (${kind})`);
+      console.log(`🎯 MEDIASOUP: ${socketId} is now the active streamer`);
+      console.log('Total producers for this socket:', this.producers.get(socketId).size);
+      
+      return producer.id;
+    } catch (error) {
+      console.error('Failed to create producer:');
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      console.error('RTP Parameters that failed:', JSON.stringify(rtpParameters, null, 2));
+      throw error;
+    }
+  }
+
   async createProducer(socketId, rtpParameters, kind) {
     const transport = this.transports.get(socketId);
     if (!transport) {
@@ -340,6 +423,68 @@ class MediasoupService {
     };
   }
 
+  async consume(consumerSocketId, producerId, rtpCapabilities) {
+    // Find the producer by ID
+    let foundProducer = null;
+    let producerSocketId = null;
+    
+    for (const [socketId, producerMap] of this.producers.entries()) {
+      for (const [kind, producer] of producerMap.entries()) {
+        if (producer.id === producerId) {
+          foundProducer = producer;
+          producerSocketId = socketId;
+          break;
+        }
+      }
+      if (foundProducer) break;
+    }
+    
+    if (!foundProducer) {
+      console.error(`❌ MEDIASOUP: Producer ${producerId} not found`);
+      return null;
+    }
+    
+    const consumerTransport = this.transports.get(consumerSocketId);
+    if (!consumerTransport) {
+      console.error(`❌ MEDIASOUP: No transport found for consumer ${consumerSocketId}`);
+      return null;
+    }
+    
+    if (!this.router.canConsume({ producerId, rtpCapabilities })) {
+      console.error(`❌ MEDIASOUP: Cannot consume producer ${producerId}`);
+      return null;
+    }
+    
+    const consumer = await consumerTransport.consume({
+      producerId,
+      rtpCapabilities,
+      paused: true
+    });
+    
+    // Store consumer
+    if (!this.consumers.has(consumerSocketId)) {
+      this.consumers.set(consumerSocketId, new Set());
+    }
+    this.consumers.get(consumerSocketId).add(consumer);
+    
+    consumer.on('transportclose', () => {
+      console.log(`🔌 MEDIASOUP: Consumer transport closed for ${consumerSocketId}`);
+      consumer.close();
+    });
+    
+    consumer.on('producerclose', () => {
+      console.log(`🔌 MEDIASOUP: Producer closed for consumer ${consumerSocketId}`);
+      consumer.close();
+    });
+    
+    // Resume consumer
+    await consumer.resume();
+    
+    console.log(`✅ MEDIASOUP: Consumer created for ${consumerSocketId} from producer ${producerId}`);
+    
+    return consumer;
+  }
+
   async createConsumer(consumerSocketId, producerSocketId, rtpCapabilities, kind = null) {
     const consumerTransport = this.transports.get(consumerSocketId);
     let producerMap = this.producers.get(producerSocketId);
@@ -347,6 +492,23 @@ class MediasoupService {
     console.log(`📺 MEDIASOUP: Creating consumer for ${consumerSocketId} from producer ${producerSocketId}`);
     console.log(`📺 MEDIASOUP: Consumer transport exists: ${!!consumerTransport}`);
     console.log(`📺 MEDIASOUP: Producer map exists: ${!!producerMap}, size: ${producerMap?.size || 0}`);
+
+    // Validate transport state before attempting to create consumer
+    if (!consumerTransport) {
+      console.error(`❌ MEDIASOUP: No transport found for consumer ${consumerSocketId}`);
+      return null;
+    }
+
+    if (consumerTransport.closed) {
+      console.error(`❌ MEDIASOUP: Consumer transport is closed for ${consumerSocketId}`);
+      return null;
+    }
+
+    // Check transport connection state
+    if (consumerTransport.connectionState === 'failed') {
+      console.error(`❌ MEDIASOUP: Consumer transport in failed state for ${consumerSocketId}`);
+      return null;
+    }
 
     // Check if this is a viewbot Plain RTP producer that needs bridging for mobile
     // The producer socket ID won't contain 'viewbot', but the producer will have isViewBot flag
@@ -420,6 +582,16 @@ class MediasoupService {
         console.error(`❌ MEDIASOUP: No producers found for ${producerSocketId}`);
         return null;
       }
+    }
+
+    // Validate producer state before creating consumer
+    if (producer.closed) {
+      console.error(`❌ MEDIASOUP: Producer is closed for ${producerSocketId} (${producer.kind})`);
+      return null;
+    }
+
+    if (producer.paused) {
+      console.warn(`⚠️ MEDIASOUP: Producer is paused for ${producerSocketId} (${producer.kind}), attempting to consume anyway`);
     }
 
     if (!this.router.canConsume({

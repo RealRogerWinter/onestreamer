@@ -118,6 +118,10 @@ class SessionService {
           session.isStreaming = false;
           console.log(`📊 SESSION: IP ${ip} has no more connections, removed from viewers`);
         }
+        
+        // Clean up the session entirely to prevent phantom connections
+        this.sessions.delete(ip);
+        console.log(`📊 SESSION: Removed stale session for IP ${ip}`);
       } else {
         // Update socket count in session
         const session = this.sessions.get(ip);
@@ -205,7 +209,14 @@ class SessionService {
    * Get unique viewer count
    */
   getUniqueViewerCount() {
-    return this.uniqueViewers.size;
+    // Count only IPs that have active socket connections
+    let count = 0;
+    for (const [ip, sockets] of this.ipToSockets.entries()) {
+      if (sockets && sockets.size > 0) {
+        count++;
+      }
+    }
+    return count;
   }
 
   /**
@@ -230,8 +241,18 @@ class SessionService {
   getAllSessions() {
     const sessions = [];
     for (const [ip, session] of this.sessions.entries()) {
+      // Only include sessions that have active connections
+      if (!session || session.socketCount === 0) {
+        continue;
+      }
+      
       // Get all socket IDs for this IP
       const socketIds = this.getSocketsForIp(ip);
+      
+      // Skip if no active sockets
+      if (!socketIds || socketIds.length === 0) {
+        continue;
+      }
       
       // Create session entries for each socket
       socketIds.forEach(socketId => {

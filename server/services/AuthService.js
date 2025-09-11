@@ -55,20 +55,16 @@ class AuthService {
                         let user = await this.accountService.getUserByOAuth('google', profile.id);
                         
                         if (!user) {
-                            const email = profile.emails[0].value;
-                            const username = profile.displayName.replace(/\s+/g, '') + '_' + Date.now();
-                            
-                            user = await this.accountService.createUser(
-                                email,
-                                username,
-                                null,
-                                'google',
-                                profile.id
-                            );
-                            
-                            await this.accountService.verifyUser(user.verificationToken);
-                            
-                            user = await this.accountService.getUserById(user.id);
+                            // Return temporary OAuth data without creating user yet
+                            const tempOAuthData = {
+                                isNewUser: true,
+                                oauthProvider: 'google',
+                                oauthId: profile.id,
+                                email: profile.emails[0].value,
+                                displayName: profile.displayName,
+                                suggestedUsername: profile.displayName.replace(/\s+/g, '').toLowerCase()
+                            };
+                            return done(null, tempOAuthData);
                         } else {
                             await this.accountService.updateLastLogin(user.id);
                         }
@@ -410,6 +406,51 @@ class AuthService {
                 success: false, 
                 error: error.message || 'Failed to restore account' 
             };
+        }
+    }
+
+    async completeOAuthRegistration(oauthData, username) {
+        try {
+            // Check if username is already taken
+            const existingUser = await this.accountService.getUserByUsername(username);
+            if (existingUser) {
+                throw new Error('Username already taken');
+            }
+
+            // Create the user with the OAuth data and selected username
+            const user = await this.accountService.createUser(
+                oauthData.email,
+                username,
+                null, // No password for OAuth users
+                oauthData.oauthProvider,
+                oauthData.oauthId
+            );
+
+            // Automatically verify OAuth users
+            await this.accountService.verifyUser(user.verificationToken);
+
+            // Get the updated user
+            const verifiedUser = await this.accountService.getUserById(user.id);
+
+            const token = this.generateToken(verifiedUser);
+            const refreshToken = this.generateRefreshToken(verifiedUser);
+
+            return {
+                success: true,
+                user: {
+                    id: verifiedUser.id,
+                    email: verifiedUser.email,
+                    username: verifiedUser.username,
+                    isVerified: true,
+                    isAdmin: false,
+                    isModerator: false
+                },
+                token,
+                refreshToken
+            };
+        } catch (error) {
+            console.error('OAuth registration completion error:', error);
+            throw error;
         }
     }
 }

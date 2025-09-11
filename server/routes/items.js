@@ -170,6 +170,9 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
         // Check if this is a soundboard item that needs URL input
         const isSoundboardItem = item.name === '101soundboards';
         
+        // Check if this is a summon bot item
+        const isSummonBotItem = item.name === 'summon_bot';
+        
         // Check if this is an interactive item that needs click-to-throw
         const isInteractiveItem = canvasFxService && canvasFxService.isInteractiveItem(item);
         
@@ -617,6 +620,39 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 remainingQuantity: inventoryItem.quantity,
                 ttsMode: true,
                 message: 'TTS input required'
+            };
+            
+            res.json(result);
+        } else if (isSummonBotItem) {
+            console.log(`🤖 ITEMS: Taking summon bot path for ${item.display_name}`);
+            // For summon bot items, validate but don't consume yet - need bot details first
+            const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+            if (!inventoryItem || inventoryItem.quantity < 1) {
+                return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
+            }
+            
+            // Validate item usage (cooldown check)
+            const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+            if (!validation.valid) {
+                return res.status(429).json({ 
+                    error: validation.error || 'Cannot use item',
+                    cooldownRemaining: validation.cooldownRemaining 
+                });
+            }
+            
+            // Return success with summon bot mode flag - client should show input dialog
+            const result = {
+                success: true,
+                item: {
+                    id: item.id,
+                    name: item.name,
+                    displayName: item.display_name,
+                    emoji: item.emoji,
+                    type: item.item_type
+                },
+                remainingQuantity: inventoryItem.quantity,
+                summonBotMode: true,
+                message: 'Bot customization required'
             };
             
             res.json(result);
@@ -1679,6 +1715,123 @@ router.post('/admin/cooldowns/reset', authenticateAdmin, async (req, res) => {
     } catch (error) {
         console.error('Error resetting user item cooldowns:', error);
         res.status(500).json({ error: 'Failed to reset cooldowns' });
+    }
+});
+
+// Summon Bot endpoint - handles the actual bot creation after user provides details
+router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res) => {
+    console.log(`🤖 SUMMON BOT: Request received for item ${req.params.itemId} by user ${req.user.username}`);
+    
+    try {
+        const { botName, personalityPrompt } = req.body;
+        const inventoryService = req.app.get('inventoryService');
+        const itemService = req.app.get('itemService');
+        const chatBotService = req.app.get('chatBotService');
+        
+        // Import and use ProfanityFilterService
+        const ProfanityFilterService = require('../services/ProfanityFilterService');
+        const profanityFilter = new ProfanityFilterService();
+        
+        // Get item details
+        const item = await itemService.getItemById(req.params.itemId);
+        if (!item || item.name !== 'summon_bot') {
+            return res.status(400).json({ error: 'Invalid item' });
+        }
+        
+        // Validate bot name
+        const nameValidation = profanityFilter.validateBotName(botName);
+        if (!nameValidation.isValid) {
+            console.log(`🚫 SUMMON BOT: Name validation failed: ${nameValidation.error}`);
+            return res.status(400).json({ error: nameValidation.error });
+        }
+        
+        // Validate personality prompt
+        const promptValidation = profanityFilter.validatePersonalityPrompt(personalityPrompt);
+        if (!promptValidation.isValid) {
+            console.log(`🚫 SUMMON BOT: Prompt validation failed: ${promptValidation.error}`);
+            return res.status(400).json({ error: promptValidation.error });
+        }
+        
+        // Validate inventory and cooldown
+        const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+        if (!inventoryItem || inventoryItem.quantity < 1) {
+            return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
+        }
+        
+        const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+        if (!validation.valid) {
+            return res.status(429).json({ 
+                error: validation.error || 'Cannot use item',
+                cooldownRemaining: validation.cooldownRemaining 
+            });
+        }
+        
+        // Parse effect data for bot duration
+        const effectData = item.effect_data ? JSON.parse(item.effect_data) : {};
+        const botDuration = effectData.bot_duration || 3600; // Default 1 hour
+        
+        // Create the temporary bot
+        const bot = await chatBotService.createTemporaryBot({
+            name: botName.trim(),
+            personalityPrompt: personalityPrompt.trim(),
+            summonedBy: req.user.id,
+            summonedByUsername: req.user.username,
+            duration: botDuration,
+            itemId: item.id,
+            llmModel: 'openai',
+            temperature: 0.8
+        });
+        
+        // Consume the item
+        const usageResult = await inventoryService.useItem(
+            req.user.id, 
+            req.params.itemId,
+            null // streamId
+        );
+        
+        console.log(`✅ SUMMON BOT: Bot "${botName}" created successfully by ${req.user.username}`);
+        
+        // Send a chat notification with all details
+        const durationInHours = Math.round(botDuration / 3600);
+        const durationText = durationInHours === 1 ? '1 hour' : `${durationInHours} hours`;
+        
+        const chatMessage = `🤖 ${req.user.username} has summoned "${botName}" to the chat!\n` +
+            `⏱️ Duration: ${durationText}\n` +
+            `💭 Personality: "${personalityPrompt.trim()}"`;
+        
+        console.log(`📤 SUMMON BOT: Attempting to send chat message: "${chatMessage}"`);
+        
+        try {
+            const messageResult = await sendSystemMessage(chatMessage, '🤖 StreamBot');
+            console.log(`✅ SUMMON BOT: Chat message sent successfully:`, messageResult);
+        } catch (msgError) {
+            console.error(`❌ SUMMON BOT: Failed to send chat message:`, msgError);
+        }
+        
+        // Also emit socket message for real-time notification
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('system-message', {
+                message: `🤖 ${req.user.username} has summoned "${botName}" to the chat! Duration: ${durationText}. Personality: "${personalityPrompt.trim()}"`,
+                timestamp: Date.now(),
+                type: 'bot-summoned'
+            });
+        }
+        
+        res.json({
+            success: true,
+            bot: {
+                id: bot.id,
+                name: bot.name,
+                expiresAt: bot.expires_at
+            },
+            remainingQuantity: usageResult.remainingQuantity,
+            message: `Bot "${botName}" has been summoned!`
+        });
+        
+    } catch (error) {
+        console.error('❌ SUMMON BOT: Error creating bot:', error);
+        res.status(500).json({ error: 'Failed to summon bot' });
     }
 });
 

@@ -203,3 +203,91 @@
     height: 22px;
   }
 }
+
+/* Mobile Permission Status Indicator */
+.mobile-permission-status {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 15px;
+  padding: 10px 20px;
+  border-radius: 25px;
+  font-size: 14px;
+  font-weight: 500;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.mobile-permission-status span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-permission-status .permission-ready {
+  color: #4caf50;
+  text-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
+}
+
+.mobile-permission-status .permission-denied {
+  color: #f44336;
+  text-shadow: 0 0 10px rgba(244, 67, 54, 0.3);
+}
+
+.mobile-permission-status .permission-checking {
+  color: #2196f3;
+  animation: pulse 1.5s infinite;
+}
+
+.mobile-permission-status .permission-required {
+  color: #ff9800;
+  text-shadow: 0 0 10px rgba(255, 152, 0, 0.3);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Permission Required Button Style for Mobile */
+.control-button.permission-required {
+  background: linear-gradient(45deg, #ff9800, #ff6b00);
+  animation: permission-glow 2s infinite;
+  border: 2px solid rgba(255, 152, 0, 0.3);
+}
+
+@keyframes permission-glow {
+  0%, 100% {
+    box-shadow: 0 4px 15px rgba(255, 152, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 4px 25px rgba(255, 152, 0, 0.5);
+  }
+}
+
+.control-button.permission-required:hover:not(.disabled) {
+  background: linear-gradient(45deg, #ffab00, #ff7c00);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(255, 152, 0, 0.5);
+}
+
+/* Responsive adjustments for permission indicators */
+@media (max-width: 768px) {
+  .mobile-permission-status {
+    font-size: 13px;
+    padding: 8px 16px;
+    margin-bottom: 12px;
+  }
+  
+  .control-button.permission-required {
+    font-size: 14px;
+    padding: 14px 24px;
+  }
+}

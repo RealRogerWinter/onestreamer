@@ -370,18 +370,24 @@ export class MediasoupClient {
     }
   }
 
-  async initialize(): Promise<void> {
+  async initialize(forceReload: boolean = false): Promise<void> {
     if (!this.validateState()) {
       throw new Error('MediasoupClient is in invalid state for initialization');
     }
 
-    // Check if we already have a healthy transport
-    if (this.device?.loaded && this.recvTransport && !this.recvTransport.closed) {
+    // Check if we already have a healthy transport (unless force reload)
+    if (!forceReload && this.device?.loaded && this.recvTransport && !this.recvTransport.closed) {
       const state = this.recvTransport.connectionState;
       if (state === 'connected' || state === 'connecting') {
         console.log('🔄 MEDIASOUP CLIENT: Already initialized with healthy transport, skipping');
         return;
       }
+    }
+    
+    // If force reload, reset the device
+    if (forceReload && this.device?.loaded) {
+      console.log('🔄 MEDIASOUP CLIENT: Force reloading device with fresh RTP capabilities');
+      this.device = new Device();
     }
 
     this.setProcessing(true);
@@ -431,13 +437,48 @@ export class MediasoupClient {
   }
 
   async createSendTransport(): Promise<void> {
-    // console.log('📡 MEDIASOUP CLIENT: Creating send transport...');
+    console.log('📡 MEDIASOUP CLIENT: Creating send transport...');
     
     if (!this.socket.id) {
       throw new Error('Socket ID not available. Ensure socket is connected.');
     }
     
-    // console.log(`📡 MEDIASOUP CLIENT: Using socket ID: ${this.socket.id}`);
+    console.log(`📡 MEDIASOUP CLIENT: Using socket ID: ${this.socket.id}`);
+    
+    // CRITICAL FIX: Complete reset to avoid MID=0 conflicts
+    console.warn('🔄 MEDIASOUP CLIENT: Performing complete reset for streaming...');
+    
+    // Close ALL existing transports and producers
+    if (this.sendTransport && !this.sendTransport.closed) {
+      console.log('🔄 Closing existing send transport...');
+      this.sendTransport.close();
+    }
+    if (this.recvTransport && !this.recvTransport.closed) {
+      console.log('🔄 Closing existing receive transport...');
+      this.recvTransport.close();
+    }
+    
+    // Reset all references
+    this.sendTransport = undefined;
+    this.recvTransport = undefined;
+    this.videoProducer = undefined;
+    this.audioProducer = undefined;
+    this.consumers.clear();
+    
+    // Create completely fresh device
+    this.device = new Device();
+    
+    // Initialize with fresh RTP capabilities
+    await this.initialize(true); // Force reload to get fresh capabilities
+    
+    if (!this.device.loaded) {
+      throw new Error('Failed to load MediaSoup device');
+    }
+    
+    // Log device state for debugging
+    console.log('📊 Device loaded:', this.device.loaded);
+    console.log('📊 Can produce video:', this.device.canProduce('video'));
+    console.log('📊 Can produce audio:', this.device.canProduce('audio'));
     
     try {
       // Detect if this is a mobile client
@@ -569,21 +610,39 @@ export class MediasoupClient {
         }
       });
 
-      this.sendTransport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
+      this.sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback, errback) => {
         try {
-          // console.log(`🎬 MEDIASOUP CLIENT: Producing ${kind}...`);
+          console.log(`🎬 MEDIASOUP CLIENT: Produce handler called for ${kind}`);
+          console.log(`📡 Socket connected: ${this.socket.connected}, ID: ${this.socket.id}`);
+          console.log(`🎬 RTP Parameters:`, rtpParameters);
           
-          // Send produce request via socket.io for real-time handling
-          this.socket.emit('mediasoup:produce', { kind, rtpParameters }, (response: any) => {
-            if (response.success) {
-              callback({ id: response.producerId });
-              // console.log(`✅ MEDIASOUP CLIENT: Producer created for ${kind}`);
-            } else {
-              errback(new Error(response.error));
-            }
+          // If socket.id is not available, this will fail
+          if (!this.socket.id) {
+            throw new Error('Socket ID not available - socket not connected');
+          }
+          
+          // Use HTTP API instead of Socket.IO for produce (more reliable)
+          const response = await fetch(`${this.serverUrl}/api/mediasoup/produce`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              socketId: this.socket.id,
+              kind,
+              rtpParameters,
+              appData
+            })
           });
+          
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to produce');
+          }
+          
+          const data = await response.json();
+          callback({ id: data.producerId });
+          console.log(`✅ MEDIASOUP CLIENT: Producer created for ${kind}: ${data.producerId}`);
         } catch (error) {
-          console.error('❌ MEDIASOUP CLIENT: Produce failed:', error);
+          console.error('❌ MEDIASOUP CLIENT: Produce handler error:', error);
           errback(error as Error);
         }
       });
@@ -958,56 +1017,83 @@ export class MediasoupClient {
     // Clean up any existing producers first
     await this.stopProducing();
 
-    // console.log('🎬 MEDIASOUP CLIENT: Starting to produce media...');
+    console.log('🎬 MEDIASOUP CLIENT: Starting to produce media...');
+    console.log('📊 Stream tracks - Video:', stream.getVideoTracks().length, 'Audio:', stream.getAudioTracks().length);
+    console.log('🌐 Browser:', navigator.userAgent);
     
     try {
-      // Produce video track
+      // CRITICAL FIX: Produce AUDIO FIRST to get MID=0, then VIDEO gets MID=1
+      // This prevents the MID=0 conflict that causes SDP negotiation failure
+      
+      // Get both tracks
+      const audioTrack = stream.getAudioTracks()[0];
       const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        // console.log('📺 MEDIASOUP CLIENT: Creating video producer...');
-        // Back to single high-quality stream - simulcast was causing quality issues
-        this.videoProducer = await this.sendTransport.produce({
-          track: videoTrack,
-          codecOptions: {
-            videoGoogleStartBitrate: 2500, // Good starting bitrate
-            videoGoogleMaxBitrate: 5000, // Max 5 Mbps for high quality
-            videoGoogleMinBitrate: 500 // Min 500 kbps
-          },
-          encodings: [
-            {
-              maxBitrate: 5000000, // 5 Mbps for good quality
-              scaleResolutionDownBy: 1, // Full resolution
-              maxFramerate: 30
-            }
-          ],
-          appData: { mediaType: 'video' }
-        });
+      if (audioTrack) {
+        console.log('🎤 MEDIASOUP CLIENT: Creating audio producer FIRST...');
+        console.log('🎙️ Audio track settings:', audioTrack.getSettings());
+        console.log('🎙️ Audio track state:', audioTrack.readyState, 'enabled:', audioTrack.enabled);
         
-        // console.log('📺 MEDIASOUP CLIENT: Video producer created:', this.videoProducer.id);
+        try {
+          console.log('🎤 Producing audio to claim MID=0...');
+          
+          this.audioProducer = await this.sendTransport.produce({
+            track: audioTrack
+          });
+          
+          console.log('✅ Audio produce succeeded with MID=0!');
+          
+        } catch (audioError: any) {
+          console.error('❌ Audio produce failed:', audioError.message);
+          console.warn('⚠️ Continuing without audio producer');
+          this.audioProducer = undefined;
+        }
+        
+        if (this.audioProducer) {
+          console.log('✅ MEDIASOUP CLIENT: Audio producer created:', this.audioProducer.id);
+          console.log('🎤 Audio producer paused:', this.audioProducer.paused);
+        }
+      } else {
+        console.warn('⚠️ No audio track found in stream');
+      }
+      
+      // Now produce video track SECOND
+      if (videoTrack) {
+        console.log('📺 MEDIASOUP CLIENT: Creating video producer SECOND...');
+        console.log('📹 Video track settings:', videoTrack.getSettings());
+        console.log('📹 Video track state:', videoTrack.readyState, 'enabled:', videoTrack.enabled);
+        
+        // Simple produce - MediaSoup will assign MID=1 since audio took MID=0
+        try {
+          console.log('🎬 Producing video SECOND (will get MID=1)...');
+          
+          this.videoProducer = await this.sendTransport.produce({
+            track: videoTrack
+          });
+          
+          console.log('✅ Video produce succeeded with MID=1!');
+          
+        } catch (produceError: any) {
+          console.error('❌ Video produce failed:', produceError.message);
+          console.error('Full error:', produceError);
+          this.videoProducer = undefined;
+        }
+        
+        if (this.videoProducer) {
+          console.log('✅ MEDIASOUP CLIENT: Video producer created:', this.videoProducer.id);
+          console.log('📺 Video producer paused:', this.videoProducer.paused);
+        } else {
+          console.warn('⚠️ No video producer created, continuing with audio only');
+        }
       }
 
-      // Produce audio track
-      const audioTrack = stream.getAudioTracks()[0];
-      if (audioTrack) {
-        // console.log('🎤 MEDIASOUP CLIENT: Creating audio producer...');
-        this.audioProducer = await this.sendTransport.produce({
-          track: audioTrack,
-          codecOptions: {
-            opusStereo: true,
-            opusFec: true, // Forward error correction
-            opusDtx: true, // Discontinuous transmission
-            opusMaxPlaybackRate: 48000,
-            opusMaxAverageBitrate: 128000,
-            opusPtime: 20 // Packet time
-          },
-          appData: { mediaType: 'audio' }
-        });
-        
-        // console.log('🎤 MEDIASOUP CLIENT: Audio producer created:', this.audioProducer.id);
-      }
 
     } catch (error) {
       console.error('❌ MEDIASOUP CLIENT: Failed to produce:', error);
+      console.error('Error details:', {
+        name: (error as any).name,
+        message: (error as any).message,
+        stack: (error as any).stack
+      });
       // Clean up on error
       await this.stopProducing();
       throw error;
@@ -1188,11 +1274,32 @@ export class MediasoupClient {
   }
   
   private async attemptConsumeTrack(kind: 'video' | 'audio', attempt: number): Promise<MediaStream | null> {
+    // Validate transport state before attempting consumption
+    if (!this.recvTransport) {
+      throw new Error(`No receive transport available for ${kind} consumption`);
+    }
+    
+    if (this.recvTransport.closed) {
+      throw new Error(`Receive transport is closed, cannot consume ${kind}`);
+    }
+    
+    // Check transport connection state
+    const transportState = this.recvTransport.connectionState;
+    if (transportState === 'failed') {
+      throw new Error(`Transport in failed state, cannot consume ${kind}`);
+    }
+    
+    if (transportState !== 'connected' && attempt > 2) {
+      // After 2 attempts, require transport to be fully connected
+      console.warn(`⚠️ MEDIASOUP CLIENT: Transport not fully connected (${transportState}) after ${attempt} attempts`);
+      throw new Error(`Transport not ready (${transportState}), cannot consume ${kind}`);
+    }
+    
     return new Promise((resolve, reject) => {
       // Add timeout to prevent hanging
       const timeout = setTimeout(() => {
         reject(new Error(`Consume timeout for ${kind} on attempt ${attempt}`));
-      }, 3000); // 3 second timeout
+      }, 5000); // Increased to 5 second timeout for slower connections
       
       this.socket.emit('mediasoup:consume', { 
         rtpCapabilities: this.device.rtpCapabilities,
@@ -1287,20 +1394,33 @@ export class MediasoupClient {
           // console.log(`🔄 MEDIASOUP CLIENT: Waiting for transport connection before resuming ${kind} consumer...`);
           await new Promise<void>((connectResolve, connectReject) => {
             const connectTimeout = setTimeout(() => {
-              connectReject(new Error(`Transport connection timeout for ${kind} consumer`));
-            }, 10000);
+              const currentState = this.recvTransport?.connectionState || 'undefined';
+              console.error(`❌ MEDIASOUP CLIENT: Transport connection timeout for ${kind} consumer (state: ${currentState})`);
+              connectReject(new Error(`Transport connection timeout for ${kind} consumer (state: ${currentState})`));
+            }, 15000); // Increased timeout for slower connections
             
+            let checkCount = 0;
             const checkConnection = () => {
-              if (this.recvTransport && this.recvTransport.connectionState === 'connected') {
+              checkCount++;
+              const transportState = this.recvTransport?.connectionState;
+              
+              if (this.recvTransport && transportState === 'connected') {
                 clearTimeout(connectTimeout);
-                // console.log(`✅ MEDIASOUP CLIENT: Transport connected for ${kind} consumer`);
+                // console.log(`✅ MEDIASOUP CLIENT: Transport connected for ${kind} consumer after ${checkCount} checks`);
                 connectResolve();
-              } else if (this.recvTransport && this.recvTransport.connectionState === 'failed') {
+              } else if (this.recvTransport && transportState === 'failed') {
                 clearTimeout(connectTimeout);
                 connectReject(new Error(`Transport connection failed for ${kind} consumer`));
+              } else if (transportState === 'connecting' || transportState === 'new') {
+                // Still connecting, check again
+                if (checkCount % 10 === 0) {
+                  console.log(`⏳ MEDIASOUP CLIENT: Transport still ${transportState} for ${kind} consumer (check ${checkCount})`);
+                }
+                setTimeout(checkConnection, 200); // Check every 200ms instead of 100ms
               } else {
-                // Check again in 100ms
-                setTimeout(checkConnection, 100);
+                // Unknown state
+                console.warn(`⚠️ MEDIASOUP CLIENT: Unknown transport state: ${transportState}`);
+                setTimeout(checkConnection, 200);
               }
             };
             

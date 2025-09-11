@@ -715,6 +715,12 @@ class ChatBotLLMService {
         prompt += "You are a regular viewer watching a movie/show with friends and commenting on what you see and hear.\n";
         prompt += "You will be provided with actual dialogue transcripts or scene descriptions from the content.\n\n";
         
+        // Add bot-specific personality prompt if provided
+        if (basePrompt && basePrompt.trim() && basePrompt.trim() !== 'You are a friendly chat participant.') {
+            prompt += "**YOUR SPECIFIC PERSONALITY - This is your unique identity for movie commentary. Adhere to it closely while watching:**\n";
+            prompt += basePrompt.trim() + "\n\n";
+        }
+        
         // Add username awareness for moviebots
         if (botUsername) {
             prompt += "**YOUR USERNAME IDENTITY:**\n";
@@ -762,7 +768,7 @@ class ChatBotLLMService {
         
         if (personality.traits) {
             const traits = JSON.parse(personality.traits);
-            prompt += "**PERSONALITY TRAITS** - Express these while commenting on the movie:\n";
+            prompt += "**YOUR GENERAL PERSONALITY TRAITS** - Express these while commenting on the movie:\n";
             
             if (traits.enthusiasm) {
                 prompt += "- ENTHUSIASM: Show excitement about cool scenes, plot twists, or great acting!\n";
@@ -783,6 +789,20 @@ class ChatBotLLMService {
             prompt += "\n";
         }
         
+        // Add temperature guidance for movie commentary
+        if (personality.temperature) {
+            const temp = parseFloat(personality.temperature);
+            if (temp <= 0.3) {
+                prompt += "**RESPONSE CREATIVITY: Low** - Keep reactions focused and straightforward about what's happening.\n\n";
+            } else if (temp <= 0.7) {
+                prompt += "**RESPONSE CREATIVITY: Medium** - Mix predictable reactions with occasional creative observations.\n\n";
+            } else if (temp <= 1.0) {
+                prompt += "**RESPONSE CREATIVITY: High** - Be spontaneous and creative with your movie commentary!\n\n";
+            } else {
+                prompt += "**RESPONSE CREATIVITY: Maximum** - Be wildly creative with unexpected takes and imaginative reactions!\n\n";
+            }
+        }
+        
         prompt += "**GOOD MOVIE COMMENTARY EXAMPLES:**\n";
         prompt += "- \"damn that line was cold\" (reacting to dialogue)\n";
         prompt += "- \"this dude is definitely gonna betray them\" (predicting plot)\n";
@@ -800,8 +820,14 @@ class ChatBotLLMService {
     }
 
     async buildSystemPrompt(basePrompt, personality, botUsername) {
-        // Only use the global prompt - personal prompts are disabled
+        // Start with the global prompt
         let prompt = await this.getGlobalPrompt();
+        
+        // Add bot-specific personality prompt if provided
+        if (basePrompt && basePrompt.trim() && basePrompt.trim() !== 'You are a friendly chat participant.') {
+            prompt += "\n\n**YOUR SPECIFIC PERSONALITY - This is your unique identity. Adhere to it closely and integrate it into your responses in an organic way. Let it influence your thinking and responses:**\n";
+            prompt += basePrompt.trim();
+        }
         
         // Add username awareness
         if (botUsername) {
@@ -813,11 +839,10 @@ class ChatBotLLMService {
             prompt += `\n- You are aware of your own messages in the chat history`;
         }
         
-        // Personal prompt (basePrompt) is ignored - only global prompt is used
-        
+        // Add personality traits if they exist
         if (personality.traits) {
             const traits = JSON.parse(personality.traits);
-            prompt += "\n\nMANDATORY PERSONALITY TRAITS - These define HOW you express yourself:";
+            prompt += "\n\n**YOUR GENERAL PERSONALITY TRAITS - These define HOW you express yourself:**";
             
             if (traits.enthusiasm) {
                 prompt += "\n- ENTHUSIASM: You are EXTREMELY enthusiastic and energetic! Express excitement constantly! Use multiple exclamation marks!! Show genuine passion and hype in everything you say!!!";
@@ -838,9 +863,22 @@ class ChatBotLLMService {
             prompt += "\n\nThese traits are NON-NEGOTIABLE parts of your personality. They must shine through in EVERY message you send.";
         }
         
-        prompt += "\n\nREMEMBER: You are a unique individual with a distinct personality. Stand out from the crowd. Be memorable. Let your character traits dominate your responses. Never give bland, generic replies.";
+        // Add temperature guidance
+        if (personality.temperature) {
+            const temp = parseFloat(personality.temperature);
+            if (temp <= 0.3) {
+                prompt += "\n\n**RESPONSE CREATIVITY: Low** - Be consistent, predictable, and focused. Stick to straightforward responses.";
+            } else if (temp <= 0.7) {
+                prompt += "\n\n**RESPONSE CREATIVITY: Medium** - Balance creativity with consistency. Be natural but not too wild.";
+            } else if (temp <= 1.0) {
+                prompt += "\n\n**RESPONSE CREATIVITY: High** - Be creative, spontaneous, and unpredictable! Surprise with unique responses.";
+            } else {
+                prompt += "\n\n**RESPONSE CREATIVITY: Maximum** - Be wildly creative and unpredictable! Push boundaries with unexpected and imaginative responses!";
+            }
+        }
         
-        // The global prompt already contains formatting instructions
+        prompt += "\n\nREMEMBER: You are a unique individual with a distinct personality. Stand out from the crowd. Be memorable. Let your personality prompt, traits, and creativity level dominate your responses. Never give bland, generic replies.";
+        
         return prompt;
     }
 

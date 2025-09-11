@@ -572,6 +572,24 @@ class ItemService {
                 base_price: 100,
                 cooldown_seconds: 30,
                 max_stack: 0
+            },
+            {
+                name: 'summon_bot',
+                display_name: 'Summon Bot',
+                emoji: '🤖',
+                description: 'Summon a custom AI bot to chat for 1 hour',
+                item_type: 'utility',
+                rarity: 'epic',
+                base_price: 800,
+                cooldown_seconds: 3600,
+                max_stack: 0,
+                effect_data: JSON.stringify({
+                    effect_type: 'summon_bot',
+                    requires_input: true,
+                    bot_duration: 3600,
+                    max_name_length: 30,
+                    max_prompt_length: 200
+                })
             }
         ];
 

@@ -23,6 +23,7 @@ import MobileBottomNav from './components/MobileBottomNav';
 import MobileHeader from './components/MobileHeader';
 import DesktopHeaderV2 from './components/DesktopHeaderV2';
 import OAuthCallback from './components/OAuthCallback';
+import OAuthUsernameSelection from './components/OAuthUsernameSelection';
 import BugReportModal from './components/BugReportModal';
 import EmailVerification from './components/EmailVerification';
 import PasswordReset from './components/PasswordReset';
@@ -62,6 +63,9 @@ function AppContent() {
   // Check if we're on the OAuth callback page
   const isOAuthCallback = window.location.pathname === '/auth/success' || 
                          window.location.pathname === '/auth/error';
+  
+  // Check if we're on the OAuth username selection page
+  const isOAuthUsernameSelection = window.location.pathname === '/auth/complete-registration';
   
   // Check if we're on the email verification page
   const currentPath = window.location.pathname;
@@ -286,6 +290,17 @@ function AppContent() {
     };
   });
 
+  // Sound effects volume (for TTS, soundboards, etc)
+  const [soundEffectsVolume, setSoundEffectsVolume] = useState(() => {
+    const saved = localStorage.getItem('soundfx_volume');
+    return saved ? parseFloat(saved) : 0.8;
+  });
+
+  const handleSoundVolumeChange = (volume: number) => {
+    setSoundEffectsVolume(volume);
+    localStorage.setItem('soundfx_volume', volume.toString());
+  };
+
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Update socketRef when socket changes
@@ -447,6 +462,22 @@ function AppContent() {
       // Log the state change
       // console.log('✅ CLIENT: isStreaming set to true');
     });
+    
+    socket.on('stream-denied', (data: any) => {
+      console.log('🚫 CLIENT: Stream denied:', data);
+      setIsStreaming(false);
+      
+      // Handle permission-specific denials
+      if (data.requiresPermissions) {
+        setError('Camera and microphone permissions are required to stream. Please grant permissions and try again.');
+        // Could trigger permission modal here if needed
+      } else if (data.permissionStatus) {
+        const { camera, microphone } = data.permissionStatus;
+        setError(`Insufficient permissions: Camera is ${camera}, Microphone is ${microphone}. Both must be granted.`);
+      } else {
+        setError(data.reason || 'Stream request was denied');
+      }
+    });
 
     socket.on('takeover-approved', () => {
       // console.log('✅ CLIENT: Takeover approved!');
@@ -602,6 +633,7 @@ function AppContent() {
       socket.off('global-cooldown');
       socket.off('cooldown-status-update');
       socket.off('streaming-approved');
+      socket.off('stream-denied');
       socket.off('takeover-approved');
       socket.off('takeover-denied');
       socket.off('takeover-blocked');
@@ -829,6 +861,11 @@ function AppContent() {
     return <OAuthCallback />;
   }
 
+  // If we're on the OAuth username selection page, show the username selection form
+  if (isOAuthUsernameSelection) {
+    return <OAuthUsernameSelection />;
+  }
+
   return (
     <div className={`App ${theatreMode ? 'theatre-mode' : ''}`}>
       
@@ -1001,6 +1038,8 @@ function AppContent() {
               }
             }
           }}
+          soundVolume={soundEffectsVolume}
+          onSoundVolumeChange={handleSoundVolumeChange}
           />
         </>
       ) : null}
@@ -1103,9 +1142,16 @@ function AppContent() {
                       console.warn('Cannot take over stream: Socket not connected');
                       return;
                     }
+                    // Permission confirmation is now handled by TheatreControls
+                    // The component will only call this after permissions are verified
                     socket.emit('request-to-stream', {
                       streamType: 'webcam',
-                      timestamp: Date.now()
+                      timestamp: Date.now(),
+                      permissionsGranted: true, // TheatreControls ensures this is true
+                      permissionStatus: {
+                        camera: 'granted',
+                        microphone: 'granted'
+                      }
                     });
                   }}
                   onStopStream={() => {
@@ -1161,9 +1207,15 @@ function AppContent() {
                     console.warn('Cannot take over stream: Socket not connected');
                     return;
                   }
+                  // StreamControls should also handle permission checking
                   socket.emit('request-to-stream', {
                     streamType: 'webcam',
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    permissionsGranted: true, // StreamControls should verify this
+                    permissionStatus: {
+                      camera: 'granted',
+                      microphone: 'granted'
+                    }
                   });
                 }}
                 onStopStream={() => {
@@ -1240,7 +1292,7 @@ function AppContent() {
           <div />
         </FloatingPointsManager>
         <NotificationManager />
-        <SoundFxPlayer socket={socket} />
+        <SoundFxPlayer socket={socket} volume={soundEffectsVolume} />
         <SafariTTSNotice />
       </main>
 

@@ -15,6 +15,15 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
 function initializeDatabase() {
     db.serialize(() => {
+        // Enable foreign key constraints
+        db.run('PRAGMA foreign_keys = ON', (err) => {
+            if (err) {
+                console.error('Error enabling foreign keys:', err);
+            } else {
+                console.log('Foreign key constraints enabled');
+            }
+        });
+        
         db.run(`
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import StreamerSettings, { StreamerSettingsConfig } from './StreamerSettings';
 import TheatreMuteIndicator from './TheatreMuteIndicator';
 import BuffDisplay from './BuffDisplay';
+import PermissionSetupModal from './PermissionSetupModal';
+import PermissionService, { MediaPermissions } from '../services/PermissionService';
 import './TheatreControls.css';
 
 interface TheatreControlsProps {
@@ -41,6 +43,13 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
   const [userHasUnmuted, setUserHasUnmuted] = useState(false);
   const [showTakeoverTooltip, setShowTakeoverTooltip] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [permissions, setPermissions] = useState<MediaPermissions>({
+    camera: 'checking',
+    microphone: 'checking',
+    lastChecked: Date.now()
+  });
+  const [permissionStream, setPermissionStream] = useState<MediaStream | null>(null);
   const hideTimeout = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -48,6 +57,26 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
   useEffect(() => {
     setShowTakeoverTooltip(true);
   }, [hasActiveStream, isStreaming]);
+
+  // Check permissions on mount and periodically
+  useEffect(() => {
+    const checkPermissions = async () => {
+      const perms = await PermissionService.checkPermissions();
+      setPermissions(perms);
+    };
+    
+    checkPermissions();
+    // Recheck permissions every 5 seconds
+    const interval = setInterval(checkPermissions, 5000);
+    
+    return () => {
+      clearInterval(interval);
+      // Clean up permission stream if exists
+      if (permissionStream) {
+        PermissionService.releaseStream(permissionStream);
+      }
+    };
+  }, []);
 
   // Notify parent when visibility changes
   useEffect(() => {
@@ -212,16 +241,56 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
     if (!isConnected) return 'Connecting...';
     if (isStreaming) return 'Stop Streaming';
     if (cooldownRemaining > 0 && !hasActiveStream) return `Cooldown: ${cooldownRemaining}s`;
+    
+    // Check permissions state
+    const canStream = PermissionService.canStream(permissions);
+    if (!canStream && !hasActiveStream) {
+      if (permissions.camera === 'denied' || permissions.microphone === 'denied') {
+        return '🔒 Permissions Required';
+      }
+      return '🎤 Setup Permissions';
+    }
+    
     if (hasActiveStream) return 'Take Over Stream';
     return 'Start Streaming';
   };
 
-  const handleStreamAction = () => {
+  const handleStreamAction = async () => {
     if (isStreaming) {
+      // Stop streaming - always allowed
       onStopStream();
+      // Clean up permission stream if exists
+      if (permissionStream) {
+        PermissionService.releaseStream(permissionStream);
+        setPermissionStream(null);
+      }
     } else {
-      onTakeOver();
+      // Check if permissions are granted before streaming
+      const canStream = PermissionService.canStream(permissions);
+      
+      if (!canStream) {
+        // Show permission modal to get permissions
+        setShowPermissionModal(true);
+      } else {
+        // Permissions already granted, proceed with streaming
+        onTakeOver();
+      }
     }
+  };
+
+  const handlePermissionsGranted = (stream: MediaStream) => {
+    // Store the stream for later use
+    setPermissionStream(stream);
+    // Update permissions state
+    setPermissions({
+      camera: 'granted',
+      microphone: 'granted',
+      lastChecked: Date.now()
+    });
+    // Close modal
+    setShowPermissionModal(false);
+    // Now proceed with streaming
+    onTakeOver();
   };
 
   const handlePlayPause = () => {
@@ -442,15 +511,31 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
             ⚙️ Streamer Settings
           </button>
           
+          {/* Permission Status Indicator */}
+          {!isStreaming && !hasActiveStream && (
+            <div className="permission-status-indicator">
+              {permissions.camera === 'granted' && permissions.microphone === 'granted' ? (
+                <span className="permission-ready">✅ Ready to stream</span>
+              ) : permissions.camera === 'denied' || permissions.microphone === 'denied' ? (
+                <span className="permission-denied">🔒 Permissions blocked</span>
+              ) : permissions.camera === 'checking' || permissions.microphone === 'checking' ? (
+                <span className="permission-checking">⏳ Checking...</span>
+              ) : (
+                <span className="permission-required">🎤 Setup required</span>
+              )}
+            </div>
+          )}
+          
           {/* Main Stream Control Button with Tooltip */}
           <div className="theatre-control-btn-wrapper">
             <button
-              className={`theatre-control-btn ${isStreaming ? 'danger' : hasActiveStream && !isStreaming ? 'takeover' : 'primary'}`}
+              className={`theatre-control-btn ${isStreaming ? 'danger' : hasActiveStream && !isStreaming ? 'takeover' : !PermissionService.canStream(permissions) && !hasActiveStream ? 'permission-required' : 'primary'}`}
               onClick={handleStreamAction}
               disabled={!isConnected || (!isStreaming && cooldownRemaining > 0)}
               title={
                 isStreaming ? "Stop your stream" : 
                 hasActiveStream && !isStreaming ? "Take control of the stream! Anyone can become the streamer." : 
+                !PermissionService.canStream(permissions) ? "Grant camera and microphone permissions to stream" :
                 ""
               }
             >
@@ -459,6 +544,9 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
               )}
               {hasActiveStream && !isStreaming && (
                 <span className="takeover-icon">🎬</span>
+              )}
+              {!PermissionService.canStream(permissions) && !hasActiveStream && !isStreaming && (
+                <span className="permission-icon">🔓</span>
               )}
               {getStreamButtonText()}
             </button>
@@ -525,6 +613,14 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
     {isMuted && !userHasUnmuted && (
       <TheatreMuteIndicator onUnmute={handleUnmuteClick} />
     )}
+    
+    {/* Permission Setup Modal */}
+    <PermissionSetupModal
+      isOpen={showPermissionModal}
+      onClose={() => setShowPermissionModal(false)}
+      onPermissionsGranted={handlePermissionsGranted}
+      requiredPermissions={{ camera: true, microphone: true }}
+    />
   </>
   );
 };

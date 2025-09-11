@@ -234,5 +234,46 @@ router.get('/:id/history', authenticateAdmin, async (req, res) => {
     }
 });
 
+// Extend time for temporary bot
+router.post('/:id/extend-time', authenticateAdmin, async (req, res) => {
+    try {
+        const { additionalMinutes } = req.body;
+        const botId = parseInt(req.params.id);
+        
+        if (!additionalMinutes || additionalMinutes <= 0) {
+            return res.status(400).json({ error: 'Invalid additional minutes' });
+        }
+        
+        // Check if this is a temporary bot
+        const tempBot = await database.getAsync(
+            'SELECT * FROM temporary_bots WHERE chatbot_id = ?',
+            [botId]
+        );
+        
+        if (!tempBot) {
+            return res.status(400).json({ error: 'This is not a temporary bot' });
+        }
+        
+        // Calculate new expiration time
+        const currentExpiration = new Date(tempBot.expires_at);
+        const newExpiration = new Date(currentExpiration.getTime() + (additionalMinutes * 60 * 1000));
+        
+        // Update the expiration time
+        await database.runAsync(
+            'UPDATE temporary_bots SET expires_at = ? WHERE chatbot_id = ?',
+            [newExpiration.toISOString(), botId]
+        );
+        
+        res.json({ 
+            success: true, 
+            expires_at: newExpiration.toISOString(),
+            message: `Extended bot time by ${additionalMinutes} minutes`
+        });
+    } catch (error) {
+        console.error('Error extending bot time:', error);
+        res.status(500).json({ error: 'Failed to extend bot time' });
+    }
+});
+
 
 module.exports = { router, initializeChatBotRoutes };

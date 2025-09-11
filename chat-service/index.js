@@ -82,6 +82,7 @@ const MAX_CHAT_HISTORY = 100; // Keep last 100 messages
 // Admin functionality
 const bannedUsers = new Set(); // Store banned usernames (either authenticated or anonymous)
 const timeoutUsers = new Map(); // Store timeout data: username -> { endTime, reason }
+const bannedUsersData = new Map(); // Store additional ban data: username -> { bannedAt, reason, bannedBy }
 
 // Chat throttling functionality
 const userLastMessage = new Map(); // Store last message timestamp: username -> timestamp
@@ -96,6 +97,82 @@ let lastClaimEventTime = 0; // Track last claim event time to enforce minimum sp
 const MIN_CLAIM_INTERVAL = 20 * 60 * 1000; // Minimum 20 minutes between events
 const MAX_CLAIM_INTERVAL = 60 * 60 * 1000; // Maximum 60 minutes between events
 const CLAIM_TIMEOUT = 60 * 1000; // Claim events expire after 60 seconds if not claimed
+
+// Persistence paths
+const MODERATION_DATA_PATH = path.join(__dirname, 'moderation_data.json');
+
+// Load moderation data from disk
+function loadModerationData() {
+  try {
+    if (fs.existsSync(MODERATION_DATA_PATH)) {
+      const data = JSON.parse(fs.readFileSync(MODERATION_DATA_PATH, 'utf8'));
+      
+      // Load banned users
+      if (data.bannedUsers && Array.isArray(data.bannedUsers)) {
+        bannedUsers.clear();
+        bannedUsersData.clear();
+        data.bannedUsers.forEach(user => {
+          bannedUsers.add(user.username);
+          bannedUsersData.set(user.username, {
+            bannedAt: user.bannedAt,
+            reason: user.reason || 'No reason recorded',
+            bannedBy: user.bannedBy
+          });
+        });
+        console.log(`📂 MODERATION: Loaded ${bannedUsers.size} banned users from disk`);
+      }
+      
+      // Load timeout users (only active ones)
+      if (data.timedOutUsers && Array.isArray(data.timedOutUsers)) {
+        const currentTime = Date.now();
+        timeoutUsers.clear();
+        data.timedOutUsers.forEach(user => {
+          if (user.endTime > currentTime) {
+            timeoutUsers.set(user.username, {
+              endTime: user.endTime,
+              reason: user.reason || 'No reason recorded',
+              startTime: user.startTime || currentTime
+            });
+          }
+        });
+        console.log(`📂 MODERATION: Loaded ${timeoutUsers.size} active timeouts from disk`);
+      }
+    }
+  } catch (error) {
+    console.error('❌ MODERATION: Failed to load moderation data:', error);
+  }
+}
+
+// Save moderation data to disk
+function saveModerationData() {
+  try {
+    const bannedUsersList = Array.from(bannedUsers).map(username => ({
+      username,
+      ...(bannedUsersData.get(username) || {
+        bannedAt: new Date().toISOString(),
+        reason: 'No reason recorded'
+      })
+    }));
+    
+    const timedOutUsersList = Array.from(timeoutUsers.entries()).map(([username, data]) => ({
+      username,
+      endTime: data.endTime,
+      reason: data.reason,
+      startTime: data.startTime
+    }));
+    
+    const data = {
+      bannedUsers: bannedUsersList,
+      timedOutUsers: timedOutUsersList,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    fs.writeFileSync(MODERATION_DATA_PATH, JSON.stringify(data, null, 2));
+    console.log(`💾 MODERATION: Saved moderation data to disk (${bannedUsersList.length} bans, ${timedOutUsersList.length} timeouts)`);
+  } catch (error) {
+    console.error('❌ MODERATION: Failed to save moderation data:', error);
+  }
+}
 
 // JWT secret (should match the main server)
 const JWT_SECRET = process.env.JWT_SECRET || '***REMOVED-JWT-DEFAULT***';
@@ -506,13 +583,38 @@ const adminCommands = {
     
     const targetUsername = args.join(' ');
     bannedUsers.add(targetUsername);
+    bannedUsersData.set(targetUsername, {
+      bannedAt: new Date().toISOString(),
+      reason: 'Banned via admin command',
+      bannedBy: userInfo.username
+    });
+    
+    // Save to disk
+    saveModerationData();
     
     console.log(`🔨 BAN: Adding "${targetUsername}" to ban list`);
     console.log(`🔨 BAN: Current banned users:`, Array.from(bannedUsers));
     
+    // Delete all messages from the banned user
+    const messagesToDelete = [];
+    const lowerTargetUsername = targetUsername.toLowerCase();
+    
+    // Find all message IDs from the banned user
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].username && chatMessages[i].username.toLowerCase() === lowerTargetUsername) {
+        messagesToDelete.push(chatMessages[i].id);
+        chatMessages.splice(i, 1); // Remove from array
+      }
+    }
+    
+    // Emit event to delete messages from all clients
+    if (messagesToDelete.length > 0) {
+      io.emit('delete-messages', { messageIds: messagesToDelete, reason: 'user_banned' });
+      console.log(`🔨 BAN: Deleted ${messagesToDelete.length} messages from ${targetUsername}`);
+    }
+    
     // Disconnect all sockets with this username (case-insensitive)
     let disconnectedCount = 0;
-    const lowerTargetUsername = targetUsername.toLowerCase();
     connectedUsers.forEach((user, socketId) => {
       if (user.username.toLowerCase() === lowerTargetUsername) {
         const targetSocket = io.sockets.sockets.get(socketId);
@@ -525,8 +627,8 @@ const adminCommands = {
       }
     });
     
-    sendSystemMessage(`User ${targetUsername} has been banned`, io);
-    sendAdminResponse(socket, `✅ Banned ${targetUsername} and disconnected ${disconnectedCount} connection(s)`);
+    sendSystemMessage(`User ${targetUsername} has been banned and their messages have been removed`, io);
+    sendAdminResponse(socket, `✅ Banned ${targetUsername}, deleted ${messagesToDelete.length} messages, and disconnected ${disconnectedCount} connection(s)`);
   },
   
   unban: (socket, args, userInfo, io) => {
@@ -543,6 +645,11 @@ const adminCommands = {
     }
     
     bannedUsers.delete(targetUsername);
+    bannedUsersData.delete(targetUsername);
+    
+    // Save to disk
+    saveModerationData();
+    
     sendSystemMessage(`User ${targetUsername} has been unbanned`, io);
     sendAdminResponse(socket, `✅ Unbanned ${targetUsername} - they can now reconnect to chat`);
   },
@@ -561,11 +668,16 @@ const adminCommands = {
       return;
     }
     
-    const endTime = Date.now() + (duration * 1000);
+    const startTime = Date.now();
+    const endTime = startTime + (duration * 1000);
     timeoutUsers.set(targetUsername, {
       endTime,
-      reason: 'Timed out by administrator'
+      reason: 'Timed out by administrator',
+      startTime: startTime
     });
+    
+    // Save to disk
+    saveModerationData();
     
     console.log(`⏱️ TIMEOUT: Adding "${targetUsername}" to timeout list for ${duration}s`);
     console.log(`⏱️ TIMEOUT: Current timed out users:`, Array.from(timeoutUsers.keys()));
@@ -1512,8 +1624,11 @@ app.get('/api/moderation', (req, res) => {
     
     const bannedUsersList = Array.from(bannedUsers).map(username => ({
       username,
-      bannedAt: new Date().toISOString(), // We don't track exact ban time currently
-      reason: 'No reason recorded'
+      ...(bannedUsersData.get(username) || {
+        bannedAt: new Date().toISOString(),
+        reason: 'No reason recorded',
+        bannedBy: 'Unknown'
+      })
     }));
     
     // Filter out expired timeouts
@@ -1563,13 +1678,39 @@ app.post('/api/ban', express.json(), (req, res) => {
     }
     
     bannedUsers.add(username);
+    bannedUsersData.set(username, {
+      bannedAt: new Date().toISOString(),
+      reason: reason || 'No reason provided',
+      bannedBy: bannedBy || 'Admin'
+    });
     
-    // Notify all clients
+    // Save to disk
+    saveModerationData();
+    
+    // Delete all messages from the banned user
+    const messagesToDelete = [];
+    const lowerUsername = username.toLowerCase();
+    
+    // Find all message IDs from the banned user
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].username && chatMessages[i].username.toLowerCase() === lowerUsername) {
+        messagesToDelete.push(chatMessages[i].id);
+        chatMessages.splice(i, 1); // Remove from array
+      }
+    }
+    
+    // Emit event to delete messages from all clients
+    if (messagesToDelete.length > 0) {
+      io.emit('delete-messages', { messageIds: messagesToDelete, reason: 'user_banned' });
+      console.log(`🔨 MODERATION: Deleted ${messagesToDelete.length} messages from ${username}`);
+    }
+    
+    // Notify all clients about the ban
     const banMessage = {
       id: `ban_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       username: '🔨 MODERATION',
       color: '#FF0000',
-      message: `${username} has been banned from chat${reason ? `: ${reason}` : ''}`,
+      message: `${username} has been banned from chat and their messages have been removed${reason ? `: ${reason}` : ''}`,
       timestamp: formatTime(),
       fullTimestamp: new Date().toISOString(),
       isSystem: true
@@ -1582,8 +1723,22 @@ app.post('/api/ban', express.json(), (req, res) => {
     
     io.emit('new-message', banMessage);
     
-    console.log(`🔨 MODERATION: ${username} banned by ${bannedBy || 'admin'}`);
-    res.json({ success: true, message: `${username} has been banned` });
+    // Disconnect all sockets with this username (case-insensitive)
+    let disconnectedCount = 0;
+    connectedUsers.forEach((user, socketId) => {
+      if (user.username.toLowerCase() === lowerUsername) {
+        const targetSocket = io.sockets.sockets.get(socketId);
+        if (targetSocket) {
+          console.log(`🔨 MODERATION: Disconnecting socket ${socketId} for user ${user.username}`);
+          targetSocket.emit('banned', { reason: 'You have been banned by an administrator' });
+          targetSocket.disconnect(true);
+          disconnectedCount++;
+        }
+      }
+    });
+    
+    console.log(`🔨 MODERATION: ${username} banned by ${bannedBy || 'admin'}, deleted ${messagesToDelete.length} messages, disconnected ${disconnectedCount} connection(s)`);
+    res.json({ success: true, message: `${username} has been banned, ${messagesToDelete.length} messages deleted` });
   } catch (error) {
     console.error('Error banning user:', error);
     res.status(500).json({ error: 'Failed to ban user' });
@@ -1600,6 +1755,10 @@ app.post('/api/unban', express.json(), (req, res) => {
     }
     
     bannedUsers.delete(username);
+    bannedUsersData.delete(username);
+    
+    // Save to disk
+    saveModerationData();
     
     console.log(`✅ MODERATION: ${username} unbanned`);
     res.json({ success: true, message: `${username} has been unbanned` });
@@ -1618,8 +1777,16 @@ app.post('/api/timeout', express.json(), (req, res) => {
       return res.status(400).json({ error: 'Username and duration are required' });
     }
     
-    const endTime = Date.now() + (duration * 1000);
-    timeoutUsers.set(username, { endTime, reason });
+    const startTime = Date.now();
+    const endTime = startTime + (duration * 1000);
+    timeoutUsers.set(username, { 
+      endTime, 
+      reason: reason || 'No reason provided',
+      startTime: startTime
+    });
+    
+    // Save to disk
+    saveModerationData();
     
     // Notify all clients
     const timeoutMessage = {
@@ -1657,6 +1824,9 @@ app.post('/api/remove-timeout', express.json(), (req, res) => {
     }
     
     timeoutUsers.delete(username);
+    
+    // Save to disk
+    saveModerationData();
     
     console.log(`✅ MODERATION: Timeout removed for ${username}`);
     res.json({ success: true, message: `Timeout removed for ${username}` });
@@ -1922,6 +2092,18 @@ io.on('connection', async (socket) => {
     // Just trim the message - client handles HTML escaping
     // We only need to validate it's a valid string and limit length
     const trimmedMessage = message.trim().substring(0, 2000); // Max 2000 characters
+    
+    // Profanity filter - silently block messages containing banned words
+    const bannedWords = ['nigger', 'faggot'];
+    const lowerMessage = trimmedMessage.toLowerCase();
+    for (const word of bannedWords) {
+      if (lowerMessage.includes(word)) {
+        console.log(`🚫 PROFANITY: Blocked message from ${user.username} containing banned word`);
+        // Silently return without sending the message
+        return;
+      }
+    }
+    
     const sanitizedMessage = trimmedMessage;
     
     // Extract @ mentions from the message
@@ -2198,6 +2380,9 @@ io.on('connection', async (socket) => {
 });
 
 const PORT = process.env.CHAT_PORT || 8081;
+
+// Load moderation data on startup
+loadModerationData();
 
 // Start HTTP server
 httpServer.listen(PORT, '0.0.0.0', () => {

@@ -95,8 +95,8 @@ class ChatBotService {
         try {
             const result = await database.runAsync(
                 `INSERT INTO chatbots (name, prompt, is_enabled, response_interval_min, 
-                 response_interval_max, show_robot_emoji, personality_traits, use_assigned_name, llm_model, moviebot_enabled)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 response_interval_max, show_robot_emoji, personality_traits, use_assigned_name, llm_model, moviebot_enabled, response_creativity_temperature)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     data.name || this.generateUsername(),
                     data.prompt || 'You are a friendly chat participant.',
@@ -107,7 +107,8 @@ class ChatBotService {
                     JSON.stringify(data.personality_traits || {}),
                     data.use_assigned_name !== undefined ? data.use_assigned_name : 1,
                     data.llm_model || null,  // null means use global default
-                    data.moviebot_enabled !== undefined ? data.moviebot_enabled : 0
+                    data.moviebot_enabled !== undefined ? data.moviebot_enabled : 0,
+                    data.response_creativity_temperature !== undefined ? data.response_creativity_temperature : 0.7
                 ]
             );
             
@@ -175,6 +176,10 @@ class ChatBotService {
                 updates.push('moviebot_enabled = ?');
                 params.push(data.moviebot_enabled);
             }
+            if (data.response_creativity_temperature !== undefined) {
+                updates.push('response_creativity_temperature = ?');
+                params.push(data.response_creativity_temperature);
+            }
             
             updates.push('updated_at = CURRENT_TIMESTAMP');
             params.push(botId);
@@ -232,13 +237,37 @@ class ChatBotService {
                     [bot.id]
                 );
                 
+                // Check if this is a temporary bot
+                const tempBotInfo = await database.getAsync(
+                    `SELECT * FROM temporary_bots WHERE chatbot_id = ?`,
+                    [bot.id]
+                );
+                
+                let additionalInfo = {};
+                if (tempBotInfo) {
+                    const now = Date.now();
+                    const expiresAt = new Date(tempBotInfo.expires_at).getTime();
+                    const timeRemaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
+                    
+                    additionalInfo = {
+                        is_temporary: true,
+                        summoned_by: tempBotInfo.summoned_by_username,
+                        summoned_by_user_id: tempBotInfo.summoned_by_user_id,
+                        personality_prompt: tempBotInfo.personality_prompt,
+                        expires_at: tempBotInfo.expires_at,
+                        time_remaining_seconds: timeRemaining,
+                        time_remaining_display: this.formatTimeRemaining(timeRemaining)
+                    };
+                }
+                
                 return {
                     ...bot,
                     is_connected: this.bots.has(bot.id) && this.bots.get(bot.id).connected,
                     personality_traits: bot.personality_traits ? JSON.parse(bot.personality_traits) : {},
                     moviebot_enabled: bot.moviebot_enabled === 1 || bot.moviebot_enabled === true,
                     last_message: lastMessage ? lastMessage.message : null,
-                    last_message_at: lastMessage ? lastMessage.created_at : null
+                    last_message_at: lastMessage ? lastMessage.created_at : null,
+                    ...additionalInfo
                 };
             }));
             
@@ -246,6 +275,22 @@ class ChatBotService {
         } catch (error) {
             console.error('Error getting bots:', error);
             throw error;
+        }
+    }
+    
+    formatTimeRemaining(seconds) {
+        if (seconds <= 0) return 'Expired';
+        
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        
+        if (hours > 0) {
+            return `${hours}h ${minutes}m`;
+        } else if (minutes > 0) {
+            return `${minutes}m ${secs}s`;
+        } else {
+            return `${secs}s`;
         }
     }
 
@@ -399,6 +444,20 @@ class ChatBotService {
             console.log(`🤖 Bot ${botInstance.id} not scheduling - connected: ${botInstance.connected}, enabled: ${botInstance.data.is_enabled}`);
             return;
         }
+        
+        // Check if this is a temporary bot that has expired
+        if (botInstance.data.is_temporary && botInstance.data.expires_at) {
+            const now = new Date();
+            const expiresAt = new Date(botInstance.data.expires_at);
+            if (now >= expiresAt) {
+                console.log(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, not scheduling next response`);
+                // Mark as disabled and trigger cleanup
+                botInstance.data.is_enabled = 0;
+                botInstance.connected = false;
+                this.cleanupExpiredBots();
+                return;
+            }
+        }
 
         // Skip scheduling regular responses for MovieBot-enabled bots
         // They should only respond to movie transcriptions
@@ -427,6 +486,25 @@ class ChatBotService {
                 return;
             }
             
+            // Check if this is a temporary bot that has expired
+            if (botInstance.data.is_temporary && botInstance.data.expires_at) {
+                const now = new Date();
+                const expiresAt = new Date(botInstance.data.expires_at);
+                if (now >= expiresAt) {
+                    console.log(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, stopping message generation`);
+                    // Stop the bot completely
+                    botInstance.data.is_enabled = 0;
+                    botInstance.connected = false;
+                    if (botInstance.responseTimer) {
+                        clearTimeout(botInstance.responseTimer);
+                        botInstance.responseTimer = null;
+                    }
+                    // Trigger cleanup
+                    this.cleanupExpiredBots();
+                    return;
+                }
+            }
+            
             // Skip regular messages for MovieBot-enabled bots
             // They should only respond to movie transcriptions
             if (botInstance.data.moviebot_enabled) {
@@ -436,6 +514,11 @@ class ChatBotService {
             
             const personality = botInstance.data.personality_traits ? 
                 JSON.parse(botInstance.data.personality_traits) : {};
+            
+            // Add temperature to personality object
+            if (botInstance.data.response_creativity_temperature !== undefined && botInstance.data.response_creativity_temperature !== null) {
+                personality.temperature = botInstance.data.response_creativity_temperature;
+            }
             
             const response = await this.llmService.generateResponse(
                 botInstance.data.prompt,
@@ -473,6 +556,153 @@ class ChatBotService {
             }
         } catch (error) {
             console.error(`Error generating message for bot ${botInstance.id}:`, error);
+        }
+    }
+
+    async createTemporaryBot(data) {
+        try {
+            console.log(`🤖 Creating temporary bot: ${data.name}`);
+            
+            // Calculate expiration time
+            const expiresAt = new Date(Date.now() + (data.duration || 3600) * 1000);
+            
+            // Build the combined prompt
+            const movieBotPrompt = this.movieBotService?.config?.moviePromptTemplate || 
+                `You are watching a stream. Your core identity is that you are currently a viewer of this stream watching the content.`;
+            
+            const combinedPrompt = `${movieBotPrompt}\n\nYour specific personality: ${data.personalityPrompt}\nYour name is ${data.name}.`;
+            
+            // Create the bot in database
+            const result = await database.runAsync(
+                `INSERT INTO chatbots (
+                    name, prompt, is_enabled, is_temporary,
+                    summoned_by_user_id, expires_at, summon_item_id,
+                    moviebot_enabled, use_assigned_name,
+                    response_interval_min, response_interval_max,
+                    show_robot_emoji, llm_model, response_creativity_temperature
+                ) VALUES (?, ?, 1, 1, ?, ?, ?, 1, 1, 30, 90, 1, ?, ?)`,
+                [
+                    data.name,
+                    combinedPrompt,
+                    data.summonedBy,
+                    expiresAt.toISOString(),
+                    data.itemId || null,
+                    data.llmModel || 'openai',
+                    data.temperature || 0.8
+                ]
+            );
+            
+            // Get the created bot
+            const bot = await database.getAsync(
+                'SELECT * FROM chatbots WHERE id = ?',
+                [result.id]
+            );
+            
+            // Create entry in temporary_bots table
+            await database.runAsync(
+                `INSERT INTO temporary_bots (
+                    chatbot_id, summoned_by_user_id, summoned_by_username,
+                    personality_prompt, expires_at
+                ) VALUES (?, ?, ?, ?, ?)`,
+                [
+                    bot.id,
+                    data.summonedBy,
+                    data.summonedByUsername || 'User',
+                    data.personalityPrompt,
+                    expiresAt.toISOString()
+                ]
+            );
+            
+            // Start the bot
+            await this.startBot(bot);
+            
+            // Schedule expiration
+            this.scheduleExpiration(bot.id, data.duration || 3600);
+            
+            console.log(`✅ Temporary bot ${bot.name} (ID: ${bot.id}) created and started`);
+            return bot;
+            
+        } catch (error) {
+            console.error('❌ Error creating temporary bot:', error);
+            throw error;
+        }
+    }
+    
+    scheduleExpiration(botId, durationSeconds) {
+        const timeoutMs = durationSeconds * 1000;
+        
+        console.log(`⏰ Scheduling expiration for bot ${botId} in ${durationSeconds} seconds`);
+        
+        setTimeout(async () => {
+            try {
+                console.log(`🗑️ Expiring temporary bot ${botId}`);
+                
+                // Stop the bot
+                await this.stopBot(botId);
+                
+                // Delete from temporary_bots table first
+                await database.runAsync(
+                    'DELETE FROM temporary_bots WHERE chatbot_id = ?',
+                    [botId]
+                );
+                
+                // Delete from database
+                await database.runAsync(
+                    'DELETE FROM chatbots WHERE id = ? AND is_temporary = 1',
+                    [botId]
+                );
+                
+                console.log(`✅ Temporary bot ${botId} expired and removed`);
+            } catch (error) {
+                console.error(`❌ Error expiring bot ${botId}:`, error);
+            }
+        }, timeoutMs);
+    }
+    
+    async cleanupExpiredBots() {
+        try {
+            // Find all expired temporary bots
+            const expired = await database.allAsync(
+                'SELECT id, name FROM chatbots WHERE is_temporary = 1 AND expires_at < datetime("now")'
+            );
+            
+            if (expired.length === 0) {
+                return 0;
+            }
+            
+            console.log(`🧹 Cleaning up ${expired.length} expired temporary bots`);
+            
+            for (const bot of expired) {
+                console.log(`  - Removing expired bot: ${bot.name} (ID: ${bot.id})`);
+                
+                // First stop the bot if it's running
+                const botInstance = this.bots.get(bot.id);
+                if (botInstance) {
+                    console.log(`    Stopping active bot instance for ${bot.name}`);
+                    // Clear any scheduled timers
+                    if (botInstance.responseTimer) {
+                        clearTimeout(botInstance.responseTimer);
+                        botInstance.responseTimer = null;
+                    }
+                    // Mark as disabled to prevent new messages
+                    botInstance.data.is_enabled = 0;
+                    botInstance.connected = false;
+                }
+                
+                await this.stopBot(bot.id);
+                
+                // Delete from temporary_bots table first (in case foreign keys aren't working)
+                await database.runAsync('DELETE FROM temporary_bots WHERE chatbot_id = ?', [bot.id]);
+                
+                // Then delete from chatbots table
+                await database.runAsync('DELETE FROM chatbots WHERE id = ?', [bot.id]);
+            }
+            
+            console.log(`✅ Successfully cleaned up ${expired.length} expired temporary bots`);
+            return expired.length;
+        } catch (error) {
+            console.error('❌ Error cleaning up expired bots:', error);
+            return 0;
         }
     }
 
@@ -644,6 +874,11 @@ class ChatBotService {
                 { username: 'User3', message: 'This stream is pretty cool' }
             ];
 
+            // Add temperature to personality object
+            if (bot.response_creativity_temperature !== undefined && bot.response_creativity_temperature !== null) {
+                personality.temperature = bot.response_creativity_temperature;
+            }
+            
             const response = await this.llmService.generateResponse(
                 bot.prompt,
                 sampleContext,
@@ -724,6 +959,11 @@ class ChatBotService {
                                 const personality = bot.personality_traits ? 
                                     JSON.parse(bot.personality_traits) : {};
                                 
+                                // Add temperature to personality object
+                                if (bot.response_creativity_temperature !== undefined && bot.response_creativity_temperature !== null) {
+                                    personality.temperature = bot.response_creativity_temperature;
+                                }
+                                
                                 // Get recent chat context if available
                                 const context = botInstance?.messageHistory || [];
                                 
@@ -781,6 +1021,11 @@ class ChatBotService {
                 if (!message) {
                     const personality = bot.personality_traits ? 
                         JSON.parse(bot.personality_traits) : {};
+                    
+                    // Add temperature to personality object
+                    if (bot.response_creativity_temperature !== undefined && bot.response_creativity_temperature !== null) {
+                        personality.temperature = bot.response_creativity_temperature;
+                    }
                     
                     const response = await this.llmService.generateResponse(
                         bot.prompt,
@@ -940,10 +1185,15 @@ class ChatBotService {
             const personality = botInstance.data.personality_traits ? 
                 JSON.parse(botInstance.data.personality_traits) : {};
             
+            // Add temperature to personality object
+            if (botInstance.data.response_creativity_temperature !== undefined && botInstance.data.response_creativity_temperature !== null) {
+                personality.temperature = botInstance.data.response_creativity_temperature;
+            }
+            
             // Generate response for movie comment with transcript focus
             // The moviePrompt should contain the transcript for the bot to comment on
             const response = await this.llmService.generateMovieResponse(
-                botInstance.data.prompt,  // Use the bot's individual prompt (though it gets ignored anyway)
+                botInstance.data.prompt,  // Use the bot's individual prompt
                 moviePrompt,  // The movie transcript/prompt to comment on
                 chatHistory || [],
                 personality,

@@ -28,6 +28,14 @@ interface ChatBot {
   last_message_at?: string;
   created_at: string;
   updated_at: string;
+  // Temporary bot fields
+  is_temporary?: boolean;
+  summoned_by?: string;
+  summoned_by_user_id?: number;
+  personality_prompt?: string;
+  expires_at?: string;
+  time_remaining_seconds?: number;
+  time_remaining_display?: string;
 }
 
 interface ChatBotManagementProps {
@@ -64,6 +72,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
   const [currentModel, setCurrentModel] = useState<any>(null);
   const [switchingModel, setSwitchingModel] = useState(false);
   const [togglingAll, setTogglingAll] = useState(false);
+  const [editingTimeRemaining, setEditingTimeRemaining] = useState<{[key: number]: string}>({});
   
   // MovieBot state
   const [movieBotStatus, setMovieBotStatus] = useState<MovieBotStatus | null>(null);
@@ -129,6 +138,19 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
     }
   }, [movieBotStatus?.config?.useGroq]);
 
+  // Auto-refresh temporary bots to update time remaining
+  useEffect(() => {
+    const hasTemporaryBots = chatbots.some(bot => bot.is_temporary);
+    
+    if (hasTemporaryBots) {
+      const interval = setInterval(() => {
+        fetchChatbots();
+      }, 30000); // Refresh every 30 seconds
+      
+      return () => clearInterval(interval);
+    }
+  }, [chatbots]);
+
   // Set initial transcription values only once when movieBotStatus first loads
   useEffect(() => {
     if (movieBotStatus?.config && !initialValuesSet.current) {
@@ -149,6 +171,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
       if (!response.ok) throw new Error('Failed to fetch chatbots');
       
       const data = await response.json();
+      console.log('🤖 Fetched chatbots data:', data);
       // Ensure personality_traits is properly typed
       const formattedData = data.map((bot: any) => ({
         ...bot,
@@ -590,6 +613,39 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
     }
   };
 
+  const handleExtendTime = async (botId: number, additionalMinutes: number) => {
+    if (isNaN(additionalMinutes) || additionalMinutes <= 0) {
+      addLog('Please enter a valid number of minutes');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${serverUrl}/api/chatbots/${botId}/extend-time`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authService.getToken()}`
+        },
+        body: JSON.stringify({ additionalMinutes })
+      });
+      
+      if (!response.ok) throw new Error('Failed to extend bot time');
+      
+      const result = await response.json();
+      addLog(`Extended bot time by ${additionalMinutes} minutes. New expiration: ${result.expires_at}`);
+      
+      // Clear the editing state for this bot
+      const newEditing = {...editingTimeRemaining};
+      delete newEditing[botId];
+      setEditingTimeRemaining(newEditing);
+      
+      // Refresh the bot list
+      fetchChatbots();
+    } catch (error) {
+      addLog(`Error extending bot time: ${error}`);
+    }
+  };
+  
   const handleDelete = async (id: number) => {
     if (!window.confirm('Are you sure you want to delete this chatbot?')) return;
     
@@ -1160,8 +1216,154 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
           </div>
         </div>
         
-        <div className="bots-grid">
-          {chatbots.map(bot => (
+        {/* User-Summoned Bots Section */}
+        {chatbots.filter(bot => bot.is_temporary).length > 0 && (
+          <>
+            <div className="section-header" style={{ marginTop: '30px', marginBottom: '20px' }}>
+              <h3 style={{ color: '#9c27b0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                🤖 User-Summoned Bots
+                <span style={{ fontSize: '0.8em', color: 'rgba(255, 255, 255, 0.6)' }}>
+                  ({chatbots.filter(bot => bot.is_temporary).length} active)
+                </span>
+              </h3>
+            </div>
+            <div className="bots-grid">
+              {chatbots.filter(bot => bot.is_temporary).map(bot => (
+                <div key={bot.id} className={`bot-card ${bot.is_enabled ? 'enabled' : 'disabled'}`} 
+                     style={{ borderColor: '#9c27b0', borderWidth: '2px' }}>
+                  <div className="bot-header">
+                    <span className="bot-name">
+                      {bot.show_robot_emoji && '🤖 '}{bot.name}
+                      <span style={{ marginLeft: '8px', fontSize: '0.8em', color: '#9c27b0' }}>✨ Summoned</span>
+                    </span>
+                    <span className={`status-badge ${bot.is_connected ? 'connected' : 'disconnected'}`}>
+                      {bot.is_connected ? '● Connected' : '○ Disconnected'}
+                    </span>
+                  </div>
+                  
+                  <div className="bot-info">
+                    <div className="info-row" style={{ color: '#9c27b0', fontWeight: 'bold' }}>
+                      <span>⏱️ Time Remaining:</span>
+                      {editingTimeRemaining[bot.id] !== undefined ? (
+                        <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                          <input
+                            type="number"
+                            value={editingTimeRemaining[bot.id]}
+                            onChange={(e) => setEditingTimeRemaining({...editingTimeRemaining, [bot.id]: e.target.value})}
+                            style={{ width: '60px', padding: '2px 5px' }}
+                            placeholder="Minutes"
+                          />
+                          <span>min</span>
+                          <button
+                            onClick={() => handleExtendTime(bot.id, parseInt(editingTimeRemaining[bot.id]))}
+                            style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                          >
+                            ✓
+                          </button>
+                          <button
+                            onClick={() => {
+                              const newEditing = {...editingTimeRemaining};
+                              delete newEditing[bot.id];
+                              setEditingTimeRemaining(newEditing);
+                            }}
+                            style={{ padding: '2px 8px', fontSize: '0.8em' }}
+                          >
+                            ✗
+                          </button>
+                        </div>
+                      ) : (
+                        <span 
+                          onClick={() => setEditingTimeRemaining({...editingTimeRemaining, [bot.id]: '60'})}
+                          style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                          title="Click to edit time"
+                        >
+                          {bot.time_remaining_display || 'Unknown'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="info-row">
+                      <span>Summoned by:</span>
+                      <span>{bot.summoned_by || 'Unknown'}</span>
+                    </div>
+                    <div className="info-row">
+                      <span>Status:</span>
+                      <span>{bot.is_enabled ? 'Enabled' : 'Disabled'}</span>
+                    </div>
+                  </div>
+                  
+                  {bot.personality_prompt && (
+                    <div className="bot-prompt" style={{ borderTop: '1px solid rgba(156, 39, 176, 0.2)', paddingTop: '10px', marginTop: '10px' }}>
+                      <strong style={{ color: '#9c27b0' }}>User's Personality Request:</strong> {bot.personality_prompt}
+                    </div>
+                  )}
+                  
+                  <div className="bot-prompt" style={{ marginTop: '10px' }}>
+                    <strong style={{ color: '#9c27b0' }}>Full System Prompt:</strong>
+                    <div style={{ marginTop: '5px', padding: '10px', background: 'rgba(156, 39, 176, 0.05)', borderRadius: '4px', fontSize: '0.9em' }}>
+                      {bot.prompt || 'No prompt configured'}
+                    </div>
+                  </div>
+                  
+                  {bot.last_message && (
+                    <div className="bot-last-message">
+                      <div className="last-message-header">
+                        <span className="last-message-label">Last message:</span>
+                        {bot.last_message_at && (
+                          <span className="last-message-time">
+                            {formatMessageTime(bot.last_message_at)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="last-message-text">{bot.last_message}</div>
+                    </div>
+                  )}
+                  
+                  <div className="bot-actions">
+                    <button 
+                      className={`btn ${bot.is_enabled ? 'btn-warning' : 'btn-success'}`}
+                      onClick={() => handleToggle(bot.id)}
+                    >
+                      {bot.is_enabled ? '⏸️ Disable' : '▶️ Enable'}
+                    </button>
+                    <button 
+                      className="btn btn-primary"
+                      onClick={() => startEdit(bot)}
+                    >
+                      ✏️ Edit
+                    </button>
+                    <button 
+                      className="btn btn-secondary"
+                      onClick={() => handleTest(bot.id)}
+                    >
+                      🧪 Test
+                    </button>
+                    <button 
+                      className="btn btn-danger"
+                      onClick={() => handleDelete(bot.id)}
+                      title="Delete this temporary bot immediately"
+                    >
+                      🗑️ Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        
+        {/* Regular Bots Section */}
+        {chatbots.filter(bot => !bot.is_temporary).length > 0 && (
+          <>
+            <div className="section-header" style={{ marginTop: '30px', marginBottom: '20px' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                🤖 System Bots
+                <span style={{ fontSize: '0.8em', color: 'rgba(255, 255, 255, 0.6)' }}>
+                  ({chatbots.filter(bot => !bot.is_temporary).length} total)
+                </span>
+              </h3>
+            </div>
+            <div className="bots-grid">
+              {chatbots.filter(bot => !bot.is_temporary).map(bot => (
             <div key={bot.id} className={`bot-card ${bot.is_enabled ? 'enabled' : 'disabled'}`}>
               <div className="bot-header">
                 <span className="bot-name">
@@ -1235,14 +1437,56 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
               </div>
             </div>
           ))}
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Create/Edit Form */}
       {(showCreateForm || editingBot) && (
         <div className="bot-form-overlay">
           <div className="bot-form">
-            <h3>{editingBot ? 'Edit Chatbot' : 'Create New Chatbot'}</h3>
+            <h3>
+              {editingBot ? (
+                <>
+                  Edit Chatbot
+                  {editingBot.is_temporary && (
+                    <span style={{ 
+                      marginLeft: '10px', 
+                      fontSize: '0.8em', 
+                      color: '#9c27b0',
+                      padding: '2px 8px',
+                      background: 'rgba(156, 39, 176, 0.1)',
+                      borderRadius: '4px'
+                    }}>
+                      ✨ User-Summoned Bot
+                    </span>
+                  )}
+                </>
+              ) : 'Create New Chatbot'}
+            </h3>
+            
+            {editingBot?.is_temporary && (
+              <div style={{ 
+                background: 'rgba(156, 39, 176, 0.1)', 
+                border: '1px solid rgba(156, 39, 176, 0.3)',
+                borderRadius: '6px',
+                padding: '12px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ marginBottom: '8px' }}>
+                  <strong>Summoned by:</strong> {editingBot.summoned_by || 'Unknown'}
+                </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <strong>Time Remaining:</strong> {editingBot.time_remaining_display || 'Unknown'}
+                </div>
+                {editingBot.personality_prompt && (
+                  <div>
+                    <strong>User's Original Request:</strong> {editingBot.personality_prompt}
+                  </div>
+                )}
+              </div>
+            )}
             
             <div className="form-group">
               <label>Name (leave empty for random)</label>

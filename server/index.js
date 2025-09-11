@@ -730,6 +730,7 @@ app.set('itemService', itemService);
 app.set('inventoryService', inventoryService);
 app.set('shopService', shopService);
 app.set('buffDebuffService', buffDebuffService);
+app.set('chatBotService', chatBotService);
 
 // Make services available to routes via app.locals for easier access
 app.locals.buffDebuffService = buffDebuffService;
@@ -2026,7 +2027,7 @@ const generateViewBotRtpParameters = (kind, config) => {
   
   if (kind === 'video') {
     return {
-      mid: '0',
+      mid: '1000',  // Use high MID value to avoid conflicts with real users
       codecs: [
         {
           mimeType: 'video/VP8',
@@ -2070,7 +2071,7 @@ const generateViewBotRtpParameters = (kind, config) => {
     };
   } else if (kind === 'audio') {
     return {
-      mid: '1',
+      mid: '1001',  // Use high MID value to avoid conflicts with real users
       codecs: [
         {
           mimeType: 'audio/opus',
@@ -2368,6 +2369,94 @@ app.post('/api/mediasoup/connect-transport', async (req, res) => {
   }
 });
 
+app.post('/api/mediasoup/produce', async (req, res) => {
+  try {
+    const { socketId, kind, rtpParameters, appData } = req.body;
+    
+    // Comprehensive logging for debugging MID issues
+    console.log('=== PRODUCE REQUEST DEBUG ===');
+    console.log(`📡 MEDIASOUP: Produce request from ${socketId} for ${kind}`);
+    console.log('RTP Parameters MID:', rtpParameters?.mid);
+    console.log('RTP Codecs:', JSON.stringify(rtpParameters?.codecs?.map(c => ({ mimeType: c.mimeType, payloadType: c.payloadType })), null, 2));
+    console.log('Socket ID:', socketId);
+    console.log('Kind:', kind);
+    console.log('App Data:', JSON.stringify(appData, null, 2));
+    
+    // Log current router state
+    try {
+      const router = mediasoupService.getRouter();
+      if (router && router._producers) {
+        console.log('ROUTER - Active producers:', router._producers.size);
+        let midConflict = false;
+        router._producers.forEach((producer, id) => {
+          const producerMid = producer.rtpParameters?.mid;
+          console.log(`  Producer ${id}: MID=${producerMid}, kind=${producer.kind}, closed=${producer.closed}`);
+          if (producerMid === rtpParameters?.mid && !producer.closed) {
+            console.error(`⚠️ MID CONFLICT DETECTED! MID ${producerMid} already taken by producer ${id}`);
+            midConflict = true;
+          }
+        });
+        
+        // Emergency MID override for real users if conflict detected
+        if (midConflict && rtpParameters?.mid === '0') {
+          const newMid = '100';  // Use different range for real users
+          console.log(`🔄 OVERRIDING MID from ${rtpParameters.mid} to ${newMid} to avoid conflict`);
+          rtpParameters.mid = newMid;
+        }
+      }
+    } catch (routerError) {
+      console.error('Could not inspect router state:', routerError.message);
+    }
+    
+    if (!socketId || !kind || !rtpParameters) {
+      console.error('Missing required parameters:', { socketId: !!socketId, kind: !!kind, rtpParameters: !!rtpParameters });
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    console.log('Calling mediasoupService.produce with MID:', rtpParameters.mid);
+    const producerId = await mediasoupService.produce(socketId, kind, rtpParameters, appData);
+    console.log(`✅ MEDIASOUP: Producer created for ${socketId}: ${producerId} with MID ${rtpParameters.mid}`);
+    
+    res.json({ success: true, producerId });
+  } catch (error) {
+    console.error('❌ MEDIASOUP: Failed to produce:', error);
+    console.error('Full error stack:', error.stack);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/mediasoup/consume', async (req, res) => {
+  try {
+    const { socketId, producerId, rtpCapabilities } = req.body;
+    console.log(`📡 MEDIASOUP: Consume request from ${socketId} for producer ${producerId}`);
+    
+    if (!socketId || !producerId || !rtpCapabilities) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    const consumer = await mediasoupService.consume(socketId, producerId, rtpCapabilities);
+    
+    if (!consumer) {
+      return res.status(404).json({ error: 'Producer not found or cannot consume' });
+    }
+    
+    console.log(`✅ MEDIASOUP: Consumer created for ${socketId}: ${consumer.id}`);
+    
+    res.json({ 
+      success: true,
+      id: consumer.id,
+      producerId: consumer.producerId,
+      kind: consumer.kind,
+      rtpParameters: consumer.rtpParameters,
+      type: consumer.type,
+      producerPaused: consumer.producerPaused
+    });
+  } catch (error) {
+    console.error('❌ MEDIASOUP: Failed to consume:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ICE restart endpoint for handling network changes (WiFi to 5G, etc)
 app.post('/api/mediasoup/restart-ice', async (req, res) => {
   try {
@@ -2415,7 +2504,46 @@ app.get('/api/emojis', async (req, res) => {
             WHERE is_active = 1 
             ORDER BY usage_count DESC, name ASC
         `);
-        res.json(emojis);
+        
+        // Check for available formats for each emoji
+        const fs = require('fs').promises;
+        const path = require('path');
+        const emojisWithFormats = await Promise.all(emojis.map(async (emoji) => {
+            const basePath = emoji.url.replace(/\.[^/.]+$/, '');
+            const baseFile = path.join(__dirname, '..', basePath);
+            
+            const formats = {
+                avif: emoji.url,
+                gif: null,
+                webp: null,
+                png: null
+            };
+            
+            // Check for GIF
+            try {
+                await fs.access(baseFile + '.gif');
+                formats.gif = basePath + '.gif';
+            } catch {}
+            
+            // Check for WebP
+            try {
+                await fs.access(baseFile + '.webp');
+                formats.webp = basePath + '.webp';
+            } catch {}
+            
+            // Check for PNG
+            try {
+                await fs.access(baseFile + '.png');
+                formats.png = basePath + '.png';
+            } catch {}
+            
+            return {
+                ...emoji,
+                formats
+            };
+        }));
+        
+        res.json(emojisWithFormats);
     } catch (error) {
         console.error('Error fetching emojis:', error);
         res.status(500).json({ error: 'Failed to fetch emojis' });
@@ -5871,6 +5999,42 @@ io.on('connection', async (socket) => {
     console.log(`📥 STREAMING: Current streamer:`, streamService.getCurrentStreamer());
     console.log(`📥 STREAMING: Server state - hasStreamer:`, !!streamService.getCurrentStreamer());
     
+    // CRITICAL: Check for permission confirmation (new in permission system)
+    const isViewBot = data.isViewBot || data.streamType === 'viewbot';
+    if (!isViewBot && data.streamType === 'webcam') {
+      // For real users streaming from webcam, require permission confirmation
+      if (!data.permissionsGranted) {
+        console.log(`🚫 STREAMING: Request denied - no permission confirmation from ${socket.id}`);
+        socket.emit('stream-denied', { 
+          reason: 'Camera and microphone permissions are required to stream',
+          requiresPermissions: true,
+          timestamp: new Date().toISOString()
+        });
+        if (callback && typeof callback === 'function') {
+          callback(false);
+        }
+        return;
+      }
+      
+      // Validate permission status if provided
+      if (data.permissionStatus) {
+        const { camera, microphone } = data.permissionStatus;
+        if (camera !== 'granted' || microphone !== 'granted') {
+          console.log(`🚫 STREAMING: Insufficient permissions - camera: ${camera}, mic: ${microphone}`);
+          socket.emit('stream-denied', { 
+            reason: 'Both camera and microphone permissions must be granted',
+            permissionStatus: data.permissionStatus,
+            timestamp: new Date().toISOString()
+          });
+          if (callback && typeof callback === 'function') {
+            callback(false);
+          }
+          return;
+        }
+      }
+      console.log(`✅ STREAMING: Permissions verified for ${socket.id}`);
+    }
+    
     // Check if IP is banned before allowing streaming
     const clientIP = IPBanService.getIPFromSocket(socket);
     const isBanned = await IPBanService.isIPBanned(clientIP);
@@ -5894,8 +6058,7 @@ io.on('connection', async (socket) => {
     }
     
     try {
-      // Check if this is a viewbot or real user
-      const isViewBot = data.isViewBot || data.streamType === 'viewbot';
+      // Check if this is a viewbot or real user (already checked above for permissions)
       const isRealUser = !isViewBot;
       
       // CRITICAL: Check if current streamer is a real user
@@ -5990,11 +6153,26 @@ io.on('connection', async (socket) => {
             cooldownRemaining: cooldownInfo ? cooldownInfo.remaining : takeoverService.getCooldownSeconds()
           });
           
-          // Move previous streamer to viewers room (they'll get the notification and join properly)
+          // CRITICAL FIX: Completely disconnect the previous streamer to prevent auto-reconnection
           const previousStreamerSocket = io.sockets.sockets.get(currentStreamer);
           if (previousStreamerSocket) {
+            console.log(`🔌 TAKEOVER: Forcefully disconnecting previous streamer ${currentStreamer} to prevent auto-reconnection`);
             previousStreamerSocket.leave('streamer');
-            // Don't add to viewers yet - let them handle it via join-as-viewer
+            
+            // Send a specific disconnect reason so the client knows not to auto-reconnect
+            previousStreamerSocket.emit('force-disconnect', { 
+              reason: 'stream_takeover',
+              message: 'Your stream has been taken over by another user',
+              shouldReconnect: false
+            });
+            
+            // Forcefully disconnect the socket after a brief delay to ensure the message is sent
+            setTimeout(() => {
+              if (previousStreamerSocket.connected) {
+                previousStreamerSocket.disconnect(true);
+                console.log(`✅ TAKEOVER: Previous streamer ${currentStreamer} has been disconnected`);
+              }
+            }, 100);
           }
         }
         
@@ -6937,7 +7115,7 @@ io.on('connection', async (socket) => {
         throw new Error('Transports not found');
       }
       
-      // Create video producer on video transport
+      // Create video producer on video transport (Plain RTP doesn't use MID)
       const videoProducer = await transports.video.produce({
         kind: 'video',
         rtpParameters: {
@@ -6955,7 +7133,7 @@ io.on('connection', async (socket) => {
         }
       });
       
-      // Create audio producer on audio transport  
+      // Create audio producer on audio transport (Plain RTP doesn't use MID)
       const audioProducer = await transports.audio.produce({
         kind: 'audio',
         rtpParameters: {
@@ -7132,17 +7310,74 @@ io.on('connection', async (socket) => {
     try {
       const { kind, rtpParameters, transportId } = data;
       
-      // Check if this is a new streamer BEFORE updating services
-      const wasNewStreamer = streamService.getCurrentStreamer() !== socket.id;
-      console.log(`🔍 MEDIASOUP: Before producer creation - current streamer: ${streamService.getCurrentStreamer()}, this socket: ${socket.id}, wasNewStreamer: ${wasNewStreamer}`);
+      // Get user info for debugging
+      const session = sessionService.getSessionBySocketId(socket.id);
+      const username = session?.username || 'unknown';
+      const userAgent = socket.handshake?.headers?.['user-agent'] || 'unknown';
+      const ip = socket.handshake?.address || 'unknown';
+      
+      console.log(`🎬 MEDIASOUP PRODUCE: Request from ${username} (${socket.id})`);
+      console.log(`📱 User Agent: ${userAgent}`);
+      console.log(`🌐 IP: ${ip}`);
+      console.log(`🎥 Track kind: ${kind}, Transport ID: ${transportId}`);
+      
+      // Check if there's already an active streamer
+      const currentStreamer = streamService.getCurrentStreamer();
+      const wasNewStreamer = currentStreamer !== socket.id;
+      
+      // Check if current user is a real user (positive user ID or no session)
+      const isRealUser = !session?.userId || session.userId > 0;
+      
+      // Check if current streamer is a viewbot (negative user ID)
+      let currentStreamerIsViewbot = false;
+      if (currentStreamer) {
+        const currentStreamerSession = sessionService.getSessionBySocketId(currentStreamer);
+        currentStreamerIsViewbot = currentStreamerSession?.userId && currentStreamerSession.userId < 0;
+      }
+      
+      // Allow real users to override viewbots, but prevent viewbots from overriding real users
+      if (currentStreamer && wasNewStreamer) {
+        if (isRealUser && currentStreamerIsViewbot) {
+          console.log(`✅ MEDIASOUP: Real user ${socket.id} (${username}) overriding viewbot streamer ${currentStreamer}`);
+          // Clear the viewbot streamer
+          streamService.clearStreamer();
+          mediasoupService.currentStreamer = null;
+        } else if (!isRealUser && !currentStreamerIsViewbot) {
+          console.log(`⚠️ MEDIASOUP: Blocking viewbot ${socket.id} - real user ${currentStreamer} is streaming`);
+          callback({ 
+            success: false, 
+            error: 'A real user is currently streaming.' 
+          });
+          return;
+        } else if (!isRealUser && currentStreamerIsViewbot) {
+          console.log(`⚠️ MEDIASOUP: Blocking viewbot ${socket.id} - another viewbot ${currentStreamer} is streaming`);
+          callback({ 
+            success: false, 
+            error: 'Another viewbot is currently streaming.' 
+          });
+          return;
+        } else {
+          console.log(`⚠️ MEDIASOUP: Blocking produce attempt from ${socket.id} - active streamer is ${currentStreamer}`);
+          callback({ 
+            success: false, 
+            error: 'Another user is currently streaming. Please request takeover first.' 
+          });
+          return;
+        }
+      }
+      
+      console.log(`🔍 MEDIASOUP: Before producer creation - current streamer: ${currentStreamer}, this socket: ${socket.id}, wasNewStreamer: ${wasNewStreamer}`);
       
       // ViewBots now use the same producer creation as regular users
       const result = await mediasoupService.createProducer(socket.id, rtpParameters, kind);
+      console.log(`✅ Producer created: ${result.id} for ${username} (${kind})`)
       
-      // Update stream service to reflect new streamer
-      streamService.setStreamer(socket.id, 'webrtc');
-      socket.join('streamer');
-      socket.leave('viewers');
+      // Only update stream service if this is the first producer or the current streamer
+      if (!currentStreamer || socket.id === currentStreamer) {
+        streamService.setStreamer(socket.id, 'webrtc');
+        socket.join('streamer');
+        socket.leave('viewers');
+      }
       
       // Enhanced producer readiness checking with better race condition handling
       const producerMap = mediasoupService.producers.get(socket.id);
@@ -7196,6 +7431,16 @@ io.on('connection', async (socket) => {
               // Double-check that we're still the current streamer
               if (mediasoupService.getCurrentStreamer() === socket.id) {
                 const streamerDisplayName = await getStreamerDisplayName(socket.id);
+                
+                // Emit producer-verified event for clients waiting specifically for producer readiness
+                io.emit('producer-verified', {
+                  streamerId: socket.id,
+                  hasVideo: readyHasVideo,
+                  hasAudio: readyHasAudio,
+                  timestamp: Date.now()
+                });
+                console.log(`✅ MEDIASOUP: Producer verified for ${socket.id} (video: ${readyHasVideo}, audio: ${readyHasAudio})`);
+                
                 io.emit('stream-ready', { 
                 streamerId: socket.id, 
                 newStreamId: socket.id,
@@ -8153,6 +8398,19 @@ async function startServer() {
     
     await chatBotService.initialize();
     console.log('🤖 SERVER: ChatBot service initialization completed');
+    
+    // Set up periodic cleanup for expired temporary bots
+    setInterval(async () => {
+      try {
+        const cleaned = await chatBotService.cleanupExpiredBots();
+        if (cleaned > 0) {
+          console.log(`🧹 Cleaned up ${cleaned} expired temporary bots`);
+        }
+      } catch (error) {
+        console.error('❌ Error during bot cleanup:', error);
+      }
+    }, 5 * 60 * 1000); // Run every 5 minutes
+    console.log('⏰ Scheduled periodic cleanup for expired bots');
   } catch (error) {
     console.error('❌ SERVER: ChatBot service initialization failed:', error);
     console.error('❌ SERVER: ChatBot service stack trace:', error.stack);
@@ -8161,14 +8419,48 @@ async function startServer() {
   }
   
   // Catch-all route - serve React app for client-side routing
-  // Commented out during development to prevent Socket.IO interference
-  /* app.get('*', (req, res, next) => {
+  app.get('*', (req, res, next) => {
     // Don't intercept Socket.IO requests
     if (req.path.startsWith('/socket.io/')) {
       return next();
     }
+    // Don't intercept API requests
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    // List of auth API endpoints to skip (not client routes)
+    // Note: /auth/complete-registration is a CLIENT route, not API
+    // while /auth/complete-oauth-registration is the API endpoint
+    const authApiPaths = [
+      '/auth/signup',
+      '/auth/login', 
+      '/auth/logout',
+      '/auth/refresh',
+      '/auth/verify-email/',
+      '/auth/resend-verification',
+      '/auth/forgot-password',
+      '/auth/reset-password',
+      '/auth/me',
+      '/auth/change-username',
+      '/auth/profile',
+      '/auth/google',
+      '/auth/google/callback',
+      '/auth/check-username/',
+      '/auth/complete-oauth-registration', // API endpoint
+      '/auth/request-deletion',
+      '/auth/confirm-deletion',
+      '/auth/restore-account',
+      '/auth/admin/'
+    ];
+    
+    // Check if this is an auth API endpoint
+    if (authApiPaths.some(apiPath => req.path.startsWith(apiPath))) {
+      return next();
+    }
+    
+    // Serve React app for all other routes including /auth/complete-registration
     res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
-  }); */
+  });
 
   // Start account deletion scheduler after a delay to ensure database is ready
   setTimeout(() => {

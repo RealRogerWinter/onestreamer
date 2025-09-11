@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import PermissionSetupModal from './PermissionSetupModal';
+import PermissionService, { MediaPermissions } from '../services/PermissionService';
 import './StreamControls.css';
 
 interface StreamControlsProps {
@@ -32,6 +34,33 @@ const StreamControls: React.FC<StreamControlsProps> = ({
   onTakeOver,
   onStopStream
 }) => {
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [permissions, setPermissions] = useState<MediaPermissions>({
+    camera: 'checking',
+    microphone: 'checking',
+    lastChecked: Date.now()
+  });
+  const [permissionStream, setPermissionStream] = useState<MediaStream | null>(null);
+
+  // Check permissions on mount and periodically
+  useEffect(() => {
+    const checkPermissions = async () => {
+      const perms = await PermissionService.checkPermissions();
+      setPermissions(perms);
+    };
+    
+    checkPermissions();
+    // Recheck permissions every 5 seconds
+    const interval = setInterval(checkPermissions, 5000);
+    
+    return () => {
+      clearInterval(interval);
+      // Clean up permission stream if exists
+      if (permissionStream) {
+        PermissionService.releaseStream(permissionStream);
+      }
+    };
+  }, []);
   const getTakeOverButtonText = () => {
     if (!isConnected) {
       return 'Connecting...';
@@ -44,10 +73,58 @@ const StreamControls: React.FC<StreamControlsProps> = ({
       }
       return wasTakenOver ? `Cooldown: ${cooldownRemaining}s` : `Wait ${cooldownRemaining}s`;
     }
+    
+    // Check permissions state for mobile
+    const canStream = PermissionService.canStream(permissions);
+    if (!canStream && !hasActiveStream) {
+      if (permissions.camera === 'denied' || permissions.microphone === 'denied') {
+        return '🔒 Permissions Required';
+      }
+      return '🎤 Setup Permissions';
+    }
+    
     if (hasActiveStream) {
       return 'Take Over Stream';
     }
     return 'Start Streaming';
+  };
+
+  const handleStreamAction = async () => {
+    if (isStreaming) {
+      // Stop streaming - always allowed
+      onStopStream();
+      // Clean up permission stream if exists
+      if (permissionStream) {
+        PermissionService.releaseStream(permissionStream);
+        setPermissionStream(null);
+      }
+    } else {
+      // Check if permissions are granted before streaming
+      const canStream = PermissionService.canStream(permissions);
+      
+      if (!canStream) {
+        // Show permission modal to get permissions
+        setShowPermissionModal(true);
+      } else {
+        // Permissions already granted, proceed with streaming
+        onTakeOver();
+      }
+    }
+  };
+
+  const handlePermissionsGranted = (stream: MediaStream) => {
+    // Store the stream for later use
+    setPermissionStream(stream);
+    // Update permissions state
+    setPermissions({
+      camera: 'granted',
+      microphone: 'granted',
+      lastChecked: Date.now()
+    });
+    // Close modal
+    setShowPermissionModal(false);
+    // Now proceed with streaming
+    onTakeOver();
   };
 
   const isTakeOverDisabled = cooldownRemaining > 0 || !isConnected;
@@ -57,15 +134,29 @@ const StreamControls: React.FC<StreamControlsProps> = ({
       {isStreaming ? (
         <button 
           className="control-button stop-button"
-          onClick={onStopStream}
+          onClick={handleStreamAction}
         >
           Stop Streaming
         </button>
       ) : (
         <div>
+          {/* Permission Status Indicator for Mobile */}
+          {!hasActiveStream && isMobile && (
+            <div className="mobile-permission-status">
+              {permissions.camera === 'granted' && permissions.microphone === 'granted' ? (
+                <span className="permission-ready">✅ Ready to stream</span>
+              ) : permissions.camera === 'denied' || permissions.microphone === 'denied' ? (
+                <span className="permission-denied">🔒 Camera/mic access blocked</span>
+              ) : permissions.camera === 'checking' || permissions.microphone === 'checking' ? (
+                <span className="permission-checking">⏳ Checking permissions...</span>
+              ) : (
+                <span className="permission-required">🎤 Camera/mic setup required</span>
+              )}
+            </div>
+          )}
           <button
-            className={`control-button take-over-button ${isTakeOverDisabled ? 'disabled' : ''}`}
-            onClick={onTakeOver}
+            className={`control-button take-over-button ${isTakeOverDisabled ? 'disabled' : ''} ${!PermissionService.canStream(permissions) && !hasActiveStream ? 'permission-required' : ''}`}
+            onClick={handleStreamAction}
             disabled={isTakeOverDisabled}
           >
             {getTakeOverButtonText()}
@@ -146,6 +237,14 @@ const StreamControls: React.FC<StreamControlsProps> = ({
           </div>
         )}
       </div>
+      
+      {/* Permission Setup Modal */}
+      <PermissionSetupModal
+        isOpen={showPermissionModal}
+        onClose={() => setShowPermissionModal(false)}
+        onPermissionsGranted={handlePermissionsGranted}
+        requiredPermissions={{ camera: true, microphone: true }}
+      />
     </div>
   );
 };
