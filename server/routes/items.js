@@ -129,8 +129,9 @@ router.delete('/items/:id', authenticateAdmin, async (req, res) => {
 // Inventory endpoints
 router.get('/inventory', authenticateToken, async (req, res) => {
     try {
+        const userId = req.user.userId || req.user.id;
         const inventoryService = req.app.get('inventoryService');
-        const inventory = await inventoryService.getUserInventory(req.user.id);
+        const inventory = await inventoryService.getUserInventory(userId);
         res.json(inventory);
     } catch (error) {
         console.error('Error fetching inventory:', error);
@@ -143,7 +144,8 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
     console.log(`🚨🚨🚨 FART DEBUG: User: ${req.user?.username || 'unknown'}, Method: ${req.method}`);
     console.log(`🚨🚨🚨 FART DEBUG: Headers:`, req.headers);
     console.log(`🚀 ITEMS: ===== ITEM USAGE REQUEST RECEIVED =====`);
-    console.log(`🚀 ITEMS: Starting item usage for item ID ${req.params.itemId} by user ${req.user.id} (${req.user.username})`);
+    const userId = req.user.userId || req.user.id;
+    console.log(`🚀 ITEMS: Starting item usage for item ID ${req.params.itemId} by user ${userId} (${req.user.username})`);
     console.log(`🚀 ITEMS: User: ${req.user.username}`);
     try {
         const inventoryService = req.app.get('inventoryService');
@@ -160,7 +162,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'Item not found' });
         }
         
-        console.log(`🎯 ITEMS: Item "${item.display_name}" (${item.item_type}) being used by user ${req.user.id}`);
+        console.log(`🎯 ITEMS: Item "${item.display_name}" (${item.item_type}) being used by user ${userId}`);
         console.log(`🎯 ITEMS: Item ID: ${item.id}, Name: ${item.name}`);
         console.log(`🎯 ITEMS: Effect Data: ${item.effect_data}`);
         
@@ -210,7 +212,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             
             // Consume the item
             const usageResult = await inventoryService.useItem(
-                req.user.id, 
+                userId, 
                 req.params.itemId,
                 streamId
             );
@@ -224,7 +226,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 // Queue the sound effect first
                 if (soundFxService) {
                     soundFxService.queue101Soundboard(
-                        req.user.id,
+                        userId,
                         req.user.username,
                         'https://www.101soundboards.com/sounds/23972494-fart-reverb',
                         { streamId }
@@ -239,7 +241,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 setTimeout(() => {
                     if (canvasFxService) {
                         canvasFxService.triggerItemEffect(
-                            req.user.id,
+                            userId,
                             usageResult.item.id,
                             streamId,
                             {
@@ -266,7 +268,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 // Queue the thunderstorm sound effect
                 if (soundFxService) {
                     soundFxService.queue101Soundboard(
-                        req.user.id,
+                        userId,
                         req.user.username,
                         'https://www.101soundboards.com/sounds/74377-thunderstorm',
                         { streamId }
@@ -281,7 +283,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 setTimeout(() => {
                     if (canvasFxService) {
                         canvasFxService.triggerItemEffect(
-                            req.user.id,
+                            userId,
                             usageResult.item.id,
                             streamId,
                             {
@@ -335,13 +337,13 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             }
             
             // For interactive items, only validate but don't consume the item yet
-            const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+            const inventoryItem = await inventoryService.getInventoryItem(userId, req.params.itemId);
             if (!inventoryItem || inventoryItem.quantity < 1) {
                 return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
             }
             
             // Validate item usage (cooldown check)
-            const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+            const validation = await itemService.validateItemUsage(userId, req.params.itemId);
             if (!validation.valid) {
                 return res.status(429).json({ 
                     error: validation.error || 'Cannot use item',
@@ -369,7 +371,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             };
             
             // Create a unique interaction ID for tracking
-            const interactionId = `interact_${req.user.id}_${item.id}_${Date.now()}`;
+            const interactionId = `interact_${userId}_${item.id}_${Date.now()}`;
             result.interactionId = interactionId;
             
             // For drawing items, the interaction mode is different
@@ -381,13 +383,13 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             const io = req.app.get('io');
             const sessionService = req.app.get('sessionService');
             if (io && sessionService) {
-                const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                const userSocketIds = sessionService.getSocketsByUserId(userId);
                 userSocketIds.forEach(socketId => {
                     io.to(socketId).emit('canvas-effect-mode', {
                         mode: interactionConfig?.mode || 'click-to-throw',
                         item: result.item,
                         interactionConfig: interactionConfig,
-                        userId: req.user.id,
+                        userId: userId,
                         username: req.user.username,
                         streamId,
                         interactionId: interactionId
@@ -407,12 +409,18 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             // Get the current streamer to determine target
             const currentStreamerSocketId = streamService.getCurrentStreamer();
             let targetUserId = null;
+            let isAnonymousStreamer = false;
 
             if (currentStreamerSocketId && req.app.get('sessionService')) {
                 const session = req.app.get('sessionService').getSessionBySocketId(currentStreamerSocketId);
                 if (session && session.userId) {
+                    // Accept any user ID, including negative IDs for anonymous/viewbot users
                     targetUserId = session.userId;
-                    console.log(`🎭 ITEMS: Found current streamer userId: ${targetUserId}`);
+                    if (targetUserId < 0) {
+                        console.log(`🎭 ITEMS: Found anonymous/viewbot streamer with synthetic ID: ${targetUserId}`);
+                    } else {
+                        console.log(`🎭 ITEMS: Found current streamer userId: ${targetUserId}`);
+                    }
                 } else {
                     console.log(`🎭 ITEMS: No session found for current streamer ${currentStreamerSocketId}`);
                 }
@@ -426,7 +434,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
 
             // Consume the item from inventory
             const result = await inventoryService.useItem(
-                req.user.id, 
+                userId, 
                 req.params.itemId,
                 streamId
             );
@@ -436,7 +444,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 console.log(`🎭 ITEMS: About to call applyBuffDebuffItem with params:`, {
                     targetUserId,
                     itemId: req.params.itemId,
-                    appliedByUserId: req.user.id,
+                    appliedByUserId: userId,
                     hasBuffDebuffService: !!buffDebuffService,
                     streamId
                 });
@@ -444,7 +452,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 const buffResult = await itemService.applyBuffDebuffItem(
                     targetUserId,
                     req.params.itemId,
-                    req.user.id,
+                    userId,
                     buffDebuffService,
                     true, // Skip cooldown validation since we already consumed the item
                     streamId // Pass the stream ID for visual effects
@@ -475,7 +483,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             if (io) {
                 // Global event for all users to see buff/debuff effects
                 io.emit('item-used', {
-                    userId: req.user.id,
+                    userId: userId,
                     username: req.user.username,
                     item: result.item,
                     targetUserId: targetUserId,
@@ -485,7 +493,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
 
                 // Specific inventory update for the user
                 if (sessionService) {
-                    const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                    const userSocketIds = sessionService.getSocketsByUserId(userId);
                     userSocketIds.forEach(socketId => {
                         io.to(socketId).emit('inventory-updated', {
                             action: 'use',
@@ -508,7 +516,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
 
             // Consume the item from inventory
             const result = await inventoryService.useItem(
-                req.user.id, 
+                userId, 
                 req.params.itemId,
                 streamId
             );
@@ -516,9 +524,9 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             // Apply the cooldown modification
             try {
                 const cooldownResult = await itemService.applyCooldownModifierItem(
-                    req.user.id,
+                    userId,
                     req.params.itemId,
-                    req.user.id,
+                    userId,
                     takeoverService,
                     true // Skip cooldown validation since we already consumed the item
                 );
@@ -563,7 +571,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             if (io) {
                 // Global event for all users to see cooldown effects
                 io.emit('item-used', {
-                    userId: req.user.id,
+                    userId: userId,
                     username: req.user.username,
                     item: result.item,
                     streamId,
@@ -579,7 +587,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 
                 // Specific inventory update for the user
                 if (sessionService) {
-                    const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                    const userSocketIds = sessionService.getSocketsByUserId(userId);
                     userSocketIds.forEach(socketId => {
                         io.to(socketId).emit('inventory-updated', {
                             action: 'use',
@@ -595,13 +603,13 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
         } else if (isTTSItem) {
             console.log(`🎯 ITEMS: Taking TTS path for ${item.display_name}`);
             // For TTS items, validate but don't consume yet - need text input first
-            const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+            const inventoryItem = await inventoryService.getInventoryItem(userId, req.params.itemId);
             if (!inventoryItem || inventoryItem.quantity < 1) {
                 return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
             }
             
             // Validate item usage (cooldown check)
-            const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+            const validation = await itemService.validateItemUsage(userId, req.params.itemId);
             if (!validation.valid) {
                 return res.status(429).json({ error: validation.error || 'Cannot use item' });
             }
@@ -626,13 +634,13 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
         } else if (isSummonBotItem) {
             console.log(`🤖 ITEMS: Taking summon bot path for ${item.display_name}`);
             // For summon bot items, validate but don't consume yet - need bot details first
-            const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+            const inventoryItem = await inventoryService.getInventoryItem(userId, req.params.itemId);
             if (!inventoryItem || inventoryItem.quantity < 1) {
                 return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
             }
             
             // Validate item usage (cooldown check)
-            const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+            const validation = await itemService.validateItemUsage(userId, req.params.itemId);
             if (!validation.valid) {
                 return res.status(429).json({ 
                     error: validation.error || 'Cannot use item',
@@ -659,13 +667,13 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
         } else if (isSoundboardItem) {
             console.log(`🎯 ITEMS: Taking soundboard path for ${item.display_name}`);
             // For soundboard items, validate but don't consume yet - need URL input first
-            const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+            const inventoryItem = await inventoryService.getInventoryItem(userId, req.params.itemId);
             if (!inventoryItem || inventoryItem.quantity < 1) {
                 return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
             }
             
             // Validate item usage (cooldown check)
-            const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+            const validation = await itemService.validateItemUsage(userId, req.params.itemId);
             if (!validation.valid) {
                 return res.status(429).json({ error: validation.error || 'Cannot use item' });
             }
@@ -701,13 +709,13 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             }
             
             // For interactive items, only validate but don't consume the item yet
-            const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+            const inventoryItem = await inventoryService.getInventoryItem(userId, req.params.itemId);
             if (!inventoryItem || inventoryItem.quantity < 1) {
                 return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
             }
             
             // Validate item usage (cooldown check)
-            const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+            const validation = await itemService.validateItemUsage(userId, req.params.itemId);
             if (!validation.valid) {
                 return res.status(429).json({ error: validation.error || 'Cannot use item' });
             }
@@ -723,11 +731,11 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 const sessionService = req.app.get('sessionService');
                 
                 if (io && sessionService) {
-                    const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                    const userSocketIds = sessionService.getSocketsByUserId(userId);
                     const interactionConfig = canvasFxService.getInteractionConfig(item);
                     
                     // Generate a unique interaction ID for this specific item use
-                    const interactionId = `${req.user.id}-${item.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    const interactionId = `${userId}-${item.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                     
                     userSocketIds.forEach(socketId => {
                         console.log(`🎯 SOCKET: Sending canvas-effect-mode for drawing to socket ${socketId} with interaction ID ${interactionId}`);
@@ -740,7 +748,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                                 emoji: item.emoji,
                                 type: item.item_type
                             },
-                            userId: req.user.id,
+                            userId: userId,
                             username: req.user.username,
                             streamId,
                             interactionConfig,
@@ -775,17 +783,17 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             const sessionService = req.app.get('sessionService');
             
             if (io && sessionService) {
-                const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                const userSocketIds = sessionService.getSocketsByUserId(userId);
                 const interactionConfig = canvasFxService.getInteractionConfig(item);
                 
                 console.log(`🎯 ITEMS: Enabling interactive mode for user ${req.user.username} with item ${item.display_name}`);
-                console.log(`🎯 ITEMS: Found ${userSocketIds.length} sockets for user ${req.user.id}`);
+                console.log(`🎯 ITEMS: Found ${userSocketIds.length} sockets for user ${userId}`);
                 
                 if (userSocketIds.length === 0) {
-                    console.log(`❌ ITEMS: No active sockets found for user ${req.user.id}. Falling back to immediate usage.`);
+                    console.log(`❌ ITEMS: No active sockets found for user ${userId}. Falling back to immediate usage.`);
                     // Fall back to immediate usage since we can't activate click-to-throw mode
                     const result = await inventoryService.useItem(
-                        req.user.id, 
+                        userId, 
                         req.params.itemId,
                         streamId
                     );
@@ -793,7 +801,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     // Trigger visual effect immediately
                     if (canvasFxService && result.item) {
                         const effect = await canvasFxService.triggerItemEffect(
-                            req.user.id,
+                            userId,
                             result.item.id,
                             streamId,
                             { username: req.user.username }
@@ -806,7 +814,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     
                     // Emit socket events for immediate usage - mark as interactive fallback
                     io.emit('item-used', {
-                        userId: req.user.id,
+                        userId: userId,
                         username: req.user.username,
                         item: result.item,
                         streamId,
@@ -823,10 +831,10 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 }
                 
                 // Generate a unique interaction ID for this specific item use
-                const interactionId = `${req.user.id}-${item.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const interactionId = `${userId}-${item.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                 
                 userSocketIds.forEach(socketId => {
-                    console.log(`🎯 SOCKET: Sending canvas-effect-mode to socket ${socketId} for user ${req.user.id} (${req.user.username}) with interaction ID ${interactionId}`);
+                    console.log(`🎯 SOCKET: Sending canvas-effect-mode to socket ${socketId} for user ${userId} (${req.user.username}) with interaction ID ${interactionId}`);
                     io.to(socketId).emit('canvas-effect-mode', {
                         mode: interactionConfig?.mode || 'click-to-throw',
                         item: {
@@ -836,7 +844,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                             emoji: item.emoji,
                             type: item.item_type
                         },
-                        userId: req.user.id,
+                        userId: userId,
                         username: req.user.username,
                         streamId,
                         interactionConfig,
@@ -868,7 +876,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 // For non-interactive, non-cooldown-modifier items, use the original flow
                 console.log(`🔍 ITEMS DEBUG: About to call inventoryService.useItem for ${item.display_name}`);
                 const result = await inventoryService.useItem(
-                    req.user.id, 
+                    userId, 
                     req.params.itemId,
                     streamId
                 );
@@ -885,7 +893,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     if (soundFxService) {
                         try {
                             await soundFxService.queue101Soundboard(
-                                req.user.id,
+                                userId,
                                 req.user.username,
                                 'https://www.101soundboards.com/sounds/23972494-fart-reverb',
                                 { streamId }
@@ -900,7 +908,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     setTimeout(() => {
                         if (canvasFxService) {
                             canvasFxService.triggerItemEffect(
-                                req.user.id,
+                                userId,
                                 result.item.id,
                                 streamId,
                                 {
@@ -920,7 +928,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 
                 // Special handling for Kill Switch after item consumption
                 if (item.name === 'kill_switch') {
-                    console.log(`💥 ITEMS: Kill Switch activated by ${req.user.username} (user ${req.user.id}) in regular path`);
+                    console.log(`💥 ITEMS: Kill Switch activated by ${req.user.username} (user ${userId}) in regular path`);
                     
                     const streamService = req.app.get('streamService');
                     const sessionService = req.app.get('sessionService');
@@ -978,7 +986,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     }
                     
                     // Update inventory for the user (item already consumed)
-                    const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                    const userSocketIds = sessionService.getSocketsByUserId(userId);
                     userSocketIds.forEach(socketId => {
                         io.to(socketId).emit('inventory-updated', {
                             action: 'use',
@@ -999,7 +1007,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 // Trigger visual effect immediately for non-interactive items
                 if (canvasFxService && result.item) {
                     const effect = await canvasFxService.triggerItemEffect(
-                        req.user.id,
+                        userId,
                         result.item.id,
                         streamId,
                         { username: req.user.username }
@@ -1016,7 +1024,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 if (io) {
                     // Global event for all users to see item effects
                     io.emit('item-used', {
-                        userId: req.user.id,
+                        userId: userId,
                         username: req.user.username,
                         item: result.item,
                         streamId
@@ -1024,7 +1032,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     
                     // Specific inventory update for the user
                     if (sessionService) {
-                        const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                        const userSocketIds = sessionService.getSocketsByUserId(userId);
                         userSocketIds.forEach(socketId => {
                             io.to(socketId).emit('inventory-updated', {
                                 action: 'use',
@@ -1053,6 +1061,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
 // Endpoint for consuming drawing/marker items when drawing starts
 router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
     try {
+        const userId = req.user.userId || req.user.id;
         console.log(`✏️ DRAWING START: User ${req.user.username} starting drawing`, req.body);
         const { item } = req.body;
         
@@ -1082,7 +1091,7 @@ router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
         
         // Now consume the item from inventory
         const result = await inventoryService.useItem(
-            req.user.id, 
+            userId, 
             item.id,
             streamId
         );
@@ -1091,7 +1100,7 @@ router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
         if (canvasFxService && result.item) {
             try {
                 const effect = await canvasFxService.triggerItemEffect(
-                    req.user.id,
+                    userId,
                     result.item.id,
                     streamId,
                     { username: req.user.username }
@@ -1118,7 +1127,7 @@ router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
         if (io) {
             // Global event for all users to see item usage
             io.emit('item-used', {
-                userId: req.user.id,
+                userId: userId,
                 username: req.user.username,
                 item: result.item,
                 streamId,
@@ -1127,7 +1136,7 @@ router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
             
             // Specific inventory update for the user
             if (sessionService) {
-                const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                const userSocketIds = sessionService.getSocketsByUserId(userId);
                 userSocketIds.forEach(socketId => {
                     io.to(socketId).emit('inventory-updated', {
                         action: 'draw',
@@ -1158,6 +1167,7 @@ router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
 
 router.post('/inventory/throw', authenticateToken, async (req, res) => {
     try {
+        const userId = req.user.userId || req.user.id;
         console.log(`🎯 THROW ENDPOINT HIT: User ${req.user.username} throwing item`, req.body);
         const { x, y, item, username } = req.body;
         
@@ -1187,7 +1197,7 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
         
         // First, consume the item from inventory
         const result = await inventoryService.useItem(
-            req.user.id, 
+            userId, 
             item.id,
             streamId
         );
@@ -1220,7 +1230,7 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
                         const buffResult = await itemService.applyBuffDebuffItem(
                             targetUserId,
                             item.id,
-                            req.user.id,
+                            userId,
                             buffDebuffService,
                             true, // Skip cooldown validation since we already consumed the item
                             streamId
@@ -1251,7 +1261,7 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
             }
             
             const effect = await canvasFxService.triggerItemEffectAtPosition(
-                req.user.id,
+                userId,
                 item.id,
                 streamId,
                 { x: parseFloat(x), y: parseFloat(y) },
@@ -1277,7 +1287,7 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
                 if (io) {
                     // Always emit item-used for cooldown tracking, but flag interactive items
                     io.emit('item-used', {
-                        userId: req.user.id,
+                        userId: userId,
                         username: req.user.username,
                         item: result.item,
                         streamId,
@@ -1291,7 +1301,7 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
                     
                     // Specific inventory update for the user
                     if (sessionService) {
-                        const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+                        const userSocketIds = sessionService.getSocketsByUserId(userId);
                         userSocketIds.forEach(socketId => {
                             io.to(socketId).emit('inventory-updated', {
                                 action: 'throw',
@@ -1332,10 +1342,11 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
 
 router.get('/inventory/cooldowns', authenticateToken, async (req, res) => {
     try {
+        const userId = req.user.userId || req.user.id;
         const itemService = req.app.get('itemService');
         const takeoverService = req.app.get('takeoverService');
         
-        const itemCooldowns = await itemService.getItemCooldowns(req.user.id);
+        const itemCooldowns = await itemService.getItemCooldowns(userId);
         
         let response = { itemCooldowns };
         
@@ -1390,8 +1401,9 @@ router.get('/cooldown/status', async (req, res) => {
 
 router.get('/inventory/value', authenticateToken, async (req, res) => {
     try {
+        const userId = req.user.userId || req.user.id;
         const inventoryService = req.app.get('inventoryService');
-        const value = await inventoryService.getUserInventoryValue(req.user.id);
+        const value = await inventoryService.getUserInventoryValue(userId);
         res.json(value);
     } catch (error) {
         console.error('Error fetching inventory value:', error);
@@ -1413,6 +1425,7 @@ router.get('/shop', async (req, res) => {
 
 router.post('/shop/purchase', authenticateToken, async (req, res) => {
     try {
+        const userId = req.user.userId || req.user.id;
         const { itemId, quantity = 1 } = req.body;
         
         if (!itemId) {
@@ -1420,14 +1433,14 @@ router.post('/shop/purchase', authenticateToken, async (req, res) => {
         }
         
         const shopService = req.app.get('shopService');
-        const result = await shopService.purchaseItem(req.user.id, itemId, quantity);
+        const result = await shopService.purchaseItem(userId, itemId, quantity);
         
         // Emit socket event for purchase
         const io = req.app.get('io');
         const sessionService = req.app.get('sessionService');
         if (io && sessionService) {
-            const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
-            // console.log(`📦 INVENTORY: Emitting inventory-updated to user ${req.user.id}, found ${userSocketIds.length} sockets: [${userSocketIds.join(', ')}]`);
+            const userSocketIds = sessionService.getSocketsByUserId(userId);
+            // console.log(`📦 INVENTORY: Emitting inventory-updated to user ${userId}, found ${userSocketIds.length} sockets: [${userSocketIds.join(', ')}]`);
             userSocketIds.forEach(socketId => {
                 // console.log(`📦 INVENTORY: Emitting to socket ${socketId}`);
                 io.to(socketId).emit('inventory-updated', {
@@ -1452,6 +1465,7 @@ router.post('/shop/purchase', authenticateToken, async (req, res) => {
 
 router.post('/shop/sell', authenticateToken, async (req, res) => {
     try {
+        const userId = req.user.userId || req.user.id;
         const { itemId, quantity = 1 } = req.body;
         
         if (!itemId) {
@@ -1459,13 +1473,13 @@ router.post('/shop/sell', authenticateToken, async (req, res) => {
         }
         
         const shopService = req.app.get('shopService');
-        const result = await shopService.sellItem(req.user.id, itemId, quantity);
+        const result = await shopService.sellItem(userId, itemId, quantity);
         
         // Emit socket event for sale
         const io = req.app.get('io');
         const sessionService = req.app.get('sessionService');
         if (io && sessionService) {
-            const userSocketIds = sessionService.getSocketsByUserId(req.user.id);
+            const userSocketIds = sessionService.getSocketsByUserId(userId);
             userSocketIds.forEach(socketId => {
                 io.to(socketId).emit('inventory-updated', {
                     action: 'sell',
@@ -1700,12 +1714,13 @@ router.delete('/admin/items/:id', authenticateAdmin, async (req, res) => {
 // Admin endpoint to reset all cooldowns for the authenticated user
 router.post('/admin/cooldowns/reset', authenticateAdmin, async (req, res) => {
     try {
+        const userId = req.user.userId || req.user.id;
         const itemService = req.app.get('itemService');
         
         // Reset item usage cooldowns for the admin user
-        const count = await itemService.resetUserItemCooldowns(req.user.id);
+        const count = await itemService.resetUserItemCooldowns(userId);
         
-        console.log(`🔄 ADMIN: User ${req.user.id} reset ${count} item cooldowns`);
+        console.log(`🔄 ADMIN: User ${userId} reset ${count} item cooldowns`);
         
         res.json({ 
             success: true, 
@@ -1723,6 +1738,7 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
     console.log(`🤖 SUMMON BOT: Request received for item ${req.params.itemId} by user ${req.user.username}`);
     
     try {
+        const userId = req.user.userId || req.user.id;
         const { botName, personalityPrompt } = req.body;
         const inventoryService = req.app.get('inventoryService');
         const itemService = req.app.get('itemService');
@@ -1753,12 +1769,12 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
         }
         
         // Validate inventory and cooldown
-        const inventoryItem = await inventoryService.getInventoryItem(req.user.id, req.params.itemId);
+        const inventoryItem = await inventoryService.getInventoryItem(userId, req.params.itemId);
         if (!inventoryItem || inventoryItem.quantity < 1) {
             return res.status(400).json({ error: 'Item not in inventory or insufficient quantity' });
         }
         
-        const validation = await itemService.validateItemUsage(req.user.id, req.params.itemId);
+        const validation = await itemService.validateItemUsage(userId, req.params.itemId);
         if (!validation.valid) {
             return res.status(429).json({ 
                 error: validation.error || 'Cannot use item',
@@ -1774,7 +1790,7 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
         const bot = await chatBotService.createTemporaryBot({
             name: botName.trim(),
             personalityPrompt: personalityPrompt.trim(),
-            summonedBy: req.user.id,
+            summonedBy: userId,
             summonedByUsername: req.user.username,
             duration: botDuration,
             itemId: item.id,
@@ -1784,7 +1800,7 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
         
         // Consume the item
         const usageResult = await inventoryService.useItem(
-            req.user.id, 
+            userId, 
             req.params.itemId,
             null // streamId
         );

@@ -142,9 +142,12 @@ class InventoryService {
     }
 
     async useItem(userId, itemId, streamId = null) {
+        console.log(`📦 INVENTORY: useItem called - userId: ${userId}, itemId: ${itemId}, streamId: ${streamId}`);
         const inventoryItem = await this.getInventoryItem(userId, itemId);
+        console.log(`📦 INVENTORY: inventoryItem result:`, inventoryItem);
         
         if (!inventoryItem) {
+            console.error(`❌ INVENTORY: Item ${itemId} not found for user ${userId}`);
             throw new Error('Item not in inventory');
         }
         
@@ -176,29 +179,15 @@ class InventoryService {
                     console.log(`🔍 INVENTORY DEBUG: Streamer session found: ${!!streamerSession}`);
                     
                     if (streamerSession && streamerSession.userId) {
+                        // Apply to any streamer, including anonymous/viewbot users with negative IDs
                         targetUserId = streamerSession.userId;
-                        console.log(`🎭 INVENTORY: Applying ${item.item_type} "${item.display_name}" to current streamer (user ${targetUserId})`);
-                    } else {
-                        // Check if current streamer is a viewbot (check both methods)
-                        console.log(`🔍 INVENTORY DEBUG: Checking if "${currentStreamerSocketId}" is viewbot...`);
-                        const isViewbotByService = this.viewbotService && this.viewbotService.isViewbotStream(currentStreamerSocketId);
-                        const isViewbotBySocket = this.viewbotSocketChecker && this.viewbotSocketChecker(currentStreamerSocketId);
-                        const isViewbot = isViewbotByService || isViewbotBySocket;
-                        console.log(`🔍 INVENTORY DEBUG: Is viewbot by service: ${isViewbotByService}, by socket tracker: ${isViewbotBySocket}, final: ${isViewbot}`);
-                        
-                        if (isViewbot) {
-                            const syntheticUserId = this.sessionService.getUserIdBySocketId(currentStreamerSocketId);
-                            console.log(`🔍 INVENTORY DEBUG: Synthetic user ID: ${syntheticUserId}`);
-                            
-                            if (syntheticUserId) {
-                                targetUserId = syntheticUserId;
-                                console.log(`🎭 INVENTORY: Applying ${item.item_type} "${item.display_name}" to viewbot streamer (synthetic user ${targetUserId})`);
-                            } else {
-                                console.log(`🎭 INVENTORY: Viewbot streamer found but no synthetic user ID, applying to self (user ${userId})`);
-                            }
+                        if (targetUserId < 0) {
+                            console.log(`🎭 INVENTORY: Applying ${item.item_type} "${item.display_name}" to anonymous/viewbot streamer (synthetic ID ${targetUserId})`);
                         } else {
-                            console.log(`🎭 INVENTORY: No session found for streamer, applying to self (user ${userId})`);
+                            console.log(`🎭 INVENTORY: Applying ${item.item_type} "${item.display_name}" to current streamer (user ${targetUserId})`);
                         }
+                    } else {
+                        console.log(`🎭 INVENTORY: No session found for streamer, applying to self (user ${userId})`)
                     }
                 } else {
                     console.log(`🎭 INVENTORY: No active streamer, applying to self (user ${userId})`);

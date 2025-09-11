@@ -21,7 +21,7 @@ const authenticateToken = async (req, res, next) => {
     // Check if account is deleted or pending deletion
     try {
         const accountService = new AccountService();
-        const userRecord = await accountService.getUserById(decoded.id);
+        const userRecord = await accountService.getUserById(decoded.userId || decoded.id);
         
         if (!userRecord) {
             return res.status(403).json({ error: 'User not found' });
@@ -60,7 +60,7 @@ const authenticateAdmin = async (req, res, next) => {
 
     const decoded = authService.verifyToken(token);
     
-    console.log('🔐 Admin auth - Token decoded:', !!decoded, decoded?.id);
+    console.log('🔐 Admin auth - Token decoded:', !!decoded, decoded?.userId || decoded?.id);
     
     if (!decoded) {
         return res.status(403).json({ error: 'Invalid or expired token' });
@@ -69,7 +69,7 @@ const authenticateAdmin = async (req, res, next) => {
     try {
         // Check if user exists and is admin
         const accountService = new AccountService();
-        const userRecord = await accountService.getUserById(decoded.id);
+        const userRecord = await accountService.getUserById(decoded.userId || decoded.id);
         
         console.log('🔐 Admin auth - User found:', !!userRecord, 'Is admin:', userRecord?.is_admin);
         
