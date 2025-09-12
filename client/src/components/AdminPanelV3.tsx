@@ -13,6 +13,7 @@ import TutorialEditor from './TutorialEditor';
 import BugReportsManagement from './BugReportsManagement';
 import IPBanManagement from './IPBanManagement';
 import StreamingLogs from './StreamingLogs';
+import StreamBotManager from './StreamBotManager';
 import authService from '../services/AuthService';
 import './AdminPanelV3.css';
 
@@ -47,6 +48,7 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
     { id: 'viewbot', label: 'ViewBot Control', icon: '🤖', category: 'Services' },
     { id: 'items', label: 'Items & Shop', icon: '🛍️', category: 'Content' },
     { id: 'chatbots', label: 'Chat Bots', icon: '💬', category: 'Services' },
+    { id: 'streambot', label: 'StreamBot', icon: '📢', category: 'Services' },
     { id: 'recordings', label: 'Recordings', icon: '📹', category: 'Media' },
     { id: 'transcriptions', label: 'Transcriptions', icon: '🎙️', category: 'Media' },
     { id: 'emojis', label: 'Emoji Manager', icon: '😊', category: 'Content' },
@@ -206,6 +208,8 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
         return <ItemManagement addLog={addLog} />;
       case 'chatbots':
         return <ChatBotManagement addLog={addLog} />;
+      case 'streambot':
+        return <StreamBotManager />;
       case 'recordings':
         return <RecordingManagement addLog={addLog} />;
       case 'transcriptions':

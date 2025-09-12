@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import authService from '../services/AuthService';
 import CookieConsentService from '../services/CookieConsentService';
 import './ProfileSettings.css';
@@ -15,6 +15,8 @@ interface UserData {
   isVerified?: boolean;
   is_verified?: boolean;
   canChangeUsername?: boolean;
+  avatar_url?: string;
+  description?: string;
 }
 
 interface UserStats {
@@ -49,12 +51,26 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletionRequested, setDeletionRequested] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [description, setDescription] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       loadUserProfile();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    // Clean up avatar preview URL when component unmounts
+    return () => {
+      if (avatarPreview && avatarPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarPreview);
+      }
+    };
+  }, [avatarPreview]);
 
   const loadUserProfile = async () => {
     try {
@@ -69,6 +85,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
           newPassword: '',
           confirmPassword: ''
         });
+        setDescription(profile.user.description || '');
+        if (profile.user.avatar_url) {
+          setAvatarPreview(profile.user.avatar_url);
+        }
       }
     } catch (error) {
       console.error('Failed to load profile:', error);
@@ -181,6 +201,137 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
     }
   };
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Avatar file size must be less than 5MB');
+      return;
+    }
+
+    // Validate file type - only accept common image formats
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Please select a valid image file (JPG, PNG, GIF, or WebP)');
+      return;
+    }
+
+    // Check file extension as additional validation
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    const fileName = file.name.toLowerCase();
+    const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+    if (!hasValidExtension) {
+      setError('Invalid file extension. Allowed: JPG, PNG, GIF, WebP');
+      return;
+    }
+
+    setAvatarFile(file);
+    setError(null);
+    
+    // Create preview while uploading
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAvatarPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    // Automatically upload the file
+    await uploadAvatar(file);
+  };
+
+  const uploadAvatar = async (file: File) => {
+    setUploadingAvatar(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      const response = await authService.uploadAvatar(formData);
+      
+      if (response.success) {
+        setSuccess('Avatar uploaded successfully');
+        setAvatarFile(null);
+        // Update the preview with the server URL
+        if (response.avatar_url) {
+          setAvatarPreview(response.avatar_url);
+        }
+        await loadUserProfile();
+        if (onProfileUpdate) {
+          onProfileUpdate();
+        }
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to upload avatar');
+      // Reset preview on error
+      if (userData?.avatar_url) {
+        setAvatarPreview(userData.avatar_url);
+      } else {
+        setAvatarPreview(null);
+      }
+      setAvatarFile(null);
+    } finally {
+      setUploadingAvatar(false);
+      // Clear file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // No longer needed - upload happens automatically
+
+  const handleAvatarDelete = async () => {
+    if (!window.confirm('Are you sure you want to remove your avatar?')) {
+      return;
+    }
+
+    setUploadingAvatar(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await authService.deleteAvatar();
+      
+      if (response.success) {
+        setSuccess('Avatar removed successfully');
+        setAvatarPreview(null);
+        await loadUserProfile();
+        if (onProfileUpdate) {
+          onProfileUpdate();
+        }
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to remove avatar');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleSaveDescription = async () => {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await authService.updateProfile({ description });
+      
+      if (response.success) {
+        setSuccess('Description updated successfully');
+        if (onProfileUpdate) {
+          onProfileUpdate();
+        }
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to update description');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCancel = () => {
     setEditMode(false);
     setError(null);
@@ -281,6 +432,86 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ isOpen, onClose, onPr
               {success}
             </div>
           )}
+
+          <div className="profile-section">
+            <h3>Profile</h3>
+            
+            {/* Avatar Section */}
+            <div className="profile-field avatar-section">
+              <label>Avatar</label>
+              <div className="avatar-container">
+                <div className="avatar-preview">
+                  {uploadingAvatar && (
+                    <div className="avatar-upload-overlay">
+                      <div className="upload-spinner"></div>
+                    </div>
+                  )}
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Avatar" />
+                  ) : (
+                    <div className="avatar-placeholder">
+                      {userData?.username?.substring(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+                <div className="avatar-actions">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                    style={{ display: 'none' }}
+                    onChange={handleAvatarChange}
+                    disabled={uploadingAvatar}
+                  />
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                  >
+                    {uploadingAvatar ? 'Uploading...' : userData?.avatar_url ? 'Change Avatar' : 'Upload Avatar'}
+                  </button>
+                  {userData?.avatar_url && !uploadingAvatar && (
+                    <button
+                      className="btn btn-danger"
+                      onClick={handleAvatarDelete}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <div className="avatar-help-text">
+                  <small>Recommended: 200x200px • Max size: 5MB</small>
+                  <small>Formats: JPG, PNG, GIF, WebP</small>
+                </div>
+              </div>
+            </div>
+
+            {/* Description Section */}
+            <div className="profile-field">
+              <label>Description</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Tell others about yourself..."
+                maxLength={500}
+                rows={4}
+                disabled={loading}
+              />
+              <div className="character-count">
+                {description.length}/500 characters
+              </div>
+              {description !== (userData?.description || '') && (
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSaveDescription}
+                  disabled={loading}
+                  style={{ marginTop: '10px' }}
+                >
+                  {loading ? 'Saving...' : 'Save Description'}
+                </button>
+              )}
+            </div>
+          </div>
 
           <div className="profile-section">
             <h3>Account Information</h3>

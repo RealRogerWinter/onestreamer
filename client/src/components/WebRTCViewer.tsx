@@ -43,6 +43,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const [isFallbackMode, setIsFallbackMode] = useState(false);
   const streamSwitchManagerRef = useRef<StreamSwitchManager | null>(null);
   const [isPaused, setIsPaused] = useState(false);
+  const webrtcReconnectAttempts = useRef(0);
   
   // Initialize volume from cookie or default
   const [volume, setVolume] = useState(() => {
@@ -130,15 +131,44 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       setIsPaused(paused);
       setPlaybackState(paused ? 'paused' : 'playing');
     };
+    
+    // iOS-specific: Handle stalled/waiting events to prevent freezing
+    const handleStalled = () => {
+      if (isIOS()) {
+        console.log('📱 iOS: Video stalled, attempting recovery...');
+        // Force a small seek to unstall the video
+        if (video.currentTime > 0) {
+          video.currentTime = video.currentTime - 0.1;
+        }
+        // Try to play again
+        video.play().catch(() => {});
+      }
+    };
+    
+    const handleWaiting = () => {
+      if (isIOS()) {
+        console.log('📱 iOS: Video waiting for data...');
+        // Set a timeout to recover if stuck waiting
+        setTimeout(() => {
+          if (video.readyState < 3) { // HAVE_FUTURE_DATA
+            console.log('📱 iOS: Video still waiting, forcing play...');
+            video.load();
+            video.play().catch(() => {});
+          }
+        }, 2000);
+      }
+    };
 
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('loadeddata', handleLoadedData);
+    video.addEventListener('stalled', handleStalled);
+    video.addEventListener('waiting', handleWaiting);
     
     // Apply volume and muted state from saved settings
     video.volume = volume;
-    // Use saved muted state or mute if volume is 0
-    video.muted = isMuted || volume === 0;
+    // Always start muted for autoplay to work on all browsers
+    video.muted = true;
     
     // Initial state sync
     const initialPaused = video.paused;
@@ -149,6 +179,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('loadeddata', handleLoadedData);
+      video.removeEventListener('stalled', handleStalled);
+      video.removeEventListener('waiting', handleWaiting);
     };
   }, [volume, userInteracted]);
 
@@ -194,13 +226,67 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
   }, []);
+  
+  // iOS Safari video recovery - detect when video freezes with audio playing
+  useEffect(() => {
+    if (!isConnected || !videoRef.current || !isIOS()) return;
+    if (playbackState !== 'playing') return;
+    
+    const video = videoRef.current;
+    let lastVideoTime = 0;
+    let stuckCount = 0;
+    
+    const checkInterval = setInterval(() => {
+      if (!video || video.paused) return;
+      
+      // Check if we have both audio and video tracks
+      const stream = video.srcObject as MediaStream;
+      if (!stream) return;
+      
+      const hasVideo = stream.getVideoTracks().length > 0;
+      const hasAudio = stream.getAudioTracks().length > 0;
+      
+      if (hasVideo && hasAudio) {
+        // Check if video is progressing
+        const currentVideoTime = video.currentTime;
+        
+        if (currentVideoTime > 0 && currentVideoTime === lastVideoTime) {
+          stuckCount++;
+          console.log(`📱 iOS: Video may be stuck (count: ${stuckCount}), audio at ${currentVideoTime.toFixed(2)}s`);
+          
+          if (stuckCount >= 3) { // After 6 seconds of no progress
+            console.log('📱 iOS: Video confirmed stuck, attempting recovery...');
+            
+            // Try pause/play recovery
+            video.pause();
+            setTimeout(() => {
+              video.play().catch(() => {});
+            }, 100);
+            
+            stuckCount = 0;
+          }
+        } else {
+          if (stuckCount > 0) {
+            console.log('📱 iOS: Video recovered');
+          }
+          stuckCount = 0;
+        }
+        
+        lastVideoTime = currentVideoTime;
+      }
+    }, 2000); // Check every 2 seconds
+    
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, [isConnected, playbackState]);
 
   const initializeViewer = async (forceInit: boolean = false) => {
     const browserInfo = getBrowserInfo();
     
-    // iOS-specific: Clear stuck states first
-    if (browserInfo.isIOS && (switchState === 'switching' || switchState === 'retrying')) {
-      console.log('📱 WEBRTC: iOS detected with stuck state, clearing...');
+    // Clear any stuck states
+    if (switchState === 'switching' || switchState === 'retrying') {
+      console.log('📺 WEBRTC: Clearing stuck state...');
       setSwitchState('idle');
       setError(null);
     }
@@ -230,7 +316,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     // Basic rate limiting - prevent rapid reinitialization
     const now = Date.now();
     const timeSinceLastInit = now - lastInitTimeRef.current;
-    const minInterval = (forceInitialize || forceInit) ? 50 : (browserInfo.isIOS ? 500 : 200); // iOS needs longer intervals
+    const minInterval = (forceInitialize || forceInit) ? 50 : 200; // Same for all platforms
     if (timeSinceLastInit < minInterval && !forceInitialize && !forceInit) {
       // console.log(`📺 WEBRTC: Rate limiting init (${timeSinceLastInit}ms < ${minInterval}ms), skipping...`);
       return;
@@ -475,7 +561,14 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         });
         
         // Try to play with comprehensive fallback strategies
-        await attemptVideoPlayback(video);
+        try {
+          await attemptVideoPlayback(video);
+        } catch (playbackError) {
+          console.warn('⚠️ WEBRTC: Video playback failed, but connection is established:', playbackError);
+          // Don't fail the entire connection just because autoplay failed
+          // iOS often needs user interaction to play
+        }
+        
         setIsConnected(true);
         setConnectionState('connected');
         setError(null); // Clear any previous error messages on successful connection
@@ -493,31 +586,20 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       console.error('❌ WEBRTC: Failed to initialize viewer:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to connect to stream';
       
-      // iOS-specific error handling
-      if (browserInfo.isIOS) {
-        if (errorMessage.includes('transport') || errorMessage.includes('ICE') || errorMessage.includes('failed')) {
-          setError('Connection failed. iOS Safari may have restrictions. Tap to retry or wait for fallback.');
-          // Could implement HLS fallback here
-          console.log('📱 WEBRTC: iOS Safari connection failed, consider HLS fallback');
-        } else {
-          setError(errorMessage);
-        }
-      } else {
-        setError(errorMessage);
-      }
+      // Set error for all browsers
+      setError(errorMessage);
       
       setIsLoading(false);
       
       // Retry initialization for certain types of errors
       if (errorMessage.includes('No active stream') || errorMessage.includes('consume')) {
-        const retryDelay = browserInfo.isIOS ? 5000 : 3000; // iOS needs longer delay
-        // console.log(`🔄 WEBRTC: Will retry initialization in ${retryDelay/1000} seconds...`);
+        // console.log(`🔄 WEBRTC: Will retry initialization in 3 seconds...`);
         setTimeout(() => {
           if (isActive && !isInitializingRef.current && !isSwitchingRef.current) {
             // console.log('🔄 WEBRTC: Retrying initialization...');
             initializeViewer(true); // Force retry
           }
-        }, retryDelay);
+        }, 3000);
       }
     } finally {
       isInitializingRef.current = false;
@@ -536,41 +618,11 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       try {
         // console.log(`🎬 WEBRTC: Attempting video playback (attempt ${attempts}/${maxAttempts})`);
         
-        // iOS Safari specific strategy - always start muted
-        if (browserInfo.isIOS) {
-          // console.log('📱 WEBRTC: iOS detected, using muted autoplay strategy');
-          video.muted = true;
-          video.setAttribute('playsinline', 'true');
-          video.setAttribute('webkit-playsinline', 'true');
-          
-          // Try to play muted
-          await video.play();
-          setPlaybackState('playing');
-          
-          // Show iOS-specific unmute prompt
-          if (!userInteracted) {
-            setError('Tap to unmute audio');
-          }
-          
-          // console.log('✅ WEBRTC: iOS muted autoplay successful');
-          return true;
-        }
-        
-        // Strategy 1: Try unmuted autoplay first (non-iOS)
-        if (attempts === 1 && !video.muted && !browserInfo.isIOS) {
-          // console.log('🔊 WEBRTC: Attempting unmuted autoplay...');
-          video.muted = false;
-          await video.play();
-          setPlaybackState('playing');
-          setUserInteracted(true); // Mark as if user interacted since unmuted play worked
-          // console.log('✅ WEBRTC: Video autoplay with sound successful!');
-          return true;
-        }
-        
-        // Strategy 2: Standard muted autoplay as fallback
+        // Always try muted autoplay for all browsers including iOS
+        video.muted = true;
         await video.play();
         setPlaybackState('playing');
-        // console.log('✅ WEBRTC: Video autoplay successful');
+        // console.log('✅ WEBRTC: Video muted autoplay successful');
         return true;
         
       } catch (error: any) {
@@ -608,7 +660,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             return tryPlay();
           } else {
             setPlaybackState('failed');
-            throw new Error(`Playback failed after ${maxAttempts} attempts: ${error.message}`);
+            console.error(`Playback failed after ${maxAttempts} attempts: ${error.message}`);
+            return false; // Don't throw - just return false
           }
           
         } else {
@@ -619,7 +672,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             return tryPlay();
           } else {
             setPlaybackState('failed');
-            throw new Error(`Playback failed after ${maxAttempts} attempts: ${error.message}`);
+            console.error(`Playback failed after ${maxAttempts} attempts: ${error.message}`);
+            return false; // Don't throw - just return false
           }
         }
       }
@@ -635,11 +689,33 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
   const setupUserInteractionHandlers = (video: HTMLVideoElement) => {
     const handleUserInteraction = async () => {
-      if (!userInteracted && video.paused) {
+      if (!userInteracted) {
         setUserInteracted(true);
         try {
+          // Set proper attributes for iOS
+          video.setAttribute('playsinline', 'true');
+          video.setAttribute('webkit-playsinline', 'true');
+          video.setAttribute('x-webkit-airplay', 'allow');
+          
+          // iOS-specific optimizations
+          if (isIOS()) {
+            // Disable picture-in-picture which can interfere
+            video.setAttribute('disablePictureInPicture', 'true');
+            // Set preload to auto for faster start
+            video.setAttribute('preload', 'auto');
+            // Force immediate load
+            video.load();
+          }
+          
+          // Unmute after user interaction
+          video.muted = false;
+          video.volume = volume;
+          
+          // Play the video
           await video.play();
           setPlaybackState('playing');
+          
+          
           // console.log('✅ WEBRTC: Video playback started after user interaction');
         } catch (error) {
           console.error('❌ WEBRTC: Playback failed even after user interaction:', error);
@@ -659,59 +735,77 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     if (videoRef.current && isConnected) {
       setPlaybackState('loading');
       setAutoPlayAttempts(0);
-      await attemptVideoPlayback(videoRef.current);
+      setUserInteracted(true); // Mark as interacted since user clicked
+      
+      const video = videoRef.current;
+      
+      // For iOS, unmute and ensure decoder starts
+      if (isIOS()) {
+        video.muted = false; // Can unmute after user interaction
+        video.volume = volume;
+        
+        // Kickstart decoder with a small seek
+        if (video.currentTime > 0) {
+          video.currentTime = video.currentTime + 0.01;
+        }
+      }
+      
+      try {
+        await video.play();
+        setPlaybackState('playing');
+        
+        // iOS: Additional decoder kickstart after play
+        if (isIOS()) {
+          setTimeout(() => {
+            if (video.currentTime > 0) {
+              video.currentTime = video.currentTime + 0.01;
+            }
+          }, 100);
+        }
+      } catch (error) {
+        console.error('❌ WEBRTC: Retry playback failed:', error);
+        setPlaybackState('failed');
+      }
     }
   };
 
   const handleForceReconnection = async () => {
     const browserInfo = getBrowserInfo();
     
-    // iOS-specific reconnection handling
-    if (browserInfo.isIOS) {
-      console.log('📱 WEBRTC: iOS force reconnection initiated');
-      
-      // Clear all states first on iOS
-      setSwitchState('idle');
-      setConnectionState('disconnected');
-      setError(null);
-      setIsLoading(true);
-      
-      // Clean up completely before reconnecting
-      await cleanupSync();
-      
-      // Wait a bit for cleanup to complete
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Check if user has interacted (required for iOS)
-      if (!userInteracted) {
-        setError('Tap anywhere to connect');
-        setIsLoading(false);
-        return;
-      }
-    }
+    console.log('🔄 WEBRTC: Force reconnection initiated');
     
-    if (mediasoupClientRef.current || browserInfo.isIOS) {
-      try {
-        setIsLoading(true);
-        setError('Reconnecting...');
-        
-        if (mediasoupClientRef.current && !browserInfo.isIOS) {
-          await mediasoupClientRef.current.forceReconnection();
-        }
-        
-        // Try to reinitialize the viewer
-        await initializeViewer(true); // Force init
-      } catch (error) {
-        console.error('❌ WEBRTC: Manual reconnection failed:', error);
-        
-        if (browserInfo.isIOS) {
-          setError('Connection failed. Tap to retry.');
-        } else {
-          setError(`Manual reconnection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-      } finally {
-        setIsLoading(false);
+    // Clear all states first
+    setSwitchState('idle');
+    setConnectionState('disconnected');
+    setError(null);
+    setIsLoading(true);
+    
+    // Clean up completely before reconnecting
+    await cleanupSync();
+    
+    // Wait a bit for cleanup to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    try {
+      setIsLoading(true);
+      setError('Reconnecting...');
+      
+      if (mediasoupClientRef.current) {
+        await mediasoupClientRef.current.forceReconnection();
       }
+      
+      // Try to reinitialize the viewer
+      await initializeViewer(true); // Force init
+    } catch (error) {
+      console.error('❌ WEBRTC: Manual reconnection failed:', error);
+      
+      if (browserInfo.isIOS) {
+        setError('Connection failed. Tap to retry.');
+      } else {
+        setError(`Manual reconnection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1384,11 +1478,21 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     }
   };
 
-  const handleVideoClick = () => {
+  const handleVideoClick = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    
     // Only mark as interacted if video is actually paused and needs user interaction
-    if (videoRef.current && videoRef.current.paused) {
+    if (video.paused) {
       setUserInteracted(true);
-      videoRef.current.play().catch(e => {
+      
+      // iOS just needs unmute and play
+      if (isIOS()) {
+        video.muted = false; // Unmute after user interaction
+        video.volume = volume;
+      }
+      
+      video.play().catch(e => {
         console.error('❌ WEBRTC: Manual play failed:', e);
         setError('Unable to play stream');
       });
@@ -1800,10 +1904,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         controls={false}
         autoPlay
         playsInline
-        muted={volume === 0 || !userInteracted || isIOS()} // Always mute on iOS initially
-        {...(isIOS() && { 
-          'x-webkit-airplay': 'allow',
-          'webkitPlaysinline': true 
+        muted={true} // Always start muted for autoplay to work
+        {...(isIOS() && {
+          'webkit-playsinline': 'true',
+          'x-webkit-airplay': 'allow'
         } as any)}
         crossOrigin="anonymous"
         preload="auto"

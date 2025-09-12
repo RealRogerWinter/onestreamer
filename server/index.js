@@ -42,6 +42,7 @@ const VisualFxService = require('./services/VisualFxService');
 const MediasoupPlainTransportService = require('./services/MediasoupPlainTransportService');
 const StreamInterceptorService = require('./services/StreamInterceptorService');
 const ChatBotService = require('./services/ChatBotService');
+const StreamBotService = require('./services/StreamBotService');
 const RecordingService = require('./services/RecordingService');
 const FileCompressionService = require('./services/FileCompressionService');
 const RecordingStorageService = require('./services/RecordingStorageService');
@@ -49,11 +50,13 @@ const TranscriptionService = require('./services/TranscriptionService');
 const IPBanService = require('./services/IPBanService');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
+const moderationRoutes = require('./routes/moderation');
 const itemRoutes = require('./routes/items');
 const buffRoutes = require('./routes/buffs');
 const soundfxRoutes = require('./routes/soundfx');
 const visualfxRoutes = require('./routes/visualfx');
 const { router: chatbotRoutes, initializeChatBotRoutes } = require('./routes/chatbots');
+const streambotRoutes = require('./routes/streambot');
 // ViewBot API routes will be initialized after services are created
 let viewbotApiRoutes;
 const bugReportsRoutes = require('./routes/bug-reports');
@@ -163,13 +166,14 @@ app.use((req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " + // Allow inline scripts for React
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://www.googletagmanager.com; " + // Allow inline scripts for React, Cloudflare Turnstile, and Google Analytics
     "style-src 'self' 'unsafe-inline'; " + // Allow inline styles
     "img-src 'self' data: http: https:; " + // Allow images from any source
     "connect-src 'self' ws: wss: http: https:; " + // Allow WebSocket and API connections
     "font-src 'self' data:; " +
     "media-src 'self' blob:; " +
     "object-src 'none'; " +
+    "frame-src https://challenges.cloudflare.com; " + // Allow Cloudflare Turnstile iframe
     "frame-ancestors 'none';"
   );
   
@@ -208,6 +212,27 @@ app.use('/uploads/emojis', express.static(path.join(__dirname, 'uploads', 'emoji
     } else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
       res.setHeader('Content-Type', 'image/jpeg');
     }
+  }
+}));
+
+// Serve uploaded avatars
+app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars'), {
+  maxAge: '7d', // Cache avatars for 7 days
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    // Set proper MIME types for all image formats
+    if (filePath.endsWith('.webp')) {
+      res.setHeader('Content-Type', 'image/webp');
+    } else if (filePath.endsWith('.png')) {
+      res.setHeader('Content-Type', 'image/png');
+    } else if (filePath.endsWith('.gif')) {
+      res.setHeader('Content-Type', 'image/gif');
+    } else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
+      res.setHeader('Content-Type', 'image/jpeg');
+    }
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   }
 }));
 
@@ -278,6 +303,9 @@ app.use(passport.initialize());
 // Auth routes
 app.use('/auth', authRoutes);
 
+// Moderation routes
+app.use('/api/moderation', moderationRoutes);
+
 // Debug middleware to log all requests
 app.use('/api', (req, res, next) => {
   console.log(`🌐 HTTP: ${req.method} ${req.url} from ${req.get('origin') || 'unknown'}`);
@@ -302,6 +330,7 @@ app.use('/api/soundfx', soundfxRoutes);
 // ViewBot API routes will be added after services are initialized
 app.use('/api/visualfx', visualfxRoutes);
 app.use('/api/chatbots', chatbotRoutes);
+app.use('/api/streambot', streambotRoutes);
 app.use('/api/bug-reports', bugReportsRoutes);
 
 // Tutorial API endpoints
@@ -630,6 +659,7 @@ buffDebuffService.on('buff-applied', async (buffData) => {
 const streamInterceptorService = new StreamInterceptorService(mediasoupService, plainTransportService);
 const visualFxService = new VisualFxService(mediasoupService, buffDebuffService, streamInterceptorService);
 const chatBotService = new ChatBotService();
+const streamBotService = new StreamBotService(database);
 
 // Set up stream interceptor event handlers
 streamInterceptorService.on('stream-intercepted', async (data) => {
@@ -731,6 +761,7 @@ app.set('inventoryService', inventoryService);
 app.set('shopService', shopService);
 app.set('buffDebuffService', buffDebuffService);
 app.set('chatBotService', chatBotService);
+app.set('streamBotService', streamBotService);
 
 // Make services available to routes via app.locals for easier access
 app.locals.buffDebuffService = buffDebuffService;
@@ -2338,6 +2369,25 @@ app.get('/api/media/info', (req, res) => {
 app.get('/api/mediasoup/router-capabilities', async (req, res) => {
   try {
     const rtpCapabilities = await mediasoupService.getRouterRtpCapabilities();
+    
+    // Check if client prefers H264 (iOS Safari)
+    const preferH264 = req.query.preferH264 === 'true';
+    
+    if (preferH264 && rtpCapabilities?.codecs) {
+      // Reorder codecs to prioritize H264 for iOS
+      const h264Codecs = rtpCapabilities.codecs.filter(codec => 
+        codec.mimeType?.toLowerCase() === 'video/h264'
+      );
+      const otherCodecs = rtpCapabilities.codecs.filter(codec => 
+        codec.mimeType?.toLowerCase() !== 'video/h264'
+      );
+      
+      // Put H264 first for iOS devices
+      rtpCapabilities.codecs = [...h264Codecs, ...otherCodecs];
+      
+      console.log('📱 MEDIASOUP: Prioritized H264 codec for iOS client');
+    }
+    
     res.json({ rtpCapabilities });
   } catch (error) {
     console.error('❌ Failed to get router capabilities:', error);
@@ -7638,6 +7688,29 @@ io.on('connection', async (socket) => {
     }
   });
 
+  // Handle keyframe requests for iOS video decoder issues
+  socket.on('mediasoup:request-keyframe', async (data, callback) => {
+    try {
+      const { consumerId } = data;
+      const consumer = mediasoupService.getConsumer(socket.id, consumerId);
+      
+      if (!consumer) {
+        throw new Error('Consumer not found');
+      }
+      
+      // Request keyframe from the producer
+      if (consumer.kind === 'video') {
+        console.log(`📱 iOS: Requesting keyframe for consumer ${consumerId}`);
+        await consumer.requestKeyFrame();
+      }
+      
+      callback({ success: true });
+    } catch (error) {
+      console.error('❌ MEDIASOUP: Failed to request keyframe:', error);
+      callback({ success: false, error: error.message });
+    }
+  });
+
   // Buff/Debuff related socket events
   socket.on('apply-buff-item', async (data) => {
     try {
@@ -8398,6 +8471,10 @@ async function startServer() {
     
     await chatBotService.initialize();
     console.log('🤖 SERVER: ChatBot service initialization completed');
+    
+    // Initialize StreamBot service
+    await streamBotService.initialize();
+    console.log('📢 SERVER: StreamBot service initialized');
     
     // Set up periodic cleanup for expired temporary bots
     setInterval(async () => {

@@ -1,0 +1,336 @@
+.streambot-manager {
+  padding: 20px;
+  background: #1a1a1a;
+  border-radius: 8px;
+  color: #ffffff;
+}
+
+.streambot-manager h2 {
+  margin: 0 0 20px 0;
+  color: #FF6B35;
+  font-size: 24px;
+  border-bottom: 2px solid #FF6B35;
+  padding-bottom: 10px;
+}
+
+.streambot-manager h3 {
+  margin: 20px 0 15px 0;
+  color: #FF6B35;
+  font-size: 18px;
+}
+
+.alert {
+  padding: 10px 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+
+.alert.error {
+  background: rgba(255, 0, 0, 0.2);
+  border: 1px solid #ff0000;
+  color: #ff6b6b;
+}
+
+.alert.success {
+  background: rgba(0, 255, 0, 0.2);
+  border: 1px solid #00ff00;
+  color: #6bff6b;
+}
+
+/* Settings Section */
+.settings-section {
+  background: #252525;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.settings-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.setting-item label {
+  min-width: 120px;
+  color: #999;
+  font-size: 14px;
+}
+
+.toggle-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.3s;
+}
+
+.toggle-btn.enabled {
+  background: #00ff00;
+  color: #000;
+}
+
+.toggle-btn.disabled {
+  background: #666;
+  color: #fff;
+}
+
+.toggle-btn:hover {
+  opacity: 0.8;
+}
+
+.interval-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.interval-control input {
+  width: 80px;
+  padding: 6px 10px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 14px;
+}
+
+.interval-control span {
+  color: #999;
+  font-size: 14px;
+}
+
+.interval-control button {
+  padding: 6px 15px;
+  background: #FF6B35;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.interval-control button:hover {
+  background: #ff8555;
+}
+
+.test-btn {
+  padding: 8px 20px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.test-btn:hover {
+  background: #5CBF60;
+}
+
+/* Messages Section */
+.messages-section {
+  background: #252525;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.add-message {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.add-message input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 14px;
+}
+
+.add-message input::placeholder {
+  color: #666;
+}
+
+.add-message button {
+  padding: 10px 20px;
+  background: #FF6B35;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.add-message button:hover {
+  background: #ff8555;
+}
+
+/* Messages List */
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  transition: all 0.3s;
+}
+
+.message-item.disabled {
+  opacity: 0.5;
+}
+
+.message-item:hover {
+  border-color: #FF6B35;
+}
+
+.message-order {
+  font-size: 18px;
+  font-weight: bold;
+  color: #FF6B35;
+  min-width: 40px;
+}
+
+.message-content {
+  flex: 1;
+}
+
+.message-text {
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.edit-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.edit-mode textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #252525;
+  color: #fff;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.edit-actions button {
+  padding: 6px 15px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.edit-actions button:first-child {
+  background: #4CAF50;
+  color: white;
+}
+
+.edit-actions button:last-child {
+  background: #666;
+  color: white;
+}
+
+/* Message Actions */
+.message-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.message-actions button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s;
+}
+
+.move-btn {
+  background: #444;
+  color: #fff;
+}
+
+.move-btn:hover:not(:disabled) {
+  background: #555;
+}
+
+.move-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.toggle-msg-btn {
+  background: #444;
+  color: #fff;
+}
+
+.toggle-msg-btn.enabled {
+  background: #4CAF50;
+}
+
+.toggle-msg-btn.disabled {
+  background: #f44336;
+}
+
+.edit-btn {
+  background: #2196F3;
+}
+
+.edit-btn:hover {
+  background: #42A6F5;
+}
+
+.delete-btn {
+  background: #f44336;
+}
+
+.delete-btn:hover {
+  background: #f66356;
+}
+
+/* No Messages */
+.no-messages {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  font-size: 14px;
+}
+
+/* Loading State */
+.streambot-manager.loading {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+  font-size: 16px;
+}

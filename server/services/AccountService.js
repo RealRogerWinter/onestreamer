@@ -52,7 +52,7 @@ class AccountService {
 
     async getUserById(id) {
         return await getAsync(
-            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_moderator, is_banned, oauth_provider, username_changed 
+            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_moderator, is_banned, oauth_provider, username_changed, avatar_url, description 
              FROM users WHERE id = ?`,
             [id]
         );
@@ -67,7 +67,7 @@ class AccountService {
 
     async getUserByUsername(username) {
         return await getAsync(
-            `SELECT * FROM users WHERE username = ?`,
+            `SELECT id, email, username, password, created_at, updated_at, last_login, is_verified, is_admin, is_moderator, is_banned, oauth_provider, username_changed, avatar_url, description FROM users WHERE username = ?`,
             [username]
         );
     }
@@ -111,6 +111,13 @@ class AccountService {
         await runAsync(
             `UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?`,
             [userId]
+        );
+    }
+
+    async linkOAuthToUser(userId, oauthProvider, oauthId) {
+        await runAsync(
+            `UPDATE users SET oauth_provider = ?, oauth_id = ? WHERE id = ?`,
+            [oauthProvider, oauthId, userId]
         );
     }
 
@@ -750,7 +757,7 @@ class AccountService {
 
     async updateProfile(userId, profileData) {
         try {
-            const { bio, website, location, displayName } = profileData;
+            const { bio, website, location, displayName, avatar_url, description } = profileData;
             
             // Build update query dynamically based on provided fields
             const updateFields = [];
@@ -774,6 +781,16 @@ class AccountService {
             if (displayName !== undefined) {
                 updateFields.push('display_name = ?');
                 values.push(displayName);
+            }
+            
+            if (avatar_url !== undefined) {
+                updateFields.push('avatar_url = ?');
+                values.push(avatar_url);
+            }
+            
+            if (description !== undefined) {
+                updateFields.push('description = ?');
+                values.push(description);
             }
             
             if (updateFields.length === 0) {

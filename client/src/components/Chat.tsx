@@ -9,6 +9,7 @@ import DOMPurify from 'dompurify';
 import CloudflareTurnstile from './CloudflareTurnstile';
 import { TURNSTILE_SITE_KEY } from '../config/turnstile';
 import ExternalLinkModal from './ExternalLinkModal';
+import UserInfoPopup from './UserInfoPopup';
 import { openPopoutChat } from './PopoutChat';
 import './Chat.css';
 import './PopoutChat.css';
@@ -86,6 +87,10 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     return sessionStorage.getItem('chatPoppedOut') === 'true';
   });
   const popoutWindowRef = useRef<Window | null>(null);
+  const [userInfoPopup, setUserInfoPopup] = useState<{
+    username: string;
+    position: { x: number; y: number };
+  } | null>(null);
   const [chatSettings, setChatSettings] = useState<ChatUserSettings>(() => {
     // Load settings from cookies
     const saved = CookieService.getCookie(COOKIE_NAMES.CHAT_SETTINGS);
@@ -1066,6 +1071,25 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
   };
 
+  // Handle username click to show user info popup
+  const handleUsernameClick = (username: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    // Remove any emoji prefix (like 🤖) from the username
+    const cleanUsername = username.replace(/^🤖\s*/, '');
+    
+    // Get click position
+    const rect = (event.target as HTMLElement).getBoundingClientRect();
+    setUserInfoPopup({
+      username: cleanUsername,
+      position: {
+        x: rect.left,
+        y: rect.bottom + 5 // Position below the username
+      }
+    });
+  };
+
   // Format timestamp based on settings
   const formatTimestamp = (timestamp: string, fullTimestamp: string): string => {
     if (!chatSettings.showTimestamps) {
@@ -1168,9 +1192,15 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
                   {formatTimestamp(msg.timestamp, msg.fullTimestamp)}
                 </span>
               )}
-              <span className="message-username" style={{ 
-                color: msg.userId === userInfo?.userId && chatSettings.userColor ? chatSettings.userColor : msg.color 
-              }}>
+              <span 
+                className="message-username clickable-username" 
+                style={{ 
+                  color: msg.userId === userInfo?.userId && chatSettings.userColor ? chatSettings.userColor : msg.color,
+                  cursor: 'pointer'
+                }}
+                onClick={(e) => handleUsernameClick(msg.username, e)}
+                title="Click to view profile"
+              >
                 {msg.isAdmin && <span className="user-badge admin-badge" title="Admin">👑</span>}
                 {!msg.isAdmin && msg.isModerator && <span className="user-badge moderator-badge" title="Moderator">🛡️</span>}
                 {msg.username}:
@@ -1336,6 +1366,15 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
           setExternalLinkModal({ isOpen: false, url: '' });
         }}
       />
+
+      {/* User Info Popup */}
+      {userInfoPopup && (
+        <UserInfoPopup
+          username={userInfoPopup.username}
+          position={userInfoPopup.position}
+          onClose={() => setUserInfoPopup(null)}
+        />
+      )}
     </div>
   );
 };

@@ -48,7 +48,7 @@ class AuthService {
                 {
                     clientID: process.env.GOOGLE_CLIENT_ID,
                     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-                    callbackURL: '/auth/google/callback'
+                    callbackURL: 'https://onestreamer.live/auth/google/callback'
                 },
                 async (accessToken, refreshToken, profile, done) => {
                     try {
@@ -411,6 +411,79 @@ class AuthService {
 
     async completeOAuthRegistration(oauthData, username) {
         try {
+            console.log('CompleteOAuthRegistration called with:', {
+                email: oauthData.email,
+                oauthProvider: oauthData.oauthProvider,
+                oauthId: oauthData.oauthId,
+                username: username
+            });
+
+            // Check if email already exists
+            const existingEmailUser = await this.accountService.getUserByEmail(oauthData.email);
+            if (existingEmailUser) {
+                console.log('Existing user found:', {
+                    id: existingEmailUser.id,
+                    email: existingEmailUser.email,
+                    oauthProvider: existingEmailUser.oauthProvider,
+                    oauthId: existingEmailUser.oauthId,
+                    hasPassword: !!existingEmailUser.password
+                });
+
+                // If user exists with this email and OAuth provider, link them
+                if (existingEmailUser.oauthProvider === oauthData.oauthProvider && 
+                    existingEmailUser.oauthId === oauthData.oauthId) {
+                    // User already exists with this OAuth account, just log them in
+                    console.log('User already exists with same OAuth, logging them in');
+                    const token = this.generateToken(existingEmailUser);
+                    const refreshToken = this.generateRefreshToken(existingEmailUser);
+                    
+                    return {
+                        success: true,
+                        user: {
+                            id: existingEmailUser.id,
+                            email: existingEmailUser.email,
+                            username: existingEmailUser.username,
+                            isVerified: existingEmailUser.isVerified,
+                            isAdmin: existingEmailUser.isAdmin || false,
+                            isModerator: existingEmailUser.isModerator || false
+                        },
+                        token,
+                        refreshToken
+                    };
+                } else if (!existingEmailUser.oauthProvider && existingEmailUser.password) {
+                    // User exists with password auth, we can link OAuth to existing account
+                    console.log('Linking OAuth to existing password-based account');
+                    
+                    // Update the existing user with OAuth information
+                    await this.accountService.linkOAuthToUser(
+                        existingEmailUser.id, 
+                        oauthData.oauthProvider, 
+                        oauthData.oauthId
+                    );
+                    
+                    const token = this.generateToken(existingEmailUser);
+                    const refreshToken = this.generateRefreshToken(existingEmailUser);
+                    
+                    return {
+                        success: true,
+                        user: {
+                            id: existingEmailUser.id,
+                            email: existingEmailUser.email,
+                            username: existingEmailUser.username,
+                            isVerified: existingEmailUser.isVerified,
+                            isAdmin: existingEmailUser.isAdmin || false,
+                            isModerator: existingEmailUser.isModerator || false
+                        },
+                        token,
+                        refreshToken
+                    };
+                } else {
+                    // Email exists but with different OAuth provider
+                    console.log('Email exists with different OAuth provider');
+                    throw new Error(`An account with this email already exists using ${existingEmailUser.oauthProvider || 'email/password'} authentication. Please login with your existing account method.`);
+                }
+            }
+
             // Check if username is already taken
             const existingUser = await this.accountService.getUserByUsername(username);
             if (existingUser) {

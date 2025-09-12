@@ -1,5 +1,12 @@
 {
-  "bannedUsers": [],
+  "bannedUsers": [
+    {
+      "username": "Mouse7828",
+      "bannedAt": "2025-09-11T07:13:30.778Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    }
+  ],
   "timedOutUsers": [],
-  "lastUpdated": "2025-09-11T03:43:18.118Z"
+  "lastUpdated": "2025-09-11T07:13:30.779Z"
 }

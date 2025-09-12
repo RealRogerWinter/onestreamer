@@ -1,3 +1,118 @@
+/* Avatar Section Styles */
+.avatar-section {
+  margin-bottom: 30px;
+}
+
+.avatar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 10px;
+}
+
+.avatar-preview {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid #4ECDC4;
+  background: #2a2a2a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.avatar-upload-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.upload-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #4ECDC4;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-placeholder {
+  font-size: 32px;
+  font-weight: bold;
+  color: #4ECDC4;
+  text-transform: uppercase;
+}
+
+.avatar-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.avatar-actions button {
+  padding: 8px 16px;
+  min-width: 120px;
+}
+
+.avatar-help-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 5px;
+}
+
+.avatar-help-text small {
+  color: #888;
+  font-size: 12px;
+}
+
+/* Description Field */
+.profile-field textarea {
+  width: 100%;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  color: #fff;
+  padding: 10px;
+  font-size: 14px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.profile-field textarea:focus {
+  outline: none;
+  border-color: #4ECDC4;
+}
+
+.character-count {
+  text-align: right;
+  font-size: 12px;
+  color: #888;
+  margin-top: 5px;
+}
+
 .profile-settings-overlay {
   position: fixed;
   top: 0;

@@ -314,7 +314,7 @@ function isUserTimedOut(username) {
 function sendSystemMessage(message, io) {
   const systemMessage = {
     id: `system_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    username: '🤖 Admin',
+    username: '🤖 StreamBot',
     color: '#FF6B35',
     message: message,
     timestamp: formatTime(),
@@ -335,7 +335,7 @@ function sendSystemMessage(message, io) {
 function sendAdminResponse(socket, message) {
   const adminMessage = {
     id: `admin_response_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    username: '🔧 Admin System',
+    username: '🤖 StreamBot',
     color: '#FF4444',
     message: message,
     timestamp: formatTime(),
@@ -1837,7 +1837,7 @@ app.post('/api/remove-timeout', express.json(), (req, res) => {
 });
 
 // Endpoint for main server to send system messages
-app.post('/api/system-message', (req, res) => {
+app.post('/api/system-message', express.json(), (req, res) => {
   try {
     const { message, username = '🤖 StreamBot' } = req.body;
     
@@ -2380,6 +2380,41 @@ io.on('connection', async (socket) => {
 });
 
 const PORT = process.env.CHAT_PORT || 8081;
+
+// Initialize StreamBot integration
+const StreamBotService = require('../server/services/StreamBotService');
+const sqlite3 = require('sqlite3').verbose();
+const dbPath = path.join(__dirname, '..', 'server', 'database.db');
+const database = new sqlite3.Database(dbPath);
+const streamBotService = new StreamBotService(database);
+
+// Listen for StreamBot messages
+streamBotService.on('sendMessage', (message) => {
+  console.log('🤖 STREAMBOT: Sending periodic message:', message);
+  
+  // Send the message as a system message
+  const systemMessage = {
+    id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    username: '🤖 StreamBot',
+    color: '#FF6B35',
+    message: message,
+    timestamp: formatTime(),
+    fullTimestamp: new Date().toISOString(),
+    isSystem: true
+  };
+  
+  chatMessages.push(systemMessage);
+  if (chatMessages.length > MAX_CHAT_HISTORY) {
+    chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+  }
+  
+  io.emit('new-message', systemMessage);
+});
+
+// Initialize StreamBot service
+streamBotService.initialize().catch(err => {
+  console.error('❌ Failed to initialize StreamBot service:', err);
+});
 
 // Load moderation data on startup
 loadModerationData();

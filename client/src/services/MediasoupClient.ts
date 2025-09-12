@@ -1,5 +1,5 @@
 import * as mediasoupClient from 'mediasoup-client';
-import { Device } from 'mediasoup-client';
+import { Device, detectDevice } from 'mediasoup-client';
 import { Socket } from 'socket.io-client';
 import * as crypto from 'crypto-js';
 import { isIOSSafari, isIOS, isMobile } from '../utils/browserDetection';
@@ -41,6 +41,19 @@ export class MediasoupClient {
   constructor(config: MediasoupClientConfig) {
     this.socket = config.socket;
     this.serverUrl = config.serverUrl || process.env.REACT_APP_SERVER_URL || 'http://localhost:8080';
+    
+    // CRITICAL: Use detectDevice for proper iOS Safari detection
+    // This performs feature detection which is essential for Safari
+    try {
+      const detectedDevice = detectDevice();
+      console.log('🔍 MEDIASOUP CLIENT: Detected device handler:', detectedDevice || 'unknown');
+      if (isIOSSafari() || isIOS()) {
+        console.log('📱 MEDIASOUP CLIENT: iOS Safari detected, using appropriate handler');
+      }
+    } catch (e) {
+      console.warn('⚠️ MEDIASOUP CLIENT: Device detection warning:', e);
+    }
+    
     this.device = new Device();
     this.onConnectionRecovered = config.onConnectionRecovered;
     this.onConnectionLost = config.onConnectionLost;
@@ -59,13 +72,10 @@ export class MediasoupClient {
   }
 
   private withTimeout<T>(promise: Promise<T>, ms: number = this.operationTimeout): Promise<T> {
-    // iOS Safari needs longer timeouts for WebRTC operations
-    const timeout = isIOS() ? Math.max(ms, 45000) : ms;
-    
     return Promise.race([
       promise,
       new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error(`Operation timeout after ${timeout}ms`)), timeout)
+        setTimeout(() => reject(new Error(`Operation timeout after ${ms}ms`)), ms)
       )
     ]);
   }
@@ -406,9 +416,19 @@ export class MediasoupClient {
         return;
       }
 
+      // Detect browser capabilities for iOS Safari
+      const isIOSDevice = isIOS() || isIOSSafari();
+      
       // Get router RTP capabilities from server with timeout
+      // Include iOS flag to get H264-prioritized capabilities
+      const url = new URL(`${this.serverUrl}/api/mediasoup/router-capabilities`);
+      if (isIOSDevice) {
+        url.searchParams.set('preferH264', 'true');
+        console.log('📱 MEDIASOUP CLIENT: Requesting H264-prioritized capabilities for iOS');
+      }
+      
       const response = await this.withTimeout(
-        fetch(`${this.serverUrl}/api/mediasoup/router-capabilities`)
+        fetch(url.toString())
       );
       
       if (!response.ok) {
@@ -421,6 +441,20 @@ export class MediasoupClient {
         throw new Error('No RTP capabilities received from server');
       }
       
+      // For iOS, ensure H264 is available and prioritized
+      if (isIOSDevice) {
+        const codecs = rtpCapabilities.codecs || [];
+        const hasH264 = codecs.some((codec: any) => 
+          codec.mimeType?.toLowerCase() === 'video/h264'
+        );
+        
+        if (!hasH264) {
+          console.warn('⚠️ MEDIASOUP CLIENT: H264 codec not available for iOS device');
+        } else {
+          console.log('✅ MEDIASOUP CLIENT: H264 codec available for iOS');
+        }
+      }
+      
       // console.log('📊 MEDIASOUP CLIENT: Received RTP capabilities from server');
       
       // Load the device with router capabilities (only if not already loaded)
@@ -428,6 +462,10 @@ export class MediasoupClient {
         await this.withTimeout(
           this.device.load({ routerRtpCapabilities: rtpCapabilities })
         );
+        
+        // Log the handler being used (important for iOS debugging)
+        const handler = (this.device as any)._handler || (this.device as any).handler;
+        console.log('🎯 MEDIASOUP CLIENT: Using handler:', handler?.name || handler?.constructor?.name || 'unknown');
       }
       
       // console.log('✅ MEDIASOUP CLIENT: Device loaded successfully');
@@ -1170,7 +1208,7 @@ export class MediasoupClient {
         this.consumeTrack('audio')
       ];
       
-      // Add overall timeout for both tracks (longer for mobile)
+      // Add overall timeout for both tracks
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('Overall consume timeout after 10 seconds')), 10000);
       });
@@ -1302,11 +1340,10 @@ export class MediasoupClient {
     }
     
     return new Promise((resolve, reject) => {
-      // Add timeout to prevent hanging - iOS needs longer timeouts
-      const timeoutMs = isIOS() ? 10000 : 5000; // 10s for iOS, 5s for others
+      // Add timeout to prevent hanging
       const timeout = setTimeout(() => {
         reject(new Error(`Consume timeout for ${kind} on attempt ${attempt}`));
-      }, timeoutMs);
+      }, 5000); // 5 second timeout
       
       this.socket.emit('mediasoup:consume', { 
         rtpCapabilities: this.device.rtpCapabilities,
@@ -1368,7 +1405,7 @@ export class MediasoupClient {
           }
           
           // Create consumer with error handling
-          let consumer;
+          let consumer: mediasoupClient.types.Consumer;
           try {
             consumer = await this.recvTransport.consume({
               id: consumerData.id,
@@ -1462,10 +1499,135 @@ export class MediasoupClient {
             throw new Error(`${kind} track is ended immediately after creation`);
           }
           
+          // iOS FIX: Force consumer to request keyframe on video tracks
+          if (kind === 'video' && (isIOS() || isIOSSafari())) {
+            console.log('📱 iOS: Setting up video consumer for keyframe handling');
+            
+            // Monitor consumer stats for iOS
+            const statsInterval = setInterval(async () => {
+              if (!consumer || consumer.closed) {
+                clearInterval(statsInterval);
+                return;
+              }
+              
+              try {
+                const stats = await consumer.getStats();
+                stats.forEach((stat: any) => {
+                  if (stat.type === 'inbound-rtp' && stat.kind === 'video') {
+                    // Check for decoder issues
+                    if (stat.pliCount > 0 || stat.firCount > 0 || stat.nackCount > 0) {
+                      console.log(`📱 iOS Video Stats: PLI=${stat.pliCount}, FIR=${stat.firCount}, NACK=${stat.nackCount}`);
+                    }
+                    
+                    // Check frame rate
+                    if (stat.framesPerSecond !== undefined && stat.framesPerSecond < 1) {
+                      console.warn('📱 iOS: Low frame rate detected:', stat.framesPerSecond);
+                      // Request keyframe
+                      this.socket.emit('mediasoup:request-keyframe', { 
+                        consumerId: consumerId 
+                      });
+                    }
+                  }
+                });
+              } catch (e) {
+                // Stats collection failed, stop monitoring
+                clearInterval(statsInterval);
+              }
+            }, 3000); // Check every 3 seconds
+            
+            // Store interval for cleanup
+            (consumer as any)._statsInterval = statsInterval;
+          }
+          
           // Create media stream from consumer track
           const stream = new MediaStream([consumer.track]);
           
           // console.log(`✅ MEDIASOUP CLIENT: ${kind} stream created with track state: ${consumer.track.readyState}`);
+          
+          // CRITICAL FIX for iOS: Request keyframe immediately for video
+          if (kind === 'video' && (isIOS() || isIOSSafari())) {
+            console.log('📱 iOS: Setting up aggressive keyframe requests for video track');
+            
+            // Request initial keyframes multiple times
+            const requestKeyframe = () => {
+              this.socket.emit('mediasoup:request-keyframe', { 
+                consumerId: consumerId 
+              }, (response: any) => {
+                if (response?.success) {
+                  console.log('✅ iOS: Keyframe requested successfully');
+                } else {
+                  console.warn('⚠️ iOS: Keyframe request failed:', response?.error);
+                }
+              });
+            };
+            
+            // Request keyframes at 100ms, 200ms, 500ms, 1s to ensure we get one
+            setTimeout(requestKeyframe, 100);
+            setTimeout(requestKeyframe, 200);
+            setTimeout(requestKeyframe, 500);
+            setTimeout(requestKeyframe, 1000);
+            
+            // Set up aggressive periodic keyframe requests for iOS
+            let frameCheckCount = 0;
+            let lastFrameCount = 0;
+            let stuckFrameCount = 0;
+            
+            const keyframeInterval = setInterval(() => {
+              if (!consumer || consumer.closed || consumer.track.readyState !== 'live') {
+                clearInterval(keyframeInterval);
+                return;
+              }
+              
+              frameCheckCount++;
+              
+              // Check if video is actually playing
+              const video = document.querySelector('video') as HTMLVideoElement;
+              if (video && video.srcObject) {
+                const videoTracks = (video.srcObject as MediaStream).getVideoTracks();
+                if (videoTracks.length > 0 && videoTracks[0].readyState === 'live') {
+                  // Check if we're getting frames
+                  if ('getVideoPlaybackQuality' in video) {
+                    const quality = (video as any).getVideoPlaybackQuality();
+                    const totalFrames = quality.totalVideoFrames;
+                    
+                    // Check if frames are advancing
+                    if (totalFrames === lastFrameCount) {
+                      stuckFrameCount++;
+                      console.log(`📱 iOS: Frames stuck at ${totalFrames} (stuck count: ${stuckFrameCount})`);
+                      
+                      // Request keyframe if stuck
+                      if (stuckFrameCount >= 1) { // Request immediately when stuck
+                        console.log('📱 iOS: Requesting keyframe due to stuck frames');
+                        this.socket.emit('mediasoup:request-keyframe', { 
+                          consumerId: consumerId 
+                        });
+                        stuckFrameCount = 0; // Reset counter after request
+                      }
+                    } else {
+                      // Frames are advancing
+                      if (stuckFrameCount > 0) {
+                        console.log(`📱 iOS: Frames recovered, now at ${totalFrames}`);
+                      }
+                      stuckFrameCount = 0;
+                    }
+                    
+                    lastFrameCount = totalFrames;
+                    
+                    // Also request keyframe every 5 checks (2.5 seconds) regardless
+                    if (frameCheckCount % 5 === 0) {
+                      console.log('📱 iOS: Periodic keyframe request');
+                      this.socket.emit('mediasoup:request-keyframe', { 
+                        consumerId: consumerId 
+                      });
+                    }
+                  }
+                }
+              }
+            }, 500); // Check every 500ms for faster response
+            
+            // Store interval for cleanup
+            (consumer as any)._keyframeInterval = keyframeInterval;
+          }
           
           resolve(stream);
           
@@ -1522,6 +1684,11 @@ export class MediasoupClient {
       if (!consumer.closed) {
         stopTasks.push(
           Promise.resolve().then(() => {
+            // Clean up iOS keyframe interval if it exists
+            if ((consumer as any)._keyframeInterval) {
+              clearInterval((consumer as any)._keyframeInterval);
+              (consumer as any)._keyframeInterval = null;
+            }
             consumer.close();
             // console.log('⏹️ MEDIASOUP CLIENT: Consumer stopped:', id);
           })

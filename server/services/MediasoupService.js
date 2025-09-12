@@ -75,6 +75,7 @@ class MediasoupService {
     }
 
     // Create router with comprehensive codec support for all browsers and viewbots
+    // H264 is placed first for better iOS Safari compatibility
     const mediaCodecs = [
       {
         kind: 'audio',
@@ -86,30 +87,7 @@ class MediasoupService {
           { type: 'transport-cc' }
         ]
       },
-      {
-        kind: 'video',
-        mimeType: 'video/VP8',
-        clockRate: 90000,
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'nack', parameter: 'pli' },
-          { type: 'ccm', parameter: 'fir' },
-          { type: 'goog-remb' },
-          { type: 'transport-cc' }
-        ]
-      },
-      {
-        kind: 'video',
-        mimeType: 'video/VP9',
-        clockRate: 90000,
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'nack', parameter: 'pli' },
-          { type: 'ccm', parameter: 'fir' },
-          { type: 'goog-remb' },
-          { type: 'transport-cc' }
-        ]
-      },
+      // H264 codecs first for iOS Safari compatibility
       {
         kind: 'video',
         mimeType: 'video/h264',
@@ -153,6 +131,31 @@ class MediasoupService {
           'profile-level-id': '640032',
           'level-asymmetry-allowed': 1
         },
+        rtcpFeedback: [
+          { type: 'nack' },
+          { type: 'nack', parameter: 'pli' },
+          { type: 'ccm', parameter: 'fir' },
+          { type: 'goog-remb' },
+          { type: 'transport-cc' }
+        ]
+      },
+      // VP8 and VP9 after H264 for broader compatibility
+      {
+        kind: 'video',
+        mimeType: 'video/VP8',
+        clockRate: 90000,
+        rtcpFeedback: [
+          { type: 'nack' },
+          { type: 'nack', parameter: 'pli' },
+          { type: 'ccm', parameter: 'fir' },
+          { type: 'goog-remb' },
+          { type: 'transport-cc' }
+        ]
+      },
+      {
+        kind: 'video',
+        mimeType: 'video/VP9',
+        clockRate: 90000,
         rtcpFeedback: [
           { type: 'nack' },
           { type: 'nack', parameter: 'pli' },
@@ -630,6 +633,46 @@ class MediasoupService {
     }
     this.consumers.get(consumerSocketId).add(consumer);
 
+    // CRITICAL iOS FIX: Set up aggressive keyframe generation for video consumers
+    if (producer.kind === 'video') {
+      // Store reference for keyframe forcing
+      consumer._producer = producer;
+      consumer._isIOS = rtpCapabilities?.codecs?.some(codec => 
+        codec.mimeType?.toLowerCase() === 'video/h264' && 
+        codec.parameters?.['profile-level-id'] === '42e01f'
+      );
+      
+      if (consumer._isIOS) {
+        console.log(`📱 iOS video consumer detected, setting up keyframe forcing for ${consumerSocketId}`);
+        
+        // Force initial keyframe immediately
+        setTimeout(async () => {
+          try {
+            await consumer.requestKeyFrame();
+            console.log(`📱 Initial keyframe requested for iOS consumer ${consumer.id}`);
+          } catch (e) {
+            console.error(`Failed to request initial keyframe:`, e);
+          }
+        }, 100);
+        
+        // Set up periodic keyframe forcing every second for iOS
+        consumer._keyframeInterval = setInterval(async () => {
+          if (consumer.closed) {
+            clearInterval(consumer._keyframeInterval);
+            return;
+          }
+          
+          try {
+            await consumer.requestKeyFrame();
+            console.log(`🔑 Periodic keyframe requested for iOS consumer ${consumer.id}`);
+          } catch (e) {
+            // Consumer may be closed, stop interval
+            clearInterval(consumer._keyframeInterval);
+          }
+        }, 1000); // Request keyframe every second for iOS
+      }
+    }
+
     console.log(`📺 MEDIASOUP: Consumer created for ${consumerSocketId} from ${producerSocketId} (${producer.kind})`);
 
     return {
@@ -670,6 +713,21 @@ class MediasoupService {
 
   getCurrentStreamer() {
     return this.currentStreamer;
+  }
+
+  getConsumer(socketId, consumerId) {
+    const consumers = this.consumers.get(socketId);
+    if (!consumers) {
+      return null;
+    }
+
+    for (const consumer of consumers) {
+      if (consumer.id === consumerId) {
+        return consumer;
+      }
+    }
+    
+    return null;
   }
 
   hasActiveProducer() {
@@ -738,6 +796,11 @@ class MediasoupService {
     if (consumers) {
       for (const consumer of consumers) {
         try {
+          // Clean up iOS keyframe interval if it exists
+          if (consumer._keyframeInterval) {
+            clearInterval(consumer._keyframeInterval);
+            consumer._keyframeInterval = null;
+          }
           if (!consumer.closed) {
             consumer.close();
           }

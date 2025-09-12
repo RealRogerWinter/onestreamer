@@ -256,7 +256,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 }, 2000); // 2 second delay to sync with sound
                 
                 // Send chat message
-                await sendSystemMessage(`💨 ${req.user.username} let one rip!`, '💨 Fart Bot');
+                await sendSystemMessage(`💨 ${req.user.username} let one rip!`, '🤖 StreamBot');
             }
             
             // Special handling for Thunderstorm item
@@ -298,7 +298,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                 }, 2000); // 2 second delay to sync with sound
                 
                 // Send chat message
-                await sendSystemMessage(`⛈️ ${req.user.username} summoned a thunderstorm!`, '⛈️ Storm Bot');
+                await sendSystemMessage(`⛈️ ${req.user.username} summoned a thunderstorm!`, '🤖 StreamBot');
             }
             
             // Get interaction config for response
@@ -923,7 +923,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                     }, 2000); // 2 second delay to sync with sound
                     
                     // Send chat message
-                    await sendSystemMessage(`💨 ${req.user.username} let one rip!`, '💨 Fart Bot');
+                    await sendSystemMessage(`💨 ${req.user.username} let one rip!`, '🤖 StreamBot');
                 }
                 
                 // Special handling for Kill Switch after item consumption

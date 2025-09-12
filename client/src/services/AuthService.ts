@@ -16,6 +16,8 @@ interface User {
   is_banned?: boolean;
   accountStatus?: string;
   account_status?: string;
+  avatar_url?: string;
+  description?: string;
 }
 
 interface AuthResponse {
@@ -252,6 +254,7 @@ class AuthService {
     email?: string;
     currentPassword?: string;
     newPassword?: string;
+    description?: string;
   }): Promise<{ success: boolean; user?: User; message?: string }> {
     if (!this.token) {
       throw new Error('Not authenticated');
@@ -282,6 +285,71 @@ class AuthService {
         }
       }
       throw new Error(error.response?.data?.error || 'Failed to update profile');
+    }
+  }
+
+  async uploadAvatar(formData: FormData): Promise<{ success: boolean; avatar_url?: string; message?: string }> {
+    if (!this.token) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await axios.post<{ success: boolean; avatar_url: string; message?: string }>(
+        `${API_URL}/auth/avatar`,
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.token}`
+            // Don't set Content-Type header - axios will set it automatically with the correct boundary for multipart/form-data
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        const newToken = await this.refreshAccessToken();
+        if (newToken) {
+          return this.uploadAvatar(formData);
+        }
+      }
+      throw new Error(error.response?.data?.error || 'Failed to upload avatar');
+    }
+  }
+
+  async deleteAvatar(): Promise<{ success: boolean; message?: string }> {
+    if (!this.token) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await axios.delete<{ success: boolean; message?: string }>(
+        `${API_URL}/auth/avatar`,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.token}`
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        const newToken = await this.refreshAccessToken();
+        if (newToken) {
+          return this.deleteAvatar();
+        }
+      }
+      throw new Error(error.response?.data?.error || 'Failed to delete avatar');
+    }
+  }
+
+  async getUserProfile(username: string): Promise<any> {
+    try {
+      const response = await axios.get(`${API_URL}/auth/user/${username}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to get user profile');
     }
   }
 
