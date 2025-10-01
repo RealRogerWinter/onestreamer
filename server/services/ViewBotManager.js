@@ -82,8 +82,11 @@ class ViewBotManager {
       bot = new WebRTCViewBot(botId, videoFile);
       await bot.initialize();
     } else {
-      // Create Plain RTP viewbot (desktop only)
-      bot = new ViewBotSocketClient(botId, videoFile);
+      // Create Plain RTP viewbot (uses appropriate backend service internally)
+      // ViewBotSocketClient will detect if we're using LiveKit or MediaSoup
+      // ViewBotSocketClient expects: botId, serverUrl, mediaFile
+      const serverUrl = 'https://127.0.0.1:8443';
+      bot = new ViewBotSocketClient(botId, serverUrl, videoFile);
       await bot.connect();
     }
     

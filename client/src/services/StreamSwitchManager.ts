@@ -3,7 +3,7 @@
  * Provides fallback mechanisms and recovery strategies for WebRTC streaming
  */
 
-import { MediasoupClient } from './MediasoupClient';
+import { WebRTCClientAdapter } from './WebRTCClientAdapter';
 import { Socket } from 'socket.io-client';
 
 export interface StreamSwitchConfig {
@@ -25,7 +25,7 @@ export interface StreamSwitchResult {
 export type StreamSwitchState = 'idle' | 'switching' | 'retrying' | 'fallback' | 'fallback-no-media' | 'failed';
 
 export class StreamSwitchManager {
-  private mediasoupClient: MediasoupClient;
+  private mediasoupClient: WebRTCClientAdapter;
   private socket: Socket;
   private config: StreamSwitchConfig;
   private state: StreamSwitchState = 'idle';
@@ -45,7 +45,7 @@ export class StreamSwitchManager {
     onStateChange?: (newState: StreamSwitchState) => void;
   } = {};
 
-  constructor(mediasoupClient: MediasoupClient, socket: Socket, config?: Partial<StreamSwitchConfig>) {
+  constructor(mediasoupClient: WebRTCClientAdapter, socket: Socket, config?: Partial<StreamSwitchConfig>) {
     this.mediasoupClient = mediasoupClient;
     this.socket = socket;
     this.config = {

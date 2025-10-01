@@ -6,7 +6,7 @@
  * This allows them to see exactly what viewers see, including all MediaSoup effects.
  */
 
-import { MediasoupClient } from './MediasoupClient';
+import { WebRTCClientAdapter } from './WebRTCClientAdapter';
 import { Socket } from 'socket.io-client';
 
 export interface StreamerViewState {
@@ -18,7 +18,7 @@ export interface StreamerViewState {
 
 export class StreamerViewManager {
   private socket: Socket;
-  private mediasoupClient: MediasoupClient | null = null;
+  private mediasoupClient: WebRTCClientAdapter | null = null;
   private videoElement: HTMLVideoElement;
   private originalStream: MediaStream | null = null;
   private currentState: StreamerViewState;
@@ -431,7 +431,7 @@ export class StreamerViewManager {
         
       // console.log('🎬 STREAMER VIEW: Creating MediasoupClient with server URL:', mediasoupServerUrl);
       
-      this.mediasoupClient = new MediasoupClient({
+      this.mediasoupClient = new WebRTCClientAdapter({
         socket: this.viewerSocket,
         serverUrl: mediasoupServerUrl,
       });

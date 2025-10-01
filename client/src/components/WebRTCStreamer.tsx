@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Socket } from 'socket.io-client';
-import { MediasoupClient } from '../services/MediasoupClient';
+import { WebRTCClientAdapter } from '../services/WebRTCClientAdapter';
 import AudioLevelMeter from './AudioLevelMeter';
 import { AudioSettingsConfig, VideoSettingsConfig } from './StreamerSettings';
 import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
@@ -33,7 +33,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const mediasoupClientRef = useRef<MediasoupClient | null>(null);
+  const mediasoupClientRef = useRef<WebRTCClientAdapter | null>(null);
   const isProcessingRef = useRef(false);
   const lastStreamAttemptRef = useRef(0);
   const STREAM_DEBOUNCE_TIME = 2000; // 2 seconds between attempts
@@ -522,7 +522,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         // console.log('🌐 WEBRTC STREAMER: Initializing mediasoup for remote streaming...');
         const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}`;
         // console.log('🌐 WEBRTC STREAMER: Using server URL:', serverUrl);
-        mediasoupClientRef.current = new MediasoupClient({ socket, serverUrl });
+        mediasoupClientRef.current = new WebRTCClientAdapter({ socket, serverUrl });
         
         // Add timeout for initialization
         const initPromise = mediasoupClientRef.current.initialize();

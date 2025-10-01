@@ -3,10 +3,12 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const ViewBotWebRTCService = require('./ViewBotWebRTCService');
+const ViewBotLiveKitService = require('./ViewBotLiveKitService');
 
 class ViewbotService {
-  constructor(mediasoupService) {
+  constructor(mediasoupService, livekitService) {
     this.mediasoupService = mediasoupService;
+    this.livekitService = livekitService;
     this.isViewbotActive = false;
     this.viewbotStreamId = null;
     this.streamStartTime = null;
@@ -26,9 +28,23 @@ class ViewbotService {
     this.maxViewbots = Infinity;
     this.rtmpUrl = null;
     
-    // Initialize WebRTC ViewBot service
-    this.webrtcService = new ViewBotWebRTCService(mediasoupService);
-    this.useWebRTC = true; // Use WebRTC mode for proper MediaSoup integration
+    // Detect which backend to use
+    const useAdapter = process.env.USE_WEBRTC_ADAPTER === 'true';
+    const backend = process.env.WEBRTC_BACKEND || 'mediasoup';
+    
+    if (useAdapter && backend === 'livekit' && livekitService) {
+      // Use LiveKit ViewBot service
+      this.webrtcService = new ViewBotLiveKitService(livekitService);
+      this.backendType = 'livekit';
+      console.log('🤖 VIEWBOT: Using LiveKit backend for ViewBots');
+    } else {
+      // Use MediaSoup ViewBot service (default)
+      this.webrtcService = new ViewBotWebRTCService(mediasoupService);
+      this.backendType = 'mediasoup';
+      console.log('🤖 VIEWBOT: Using MediaSoup backend for ViewBots');
+    }
+    
+    this.useWebRTC = true; // Use WebRTC mode for proper integration
     
     // FFmpeg path for Windows
     this.ffmpegPath = 'C:\\Users\\18084\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.exe';

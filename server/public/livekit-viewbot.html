@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LiveKit ViewBot Streamer</title>
+    <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js"></script>
+</head>
+<body>
+    <h2>LiveKit ViewBot</h2>
+    <video id="videoPlayer" muted style="width: 640px; height: 480px; display: none;"></video>
+    <canvas id="canvas" style="width: 640px; height: 480px; display: none;"></canvas>
+    <div id="status">Initializing...</div>
+    
+    <script>
+        const { Room, RoomEvent, Track, createLocalVideoTrack, createLocalAudioTrack, VideoPresets } = LivekitClient;
+        
+        let room;
+        let videoTrack;
+        let audioTrack;
+        
+        // Get parameters from URL
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('token');
+        const videoUrl = params.get('video');
+        const wsUrl = params.get('ws') || 'wss://onestreamer.live/livekit';
+        
+        async function startStreaming() {
+            try {
+                updateStatus('Connecting to LiveKit...');
+                
+                // Create room
+                room = new Room({
+                    adaptiveStream: true,
+                    dynacast: true,
+                    videoCaptureDefaults: {
+                        resolution: VideoPresets.h720.resolution,
+                        frameRate: 30
+                    }
+                });
+                
+                // Connect to room
+                await room.connect(wsUrl, token);
+                updateStatus(`Connected as ${room.localParticipant.identity}`);
+                
+                // Setup video element with the video file
+                const video = document.getElementById('videoPlayer');
+                const canvas = document.getElementById('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                if (videoUrl) {
+                    video.src = videoUrl;
+                    video.loop = true;
+                    video.muted = true;
+                    
+                    await video.play();
+                    updateStatus('Video playing...');
+                    
+                    // Set canvas size to match video
+                    canvas.width = video.videoWidth || 1280;
+                    canvas.height = video.videoHeight || 720;
+                    
+                    // Create stream from canvas
+                    const stream = canvas.captureStream(30);
+                    
+                    // Draw video to canvas continuously
+                    function drawFrame() {
+                        if (video && !video.paused && !video.ended) {
+                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        }
+                        requestAnimationFrame(drawFrame);
+                    }
+                    drawFrame();
+                    
+                    // Get video and audio tracks from stream
+                    const videoTracks = stream.getVideoTracks();
+                    const audioTracks = video.captureStream ? video.captureStream().getAudioTracks() : [];
+                    
+                    if (videoTracks.length > 0) {
+                        // Publish video track
+                        const videoTrack = videoTracks[0];
+                        await room.localParticipant.publishTrack(videoTrack, {
+                            name: 'viewbot-video',
+                            simulcast: false,
+                            videoCodec: 'h264'
+                        });
+                        updateStatus('Publishing video...');
+                    }
+                    
+                    if (audioTracks.length > 0) {
+                        // Publish audio track
+                        const audioTrack = audioTracks[0];
+                        await room.localParticipant.publishTrack(audioTrack, {
+                            name: 'viewbot-audio'
+                        });
+                        updateStatus('Publishing audio...');
+                    }
+                    
+                    updateStatus(`Streaming: ${videoUrl}`);
+                } else {
+                    // Use test pattern if no video
+                    updateStatus('Using test pattern...');
+                    
+                    // Create test pattern on canvas
+                    canvas.width = 1280;
+                    canvas.height = 720;
+                    
+                    let frame = 0;
+                    function drawTestPattern() {
+                        const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'];
+                        const barWidth = canvas.width / colors.length;
+                        
+                        colors.forEach((color, i) => {
+                            ctx.fillStyle = color;
+                            ctx.fillRect(i * barWidth, 0, barWidth, canvas.height);
+                        });
+                        
+                        // Add frame counter
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.font = '48px Arial';
+                        ctx.fillText(`ViewBot Frame: ${frame++}`, 50, 100);
+                        
+                        requestAnimationFrame(drawTestPattern);
+                    }
+                    drawTestPattern();
+                    
+                    // Create stream from canvas
+                    const stream = canvas.captureStream(30);
+                    const videoTracks = stream.getVideoTracks();
+                    
+                    if (videoTracks.length > 0) {
+                        await room.localParticipant.publishTrack(videoTracks[0], {
+                            name: 'viewbot-video',
+                            simulcast: false
+                        });
+                        updateStatus('Streaming test pattern');
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Streaming error:', error);
+                updateStatus(`Error: ${error.message}`);
+            }
+        }
+        
+        function updateStatus(message) {
+            document.getElementById('status').textContent = message;
+            console.log(message);
+        }
+        
+        // Start streaming when page loads
+        if (token) {
+            startStreaming();
+        } else {
+            updateStatus('Error: No token provided');
+        }
+        
+        // Handle page unload
+        window.addEventListener('beforeunload', () => {
+            if (room) {
+                room.disconnect();
+            }
+        });
+    </script>
+</body>
+</html>

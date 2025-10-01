@@ -40,9 +40,18 @@ class WebRTCViewBotRotation {
     this.videoFiles = videoFiles;
     console.log(`📦 Loaded ${videoFiles.length} videos for WebRTC rotation`);
     
+    // Detect backend to determine if we should use WebRTC mode
+    // When LiveKit is enabled, we use Plain RTP mode (ViewBotSocketClient)
+    // which internally uses the appropriate backend service
+    const useAdapter = process.env.USE_WEBRTC_ADAPTER === 'true';
+    const backend = process.env.WEBRTC_BACKEND || 'mediasoup';
+    const isLiveKit = useAdapter && backend === 'livekit';
+    
     // Initialize ViewBot Manager
     this.viewBotManager = new ViewBotManager({
-      useWebRTCViewBots: true,  // Force WebRTC mode
+      // When LiveKit is enabled, use Plain RTP mode (ViewBotSocketClient handles backend)
+      // When MediaSoup, use WebRTC mode for browser compatibility
+      useWebRTCViewBots: !isLiveKit,  
       videoFolder: '/root/onestreamer/server/uploads'
     });
     

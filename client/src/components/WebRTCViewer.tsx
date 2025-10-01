@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Socket } from 'socket.io-client';
-import { MediasoupClient } from '../services/MediasoupClient';
+import { WebRTCClientAdapter } from '../services/WebRTCClientAdapter';
 import PerformanceMonitorComponent from './PerformanceMonitor';
 import { StreamSwitchManager, StreamSwitchState } from '../services/StreamSwitchManager';
 import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
@@ -19,7 +19,7 @@ interface WebRTCViewerProps {
 
 const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className = '', showPerformanceMonitor = false, forceInitialize = false }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const mediasoupClientRef = useRef<MediasoupClient | null>(null);
+  const mediasoupClientRef = useRef<WebRTCClientAdapter | null>(null);
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInitializingRef = useRef(false);
   const isSwitchingRef = useRef(false);
@@ -350,7 +350,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       // console.log('🌐 WEBRTC: Creating MediasoupClient with server URL:', serverUrl);
       // console.log('🌐 WEBRTC: Using HTTPS for transport connection');
       
-      mediasoupClientRef.current = new MediasoupClient({ 
+      mediasoupClientRef.current = new WebRTCClientAdapter({ 
         socket,
         serverUrl,
         onConnectionLost: () => {

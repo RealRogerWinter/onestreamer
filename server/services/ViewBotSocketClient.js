@@ -149,13 +149,15 @@ class ViewBotSocketClient {
         console.log(`🖥️ ViewBot ${this.botId}: Using Plain RTP transport (desktop only)`);
         
         // Step 2: Create MediaSoup Plain RTP transport and get ports
-        const rtpPorts = await this.createMediaSoupTransport();
+        const transportConfig = await this.createMediaSoupTransport();
         
-        // Step 3: Start GStreamer sending to MediaSoup ports
-        await this.startGStreamer(rtpPorts);
+        // Step 3: Start GStreamer (handles both LiveKit and MediaSoup)
+        await this.startGStreamer(transportConfig);
         
-        // Step 4: Create MediaSoup producers 
-        await this.createProducers(rtpPorts);
+        // Step 4: Create MediaSoup producers (only if not using LiveKit)
+        if (!transportConfig.useLiveKit) {
+          await this.createProducers(transportConfig);
+        }
       }
       
       this.isStreaming = true;
@@ -288,7 +290,21 @@ class ViewBotSocketClient {
       this.socket.emit('viewbot-create-transport', {
         botId: this.botId
       }, (response) => {
-        if (response && response.videoPort && response.audioPort) {
+        // Check if server returned LiveKit configuration
+        if (response && response.useLiveKit) {
+          console.log(`🎮 ViewBot ${this.botId}: Server is using LiveKit, switching to whipsink pipeline`);
+          this.transport = {
+            useLiveKit: true,
+            token: response.token,
+            whipUrl: response.whipUrl
+          };
+          // Return special LiveKit indicator
+          resolve({
+            useLiveKit: true,
+            token: response.token,
+            whipUrl: response.whipUrl
+          });
+        } else if (response && response.videoPort && response.audioPort) {
           console.log(`✅ ViewBot ${this.botId}: Got MediaSoup ports - Video: ${response.videoPort}, Audio: ${response.audioPort}`);
           this.transport = response;
           this.rtpPorts = {
@@ -310,13 +326,8 @@ class ViewBotSocketClient {
   /**
    * Start GStreamer pipeline
    */
-  async startGStreamer(rtpPorts) {
+  async startGStreamer(transportConfig) {
     return new Promise((resolve, reject) => {
-      // Use MediaSoup-assigned ports
-      this.rtpPorts = rtpPorts;
-      
-      console.log(`🎥 ViewBot ${this.botId}: Starting GStreamer with MediaSoup ports - Video: ${rtpPorts.video}, Audio: ${rtpPorts.audio}`);
-      
       // Only use real video files, no test patterns
       if (!this.mediaFile || !fs.existsSync(this.mediaFile)) {
         console.error(`❌ ViewBot ${this.botId}: No video file available (${this.mediaFile})`);
@@ -326,27 +337,68 @@ class ViewBotSocketClient {
       
       console.log(`📹 ViewBot ${this.botId}: Streaming video file: ${this.mediaFile}`);
       
-      // Use simpler, more compatible pipeline
-      const pipelineArgs = [
-        'filesrc', `location=${this.mediaFile}`,
-        '!', 'decodebin', 'name=dec', 'use-buffering=false',
-        'dec.',
-        '!', 'queue', 'max-size-buffers=100', 'max-size-time=100000000', 'max-size-bytes=0', 'min-threshold-buffers=1',
-        '!', 'videoconvert',
-        '!', 'videoscale',
-        '!', 'video/x-raw,width=1280,height=720',
-        '!', 'x264enc', 'tune=zerolatency', 'bitrate=2000', 'speed-preset=ultrafast', 'key-int-max=30', 'bframes=0',
-        '!', 'rtph264pay', 'pt=102', 'ssrc=11111111',
-        '!', 'udpsink', 'host=127.0.0.1', `port=${this.rtpPorts.video}`,
-        'dec.',
-        '!', 'queue', 'max-size-buffers=100', 'max-size-time=100000000', 'max-size-bytes=0', 'min-threshold-buffers=1',
-        '!', 'audioconvert',
-        '!', 'audioresample',
-        '!', 'audio/x-raw,rate=48000,channels=2',
-        '!', 'opusenc',
-        '!', 'rtpopuspay', 'pt=101', 'ssrc=22222222',
-        '!', 'udpsink', 'host=127.0.0.1', `port=${this.rtpPorts.audio}`
-      ];
+      let pipelineArgs;
+      
+      // Check if we're using LiveKit
+      if (transportConfig.useLiveKit) {
+        console.log(`🎮 ViewBot ${this.botId}: Starting LiveKit GStreamer pipeline with whipsink`);
+        
+        // Build LiveKit pipeline with whipclientsink
+        const whipUrl = `${transportConfig.whipUrl}?authorization=Bearer%20${encodeURIComponent(transportConfig.token)}`;
+        
+        pipelineArgs = [
+          'filesrc', `location=${this.mediaFile}`,
+          '!', 'decodebin', 'name=dec',
+          
+          // Video branch
+          'dec.',
+          '!', 'queue',
+          '!', 'videoconvert',
+          '!', 'videoscale',
+          '!', 'video/x-raw,width=1280,height=720,framerate=30/1',
+          '!', 'whipclientsink.video_0',
+          
+          // Audio branch  
+          'dec.',
+          '!', 'queue',
+          '!', 'audioconvert',
+          '!', 'audioresample',
+          '!', 'audio/x-raw,rate=48000,channels=2',
+          '!', 'whipclientsink.audio_0',
+          
+          // WHIP sink
+          'whipclientsink',
+          'name=whipclientsink',
+          `signaller::whip-endpoint=${whipUrl}`,
+          'signaller::use-link-headers=true'
+        ];
+        
+      } else {
+        // MediaSoup pipeline with RTP ports
+        this.rtpPorts = transportConfig;
+        console.log(`🎥 ViewBot ${this.botId}: Starting MediaSoup GStreamer pipeline - Video: ${transportConfig.video}, Audio: ${transportConfig.audio}`);
+        
+        pipelineArgs = [
+          'filesrc', `location=${this.mediaFile}`,
+          '!', 'decodebin', 'name=dec', 'use-buffering=false',
+          'dec.',
+          '!', 'queue', 'max-size-buffers=100', 'max-size-time=100000000', 'max-size-bytes=0', 'min-threshold-buffers=1',
+          '!', 'videoconvert',
+          '!', 'videoscale',
+          '!', 'video/x-raw,width=1280,height=720',
+          '!', 'x264enc', 'tune=zerolatency', 'bitrate=2000', 'speed-preset=ultrafast', 'key-int-max=30', 'bframes=0',
+          '!', 'rtph264pay', 'pt=102', 'ssrc=11111111',
+          '!', 'udpsink', 'host=127.0.0.1', `port=${this.rtpPorts.video}`,
+          'dec.',
+          '!', 'queue', 'max-size-buffers=100', 'max-size-time=100000000', 'max-size-bytes=0', 'min-threshold-buffers=1',
+          '!', 'audioconvert',
+          '!', 'audioresample',
+          '!', 'audio/x-raw,rate=48000,channels=2',
+          '!', 'opusenc',
+          '!', 'rtpopuspay', 'pt=101', 'ssrc=22222222',
+          '!', 'udpsink', 'host=127.0.0.1', `port=${this.rtpPorts.audio}`
+        ];
+      }
       
       console.log(`🎥 ViewBot ${this.botId}: GStreamer command:`, 'gst-launch-1.0', pipelineArgs.join(' '));
       

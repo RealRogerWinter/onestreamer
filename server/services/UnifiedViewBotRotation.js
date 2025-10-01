@@ -10,10 +10,16 @@ const simpleViewBotRotationInstance = require('./SimpleViewBotRotation');
 const WebRTCViewBotRotation = require('./WebRTCViewBotRotation');
 
 class UnifiedViewBotRotation {
-  constructor(io, streamService, mediasoupService) {
+  constructor(io, streamService, mediasoupService, livekitService) {
     this.io = io;
     this.streamService = streamService;
     this.mediasoupService = mediasoupService;
+    this.livekitService = livekitService;
+    
+    // Detect which backend to use
+    const useAdapter = process.env.USE_WEBRTC_ADAPTER === 'true';
+    const backend = process.env.WEBRTC_BACKEND || 'mediasoup';
+    this.backendType = (useAdapter && backend === 'livekit') ? 'livekit' : 'mediasoup';
     
     // Current mode - default to WebRTC for mobile compatibility
     this.mode = 'webrtc'; // 'plainrtp' or 'webrtc'
@@ -27,7 +33,7 @@ class UnifiedViewBotRotation {
     this.videoFiles = [];
     this.isRotating = false;
     
-    console.log('🎮 UnifiedViewBotRotation: Initialized');
+    console.log(`🎮 UnifiedViewBotRotation: Initialized with ${this.backendType} backend`);
   }
   
   /**

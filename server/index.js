@@ -540,7 +540,25 @@ const sessionService = new SessionService();
 const takeoverService = new TakeoverService(redisClient, sessionService);
 const testStreamService = new TestStreamService();
 const mediaStreamService = new SimpleMediaStreamService();
-const mediasoupService = new MediasoupService();
+// WebRTC service initialization - with optional adapter support
+let mediasoupService;
+let usingAdapter = false;
+
+if (process.env.USE_WEBRTC_ADAPTER === 'true') {
+  // Use adapter for backend switching capability
+  console.log('🔄 WebRTC Adapter enabled - backend switching available');
+  const WebRTCAdapterV2 = require('./services/WebRTCAdapterV2');
+  mediasoupService = new WebRTCAdapterV2();
+  usingAdapter = true;
+  global.webrtcAdapter = mediasoupService; // Make adapter available globally
+} else {
+  // Use standard MediaSoup (default for compatibility)
+  console.log('📡 Using standard MediaSoup service');
+  mediasoupService = new MediasoupService();
+}
+
+// Store service type for debugging
+global.mediasoupServiceType = usingAdapter ? 'adapter' : 'direct';
 const audioOptimizationService = new AudioOptimizationService();
 const resourceMonitor = new ResourceMonitor();
 const accountService = new AccountService();
@@ -2528,6 +2546,77 @@ app.post('/api/mediasoup/restart-ice', async (req, res) => {
 app.get('/api/mediasoup/stats', (req, res) => {
   const stats = mediasoupService.getStats();
   res.json(stats);
+});
+
+// WebRTC Backend Management Endpoints (only when adapter is enabled)
+app.get('/api/webrtc/backend', (req, res) => {
+  if (!usingAdapter) {
+    return res.json({
+      backend: 'mediasoup',
+      adapterEnabled: false,
+      message: 'Backend switching not available. Set USE_WEBRTC_ADAPTER=true to enable.'
+    });
+  }
+  
+  const adapter = global.webrtcAdapter;
+  res.json({
+    backend: adapter.getBackendType(),
+    adapterEnabled: true,
+    info: adapter.getBackendInfo(),
+    stats: mediasoupService.getStats()
+  });
+});
+
+// Admin endpoint to check backend configuration
+app.get('/api/admin/webrtc/config', (req, res) => {
+  const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
+  const correctKey = process.env.ADMIN_KEY || '***REMOVED-ADMIN-KEY***';
+  
+  if (adminKey !== correctKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  res.json({
+    adapterEnabled: usingAdapter,
+    currentBackend: usingAdapter ? global.webrtcAdapter.getBackendType() : 'mediasoup',
+    availableBackends: ['mediasoup', 'livekit'],
+    environmentVariables: {
+      USE_WEBRTC_ADAPTER: process.env.USE_WEBRTC_ADAPTER || 'false',
+      WEBRTC_BACKEND: process.env.WEBRTC_BACKEND || 'mediasoup'
+    }
+  });
+});
+
+// LiveKit Token endpoint (for testing)
+app.get('/api/livekit/token', async (req, res) => {
+  if (!usingAdapter || !global.webrtcAdapter || global.webrtcAdapter.getBackendType() !== 'livekit') {
+    return res.status(400).json({ 
+      error: 'LiveKit backend not active',
+      hint: 'Enable with: USE_WEBRTC_ADAPTER=true WEBRTC_BACKEND=livekit'
+    });
+  }
+  
+  const identity = req.query.identity || `user-${Date.now()}`;
+  const roomName = req.query.room || 'onestreamer-main';
+  
+  try {
+    // Get the LiveKit service through the adapter's backend
+    const livekitService = global.webrtcAdapter._backend;
+    const token = await livekitService.generateToken(identity, {
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true
+    });
+    
+    res.json({
+      token: token,
+      url: livekitService.config.wsUrl,
+      roomName: roomName,
+      identity: identity
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Import JWT admin authentication middleware
@@ -7033,6 +7122,42 @@ io.on('connection', async (socket) => {
     console.log(`🚚 SERVER: ViewBot ${data.botId} requesting Plain RTP transports (LEGACY - not mobile compatible)`);
     
     try {
+      // Check if we're using LiveKit backend
+      const useAdapter = process.env.USE_WEBRTC_ADAPTER === 'true';
+      const backend = process.env.WEBRTC_BACKEND || 'mediasoup';
+      const isLiveKit = useAdapter && backend === 'livekit';
+      
+      if (isLiveKit) {
+        // For LiveKit, ViewBots should use GStreamer with whipsink
+        // Return special response indicating LiveKit mode
+        console.log(`🎮 SERVER: ViewBot ${data.botId} should use LiveKit GStreamer pipeline`);
+        
+        // Get LiveKit service from adapter
+        const livekitService = global.webrtcAdapter._backend;
+        
+        // Get LiveKit token for the ViewBot
+        const token = await livekitService.generateToken(data.botId, {
+          canPublish: true,
+          canSubscribe: false,
+          canPublishData: false
+        });
+        // Use the nginx-proxied WHIP endpoint for proper SSL handling
+        const whipUrl = 'https://onestreamer.live/livekit/rtc';
+        
+        callback({
+          useLiveKit: true,
+          token: token,
+          whipUrl: whipUrl,
+          message: 'Use LiveKit GStreamer pipeline with whipsink'
+        });
+        return;
+      }
+      
+      // MediaSoup path - create Plain RTP transports
+      if (!mediasoupService.router) {
+        throw new Error('MediaSoup router not available');
+      }
+      
       // Create TWO Plain RTP transports - one for video, one for audio
       const videoTransport = await mediasoupService.router.createPlainTransport({
         listenIp: {
@@ -8271,13 +8396,18 @@ async function startServer() {
   timeTrackingService.setSocketIO(io); // Pass Socket.IO instance to time tracking service
   console.log('✅ TIME: Started periodic cleanup for time tracking service');
   
-  // Initialize mediasoup worker
+  // Initialize mediasoup worker (restored to original)
   try {
     await mediasoupService.initialize();
     console.log('✅ MEDIASOUP: Initialization completed');
     
     // Initialize ViewbotService after MediasoupService is ready
-    viewbotService = new ViewbotService(mediasoupService);
+    // Pass both services so ViewbotService can choose based on backend
+    let livekitService = null;
+    if (usingAdapter && global.webrtcAdapter && global.webrtcAdapter.getBackendType() === 'livekit') {
+      livekitService = global.webrtcAdapter._backend;
+    }
+    viewbotService = new ViewbotService(mediasoupService, livekitService);
     console.log('✅ VIEWBOT: ViewbotService initialized');
     
     // Initialize ViewBotWebRTCService for proper WebRTC connections (TURN support)
@@ -8389,7 +8519,7 @@ async function startServer() {
         global.viewBotManager = viewBotManager;
         
         // Create Unified Rotation controller
-        const unifiedRotation = new UnifiedViewBotRotation(io, streamService, mediasoupService);
+        const unifiedRotation = new UnifiedViewBotRotation(io, streamService, mediasoupService, livekitService);
         const videoFiles = await getVideoFiles();
         await unifiedRotation.initialize(videoFiles);
         global.unifiedViewBotRotation = unifiedRotation;
