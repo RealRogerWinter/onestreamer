@@ -513,6 +513,51 @@ function initializeDatabase() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_custom_emojis_code ON custom_emojis(code)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_custom_emojis_active ON custom_emojis(is_active)`);
 
+        // Clips System Tables
+        // Note: Foreign keys removed to allow clips from continuous recording sessions
+        // which don't have entries in the recordings table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS clips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clip_id TEXT UNIQUE NOT NULL,
+                recording_id TEXT,
+                user_id INTEGER,
+                streamer_user_id INTEGER,
+                title TEXT NOT NULL,
+                description TEXT,
+                start_time_ms INTEGER NOT NULL,
+                end_time_ms INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                file_path TEXT,
+                file_size INTEGER,
+                thumbnail_path TEXT,
+                status TEXT DEFAULT 'processing',
+                view_count INTEGER DEFAULT 0,
+                is_public BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        db.run(`
+            CREATE TABLE IF NOT EXISTS clip_views (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clip_id TEXT NOT NULL,
+                user_id INTEGER,
+                ip_address TEXT,
+                viewed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (clip_id) REFERENCES clips (clip_id),
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        `);
+
+        db.run(`CREATE INDEX IF NOT EXISTS idx_clips_clip_id ON clips(clip_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_clips_user ON clips(user_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_clips_status ON clips(status)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_clips_public ON clips(is_public)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_clip_views_clip ON clip_views(clip_id)`);
+
         // Add missing columns if they don't exist (migration)
         db.run(`ALTER TABLE recordings ADD COLUMN session_id TEXT`, (err) => {
             if (err && !err.message.includes('duplicate column')) {

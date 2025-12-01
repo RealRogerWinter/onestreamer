@@ -11,6 +11,7 @@ interface StreamViewerProps {
   hasActiveStream: boolean;
   streamType?: string | null;
   forceViewerMode?: boolean;
+  currentStreamerId?: string | null;  // CRITICAL: Pass streamerId to detect stream switches
   onStreamStart?: () => void;
   onStreamStop?: () => void;
   audioSettings?: AudioSettingsConfig;
@@ -25,6 +26,7 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
   hasActiveStream,
   streamType,
   forceViewerMode = false,
+  currentStreamerId,  // CRITICAL: Used to detect stream switches
   onStreamStart,
   onStreamStop,
   audioSettings,
@@ -76,6 +78,7 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
             isActive={(hasActiveStream || forceViewerMode) && !isStreaming}
             className="webrtc-viewer-container"
             forceInitialize={forceViewerMode}
+            currentStreamerId={currentStreamerId}  // CRITICAL: Pass streamerId for switch detection
           />
           {hasActiveStream || forceViewerMode ? (
             <div className="viewer-indicator">

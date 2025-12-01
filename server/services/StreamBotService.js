@@ -5,7 +5,8 @@ const axios = require('axios');
 class StreamBotService extends EventEmitter {
     constructor(database) {
         super();
-        this.db = database;
+        // Handle both direct sqlite3 database and wrapper object
+        this.db = database.db || database;
         this.intervalId = null;
         this.isInitialized = false;
         this.chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';

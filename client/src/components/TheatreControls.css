@@ -33,6 +33,7 @@
 .theatre-controls-wrapper .theatre-volume-btn,
 .theatre-controls-wrapper .theatre-volume-slider,
 .theatre-controls-wrapper .theatre-fullscreen-btn,
+.theatre-controls-wrapper .theatre-clip-btn,
 .theatre-controls-wrapper .theatre-status-effects .buff-item,
 .theatre-controls-wrapper .theatre-settings-close,
 .theatre-controls-wrapper .tooltip-close-btn,
@@ -800,6 +801,54 @@
 
 .theatre-fullscreen-btn:active {
   transform: scale(0.95);
+}
+
+/* Clip Button */
+.theatre-clip-btn {
+  height: 48px;
+  padding: 0 16px;
+  border: none;
+  background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.theatre-clip-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.theatre-clip-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #a569bd 0%, #9b59b6 100%);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+  box-shadow: 0 4px 15px rgba(155, 89, 182, 0.4);
+}
+
+.theatre-clip-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.theatre-clip-btn:disabled {
+  background: rgba(100, 100, 100, 0.5);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.theatre-clip-btn span {
+  white-space: nowrap;
 }
 
 /* Mobile Responsiveness */

@@ -15,9 +15,10 @@ interface WebRTCViewerProps {
   className?: string;
   showPerformanceMonitor?: boolean;
   forceInitialize?: boolean;
+  currentStreamerId?: string | null;  // CRITICAL: Stream switching detection
 }
 
-const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className = '', showPerformanceMonitor = false, forceInitialize = false }) => {
+const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className = '', showPerformanceMonitor = false, forceInitialize = false, currentStreamerId }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediasoupClientRef = useRef<WebRTCClientAdapter | null>(null);
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -44,7 +45,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const streamSwitchManagerRef = useRef<StreamSwitchManager | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const webrtcReconnectAttempts = useRef(0);
-  
+  const lastStreamUpdateRef = useRef<number>(0);
+  const streamUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const streamSwitchAbortController = useRef<AbortController | null>(null);
+
   // Initialize volume from cookie or default
   const [volume, setVolume] = useState(() => {
     const savedVolume = CookieService.getCookie(COOKIE_NAMES.VOLUME);
@@ -93,6 +97,13 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       return;
     }
 
+    // Only initialize if we don't already have a working connection
+    // This prevents destroying working connections when dependencies change
+    if (mediasoupClientRef.current && isConnected) {
+      // console.log('📺 WEBRTC: Skipping init - already connected');
+      return;
+    }
+
     // Debounce initialization to prevent rapid switching issues
     // Use shorter delay when force initializing (takeover scenario)
     const initDelay = forceInitialize ? 10 : 100;
@@ -107,9 +118,128 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         clearTimeout(initTimeoutRef.current);
         initTimeoutRef.current = null;
       }
-      cleanupSync();
+      // DON'T cleanup here - only cleanup when socket disconnects or isActive becomes false
+      // The cleanup on dependency change was destroying working connections
     };
-  }, [isActive, socket?.connected, forceInitialize]);
+  }, [isActive, socket?.connected, forceInitialize, isConnected]);
+
+  // CRITICAL FIX: Detect streamer changes and force reconnection
+  // This ensures viewers switch to the new stream when a takeover happens
+  const previousStreamerIdRef = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    // Skip on first render (undefined → initial value)
+    if (previousStreamerIdRef.current === undefined) {
+      previousStreamerIdRef.current = currentStreamerId;
+      return;
+    }
+
+    // Skip if streamer hasn't changed
+    if (previousStreamerIdRef.current === currentStreamerId) {
+      return;
+    }
+
+    const oldStreamerId = previousStreamerIdRef.current;
+    previousStreamerIdRef.current = currentStreamerId;
+
+    // If there's no new streamer, don't do anything special
+    if (!currentStreamerId) {
+      console.log(`🔄 STREAM-SWITCH: Streamer ended (was: ${oldStreamerId})`);
+      return;
+    }
+
+    // If our currentStreamIdRef already matches the new streamer, we're already connected
+    if (currentStreamIdRef.current === currentStreamerId) {
+      console.log(`🔄 STREAM-SWITCH: Already connected to ${currentStreamerId}, skipping reconnect`);
+      return;
+    }
+
+    console.log(`🚨 STREAM-SWITCH DETECTED: Streamer changed from ${oldStreamerId || 'none'} to ${currentStreamerId}`);
+    console.log(`🔄 STREAM-SWITCH: Current connection ref: ${currentStreamIdRef.current}, isConnected: ${isConnected}, isInitializing: ${isInitializingRef.current}`);
+
+    // CRITICAL: Force reconnection to new stream
+    // This is the key fix - when App.tsx tells us the streamer changed, we MUST reconnect
+    const forceReconnectToNewStream = async () => {
+      console.log(`🔄 STREAM-SWITCH: Initiating forced reconnection to ${currentStreamerId}`);
+
+      // Cancel any pending operations
+      if (streamSwitchAbortController.current) {
+        streamSwitchAbortController.current.abort();
+      }
+      streamSwitchAbortController.current = new AbortController();
+
+      // Update our tracking ref immediately
+      currentStreamIdRef.current = currentStreamerId;
+
+      // Set loading state
+      setIsLoading(true);
+      setError('Connecting to new stream...');
+      setSwitchState('switching');
+      setIsConnected(false);
+
+      // Clean up existing connection
+      if (mediasoupClientRef.current) {
+        console.log(`🧹 STREAM-SWITCH: Cleaning up connection to old stream ${oldStreamerId}`);
+        try {
+          isInitializingRef.current = false; // Reset to allow new init
+          await mediasoupClientRef.current.cleanup();
+          mediasoupClientRef.current = null;
+        } catch (error) {
+          console.error('❌ STREAM-SWITCH: Cleanup error:', error);
+        }
+      }
+
+      // Reset video element
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      }
+
+      // Small delay to ensure cleanup is complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Check if we're still supposed to connect to this streamer (might have changed again)
+      if (currentStreamIdRef.current !== currentStreamerId) {
+        console.log(`🔄 STREAM-SWITCH: Streamer changed again during cleanup, aborting reconnect to ${currentStreamerId}`);
+        return;
+      }
+
+      // Initialize viewer connection to new stream
+      console.log(`🔄 STREAM-SWITCH: Initializing connection to new stream ${currentStreamerId}`);
+      try {
+        await initializeViewer(true); // Force initialization
+        setSwitchState('idle');
+        setError(null);
+        console.log(`✅ STREAM-SWITCH: Successfully connected to ${currentStreamerId}`);
+
+        // Restart viewing session for points tracking
+        socket.emit('join-as-viewer');
+      } catch (error) {
+        console.error(`❌ STREAM-SWITCH: Failed to connect to ${currentStreamerId}:`, error);
+        setSwitchState('failed');
+        setError(`Failed to connect to new stream. Please refresh the page.`);
+
+        // Retry once after a delay
+        setTimeout(async () => {
+          if (currentStreamIdRef.current === currentStreamerId) {
+            console.log(`🔄 STREAM-SWITCH: Retrying connection to ${currentStreamerId}`);
+            try {
+              await initializeViewer(true);
+              setSwitchState('idle');
+              setError(null);
+              socket.emit('join-as-viewer');
+            } catch (retryError) {
+              console.error(`❌ STREAM-SWITCH: Retry failed:`, retryError);
+            }
+          }
+        }, 2000);
+      }
+    };
+
+    // Execute the reconnection
+    forceReconnectToNewStream();
+
+  }, [currentStreamerId, socket]);
 
   // Handle video events and apply volume
   useEffect(() => {
@@ -284,9 +414,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const initializeViewer = async (forceInit: boolean = false) => {
     const browserInfo = getBrowserInfo();
     
-    // Clear any stuck states
-    if (switchState === 'switching' || switchState === 'retrying') {
-      console.log('📺 WEBRTC: Clearing stuck state...');
+    // Clear any stuck states - but only if we're not in a legitimate switch operation
+    // The forceInit flag indicates a legitimate switch, so don't clear in that case
+    if (!forceInit && (switchState === 'switching' || switchState === 'retrying')) {
+      console.log('📺 WEBRTC: Clearing stuck state (not from forceInit)...');
       setSwitchState('idle');
       setError(null);
     }
@@ -350,7 +481,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       // console.log('🌐 WEBRTC: Creating MediasoupClient with server URL:', serverUrl);
       // console.log('🌐 WEBRTC: Using HTTPS for transport connection');
       
-      mediasoupClientRef.current = new WebRTCClientAdapter({ 
+      mediasoupClientRef.current = new WebRTCClientAdapter({
         socket,
         serverUrl,
         onConnectionLost: () => {
@@ -365,11 +496,90 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           setError(null);
           setDebugInfo(prev => ({ ...prev, error: 'Recovering...', timestamp: new Date().toISOString() }));
         },
+        onStreamUpdate: async () => {
+          // CRITICAL FIX: Use streamId-based deduplication instead of time-based debouncing
+          // Get the current streamer ID from the client
+          const newStreamerId = mediasoupClientRef.current?.getCurrentStreamer();
+
+          // Skip if this is the same stream we're already showing
+          if (newStreamerId && newStreamerId === currentStreamIdRef.current) {
+            console.log(`⏭️ WEBRTC: Skipping duplicate stream update for ${newStreamerId} (already active)`);
+            return;
+          }
+
+          console.log(`🔄 WEBRTC: Stream update triggered - switching from ${currentStreamIdRef.current || 'none'} to ${newStreamerId}`);
+
+          // Clear any pending update timeout
+          if (streamUpdateTimeoutRef.current) {
+            clearTimeout(streamUpdateTimeoutRef.current);
+            streamUpdateTimeoutRef.current = null;
+          }
+
+          try {
+            if (mediasoupClientRef.current && videoRef.current) {
+              const video = videoRef.current;
+
+              // Store current stream for cleanup
+              const oldStream = video.srcObject as MediaStream | null;
+
+              // Wait a moment for new tracks to be fully available
+              await new Promise(resolve => setTimeout(resolve, 100));
+
+              // Get new stream - LiveKit Client now handles track cleanup internally
+              const newStream = await mediasoupClientRef.current.consume();
+
+              if (newStream && newStream.getTracks().length > 0) {
+                console.log(`🔄 WEBRTC: Switching to new stream with ${newStream.getTracks().length} tracks`);
+
+                // Pause video before switching to prevent glitches
+                video.pause();
+
+                // Set the new stream
+                video.srcObject = newStream;
+
+                // Apply audio settings
+                video.muted = !userInteracted;
+                video.volume = userInteracted ? volume : 0.8;
+
+                // Load and play the new stream
+                video.load();
+
+                try {
+                  await video.play();
+                  console.log('✅ WEBRTC: Stream updated and playing successfully');
+                } catch (playError) {
+                  console.log('⚠️ WEBRTC: Autoplay prevented after stream update:', playError);
+                  setPlaybackState('paused');
+                }
+
+                // Old stream cleanup is now handled by LiveKit Client
+              } else {
+                console.log('⚠️ WEBRTC: No tracks available in new stream, will retry...');
+
+                // Retry after a short delay if no tracks available
+                streamUpdateTimeoutRef.current = setTimeout(async () => {
+                  if (mediasoupClientRef.current && videoRef.current) {
+                    const retryStream = await mediasoupClientRef.current.consume();
+                    if (retryStream && retryStream.getTracks().length > 0) {
+                      videoRef.current.pause();
+                      videoRef.current.srcObject = retryStream;
+                      videoRef.current.load();
+                      await videoRef.current.play().catch(e => console.log('Autoplay prevented:', e));
+                      console.log('✅ WEBRTC: Stream updated successfully (retry)');
+                    }
+                  }
+                }, 500);
+              }
+            }
+          } catch (error) {
+            console.error('❌ WEBRTC: Failed to update stream:', error);
+          }
+        },
         onDebugInfo: (info: any) => {
-          setDebugInfo(prev => ({ 
-            ...prev, 
-            ...info, 
-            timestamp: new Date().toISOString() 
+          setDebugInfo(prev => ({
+            ...prev,
+            ...info,
+            timestamp: new Date().toISOString()
           }));
         }
       } as any);
@@ -816,7 +1026,12 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     const updateConnectionInfo = () => {
       const client = mediasoupClientRef.current;
       if (client) {
-        setConnectionState(client.connectionState);
+        const clientState = client.connectionState;
+        // Only update connectionState from client if we're not successfully connected
+        // This prevents polling from overriding a successful connection state
+        if (!isConnected || clientState === 'connected') {
+          setConnectionState(clientState);
+        }
         setReconnectionAttempts(client.reconnectionInfo.attempts);
       }
     };
@@ -954,11 +1169,11 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       (globalThis as any)._webrtcFallbackTimer = fallbackTimer;
     };
 
-    const handleStreamReady = async (data: { 
-      newStreamId: string, 
-      streamerId: string, 
-      streamType?: string, 
-      isTestStream?: boolean, 
+    const handleStreamReady = async (data: {
+      newStreamId: string,
+      streamerId: string,
+      streamType?: string,
+      isTestStream?: boolean,
       isWebRTC?: boolean,
       hasVideo?: boolean,
       hasAudio?: boolean,
@@ -966,31 +1181,57 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       fallback?: boolean,
       timestamp?: number
     }) => {
-      // console.log('🎬 WEBRTC: Received stream-ready notification:', data);
-      // console.log(`🎬 WEBRTC: Viewer state when stream-ready received - isActive: ${isActive}, isConnected: ${isConnected}, switchState: ${switchState}`);
-      
-      // Check if this stream-ready is for our expected takeover
-      const isExpectedStream = currentStreamIdRef.current === data.newStreamId;
-      const isFreshStream = !currentStreamIdRef.current || currentStreamIdRef.current !== data.newStreamId;
-      const isAlreadyConnected = isConnected && currentStreamIdRef.current === data.newStreamId;
-      
-      // console.log(`🔍 WEBRTC: Stream-ready analysis - isExpected: ${isExpectedStream}, isFresh: ${isFreshStream}, alreadyConnected: ${isAlreadyConnected}`);
-      
-      // If we're already successfully connected to this stream, ignore the stream-ready
-      if (isAlreadyConnected) {
-        // console.log('✅ WEBRTC: Already connected to this stream, ignoring duplicate stream-ready');
+      console.log('🎬 WEBRTC: Received stream-ready notification:', data);
+      console.log(`🎬 WEBRTC: Current state - streamId: ${currentStreamIdRef.current}, isConnected: ${isConnected}, switchState: ${switchState}`);
+
+      // CRITICAL FIX: Don't process stream-ready while initialization is in progress
+      // This prevents race conditions where a stream-ready arrives mid-init and destroys a working connection
+      if (isInitializingRef.current) {
+        console.log(`⏭️ WEBRTC: Ignoring stream-ready during initialization (streamId: ${data.newStreamId})`);
         return;
       }
-      
-      if (!isExpectedStream && !isFreshStream) {
-        // console.log('⚠️ WEBRTC: Stream-ready for unexpected stream, ignoring');
+
+      // CRITICAL FIX: Comprehensive deduplication to prevent unnecessary reconnections
+      const isSameStream = currentStreamIdRef.current === data.newStreamId;
+      const isAlreadyConnected = isConnected && switchState === 'idle';
+      const isCurrentlySwitchingToThis = isSameStream &&
+        (switchState === 'switching' || switchState === 'retrying');
+
+      // Skip if: same stream + connected OR same stream + currently switching to it
+      if (isSameStream && (isAlreadyConnected || isCurrentlySwitchingToThis)) {
+        console.log(`⏭️ WEBRTC: Ignoring duplicate stream-ready for ${data.newStreamId} (connected: ${isAlreadyConnected}, switching: ${isCurrentlySwitchingToThis})`);
         return;
       }
-      
+
+      // If this is a different stream, process it
+      const isDifferentStream = !isSameStream;
+
+      if (isDifferentStream) {
+        console.log(`🔄 WEBRTC: New stream detected - switching from ${currentStreamIdRef.current || 'none'} to ${data.newStreamId}`);
+      } else {
+        console.log(`🔄 WEBRTC: Retrying connection to ${data.newStreamId} (previous attempt may have failed)`);
+      }
+
+      // CRITICAL FIX: Cancel any pending stream switch operations
+      if (streamSwitchAbortController.current) {
+        console.log('🛑 WEBRTC: Canceling previous stream switch operation');
+        streamSwitchAbortController.current.abort();
+      }
+
+      // Create new abort controller for this stream switch
+      streamSwitchAbortController.current = new AbortController();
+      const switchSignal = streamSwitchAbortController.current.signal;
+
       try {
-        // console.log(`🎬 WEBRTC: Processing stream-ready for ${data.newStreamId} (verified: ${data.producerVerified})`);
-        
-        if (isFreshStream) {
+        // Check if operation was cancelled
+        if (switchSignal.aborted) {
+          console.log('🛑 WEBRTC: Stream switch was cancelled before starting');
+          return;
+        }
+
+        console.log(`🎬 WEBRTC: Processing stream-ready for ${data.newStreamId} (verified: ${data.producerVerified})`);
+
+        if (isDifferentStream) {
           // This is a fresh stream (not from takeover), need to setup
           // console.log('🔄 WEBRTC: Fresh stream detected, setting up switch');
           currentStreamIdRef.current = data.newStreamId;
@@ -1032,32 +1273,62 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           setError(`Connecting to stream${data.producerVerified ? ' (verified)' : ''}...`);
         }
         
-        
+
+
         // Wait longer if producer not verified, shorter if verified
         const waitTime = data.producerVerified ? 200 : 800;
-        // console.log(`⏳ WEBRTC: Waiting ${waitTime}ms for producer stability...`);
+        console.log(`⏳ WEBRTC: Waiting ${waitTime}ms for producer stability...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
-        
-        // Initialize connection directly
-        // console.log('🔄 WEBRTC: Initializing connection for stream switch');
-        setSwitchState('switching');
-        
-        try {
-          await initializeViewer(true); // Force init for stream switching
+
+        // Check if cancelled after wait
+        if (switchSignal.aborted) {
+          console.log('🛑 WEBRTC: Stream switch was cancelled during wait');
           setSwitchState('idle');
           setError(null);
-          // console.log('✅ WEBRTC: Stream switch completed successfully');
-          
+          return;
+        }
+
+        // Initialize connection directly
+        console.log('🔄 WEBRTC: Initializing connection for stream switch');
+        setSwitchState('switching');
+
+        try {
+          await initializeViewer(true); // Force init for stream switching
+
+          // Check if cancelled after initialization
+          if (switchSignal.aborted) {
+            console.log('🛑 WEBRTC: Stream switch was cancelled after initialization');
+            setSwitchState('idle');
+            setError(null);
+            return;
+          }
+
+          setSwitchState('idle');
+          setError(null);
+          console.log('✅ WEBRTC: Stream switch completed successfully');
+
           // Restart viewing session for points tracking
           socket.emit('join-as-viewer');
-          // console.log('🎯 WEBRTC: Restarted viewing session for points tracking');
+          console.log('🎯 WEBRTC: Restarted viewing session for points tracking');
         } catch (error) {
+          // Check if this was an abort
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.log('🛑 WEBRTC: Stream switch was aborted');
+            return;
+          }
+
           console.error('❌ WEBRTC: Stream switch failed:', error);
           setSwitchState('failed');
           setError(`Stream switch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-        
+
       } catch (error) {
+        // Check if this was an abort
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('🛑 WEBRTC: Stream switch operation was aborted');
+          return;
+        }
+
         console.error('❌ WEBRTC: Stream switch failed after all attempts:', error);
         setSwitchState('failed');
         setError(`Stream switch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1135,34 +1406,60 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
 
     const handleStreamEnded = async (data?: { reason?: string, previousStreamer?: string, newStreamer?: string }) => {
-      // console.log('🔔 WEBRTC: Stream ended event received:', data);
-      
+      console.log('🔔 WEBRTC: Stream ended event received:', data);
+
       // Clean up video display
       if (videoRef.current) {
         videoRef.current.srcObject = null;
-        // console.log('🧹 WEBRTC: Cleared video element');
+        console.log('🧹 WEBRTC: Cleared video element');
       }
-      
+
       // Reset state
       setError(null);
       setIsConnected(false);
-      
-      // If this is a takeover, clean up consumers immediately to prevent orphaned consumer errors
-      if (data?.reason === 'takeover' && mediasoupClientRef.current) {
-        // console.log('🧹 WEBRTC: Takeover detected, cleaning up consumers before new stream');
-        try {
-          await mediasoupClientRef.current.cleanup();
-          // console.log('✅ WEBRTC: Takeover cleanup completed');
-        } catch (error) {
-          console.error('❌ WEBRTC: Takeover cleanup failed:', error);
+
+      // If this is a takeover, prepare for the new stream
+      if (data?.reason === 'takeover') {
+        console.log(`🔄 WEBRTC: Takeover detected - old: ${data.previousStreamer}, new: ${data.newStreamer}`);
+
+        // CRITICAL: Reset initialization flag to allow new connection
+        isInitializingRef.current = false;
+
+        // Clear current stream ID to allow reconnection
+        // Note: The new currentStreamerId prop will trigger reconnection via useEffect
+        // But we also clear this ref to ensure stream-ready can also trigger reconnection
+        if (data.previousStreamer && currentStreamIdRef.current === data.previousStreamer) {
+          console.log(`🧹 WEBRTC: Clearing currentStreamIdRef (was: ${currentStreamIdRef.current})`);
+          currentStreamIdRef.current = null;
+        }
+
+        // Set loading state while waiting for new stream
+        setIsLoading(true);
+        setError('Switching to new stream...');
+        setSwitchState('switching');
+
+        if (mediasoupClientRef.current) {
+          console.log('🧹 WEBRTC: Takeover detected, cleaning up consumers before new stream');
+          try {
+            await mediasoupClientRef.current.cleanup();
+            mediasoupClientRef.current = null;
+            console.log('✅ WEBRTC: Takeover cleanup completed');
+          } catch (error) {
+            console.error('❌ WEBRTC: Takeover cleanup failed:', error);
+          }
         }
       } else {
         // For normal stream ending (like disconnect), also clean up
-        // console.log('🧹 WEBRTC: Stream ended normally, cleaning up consumers');
+        console.log('🧹 WEBRTC: Stream ended normally, cleaning up consumers');
+        currentStreamIdRef.current = null;
+        isInitializingRef.current = false;
+        setSwitchState('idle');
+
         if (mediasoupClientRef.current) {
           try {
             await mediasoupClientRef.current.cleanup();
-            // console.log('✅ WEBRTC: Normal stream end cleanup completed');
+            mediasoupClientRef.current = null;
+            console.log('✅ WEBRTC: Normal stream end cleanup completed');
           } catch (error) {
             console.error('❌ WEBRTC: Normal stream end cleanup failed:', error);
           }

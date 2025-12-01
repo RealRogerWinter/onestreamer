@@ -230,6 +230,48 @@ class WebRTCAdapter {
   }
 
   /**
+   * Verify participant tracks are ready (proxied to backend)
+   */
+  async verifyParticipantTracks(participantIdentity, options = {}) {
+    await this.ensureInitialized();
+
+    if (this.isLiveKit() && this.backend.verifyParticipantTracks) {
+      return await this.backend.verifyParticipantTracks(participantIdentity, options);
+    }
+
+    // MediaSoup doesn't need track verification - tracks are created synchronously
+    // Just verify the producer exists
+    if (this.isMediaSoup()) {
+      const producerMap = this.backend.producers.get(participantIdentity);
+      if (producerMap && producerMap.size > 0) {
+        return {
+          verified: true,
+          hasVideo: producerMap.has('video'),
+          hasAudio: producerMap.has('audio'),
+          trackCount: producerMap.size,
+          attempt: 1
+        };
+      }
+      return {
+        verified: false,
+        hasVideo: false,
+        hasAudio: false,
+        trackCount: 0,
+        attempt: 1
+      };
+    }
+
+    // Fallback - assume ready
+    return {
+      verified: true,
+      hasVideo: true,
+      hasAudio: false,
+      trackCount: 1,
+      attempt: 1
+    };
+  }
+
+  /**
    * Admin method to switch backend (requires server restart)
    */
   static getCurrentConfiguredBackend() {
@@ -241,12 +283,12 @@ class WebRTCAdapter {
     if (!['mediasoup', 'livekit'].includes(backend)) {
       throw new Error(`Invalid backend: ${backend}`);
     }
-    
+
     // This would typically update a config file or environment variable
     process.env.WEBRTC_BACKEND = backend;
     console.log(`📝 WebRTC Adapter: Backend configuration changed to ${backend}`);
     console.log('⚠️  Server restart required for changes to take effect');
-    
+
     return {
       backend: backend,
       requiresRestart: true

@@ -407,7 +407,19 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             }
 
             // Get the current streamer to determine target
-            const currentStreamerSocketId = streamService.getCurrentStreamer();
+            // Try StreamService first (works for MediaSoup and synced LiveKit)
+            let currentStreamerSocketId = streamService.getCurrentStreamer();
+
+            // LIVEKIT FIX: Fallback to mediasoupService/webrtcAdapter if StreamService has no streamer
+            // This handles LiveKit mode where LiveKitService tracks currentStreamer but StreamService might not be synced
+            const mediasoupService = req.app.get('mediasoupService');
+            if (!currentStreamerSocketId && mediasoupService) {
+                currentStreamerSocketId = mediasoupService.getCurrentStreamer();
+                if (currentStreamerSocketId) {
+                    console.log(`🎭 ITEMS: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                }
+            }
+
             let targetUserId = null;
             let isAnonymousStreamer = false;
 
@@ -938,9 +950,20 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
                         console.error('❌ KILL SWITCH: Required services not available');
                         return res.status(500).json({ error: 'Kill Switch unavailable - required services not found' });
                     }
-                    
+
                     // Get current streamer
-                    const currentStreamerSocketId = streamService.getCurrentStreamer();
+                    // Try StreamService first (works for MediaSoup and synced LiveKit)
+                    let currentStreamerSocketId = streamService.getCurrentStreamer();
+
+                    // LIVEKIT FIX: Fallback to mediasoupService/webrtcAdapter if StreamService has no streamer
+                    const mediasoupServiceForKillSwitch = req.app.get('mediasoupService');
+                    if (!currentStreamerSocketId && mediasoupServiceForKillSwitch) {
+                        currentStreamerSocketId = mediasoupServiceForKillSwitch.getCurrentStreamer();
+                        if (currentStreamerSocketId) {
+                            console.log(`💥 KILL SWITCH: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                        }
+                    }
+
                     if (!currentStreamerSocketId) {
                         console.log('❌ KILL SWITCH: No active streamer to disconnect');
                         return res.status(400).json({ error: 'No active streamer to disconnect' });
@@ -1214,7 +1237,19 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
             const buffDebuffService = req.app.get('buffDebuffService');
             if (buffDebuffService) {
                 // Get the current streamer to determine target
-                const currentStreamerSocketId = streamService.getCurrentStreamer();
+                // Try StreamService first (works for MediaSoup and synced LiveKit)
+                let currentStreamerSocketId = streamService.getCurrentStreamer();
+
+                // LIVEKIT FIX: Fallback to mediasoupService/webrtcAdapter if StreamService has no streamer
+                // This handles LiveKit mode where LiveKitService tracks currentStreamer but StreamService might not be synced
+                const mediasoupServiceForThrow = req.app.get('mediasoupService');
+                if (!currentStreamerSocketId && mediasoupServiceForThrow) {
+                    currentStreamerSocketId = mediasoupServiceForThrow.getCurrentStreamer();
+                    if (currentStreamerSocketId) {
+                        console.log(`🎯 THROW: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                    }
+                }
+
                 let targetUserId = null;
 
                 if (currentStreamerSocketId && req.app.get('sessionService')) {

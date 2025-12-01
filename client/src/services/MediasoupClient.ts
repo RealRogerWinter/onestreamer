@@ -23,15 +23,20 @@ export class MediasoupClient {
   private consumers: Map<string, mediasoupClient.types.Consumer> = new Map();
   private isDestroyed: boolean = false;
   private isProcessing: boolean = false;
-  private operationTimeout: number = 30000; // 30 seconds for mobile networks
+  private consumeLock: boolean = false;
+  // MOBILE FIX: Longer timeouts for cellular networks with high latency
+  private operationTimeout: number = isMobile() ? 45000 : 30000; // 45s mobile, 30s desktop
   private reconnectionAttempts: number = 0;
-  private maxReconnectionAttempts: number = 5;
+  // MOBILE FIX: More reconnection attempts for unreliable cellular connections
+  private maxReconnectionAttempts: number = isMobile() ? 8 : 5; // 8 attempts for mobile
   private reconnectionDelay: number = 1000; // Start with 1 second
   private maxReconnectionDelay: number = 30000; // Max 30 seconds
   private reconnectionTimer?: NodeJS.Timeout;
   private isReconnecting: boolean = false;
   private lastConnectionState: 'connected' | 'disconnected' = 'disconnected';
   private healthCheckInterval?: NodeJS.Timeout;
+  private healthCheckFailures: number = 0;
+  private readonly healthCheckFailureThreshold: number = 3;
   private onConnectionRecovered?: () => void;
   private currentStreamerId: string | null = null;
   private onConnectionLost?: () => void;
@@ -208,10 +213,19 @@ export class MediasoupClient {
         this.reconnectionAttempts = 0;
         this.reconnectionDelay = 1000;
       }
-      
+      // Reset health check failure counter on success
+      this.healthCheckFailures = 0;
+
     } catch (error) {
-      console.warn('⚠️ MEDIASOUP CLIENT: Health check failed:', error);
-      this.handleConnectionError(error as Error);
+      this.healthCheckFailures++;
+      console.warn(`⚠️ MEDIASOUP CLIENT: Health check failed (${this.healthCheckFailures}/${this.healthCheckFailureThreshold}):`, error);
+
+      // Only trigger reconnection after consecutive failures to avoid false positives
+      if (this.healthCheckFailures >= this.healthCheckFailureThreshold) {
+        console.warn('⚠️ MEDIASOUP CLIENT: Health check failure threshold reached, triggering reconnection');
+        this.healthCheckFailures = 0;
+        this.handleConnectionError(error as Error);
+      }
     }
   }
 
@@ -523,8 +537,8 @@ export class MediasoupClient {
     console.log('📊 Can produce audio:', this.device.canProduce('audio'));
     
     try {
-      // Detect if this is a mobile client
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      // Detect if this is a mobile client (use imported function)
+      const isMobileDevice = isMobile();
       
       // Request transport creation from server with mobile flag
       const response = await fetch(`${this.serverUrl}/api/mediasoup/create-transport`, {
@@ -532,7 +546,7 @@ export class MediasoupClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           socketId: this.socket.id,
-          isMobile: isMobile
+          isMobile: isMobileDevice
         })
       });
       
@@ -711,8 +725,8 @@ export class MediasoupClient {
     }
     
     try {
-      // Detect if this is a mobile client
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      // Detect if this is a mobile client (use imported function)
+      const isMobileDevice = isMobile();
       
       // Request transport creation from server with mobile flag
       const response = await fetch(`${this.serverUrl}/api/mediasoup/create-transport`, {
@@ -720,7 +734,7 @@ export class MediasoupClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           socketId: this.socket.id,
-          isMobile: isMobile
+          isMobile: isMobileDevice
         })
       });
       
@@ -767,34 +781,47 @@ export class MediasoupClient {
       // MediaSoup-client provides updateIceServers() to configure TURN
       // Detect if we're likely connecting to a viewbot (mobile on cellular)
       const isAndroidDevice = /Android/i.test(navigator.userAgent);
-      const isCellular = isMobile && !navigator.onLine; // Simple heuristic
+      const isCellular = isMobile() && !navigator.onLine; // Simple heuristic
       // DON'T force relay - MediaSoup ICE-lite cannot receive from TURN relay
       // Instead, let the browser choose the best path (TURN will be used if needed)
       const forceRelay = false;
       
+      // CRITICAL MOBILE FIX: Aggressive ICE server configuration for cellular networks
+      // Adding more STUN servers increases chance of successful NAT traversal
       const iceServers = [
-        // STUN servers for NAT discovery
+        // Multiple STUN servers for maximum redundancy and NAT discovery
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        // Our TURN server with proper credentials - multiple URLs for redundancy
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        // Alternative STUN servers for better coverage
+        { urls: 'stun:stun.services.mozilla.com:3478' },
+        // TURN server with both UDP and TCP for maximum compatibility
         {
-          urls: ['turn:<SERVER_IP>:3478', 'turn:<SERVER_IP>:3478?transport=udp'],
-          username: recvTurnUsername,
-          credential: recvTurnCredential
-        },
-        {
-          urls: 'turn:<SERVER_IP>:3478?transport=tcp',
+          urls: [
+            'turn:<SERVER_IP>:3478?transport=udp',
+            'turn:<SERVER_IP>:3478?transport=tcp'
+          ],
           username: recvTurnUsername,
           credential: recvTurnCredential
         }
       ];
-      
-      // Configure ICE transport policy based on client type
+
+      // CRITICAL: Aggressive ICE configuration for mobile cellular networks
+      // Note: MediaSoup ICE-lite limitation means TURN relay won't work,
+      // but we maximize STUN-assisted connection chances
       const iceConfig = {
         iceServers,
-        iceTransportPolicy: forceRelay ? 'relay' : 'all' as RTCIceTransportPolicy,
-        iceCandidatePoolSize: 10,
-        bundlePolicy: 'max-bundle' as RTCBundlePolicy
+        // IMPORTANT: Let browser choose best path - don't force relay
+        // MediaSoup ICE-lite works with direct connections and STUN, but not TURN relay
+        iceTransportPolicy: 'all' as RTCIceTransportPolicy,
+        // INCREASED: Higher candidate pool for better mobile connectivity
+        iceCandidatePoolSize: isMobile() ? 20 : 10,
+        bundlePolicy: 'max-bundle' as RTCBundlePolicy,
+        rtcpMuxPolicy: 'require' as RTCRtcpMuxPolicy,
+        // Enable continuous gathering for network changes (all mobile devices)
+        ...(isMobile() && { iceServersBackupPolicy: 'all' as any })
       };
       
       // Update ICE servers on the transport
@@ -816,53 +843,55 @@ export class MediasoupClient {
       
       // Debug browser and connection info
       const isAndroid = /Android/i.test(navigator.userAgent);
-      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const isIOSDevice = /iPhone|iPad|iPod/i.test(navigator.userAgent);
       const isSafari = /Safari/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent);
-      
+
       if (this.onDebugInfo) {
         this.onDebugInfo({
-          browser: isAndroid ? 'Android' : (isIOS ? 'iOS' : 'Desktop'),
+          browser: isAndroid ? 'Android' : (isIOSDevice ? 'iOS' : 'Desktop'),
           browserEngine: isSafari ? 'Safari' : 'Chrome',
           turnUrls: recvTransportOptions.iceServers?.[2]?.urls || 'No TURN'
         });
       }
       
-      // Wait a moment for the PC to be created, then access it
+      // CRITICAL iOS FIX: Configure PeerConnection early with proper timeout
       const configurePeerConnection = async () => {
-        // Try multiple times to get the PC as it might not be immediately available
+        // Wait for PC with timeout - improved from polling approach
         let pc: any = null;
-        for (let i = 0; i < 10; i++) {
+        let attempts = 0;
+        const maxWaitMs = 2000; // 2 second timeout
+        const startTime = Date.now();
+
+        while (!pc && (Date.now() - startTime) < maxWaitMs) {
           pc = (this.recvTransport as any)._handler?._pc || (this.recvTransport as any)._pc;
           if (pc) break;
           await new Promise(resolve => setTimeout(resolve, 50));
+          attempts++;
         }
-        
+
         if (!pc) {
-          console.warn('⚠️ Could not access internal RTCPeerConnection');
+          console.warn(`⚠️ Could not access internal RTCPeerConnection after ${attempts} attempts`);
           return;
         }
-        
-        // Accessing internal RTCPeerConnection for debugging
-        
-        // Configure TURN on the RTCPeerConnection but don't force relay
-        // MediaSoup ICE-lite cannot receive from TURN relay
-        if (isAndroidDevice) {
+
+        console.log(`✅ Accessed PeerConnection after ${attempts} attempts`);
+
+        // CRITICAL: Configure ICE BEFORE any negotiation happens
+        // Apply to iOS, Android, and all mobile devices for consistency
+        if (isIOS() || isAndroidDevice || isMobile()) {
           try {
-            const currentConfig = pc.getConfiguration();
-            // Current ICE config check
-            
-            // Set the configuration with TURN servers but allow all candidates
+            // Configure the PeerConnection with ICE settings immediately
             pc.setConfiguration({
               iceServers,
-              iceTransportPolicy: 'all', // Allow all types - browser will use TURN if needed
+              iceTransportPolicy: 'all', // Let browser choose - critical for iOS cellular
               iceCandidatePoolSize: 10,
-              bundlePolicy: 'max-bundle'
+              bundlePolicy: 'max-bundle',
+              ...(isIOS() && { iceServersBackupPolicy: 'all' as any })
             });
-            
-            const newConfig = pc.getConfiguration();
-            // Configured TURN servers on RTCPeerConnection for Android
+
+            console.log('✅ Configured PeerConnection ICE settings for mobile device');
           } catch (e) {
-            console.error('Failed to configure TURN:', e);
+            console.error('❌ Failed to configure PeerConnection:', e);
           }
         }
         
@@ -956,8 +985,8 @@ export class MediasoupClient {
         };
       };
       
-      // Execute the peer connection configuration
-      configurePeerConnection();
+      // CRITICAL iOS FIX: Execute PC configuration immediately and await it
+      await configurePeerConnection();
       
       // Monitor ICE candidates for debugging (backup method)
       (this.recvTransport as any).on('icecandidate', (candidate: any) => {
@@ -1005,10 +1034,22 @@ export class MediasoupClient {
         // Don't close transport on temporary disconnections
         if (state === 'disconnected') {
           console.log('⚠️ MEDIASOUP CLIENT: Transport disconnected, waiting for reconnection...');
-          // For mobile/relay connections, give more time to reconnect
-          const isAndroid = /Android/i.test(navigator.userAgent);
-          const timeout = isAndroid ? 15000 : 5000; // 15s for Android, 5s for others
-          
+
+          // MOBILE FIX: Extended timeouts for cellular networks with variable latency
+          const timeout = isMobile() ? 20000 : 5000; // 20s for mobile, 5s for desktop
+          console.log(`⏳ Waiting ${timeout}ms for mobile reconnection...`);
+
+          // MOBILE FIX: Log network diagnostics on disconnect
+          if (isMobile()) {
+            console.log('📱 Mobile network diagnostic:', {
+              online: navigator.onLine,
+              connection: (navigator as any).connection?.effectiveType,
+              downlink: (navigator as any).connection?.downlink,
+              rtt: (navigator as any).connection?.rtt,
+              saveData: (navigator as any).connection?.saveData
+            });
+          }
+
           setTimeout(async () => {
             if (this.recvTransport?.connectionState === 'disconnected') {
               console.log('❌ MEDIASOUP CLIENT: Transport still disconnected after timeout');
@@ -1018,10 +1059,32 @@ export class MediasoupClient {
           }, timeout);
         } else if (state === 'failed') {
           console.error('❌ MEDIASOUP CLIENT: Transport connection failed');
+
+          // MOBILE FIX: Log detailed failure diagnostics
+          if (isMobile()) {
+            console.error('📱 Mobile connection failure diagnostic:', {
+              online: navigator.onLine,
+              connection: (navigator as any).connection?.effectiveType,
+              transportState: this.recvTransport?.connectionState,
+              iceState: (this.recvTransport as any)?._handler?._pc?.iceConnectionState,
+              iceGatheringState: (this.recvTransport as any)?._handler?._pc?.iceGatheringState,
+              signalingState: (this.recvTransport as any)?._handler?._pc?.signalingState
+            });
+          }
+
           // Immediately trigger reconnection on failure
           this.handleTransportFailure();
         } else if (state === 'connected') {
           // Transport connected successfully
+          console.log('✅ MEDIASOUP CLIENT: Transport connected successfully');
+
+          // MOBILE FIX: Log successful connection details for diagnostics
+          if (isMobile()) {
+            console.log('📱 Mobile connection success:', {
+              connection: (navigator as any).connection?.effectiveType,
+              iceState: (this.recvTransport as any)?._handler?._pc?.iceConnectionState
+            });
+          }
         }
       });
       
@@ -1287,28 +1350,40 @@ export class MediasoupClient {
   }
 
   private async consumeTrack(kind: 'video' | 'audio'): Promise<MediaStream | null> {
-    // Enhanced consume with retry logic
-    const maxAttempts = 3;
+    // MOBILE FIX: Enhanced consume with aggressive retry logic for cellular networks
+    // Mobile devices get more attempts due to unreliable connections
+    const maxAttempts = isMobile() ? 5 : 3;
     let attempt = 0;
-    
+
     while (attempt < maxAttempts) {
       attempt++;
-      // console.log(`📺 MEDIASOUP CLIENT: Consume attempt ${attempt}/${maxAttempts} for ${kind}`);
-      
+      console.log(`📺 MEDIASOUP CLIENT: Consume attempt ${attempt}/${maxAttempts} for ${kind}${isMobile() ? ' (mobile)' : ''}`);
+
       try {
         const stream = await this.attemptConsumeTrack(kind, attempt);
         if (stream) {
-          // console.log(`✅ MEDIASOUP CLIENT: Successfully consumed ${kind} on attempt ${attempt}`);
+          console.log(`✅ MEDIASOUP CLIENT: Successfully consumed ${kind} on attempt ${attempt}`);
           return stream;
         }
       } catch (error) {
         console.warn(`⚠️ MEDIASOUP CLIENT: Consume attempt ${attempt} failed for ${kind}:`, error);
+
+        // MOBILE FIX: Log additional diagnostic info on mobile failures
+        if (isMobile()) {
+          console.log(`📱 Mobile diagnostic - Attempt ${attempt}:`, {
+            online: navigator.onLine,
+            connection: (navigator as any).connection?.effectiveType,
+            kind,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
       }
-      
+
       // Wait before retry (except on last attempt)
       if (attempt < maxAttempts) {
-        const delay = attempt * 500; // 500ms, 1000ms delays
-        // console.log(`⏳ MEDIASOUP CLIENT: Waiting ${delay}ms before retry for ${kind}...`);
+        // MOBILE FIX: Shorter delays on mobile for faster recovery
+        const delay = isMobile() ? attempt * 300 : attempt * 500; // Mobile: 300ms, 600ms, 900ms, 1200ms
+        console.log(`⏳ MEDIASOUP CLIENT: Waiting ${delay}ms before retry for ${kind}...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -1318,28 +1393,42 @@ export class MediasoupClient {
   }
   
   private async attemptConsumeTrack(kind: 'video' | 'audio', attempt: number): Promise<MediaStream | null> {
-    // Validate transport state before attempting consumption
-    if (!this.recvTransport) {
-      throw new Error(`No receive transport available for ${kind} consumption`);
+    // LOCK: Prevent concurrent consume operations that can cause race conditions
+    if (this.consumeLock) {
+      console.log(`⏳ MEDIASOUP CLIENT: Consume lock held, waiting for ${kind}...`);
+      // Wait briefly then check again
+      await new Promise(resolve => setTimeout(resolve, 100));
+      if (this.consumeLock) {
+        throw new Error(`Consume operation already in progress for another track`);
+      }
     }
-    
-    if (this.recvTransport.closed) {
-      throw new Error(`Receive transport is closed, cannot consume ${kind}`);
-    }
-    
-    // Check transport connection state
-    const transportState = this.recvTransport.connectionState;
-    if (transportState === 'failed') {
-      throw new Error(`Transport in failed state, cannot consume ${kind}`);
-    }
-    
-    if (transportState !== 'connected' && attempt > 2) {
-      // After 2 attempts, require transport to be fully connected
-      console.warn(`⚠️ MEDIASOUP CLIENT: Transport not fully connected (${transportState}) after ${attempt} attempts`);
-      throw new Error(`Transport not ready (${transportState}), cannot consume ${kind}`);
-    }
-    
-    return new Promise((resolve, reject) => {
+
+    this.consumeLock = true;
+
+    try {
+      // Validate transport state before attempting consumption
+      if (!this.recvTransport) {
+        throw new Error(`No receive transport available for ${kind} consumption`);
+      }
+
+      if (this.recvTransport.closed) {
+        throw new Error(`Receive transport is closed, cannot consume ${kind}`);
+      }
+
+      // Check transport connection state
+      const transportState = this.recvTransport.connectionState;
+      if (transportState === 'failed') {
+        throw new Error(`Transport in failed state, cannot consume ${kind}`);
+      }
+
+      if (transportState !== 'connected' && attempt > 2) {
+        // After 2 attempts, require transport to be fully connected
+        console.warn(`⚠️ MEDIASOUP CLIENT: Transport not fully connected (${transportState}) after ${attempt} attempts`);
+        throw new Error(`Transport not ready (${transportState}), cannot consume ${kind}`);
+      }
+
+      // LOCK: Wrap the promise to release lock on completion
+      return new Promise<MediaStream | null>((resolve, reject) => {
       // Add timeout to prevent hanging
       const timeout = setTimeout(() => {
         reject(new Error(`Consume timeout for ${kind} on attempt ${attempt}`));
@@ -1544,99 +1633,83 @@ export class MediasoupClient {
           
           // console.log(`✅ MEDIASOUP CLIENT: ${kind} stream created with track state: ${consumer.track.readyState}`);
           
-          // CRITICAL FIX for iOS: Request keyframe immediately for video
+          // CRITICAL iOS FIX: MEASURED keyframe approach (not aggressive)
+          // Previous aggressive approach overwhelmed iOS decoder
           if (kind === 'video' && (isIOS() || isIOSSafari())) {
-            console.log('📱 iOS: Setting up aggressive keyframe requests for video track');
-            
-            // Request initial keyframes multiple times
-            const requestKeyframe = () => {
-              this.socket.emit('mediasoup:request-keyframe', { 
-                consumerId: consumerId 
+            console.log('📱 iOS: Setting up MEASURED keyframe requests for video track');
+
+            // Request ONE initial keyframe after brief delay for decoder initialization
+            setTimeout(() => {
+              this.socket.emit('mediasoup:request-keyframe', {
+                consumerId: consumerId
               }, (response: any) => {
                 if (response?.success) {
-                  console.log('✅ iOS: Keyframe requested successfully');
+                  console.log('✅ iOS: Initial keyframe requested successfully');
                 } else {
-                  console.warn('⚠️ iOS: Keyframe request failed:', response?.error);
+                  console.warn('⚠️ iOS: Initial keyframe request failed:', response?.error);
                 }
               });
-            };
-            
-            // Request keyframes at 100ms, 200ms, 500ms, 1s to ensure we get one
-            setTimeout(requestKeyframe, 100);
-            setTimeout(requestKeyframe, 200);
-            setTimeout(requestKeyframe, 500);
-            setTimeout(requestKeyframe, 1000);
-            
-            // Set up aggressive periodic keyframe requests for iOS
-            let frameCheckCount = 0;
+            }, 300); // Single request at 300ms
+
+            // ONLY request keyframes when video is actually stuck
             let lastFrameCount = 0;
-            let stuckFrameCount = 0;
-            
+            let stuckFrameChecks = 0;
+
             const keyframeInterval = setInterval(() => {
               if (!consumer || consumer.closed || consumer.track.readyState !== 'live') {
                 clearInterval(keyframeInterval);
                 return;
               }
-              
-              frameCheckCount++;
-              
+
               // Check if video is actually playing
               const video = document.querySelector('video') as HTMLVideoElement;
-              if (video && video.srcObject) {
-                const videoTracks = (video.srcObject as MediaStream).getVideoTracks();
-                if (videoTracks.length > 0 && videoTracks[0].readyState === 'live') {
-                  // Check if we're getting frames
-                  if ('getVideoPlaybackQuality' in video) {
-                    const quality = (video as any).getVideoPlaybackQuality();
-                    const totalFrames = quality.totalVideoFrames;
-                    
-                    // Check if frames are advancing
-                    if (totalFrames === lastFrameCount) {
-                      stuckFrameCount++;
-                      console.log(`📱 iOS: Frames stuck at ${totalFrames} (stuck count: ${stuckFrameCount})`);
-                      
-                      // Request keyframe if stuck
-                      if (stuckFrameCount >= 1) { // Request immediately when stuck
-                        console.log('📱 iOS: Requesting keyframe due to stuck frames');
-                        this.socket.emit('mediasoup:request-keyframe', { 
-                          consumerId: consumerId 
-                        });
-                        stuckFrameCount = 0; // Reset counter after request
-                      }
-                    } else {
-                      // Frames are advancing
-                      if (stuckFrameCount > 0) {
-                        console.log(`📱 iOS: Frames recovered, now at ${totalFrames}`);
-                      }
-                      stuckFrameCount = 0;
-                    }
-                    
-                    lastFrameCount = totalFrames;
-                    
-                    // Also request keyframe every 5 checks (2.5 seconds) regardless
-                    if (frameCheckCount % 5 === 0) {
-                      console.log('📱 iOS: Periodic keyframe request');
-                      this.socket.emit('mediasoup:request-keyframe', { 
-                        consumerId: consumerId 
-                      });
-                    }
+              if (video && video.srcObject && 'getVideoPlaybackQuality' in video) {
+                const quality = (video as any).getVideoPlaybackQuality();
+                const currentFrames = quality.totalVideoFrames;
+
+                // Only request keyframe if truly stuck for 3+ seconds
+                if (currentFrames === lastFrameCount && currentFrames > 0) {
+                  stuckFrameChecks++;
+                  if (stuckFrameChecks >= 3) { // 3 checks * 1s = 3 seconds stuck
+                    console.log('📱 iOS: Video stuck, requesting recovery keyframe');
+                    this.socket.emit('mediasoup:request-keyframe', {
+                      consumerId: consumerId
+                    });
+                    stuckFrameChecks = 0; // Reset after request
                   }
+                } else {
+                  // Frames are advancing - reset stuck counter
+                  if (stuckFrameChecks > 0) {
+                    console.log(`📱 iOS: Video recovered at ${currentFrames} frames`);
+                  }
+                  stuckFrameChecks = 0;
                 }
+
+                lastFrameCount = currentFrames;
               }
-            }, 500); // Check every 500ms for faster response
-            
+            }, 1000); // Check every 1 second, NOT 500ms
+
             // Store interval for cleanup
             (consumer as any)._keyframeInterval = keyframeInterval;
           }
           
           resolve(stream);
-          
+
         } catch (error) {
           console.error(`❌ MEDIASOUP CLIENT: Failed to create ${kind} consumer:`, error);
           reject(error);
         }
       });
-    });
+      }).finally(() => {
+        // LOCK: Always release lock when promise settles
+        this.consumeLock = false;
+      });
+
+    } catch (error) {
+      // LOCK: Release lock on validation errors
+      this.consumeLock = false;
+      throw error;
+    }
   }
 
   async stopProducing(): Promise<void> {

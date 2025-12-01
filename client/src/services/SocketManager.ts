@@ -62,8 +62,8 @@ class SocketManager {
         },
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5
+        reconnectionDelayMax: 10000,
+        reconnectionAttempts: Infinity  // Keep reconnecting indefinitely for streaming stability
       });
 
       this.mainSocket.on('connect', () => {
@@ -108,8 +108,8 @@ class SocketManager {
         },
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5
+        reconnectionDelayMax: 10000,
+        reconnectionAttempts: Infinity  // Keep reconnecting indefinitely for chat stability
       });
 
       this.chatSocket.on('connect', () => {

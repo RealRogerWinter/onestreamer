@@ -11,6 +11,7 @@ import {
   RemoteParticipant,
   LocalParticipant,
   VideoPresets,
+  VideoQuality,
   createLocalTracks,
   RoomOptions,
   RoomConnectOptions,
@@ -29,6 +30,7 @@ export interface LiveKitClientConfig {
   onConnectionLost?: () => void;
   onReconnectionFailed?: (error: Error) => void;
   onDebugInfo?: (info: any) => void;
+  onStreamUpdate?: () => void;
 }
 
 interface LiveKitTokenResponse {
@@ -55,7 +57,17 @@ export class LiveKitClient {
   public consumers: Map<string, RemoteTrack> = new Map();
   public isDestroyed: boolean = false;
   public currentStreamerId: string | null = null;
-  
+
+  // Active participant tracking for stream switching
+  private activeParticipant: RemoteParticipant | null = null;
+  private currentStream: MediaStream | null = null;
+  private isSwitchingStream: boolean = false;
+  private pendingStreamUpdates: Set<string> = new Set();
+  private streamUpdateDebounceTimer: NodeJS.Timeout | null = null;
+
+  // Timeout tracking for cleanup
+  private activeTimeouts: Set<NodeJS.Timeout> = new Set();
+
   // Connection management
   private isProcessing: boolean = false;
   private operationTimeout: number = 30000;
@@ -72,6 +84,7 @@ export class LiveKitClient {
   private onConnectionLost?: () => void;
   private onReconnectionFailed?: (error: Error) => void;
   public onDebugInfo?: (info: any) => void;
+  public onStreamUpdate?: () => void;
 
   // Local tracks
   private localVideoTrack: LocalVideoTrack | null = null;
@@ -85,7 +98,8 @@ export class LiveKitClient {
     this.onConnectionLost = config.onConnectionLost;
     this.onReconnectionFailed = config.onReconnectionFailed;
     this.onDebugInfo = config.onDebugInfo;
-    
+    this.onStreamUpdate = config.onStreamUpdate;
+
     console.log('🚀 LIVEKIT CLIENT: Initializing LiveKit client');
   }
 
@@ -104,10 +118,11 @@ export class LiveKitClient {
       console.log('✅ LIVEKIT CLIENT: LiveKit initialized (no device loading needed)');
       
       // Create room instance but don't connect yet
+      // Disable ALL adaptive features to prevent any layer switching
       this.room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-        simulcast: true,
+        adaptiveStream: false,
+        dynacast: false,
+        simulcast: false,
         videoCaptureDefaults: {
           resolution: VideoPresets.h720.resolution,
         },
@@ -134,7 +149,79 @@ export class LiveKitClient {
   }
 
   /**
-   * Set up LiveKit room event handlers
+   * Create a tracked timeout that will be cleaned up on destroy
+   */
+  private createTrackedTimeout(callback: () => void, delay: number): NodeJS.Timeout {
+    const timeout = setTimeout(() => {
+      this.activeTimeouts.delete(timeout);
+      try {
+        callback();
+      } catch (error) {
+        console.error('❌ LIVEKIT CLIENT: Error in tracked timeout callback:', error);
+      }
+    }, delay);
+    this.activeTimeouts.add(timeout);
+    return timeout;
+  }
+
+  /**
+   * Clear a tracked timeout
+   */
+  private clearTrackedTimeout(timeout: NodeJS.Timeout | null): void {
+    if (timeout) {
+      clearTimeout(timeout);
+      this.activeTimeouts.delete(timeout);
+    }
+  }
+
+  /**
+   * Clear all tracked timeouts
+   */
+  private clearAllTimeouts(): void {
+    this.activeTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.activeTimeouts.clear();
+
+    if (this.streamUpdateDebounceTimer) {
+      clearTimeout(this.streamUpdateDebounceTimer);
+      this.streamUpdateDebounceTimer = null;
+    }
+
+    if (this.reconnectionTimer) {
+      clearTimeout(this.reconnectionTimer);
+      this.reconnectionTimer = undefined;
+    }
+  }
+
+  /**
+   * Safely trigger stream update with debouncing and queueing
+   */
+  private triggerStreamUpdate(participantId: string, delay: number = 200): void {
+    // Add to pending updates
+    this.pendingStreamUpdates.add(participantId);
+
+    // Clear existing debounce timer
+    if (this.streamUpdateDebounceTimer) {
+      clearTimeout(this.streamUpdateDebounceTimer);
+      this.streamUpdateDebounceTimer = null;
+    }
+
+    // Set new debounced timer
+    this.streamUpdateDebounceTimer = this.createTrackedTimeout(() => {
+      if (this.onStreamUpdate && !this.isSwitchingStream && !this.isDestroyed) {
+        console.log(`🔄 LIVEKIT CLIENT: Triggering debounced stream update for pending participants: ${Array.from(this.pendingStreamUpdates).join(', ')}`);
+        this.pendingStreamUpdates.clear();
+        try {
+          this.onStreamUpdate();
+        } catch (error) {
+          console.error('❌ LIVEKIT CLIENT: Error in onStreamUpdate callback:', error);
+        }
+      }
+      this.streamUpdateDebounceTimer = null;
+    }, delay);
+  }
+
+  /**
+   * Set up LiveKit room event handlers with proper error handling
    */
   private setupRoomEventHandlers(): void {
     if (!this.room) return;
@@ -166,17 +253,44 @@ export class LiveKitClient {
       publication: RemoteTrackPublication,
       participant: RemoteParticipant
     ) => {
-      console.log(`📺 LIVEKIT CLIENT: Subscribed to ${track.kind} track from ${participant.identity}`);
-      this.consumers.set(`${participant.identity}-${track.kind}`, track);
-      
-      // Debug info
-      if (this.onDebugInfo) {
-        this.onDebugInfo({
-          type: 'track_subscribed',
-          participant: participant.identity,
-          trackKind: track.kind,
-          trackSid: track.sid
-        });
+      try {
+        console.log(`📺 LIVEKIT CLIENT: Subscribed to ${track.kind} track from ${participant.identity}`);
+        this.consumers.set(`${participant.identity}-${track.kind}`, track);
+
+        // For video tracks, trigger a stream update to ensure we're displaying the best participant
+        // The consume() method will intelligently select which participant to display
+        if (track.kind === 'video') {
+          const isNewParticipant = !this.activeParticipant ||
+                                   this.activeParticipant.identity !== participant.identity;
+
+          if (isNewParticipant) {
+            console.log(`🔄 LIVEKIT CLIENT: New video track from ${participant.identity}, current: ${this.activeParticipant?.identity || 'none'}`);
+            // Use safe debounced trigger
+            this.triggerStreamUpdate(participant.identity, 200);
+          }
+        }
+
+        // Force video tracks to start playing immediately
+        if (track.kind === 'video' && track.mediaStreamTrack) {
+          track.mediaStreamTrack.enabled = true;
+          console.log(`▶️ LIVEKIT CLIENT: Enabled video track from ${participant.identity}`);
+        }
+
+        // Debug info
+        if (this.onDebugInfo) {
+          try {
+            this.onDebugInfo({
+              type: 'track_subscribed',
+              participant: participant.identity,
+              trackKind: track.kind,
+              trackSid: track.sid
+            });
+          } catch (error) {
+            console.error('❌ LIVEKIT CLIENT: Error in onDebugInfo callback:', error);
+          }
+        }
+      } catch (error) {
+        console.error('❌ LIVEKIT CLIENT: Error in TrackSubscribed handler:', error);
       }
     });
     
@@ -199,17 +313,30 @@ export class LiveKitClient {
     });
     
     this.room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
-      console.log(`👋 LIVEKIT CLIENT: Participant disconnected: ${participant.identity}`);
-      
-      // Clean up consumers for this participant
-      this.consumers.forEach((track, key) => {
-        if (key.startsWith(participant.identity)) {
-          this.consumers.delete(key);
+      try {
+        console.log(`👋 LIVEKIT CLIENT: Participant disconnected: ${participant.identity}`);
+
+        // Clean up consumers for this participant
+        this.consumers.forEach((track, key) => {
+          if (key.startsWith(participant.identity)) {
+            this.consumers.delete(key);
+          }
+        });
+
+        // If the active participant disconnected, we need to switch to another one
+        if (this.activeParticipant && this.activeParticipant.identity === participant.identity) {
+          console.log(`🔄 LIVEKIT CLIENT: Active participant ${participant.identity} disconnected, switching to next available`);
+
+          // Clean up the old stream since this participant is gone
+          this.cleanupOldStream();
+          this.activeParticipant = null;
+          this.currentStreamerId = null;
+
+          // Use safe debounced trigger for participant switch
+          this.triggerStreamUpdate(participant.identity, 200);
         }
-      });
-      
-      if (this.currentStreamerId === participant.identity) {
-        this.currentStreamerId = null;
+      } catch (error) {
+        console.error('❌ LIVEKIT CLIENT: Error in ParticipantDisconnected handler:', error);
       }
     });
     
@@ -342,9 +469,9 @@ export class LiveKitClient {
         
         if (!this.room) {
           this.room = new Room({
-            adaptiveStream: true,
-            dynacast: true,
-            simulcast: true,
+            adaptiveStream: false,
+            dynacast: false,
+            simulcast: false,
             videoCaptureDefaults: {
               resolution: VideoPresets.h720.resolution,
             },
@@ -376,17 +503,29 @@ export class LiveKitClient {
       // Publish video track
       if (videoTrack) {
         console.log('📹 LIVEKIT CLIENT: Publishing video track...');
-        this.localVideoTrack = this.room.localParticipant.publishTrack(videoTrack) as any;
-        this.videoProducer = this.localVideoTrack;
-        console.log('✅ LIVEKIT CLIENT: Video track published');
+        try {
+          const publication = await this.room.localParticipant.publishTrack(videoTrack);
+          this.localVideoTrack = publication.track as LocalVideoTrack;
+          this.videoProducer = this.localVideoTrack;
+          console.log('✅ LIVEKIT CLIENT: Video track published successfully');
+        } catch (error) {
+          console.error('❌ LIVEKIT CLIENT: Failed to publish video track:', error);
+          throw error;
+        }
       }
-      
+
       // Publish audio track
       if (audioTrack) {
         console.log('🎤 LIVEKIT CLIENT: Publishing audio track...');
-        this.localAudioTrack = this.room.localParticipant.publishTrack(audioTrack) as any;
-        this.audioProducer = this.localAudioTrack;
-        console.log('✅ LIVEKIT CLIENT: Audio track published');
+        try {
+          const publication = await this.room.localParticipant.publishTrack(audioTrack);
+          this.localAudioTrack = publication.track as LocalAudioTrack;
+          this.audioProducer = this.localAudioTrack;
+          console.log('✅ LIVEKIT CLIENT: Audio track published successfully');
+        } catch (error) {
+          console.error('❌ LIVEKIT CLIENT: Failed to publish audio track:', error);
+          throw error;
+        }
       }
       
       // Update current streamer ID
@@ -401,12 +540,224 @@ export class LiveKitClient {
   }
 
   /**
+   * Check if room is in a valid state for operations
+   */
+  private isRoomReady(): boolean {
+    if (this.isDestroyed) {
+      console.warn('⚠️ LIVEKIT CLIENT: Client is destroyed');
+      return false;
+    }
+
+    if (!this.room) {
+      console.warn('⚠️ LIVEKIT CLIENT: Room not initialized');
+      return false;
+    }
+
+    if (this.room.state !== 'connected') {
+      console.warn(`⚠️ LIVEKIT CLIENT: Room not connected (state: ${this.room.state})`);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Clean up old stream reference before switching
+   * NOTE: Don't stop LiveKit tracks - LiveKit manages track lifecycle
+   */
+  private cleanupOldStream(): void {
+    if (this.currentStream) {
+      console.log('🧹 LIVEKIT CLIENT: Releasing old stream reference');
+      // Just release the reference, don't stop tracks
+      // LiveKit manages track lifecycle internally
+      this.currentStream = null;
+    }
+  }
+
+  /**
+   * Select the best participant to display based on current state
+   */
+  private selectActiveParticipant(): RemoteParticipant | null {
+    if (!this.room) return null;
+
+    const allParticipants = Array.from(this.room.remoteParticipants.values());
+
+    // CRITICAL FIX: Filter out disconnecting/disconnected participants to prevent flip-flopping
+    const connectedParticipants = allParticipants.filter((p) => {
+      // Check connection state - exclude participants that are disconnecting or disconnected
+      const isDisconnecting = p.connectionQuality === 'lost';
+      const hasMetadata = p.metadata && p.metadata !== '';
+
+      // Filter out participants marked as disconnecting
+      if (isDisconnecting) {
+        console.log(`🔻 LIVEKIT CLIENT: Filtering out disconnecting participant: ${p.identity}`);
+        return false;
+      }
+
+      return true;
+    });
+
+    console.log(`📊 LIVEKIT CLIENT: ${allParticipants.length} total participants, ${connectedParticipants.length} connected`);
+
+    // Helper function to check if participant has active video tracks
+    const hasActiveVideoTracks = (p: RemoteParticipant): boolean => {
+      const publications = Array.from(p.trackPublications.values());
+      return publications.some((pub: any) =>
+        pub.kind === 'video' && pub.track && pub.subscribed && pub.track.mediaStreamTrack
+      );
+    };
+
+    // Separate real streamers from viewbots (only from connected participants)
+    const realStreamers = connectedParticipants.filter((p) => !p.identity.startsWith('viewbot-'));
+    const viewbotParticipants = connectedParticipants.filter((p) => p.identity.startsWith('viewbot-'));
+
+    // Filter real streamers to only those with active tracks
+    const realStreamersWithTracks = realStreamers.filter(hasActiveVideoTracks);
+
+    // Prefer real streamers with tracks over viewbots
+    if (realStreamersWithTracks.length > 0) {
+      const selected = realStreamersWithTracks[0];
+
+      // If we're switching from viewbot to real streamer, log it
+      if (this.activeParticipant?.identity.startsWith('viewbot-')) {
+        console.log(`🔄 LIVEKIT CLIENT: Switching from viewbot to real streamer with tracks: ${selected.identity}`);
+      } else if (this.activeParticipant?.identity !== selected.identity) {
+        console.log(`📺 LIVEKIT CLIENT: Selected real streamer with tracks: ${selected.identity}`);
+      }
+
+      return selected;
+    }
+
+    // If real streamers exist but don't have tracks yet, log it
+    if (realStreamers.length > 0) {
+      console.log(`⏳ LIVEKIT CLIENT: Real streamer(s) present but no tracks yet: ${realStreamers.map(p => p.identity).join(', ')}`);
+    }
+
+    // Handle viewbots
+    if (viewbotParticipants.length > 0) {
+      // Filter to only viewbots with active video tracks
+      const viewbotsWithTracks = viewbotParticipants.filter(hasActiveVideoTracks);
+
+      if (viewbotsWithTracks.length === 0) {
+        console.log('⚠️ LIVEKIT CLIENT: No viewbots with active tracks');
+        return null;
+      }
+
+      // If we have a current active viewbot with tracks, keep it for stability
+      // UNLESS there's a new viewbot (indicates rotation in progress)
+      if (this.activeParticipant &&
+          this.activeParticipant.identity.startsWith('viewbot-') &&
+          viewbotsWithTracks.includes(this.activeParticipant)) {
+
+        // Check if there's a newer viewbot (different from current)
+        const otherViewbots = viewbotsWithTracks.filter(
+          (p) => p.identity !== this.activeParticipant!.identity
+        );
+
+        if (otherViewbots.length > 0) {
+          // There's another viewbot - this indicates rotation
+          // Use deterministic selection to pick the "best" one
+          const allViewbotsSorted = viewbotsWithTracks.sort((a, b) =>
+            a.identity.localeCompare(b.identity)
+          );
+          const selected = allViewbotsSorted[0];
+
+          if (selected.identity !== this.activeParticipant.identity) {
+            console.log(`🔄 LIVEKIT CLIENT: Viewbot rotation detected, switching from ${this.activeParticipant.identity} to ${selected.identity}`);
+            return selected;
+          } else {
+            // Current is still the best choice
+            return this.activeParticipant;
+          }
+        } else {
+          // Only one viewbot with tracks (the current one), keep it
+          return this.activeParticipant;
+        }
+      }
+
+      // No active participant or it's not in the list, select deterministically
+      viewbotsWithTracks.sort((a, b) => a.identity.localeCompare(b.identity));
+      const selected = viewbotsWithTracks[0];
+
+      if (viewbotsWithTracks.length > 1) {
+        console.log(`⚠️ LIVEKIT CLIENT: Multiple viewbots with tracks (${viewbotsWithTracks.length}), selected: ${selected.identity}`);
+      } else {
+        console.log(`📺 LIVEKIT CLIENT: Selected viewbot: ${selected.identity}`);
+      }
+
+      return selected;
+    }
+
+    return null;
+  }
+
+  /**
+   * Wait for a participant's tracks to be ready
+   * CRITICAL FIX: Actually enforces track readiness before returning
+   */
+  private async waitForParticipantTracks(participant: RemoteParticipant, timeoutMs: number = 10000): Promise<boolean> {
+    const startTime = Date.now();
+    const pollInterval = 200; // Check every 200ms
+
+    console.log(`⏳ LIVEKIT CLIENT: Waiting for tracks from ${participant.identity} (timeout: ${timeoutMs}ms)...`);
+
+    while (Date.now() - startTime < timeoutMs) {
+      const publications = Array.from(participant.trackPublications.values());
+      const readyTracks = publications.filter((pub: any) =>
+        pub.track && pub.subscribed && pub.track.mediaStreamTrack
+      );
+
+      if (readyTracks.length > 0) {
+        const elapsed = Date.now() - startTime;
+        console.log(`✅ LIVEKIT CLIENT: Participant ${participant.identity} has ${readyTracks.length} ready tracks (waited ${elapsed}ms)`);
+        return true;
+      }
+
+      // Log progress every second
+      const elapsed = Date.now() - startTime;
+      if (elapsed % 1000 < pollInterval) {
+        console.log(`⏳ LIVEKIT CLIENT: Still waiting for tracks... (${Math.floor(elapsed/1000)}s/${Math.floor(timeoutMs/1000)}s)`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+
+    console.error(`❌ LIVEKIT CLIENT: Timeout waiting for tracks from ${participant.identity} after ${timeoutMs}ms`);
+    return false;
+  }
+
+  /**
    * Consume media (MediaSoup compatible)
    * In LiveKit, this returns a MediaStream with subscribed tracks
    */
   async consume(): Promise<MediaStream | null> {
     console.log('📺 LIVEKIT CLIENT: Starting to consume media...');
-    
+
+    // Check if destroyed
+    if (this.isDestroyed) {
+      console.error('❌ LIVEKIT CLIENT: Cannot consume - client is destroyed');
+      return null;
+    }
+
+    // Prevent concurrent consume operations
+    if (this.isSwitchingStream) {
+      console.log('⏳ LIVEKIT CLIENT: Stream switch in progress, waiting...');
+      // Wait for current switch to complete
+      let waitTime = 0;
+      while (this.isSwitchingStream && waitTime < 5000 && !this.isDestroyed) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        waitTime += 100;
+      }
+
+      // If still switching or destroyed, return null
+      if (this.isSwitchingStream || this.isDestroyed) {
+        console.warn('⚠️ LIVEKIT CLIENT: Consume aborted - still switching or destroyed');
+        return null;
+      }
+    }
+
+    this.isSwitchingStream = true;
+
     try {
       // Ensure we have token
       if (!this.token) {
@@ -417,79 +768,115 @@ export class LiveKitClient {
         this.roomName = tokenInfo.roomName;
         this.identity = tokenInfo.identity;
       }
-      
+
       // Connect to room if not connected
       if (!this.room || this.room.state !== 'connected') {
         console.log('🔗 LIVEKIT CLIENT: Connecting to room as viewer...');
-        
+
         if (!this.room) {
           this.room = new Room({
-            adaptiveStream: true,
-            dynacast: true,
+            adaptiveStream: false,
+            dynacast: false,
+            simulcast: false,
+            videoCaptureDefaults: {
+              resolution: VideoPresets.h720.resolution,
+            },
+            stopLocalTrackOnUnpublish: false,
           } as RoomOptions);
           this.setupRoomEventHandlers();
         }
-        
+
         // Add connection timeout
         const connectPromise = this.room.connect(this.wsUrl, this.token, {
           autoSubscribe: true,
+          maxRetries: 3,
         } as RoomConnectOptions);
-        
+
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => reject(new Error('Connection timeout')), 10000);
         });
-        
+
         await Promise.race([connectPromise, timeoutPromise]);
-        
+
         console.log('✅ LIVEKIT CLIENT: Connected to room as viewer');
       }
-      
+
       // Wait for tracks to be available or timeout
       let waitTime = 0;
       const maxWait = 5000; // 5 seconds max wait
-      
+
       while (this.consumers.size === 0 && waitTime < maxWait) {
         await new Promise(resolve => setTimeout(resolve, 100));
         waitTime += 100;
       }
-      
-      // Create a MediaStream with all subscribed tracks
-      const stream = new MediaStream();
-      
-      // Get all remote participants
-      if (this.room) {
-        this.room.remoteParticipants.forEach((participant) => {
-          participant.trackPublications.forEach((publication: any) => {
-            if (publication.track && publication.subscribed && publication.track.mediaStreamTrack) {
-              stream.addTrack(publication.track.mediaStreamTrack);
-              console.log(`➕ LIVEKIT CLIENT: Added ${publication.kind} track from ${participant.identity} to stream`);
-            }
-          });
-        });
+
+      // Select the best participant to display
+      const selectedParticipant = this.selectActiveParticipant();
+
+      if (!selectedParticipant) {
+        console.log('⚠️ LIVEKIT CLIENT: No participants available to consume');
+        this.isSwitchingStream = false;
+        return new MediaStream(); // Return empty stream
       }
-      
-      // Also check our consumers map as fallback
-      if (stream.getTracks().length === 0) {
-        this.consumers.forEach((track: RemoteTrack) => {
-          if (track.mediaStreamTrack && !stream.getTracks().includes(track.mediaStreamTrack)) {
-            stream.addTrack(track.mediaStreamTrack);
-            console.log(`➕ LIVEKIT CLIENT: Added ${track.kind} track to stream (from consumers)`);
+
+      // If this is a different participant, switch to them
+      const isNewParticipant = !this.activeParticipant ||
+                               this.activeParticipant.identity !== selectedParticipant.identity;
+
+      if (isNewParticipant) {
+        console.log(`🔄 LIVEKIT CLIENT: Switching from ${this.activeParticipant?.identity || 'none'} to ${selectedParticipant.identity}`);
+
+        // CRITICAL FIX: Wait for new participant's tracks to be ready with longer timeout
+        const tracksReady = await this.waitForParticipantTracks(selectedParticipant, 10000); // Increased from 3s to 10s
+        if (!tracksReady) {
+          // FIX: Don't proceed if tracks aren't ready - throw an error instead
+          console.error(`❌ LIVEKIT CLIENT: Cannot consume - tracks not ready for ${selectedParticipant.identity}`);
+          this.isSwitchingStream = false;
+          throw new Error(`Tracks not ready for participant ${selectedParticipant.identity}`);
+        }
+
+        // Clean up old stream
+        this.cleanupOldStream();
+
+        // Update active participant
+        this.activeParticipant = selectedParticipant;
+        this.currentStreamerId = selectedParticipant.identity;
+      }
+
+      // Create a new MediaStream with tracks from the active participant
+      const stream = new MediaStream();
+
+      if (this.activeParticipant) {
+        this.activeParticipant.trackPublications.forEach((publication: any) => {
+          if (publication.track && publication.subscribed && publication.track.mediaStreamTrack) {
+            stream.addTrack(publication.track.mediaStreamTrack);
+            console.log(`➕ LIVEKIT CLIENT: Added ${publication.kind} track from ${this.activeParticipant!.identity}`);
           }
         });
       }
-      
+
+      // CRITICAL FIX: Enforce that we have tracks before returning
       if (stream.getTracks().length === 0) {
-        console.log('⚠️ LIVEKIT CLIENT: No tracks available to consume yet');
-        // Return an empty stream instead of null for compatibility
-        return stream;
+        console.error('❌ LIVEKIT CLIENT: No tracks available after waiting - cannot consume empty stream');
+        this.isSwitchingStream = false;
+        throw new Error('No tracks available to consume');
       }
-      
-      console.log(`✅ LIVEKIT CLIENT: Consuming ${stream.getTracks().length} tracks`);
+
+      // Store the current stream reference
+      this.currentStream = stream;
+
+      console.log(`✅ LIVEKIT CLIENT: Consuming ${stream.getTracks().length} tracks from ${this.activeParticipant?.identity}`);
       return stream;
-      
+
     } catch (error) {
       console.error('❌ LIVEKIT CLIENT: Failed to consume media:', error);
+      // Reset state on error
+      this.activeParticipant = null;
+      this.currentStreamerId = null;
       return null;
+    } finally {
+      // Always reset the switching flag
+      this.isSwitchingStream = false;
     }
   }
 
@@ -623,24 +1010,46 @@ export class LiveKitClient {
   }
 
   /**
-   * Reset client
+   * Reset client with proper cleanup
    */
   async reset(): Promise<void> {
     console.log('🔄 LIVEKIT CLIENT: Performing complete reset...');
-    
-    await this.stopProducing();
-    
-    if (this.room) {
-      this.room.disconnect();
+
+    // Clear all pending timeouts
+    this.clearAllTimeouts();
+
+    // Clear pending updates
+    this.pendingStreamUpdates.clear();
+
+    // Clean up stream before resetting
+    this.cleanupOldStream();
+
+    // Stop producing
+    try {
+      await this.stopProducing();
+    } catch (error) {
+      console.error('❌ LIVEKIT CLIENT: Error stopping production during reset:', error);
     }
-    
+
+    // Disconnect from room if connected
+    if (this.room) {
+      try {
+        this.room.disconnect();
+      } catch (error) {
+        console.error('❌ LIVEKIT CLIENT: Error disconnecting during reset:', error);
+      }
+    }
+
+    // Clear state
     this.consumers.clear();
     this.token = '';
     this.wsUrl = '';
     this.currentStreamerId = null;
+    this.activeParticipant = null;
     this.reconnectionAttempts = 0;
     this.isReconnecting = false;
-    
+    this.isSwitchingStream = false;
+
     console.log('✅ LIVEKIT CLIENT: Reset complete');
   }
 
@@ -769,27 +1178,56 @@ export class LiveKitClient {
   }
 
   /**
-   * Destroy client
+   * Destroy client with comprehensive cleanup
    */
   async destroy(): Promise<void> {
     console.log('💥 LIVEKIT CLIENT: Destroying client...');
-    
+
+    // Set destroyed flag first to prevent new operations
     this.isDestroyed = true;
-    
-    if (this.reconnectionTimer) {
-      clearTimeout(this.reconnectionTimer);
-      this.reconnectionTimer = undefined;
+
+    // Clear all pending timeouts
+    this.clearAllTimeouts();
+
+    // Clear pending stream updates
+    this.pendingStreamUpdates.clear();
+
+    // Clean up stream reference
+    this.cleanupOldStream();
+
+    // Stop producing if we were
+    try {
+      await this.stopProducing();
+    } catch (error) {
+      console.error('❌ LIVEKIT CLIENT: Error stopping production during destroy:', error);
     }
-    
-    await this.stopProducing();
-    
+
+    // Disconnect and cleanup room
     if (this.room) {
-      this.room.disconnect();
+      try {
+        // Remove all event listeners before disconnecting
+        this.room.removeAllListeners();
+        // Disconnect from room
+        this.room.disconnect();
+      } catch (error) {
+        console.error('❌ LIVEKIT CLIENT: Error disconnecting room:', error);
+      }
       this.room = null;
     }
-    
+
+    // Clear all state
     this.consumers.clear();
-    
+    this.activeParticipant = null;
+    this.currentStreamerId = null;
+    this.isSwitchingStream = false;
+    this.isReconnecting = false;
+    this.reconnectionAttempts = 0;
+
+    // Clear local tracks
+    this.localVideoTrack = null;
+    this.localAudioTrack = null;
+    this.localStream = null;
+
     console.log('✅ LIVEKIT CLIENT: Client destroyed');
   }
 }

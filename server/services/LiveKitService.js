@@ -318,8 +318,32 @@ class LiveKitService {
     }
   }
 
-  getCurrentStreamer() {
-    return this.currentStreamer;
+  async getCurrentStreamer() {
+    // If we have a cached current streamer, return it
+    if (this.currentStreamer) {
+      return this.currentStreamer;
+    }
+
+    // Otherwise, query LiveKit for active participants
+    // This handles viewbots that connect directly via WHIP
+    try {
+      const participants = await this.roomClient.listParticipants(this.config.roomName);
+
+      // Find a participant with an audio track (likely a streamer)
+      const streamer = participants.find(p =>
+        p.tracks.some(t => t.type === 0) // 0 = TRACK_TYPE_AUDIO
+      );
+
+      if (streamer) {
+        console.log(`🔍 LIVEKIT: Found active streamer via room query: ${streamer.identity}`);
+        return streamer.identity;
+      }
+
+      return null;
+    } catch (err) {
+      console.error(`❌ LIVEKIT: Error querying for current streamer:`, err.message);
+      return null;
+    }
   }
 
   getRouter() {
@@ -447,6 +471,83 @@ class LiveKitService {
     } catch (error) {
       console.error(`❌ LIVEKIT: Failed to mute/unmute track:`, error);
     }
+  }
+
+  /**
+   * Verify that a participant has active publishing tracks
+   * This ensures tracks are actually available before viewers try to consume
+   */
+  async verifyParticipantTracks(participantIdentity, options = {}) {
+    const {
+      requireVideo = true,
+      requireAudio = false,
+      maxAttempts = 10,
+      retryDelay = 500
+    } = options;
+
+    console.log(`🔍 LIVEKIT: Verifying tracks for participant ${participantIdentity}...`);
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const participants = await this.roomClient.listParticipants(this.config.roomName);
+        const participant = participants.find(p => p.identity === participantIdentity);
+
+        if (!participant) {
+          console.warn(`⚠️ LIVEKIT: Participant ${participantIdentity} not found (attempt ${attempt + 1}/${maxAttempts})`);
+          await this.delay(retryDelay * Math.pow(1.5, attempt)); // Exponential backoff
+          continue;
+        }
+
+        // Check for required tracks
+        const hasVideo = participant.tracks.some(t =>
+          t.type === 0 && // TRACK_TYPE_VIDEO = 0
+          !t.muted
+        );
+
+        const hasAudio = participant.tracks.some(t =>
+          t.type === 1 && // TRACK_TYPE_AUDIO = 1
+          !t.muted
+        );
+
+        // Check if requirements are met
+        const videoOk = !requireVideo || hasVideo;
+        const audioOk = !requireAudio || hasAudio;
+
+        if (videoOk && audioOk) {
+          console.log(`✅ LIVEKIT: Participant ${participantIdentity} has required tracks (video: ${hasVideo}, audio: ${hasAudio})`);
+          return {
+            verified: true,
+            hasVideo,
+            hasAudio,
+            trackCount: participant.tracks.length,
+            attempt: attempt + 1
+          };
+        }
+
+        console.log(`⏳ LIVEKIT: Waiting for tracks... (video: ${hasVideo}/${requireVideo}, audio: ${hasAudio}/${requireAudio}) - attempt ${attempt + 1}/${maxAttempts}`);
+        await this.delay(retryDelay * Math.pow(1.5, attempt));
+
+      } catch (error) {
+        console.error(`❌ LIVEKIT: Error verifying tracks (attempt ${attempt + 1}):`, error);
+        await this.delay(retryDelay * Math.pow(1.5, attempt));
+      }
+    }
+
+    console.error(`❌ LIVEKIT: Failed to verify tracks for ${participantIdentity} after ${maxAttempts} attempts`);
+    return {
+      verified: false,
+      hasVideo: false,
+      hasAudio: false,
+      trackCount: 0,
+      attempt: maxAttempts
+    };
+  }
+
+  /**
+   * Helper method for delays
+   */
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 

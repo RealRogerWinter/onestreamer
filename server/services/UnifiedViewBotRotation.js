@@ -21,8 +21,8 @@ class UnifiedViewBotRotation {
     const backend = process.env.WEBRTC_BACKEND || 'mediasoup';
     this.backendType = (useAdapter && backend === 'livekit') ? 'livekit' : 'mediasoup';
     
-    // Current mode - default to WebRTC for mobile compatibility
-    this.mode = 'webrtc'; // 'plainrtp' or 'webrtc'
+    // Current mode - default to plainrtp since WebRTC viewbots have GStreamer issues
+    this.mode = 'plainrtp'; // 'plainrtp' or 'webrtc'
     
     // Rotation instances
     this.plainRtpRotation = null;
@@ -54,12 +54,16 @@ class UnifiedViewBotRotation {
     }
     
     // Initialize WebRTC rotation (new system)
+    // CRITICAL: Disable auto-start before initialization to prevent unwanted rotation
     if (!this.webRtcRotation) {
       this.webRtcRotation = new WebRTCViewBotRotation(this.io, this.streamService);
+      // Disable auto-start before initialization
+      this.webRtcRotation.settings.enabled = false;
       await this.webRtcRotation.initialize(videoFiles);
     }
-    
-    // Set default mode
+
+    // Set default mode - now defaults to plainrtp since WebRTC viewbots have issues
+    this.mode = 'plainrtp';
     await this.setMode(this.mode);
     
     console.log('✅ UnifiedViewBotRotation: Both systems initialized');
@@ -79,12 +83,23 @@ class UnifiedViewBotRotation {
     if (this.activeRotation) {
       await this.activeRotation.stopRotation();
     }
-    
+
+    // CRITICAL: Explicitly disable the rotation system we're switching away from
+    if (mode === 'plainrtp' && this.webRtcRotation) {
+      this.webRtcRotation.settings.enabled = false;
+      await this.webRtcRotation.stopRotation();
+      console.log('🛑 WebRTC rotation disabled');
+    } else if (mode === 'webrtc' && this.plainRtpRotation) {
+      // Disable plain RTP if switching to WebRTC
+      console.log('🛑 Plain RTP rotation disabled');
+    }
+
     // Switch mode
     this.mode = mode;
-    
+
     if (mode === 'webrtc') {
       this.activeRotation = this.webRtcRotation;
+      this.webRtcRotation.settings.enabled = true;
       console.log('📱 Using WebRTC viewbots (mobile compatible)');
     } else {
       this.activeRotation = this.plainRtpRotation;

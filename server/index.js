@@ -24,6 +24,8 @@ const TestStreamService = require('./services/TestStreamService');
 const ViewbotService = require('./services/ViewbotService');
 const ViewBotClientService = require('./services/ViewBotClientService');
 const ViewBotWebRTCService = require('./services/ViewBotWebRTCService');
+const ViewBotLiveKitService = require('./services/ViewBotLiveKitService');
+const SimpleViewBotRotation = require('./services/SimpleViewBotRotation');
 const SimpleMediaStreamService = require('./services/SimpleMediaStreamService');
 const MediasoupService = require('./services/MediasoupService');
 const AudioOptimizationService = require('./services/AudioOptimizationService');
@@ -46,6 +48,10 @@ const StreamBotService = require('./services/StreamBotService');
 const RecordingService = require('./services/RecordingService');
 const FileCompressionService = require('./services/FileCompressionService');
 const RecordingStorageService = require('./services/RecordingStorageService');
+const ClipStorageService = require('./services/ClipStorageService');
+const ClipProcessorService = require('./services/ClipProcessorService');
+const ClipService = require('./services/ClipService');
+const ContinuousRecordingService = require('./services/ContinuousRecordingService');
 const TranscriptionService = require('./services/TranscriptionService');
 const IPBanService = require('./services/IPBanService');
 const authRoutes = require('./routes/auth');
@@ -60,6 +66,7 @@ const streambotRoutes = require('./routes/streambot');
 // ViewBot API routes will be initialized after services are created
 let viewbotApiRoutes;
 const bugReportsRoutes = require('./routes/bug-reports');
+const clipsRoutes = require('./routes/clips');
 const database = require('./database/database');
 const { runAsync, getAsync, allAsync } = database;
 
@@ -332,6 +339,7 @@ app.use('/api/visualfx', visualfxRoutes);
 app.use('/api/chatbots', chatbotRoutes);
 app.use('/api/streambot', streambotRoutes);
 app.use('/api/bug-reports', bugReportsRoutes);
+app.use('/api/clips', clipsRoutes);
 
 // Tutorial API endpoints
 app.get('/api/tutorial', (req, res) => {
@@ -714,6 +722,27 @@ const recordingStorageService = new RecordingStorageService(database);
 const fileCompressionService = new FileCompressionService(database);
 const recordingService = new RecordingService(database, mediasoupService, recordingStorageService);
 
+// Initialize clip services
+const clipStorageService = new ClipStorageService();
+const clipProcessorService = new ClipProcessorService(clipStorageService);
+
+// Initialize continuous recording service for LiveKit Egress
+const continuousRecordingService = new ContinuousRecordingService({
+  livekitHost: process.env.LIVEKIT_HOST || 'http://127.0.0.1:7882',
+  apiKey: process.env.LIVEKIT_API_KEY || 'devkey',
+  apiSecret: process.env.LIVEKIT_API_SECRET || 'secret',
+  roomName: process.env.LIVEKIT_ROOM_NAME || 'onestreamer-main',
+  outputDir: '/root/onestreamer/egress-recordings',
+  retentionMinutes: 10 // Keep last 10 minutes for clipping
+});
+
+const clipService = new ClipService(database, clipStorageService, clipProcessorService, continuousRecordingService);
+
+// Connect clip processor to clip service for status updates
+clipProcessorService.setProcessedCallback(async (clipId, result) => {
+  await clipService.updateClipProcessingResult(clipId, result);
+});
+
 // Initialize transcription service with recording service dependency
 const transcriptionService = new TranscriptionService(database, mediasoupService, recordingService);
 
@@ -792,6 +821,13 @@ app.set('canvasFxService', canvasFxService);
 app.set('soundFxService', soundFxService);
 app.set('visualFxService', visualFxService);
 app.set('transcriptionService', transcriptionService);
+app.set('clipStorageService', clipStorageService);
+app.set('clipProcessorService', clipProcessorService);
+app.set('clipService', clipService);
+app.set('continuousRecordingService', continuousRecordingService);
+
+// Give clip processor access to Socket.IO for real-time updates
+clipProcessorService.setSocketIO(io);
 
 // API endpoint for chat service to track messages
 app.post('/api/internal/track-chat-message', express.json(), async (req, res) => {
@@ -2317,6 +2353,93 @@ const enrichStreamStatus = async (status) => {
   return enriched;
 };
 
+// DEDUP: Track last emitted stream-ready to prevent duplicate emissions
+let lastEmittedStreamReady = { streamerId: null, timestamp: 0 };
+
+/**
+ * Helper function to verify tracks and emit stream-ready
+ * This ensures viewers don't try to consume streams before tracks are publishing
+ * CRITICAL FIX: Prevents "black square" issues during stream switches
+ */
+const verifyAndEmitStreamReady = async (streamerId, streamData = {}) => {
+  // DEDUP: Prevent duplicate stream-ready emissions within 2 seconds
+  const now = Date.now();
+  if (lastEmittedStreamReady.streamerId === streamerId &&
+      (now - lastEmittedStreamReady.timestamp) < 2000) {
+    console.log(`⏭️ STREAM-READY: Skipping duplicate emission for ${streamerId} (${now - lastEmittedStreamReady.timestamp}ms since last)`);
+    return true; // Return true as if successful since we already emitted for this stream
+  }
+  console.log(`🔍 STREAM-READY: Verifying tracks for ${streamerId} before emitting...`);
+
+  // Check if we're using LiveKit backend
+  const isLiveKit = mediasoupService.isLiveKit && mediasoupService.isLiveKit();
+
+  if (isLiveKit && mediasoupService.verifyParticipantTracks) {
+    // For LiveKit, verify tracks are actually publishing
+    try {
+      const verification = await mediasoupService.verifyParticipantTracks(streamerId, {
+        requireVideo: true,
+        requireAudio: false,
+        maxAttempts: 10,
+        retryDelay: 500
+      });
+
+      if (!verification.verified) {
+        console.error(`❌ STREAM-READY: Track verification failed for ${streamerId} after ${verification.attempt} attempts`);
+        // Don't emit stream-ready - tracks aren't ready
+        return false;
+      }
+
+      console.log(`✅ STREAM-READY: Tracks verified for ${streamerId} (video: ${verification.hasVideo}, audio: ${verification.hasAudio}) after ${verification.attempt} attempts`);
+
+      // Emit stream-ready with verified track info
+      const streamerDisplayName = await getStreamerDisplayName(streamerId);
+      const emitTimestamp = Date.now();
+      io.emit('stream-ready', {
+        streamerId,
+        newStreamId: streamerId,
+        isWebRTC: true,
+        hasVideo: verification.hasVideo,
+        hasAudio: verification.hasAudio,
+        producerVerified: true,
+        trackCount: verification.trackCount,
+        timestamp: emitTimestamp,
+        streamerDisplayName,
+        ...streamData
+      });
+
+      // DEDUP: Track this emission
+      lastEmittedStreamReady = { streamerId, timestamp: emitTimestamp };
+      console.log(`📡 STREAM-READY: Emitted verified stream-ready for ${streamerId}`);
+      return true;
+
+    } catch (error) {
+      console.error(`❌ STREAM-READY: Error verifying tracks for ${streamerId}:`, error);
+      // Don't emit stream-ready on error
+      return false;
+    }
+  } else {
+    // For MediaSoup or when verification isn't available, emit immediately
+    // MediaSoup producers are synchronous, so they're ready when created
+    const streamerDisplayName = await getStreamerDisplayName(streamerId);
+    const emitTimestamp = Date.now();
+    io.emit('stream-ready', {
+      streamerId,
+      newStreamId: streamerId,
+      isWebRTC: true,
+      producerVerified: true,
+      timestamp: emitTimestamp,
+      streamerDisplayName,
+      ...streamData
+    });
+
+    // DEDUP: Track this emission
+    lastEmittedStreamReady = { streamerId, timestamp: emitTimestamp };
+    console.log(`📡 STREAM-READY: Emitted stream-ready for ${streamerId} (MediaSoup/no verification needed)`);
+    return true;
+  }
+};
+
 app.get('/', (req, res) => {
   res.json({ 
     message: 'OneStreamer API Server', 
@@ -2386,26 +2509,14 @@ app.get('/api/media/info', (req, res) => {
 // Mediasoup API routes
 app.get('/api/mediasoup/router-capabilities', async (req, res) => {
   try {
-    const rtpCapabilities = await mediasoupService.getRouterRtpCapabilities();
-    
-    // Check if client prefers H264 (iOS Safari)
+    // CRITICAL iOS FIX: Use optimized method that handles iOS-specific codec filtering
     const preferH264 = req.query.preferH264 === 'true';
-    
-    if (preferH264 && rtpCapabilities?.codecs) {
-      // Reorder codecs to prioritize H264 for iOS
-      const h264Codecs = rtpCapabilities.codecs.filter(codec => 
-        codec.mimeType?.toLowerCase() === 'video/h264'
-      );
-      const otherCodecs = rtpCapabilities.codecs.filter(codec => 
-        codec.mimeType?.toLowerCase() !== 'video/h264'
-      );
-      
-      // Put H264 first for iOS devices
-      rtpCapabilities.codecs = [...h264Codecs, ...otherCodecs];
-      
-      console.log('📱 MEDIASOUP: Prioritized H264 codec for iOS client');
+    const rtpCapabilities = await mediasoupService.getRouterRtpCapabilities(preferH264);
+
+    if (preferH264) {
+      console.log('📱 MEDIASOUP: Sent iOS-optimized RTP capabilities (H264 Baseline only)');
     }
-    
+
     res.json({ rtpCapabilities });
   } catch (error) {
     console.error('❌ Failed to get router capabilities:', error);
@@ -5506,7 +5617,14 @@ app.get('/admin/recordings/continuous/history/:sessionId', authenticateAdmin, as
 // Helper functions for stream state changes
 function notifyViewersStreamStarted() {
   console.log('📊 TIME: Stream started - notifying viewers to start earning view time');
-  
+
+  // Start continuous recording for clips
+  if (continuousRecordingService) {
+    continuousRecordingService.startRecording().catch(err => {
+      console.error('Failed to start continuous recording:', err);
+    });
+  }
+
   // Emit to all viewers
   io.to('viewers').emit('stream-started-for-viewing');
   
@@ -5540,21 +5658,29 @@ function notifyViewersStreamEnded() {
   }
   
   // Trigger ViewBot rotation after a delay when stream ends
+  const triggerTime = Date.now();
+  console.log(`🔍 ROTATION TRIGGER: Stream ended at ${new Date(triggerTime).toISOString()}`);
+  console.log(`🔍 ROTATION TRIGGER: Checking conditions - viewBotRotation exists: ${!!global.viewBotRotation}, enabled: ${global.viewBotRotation?.enabled}`);
   if (global.viewBotRotation && global.viewBotRotation.enabled) {
-    console.log('🔄 ROTATION: Stream ended, scheduling ViewBot rotation after delay...');
+    console.log('✅ ROTATION TRIGGER: Conditions met, scheduling rotation in 5s');
     setTimeout(async () => {
-      // Check if still no active streamer
-      if (!streamService.getCurrentStreamer() && global.viewBotRotation && global.viewBotRotation.enabled) {
-        console.log('🔄 ROTATION: No active streamer, starting ViewBot rotation...');
+      const currentStreamer = streamService.getCurrentStreamer();
+      console.log(`🔍 ROTATION TRIGGER: After 5s delay (${Date.now() - triggerTime}ms elapsed) - currentStreamer: ${currentStreamer}`);
+      if (!currentStreamer && global.viewBotRotation && global.viewBotRotation.enabled) {
+        console.log('✅ ROTATION TRIGGER: No streamer, triggering rotation...');
+        const rotateStartTime = Date.now();
         try {
           await global.viewBotRotation.rotateToNextBot();
+          console.log(`⏱️ ROTATION TRIGGER: Total time from stream end to rotation complete: ${Date.now() - triggerTime}ms`);
         } catch (error) {
-          console.error('❌ ROTATION: Failed to start rotation after stream end:', error);
+          console.error('❌ Failed to start rotation after stream end:', error);
         }
       } else {
-        console.log('🔄 ROTATION: Active streamer found or rotation disabled, skipping rotation');
+        console.log(`⏭️  ROTATION TRIGGER: Skipped - currentStreamer: ${currentStreamer}`);
       }
-    }, 5000); // 5 second delay before starting rotation
+    }, 5000);
+  } else {
+    console.log('❌ ROTATION TRIGGER: Conditions not met, rotation will not trigger');
   }
 }
 
@@ -6258,53 +6384,92 @@ io.on('connection', async (socket) => {
 
       if (currentStreamer) {
         console.log(`📢 TAKEOVER: Notifying current streamer ${currentStreamer} of takeover by ${socket.id}`);
-        
-        // Handle viewbot takeover
-        if (viewbotService && viewbotService.isViewbotStream(currentStreamer)) {
-          console.log('🤖 TAKEOVER: Current streamer is viewbot, handling graceful takeover');
-          await viewbotService.handleTakeover(socket.id);
-          
-          // If real user is taking over from viewbot, ensure protection is set
+
+        // CRITICAL FIX: Comprehensive viewbot detection including LiveKit viewbots
+        const isOldViewBot = viewbotService && viewbotService.isViewbotStream(currentStreamer);
+        const userId = sessionService.getUserIdBySocketId(currentStreamer);
+        const isNewViewBot = userId && userId < 0;
+        const isLiveKitViewBot = currentStreamer.startsWith('viewbot-'); // LiveKit viewbots have this prefix
+        const currentIsViewbot = isOldViewBot || isNewViewBot || isLiveKitViewBot;
+
+        console.log(`🔍 TAKEOVER: Viewbot detection - old: ${isOldViewBot}, new: ${isNewViewBot}, livekit: ${isLiveKitViewBot}`);
+
+        // Handle viewbot takeover - must stop the viewbot properly
+        if (currentIsViewbot) {
+          console.log(`🤖 TAKEOVER: Current streamer ${currentStreamer} is a viewbot, stopping it`);
+
+          // Stop OLD viewbot system
+          if (isOldViewBot && viewbotService) {
+            console.log('🤖 TAKEOVER: Stopping old viewbot service');
+            await viewbotService.handleTakeover(socket.id);
+          }
+
+          // CRITICAL: Stop LiveKit/SimpleViewBotRotation viewbot
+          if (isLiveKitViewBot || isNewViewBot) {
+            console.log('🤖 TAKEOVER: Stopping LiveKit viewbot rotation');
+            try {
+              // Stop via SimpleViewBotRotation (main rotation system)
+              if (SimpleViewBotRotation && SimpleViewBotRotation.stopRotation) {
+                await SimpleViewBotRotation.stopRotation();
+                console.log('✅ TAKEOVER: SimpleViewBotRotation stopped');
+              }
+
+              // Also stop via ViewBotClientService if available
+              if (viewBotClientService && viewBotClientService.stopViewBotRotation) {
+                viewBotClientService.stopViewBotRotation();
+                console.log('✅ TAKEOVER: ViewBotClientService rotation stopped');
+              }
+
+              // Stop via global viewBotRotation if available
+              if (global.viewBotRotation && global.viewBotRotation.stopRotation) {
+                await global.viewBotRotation.stopRotation();
+                console.log('✅ TAKEOVER: global.viewBotRotation stopped');
+              }
+
+              // Stop via unified rotation if available
+              if (global.unifiedViewBotRotation && global.unifiedViewBotRotation.stopRotation) {
+                await global.unifiedViewBotRotation.stopRotation();
+                console.log('✅ TAKEOVER: unifiedViewBotRotation stopped');
+              }
+            } catch (viewbotStopError) {
+              console.error('❌ TAKEOVER: Error stopping viewbot:', viewbotStopError);
+            }
+          }
+
+          // Set protection for real user taking over from viewbot
           if (isRealUser && viewBotClientService) {
             viewBotClientService.setRealStreamerStatus(true);
+            console.log('✅ TAKEOVER: Set real streamer status to protect from viewbot interruption');
           }
         } else {
-          // Check if the current streamer being taken over is a viewbot
-          // Use the same detection pattern as elsewhere in the code
-          const isOldViewBot = viewbotService && viewbotService.isViewbotStream(currentStreamer);
-          const userId = sessionService.getUserIdBySocketId(currentStreamer);
-          const isNewViewBot = userId && userId < 0;
-          const currentIsViewbot = isOldViewBot || isNewViewBot;
-          
-          // Only set cooldown for real users, not viewbots
+          // Current streamer is a real user (not a viewbot)
+          console.log(`👤 TAKEOVER: Current streamer ${currentStreamer} is a real user`);
+
+          // Set cooldown for real user being taken over
           let cooldownInfo = null;
-          if (!currentIsViewbot) {
-            console.log(`🔒 TAKEOVER: Setting cooldown for real user ${currentStreamer} being taken over`);
-            await takeoverService.setSocketCooldown(currentStreamer, 'stream_taken_over');
-            cooldownInfo = await takeoverService.getSocketCooldown(currentStreamer);
-          } else {
-            console.log(`🤖 TAKEOVER: Skipping cooldown for viewbot ${currentStreamer} being taken over`);
-          }
-          
+          console.log(`🔒 TAKEOVER: Setting cooldown for real user ${currentStreamer} being taken over`);
+          await takeoverService.setSocketCooldown(currentStreamer, 'stream_taken_over');
+          cooldownInfo = await takeoverService.getSocketCooldown(currentStreamer);
+
           // Emit takeover event with cooldown information
-          io.to(currentStreamer).emit('stream-takeover', { 
+          io.to(currentStreamer).emit('stream-takeover', {
             newStreamerId: socket.id,
             cooldownRemaining: cooldownInfo ? cooldownInfo.remaining : takeoverService.getCooldownSeconds()
           });
-          
+
           // CRITICAL FIX: Completely disconnect the previous streamer to prevent auto-reconnection
           const previousStreamerSocket = io.sockets.sockets.get(currentStreamer);
           if (previousStreamerSocket) {
             console.log(`🔌 TAKEOVER: Forcefully disconnecting previous streamer ${currentStreamer} to prevent auto-reconnection`);
             previousStreamerSocket.leave('streamer');
-            
+
             // Send a specific disconnect reason so the client knows not to auto-reconnect
-            previousStreamerSocket.emit('force-disconnect', { 
+            previousStreamerSocket.emit('force-disconnect', {
               reason: 'stream_takeover',
               message: 'Your stream has been taken over by another user',
               shouldReconnect: false
             });
-            
+
             // Forcefully disconnect the socket after a brief delay to ensure the message is sent
             setTimeout(() => {
               if (previousStreamerSocket.connected) {
@@ -6557,20 +6722,29 @@ io.on('connection', async (socket) => {
           
           console.log(`🎬 TAKEOVER: ViewBot ${socket.id} ready - notifying viewers immediately (GStreamer mode)`);
           const streamerDisplayName = await getStreamerDisplayName(socket.id);
-          io.emit('stream-ready', {
-            streamerId: socket.id,
-            newStreamId: socket.id,
-            isWebRTC: true,
-            streamType: 'viewbot',
-            isViewBot: true,
-            hasVideo: true,  // ViewBots always have video via GStreamer
-            hasAudio: true,  // ViewBots always have audio via GStreamer
-            producerVerified: true,
-            streamStartTime: Date.now(),
-            timestamp: Date.now(),
-            streamerDisplayName: streamerDisplayName
-          });
-          console.log(`📡 STREAM-READY: ViewBot ${socket.id} ready with display name: ${streamerDisplayName}`);
+          const emitTimestamp = Date.now();
+
+          // DEDUP: Check if we already emitted for this stream recently
+          if (lastEmittedStreamReady.streamerId === socket.id &&
+              (emitTimestamp - lastEmittedStreamReady.timestamp) < 2000) {
+            console.log(`⏭️ STREAM-READY: Skipping duplicate ViewBot emission for ${socket.id}`);
+          } else {
+            io.emit('stream-ready', {
+              streamerId: socket.id,
+              newStreamId: socket.id,
+              isWebRTC: true,
+              streamType: 'viewbot',
+              isViewBot: true,
+              hasVideo: true,  // ViewBots always have video via GStreamer
+              hasAudio: true,  // ViewBots always have audio via GStreamer
+              producerVerified: true,
+              streamStartTime: emitTimestamp,
+              timestamp: emitTimestamp,
+              streamerDisplayName: streamerDisplayName
+            });
+            lastEmittedStreamReady = { streamerId: socket.id, timestamp: emitTimestamp };
+            console.log(`📡 STREAM-READY: ViewBot ${socket.id} ready with display name: ${streamerDisplayName}`);
+          }
           
           // Notify existing viewers to start tracking view time
           notifyViewersStreamStarted();
@@ -7053,13 +7227,47 @@ io.on('connection', async (socket) => {
       
       socket.leave('streamer');
       socket.join('viewers');
-      
+
       io.emit('stream-ended');
       notifyViewersStreamEnded();
       notifyViewersStreamEnded();
       io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
-      
+
       console.log(`Stream ended by: ${socket.id}`);
+
+      // CRITICAL: Restart viewbot rotation after real user stops streaming
+      // Check if this was a real user (not a viewbot)
+      const userId = sessionService.getUserIdBySocketId(socket.id);
+      const isViewbot = userId && userId < 0;
+      const isLiveKitViewBot = socket.id.startsWith('viewbot-');
+
+      if (!isViewbot && !isLiveKitViewBot && viewBotClientService) {
+        console.log(`🔓 VOLUNTARY STOP: Real user ${socket.id} stopped streaming - clearing viewbot protection`);
+        viewBotClientService.setRealStreamerStatus(false);
+
+        // Restart viewbot rotation after real user voluntarily stops
+        setTimeout(async () => {
+          console.log(`🔄 RESTART: Attempting to restart viewbot rotation after voluntary stop`);
+
+          if (global.viewBotRotation && global.viewBotRotation.startRotation) {
+            try {
+              console.log(`🚀 RESTART: Restarting global.viewBotRotation`);
+              await global.viewBotRotation.startRotation();
+            } catch (e) {
+              console.error(`❌ RESTART: Failed to restart global.viewBotRotation:`, e);
+            }
+          }
+
+          if (SimpleViewBotRotation && SimpleViewBotRotation.startRotation) {
+            try {
+              console.log(`🚀 RESTART: Restarting SimpleViewBotRotation`);
+              await SimpleViewBotRotation.startRotation();
+            } catch (e) {
+              console.error(`❌ RESTART: Failed to restart SimpleViewBotRotation:`, e);
+            }
+          }
+        }, 3000);
+      }
     }
   });
 
@@ -7352,17 +7560,27 @@ io.on('connection', async (socket) => {
   // ViewBot stream ready notification
   socket.on('viewbot-stream-ready', async (data) => {
     console.log(`📺 SERVER: ViewBot ${data.botId} reports stream ready, triggering stream switch`);
-    
+
     try {
+      const emitTimestamp = Date.now();
+
+      // DEDUP: Check if we already emitted for this stream recently
+      if (lastEmittedStreamReady.streamerId === socket.id &&
+          (emitTimestamp - lastEmittedStreamReady.timestamp) < 2000) {
+        console.log(`⏭️ STREAM-READY: Skipping duplicate viewbot-stream-ready emission for ${socket.id}`);
+        return;
+      }
+
       // Emit stream-ready to trigger viewer consumption
       io.emit('stream-ready', {
         streamerId: socket.id,
         isViewBot: true,
         streamType: 'viewbot',
         botId: data.botId,
-        timestamp: data.timestamp
+        timestamp: emitTimestamp
       });
-      
+
+      lastEmittedStreamReady = { streamerId: socket.id, timestamp: emitTimestamp };
       console.log(`✅ SERVER: Stream-ready notification sent for ViewBot ${data.botId}`);
       
     } catch (error) {
@@ -7615,20 +7833,15 @@ io.on('connection', async (socket) => {
                   timestamp: Date.now()
                 });
                 console.log(`✅ MEDIASOUP: Producer verified for ${socket.id} (video: ${readyHasVideo}, audio: ${readyHasAudio})`);
-                
-                io.emit('stream-ready', { 
-                streamerId: socket.id, 
-                newStreamId: socket.id,
-                isWebRTC: true,
-                streamType: 'webrtc',
-                hasVideo: readyHasVideo,
-                hasAudio: readyHasAudio,
-                producerVerified: true,
-                streamStartTime: streamService.streamStartTime,
-                timestamp: Date.now(),
-                streamerDisplayName: streamerDisplayName
-              });
-              console.log(`📡 STREAM-READY: Regular streamer ${socket.id} ready with display name: ${streamerDisplayName}`);
+
+                // Use verified emission helper for LiveKit backend track verification
+                await verifyAndEmitStreamReady(socket.id, {
+                  streamType: 'webrtc',
+                  hasVideo: readyHasVideo,
+                  hasAudio: readyHasAudio,
+                  streamStartTime: streamService.streamStartTime
+                });
+                console.log(`📡 STREAM-READY: Regular streamer ${socket.id} ready emission completed`);
               
               // Visual effects sync temporarily disabled to debug rotate_90 issue
               // try {
@@ -7703,17 +7916,13 @@ io.on('connection', async (socket) => {
             
             console.log(`🎬 MEDIASOUP: Fallback notification for ${socket.id} (video: ${currentHasVideo}, audio: ${currentHasAudio})`);
             notifiedStreamers.add(socket.id);
-            
-            io.emit('stream-ready', { 
-              streamerId: socket.id, 
-              newStreamId: socket.id,
-              isWebRTC: true,
+
+            // Use verified emission helper for LiveKit backend track verification
+            await verifyAndEmitStreamReady(socket.id, {
               streamType: 'webrtc',
               hasVideo: currentHasVideo,
               hasAudio: currentHasAudio,
-              producerVerified: false,
-              streamStartTime: streamService.streamStartTime,
-              timestamp: Date.now()
+              streamStartTime: streamService.streamStartTime
             });
             io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
             
@@ -8191,10 +8400,36 @@ io.on('connection', async (socket) => {
         await streamingLogsService.endSession(socket.id, 'disconnect');
       }
       
-      // If real user is disconnecting, clear the protection flag
+      // If real user is disconnecting, clear the protection flag and restart viewbot rotation
       if (isRealUser && viewBotClientService) {
         console.log(`🔓 PRIORITY: Real user ${socket.id} disconnected - clearing viewbot protection`);
         viewBotClientService.setRealStreamerStatus(false);
+
+        // CRITICAL: Restart viewbot rotation after real user disconnects
+        // This is needed because stopRotation() disables the rotation service
+        setTimeout(async () => {
+          console.log(`🔄 RESTART: Attempting to restart viewbot rotation after real user disconnect`);
+
+          // Restart ViewBotRotationService (global.viewBotRotation)
+          if (global.viewBotRotation && global.viewBotRotation.startRotation) {
+            try {
+              console.log(`🚀 RESTART: Restarting global.viewBotRotation`);
+              await global.viewBotRotation.startRotation();
+            } catch (e) {
+              console.error(`❌ RESTART: Failed to restart global.viewBotRotation:`, e);
+            }
+          }
+
+          // Also restart SimpleViewBotRotation if it was stopped
+          if (SimpleViewBotRotation && SimpleViewBotRotation.startRotation) {
+            try {
+              console.log(`🚀 RESTART: Restarting SimpleViewBotRotation`);
+              await SimpleViewBotRotation.startRotation();
+            } catch (e) {
+              console.error(`❌ RESTART: Failed to restart SimpleViewBotRotation:`, e);
+            }
+          }
+        }, 3000); // 3 second delay to allow cleanup
       }
       
       // Only apply individual cooldown for real users, not viewbots
@@ -8409,10 +8644,27 @@ async function startServer() {
     }
     viewbotService = new ViewbotService(mediasoupService, livekitService);
     console.log('✅ VIEWBOT: ViewbotService initialized');
-    
+
     // Initialize ViewBotWebRTCService for proper WebRTC connections (TURN support)
-    viewBotWebRTCService = new ViewBotWebRTCService(mediasoupService);
-    console.log('✅ VIEWBOT: ViewBotWebRTCService initialized for mobile 5G/TURN support');
+    // Only initialize if we're using MediaSoup backend (not LiveKit)
+    if (!livekitService) {
+      viewBotWebRTCService = new ViewBotWebRTCService(mediasoupService);
+      console.log('✅ VIEWBOT: ViewBotWebRTCService initialized for mobile 5G/TURN support');
+    } else {
+      console.log('ℹ️ VIEWBOT: Skipping ViewBotWebRTCService (using LiveKit backend)');
+
+      // Initialize ViewBotLiveKitService for LiveKit RTMP ingress viewbots
+      const viewBotLiveKitService = new ViewBotLiveKitService(livekitService);
+      await viewBotLiveKitService.initialize();
+      console.log('✅ VIEWBOT: ViewBotLiveKitService initialized for LiveKit RTMP ingress');
+
+      // Register with rotation systems so they can use RTMP viewbots
+      SimpleViewBotRotation.setLiveKitService(viewBotLiveKitService);
+      console.log('✅ VIEWBOT: Registered LiveKit service with SimpleViewBotRotation');
+
+      // Store for later registration with ViewBotRotationService
+      global.viewBotLiveKitService = viewBotLiveKitService;
+    }
     
     // Make viewbotService available to routes
     app.locals.viewbotService = viewbotService;
@@ -8423,11 +8675,20 @@ async function startServer() {
       const { setupRecordingTables } = require('./migrations/setup-recording-tables');
       await setupRecordingTables();
       console.log('✅ RECORDING: Database tables verified');
-      
+
       // Recording service is ready to use
       console.log('✅ RECORDING: Recording system initialized and ready');
     } catch (error) {
       console.error('❌ RECORDING: Failed to initialize recording system:', error);
+    }
+
+    // Run clips table migration (separate try/catch so it runs even if recording fails)
+    try {
+      const setupClipsTables = require('./migrations/setup-clips-tables');
+      await setupClipsTables(database.db);
+      console.log('✅ CLIPS: Database tables verified');
+    } catch (error) {
+      console.error('❌ CLIPS: Failed to initialize clips tables:', error);
     }
     
     // Inject viewbotService into InventoryService for viewbot targeting
@@ -8495,11 +8756,19 @@ async function startServer() {
       
       const viewBotRotation = new ViewBotRotationService('https://127.0.0.1:8443');
       console.log('✅ VIEWBOT ROTATION: Service instance created');
-      
+
+      // Register LiveKit service if available
+      if (global.viewBotLiveKitService) {
+        viewBotRotation.setLiveKitService(global.viewBotLiveKitService);
+        console.log('✅ VIEWBOT ROTATION: LiveKit service registered');
+      } else {
+        console.log('⚠️ VIEWBOT ROTATION: LiveKit service not available, will use MediaSoup');
+      }
+
       // Store globally for admin routes
       global.viewBotRotation = viewBotRotation;
       global.viewBotRotationService = viewBotRotation; // Also store with this name for PortMonitor
-      
+
       // Initialize with media files
       await viewBotRotation.initialize();
       console.log('✅ VIEWBOT ROTATION: Service initialized');
@@ -8529,6 +8798,8 @@ async function startServer() {
           await unifiedRotation.setMode('webrtc');
           console.log('✅ WebRTC ViewBot mode enabled (mobile compatible)');
         } else {
+          // CRITICAL: Explicitly set mode to plainrtp - default is 'webrtc' which would cause failures
+          await unifiedRotation.setMode('plainrtp');
           console.log('ℹ️ Using Plain RTP ViewBot mode (desktop only)');
         }
         
@@ -8556,12 +8827,20 @@ async function startServer() {
       
       // Enable rotation
       viewBotRotation.enabled = true;
-      
+      console.log(`🔍 VIEWBOT ROTATION: Enabled set to ${viewBotRotation.enabled}`);
+
       // Delay rotation start to ensure server is fully ready
+      console.log('⏰ VIEWBOT ROTATION: Scheduling rotation start in 10 seconds...');
       setTimeout(async () => {
-        console.log('🚀 VIEWBOT ROTATION: Starting rotation after delay...');
-        await viewBotRotation.startRotation();
+        try {
+          console.log('🚀 VIEWBOT ROTATION: Starting rotation after delay...');
+          await viewBotRotation.startRotation();
+          console.log('✅ VIEWBOT ROTATION: Rotation started successfully');
+        } catch (error) {
+          console.error('❌ VIEWBOT ROTATION: Failed to start rotation:', error);
+        }
       }, 10000); // 10 second delay
+      console.log('✅ VIEWBOT ROTATION: setTimeout scheduled');
       
       console.log('✅ VIEWBOT ROTATION: New Socket.IO-based rotation system initialized');
       

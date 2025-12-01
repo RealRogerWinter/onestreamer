@@ -1,11 +1,12 @@
 /**
- * ViewBotRotationService - Manages ViewBot rotation using Socket.IO clients
- * Replaces SimpleViewBotMediaSoup with proper client connections
+ * ViewBotRotationService - Manages ViewBot rotation using Socket.IO clients or LiveKit RTMP ingress
+ * Supports both MediaSoup (socket-based) and LiveKit (RTMP ingress) backends
  */
 
 const ViewBotSocketClient = require('./ViewBotSocketClient');
 const path = require('path');
 const fs = require('fs');
+const webrtcConfig = require('../config/webrtc.config');
 
 class ViewBotRotationService {
   constructor(serverUrl) {
@@ -15,15 +16,29 @@ class ViewBotRotationService {
     this.rotationTimer = null;
     this.cooldowns = new Map();
     this.enabled = false;
-    
+    this.livekitViewBotService = null;
+    this.livekitViewBotId = null;
+    this.isRotating = false; // Prevent concurrent rotations
+
+    // Detect backend
+    this.backend = webrtcConfig.backend || 'mediasoup';
+
     // Settings
     this.settings = {
       minRotationInterval: 60000,   // 1 minute
       maxRotationInterval: 180000,  // 3 minutes
       cooldownDuration: 600000      // 10 minutes
     };
-    
-    console.log('🔄 ViewBotRotationService: Initialized');
+
+    console.log(`🔄 ViewBotRotationService: Initialized (backend: ${this.backend})`);
+  }
+
+  /**
+   * Set LiveKit ViewBot service (called from server initialization)
+   */
+  setLiveKitService(livekitViewBotService) {
+    this.livekitViewBotService = livekitViewBotService;
+    console.log('✅ LiveKit ViewBot service registered with ViewBotRotationService');
   }
   
   /**
@@ -96,39 +111,56 @@ class ViewBotRotationService {
    * Rotate to next bot
    */
   async rotateToNextBot() {
+    // Prevent concurrent rotations
+    if (this.isRotating) {
+      console.log('⚠️ ViewBotRotationService: Rotation already in progress, skipping...');
+      return;
+    }
+
+    this.isRotating = true;
+    const rotationStartTime = Date.now();
     console.log('🔄 ViewBotRotationService: Rotating to next bot...');
     console.log(`🔍 ViewBotRotationService: Current bot before rotation:`, this.currentBot?.id);
-    
+
     try {
       // Stop current bot
+      const stopStartTime = Date.now();
       console.log('🔍 ViewBotRotationService: Stopping current bot...');
       await this.stopCurrentBot();
-      console.log('🔍 ViewBotRotationService: Current bot stopped');
-      
-      // Add a delay to ensure cleanup completes and clients process stream-ended
+      console.log(`🔍 ViewBotRotationService: Current bot stopped (took ${Date.now() - stopStartTime}ms)`);
+
+      // Add a small delay to ensure LiveKit fully removes the participant from the room
+      // This prevents multiple viewbots being active simultaneously
       await new Promise(resolve => setTimeout(resolve, 500));
       console.log('🔍 ViewBotRotationService: Cleanup delay completed');
-      
+
       // Select next bot
       const nextBot = this.selectNextBot();
-      
+
       if (!nextBot) {
         console.log('⚠️ No available bots (all on cooldown)');
         this.scheduleNextRotation(30000);
         return;
       }
-      
+
       // Start the bot
+      const startBotTime = Date.now();
       await this.startBot(nextBot);
-      
+      console.log(`⏱️ ViewBotRotationService: Bot started (took ${Date.now() - startBotTime}ms)`);
+      console.log(`⏱️ ViewBotRotationService: Total rotation time: ${Date.now() - rotationStartTime}ms`);
+
       // Schedule next rotation
       const interval = this.getRandomInterval();
       this.scheduleNextRotation(interval);
-      
+
     } catch (error) {
       console.error('❌ Rotation error:', error);
       // Retry in 30 seconds
       this.scheduleNextRotation(30000);
+    } finally {
+      // Always reset rotation flag
+      this.isRotating = false;
+      console.log('✅ ViewBotRotationService: Rotation complete, flag reset');
     }
   }
   
@@ -161,39 +193,70 @@ class ViewBotRotationService {
    * Start a bot
    */
   async startBot(bot) {
-    console.log(`🚀 ViewBotRotationService: Starting ${bot.id} at ${new Date().toISOString()}`);
+    console.log(`🚀 ViewBotRotationService: Starting ${bot.id} (backend: ${this.backend})`);
     console.log(`🔍 ViewBotRotationService: Current bot before start:`, this.currentBot?.id);
-    console.log(`🔍 ViewBotRotationService: Server URL:`, this.serverUrl);
-    
-    // Create Socket.IO client for this bot
-    bot.client = new ViewBotSocketClient(bot.id, this.serverUrl, bot.mediaFile);
-    
+
     try {
-      // Connect to server
-      console.log(`🔍 ViewBotRotationService: Connecting ${bot.id}...`);
-      await bot.client.connect();
-      console.log(`🔍 ViewBotRotationService: ${bot.id} connected, starting stream...`);
-      
-      // Start streaming
-      await bot.client.startStreaming();
-      
+      // Use LiveKit or MediaSoup based on backend
+      if (this.backend === 'livekit' && this.livekitViewBotService) {
+        await this.startLiveKitBot(bot);
+      } else {
+        await this.startMediaSoupBot(bot);
+      }
+
       // Mark as current and update cooldown
       this.currentBot = bot;
       this.cooldowns.set(bot.id, Date.now());
-      
+
       console.log(`✅ ViewBotRotationService: ${bot.id} is now streaming`);
-      
+
     } catch (error) {
       console.error(`❌ Failed to start ${bot.id}:`, error);
-      
+
       // Cleanup on failure
       if (bot.client) {
         bot.client.cleanup();
         bot.client = null;
       }
-      
+
       throw error;
     }
+  }
+
+  /**
+   * Start LiveKit RTMP ingress bot
+   */
+  async startLiveKitBot(bot) {
+    console.log(`🎥 ViewBotRotationService: Starting LiveKit RTMP ingress bot ${bot.id}`);
+
+    const result = await this.livekitViewBotService.createViewBot({
+      videoFile: bot.mediaFile
+    });
+
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to create LiveKit viewbot');
+    }
+
+    this.livekitViewBotId = result.botId;
+    console.log(`✅ LiveKit viewbot created: ${this.livekitViewBotId}`);
+  }
+
+  /**
+   * Start MediaSoup socket-based bot
+   */
+  async startMediaSoupBot(bot) {
+    console.log(`🔍 ViewBotRotationService: Server URL:`, this.serverUrl);
+
+    // Create Socket.IO client for this bot
+    bot.client = new ViewBotSocketClient(bot.id, this.serverUrl, bot.mediaFile);
+
+    // Connect to server
+    console.log(`🔍 ViewBotRotationService: Connecting ${bot.id}...`);
+    await bot.client.connect();
+    console.log(`🔍 ViewBotRotationService: ${bot.id} connected, starting stream...`);
+
+    // Start streaming
+    await bot.client.startStreaming();
   }
   
   /**
@@ -201,10 +264,10 @@ class ViewBotRotationService {
    */
   async stopCurrentBot() {
     if (!this.currentBot) return;
-    
+
     const bot = this.currentBot;
-    console.log(`⏹️ ViewBotRotationService: Stopping ${bot.id}...`);
-    
+    console.log(`⏹️ ViewBotRotationService: Stopping ${bot.id} (backend: ${this.backend})...`);
+
     // Emit stream-ended event BEFORE stopping the bot
     if (global.io) {
       console.log(`📢 ViewBotRotationService: Emitting stream-ended for ${bot.id}`);
@@ -214,19 +277,30 @@ class ViewBotRotationService {
         timestamp: Date.now()
       });
     }
-    
+
+    // Stop LiveKit bot
+    if (this.backend === 'livekit' && this.livekitViewBotId && this.livekitViewBotService) {
+      try {
+        await this.livekitViewBotService.stopViewBot(this.livekitViewBotId);
+        this.livekitViewBotId = null;
+      } catch (error) {
+        console.error(`⚠️ Error stopping LiveKit viewbot ${bot.id}:`, error);
+      }
+    }
+
+    // Stop MediaSoup socket-based bot
     if (bot.client) {
       try {
         await bot.client.stopStreaming();
       } catch (error) {
         console.error(`⚠️ Error stopping ${bot.id}:`, error.message);
       }
-      
+
       // Always cleanup resources
       bot.client.cleanup();
       bot.client = null;
     }
-    
+
     this.currentBot = null;
     console.log(`✅ ViewBotRotationService: ${bot.id} stopped and cleaned up`);
   }

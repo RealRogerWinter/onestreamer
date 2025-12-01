@@ -27,10 +27,10 @@ const config = {
   
   // LiveKit configuration (new)
   livekit: {
-    host: process.env.LIVEKIT_HOST || '127.0.0.1:7881',
+    host: process.env.LIVEKIT_HOST || 'http://127.0.0.1:7882',
     apiKey: process.env.LIVEKIT_API_KEY || 'devkey',
     apiSecret: process.env.LIVEKIT_API_SECRET || 'secret',
-    wsUrl: process.env.LIVEKIT_WS_URL || 'ws://localhost:7880',
+    wsUrl: process.env.LIVEKIT_WS_URL || 'ws://localhost:7882',
     roomName: process.env.LIVEKIT_ROOM_NAME || 'onestreamer-main',
     enableTurn: process.env.LIVEKIT_TURN_ENABLED === 'true',
     turnHost: process.env.TURN_DOMAIN || '<SERVER_IP>',

@@ -20,6 +20,7 @@ export interface WebRTCClientConfig {
   onConnectionLost?: () => void;
   onReconnectionFailed?: (error: Error) => void;
   onDebugInfo?: (info: any) => void;
+  onStreamUpdate?: () => void;
 }
 
 /**

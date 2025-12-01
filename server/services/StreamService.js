@@ -11,6 +11,11 @@ class StreamService {
     this.streamType = streamType;
     this.streamStartTime = Date.now();
     this.viewers.delete(socketId);
+
+    // SYNC: Keep MediasoupService in sync to prevent dual-source-of-truth issues
+    if (global.mediasoupService) {
+      global.mediasoupService.currentStreamer = socketId;
+    }
   }
 
   getCurrentStreamer() {
@@ -26,11 +31,16 @@ class StreamService {
     this.currentStreamer = null;
     this.streamType = null;
     this.streamStartTime = null;
-    
+
+    // SYNC: Keep MediasoupService in sync to prevent dual-source-of-truth issues
+    if (global.mediasoupService) {
+      global.mediasoupService.currentStreamer = null;
+    }
+
     if (previousStreamer) {
       this.viewers.add(previousStreamer);
     }
-    
+
     return previousStreamer;
   }
 

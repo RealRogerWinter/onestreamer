@@ -74,8 +74,8 @@ class MediasoupService {
       return;
     }
 
-    // Create router with comprehensive codec support for all browsers and viewbots
-    // H264 is placed first for better iOS Safari compatibility
+    // CRITICAL iOS FIX: Optimized codec configuration for iOS Safari compatibility
+    // H264 Baseline (42e01f) is placed first and includes iOS-specific parameters
     const mediaCodecs = [
       {
         kind: 'audio',
@@ -87,14 +87,35 @@ class MediasoupService {
           { type: 'transport-cc' }
         ]
       },
-      // H264 codecs first for iOS Safari compatibility
+      // CRITICAL: H264 Baseline Profile - iOS Safari's REQUIRED codec
       {
         kind: 'video',
-        mimeType: 'video/h264',
+        mimeType: 'video/H264', // Capital H for better cross-browser compatibility
         clockRate: 90000,
         parameters: {
           'packetization-mode': 1,
-          'profile-level-id': '42e01f',
+          'profile-level-id': '42e01f', // Baseline Profile Level 3.1 - iOS preferred
+          'level-asymmetry-allowed': 1,
+          // iOS-specific optimizations
+          'x-google-start-bitrate': 1000, // Help iOS with initial bitrate (1 Mbps)
+          'x-google-max-bitrate': 2500 // Max bitrate 2.5 Mbps
+        },
+        rtcpFeedback: [
+          { type: 'nack' },
+          { type: 'nack', parameter: 'pli' },
+          { type: 'ccm', parameter: 'fir' },
+          { type: 'goog-remb' },
+          { type: 'transport-cc' }
+        ]
+      },
+      // H264 Main Profile for desktop browsers (Chrome, Firefox)
+      {
+        kind: 'video',
+        mimeType: 'video/H264',
+        clockRate: 90000,
+        parameters: {
+          'packetization-mode': 1,
+          'profile-level-id': '4d0032', // Main Profile Level 5.0
           'level-asymmetry-allowed': 1
         },
         rtcpFeedback: [
@@ -105,41 +126,7 @@ class MediasoupService {
           { type: 'transport-cc' }
         ]
       },
-      {
-        kind: 'video',
-        mimeType: 'video/h264',
-        clockRate: 90000,
-        parameters: {
-          'packetization-mode': 1,
-          'profile-level-id': '4d0032',
-          'level-asymmetry-allowed': 1
-        },
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'nack', parameter: 'pli' },
-          { type: 'ccm', parameter: 'fir' },
-          { type: 'goog-remb' },
-          { type: 'transport-cc' }
-        ]
-      },
-      {
-        kind: 'video',
-        mimeType: 'video/h264',
-        clockRate: 90000,
-        parameters: {
-          'packetization-mode': 1,
-          'profile-level-id': '640032',
-          'level-asymmetry-allowed': 1
-        },
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'nack', parameter: 'pli' },
-          { type: 'ccm', parameter: 'fir' },
-          { type: 'goog-remb' },
-          { type: 'transport-cc' }
-        ]
-      },
-      // VP8 and VP9 after H264 for broader compatibility
+      // VP8 for older browsers (placed after H264 for priority)
       {
         kind: 'video',
         mimeType: 'video/VP8',
@@ -151,30 +138,61 @@ class MediasoupService {
           { type: 'goog-remb' },
           { type: 'transport-cc' }
         ]
-      },
-      {
-        kind: 'video',
-        mimeType: 'video/VP9',
-        clockRate: 90000,
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'nack', parameter: 'pli' },
-          { type: 'ccm', parameter: 'fir' },
-          { type: 'goog-remb' },
-          { type: 'transport-cc' }
-        ]
       }
+      // Removed: H264 High Profile (640032) - iOS doesn't support it well
+      // Removed: VP9 - iOS Safari doesn't support it
     ];
 
     this.router = await this.worker.createRouter({ mediaCodecs });
     console.log('✅ MEDIASOUP: Router created successfully');
   }
 
-  async getRouterRtpCapabilities() {
+  async getRouterRtpCapabilities(preferH264 = false) {
     if (!this.router) {
       throw new Error('MediaSoup router not available');
     }
-    return this.router.rtpCapabilities;
+
+    const capabilities = this.router.rtpCapabilities;
+
+    // CRITICAL iOS FIX: Reorder codecs for iOS/Safari to prefer H264 Baseline
+    if (preferH264 && capabilities.codecs) {
+      console.log('📱 MEDIASOUP: Optimizing RTP capabilities for iOS Safari');
+
+      const codecs = [...capabilities.codecs];
+      const videoCodecs = codecs.filter(c => c.kind === 'video');
+      const audioCodecs = codecs.filter(c => c.kind === 'audio');
+
+      // Find H264 Baseline (42e01f) - iOS Safari's preferred codec
+      const h264Baseline = videoCodecs.find(c =>
+        c.mimeType?.toLowerCase() === 'video/h264' &&
+        c.parameters?.['profile-level-id'] === '42e01f'
+      );
+
+      if (h264Baseline) {
+        console.log('✅ MEDIASOUP: Found H264 Baseline codec for iOS');
+
+        // Put audio codecs first, then H264 Baseline ONLY for iOS
+        // This simplifies codec negotiation and prevents iOS confusion
+        const optimizedCodecs = [
+          ...audioCodecs,
+          h264Baseline,
+          // Only include Main profile as fallback, skip High profile and VP8/VP9
+          ...videoCodecs.filter(c =>
+            c.mimeType?.toLowerCase() === 'video/h264' &&
+            c.parameters?.['profile-level-id'] === '4d0032'
+          )
+        ];
+
+        return {
+          ...capabilities,
+          codecs: optimizedCodecs
+        };
+      } else {
+        console.warn('⚠️ MEDIASOUP: H264 Baseline codec not found for iOS');
+      }
+    }
+
+    return capabilities;
   }
 
   // Add method to get router for debugging
@@ -633,43 +651,51 @@ class MediasoupService {
     }
     this.consumers.get(consumerSocketId).add(consumer);
 
-    // CRITICAL iOS FIX: Set up aggressive keyframe generation for video consumers
+    // CRITICAL iOS FIX: Measured keyframe generation for video consumers
+    // Previous aggressive approach (every 100ms-1s) overwhelmed iOS decoder
     if (producer.kind === 'video') {
       // Store reference for keyframe forcing
       consumer._producer = producer;
-      consumer._isIOS = rtpCapabilities?.codecs?.some(codec => 
-        codec.mimeType?.toLowerCase() === 'video/h264' && 
+      consumer._isIOS = rtpCapabilities?.codecs?.some(codec =>
+        codec.mimeType?.toLowerCase() === 'video/h264' &&
         codec.parameters?.['profile-level-id'] === '42e01f'
       );
-      
+
       if (consumer._isIOS) {
-        console.log(`📱 iOS video consumer detected, setting up keyframe forcing for ${consumerSocketId}`);
-        
-        // Force initial keyframe immediately
+        console.log(`📱 iOS video consumer detected for ${consumerSocketId}, using MEASURED keyframe approach`);
+
+        // MEASURED APPROACH: Single initial keyframe after decoder initialization
         setTimeout(async () => {
           try {
             await consumer.requestKeyFrame();
-            console.log(`📱 Initial keyframe requested for iOS consumer ${consumer.id}`);
+            console.log(`📱 Initial keyframe sent for iOS consumer ${consumer.id}`);
           } catch (e) {
-            console.error(`Failed to request initial keyframe:`, e);
+            console.error(`Failed to send initial keyframe:`, e);
           }
-        }, 100);
-        
-        // Set up periodic keyframe forcing every second for iOS
+        }, 500); // Wait 500ms for iOS decoder initialization
+
+        // GENTLE periodic keyframes - every 3 seconds, NOT every 1 second
+        // This prevents decoder overload while still handling network issues
         consumer._keyframeInterval = setInterval(async () => {
           if (consumer.closed) {
             clearInterval(consumer._keyframeInterval);
             return;
           }
-          
+
           try {
-            await consumer.requestKeyFrame();
-            console.log(`🔑 Periodic keyframe requested for iOS consumer ${consumer.id}`);
+            // Only send keyframe if consumer is active and not paused
+            if (!consumer.paused && consumer.producerPaused === false) {
+              await consumer.requestKeyFrame();
+              // Reduced logging to avoid spam
+              if (Math.random() < 0.1) { // Log only 10% of requests
+                console.log(`🔑 Periodic keyframe for iOS consumer ${consumer.id}`);
+              }
+            }
           } catch (e) {
             // Consumer may be closed, stop interval
             clearInterval(consumer._keyframeInterval);
           }
-        }, 1000); // Request keyframe every second for iOS
+        }, 3000); // Every 3 seconds - gentle on iOS decoder
       }
     }
 

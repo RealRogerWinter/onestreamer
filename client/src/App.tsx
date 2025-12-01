@@ -31,6 +31,7 @@ import DeletionConfirmation from './components/DeletionConfirmation';
 import AccountRestoration from './components/AccountRestoration';
 import ModerationPanel from './components/ModerationPanel';
 import BotsPanel from './components/BotsPanel';
+import { ClipsGallery, ClipPlayer } from './components/clips';
 import authService from './services/AuthService';
 import SocketManager from './services/SocketManager';
 import CookieService, { COOKIE_NAMES } from './services/CookieService';
@@ -866,6 +867,17 @@ function AppContent() {
     return <OAuthUsernameSelection />;
   }
 
+  // If we're on the clips gallery page
+  if (currentPath === '/clips' || currentPath === '/clips/') {
+    return <ClipsGallery />;
+  }
+
+  // If we're on a single clip page
+  const clipMatch = currentPath.match(/^\/clips\/([a-f0-9-]+)$/i);
+  if (clipMatch) {
+    return <ClipPlayer clipId={clipMatch[1]} />;
+  }
+
   return (
     <div className={`App ${theatreMode ? 'theatre-mode' : ''}`}>
       
@@ -1092,11 +1104,12 @@ function AppContent() {
               </div>
             )}
             <div className="stream-viewer-container">
-              <StreamViewer 
+              <StreamViewer
                 socket={socket}
                 isStreaming={isStreaming}
                 hasActiveStream={streamStatus.hasActiveStream}
                 streamType={streamStatus.streamType}
+                currentStreamerId={streamStatus.streamerId}
                 audioSettings={streamerSettings.audio}
                 onAudioSettingsChange={(newAudioSettings) => {
                   const newSettings = {

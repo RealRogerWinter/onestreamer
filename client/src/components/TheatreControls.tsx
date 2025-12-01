@@ -3,6 +3,7 @@ import StreamerSettings, { StreamerSettingsConfig } from './StreamerSettings';
 import TheatreMuteIndicator from './TheatreMuteIndicator';
 import BuffDisplay from './BuffDisplay';
 import PermissionSetupModal from './PermissionSetupModal';
+import { ClipCreationModal } from './clips';
 import PermissionService, { MediaPermissions } from '../services/PermissionService';
 import './TheatreControls.css';
 
@@ -50,6 +51,8 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
     lastChecked: Date.now()
   });
   const [permissionStream, setPermissionStream] = useState<MediaStream | null>(null);
+  const [showClipModal, setShowClipModal] = useState(false);
+  const [clipStatus, setClipStatus] = useState<{ available: boolean; isRecording: boolean } | null>(null);
   const hideTimeout = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -76,6 +79,26 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
         PermissionService.releaseStream(permissionStream);
       }
     };
+  }, []);
+
+  // Check clip availability - always poll since recording happens server-side
+  useEffect(() => {
+    const checkClipStatus = async () => {
+      try {
+        const response = await fetch('/api/clips/status');
+        const data = await response.json();
+        if (data.success) {
+          setClipStatus({ available: data.available, isRecording: data.isRecording });
+        }
+      } catch (err) {
+        console.error('Failed to check clip status:', err);
+      }
+    };
+
+    // Always check clip status on mount and periodically
+    checkClipStatus();
+    const interval = setInterval(checkClipStatus, 10000); // Check every 10s
+    return () => clearInterval(interval);
   }, []);
 
   // Notify parent when visibility changes
@@ -491,6 +514,23 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
               </svg>
             )}
           </button>
+
+          {/* Clip Button - available to all users */}
+          <button
+            className="theatre-clip-btn"
+            onClick={() => setShowClipModal(true)}
+            title={clipStatus?.available ? "Create a clip of the last 30-120 seconds" : "Clips not available right now"}
+            disabled={!clipStatus?.available}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="6" cy="6" r="3"/>
+              <circle cx="6" cy="18" r="3"/>
+              <line x1="20" y1="4" x2="8.12" y2="15.88"/>
+              <line x1="14.47" y1="14.48" x2="20" y2="20"/>
+              <line x1="8.12" y1="8.12" x2="12" y2="12"/>
+            </svg>
+            <span>Clip</span>
+          </button>
         </div>
 
         {/* Stream Controls */}
@@ -621,6 +661,17 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
       onPermissionsGranted={handlePermissionsGranted}
       requiredPermissions={{ camera: true, microphone: true }}
     />
+
+    {/* Clip Creation Modal */}
+    {showClipModal && (
+      <ClipCreationModal
+        onClose={() => setShowClipModal(false)}
+        onSuccess={(clipId) => {
+          console.log('Clip created:', clipId);
+          // Could show a toast notification here
+        }}
+      />
+    )}
   </>
   );
 };

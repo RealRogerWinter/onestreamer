@@ -72,3 +72,8 @@ bower_components/
 *.min.js
 *.min.css
 whisper.cpp/
+
+# Data directories
+audio-buffers/
+egress-recordings/
+clips/

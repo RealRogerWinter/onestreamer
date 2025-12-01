@@ -1,15 +1,16 @@
 /**
  * SimpleViewBotRotation.js - Dead simple viewbot rotation system
- * 
+ *
  * Features:
  * - One viewbot streaming at a time
  * - Random rotation intervals
  * - Cooldown system to prevent replays
- * - Socket-based streaming through the platform
+ * - Supports both MediaSoup (GStreamer) and LiveKit (RTMP ingress) backends
  */
 
 const SimpleViewBotSocket = require('./SimpleViewBotSocket');
 const { spawn } = require('child_process');
+const webrtcConfig = require('../config/webrtc.config');
 
 class SimpleViewBotRotation {
   constructor() {
@@ -17,13 +18,15 @@ class SimpleViewBotRotation {
     this.currentBot = null;
     this.rotationTimer = null;
     this.gstreamerProcess = null;
-    
+    this.livekitViewBotService = null;
+    this.livekitViewBotId = null;
+
     // Bot pool - these should be loaded from config/database
     this.availableBots = [];
-    
+
     // Cooldowns - Map of botId -> lastPlayedTimestamp
     this.cooldowns = new Map();
-    
+
     // Settings
     this.settings = {
       minRotationInterval: 30000,  // 30 seconds minimum
@@ -31,14 +34,24 @@ class SimpleViewBotRotation {
       cooldownDuration: 600000,    // 10 minute cooldown per bot
       enabled: false  // Disabled by default, will be enabled when needed
     };
-    
+
     // MediaSoup RTP ports (should match server config)
     this.rtpPorts = {
       video: 5004,
       audio: 5006
     };
-    
-    console.log('🎯 SimpleViewBotRotation: Initialized');
+
+    // Detect backend
+    this.backend = webrtcConfig.backend || 'mediasoup';
+    console.log(`🎯 SimpleViewBotRotation: Initialized (backend: ${this.backend})`);
+  }
+
+  /**
+   * Set LiveKit ViewBot service (called from server initialization)
+   */
+  setLiveKitService(livekitViewBotService) {
+    this.livekitViewBotService = livekitViewBotService;
+    console.log('✅ LiveKit ViewBot service registered with rotation system');
   }
   
   /**
@@ -136,60 +149,97 @@ class SimpleViewBotRotation {
    */
   async startBot(bot) {
     try {
-      console.log(`🚀 Starting viewbot: ${bot.id}`);
-      
+      console.log(`🚀 Starting viewbot: ${bot.id} (backend: ${this.backend})`);
+
       // Update state
       this.currentBot = bot;
       this.cooldowns.set(bot.id, Date.now());
-      
-      // Build GStreamer pipeline
-      const pipeline = this.buildGStreamerPipeline(bot);
-      
-      // Start GStreamer process
-      this.gstreamerProcess = spawn('gst-launch-1.0', pipeline.split(' '), {
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-      
-      // Track with ProcessManager if available
-      if (global.processManager && typeof global.processManager.trackProcess === 'function') {
-        global.processManager.trackProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
-      } else if (global.processManager && typeof global.processManager.addProcess === 'function') {
-        global.processManager.addProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
+
+      // Use LiveKit or MediaSoup based on backend
+      if (this.backend === 'livekit' && this.livekitViewBotService) {
+        await this.startLiveKitBot(bot);
+      } else {
+        await this.startMediaSoupBot(bot);
       }
-      
-      // Handle process events
-      this.gstreamerProcess.on('error', (error) => {
-        console.error(`❌ GStreamer error for ${bot.id}:`, error);
-        this.handleBotError(bot);
-      });
-      
-      this.gstreamerProcess.on('exit', (code) => {
-        console.log(`📤 GStreamer exited for ${bot.id} with code ${code}`);
-        if (code !== 0 && this.currentBot?.id === bot.id) {
-          this.handleBotError(bot);
-        }
-      });
-      
-      // Log output for debugging
-      this.gstreamerProcess.stdout.on('data', (data) => {
-        console.log(`[GStreamer ${bot.id}]:`, data.toString());
-      });
-      
-      this.gstreamerProcess.stderr.on('data', (data) => {
-        if (data.toString().includes('ERROR')) {
-          console.error(`[GStreamer ERROR ${bot.id}]:`, data.toString());
-        }
-      });
-      
-      console.log(`✅ Viewbot ${bot.id} is now streaming`);
-      
+
+      console.log(`✅ ViewBotRotationService: viewbot-${bot.id} is now streaming`);
+
       // Emit event for other systems
       this.emitEvent('viewbot-started', { botId: bot.id });
-      
+
     } catch (error) {
       console.error(`❌ Failed to start bot ${bot.id}:`, error);
       this.handleBotError(bot);
     }
+  }
+
+  /**
+   * Start LiveKit RTMP ingress bot
+   */
+  async startLiveKitBot(bot) {
+    console.log(`🎥 Starting LiveKit RTMP ingress bot: ${bot.id}`);
+
+    if (!bot.mediaFile) {
+      console.warn(`⚠️ Bot ${bot.id} has no media file, skipping`);
+      throw new Error('No media file for LiveKit bot');
+    }
+
+    const result = await this.livekitViewBotService.createViewBot({
+      videoFile: bot.mediaFile
+    });
+
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to create LiveKit viewbot');
+    }
+
+    this.livekitViewBotId = result.botId;
+    console.log(`✅ LiveKit viewbot created: ${this.livekitViewBotId}`);
+  }
+
+  /**
+   * Start MediaSoup GStreamer bot
+   */
+  async startMediaSoupBot(bot) {
+    console.log(`🎥 Starting MediaSoup GStreamer bot: ${bot.id}`);
+
+    // Build GStreamer pipeline
+    const pipeline = this.buildGStreamerPipeline(bot);
+
+    // Start GStreamer process
+    this.gstreamerProcess = spawn('gst-launch-1.0', pipeline.split(' '), {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    // Track with ProcessManager if available
+    if (global.processManager && typeof global.processManager.trackProcess === 'function') {
+      global.processManager.trackProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
+    } else if (global.processManager && typeof global.processManager.addProcess === 'function') {
+      global.processManager.addProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
+    }
+
+    // Handle process events
+    this.gstreamerProcess.on('error', (error) => {
+      console.error(`❌ GStreamer error for ${bot.id}:`, error);
+      this.handleBotError(bot);
+    });
+
+    this.gstreamerProcess.on('exit', (code) => {
+      console.log(`📤 GStreamer exited for ${bot.id} with code ${code}`);
+      if (code !== 0 && this.currentBot?.id === bot.id) {
+        this.handleBotError(bot);
+      }
+    });
+
+    // Log output for debugging
+    this.gstreamerProcess.stdout.on('data', (data) => {
+      console.log(`[GStreamer ${bot.id}]:`, data.toString());
+    });
+
+    this.gstreamerProcess.stderr.on('data', (data) => {
+      if (data.toString().includes('ERROR')) {
+        console.error(`[GStreamer ERROR ${bot.id}]:`, data.toString());
+      }
+    });
   }
   
   /**
@@ -197,10 +247,20 @@ class SimpleViewBotRotation {
    */
   async stopCurrentBot() {
     if (!this.currentBot) return;
-    
+
     const botId = this.currentBot.id;
-    console.log(`⏹️ Stopping viewbot: ${botId}`);
-    
+    console.log(`⏹️ Stopping viewbot: ${botId} (backend: ${this.backend})`);
+
+    // Stop LiveKit bot
+    if (this.backend === 'livekit' && this.livekitViewBotId && this.livekitViewBotService) {
+      try {
+        await this.livekitViewBotService.stopViewBot(this.livekitViewBotId);
+        this.livekitViewBotId = null;
+      } catch (error) {
+        console.error(`⚠️ Error stopping LiveKit viewbot ${botId}:`, error);
+      }
+    }
+
     // Kill GStreamer process
     if (this.gstreamerProcess) {
       try {
@@ -219,13 +279,13 @@ class SimpleViewBotRotation {
       } catch (error) {
         console.error(`⚠️ Error killing GStreamer for ${botId}:`, error);
       }
-      
+
       this.gstreamerProcess = null;
     }
-    
+
     // Emit event
     this.emitEvent('viewbot-stopped', { botId });
-    
+
     // Clear current bot
     this.currentBot = null;
   }

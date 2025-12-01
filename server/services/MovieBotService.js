@@ -95,7 +95,8 @@ class MovieBotService extends EventEmitter {
             if (row) {
                 console.log('📚 MovieBotService: Loading config from database, row:', row);
                 this.config = {
-                    enabled: this.config?.enabled || false, // Keep runtime enabled state if exists
+                    enabled: row.enabled === 1, // Load enabled state from database
+                    streamerId: row.streamer_id || null,
                     transcriptionDuration: row.transcription_duration || 45,
                     transcriptionFrequency: row.transcription_frequency || 120,
                     chatHistoryLimit: row.chat_history_limit || 30,
@@ -117,12 +118,24 @@ class MovieBotService extends EventEmitter {
                 }
                 
                 console.log('✅ MovieBotService: Config loaded from database', {
+                    enabled: this.config.enabled,
                     useGroq: this.config.useGroq,
                     hasApiKey: !!row.groq_api_key,
                     rowUseGroq: row.use_groq,
                     hasChatBotService: !!this.chatBotService,
                     hasLLMService: !!this.chatBotService?.llmService
                 });
+
+                // If enabled in database, restore active state
+                if (this.config.enabled && this.config.streamerId) {
+                    console.log(`🔄 MovieBotService: Enabled state found in database for streamer ${this.config.streamerId}, restoring active state`);
+                    this.isActive = true;
+                    this.currentStreamerId = this.config.streamerId;
+                    // Schedule the first transcription
+                    this.scheduleNextTranscription();
+                } else if (this.config.enabled && !this.config.streamerId) {
+                    console.log('⚠️ MovieBotService: Enabled in database but no streamer_id found, waiting for manual enable');
+                }
             } else {
                 console.log('📝 MovieBotService: No saved config found, creating defaults');
                 // Create default config
@@ -151,13 +164,15 @@ class MovieBotService extends EventEmitter {
         
         const query = includeApiKey && apiKey ? `
             INSERT OR REPLACE INTO moviebot_config (
-                id, use_groq, groq_api_key, transcription_duration, 
-                transcription_frequency, chat_history_limit, 
+                id, enabled, streamer_id, use_groq, groq_api_key, transcription_duration,
+                transcription_frequency, chat_history_limit,
                 message_delay_min, message_delay_max, movie_prompt_template,
                 updated_at
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ` : `
             UPDATE moviebot_config SET
+                enabled = ?,
+                streamer_id = ?,
                 use_groq = ?,
                 transcription_duration = ?,
                 transcription_frequency = ?,
@@ -168,8 +183,10 @@ class MovieBotService extends EventEmitter {
                 updated_at = datetime('now')
             WHERE id = 1
         `;
-        
+
         const params = includeApiKey && apiKey ? [
+            this.config.enabled ? 1 : 0,
+            this.currentStreamerId || null,
             this.config.useGroq ? 1 : 0,
             apiKey,
             this.config.transcriptionDuration,
@@ -179,6 +196,8 @@ class MovieBotService extends EventEmitter {
             this.config.messageDelay.max,
             this.config.moviePromptTemplate || this.defaultPromptTemplate
         ] : [
+            this.config.enabled ? 1 : 0,
+            this.currentStreamerId || null,
             this.config.useGroq ? 1 : 0,
             this.config.transcriptionDuration,
             this.config.transcriptionFrequency,
@@ -211,25 +230,28 @@ class MovieBotService extends EventEmitter {
         this.isActive = true;
         this.currentStreamerId = streamerId;
         this.config.enabled = true;
-        
+
         console.log(`🔧 MovieBotService: State updated - isActive: ${this.isActive}, currentStreamerId: ${this.currentStreamerId}`);
-        
+
+        // Save enabled state to database
+        this.saveConfigToDatabase();
+
         // Start the first transcription after a random delay
         console.log(`🔧 MovieBotService: About to call scheduleNextTranscription()`);
         this.scheduleNextTranscription();
-        
+
         // Emit event
         this.emit('moviebot-enabled', {
             streamerId: streamerId,
             timestamp: new Date()
         });
-        
+
         // Log the enablement
         this.logEvent('ENABLED', {
             streamerId: streamerId,
             config: this.config
         });
-        
+
         console.log(`🎬 MovieBotService: MovieBot enabled successfully for streamer ${streamerId}`);
         return { success: true, message: 'MovieBot enabled successfully' };
     }
@@ -241,31 +263,34 @@ class MovieBotService extends EventEmitter {
         }
         
         console.log('🎬 MovieBotService: Disabling');
-        
+
         this.isActive = false;
         this.config.enabled = false;
-        
+
+        // Save disabled state to database
+        this.saveConfigToDatabase();
+
         // Clear any pending transcription timer
         if (this.transcriptionTimer) {
             clearTimeout(this.transcriptionTimer);
             this.transcriptionTimer = null;
         }
-        
+
         // Stop current transcription if active
         if (this.currentSession) {
             await this.stopCurrentTranscription();
         }
-        
+
         // Emit event
         this.emit('moviebot-disabled', {
             timestamp: new Date()
         });
-        
+
         // Log the disablement
         this.logEvent('DISABLED', {});
-        
+
         this.currentStreamerId = null;
-        
+
         return { success: true, message: 'MovieBot disabled successfully' };
     }
     
@@ -327,21 +352,27 @@ class MovieBotService extends EventEmitter {
                 console.log(`🔔 MovieBotService: Received transcription-stopped event:`, data.sessionId);
                 if (data.sessionId === sessionId) {
                     console.log(`📝 MovieBotService: Transcription completed (${data.wordCount} words)`);
-                    
+
                     // Remove from active sessions
                     const sessionIndex = this.currentSessions.indexOf(sessionId);
                     if (sessionIndex > -1) {
                         this.currentSessions.splice(sessionIndex, 1);
                     }
-                    
-                    // Get the transcription text
-                    const transcription = await this.getTranscriptionText(data.sessionId);
-                    
+
+                    // Get the transcription text from event or fallback to database
+                    let transcription = data.transcription;
+                    if (!transcription) {
+                        transcription = await this.getTranscriptionText(data.sessionId);
+                    }
+
                     if (transcription) {
+                        console.log(`📝 MovieBotService: Processing transcription: "${transcription.substring(0, 100)}..."`);
                         // Process the transcription and trigger chatbots
                         await this.processTranscriptionWithBatching(transcription, 0);
+                    } else {
+                        console.log(`⚠️ MovieBotService: No transcription text available`);
                     }
-                    
+
                     // Schedule the next transcription
                     this.scheduleNextTranscription();
                 }
