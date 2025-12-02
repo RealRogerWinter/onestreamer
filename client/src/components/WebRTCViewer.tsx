@@ -515,64 +515,72 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             streamUpdateTimeoutRef.current = null;
           }
 
-          try {
-            if (mediasoupClientRef.current && videoRef.current) {
+          // Helper function to attempt stream switch
+          const attemptStreamSwitch = async (attempt: number = 1): Promise<boolean> => {
+            try {
+              if (!mediasoupClientRef.current || !videoRef.current) {
+                console.log('⚠️ WEBRTC: Client or video ref not available');
+                return false;
+              }
+
               const video = videoRef.current;
-
-              // Store current stream for cleanup
-              const oldStream = video.srcObject as MediaStream | null;
-
-              // Wait a moment for new tracks to be fully available
-              await new Promise(resolve => setTimeout(resolve, 100));
-
-              // Get new stream - LiveKit Client now handles track cleanup internally
               const newStream = await mediasoupClientRef.current.consume();
 
               if (newStream && newStream.getTracks().length > 0) {
-                console.log(`🔄 WEBRTC: Switching to new stream with ${newStream.getTracks().length} tracks`);
+                console.log(`🔄 WEBRTC: Switching to new stream with ${newStream.getTracks().length} tracks (attempt ${attempt})`);
 
-                // Pause video before switching to prevent glitches
                 video.pause();
-
-                // Set the new stream
                 video.srcObject = newStream;
-
-                // Apply audio settings
                 video.muted = !userInteracted;
                 video.volume = userInteracted ? volume : 0.8;
-
-                // Load and play the new stream
                 video.load();
 
                 try {
                   await video.play();
                   console.log('✅ WEBRTC: Stream updated and playing successfully');
+                  setPlaybackState('playing');
                 } catch (playError) {
                   console.log('⚠️ WEBRTC: Autoplay prevented after stream update:', playError);
                   setPlaybackState('paused');
                 }
 
-                // Old stream cleanup is now handled by LiveKit Client
-              } else {
-                console.log('⚠️ WEBRTC: No tracks available in new stream, will retry...');
+                // Update tracking ref after successful switch
+                const actualStreamerId = mediasoupClientRef.current?.getCurrentStreamer();
+                if (actualStreamerId) {
+                  currentStreamIdRef.current = actualStreamerId;
+                  console.log(`📝 WEBRTC: Updated currentStreamIdRef to ${actualStreamerId}`);
+                }
 
-                // Retry after a short delay if no tracks available
-                streamUpdateTimeoutRef.current = setTimeout(async () => {
-                  if (mediasoupClientRef.current && videoRef.current) {
-                    const retryStream = await mediasoupClientRef.current.consume();
-                    if (retryStream && retryStream.getTracks().length > 0) {
-                      videoRef.current.pause();
-                      videoRef.current.srcObject = retryStream;
-                      videoRef.current.load();
-                      await videoRef.current.play().catch(e => console.log('Autoplay prevented:', e));
-                      console.log('✅ WEBRTC: Stream updated successfully (retry)');
-                    }
-                  }
-                }, 500);
+                setIsConnected(true);
+                setError(null);
+                return true;
+              } else {
+                console.log(`⚠️ WEBRTC: No tracks available (attempt ${attempt})`);
+                return false;
               }
+            } catch (error) {
+              console.error(`❌ WEBRTC: Stream switch attempt ${attempt} failed:`, error);
+              return false;
             }
-          } catch (error) {
-            console.error('❌ WEBRTC: Failed to update stream:', error);
+          };
+
+          // Try up to 3 times with increasing delays
+          let success = await attemptStreamSwitch(1);
+
+          if (!success) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            success = await attemptStreamSwitch(2);
+          }
+
+          if (!success) {
+            await new Promise(resolve => setTimeout(resolve, 700));
+            success = await attemptStreamSwitch(3);
+          }
+
+          if (!success) {
+            console.error('❌ WEBRTC: All stream switch attempts failed');
+            // Don't set error state here - the stream might still be playing fine
+            // Just log for debugging
           }
         },
         onDebugInfo: (info: any) => {
