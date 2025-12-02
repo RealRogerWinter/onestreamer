@@ -123,8 +123,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     };
   }, [isActive, socket?.connected, forceInitialize, isConnected]);
 
-  // CRITICAL FIX: Detect streamer changes and force reconnection
-  // This ensures viewers switch to the new stream when a takeover happens
+  // CRITICAL FIX: Detect streamer changes and handle appropriately
+  // For LiveKit: Don't reconnect for viewbot rotations - let selectActiveParticipant handle it
+  // Only reconnect for: no connection, takeover (viewbot→real), or broken connection
   const previousStreamerIdRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
@@ -142,9 +143,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     const oldStreamerId = previousStreamerIdRef.current;
     previousStreamerIdRef.current = currentStreamerId;
 
-    // If there's no new streamer, don't do anything special
+    // If there's no new streamer, don't do anything special - don't cleanup!
     if (!currentStreamerId) {
-      console.log(`🔄 STREAM-SWITCH: Streamer ended (was: ${oldStreamerId})`);
+      console.log(`🔄 STREAM-SWITCH: Streamer prop cleared (was: ${oldStreamerId}) - NOT cleaning up, waiting for new streamer`);
+      // DON'T cleanup here - this fires during viewbot rotations and destroys working connections
       return;
     }
 
@@ -154,13 +156,40 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       return;
     }
 
-    console.log(`🚨 STREAM-SWITCH DETECTED: Streamer changed from ${oldStreamerId || 'none'} to ${currentStreamerId}`);
-    console.log(`🔄 STREAM-SWITCH: Current connection ref: ${currentStreamIdRef.current}, isConnected: ${isConnected}, isInitializing: ${isInitializingRef.current}`);
+    // Helper to check if an ID is a viewbot
+    const isViewbot = (id: string | null | undefined) => id?.startsWith('viewbot-');
+    const isRealStreamer = (id: string | null | undefined) => id && !id.startsWith('viewbot-');
 
-    // CRITICAL: Force reconnection to new stream
-    // This is the key fix - when App.tsx tells us the streamer changed, we MUST reconnect
+    // Check if we have a working LiveKit connection
+    const hasWorkingConnection = mediasoupClientRef.current &&
+                                  !mediasoupClientRef.current.isDestroyed &&
+                                  videoRef.current?.srcObject;
+
+    // For viewbot→viewbot changes with working connection: just update tracking, don't reconnect
+    if (isViewbot(oldStreamerId) && isViewbot(currentStreamerId) && hasWorkingConnection) {
+      console.log(`🔄 STREAM-SWITCH: Viewbot rotation ${oldStreamerId} → ${currentStreamerId}, keeping connection`);
+      // LiveKit's selectActiveParticipant will handle picking the right viewbot
+      // Just update tracking ref
+      currentStreamIdRef.current = currentStreamerId;
+      return;
+    }
+
+    // For real streamer takeover (viewbot→real or real→real), do reconnect
+    const isTakeover = isViewbot(currentStreamIdRef.current) && isRealStreamer(currentStreamerId);
+    const needsReconnect = !hasWorkingConnection || isTakeover;
+
+    if (!needsReconnect && hasWorkingConnection) {
+      console.log(`🔄 STREAM-SWITCH: Have working connection, updating tracking only: ${currentStreamerId}`);
+      currentStreamIdRef.current = currentStreamerId;
+      return;
+    }
+
+    console.log(`🚨 STREAM-SWITCH: ${isTakeover ? 'TAKEOVER' : 'RECONNECT'} from ${oldStreamerId || 'none'} to ${currentStreamerId}`);
+    console.log(`🔄 STREAM-SWITCH: hasWorkingConnection: ${hasWorkingConnection}, isTakeover: ${isTakeover}`);
+
+    // Only do full reconnect when necessary
     const forceReconnectToNewStream = async () => {
-      console.log(`🔄 STREAM-SWITCH: Initiating forced reconnection to ${currentStreamerId}`);
+      console.log(`🔄 STREAM-SWITCH: Initiating reconnection to ${currentStreamerId}`);
 
       // Cancel any pending operations
       if (streamSwitchAbortController.current) {
@@ -173,15 +202,14 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
       // Set loading state
       setIsLoading(true);
-      setError('Connecting to new stream...');
+      setError('Connecting to stream...');
       setSwitchState('switching');
-      setIsConnected(false);
 
-      // Clean up existing connection
+      // Clean up existing connection only if it exists
       if (mediasoupClientRef.current) {
-        console.log(`🧹 STREAM-SWITCH: Cleaning up connection to old stream ${oldStreamerId}`);
+        console.log(`🧹 STREAM-SWITCH: Cleaning up old connection`);
         try {
-          isInitializingRef.current = false; // Reset to allow new init
+          isInitializingRef.current = false;
           await mediasoupClientRef.current.cleanup();
           mediasoupClientRef.current = null;
         } catch (error) {
@@ -198,35 +226,35 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       // Small delay to ensure cleanup is complete
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Check if we're still supposed to connect to this streamer (might have changed again)
+      // Check if we're still supposed to connect to this streamer
       if (currentStreamIdRef.current !== currentStreamerId) {
-        console.log(`🔄 STREAM-SWITCH: Streamer changed again during cleanup, aborting reconnect to ${currentStreamerId}`);
+        console.log(`🔄 STREAM-SWITCH: Target changed during cleanup, aborting`);
         return;
       }
 
       // Initialize viewer connection to new stream
-      console.log(`🔄 STREAM-SWITCH: Initializing connection to new stream ${currentStreamerId}`);
+      console.log(`🔄 STREAM-SWITCH: Initializing connection to ${currentStreamerId}`);
       try {
-        await initializeViewer(true); // Force initialization
+        await initializeViewer(true);
         setSwitchState('idle');
         setError(null);
-        console.log(`✅ STREAM-SWITCH: Successfully connected to ${currentStreamerId}`);
-
-        // Restart viewing session for points tracking
+        setIsConnected(true);
+        console.log(`✅ STREAM-SWITCH: Connected to ${currentStreamerId}`);
         socket.emit('join-as-viewer');
       } catch (error) {
-        console.error(`❌ STREAM-SWITCH: Failed to connect to ${currentStreamerId}:`, error);
+        console.error(`❌ STREAM-SWITCH: Failed to connect:`, error);
         setSwitchState('failed');
-        setError(`Failed to connect to new stream. Please refresh the page.`);
+        setError(`Connection failed. Please refresh.`);
 
         // Retry once after a delay
         setTimeout(async () => {
           if (currentStreamIdRef.current === currentStreamerId) {
-            console.log(`🔄 STREAM-SWITCH: Retrying connection to ${currentStreamerId}`);
+            console.log(`🔄 STREAM-SWITCH: Retrying...`);
             try {
               await initializeViewer(true);
               setSwitchState('idle');
               setError(null);
+              setIsConnected(true);
               socket.emit('join-as-viewer');
             } catch (retryError) {
               console.error(`❌ STREAM-SWITCH: Retry failed:`, retryError);
@@ -236,7 +264,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       }
     };
 
-    // Execute the reconnection
     forceReconnectToNewStream();
 
   }, [currentStreamerId, socket]);
