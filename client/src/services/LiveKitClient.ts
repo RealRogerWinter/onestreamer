@@ -19,9 +19,11 @@ import {
   LocalVideoTrack,
   LocalAudioTrack,
   TrackPublication,
-  DisconnectReason
+  DisconnectReason,
+  VideoCodec
 } from 'livekit-client';
 import { Socket } from 'socket.io-client';
+import { isIOSSafari, isIOS, isSafari, isMobile, getBrowserInfo } from '../utils/browserDetection';
 
 export interface LiveKitClientConfig {
   socket: Socket;
@@ -33,11 +35,19 @@ export interface LiveKitClientConfig {
   onStreamUpdate?: () => void;
 }
 
+interface TurnServerConfig {
+  urls: string[];
+  username: string;
+  credential: string;
+  ttl?: number;
+}
+
 interface LiveKitTokenResponse {
   token: string;
   url: string;
   roomName: string;
   identity: string;
+  turnServers?: TurnServerConfig;
 }
 
 export class LiveKitClient {
@@ -48,6 +58,7 @@ export class LiveKitClient {
   private token: string = '';
   private roomName: string = 'onestreamer-main';
   private identity: string = '';
+  private turnServers: TurnServerConfig | null = null;
   
   // MediaSoup compatibility properties
   public sendTransport: any = null;
@@ -108,32 +119,67 @@ export class LiveKitClient {
    */
   async init(): Promise<void> {
     try {
+      // Detect iOS Safari for special handling
+      const browserInfo = getBrowserInfo();
+      const isIOSDevice = isIOS();
+      const isIOSSafariBrowser = isIOSSafari();
+
       console.log('📡 LIVEKIT CLIENT: Getting router capabilities (LiveKit mode)');
-      
+      console.log(`🔍 LIVEKIT CLIENT: Browser detection - iOS: ${isIOSDevice}, iOS Safari: ${isIOSSafariBrowser}, Mobile: ${browserInfo.isMobile}`);
+
       // Get "router capabilities" - in LiveKit mode, this returns LiveKit config
       const response = await fetch(`${this.serverUrl}/api/mediasoup/router-capabilities`);
       const capabilities = await response.json();
-      
+
       // LiveKit doesn't need to load device capabilities like MediaSoup
       console.log('✅ LIVEKIT CLIENT: LiveKit initialized (no device loading needed)');
-      
+
       // Create room instance but don't connect yet
-      // Disable ALL adaptive features to prevent any layer switching
-      this.room = new Room({
+      // iOS Safari requires specific configuration for WebRTC compatibility
+      const roomOptions: RoomOptions = {
         adaptiveStream: false,
         dynacast: false,
-        simulcast: false,
         videoCaptureDefaults: {
           resolution: VideoPresets.h720.resolution,
         },
-      } as RoomOptions);
-      
+        // iOS Safari-specific: Disable features that may cause issues
+        stopLocalTrackOnUnpublish: !isIOSDevice, // Keep tracks on iOS to prevent interruptions
+        disconnectOnPageLeave: true,
+        // Increase reconnection attempts for iOS which has stricter network handling
+        reconnectPolicy: {
+          nextRetryDelayInMs: (context: { retryCount: number; elapsedMs: number }) => {
+            // iOS Safari needs more aggressive reconnection with shorter delays
+            // Use shorter delays to reconnect faster on mobile networks
+            if (isIOSDevice) {
+              const baseDelay = 1000;
+              const maxDelay = 10000;
+              // Return -1 to stop retrying after 10 attempts
+              if (context.retryCount >= 10) return null as any; // Stop retrying
+              return Math.min(baseDelay * Math.pow(1.5, context.retryCount), maxDelay);
+            }
+            // Standard reconnection for other browsers
+            const baseDelay = 1000;
+            const maxDelay = 30000;
+            if (context.retryCount >= 5) return null as any; // Stop retrying
+            return Math.min(baseDelay * Math.pow(2, context.retryCount), maxDelay);
+          },
+        },
+      };
+
+      // For iOS Safari, prefer H264 codec explicitly
+      if (isIOSSafariBrowser || isIOSDevice) {
+        console.log('📱 LIVEKIT CLIENT: iOS detected - configuring for H264 codec preference');
+        (roomOptions as any).videoCodec = 'h264' as VideoCodec;
+      }
+
+      this.room = new Room(roomOptions);
+
       this.setupRoomEventHandlers();
-      
+
       // Create fake transports for MediaSoup compatibility
       this.sendTransport = { id: 'livekit-send-transport', state: 'new' };
       this.recvTransport = { id: 'livekit-recv-transport', state: 'new' };
-      
+
     } catch (error) {
       console.error('❌ LIVEKIT CLIENT: Failed to initialize:', error);
       throw error;
@@ -380,7 +426,8 @@ export class LiveKitClient {
             token: transportData.livekitData.token,
             url: transportData.livekitData.url,
             roomName: transportData.livekitData.roomName,
-            identity: identity
+            identity: identity,
+            turnServers: transportData.livekitData.turnServers
           };
         }
       }
@@ -418,8 +465,12 @@ export class LiveKitClient {
       this.wsUrl = tokenInfo.url;
       this.roomName = tokenInfo.roomName;
       this.identity = tokenInfo.identity;
-      
+      this.turnServers = tokenInfo.turnServers || null;
+
       console.log(`✅ LIVEKIT CLIENT: Got token for room ${this.roomName} as ${this.identity}`);
+      if (this.turnServers) {
+        console.log('🔄 LIVEKIT CLIENT: TURN servers configured:', this.turnServers.urls);
+      }
       
       // Update fake transport state
       this.sendTransport = { 
@@ -767,33 +818,88 @@ export class LiveKitClient {
         this.wsUrl = tokenInfo.url;
         this.roomName = tokenInfo.roomName;
         this.identity = tokenInfo.identity;
+        this.turnServers = tokenInfo.turnServers || null;
+        if (this.turnServers) {
+          console.log('🔄 LIVEKIT CLIENT: TURN servers configured for viewer:', this.turnServers.urls);
+        }
       }
 
       // Connect to room if not connected
       if (!this.room || this.room.state !== 'connected') {
         console.log('🔗 LIVEKIT CLIENT: Connecting to room as viewer...');
 
+        // iOS Safari detection for viewer configuration
+        const isIOSDevice = isIOS();
+        const isIOSSafariBrowser = isIOSSafari();
+
         if (!this.room) {
-          this.room = new Room({
+          // iOS Safari requires specific configuration
+          const viewerRoomOptions: RoomOptions = {
             adaptiveStream: false,
             dynacast: false,
-            simulcast: false,
             videoCaptureDefaults: {
               resolution: VideoPresets.h720.resolution,
             },
             stopLocalTrackOnUnpublish: false,
-          } as RoomOptions);
+            disconnectOnPageLeave: true,
+            // iOS-specific reconnection policy with shorter delays
+            reconnectPolicy: isIOSDevice ? {
+              nextRetryDelayInMs: (context: { retryCount: number; elapsedMs: number }) => {
+                // Stop after 10 retries
+                if (context.retryCount >= 10) return null as any;
+                return Math.min(1000 * Math.pow(1.5, context.retryCount), 10000);
+              },
+            } : undefined,
+          };
+
+          // For iOS, prefer H264 codec
+          if (isIOSSafariBrowser || isIOSDevice) {
+            console.log('📱 LIVEKIT CLIENT: iOS viewer - configuring for H264 codec');
+            (viewerRoomOptions as any).videoCodec = 'h264' as VideoCodec;
+          }
+
+          this.room = new Room(viewerRoomOptions);
           this.setupRoomEventHandlers();
+        }
+
+        // iOS Safari needs longer connection timeout
+        const connectionTimeout = isIOSDevice ? 30000 : 10000;
+
+        // Configure ICE servers for TURN relay (required for iOS Safari on mobile networks)
+        // Use server-provided TURN credentials (time-limited, HMAC-SHA1 authenticated)
+        let rtcConfig: RTCConfiguration = {};
+        if (isIOSDevice && this.turnServers) {
+          console.log('🔄 LIVEKIT CLIENT: Using server-provided TURN credentials for iOS');
+          rtcConfig = {
+            iceServers: [
+              { urls: 'stun:onestreamer.live:3478' },
+              {
+                urls: this.turnServers.urls.filter(url => url.startsWith('turn')),
+                username: this.turnServers.username,
+                credential: this.turnServers.credential
+              }
+            ],
+            iceTransportPolicy: 'all', // Allow both direct and relay connections
+            iceCandidatePoolSize: 10 // Pre-gather candidates for faster connection
+          };
+        } else if (isIOSDevice) {
+          // Fallback to STUN only if TURN credentials not available
+          console.log('⚠️ LIVEKIT CLIENT: No TURN credentials available, using STUN only');
+          rtcConfig = {
+            iceServers: [{ urls: 'stun:onestreamer.live:3478' }],
+            iceTransportPolicy: 'all'
+          };
         }
 
         // Add connection timeout
         const connectPromise = this.room.connect(this.wsUrl, this.token, {
           autoSubscribe: true,
-          maxRetries: 3,
+          maxRetries: isIOSDevice ? 5 : 3, // More retries for iOS
+          rtcConfig: Object.keys(rtcConfig).length > 0 ? rtcConfig : undefined,
         } as RoomConnectOptions);
 
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Connection timeout')), 10000);
+          setTimeout(() => reject(new Error('Connection timeout')), connectionTimeout);
         });
 
         await Promise.race([connectPromise, timeoutPromise]);
@@ -802,8 +908,10 @@ export class LiveKitClient {
       }
 
       // Wait for tracks to be available or timeout
+      // iOS Safari needs longer timeout as network conditions can vary
+      const isIOSDeviceForWait = isIOS();
       let waitTime = 0;
-      const maxWait = 5000; // 5 seconds max wait
+      const maxWait = isIOSDeviceForWait ? 15000 : 5000; // 15 seconds for iOS, 5 seconds for others
 
       while (this.consumers.size === 0 && waitTime < maxWait) {
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -826,11 +934,13 @@ export class LiveKitClient {
       if (isNewParticipant) {
         console.log(`🔄 LIVEKIT CLIENT: Switching from ${this.activeParticipant?.identity || 'none'} to ${selectedParticipant.identity}`);
 
-        // CRITICAL FIX: Wait for new participant's tracks to be ready with longer timeout
-        const tracksReady = await this.waitForParticipantTracks(selectedParticipant, 10000); // Increased from 3s to 10s
+        // CRITICAL FIX: Wait for new participant's tracks to be ready
+        // iOS Safari needs much longer timeout due to slower codec negotiation
+        const trackWaitTimeout = isIOSDeviceForWait ? 20000 : 10000; // 20s for iOS, 10s for others
+        const tracksReady = await this.waitForParticipantTracks(selectedParticipant, trackWaitTimeout);
         if (!tracksReady) {
           // FIX: Don't proceed if tracks aren't ready - throw an error instead
-          console.error(`❌ LIVEKIT CLIENT: Cannot consume - tracks not ready for ${selectedParticipant.identity}`);
+          console.error(`❌ LIVEKIT CLIENT: Cannot consume - tracks not ready for ${selectedParticipant.identity} (timeout: ${trackWaitTimeout}ms)`);
           this.isSwitchingStream = false;
           throw new Error(`Tracks not ready for participant ${selectedParticipant.identity}`);
         }
@@ -1044,6 +1154,7 @@ export class LiveKitClient {
     this.consumers.clear();
     this.token = '';
     this.wsUrl = '';
+    this.turnServers = null;
     this.currentStreamerId = null;
     this.activeParticipant = null;
     this.reconnectionAttempts = 0;

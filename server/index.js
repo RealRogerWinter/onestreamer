@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const multer = require('multer');
@@ -91,6 +92,28 @@ if (USE_HTTPS || fs.existsSync(path.join(__dirname, '..', 'certificates', 'cert.
   } catch (err) {
     console.error('⚠️ HTTPS: Failed to load SSL certificates:', err.message);
   }
+}
+
+// TURN credential generation for coturn with static-auth-secret
+// Coturn uses HMAC-SHA1 for time-limited credentials
+const TURN_SECRET = process.env.TURN_SECRET || '***REMOVED-TURN-SECRET***';
+const TURN_TTL = 24 * 60 * 60; // 24 hours in seconds
+
+function generateTurnCredentials(username = 'viewer') {
+  // Username format: timestamp:username (timestamp is when credential expires)
+  const expiry = Math.floor(Date.now() / 1000) + TURN_TTL;
+  const turnUsername = `${expiry}:${username}`;
+
+  // Credential is HMAC-SHA1 of the username using the static auth secret
+  const hmac = crypto.createHmac('sha1', TURN_SECRET);
+  hmac.update(turnUsername);
+  const turnCredential = hmac.digest('base64');
+
+  return {
+    username: turnUsername,
+    credential: turnCredential,
+    ttl: TURN_TTL
+  };
 }
 
 // Use HTTP server for Socket.IO by default, can be switched to HTTPS
@@ -2719,11 +2742,25 @@ app.get('/api/livekit/token', async (req, res) => {
       canPublishData: true
     });
     
+    // Generate TURN credentials for clients behind NAT (especially iOS Safari)
+    const turnCreds = generateTurnCredentials(identity);
+
     res.json({
       token: token,
       url: livekitService.config.wsUrl,
       roomName: roomName,
-      identity: identity
+      identity: identity,
+      turnServers: {
+        urls: [
+          'stun:onestreamer.live:3478',
+          'turn:onestreamer.live:3478?transport=udp',
+          'turn:onestreamer.live:3478?transport=tcp',
+          'turns:onestreamer.live:5349?transport=tcp'
+        ],
+        username: turnCreds.username,
+        credential: turnCreds.credential,
+        ttl: turnCreds.ttl
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

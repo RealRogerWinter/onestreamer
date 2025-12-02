@@ -5,8 +5,23 @@ rtc:
   tcp_port: 7883
   port_range_start: 50200
   port_range_end: 60000
-  use_external_ip: true
+  # Explicitly set external IP instead of auto-detection (which fails)
+  use_external_ip: false
   node_ip: <SERVER_IP>
+  # Configure NAT1To1 IPs explicitly
+  ips:
+    includes:
+      - <SERVER_IP>/0
+    excludes:
+      - 127.0.0.0/8
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+  # Disable ICE-lite to allow full ICE negotiation (required for mobile/NAT)
+  use_ice_lite: false
+  # Provide STUN server for ICE candidates
+  stun_servers:
+    - onestreamer.live:3478
 keys:
   devkey: secret
 logging:
@@ -17,6 +32,12 @@ room:
   auto_create: true
   empty_timeout: 300
   max_participants: 100
+  # Enable H264 codec for iOS Safari compatibility (iOS only supports H264)
+  # H264 is listed first for priority
+  enabled_codecs:
+    - mime: video/H264
+    - mime: video/VP8
+    - mime: audio/opus
 redis:
   address: "127.0.0.1:6379"
 ingress:

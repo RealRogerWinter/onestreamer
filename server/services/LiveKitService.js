@@ -4,6 +4,20 @@
  */
 
 const { Room, RoomServiceClient, AccessToken, WebhookReceiver } = require('livekit-server-sdk');
+const crypto = require('crypto');
+
+// TURN credential generation for coturn with static-auth-secret
+const TURN_SECRET = process.env.TURN_SECRET || '***REMOVED-TURN-SECRET***';
+const TURN_TTL = 24 * 60 * 60; // 24 hours in seconds
+
+function generateTurnCredentials(username = 'viewer') {
+  const expiry = Math.floor(Date.now() / 1000) + TURN_TTL;
+  const turnUsername = `${expiry}:${username}`;
+  const hmac = crypto.createHmac('sha1', TURN_SECRET);
+  hmac.update(turnUsername);
+  const turnCredential = hmac.digest('base64');
+  return { username: turnUsername, credential: turnCredential, ttl: TURN_TTL };
+}
 
 class LiveKitService {
   constructor() {
@@ -85,6 +99,8 @@ class LiveKitService {
   async getRouterRtpCapabilities() {
     // LiveKit handles codec negotiation internally
     // Return MediaSoup-compatible capabilities for client compatibility
+    // CRITICAL: H264 MUST be listed FIRST for iOS Safari compatibility
+    // iOS Safari only supports H264 - VP8/VP9 are not supported
     return {
       codecs: [
         {
@@ -97,10 +113,16 @@ class LiveKitService {
             { type: 'transport-cc' }
           ]
         },
+        // H264 FIRST - Required for iOS Safari (only supports H264)
         {
           kind: 'video',
-          mimeType: 'video/VP8',
+          mimeType: 'video/H264',
           clockRate: 90000,
+          parameters: {
+            'packetization-mode': 1,
+            'profile-level-id': '42e01f',  // Baseline Profile Level 3.1 - best iOS compatibility
+            'level-asymmetry-allowed': 1
+          },
           rtcpFeedback: [
             { type: 'nack' },
             { type: 'nack', parameter: 'pli' },
@@ -109,15 +131,11 @@ class LiveKitService {
             { type: 'transport-cc' }
           ]
         },
+        // VP8 as fallback for other browsers
         {
           kind: 'video',
-          mimeType: 'video/h264',
+          mimeType: 'video/VP8',
           clockRate: 90000,
-          parameters: {
-            'packetization-mode': 1,
-            'profile-level-id': '42e01f',
-            'level-asymmetry-allowed': 1
-          },
           rtcpFeedback: [
             { type: 'nack' },
             { type: 'nack', parameter: 'pli' },
@@ -188,7 +206,16 @@ class LiveKitService {
       livekitData: {
         token: token,
         url: this.config.wsUrl,
-        roomName: this.config.roomName
+        roomName: this.config.roomName,
+        turnServers: {
+          urls: [
+            'stun:onestreamer.live:3478',
+            'turn:onestreamer.live:3478?transport=udp',
+            'turn:onestreamer.live:3478?transport=tcp',
+            'turns:onestreamer.live:5349?transport=tcp'
+          ],
+          ...generateTurnCredentials(socketId)
+        }
       }
     };
   }
