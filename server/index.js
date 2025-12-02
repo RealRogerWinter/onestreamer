@@ -8903,7 +8903,126 @@ async function startServer() {
     // Continue without ChatBot service rather than crashing
     console.log('⚠️ SERVER: Continuing without ChatBot service...');
   }
-  
+
+  // ============================================================================
+  // SOCIAL MEDIA EMBED SUPPORT - Dynamic Open Graph meta tags for clip pages
+  // ============================================================================
+  // This middleware serves custom HTML with proper meta tags for social crawlers
+  // so that clip links display rich previews in Discord, Twitter, Facebook, etc.
+  // ============================================================================
+
+  app.get('/clips/:clipId', async (req, res, next) => {
+    const { clipId } = req.params;
+
+    // Validate clipId format (UUID)
+    const uuidRegex = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    if (!uuidRegex.test(clipId)) {
+      // Not a valid clip URL, let React handle it
+      return next();
+    }
+
+    try {
+      // Fetch clip data
+      const clip = await clipService.getClip(clipId);
+
+      if (!clip || clip.status !== 'ready' || !clip.is_public) {
+        // Clip not found or not ready/public - serve normal React app
+        return res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
+      }
+
+      // Format duration for display (e.g., "0:45" or "1:30")
+      const durationSec = Math.round((clip.duration_ms || 0) / 1000);
+      const minutes = Math.floor(durationSec / 60);
+      const seconds = durationSec % 60;
+      const durationStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+      // Escape HTML entities for security
+      const escapeHtml = (str) => {
+        if (!str) return '';
+        return str
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+
+      const title = escapeHtml(clip.title) || 'Clip';
+      const description = escapeHtml(clip.description) || `A ${durationStr} clip by ${escapeHtml(clip.creator_username || 'Anonymous')}`;
+      const creatorName = escapeHtml(clip.creator_username || 'Anonymous');
+
+      // Build URLs
+      const baseUrl = 'https://onestreamer.live';
+      const clipUrl = `${baseUrl}/clips/${clipId}`;
+      const thumbnailUrl = `${baseUrl}/api/clips/${clipId}/thumbnail`;
+      const videoUrl = `${baseUrl}/api/clips/${clipId}/stream`;
+
+      // Read the base index.html template
+      const fs = require('fs');
+      const indexPath = path.join(__dirname, '..', 'client', 'build', 'index.html');
+      let html = fs.readFileSync(indexPath, 'utf8');
+
+      // Build the Open Graph and Twitter Card meta tags
+      const metaTags = `
+    <!-- Open Graph Meta Tags for Social Media Sharing -->
+    <meta property="og:site_name" content="OneStreamer">
+    <meta property="og:url" content="${clipUrl}">
+    <meta property="og:type" content="video.other">
+    <meta property="og:title" content="${title}">
+    <meta property="og:description" content="${description}">
+    <meta property="og:image" content="${thumbnailUrl}">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="720">
+    <meta property="og:image:alt" content="${title}">
+    <meta property="og:video" content="${videoUrl}">
+    <meta property="og:video:secure_url" content="${videoUrl}">
+    <meta property="og:video:type" content="video/mp4">
+    <meta property="og:video:width" content="1280">
+    <meta property="og:video:height" content="720">
+
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="player">
+    <meta name="twitter:site" content="@onestreamer">
+    <meta name="twitter:title" content="${title}">
+    <meta name="twitter:description" content="${description}">
+    <meta name="twitter:image" content="${thumbnailUrl}">
+    <meta name="twitter:player" content="${clipUrl}?embed=true">
+    <meta name="twitter:player:width" content="1280">
+    <meta name="twitter:player:height" content="720">
+
+    <!-- Additional metadata -->
+    <meta property="video:duration" content="${durationSec}">
+    <meta name="author" content="${creatorName}">
+`;
+
+      // Update the title tag
+      html = html.replace(
+        /<title>.*?<\/title>/,
+        `<title>${title} - OneStreamer Clip</title>`
+      );
+
+      // Update the description meta tag
+      html = html.replace(
+        /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/,
+        `<meta name="description" content="${description}">`
+      );
+
+      // Insert Open Graph tags after the description meta tag
+      html = html.replace(
+        /(<meta\s+name="description"\s+content="[^"]*"\s*\/?>)/,
+        `$1${metaTags}`
+      );
+
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+
+    } catch (error) {
+      console.error(`❌ Error generating clip meta tags for ${clipId}:`, error);
+      // On error, fall back to serving the normal React app
+      res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
+    }
+  });
+
   // Catch-all route - serve React app for client-side routing
   app.get('*', (req, res, next) => {
     // Don't intercept Socket.IO requests

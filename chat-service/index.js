@@ -77,7 +77,7 @@ const COLORS = [
 const connectedUsers = new Map();
 const ipToUser = new Map(); // Store username assignments by IP
 const chatMessages = [];
-const MAX_CHAT_HISTORY = 100; // Keep last 100 messages
+const MAX_CHAT_HISTORY = 3000; // Keep last 3000 messages (~1 hour of active chat)
 
 // Admin functionality
 const bannedUsers = new Set(); // Store banned usernames (either authenticated or anonymous)
@@ -1868,14 +1868,84 @@ app.post('/api/system-message', express.json(), (req, res) => {
     // Broadcast message to all connected users
     io.emit('new-message', systemMessage);
     
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'System message sent successfully',
-      messageId: systemMessage.id 
+      messageId: systemMessage.id
     });
   } catch (error) {
     console.error('❌ CHAT: Error sending system message:', error);
     res.status(500).json({ error: 'Failed to send system message' });
+  }
+});
+
+// API endpoint to get chat history for clip replay
+// This is used by the main server when creating clips
+app.get('/api/chat-history', (req, res) => {
+  try {
+    const { since, until, contextMs = 30000 } = req.query;
+
+    // Parse timestamps (unix ms)
+    const sinceMs = since ? parseInt(since) : null;
+    const untilMs = until ? parseInt(until) : null;
+    const contextWindow = parseInt(contextMs) || 30000; // Default 30 seconds of context
+
+    // If no time range specified, return recent messages
+    if (!sinceMs || !untilMs) {
+      const recentMessages = chatMessages.slice(-50).map(msg => ({
+        username: msg.username,
+        message: msg.message,
+        timestamp: msg.fullTimestamp || new Date().toISOString(),
+        timestampMs: msg.fullTimestamp ? new Date(msg.fullTimestamp).getTime() : Date.now(),
+        isSystem: msg.isSystem || false,
+        color: msg.color
+      }));
+
+      return res.json({
+        success: true,
+        messages: recentMessages,
+        count: recentMessages.length,
+        range: { since: null, until: null }
+      });
+    }
+
+    // Include context messages from before the clip start
+    const effectiveStart = sinceMs - contextWindow;
+
+    // Filter messages by time range
+    const filteredMessages = chatMessages
+      .filter(msg => {
+        const msgTime = msg.fullTimestamp ? new Date(msg.fullTimestamp).getTime() : 0;
+        return msgTime >= effectiveStart && msgTime <= untilMs;
+      })
+      .map(msg => {
+        const msgTimeMs = msg.fullTimestamp ? new Date(msg.fullTimestamp).getTime() : 0;
+        return {
+          username: msg.username,
+          message: msg.message,
+          timestamp: msg.fullTimestamp || new Date().toISOString(),
+          timestampMs: msgTimeMs,
+          isSystem: msg.isSystem || false,
+          color: msg.color,
+          isContext: msgTimeMs < sinceMs // Mark messages before clip start as context
+        };
+      });
+
+    console.log(`💬 CHAT API: Returning ${filteredMessages.length} messages for range ${new Date(sinceMs).toISOString()} to ${new Date(untilMs).toISOString()}`);
+
+    res.json({
+      success: true,
+      messages: filteredMessages,
+      count: filteredMessages.length,
+      range: {
+        since: sinceMs,
+        until: untilMs,
+        contextStart: effectiveStart
+      }
+    });
+  } catch (error) {
+    console.error('❌ CHAT: Error fetching chat history:', error);
+    res.status(500).json({ error: 'Failed to fetch chat history' });
   }
 });
 

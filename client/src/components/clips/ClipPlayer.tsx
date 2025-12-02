@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ClipsHeader from './ClipsHeader';
+import ClipChatReplay from './ClipChatReplay';
 import '../../styles/Clips.css';
 
 interface Clip {
@@ -56,6 +57,8 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({ clipId }) => {
   const [error, setError] = useState<string | null>(null);
   const [showCopyToast, setShowCopyToast] = useState(false);
   const [processingTime, setProcessingTime] = useState<string>('');
+  const [currentTimeMs, setCurrentTimeMs] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
   useEffect(() => {
     if (clipId) {
@@ -83,6 +86,37 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({ clipId }) => {
       };
     }
   }, [clip?.status, clip?.duration_ms, clip?.created_at]);
+
+  // Track video playback time for chat sync
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || clip?.status !== 'ready') return;
+
+    const handleTimeUpdate = () => {
+      setCurrentTimeMs(Math.floor(video.currentTime * 1000));
+    };
+
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+    const handleEnded = () => setIsPlaying(false);
+    const handleSeeked = () => {
+      setCurrentTimeMs(Math.floor(video.currentTime * 1000));
+    };
+
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('ended', handleEnded);
+    video.addEventListener('seeked', handleSeeked);
+
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('ended', handleEnded);
+      video.removeEventListener('seeked', handleSeeked);
+    };
+  }, [clip?.status]);
 
   const fetchClip = async (silent = false) => {
     try {
@@ -244,43 +278,54 @@ const ClipPlayer: React.FC<ClipPlayerProps> = ({ clipId }) => {
     <>
       <ClipsHeader showBackToClips />
       <div className="clip-player-page">
-        <div className="clip-player-container">
-          <div className="clip-video-wrapper">
-          <video
-            ref={videoRef}
-            controls
-            autoPlay
-            playsInline
-            src={`/api/clips/${clipId}/stream`}
-            poster={clip.thumbnail_path ? `/api/clips/${clipId}/thumbnail` : undefined}
-          >
-            Your browser does not support the video tag.
-          </video>
-        </div>
+        <div className="clip-player-container clip-player-with-chat">
+          <div className="clip-player-main">
+            <div className="clip-video-wrapper">
+              <video
+                ref={videoRef}
+                controls
+                autoPlay
+                playsInline
+                src={`/api/clips/${clipId}/stream`}
+                poster={clip.thumbnail_path ? `/api/clips/${clipId}/thumbnail` : undefined}
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
 
-        <div className="clip-details">
-          <h1>{clip.title}</h1>
+            <div className="clip-details">
+              <h1>{clip.title}</h1>
 
-          {clip.description && (
-            <p className="clip-description">{clip.description}</p>
-          )}
+              {clip.description && (
+                <p className="clip-description">{clip.description}</p>
+              )}
 
-          <div className="clip-stats">
-            <span>{formatViews(clip.view_count)}</span>
-            <span>{formatDuration(clip.duration_ms)}</span>
-            {clip.creator_username && (
-              <span>Clipped by @{clip.creator_username}</span>
-            )}
-            <span>{formatDate(clip.created_at)}</span>
+              <div className="clip-stats">
+                <span>{formatViews(clip.view_count)}</span>
+                <span>{formatDuration(clip.duration_ms)}</span>
+                {clip.creator_username && (
+                  <span>Clipped by @{clip.creator_username}</span>
+                )}
+                <span>{formatDate(clip.created_at)}</span>
+              </div>
+
+              <div className="clip-actions">
+                <button className="clip-share-btn" onClick={shareClip}>
+                  <span>Share</span>
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="clip-actions">
-            <button className="clip-share-btn" onClick={shareClip}>
-              <span>Share</span>
-            </button>
+          <div className="clip-player-sidebar">
+            <ClipChatReplay
+              clipId={clipId}
+              currentTimeMs={currentTimeMs}
+              isPlaying={isPlaying}
+              duration={clip.duration_ms}
+            />
           </div>
         </div>
-      </div>
 
         {showCopyToast && (
           <div className="copy-toast">

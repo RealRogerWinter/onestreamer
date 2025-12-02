@@ -100,6 +100,40 @@ router.get('/:clipId', optionalAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/clips/:clipId/chat
+ * Get chat messages for clip playback
+ */
+router.get('/:clipId/chat', optionalAuth, async (req, res) => {
+  try {
+    const clipService = req.app.get('clipService');
+    const { clipId } = req.params;
+
+    const clip = await clipService.getClip(clipId);
+
+    if (!clip) {
+      return res.status(404).json({ error: 'Clip not found' });
+    }
+
+    // Check if clip is public or user owns it
+    if (!clip.is_public && (!req.user || clip.user_id !== req.user.id)) {
+      return res.status(404).json({ error: 'Clip not found' });
+    }
+
+    const messages = await clipService.getClipChat(clipId);
+
+    res.json({
+      success: true,
+      clipId,
+      messages,
+      count: messages.length
+    });
+  } catch (error) {
+    console.error('Error fetching clip chat:', error);
+    res.status(500).json({ error: 'Failed to fetch clip chat' });
+  }
+});
+
+/**
  * GET /api/clips/:clipId/stream
  * Stream clip video with range support
  */

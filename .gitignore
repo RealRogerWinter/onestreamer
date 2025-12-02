@@ -76,4 +76,4 @@ whisper.cpp/
 # Data directories
 audio-buffers/
 egress-recordings/
-clips/
+/clips/

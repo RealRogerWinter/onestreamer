@@ -558,6 +558,21 @@ function initializeDatabase() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_clip_views_clip ON clip_views(clip_id)`);
 
+        // Clip Chat Messages - stores chat snapshot for playback with clips
+        db.run(`
+            CREATE TABLE IF NOT EXISTS clip_chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clip_id TEXT NOT NULL,
+                username TEXT NOT NULL,
+                message TEXT NOT NULL,
+                relative_time_ms INTEGER NOT NULL,
+                original_timestamp DATETIME,
+                FOREIGN KEY (clip_id) REFERENCES clips (clip_id) ON DELETE CASCADE
+            )
+        `);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_clip_chat_clip_id ON clip_chat_messages(clip_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_clip_chat_relative_time ON clip_chat_messages(clip_id, relative_time_ms)`);
+
         // Add missing columns if they don't exist (migration)
         db.run(`ALTER TABLE recordings ADD COLUMN session_id TEXT`, (err) => {
             if (err && !err.message.includes('duplicate column')) {

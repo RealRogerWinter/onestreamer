@@ -151,6 +151,16 @@ class ClipService {
       startTime, endTime, durationMs
     ]);
 
+    // Capture chat messages for clip creation time (not recording time)
+    // We use current time because chat is ephemeral and recording timestamps may be old
+    const clipCreationTime = Date.now();
+    const chatEndTime = clipCreationTime;
+    const chatStartTime = clipCreationTime - durationMs;
+
+    this.captureChatForClip(clipId, chatStartTime, chatEndTime).catch(err => {
+      console.error(`⚠️ CLIPS: Failed to capture chat for clip ${clipId}:`, err.message);
+    });
+
     // Queue for processing with segment info
     if (this.processorService) {
       this.processorService.queueClip({
@@ -565,6 +575,98 @@ class ClipService {
       ...stats,
       storage: this.storageService.getStorageStats()
     };
+  }
+
+  /**
+   * Capture chat messages for a clip's time range
+   * Fetches from chat service API and stores with relative offsets for playback
+   * @param {string} clipId - The clip ID
+   * @param {number} startTimeMs - Clip start time (unix ms)
+   * @param {number} endTimeMs - Clip end time (unix ms)
+   */
+  async captureChatForClip(clipId, startTimeMs, endTimeMs) {
+    const contextMs = 30000; // 30 seconds of context before clip starts
+
+    console.log(`💬 CLIPS: Capturing chat for clip ${clipId} from ${new Date(startTimeMs).toISOString()} to ${new Date(endTimeMs).toISOString()}`);
+
+    try {
+      // Fetch chat from chat service API
+      const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
+      const axios = require('axios');
+
+      const response = await axios.get(`${chatServiceUrl}/api/chat-history`, {
+        params: {
+          since: startTimeMs,
+          until: endTimeMs,
+          contextMs: contextMs
+        },
+        httpsAgent: new (require('https').Agent)({ rejectUnauthorized: false }),
+        timeout: 5000
+      });
+
+      if (!response.data.success || !response.data.messages || response.data.messages.length === 0) {
+        console.log(`💬 CLIPS: No chat messages found for clip ${clipId}`);
+        return { captured: 0 };
+      }
+
+      const messages = response.data.messages;
+      console.log(`💬 CLIPS: Found ${messages.length} chat messages for clip ${clipId}`);
+
+      // Insert messages with relative timestamps
+      let insertedCount = 0;
+      for (const msg of messages) {
+        try {
+          // Calculate relative offset from clip start (context messages will have negative values, which we floor to 0)
+          const msgTimeMs = msg.timestampMs || new Date(msg.timestamp).getTime();
+          // For context messages (before clip start), use negative relative time
+          // Frontend will show these immediately when clip starts
+          const relativeTimeMs = msg.isContext ? -(startTimeMs - msgTimeMs) : Math.max(0, msgTimeMs - startTimeMs);
+
+          await this.runAsync(`
+            INSERT INTO clip_chat_messages (clip_id, username, message, relative_time_ms, original_timestamp)
+            VALUES (?, ?, ?, ?, ?)
+          `, [clipId, msg.username, msg.message, relativeTimeMs, msg.timestamp]);
+
+          insertedCount++;
+        } catch (err) {
+          console.error(`💬 CLIPS: Error inserting chat message:`, err.message);
+        }
+      }
+
+      console.log(`💬 CLIPS: Captured ${insertedCount} chat messages for clip ${clipId}`);
+      return { captured: insertedCount };
+    } catch (err) {
+      console.error(`💬 CLIPS: Error fetching chat from chat service:`, err.message);
+      return { captured: 0, error: err.message };
+    }
+  }
+
+  /**
+   * Get chat messages for a clip (for playback)
+   * @param {string} clipId - The clip ID
+   * @returns {Array} Chat messages with relative timestamps
+   */
+  async getClipChat(clipId) {
+    const messages = await this.allAsync(`
+      SELECT username, message, relative_time_ms, original_timestamp
+      FROM clip_chat_messages
+      WHERE clip_id = ?
+      ORDER BY relative_time_ms ASC
+    `, [clipId]);
+
+    return messages || [];
+  }
+
+  /**
+   * Get chat message count for a clip
+   * @param {string} clipId - The clip ID
+   * @returns {number} Number of chat messages
+   */
+  async getClipChatCount(clipId) {
+    const result = await this.getAsync(`
+      SELECT COUNT(*) as count FROM clip_chat_messages WHERE clip_id = ?
+    `, [clipId]);
+    return result?.count || 0;
   }
 }
 
