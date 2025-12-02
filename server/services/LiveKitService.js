@@ -549,6 +549,103 @@ class LiveKitService {
   delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
+
+  /**
+   * Start periodic health check for streamer tracks
+   * Clears stale streamers whose WebRTC connection dropped but socket remains
+   */
+  startStreamerHealthCheck(streamService, io, interval = 15000) {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+    }
+
+    console.log(`✅ LIVEKIT: Starting streamer health check (every ${interval / 1000}s)`);
+
+    this.healthCheckTimer = setInterval(async () => {
+      try {
+        const currentStreamer = streamService.getCurrentStreamer();
+
+        // Skip if no current streamer or it's a viewbot
+        if (!currentStreamer) return;
+        if (currentStreamer.startsWith('viewbot-') || currentStreamer.includes('viewbot')) {
+          return;
+        }
+
+        // CRITICAL: Give new streams a grace period to establish WebRTC connection
+        // Don't check health until they've had at least 30 seconds to connect
+        const streamStatus = streamService.getStreamStatus();
+        const streamAge = streamStatus.streamDuration || 0;
+        const GRACE_PERIOD_MS = 30000; // 30 seconds grace period
+
+        if (streamAge < GRACE_PERIOD_MS) {
+          // console.log(`⏳ LIVEKIT HEALTH: Skipping check for ${currentStreamer} (stream age: ${Math.round(streamAge/1000)}s < ${GRACE_PERIOD_MS/1000}s grace period)`);
+          return;
+        }
+
+        // Check if streamer has active tracks in LiveKit
+        const participants = await this.roomClient.listParticipants(this.config.roomName);
+        const streamerParticipant = participants.find(p => p.identity === currentStreamer);
+
+        if (!streamerParticipant) {
+          console.log(`🔍 LIVEKIT HEALTH: Streamer ${currentStreamer} NOT FOUND in LiveKit room`);
+          await this.clearStaleStreamer(streamService, io, currentStreamer, 'not_in_room');
+          return;
+        }
+
+        // Check if they have any published tracks
+        const hasTracks = streamerParticipant.tracks && streamerParticipant.tracks.length > 0;
+        const hasActiveTracks = streamerParticipant.tracks?.some(t => t.muted === false);
+
+        if (!hasTracks || !hasActiveTracks) {
+          console.log(`🔍 LIVEKIT HEALTH: Streamer ${currentStreamer} has NO ACTIVE TRACKS`);
+          console.log(`   Tracks: ${JSON.stringify(streamerParticipant.tracks?.map(t => ({ sid: t.sid, type: t.type, muted: t.muted })) || [])}`);
+          await this.clearStaleStreamer(streamService, io, currentStreamer, 'no_tracks');
+          return;
+        }
+
+        // Streamer is healthy
+        // console.log(`✅ LIVEKIT HEALTH: Streamer ${currentStreamer} is healthy (${streamerParticipant.tracks?.length || 0} tracks)`);
+      } catch (error) {
+        console.error(`❌ LIVEKIT HEALTH: Error checking streamer:`, error.message);
+      }
+    }, interval);
+  }
+
+  /**
+   * Clear a stale streamer and trigger viewbot rotation
+   */
+  async clearStaleStreamer(streamService, io, streamerId, reason) {
+    console.log(`🧹 LIVEKIT: Clearing stale streamer ${streamerId} (reason: ${reason})`);
+
+    // Clear the streamer status
+    streamService.clearStreamer();
+    this.currentStreamer = null;
+
+    // Emit stream-ended to all clients
+    io.emit('stream-ended', {
+      reason: 'webrtc_disconnect',
+      message: 'Streamer WebRTC connection lost'
+    });
+
+    // Emit stream-update so clients know to look for new stream
+    io.emit('stream-update', {
+      hasActiveStream: false,
+      streamerId: null
+    });
+
+    console.log(`✅ LIVEKIT: Stale streamer ${streamerId} cleared, viewbot should take over`);
+  }
+
+  /**
+   * Stop health check
+   */
+  stopStreamerHealthCheck() {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+      console.log(`⏹️ LIVEKIT: Stopped streamer health check`);
+    }
+  }
 }
 
 module.exports = LiveKitService;

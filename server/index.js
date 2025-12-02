@@ -6451,41 +6451,42 @@ io.on('connection', async (socket) => {
           await takeoverService.setSocketCooldown(currentStreamer, 'stream_taken_over');
           cooldownInfo = await takeoverService.getSocketCooldown(currentStreamer);
 
-          // Emit takeover event with cooldown information
+          // Emit takeover event with cooldown information and new streamer display name
+          const newStreamerDisplayNameForTakeover = await getStreamerDisplayName(socket.id);
           io.to(currentStreamer).emit('stream-takeover', {
             newStreamerId: socket.id,
+            newStreamerDisplayName: newStreamerDisplayNameForTakeover,
             cooldownRemaining: cooldownInfo ? cooldownInfo.remaining : takeoverService.getCooldownSeconds()
           });
+          console.log(`📢 TAKEOVER: Notified ${currentStreamer} of takeover by ${socket.id} (${newStreamerDisplayNameForTakeover})`);
 
-          // CRITICAL FIX: Completely disconnect the previous streamer to prevent auto-reconnection
+          // Remove from streamer room but DON'T disconnect the socket
+          // The cooldown already prevents them from streaming again
+          // Disconnecting the socket causes race conditions with viewer initialization
           const previousStreamerSocket = io.sockets.sockets.get(currentStreamer);
           if (previousStreamerSocket) {
-            console.log(`🔌 TAKEOVER: Forcefully disconnecting previous streamer ${currentStreamer} to prevent auto-reconnection`);
+            console.log(`🔌 TAKEOVER: Removing previous streamer ${currentStreamer} from streamer room (keeping socket connected for viewer transition)`);
             previousStreamerSocket.leave('streamer');
 
-            // Send a specific disconnect reason so the client knows not to auto-reconnect
+            // Send force-disconnect event to signal transition (but don't actually disconnect socket)
             previousStreamerSocket.emit('force-disconnect', {
               reason: 'stream_takeover',
               message: 'Your stream has been taken over by another user',
               shouldReconnect: false
             });
-
-            // Forcefully disconnect the socket after a brief delay to ensure the message is sent
-            setTimeout(() => {
-              if (previousStreamerSocket.connected) {
-                previousStreamerSocket.disconnect(true);
-                console.log(`✅ TAKEOVER: Previous streamer ${currentStreamer} has been disconnected`);
-              }
-            }, 100);
+            console.log(`✅ TAKEOVER: Previous streamer ${currentStreamer} notified - socket remains connected for viewer mode`);
           }
         }
         
         // Emit stream-ended to notify viewers before cleanup, but not to the new streamer
-        console.log(`📢 TAKEOVER: Notifying viewers of stream end before cleanup (excluding new streamer ${socket.id})`);
-        socket.broadcast.emit('stream-ended', { 
+        // Include new streamer's display name so UI can update immediately
+        const newStreamerDisplayName = await getStreamerDisplayName(socket.id);
+        console.log(`📢 TAKEOVER: Notifying viewers of stream end before cleanup (excluding new streamer ${socket.id}, display: ${newStreamerDisplayName})`);
+        socket.broadcast.emit('stream-ended', {
           reason: 'takeover',
           previousStreamer: currentStreamer,
-          newStreamer: socket.id 
+          newStreamer: socket.id,
+          newStreamerDisplayName: newStreamerDisplayName
         });
         
         // Give viewers time to cleanup their consumers before we close producers
@@ -8656,14 +8657,24 @@ async function startServer() {
       // Initialize ViewBotLiveKitService for LiveKit RTMP ingress viewbots
       const viewBotLiveKitService = new ViewBotLiveKitService(livekitService);
       await viewBotLiveKitService.initialize();
+      // CRITICAL: Register StreamService for real streamer protection
+      viewBotLiveKitService.setStreamService(streamService);
       console.log('✅ VIEWBOT: ViewBotLiveKitService initialized for LiveKit RTMP ingress');
 
       // Register with rotation systems so they can use RTMP viewbots
       SimpleViewBotRotation.setLiveKitService(viewBotLiveKitService);
       console.log('✅ VIEWBOT: Registered LiveKit service with SimpleViewBotRotation');
 
+      // CRITICAL: Register StreamService for real streamer protection
+      SimpleViewBotRotation.setStreamService(streamService);
+      console.log('✅ VIEWBOT: Registered StreamService with SimpleViewBotRotation for real streamer protection');
+
       // Store for later registration with ViewBotRotationService
       global.viewBotLiveKitService = viewBotLiveKitService;
+
+      // Start LiveKit streamer health check to detect stale streamers (WebRTC dropped but socket alive)
+      livekitService.startStreamerHealthCheck(streamService, io, 10000); // Check every 10 seconds
+      console.log('✅ LIVEKIT: Started streamer health check for stale connection detection');
     }
     
     // Make viewbotService available to routes

@@ -17,6 +17,36 @@ class ViewBotLiveKitService {
     this.config = require('../config/webrtc.config').livekit;
     this.videoFiles = [];
     this.currentVideoIndex = 0;
+    this.streamService = null; // For real streamer protection
+  }
+
+  /**
+   * Set StreamService reference for real streamer protection
+   */
+  setStreamService(streamService) {
+    this.streamService = streamService;
+    console.log('✅ LIVEKIT VIEWBOT: StreamService registered for real streamer protection');
+  }
+
+  /**
+   * Check if a real streamer is currently active
+   */
+  isRealStreamerActive() {
+    if (!this.streamService) {
+      return false;
+    }
+
+    const currentStreamer = this.streamService.getCurrentStreamer();
+    if (!currentStreamer) {
+      return false;
+    }
+
+    // Check if current streamer is NOT a viewbot
+    const isViewbot = currentStreamer.startsWith('viewbot-') ||
+                      currentStreamer.includes('viewbot') ||
+                      currentStreamer.startsWith('bot-');
+
+    return !isViewbot;
   }
 
   async initialize() {
@@ -77,12 +107,21 @@ class ViewBotLiveKitService {
    * Creates a new ViewBot that publishes to LiveKit using FFmpeg
    */
   async createViewBot(config = {}) {
+    // CRITICAL: Check if real streamer is active before creating viewbot
+    if (this.isRealStreamerActive()) {
+      console.log('🛡️ LIVEKIT VIEWBOT: BLOCKED - Real streamer is active, cannot create viewbot');
+      return {
+        success: false,
+        message: 'Real streamer is active - viewbot creation blocked'
+      };
+    }
+
     await this.initialize();
-    
+
     const botId = `viewbot-${uuidv4().substring(0, 8)}`;
-    
+
     console.log(`🤖 LIVEKIT VIEWBOT: Creating ViewBot: ${botId}`);
-    
+
     // Get a video file if not provided
     let videoFile = config.videoFile || this.getNextVideoFile();
     

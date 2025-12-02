@@ -358,9 +358,19 @@ class TranscriptionAudioAdapter {
                             console.log(`📥 Reading audio frames...`);
 
                             // Read frames asynchronously in background
+                            // Track if we should stop writing (to prevent write-after-end errors)
+                            let stopWriting = false;
+                            session.stopAudioCapture = () => { stopWriting = true; };
+
                             (async () => {
                                 try {
                                     for await (const frame of stream) {
+                                        // Check if we should stop writing (stream may be closing)
+                                        if (stopWriting || pcmStream.closed || pcmStream.destroyed) {
+                                            console.log(`   ⏹️ Audio capture stopped (stopWriting: ${stopWriting}, closed: ${pcmStream.closed})`);
+                                            break;
+                                        }
+
                                         // Update sample rate from first frame
                                         if (frameCount === 0) {
                                             sampleRate = frame.sampleRate;
@@ -370,7 +380,16 @@ class TranscriptionAudioAdapter {
                                         // frame.data is Int16Array with PCM samples
                                         // Properly convert Int16Array to Buffer
                                         const pcmData = Buffer.from(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength);
-                                        pcmStream.write(pcmData);
+
+                                        // Safely write with error handling to prevent crashes
+                                        try {
+                                            if (!pcmStream.closed && !pcmStream.destroyed && pcmStream.writable) {
+                                                pcmStream.write(pcmData);
+                                            }
+                                        } catch (writeError) {
+                                            console.warn(`   ⚠️ Write error (stream likely closed): ${writeError.message}`);
+                                            break;
+                                        }
                                         frameCount++;
 
                                         // Check for non-zero audio on first few frames
@@ -468,11 +487,26 @@ class TranscriptionAudioAdapter {
         }
 
         try {
+            // CRITICAL: Signal audio capture to stop BEFORE ending stream
+            if (session.stopAudioCapture) {
+                session.stopAudioCapture();
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+
             // Wait for PCM stream to finish writing
-            if (session.pcmStream && !session.pcmStream.closed) {
+            if (session.pcmStream && !session.pcmStream.closed && !session.pcmStream.destroyed) {
                 await new Promise(resolve => {
                     session.pcmStream.on('finish', resolve);
-                    session.pcmStream.end();
+                    session.pcmStream.on('error', (err) => {
+                        console.warn(`   ⚠️ PCM stream error during finalize: ${err.message}`);
+                        resolve();
+                    });
+                    try {
+                        session.pcmStream.end();
+                    } catch (endError) {
+                        console.warn(`   ⚠️ Error ending PCM stream: ${endError.message}`);
+                        resolve();
+                    }
                 });
             }
 
@@ -624,6 +658,15 @@ class TranscriptionAudioAdapter {
     async cleanup(session) {
         console.log(`🧹 TranscriptionAudioAdapter: Cleaning up session ${session.id}`);
 
+        // CRITICAL: Signal audio capture to stop BEFORE finalizing
+        // This prevents ERR_STREAM_WRITE_AFTER_END crashes
+        if (session.stopAudioCapture) {
+            console.log(`   ⏹️ Signaling audio capture to stop...`);
+            session.stopAudioCapture();
+            // Brief delay to allow current write to complete
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
         // Finalize LiveKit RTC capture (convert PCM to WAV)
         if (session.pcmFile) {
             await this.finalizeLiveKitCapture(session);
@@ -662,6 +705,13 @@ class TranscriptionAudioAdapter {
             }
         }
 
+        // Signal audio capture to stop BEFORE disconnecting from LiveKit
+        // This prevents race conditions with the frame reading loop
+        if (session.stopAudioCapture) {
+            session.stopAudioCapture();
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
         // Close LiveKit room (if present)
         if (session.livekitRoom) {
             try {
@@ -675,7 +725,7 @@ class TranscriptionAudioAdapter {
         // Close PCM stream (if present)
         if (session.pcmStream) {
             try {
-                if (!session.pcmStream.closed) {
+                if (!session.pcmStream.closed && !session.pcmStream.destroyed) {
                     session.pcmStream.end();
                 }
                 console.log(`   ✅ Closed PCM stream`);

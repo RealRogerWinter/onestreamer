@@ -20,6 +20,7 @@ class SimpleViewBotRotation {
     this.gstreamerProcess = null;
     this.livekitViewBotService = null;
     this.livekitViewBotId = null;
+    this.streamService = null; // Reference to StreamService for real streamer protection
 
     // Bot pool - these should be loaded from config/database
     this.availableBots = [];
@@ -44,6 +45,42 @@ class SimpleViewBotRotation {
     // Detect backend
     this.backend = webrtcConfig.backend || 'mediasoup';
     console.log(`🎯 SimpleViewBotRotation: Initialized (backend: ${this.backend})`);
+  }
+
+  /**
+   * Set StreamService reference for real streamer protection
+   */
+  setStreamService(streamService) {
+    this.streamService = streamService;
+    console.log('✅ StreamService registered with SimpleViewBotRotation for real streamer protection');
+  }
+
+  /**
+   * Check if a real streamer (non-viewbot) is currently active
+   */
+  isRealStreamerActive() {
+    if (!this.streamService) {
+      console.warn('⚠️ SimpleViewBotRotation: No StreamService - cannot check for real streamer');
+      return false;
+    }
+
+    const currentStreamer = this.streamService.getCurrentStreamer();
+    if (!currentStreamer) {
+      return false;
+    }
+
+    // Check if current streamer is NOT a viewbot
+    const isViewbot = currentStreamer.startsWith('viewbot-') ||
+                      currentStreamer.includes('viewbot') ||
+                      currentStreamer.startsWith('bot-');
+
+    const isRealStreamer = !isViewbot;
+
+    if (isRealStreamer) {
+      console.log(`🛡️ PROTECTION: Real streamer ${currentStreamer} is active - viewbots blocked`);
+    }
+
+    return isRealStreamer;
   }
 
   /**
@@ -100,23 +137,30 @@ class SimpleViewBotRotation {
    */
   async rotateToNextBot() {
     console.log('🔄 Rotating to next viewbot');
-    
+
+    // CRITICAL: Check if real streamer is active before rotation
+    if (this.isRealStreamerActive()) {
+      console.log('🛡️ VIEWBOT ROTATION BLOCKED: Real streamer is active - will not rotate');
+      // Don't schedule next rotation - wait for real streamer to disconnect
+      return;
+    }
+
     // Stop current bot
     await this.stopCurrentBot();
-    
+
     // Select next bot
     const nextBot = this.selectNextBot();
-    
+
     if (!nextBot) {
       console.log('⚠️ No available bots for rotation (all on cooldown?)');
       // Retry in 30 seconds
       this.scheduleNextRotation(30000);
       return;
     }
-    
+
     // Start the new bot
     await this.startBot(nextBot);
-    
+
     // Schedule next rotation at random interval
     const interval = this.getRandomInterval();
     this.scheduleNextRotation(interval);
@@ -149,6 +193,12 @@ class SimpleViewBotRotation {
    */
   async startBot(bot) {
     try {
+      // CRITICAL SAFETY CHECK: Verify no real streamer before starting
+      if (this.isRealStreamerActive()) {
+        console.log(`🛡️ VIEWBOT START BLOCKED: Real streamer is active - cannot start ${bot.id}`);
+        return;
+      }
+
       console.log(`🚀 Starting viewbot: ${bot.id} (backend: ${this.backend})`);
 
       // Update state

@@ -93,6 +93,42 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     }
 
     if (!isActive && !forceInitialize) {
+      // CRITICAL: Don't cleanup if we're in the middle of a stream switch operation
+      // This prevents race conditions where isActive becomes false (due to isStreaming state lag)
+      // before the state update propagates
+      if (isSwitchingRef.current) {
+        console.log(`🛑 WEBRTC: Skipping cleanup - stream switch in progress`);
+        return;
+      }
+
+      // CRITICAL: Don't cleanup if we have a working connection and isConnected
+      // This handles the race condition where isActive becomes false due to stale isStreaming state
+      if (mediasoupClientRef.current && isConnected && !mediasoupClientRef.current.isDestroyed) {
+        console.log(`🛑 WEBRTC: Skipping cleanup - have active connection despite isActive=false (likely stale isStreaming state)`);
+        return;
+      }
+
+      // CRITICAL: Don't cleanup if WE are the current streamer
+      // This prevents destroying our connection during the takeover race condition
+      const mySocketId = socket?.id;
+      if (currentStreamerId && currentStreamerId === mySocketId) {
+        console.log(`🛑 WEBRTC: Skipping cleanup - I am the streamer (${mySocketId})`);
+        return;
+      }
+      // If we WERE the streamer (currentStreamIdRef.current === our socket ID), we need to cleanup
+      // and prepare to become a viewer - this is the "being taken over" scenario
+      if (currentStreamIdRef.current === mySocketId) {
+        console.log(`🔄 WEBRTC: I was the streamer, cleaning up to become viewer`);
+        currentStreamIdRef.current = null; // Clear so we can reconnect as viewer
+        cleanupSync();
+        return;
+      }
+      // If we were viewing someone else and streamer cleared, wait briefly for potential takeover
+      if (!currentStreamerId && currentStreamIdRef.current) {
+        console.log(`⏳ WEBRTC: Streamer cleared (was: ${currentStreamIdRef.current}), waiting briefly before cleanup...`);
+        // Don't cleanup immediately - let the stream-switch handler deal with it
+        return;
+      }
       cleanupSync();
       return;
     }
@@ -104,11 +140,26 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       return;
     }
 
+    // If we were the streamer (currentStreamIdRef equals our socket ID), clear it
+    // and add a longer delay to ensure WebRTCStreamer's LiveKit connection is fully cleaned up
+    const mySocketId = socket?.id;
+    const wasStreamer = currentStreamIdRef.current === mySocketId ||
+                        previousStreamerIdRef.current === mySocketId;
+    if (wasStreamer) {
+      console.log(`🔄 WEBRTC: Transitioning from streamer to viewer, clearing refs and adding delay`);
+      currentStreamIdRef.current = null;
+    }
+
     // Debounce initialization to prevent rapid switching issues
-    // Use shorter delay when force initializing (takeover scenario)
-    const initDelay = forceInitialize ? 10 : 100;
+    // CRITICAL: forceInitialize means we were just taken over - need to wait for NEW streamer to publish tracks
+    // This takes 2-3 seconds as they need to: connect to LiveKit -> publish tracks
+    // wasStreamer: cleanup delay for our own streams
+    // forceInitialize: LONG delay for takeover - wait for new streamer to publish
+    // Otherwise: normal quick init
+    const initDelay = forceInitialize ? 3000 : (wasStreamer ? 500 : 100);
+    console.log(`📺 WEBRTC: Scheduling init with ${initDelay}ms delay (forceInit=${forceInitialize}, wasStreamer=${wasStreamer})`);
     initTimeoutRef.current = setTimeout(() => {
-      // console.log('📺 WEBRTC: Starting WebRTC viewer...', forceInitialize ? '(forced after takeover)' : '');
+      console.log('📺 WEBRTC: Starting WebRTC viewer...', forceInitialize ? '(after takeover delay)' : '');
       initializeViewer();
     }, initDelay);
 
@@ -127,11 +178,19 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   // For LiveKit: Don't reconnect for viewbot rotations - let selectActiveParticipant handle it
   // Only reconnect for: no connection, takeover (viewbot→real), or broken connection
   const previousStreamerIdRef = useRef<string | null | undefined>(undefined);
+  // Track if this user was EVER the streamer (persists through null transitions)
+  const userWasStreamerRef = useRef<boolean>(false);
 
   useEffect(() => {
+    const mySocketId = socket?.id;
+
     // Skip on first render (undefined → initial value)
     if (previousStreamerIdRef.current === undefined) {
       previousStreamerIdRef.current = currentStreamerId;
+      // Track if user was streamer on first render
+      if (currentStreamerId === mySocketId) {
+        userWasStreamerRef.current = true;
+      }
       return;
     }
 
@@ -142,6 +201,18 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
     const oldStreamerId = previousStreamerIdRef.current;
     previousStreamerIdRef.current = currentStreamerId;
+
+    // Track if user was ever the streamer (set when they BECOME the streamer)
+    // This persists through null transitions so we can detect "user's ID -> null -> new ID" pattern
+    if (currentStreamerId === mySocketId) {
+      userWasStreamerRef.current = true;
+      console.log(`📝 STREAM-SWITCH: Marking user as current/former streamer (${mySocketId})`);
+    }
+    // Also set it if OLD streamer was the user (they just stopped being streamer)
+    if (oldStreamerId === mySocketId) {
+      userWasStreamerRef.current = true;
+      console.log(`📝 STREAM-SWITCH: Marking user as former streamer (was ${mySocketId})`);
+    }
 
     // If there's no new streamer, don't do anything special - don't cleanup!
     if (!currentStreamerId) {
@@ -159,6 +230,40 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     // Helper to check if an ID is a viewbot
     const isViewbot = (id: string | null | undefined) => id?.startsWith('viewbot-');
     const isRealStreamer = (id: string | null | undefined) => id && !id.startsWith('viewbot-');
+
+    // CRITICAL: Check if WE WERE the streamer at any point (not just the immediate previous)
+    // This handles the case where: user's ID -> null -> user's ID (or new streamer's ID)
+    const wasStreamerImmediately = oldStreamerId === mySocketId;
+    const wasStreamerEver = userWasStreamerRef.current;
+    const wasStreamer = wasStreamerImmediately || wasStreamerEver;
+
+    if (wasStreamer) {
+      console.log(`🔄 STREAM-SWITCH: I was the streamer (immediate: ${wasStreamerImmediately}, ever: ${wasStreamerEver}), transitioning to viewer for ${currentStreamerId}`);
+      // Clear refs so we get a fresh connection
+      currentStreamIdRef.current = null;
+      // DON'T return here - we need to continue to reconnect as viewer
+    }
+
+    // Check if this is OUR OWN stream - but ONLY block if we were NEVER the streamer
+    // If we were EVER the streamer and currentStreamerId is our ID, this is a stale update
+    if (currentStreamerId === mySocketId && !wasStreamer) {
+      console.log(`🛑 STREAM-SWITCH: ${currentStreamerId} is MY OWN socket ID - I am actively streaming, not consuming my own stream`);
+      currentStreamIdRef.current = currentStreamerId;
+      return;
+    }
+
+    // If we were the streamer and the new ID is still our own, wait for the real update
+    if (currentStreamerId === mySocketId && wasStreamer) {
+      console.log(`⏳ STREAM-SWITCH: I was just taken over but currentStreamerId is still my ID - waiting for correct update`);
+      // Don't set currentStreamIdRef, don't return - wait for another update with the real new streamer
+      return;
+    }
+
+    // Clear the "was streamer" flag since we're now successfully transitioning to viewer
+    if (wasStreamer && currentStreamerId !== mySocketId) {
+      console.log(`✅ STREAM-SWITCH: Clearing former-streamer flag, now viewing ${currentStreamerId}`);
+      userWasStreamerRef.current = false;
+    }
 
     // Check if we have a working LiveKit connection
     const hasWorkingConnection = mediasoupClientRef.current &&
@@ -190,6 +295,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     // Only do full reconnect when necessary
     const forceReconnectToNewStream = async () => {
       console.log(`🔄 STREAM-SWITCH: Initiating reconnection to ${currentStreamerId}`);
+
+      // CRITICAL: Set switching flag to prevent onStreamUpdate from interfering
+      isSwitchingRef.current = true;
 
       // Cancel any pending operations
       if (streamSwitchAbortController.current) {
@@ -223,12 +331,28 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         videoRef.current.srcObject = null;
       }
 
-      // Small delay to ensure cleanup is complete
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Delay to ensure cleanup is complete
+      // Longer delay if we were the streamer to ensure LiveKit session is fully closed
+      // ALSO: If connecting to a REAL streamer (not viewbot), wait longer for them to publish tracks
+      const isTargetRealStreamer = isRealStreamer(currentStreamerId);
+      let cleanupDelay = wasStreamer ? 500 : 100;
+
+      // CRITICAL: If we were the streamer AND connecting to a real streamer (takeover scenario),
+      // we need to wait for the new streamer to finish publishing their tracks.
+      // This can take 2-5 seconds as they need to: request stream -> get approved -> connect to LiveKit -> publish tracks
+      if (wasStreamer && isTargetRealStreamer) {
+        cleanupDelay = 3000; // Wait 3 seconds for new real streamer to publish
+        console.log(`⏳ STREAM-SWITCH: TAKEOVER - waiting ${cleanupDelay}ms for new streamer ${currentStreamerId} to publish tracks`);
+      } else {
+        console.log(`⏳ STREAM-SWITCH: Waiting ${cleanupDelay}ms for cleanup${wasStreamer ? ' (was streamer)' : ''}`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, cleanupDelay));
 
       // Check if we're still supposed to connect to this streamer
       if (currentStreamIdRef.current !== currentStreamerId) {
         console.log(`🔄 STREAM-SWITCH: Target changed during cleanup, aborting`);
+        isSwitchingRef.current = false;
         return;
       }
 
@@ -241,6 +365,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         setIsConnected(true);
         console.log(`✅ STREAM-SWITCH: Connected to ${currentStreamerId}`);
         socket.emit('join-as-viewer');
+        // Clear switching flag on success
+        isSwitchingRef.current = false;
       } catch (error) {
         console.error(`❌ STREAM-SWITCH: Failed to connect:`, error);
         setSwitchState('failed');
@@ -256,9 +382,16 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
               setError(null);
               setIsConnected(true);
               socket.emit('join-as-viewer');
+              // Clear switching flag on retry success
+              isSwitchingRef.current = false;
             } catch (retryError) {
               console.error(`❌ STREAM-SWITCH: Retry failed:`, retryError);
+              // Clear switching flag even on retry failure so component isn't stuck
+              isSwitchingRef.current = false;
             }
+          } else {
+            // Target changed, clear the flag
+            isSwitchingRef.current = false;
           }
         }, 2000);
       }
@@ -440,7 +573,32 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
   const initializeViewer = async (forceInit: boolean = false) => {
     const browserInfo = getBrowserInfo();
-    
+
+    // CRITICAL: Don't try to consume your own stream if you are ACTIVELY streaming!
+    // This prevents the case where user starts streaming, server broadcasts stream-started,
+    // and WebRTCViewer tries to consume the user's own stream (destroying the publisher)
+    // BUT: Allow if we WERE the streamer (transitioning to viewer after takeover)
+    const mySocketId = socket?.id;
+    // Check both immediate previous AND the persistent "was ever streamer" flag
+    const wasStreamer = previousStreamerIdRef.current === mySocketId || userWasStreamerRef.current;
+
+    if (currentStreamerId && currentStreamerId === mySocketId && !wasStreamer && !forceInit) {
+      console.log(`🛑 WEBRTC: Not initializing viewer - I am actively streaming (${mySocketId})`);
+      return;
+    }
+
+    // If we were the streamer and currentStreamerId is still our ID, this is stale - skip
+    if (currentStreamerId && currentStreamerId === mySocketId && wasStreamer) {
+      console.log(`⏳ WEBRTC: Was streamer, but currentStreamerId is still my ID - waiting for correct update`);
+      return;
+    }
+
+    // Clear the "was streamer" flag when successfully initializing as viewer for someone else
+    if (wasStreamer && currentStreamerId && currentStreamerId !== mySocketId) {
+      console.log(`✅ WEBRTC: Clearing former-streamer flag, initializing viewer for ${currentStreamerId}`);
+      userWasStreamerRef.current = false;
+    }
+
     // Clear any stuck states - but only if we're not in a legitimate switch operation
     // The forceInit flag indicates a legitimate switch, so don't clear in that case
     if (!forceInit && (switchState === 'switching' || switchState === 'retrying')) {
@@ -524,6 +682,19 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           setDebugInfo(prev => ({ ...prev, error: 'Recovering...', timestamp: new Date().toISOString() }));
         },
         onStreamUpdate: async () => {
+          // CRITICAL FIX: Skip if initializeViewer is handling the consume
+          // This prevents competing consume calls that can destroy working connections
+          if (isInitializingRef.current) {
+            console.log(`⏭️ WEBRTC: Skipping onStreamUpdate - initializeViewer is handling consumption`);
+            return;
+          }
+
+          // Also skip if we're in the middle of a stream switch operation
+          if (isSwitchingRef.current) {
+            console.log(`⏭️ WEBRTC: Skipping onStreamUpdate - stream switch in progress`);
+            return;
+          }
+
           // CRITICAL FIX: Use streamId-based deduplication instead of time-based debouncing
           // Get the current streamer ID from the client
           const newStreamerId = mediasoupClientRef.current?.getCurrentStreamer();
@@ -816,8 +987,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         
         setIsConnected(true);
         setConnectionState('connected');
+        setSwitchState('idle'); // Clear any switching overlay
         setError(null); // Clear any previous error messages on successful connection
-        
+
         // Restart viewing session for points tracking
         socket.emit('join-as-viewer');
         // console.log('🎯 WEBRTC: Started viewing session for points tracking');
@@ -1813,21 +1985,28 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const handleVideoClick = async () => {
     const video = videoRef.current;
     if (!video) return;
-    
-    // Only mark as interacted if video is actually paused and needs user interaction
+
+    // Handle paused video - need to play
     if (video.paused) {
       setUserInteracted(true);
-      
+
       // iOS just needs unmute and play
       if (isIOS()) {
-        video.muted = false; // Unmute after user interaction
+        video.muted = false;
         video.volume = volume;
       }
-      
+
       video.play().catch(e => {
         console.error('❌ WEBRTC: Manual play failed:', e);
         setError('Unable to play stream');
       });
+    }
+    // Handle playing but muted video (muted autoplay succeeded) - need to unmute
+    else if (video.muted && !userInteracted) {
+      console.log('🔊 WEBRTC: User clicked to unmute muted autoplay');
+      setUserInteracted(true);
+      video.muted = false;
+      video.volume = volume;
     }
     // Show controls on video click
     showControlsTemporary();

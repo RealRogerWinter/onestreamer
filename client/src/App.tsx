@@ -181,6 +181,11 @@ function AppContent() {
   const streamSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastStreamSwitchRef = useRef<number>(0);
   const [wasStreamingBeforeTakeover, setWasStreamingBeforeTakeover] = useState(false);
+  // Track the expected new streamer during takeover to prevent stale stream-status from overwriting
+  const takeoverTargetRef = useRef<string | null>(null);
+  const takeoverTimestampRef = useRef<number>(0);
+  // CRITICAL: Force viewer mode after takeover - bypasses isStreaming race conditions
+  const [forceViewerAfterTakeover, setForceViewerAfterTakeover] = useState(false);
   const [disconnectionReason, setDisconnectionReason] = useState<string | null>(null);
   const [isForceDisconnected, setIsForceDisconnected] = useState(false);
   const [showTakeoverOverlay, setShowTakeoverOverlay] = useState(false);
@@ -340,13 +345,17 @@ function AppContent() {
       }, 15000);
     }
     
-    // Reset force disconnect state when reconnected
-    if (connected && isForceDisconnected) {
-      // console.log('🔌 CLIENT: Reconnected after force disconnect');
+    // Reset force disconnect state when reconnected and request current stream status
+    if (connected && isForceDisconnected && socket) {
+      console.log('🔌 CLIENT: Reconnected after force disconnect - requesting stream status');
       setIsForceDisconnected(false);
       setDisconnectionReason(null);
+
+      // CRITICAL: Re-emit join-as-viewer to get current stream status
+      // This ensures we know about any active streams after reconnecting
+      socket.emit('join-as-viewer');
     }
-  }, [connected, isStreaming, isForceDisconnected]);
+  }, [connected, isStreaming, isForceDisconnected, socket]);
 
   // Setup socket event listeners
   useEffect(() => {
@@ -354,8 +363,34 @@ function AppContent() {
 
     socket.emit('join-as-viewer');
 
+    // Handle socket reconnection - always re-request stream status
+    const handleConnect = () => {
+      console.log('🔌 CLIENT: Socket (re)connected - requesting stream status');
+      socket.emit('join-as-viewer');
+    };
+    socket.on('connect', handleConnect);
+
     socket.on('stream-status', (status: StreamStatus) => {
-      setStreamStatus(status);
+      // CRITICAL: During takeover transition, don't let stale stream-status overwrite the correct streamer
+      const takeoverAge = Date.now() - takeoverTimestampRef.current;
+      const isInTakeoverTransition = takeoverTargetRef.current && takeoverAge < 10000; // 10 second window
+
+      if (isInTakeoverTransition && status.streamerId !== takeoverTargetRef.current) {
+        console.log(`⚠️ CLIENT: Ignoring stale stream-status (got ${status.streamerId}, expected ${takeoverTargetRef.current})`);
+        // Update other fields but preserve the correct streamerId
+        setStreamStatus(prev => ({
+          ...status,
+          streamerId: takeoverTargetRef.current,
+          hasActiveStream: true
+        }));
+      } else {
+        // Normal update - also clear takeover lock if streamerId matches
+        if (status.streamerId === takeoverTargetRef.current) {
+          console.log(`✅ CLIENT: stream-status confirmed takeover target ${status.streamerId}, clearing lock`);
+          takeoverTargetRef.current = null;
+        }
+        setStreamStatus(status);
+      }
 
       if (status.hasActiveStream && isStreaming && socket.id !== status.streamerId) {
         setIsStreaming(false);
@@ -364,13 +399,19 @@ function AppContent() {
     });
 
     socket.on('stream-started', (data: any) => {
-      
+
       // Clear any pending stream switch timeout
       if (streamSwitchTimeoutRef.current) {
         clearTimeout(streamSwitchTimeoutRef.current);
         streamSwitchTimeoutRef.current = null;
       }
-      
+
+      // Clear takeover lock if new streamer matches expected target
+      if (data.streamerId === takeoverTargetRef.current) {
+        console.log(`✅ CLIENT: stream-started confirmed takeover target ${data.streamerId}, clearing lock`);
+        takeoverTargetRef.current = null;
+      }
+
       setStreamStatus(prev => ({
         ...prev,
         hasActiveStream: true,
@@ -398,7 +439,29 @@ function AppContent() {
       }
     });
 
-    socket.on('stream-ended', () => {
+    socket.on('stream-ended', (data?: { reason?: string; previousStreamer?: string; newStreamer?: string; newStreamerDisplayName?: string }) => {
+      // CRITICAL: Handle takeover differently - there IS an active stream (the new one)
+      if (data?.reason === 'takeover' && data.newStreamer) {
+        console.log(`🛑 CLIENT: Stream ended due to takeover by ${data.newStreamer} (${data.newStreamerDisplayName}) - updating to new streamer`);
+
+        // CRITICAL: Lock in the takeover target to prevent stale stream-status from overwriting
+        takeoverTargetRef.current = data.newStreamer;
+        takeoverTimestampRef.current = Date.now();
+        console.log(`🔒 CLIENT: Locked takeover target: ${data.newStreamer}`);
+
+        setStreamStatus(prev => ({
+          ...prev,
+          hasActiveStream: true,
+          streamerId: data.newStreamer!,
+          streamerDisplayName: data.newStreamerDisplayName || null,
+          streamStartTime: Date.now(),
+          streamDuration: 0
+        }));
+        setWasStreamingBeforeTakeover(false);
+        return;
+      }
+
+      // Normal stream end - clear everything
       setStreamStatus({
         hasActiveStream: false,
         streamerId: null,
@@ -412,14 +475,14 @@ function AppContent() {
       const minSwitchInterval = 3000;
       const now = Date.now();
       const timeSinceLastSwitch = now - lastStreamSwitchRef.current;
-      
+
       if (wasStreamingBeforeTakeover && timeSinceLastSwitch > minSwitchInterval) {
         lastStreamSwitchRef.current = now;
-        
+
         if (streamSwitchTimeoutRef.current) {
           clearTimeout(streamSwitchTimeoutRef.current);
         }
-        
+
         streamSwitchTimeoutRef.current = setTimeout(() => {
           setWasStreamingBeforeTakeover(false);
           setIsStreaming(true);
@@ -556,13 +619,26 @@ function AppContent() {
 
     // Handle force disconnect from killswitch or admin
     socket.on('force-disconnect', (data: { reason: string; activatedBy?: string; message: string }) => {
-      // console.log('💥 CLIENT: Force disconnect received:', data);
+      console.log('💥 CLIENT: Force disconnect received:', data);
+
+      // CRITICAL: If this is a stream_takeover, DON'T clear the stream status or show disconnect UI
+      // The stream-takeover handler already set up the transition to viewer mode
+      if (data.reason === 'stream_takeover') {
+        console.log('💥 CLIENT: Force disconnect is from takeover - skipping (stream-takeover handler handles this)');
+        // Just set the flag, don't mess with stream status or UI
+        setIsForceDisconnected(true);
+        setTimeout(() => {
+          setIsForceDisconnected(false);
+        }, 5000);
+        return;
+      }
+
       if (isStreaming) {
         setIsStreaming(false);
         setIsForceDisconnected(true);
         setDisconnectionReason(data.message || data.reason);
-        
-        // Clear our stream from status if we were the streamer
+
+        // Clear our stream from status if we were the streamer (but not during takeover)
         if (streamStatus.streamerId === socket.id) {
           setStreamStatus(prev => ({
             ...prev,
@@ -572,7 +648,7 @@ function AppContent() {
             streamerDisplayName: null
           }));
         }
-        
+
         // Show takeover overlay for the disconnection with custom message
         setShowTakeoverOverlay(true);
         if (data.reason.includes('Kill Switch')) {
@@ -580,14 +656,14 @@ function AppContent() {
         } else {
           setTakeoverMessage(data.message || `Disconnected: ${data.reason}`);
         }
-        
+
         // Hide overlay and show persistent message after animation
         setTimeout(() => {
           setShowTakeoverOverlay(false);
           // Show a more integrated disconnection message
           setDisconnectionReason(data.message || data.reason);
         }, 3000);
-        
+
         // Clear disconnection state after 15 seconds
         setTimeout(() => {
           setDisconnectionReason(null);
@@ -607,26 +683,57 @@ function AppContent() {
     });
 
     // Handle stream takeover event (sent to the current streamer being taken over)
-    socket.on('stream-takeover', (data: { newStreamerId: string; cooldownRemaining: number }) => {
-      // console.log('🔄 CLIENT: Stream takeover event received:', data);
+    socket.on('stream-takeover', (data: { newStreamerId: string; newStreamerDisplayName?: string; cooldownRemaining: number }) => {
+      console.log('🔄 CLIENT: Stream takeover event received:', data);
       if (isStreaming) {
+        console.log('🔄 CLIENT: I was streaming, transitioning to viewer mode');
+
+        // CRITICAL: Set these BEFORE changing isStreaming to prevent race conditions
+        // Lock in the takeover target
+        takeoverTargetRef.current = data.newStreamerId;
+        takeoverTimestampRef.current = Date.now();
+
+        // Update stream status to point to new streamer BEFORE we stop streaming
+        setStreamStatus(prev => ({
+          ...prev,
+          hasActiveStream: true,
+          streamerId: data.newStreamerId,
+          streamerDisplayName: data.newStreamerDisplayName || null,
+          streamStartTime: Date.now(),
+          streamDuration: 0
+        }));
+
+        // Force viewer mode to bypass any isStreaming race conditions
+        setForceViewerAfterTakeover(true);
+
+        // Now set isStreaming to false
         setIsStreaming(false);
-        setWasStreamingBeforeTakeover(true);
+        setWasStreamingBeforeTakeover(false); // Don't auto-restart after takeover
+
         setCooldownRemaining(data.cooldownRemaining);
         startCooldownTimer(data.cooldownRemaining);
-        
+
+        console.log('🔄 CLIENT: Transitioning to view new streamer:', data.newStreamerId);
+
         // Show takeover overlay
         setShowTakeoverOverlay(true);
         setTakeoverMessage('Your stream is being taken over!');
-        
-        // Hide overlay after 3 seconds
+
+        // Hide overlay and clear force viewer mode after transition completes
         setTimeout(() => {
           setShowTakeoverOverlay(false);
+          // Clear force viewer mode after successful transition
+          setTimeout(() => {
+            setForceViewerAfterTakeover(false);
+            takeoverTargetRef.current = null;
+            console.log('🔄 CLIENT: Takeover transition complete, cleared force viewer mode');
+          }, 2000);
         }, 3000);
       }
     });
 
     return () => {
+      socket.off('connect', handleConnect);
       socket.off('stream-status');
       socket.off('stream-started');
       socket.off('stream-ended');
@@ -1110,6 +1217,7 @@ function AppContent() {
                 hasActiveStream={streamStatus.hasActiveStream}
                 streamType={streamStatus.streamType}
                 currentStreamerId={streamStatus.streamerId}
+                forceViewerMode={forceViewerAfterTakeover}
                 audioSettings={streamerSettings.audio}
                 onAudioSettingsChange={(newAudioSettings) => {
                   const newSettings = {
