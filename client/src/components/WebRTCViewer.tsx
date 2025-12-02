@@ -165,27 +165,27 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
                                   !mediasoupClientRef.current.isDestroyed &&
                                   videoRef.current?.srcObject;
 
+    // CRITICAL: If new streamer is a REAL streamer, ALWAYS reconnect - this is a takeover!
+    const newStreamerIsReal = isRealStreamer(currentStreamerId);
+
+    if (newStreamerIsReal) {
+      console.log(`🚨 STREAM-SWITCH: REAL STREAMER DETECTED - ${currentStreamerId} - MUST reconnect!`);
+      // Fall through to full reconnect - real streamers always take priority
+    }
     // For viewbot→viewbot changes with working connection: just update tracking, don't reconnect
-    if (isViewbot(oldStreamerId) && isViewbot(currentStreamerId) && hasWorkingConnection) {
-      console.log(`🔄 STREAM-SWITCH: Viewbot rotation ${oldStreamerId} → ${currentStreamerId}, keeping connection`);
+    else if (isViewbot(currentStreamerId) && hasWorkingConnection) {
+      console.log(`🔄 STREAM-SWITCH: Viewbot ${currentStreamerId} with working connection, keeping connection`);
       // LiveKit's selectActiveParticipant will handle picking the right viewbot
-      // Just update tracking ref
       currentStreamIdRef.current = currentStreamerId;
       return;
     }
-
-    // For real streamer takeover (viewbot→real or real→real), do reconnect
-    const isTakeover = isViewbot(currentStreamIdRef.current) && isRealStreamer(currentStreamerId);
-    const needsReconnect = !hasWorkingConnection || isTakeover;
-
-    if (!needsReconnect && hasWorkingConnection) {
-      console.log(`🔄 STREAM-SWITCH: Have working connection, updating tracking only: ${currentStreamerId}`);
-      currentStreamIdRef.current = currentStreamerId;
-      return;
+    // No connection and new is viewbot - need to connect
+    else if (!hasWorkingConnection) {
+      console.log(`🔄 STREAM-SWITCH: No working connection, connecting to ${currentStreamerId}`);
+      // Fall through to reconnect
     }
 
-    console.log(`🚨 STREAM-SWITCH: ${isTakeover ? 'TAKEOVER' : 'RECONNECT'} from ${oldStreamerId || 'none'} to ${currentStreamerId}`);
-    console.log(`🔄 STREAM-SWITCH: hasWorkingConnection: ${hasWorkingConnection}, isTakeover: ${isTakeover}`);
+    console.log(`🚨 STREAM-SWITCH: ${newStreamerIsReal ? 'TAKEOVER' : 'RECONNECT'} to ${currentStreamerId}`);
 
     // Only do full reconnect when necessary
     const forceReconnectToNewStream = async () => {
