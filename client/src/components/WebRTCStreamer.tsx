@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { WebRTCClientAdapter } from '../services/WebRTCClientAdapter';
 import { ScreenCaptureService } from '../services/ScreenCaptureService';
+import { AudioMixer } from '../services/AudioMixer';
 import AudioLevelMeter from './AudioLevelMeter';
 import { AudioSettingsConfig, VideoSettingsConfig, ScreenShareSettingsConfig } from './StreamerSettings';
 import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
@@ -45,6 +46,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const mediasoupClientRef = useRef<WebRTCClientAdapter | null>(null);
   const screenCaptureRef = useRef<ScreenCaptureService>(new ScreenCaptureService());
+  const audioMixerRef = useRef<AudioMixer>(new AudioMixer());
   const isProcessingRef = useRef(false);
   const lastStreamAttemptRef = useRef(0);
   const STREAM_DEBOUNCE_TIME = 2000; // 2 seconds between attempts
@@ -385,6 +387,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
   const getDefaultScreenShareSettings = (): ScreenShareSettingsConfig => ({
     cursor: 'always',
     audio: false,
+    mixWithMic: true,
+    micGain: 100,
+    systemGain: 100,
     displaySurface: 'monitor'
   });
 
@@ -417,11 +422,14 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       });
 
       // Log what we got
+      const screenVideoTrack = screenStream.getVideoTracks()[0];
+      const screenAudioTrack = screenStream.getAudioTracks()[0];
+
       console.log('🖥️ Screen stream obtained:', {
         videoTracks: screenStream.getVideoTracks().length,
         audioTracks: screenStream.getAudioTracks().length,
-        audioEnabled: screenStream.getAudioTracks()[0]?.enabled,
-        audioLabel: screenStream.getAudioTracks()[0]?.label
+        audioEnabled: screenAudioTrack?.enabled,
+        audioLabel: screenAudioTrack?.label
       });
 
       // Set up callback for when user stops sharing via browser UI
@@ -435,13 +443,59 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         cameraStreamRef.current = streamRef.current;
       }
 
+      // Prepare the final stream to send
+      let finalStream = screenStream;
+
+      // If mixWithMic is enabled (default: true) and we have both system audio and mic, mix them
+      const shouldMixWithMic = effectiveScreenShareSettings.mixWithMic !== false; // Default to true
+      console.log('🎚️ Mix with mic check:', {
+        mixWithMicSetting: effectiveScreenShareSettings.mixWithMic,
+        shouldMixWithMic,
+        hasScreenAudio: !!screenAudioTrack,
+        hasCameraStream: !!cameraStreamRef.current
+      });
+
+      if (shouldMixWithMic && screenAudioTrack && cameraStreamRef.current) {
+        const micTrack = cameraStreamRef.current.getAudioTracks()[0];
+
+        if (micTrack && micTrack.readyState === 'live') {
+          // Convert 0-100 to 0-1 for gain values
+          const micGain = (effectiveScreenShareSettings.micGain ?? 100) / 100;
+          const systemGain = (effectiveScreenShareSettings.systemGain ?? 100) / 100;
+
+          console.log('🎚️ Mixing system audio with microphone...', { micGain, systemGain });
+
+          // Use AudioMixer to combine mic + system audio
+          const mixedAudioTrack = await audioMixerRef.current.mix(micTrack, screenAudioTrack, {
+            micGain,
+            systemGain
+          });
+
+          if (mixedAudioTrack) {
+            // Create a new stream with screen video + mixed audio
+            finalStream = new MediaStream();
+            finalStream.addTrack(screenVideoTrack);
+            finalStream.addTrack(mixedAudioTrack);
+
+            console.log('🎚️ ✅ Created mixed audio stream:', {
+              videoTracks: finalStream.getVideoTracks().length,
+              audioTracks: finalStream.getAudioTracks().length
+            });
+          } else {
+            console.warn('🎚️ ⚠️ Audio mixing failed, using system audio only');
+          }
+        } else {
+          console.log('🎚️ Mic track not available for mixing, using system audio only');
+        }
+      }
+
       // Switch to screen share in WebRTC
       console.log('🖥️ Switching main video to screen share');
-      await mediasoupClientRef.current.switchToScreenShare(screenStream);
+      await mediasoupClientRef.current.switchToScreenShare(finalStream);
 
       // Update local preview to show screen
       if (videoRef.current) {
-        videoRef.current.srcObject = screenStream;
+        videoRef.current.srcObject = finalStream;
         try {
           await videoRef.current.play();
         } catch (playErr) {
@@ -449,7 +503,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         }
       }
 
-      streamRef.current = screenStream;
+      streamRef.current = finalStream;
       onScreenShareChange?.(true);
       console.log('✅ Screen share started successfully');
 
@@ -458,6 +512,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
       // Clean up on failure
       screenCaptureRef.current.stopScreenShare();
+      audioMixerRef.current.cleanup();
 
       // Show user-friendly error
       if (!error.message.includes('cancelled') && !error.message.includes('denied')) {
@@ -474,6 +529,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     try {
       // Stop screen capture
       screenCaptureRef.current.stopScreenShare();
+
+      // Clean up audio mixer if it was used
+      audioMixerRef.current.cleanup();
 
       // If we have a stored camera stream, switch back to it
       if (cameraStreamRef.current && mediasoupClientRef.current) {
@@ -505,6 +563,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
     } catch (error: any) {
       console.error('❌ Failed to stop screen share:', error);
+      audioMixerRef.current.cleanup();
       onScreenShareChange?.(false);
     }
   }, [onScreenShareChange]);
@@ -518,6 +577,18 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       });
     }
   }, [onScreenShareMethodsReady, startScreenShare, stopScreenShare]);
+
+  // Update audio mixer gains in real-time when settings change during screen share
+  useEffect(() => {
+    if (isScreenSharing && audioMixerRef.current.getIsActive()) {
+      const micGain = (effectiveScreenShareSettings.micGain ?? 100) / 100;
+      const systemGain = (effectiveScreenShareSettings.systemGain ?? 100) / 100;
+
+      console.log('🎚️ Updating mixer gains:', { micGain, systemGain });
+      audioMixerRef.current.setMicGain(micGain);
+      audioMixerRef.current.setSystemGain(systemGain);
+    }
+  }, [isScreenSharing, effectiveScreenShareSettings.micGain, effectiveScreenShareSettings.systemGain]);
 
   const startStreaming = async () => {
     // Prevent multiple simultaneous stream starts

@@ -1340,16 +1340,30 @@ export class LiveKitClient {
 
       // SEAMLESS AUDIO REPLACEMENT using replaceTrack (if screen has audio)
       if (screenAudioTrack && this.localAudioTrack) {
-        console.log('🖥️ LIVEKIT CLIENT: Seamlessly replacing audio track with system audio...');
+        console.log('🖥️ LIVEKIT CLIENT: Seamlessly replacing audio track...', {
+          screenAudioTrackId: screenAudioTrack.id,
+          screenAudioTrackLabel: screenAudioTrack.label,
+          screenAudioTrackEnabled: screenAudioTrack.enabled,
+          screenAudioTrackMuted: screenAudioTrack.muted,
+          screenAudioTrackState: screenAudioTrack.readyState,
+          currentLocalAudioTrackId: this.localAudioTrack.mediaStreamTrack?.id
+        });
         try {
           await this.localAudioTrack.replaceTrack(screenAudioTrack);
-          console.log('🖥️ LIVEKIT CLIENT: ✅ Audio track replaced seamlessly with system audio');
+          console.log('🖥️ LIVEKIT CLIENT: ✅ Audio track replaced seamlessly', {
+            newTrackId: this.localAudioTrack.mediaStreamTrack?.id,
+            newTrackEnabled: this.localAudioTrack.mediaStreamTrack?.enabled,
+            newTrackState: this.localAudioTrack.mediaStreamTrack?.readyState
+          });
         } catch (replaceError) {
           console.error('🖥️ LIVEKIT CLIENT: ❌ Failed to replace audio track:', replaceError);
           // Non-fatal - continue with mic audio
         }
       } else {
-        console.log('🖥️ LIVEKIT CLIENT: Keeping mic audio (no system audio available)');
+        console.log('🖥️ LIVEKIT CLIENT: Keeping mic audio (no system audio available)', {
+          hasScreenAudioTrack: !!screenAudioTrack,
+          hasLocalAudioTrack: !!this.localAudioTrack
+        });
       }
 
       this.screenStream = screenStream;

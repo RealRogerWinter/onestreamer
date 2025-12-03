@@ -729,8 +729,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
                 video.pause();
                 video.srcObject = newStream;
-                video.muted = !userInteracted;
-                video.volume = userInteracted ? volume : 0.8;
+                // Preserve user's mute preference during stream switch (fixes Android Chrome audio bug)
+                video.muted = isMuted;
+                video.volume = volume;
                 video.load();
 
                 try {
@@ -2052,6 +2053,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       if (isIOS()) {
         video.muted = false;
         video.volume = volume;
+        // Persist unmuted state so it's preserved during stream switches
+        setIsMuted(false);
+        CookieService.setCookie(COOKIE_NAMES.MUTED, false);
       }
 
       video.play().catch(e => {
@@ -2065,6 +2069,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       setUserInteracted(true);
       video.muted = false;
       video.volume = volume;
+      // Persist unmuted state so it's preserved during stream switches
+      setIsMuted(false);
+      CookieService.setCookie(COOKIE_NAMES.MUTED, false);
     }
     // Show controls on video click
     showControlsTemporary();

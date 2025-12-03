@@ -26,6 +26,9 @@ export interface AudioSettingsConfig {
 export interface ScreenShareSettingsConfig {
   cursor: 'always' | 'motion' | 'never';
   audio: boolean;
+  mixWithMic: boolean;  // Mix system audio with microphone
+  micGain: number;      // 0-100, microphone volume in mix
+  systemGain: number;   // 0-100, system audio volume in mix
   displaySurface: 'monitor' | 'window' | 'browser';
 }
 
@@ -267,9 +270,23 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
     });
   };
 
+  const handleScreenShareGainChange = (setting: 'micGain' | 'systemGain', value: number) => {
+    handleSettingsChange({
+      ...settings,
+      screenShare: {
+        ...getDefaultScreenShareSettings(),
+        ...settings.screenShare,
+        [setting]: value
+      }
+    });
+  };
+
   const getDefaultScreenShareSettings = (): ScreenShareSettingsConfig => ({
     cursor: 'always',
     audio: false,
+    mixWithMic: true,  // Default to mixing with mic when system audio is enabled
+    micGain: 100,      // Default 100%
+    systemGain: 100,   // Default 100%
     displaySurface: 'monitor'
   });
 
@@ -1152,18 +1169,89 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
                 </label>
                 <small>Share audio from screen (Chrome/Edge only)</small>
                 {settings.screenShare?.audio && (
-                  <div style={{
-                    marginTop: '8px',
-                    padding: '8px',
-                    background: 'rgba(76, 175, 80, 0.15)',
-                    border: '1px solid rgba(76, 175, 80, 0.4)',
-                    borderRadius: '4px',
-                    fontSize: '12px',
-                    color: '#81c784'
-                  }}>
-                    <strong>Tip:</strong> When the browser dialog appears, check the <strong>"Share system audio"</strong> checkbox at the bottom to capture game/app audio.
-                    <br />This works for Entire Screen, Window, or Tab sharing.
-                  </div>
+                  <>
+                    <div style={{
+                      marginTop: '8px',
+                      padding: '8px',
+                      background: 'rgba(76, 175, 80, 0.15)',
+                      border: '1px solid rgba(76, 175, 80, 0.4)',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      color: '#81c784'
+                    }}>
+                      <strong>Tip:</strong> When the browser dialog appears, check the <strong>"Share system audio"</strong> checkbox at the bottom to capture game/app audio.
+                      <br />This works for Entire Screen, Window, or Tab sharing.
+                    </div>
+
+                    {/* Mix with Microphone option */}
+                    <label className="setting-label" style={{ marginTop: '12px' }}>
+                      <input
+                        type="checkbox"
+                        checked={settings.screenShare?.mixWithMic ?? true}
+                        onChange={() => handleScreenShareToggle('mixWithMic')}
+                        disabled={isScreenSharing}
+                      />
+                      <span>Mix with Microphone</span>
+                    </label>
+                    <small>Combine system audio with your mic (for commentary)</small>
+
+                    {/* Volume Mixer - only show when mixing is enabled */}
+                    {(settings.screenShare?.mixWithMic ?? true) && (
+                      <div style={{
+                        marginTop: '12px',
+                        padding: '12px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(255, 255, 255, 0.1)'
+                      }}>
+                        <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '10px', color: '#aaa' }}>
+                          Audio Mix Balance
+                        </div>
+
+                        {/* Microphone Volume */}
+                        <div style={{ marginBottom: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '12px' }}>🎤 Microphone</span>
+                            <span style={{ fontSize: '11px', color: '#888' }}>{settings.screenShare?.micGain ?? 100}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={settings.screenShare?.micGain ?? 100}
+                            onChange={(e) => handleScreenShareGainChange('micGain', parseInt(e.target.value))}
+                            style={{
+                              width: '100%',
+                              height: '6px',
+                              cursor: 'pointer',
+                              accentColor: '#4ecdc4'
+                            }}
+                          />
+                        </div>
+
+                        {/* System Audio Volume */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '12px' }}>🔊 System Audio</span>
+                            <span style={{ fontSize: '11px', color: '#888' }}>{settings.screenShare?.systemGain ?? 100}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={settings.screenShare?.systemGain ?? 100}
+                            onChange={(e) => handleScreenShareGainChange('systemGain', parseInt(e.target.value))}
+                            style={{
+                              width: '100%',
+                              height: '6px',
+                              cursor: 'pointer',
+                              accentColor: '#ff6b6b'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
