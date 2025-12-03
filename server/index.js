@@ -8954,6 +8954,159 @@ async function startServer() {
   }
 
   // ============================================================================
+  // SOCIAL MEDIA EMBED SUPPORT - Dynamic Open Graph meta tags for blog posts
+  // ============================================================================
+  // This middleware serves custom HTML with proper meta tags for social crawlers
+  // so that blog links display rich previews in Discord, Twitter, Facebook, etc.
+  // ============================================================================
+
+  app.get('/blog/:slug', async (req, res, next) => {
+    const { slug } = req.params;
+
+    // Skip static files and index.html
+    if (slug === 'index.html' || slug.includes('.')) {
+      return next();
+    }
+
+    try {
+      // Fetch article from Strapi
+      const https = require('https');
+      const strapiUrl = `http://127.0.0.1:1337/api/articles?filters[slug][$eq]=${encodeURIComponent(slug)}&populate=*`;
+
+      const fetchArticle = () => new Promise((resolve, reject) => {
+        require('http').get(strapiUrl, (response) => {
+          let data = '';
+          response.on('data', chunk => data += chunk);
+          response.on('end', () => {
+            try {
+              const json = JSON.parse(data);
+              resolve(json.data?.[0] || null);
+            } catch (e) {
+              reject(e);
+            }
+          });
+        }).on('error', reject);
+      });
+
+      const article = await fetchArticle();
+
+      if (!article) {
+        // Article not found - serve normal blog page
+        return res.sendFile(path.join('/var/www/html/blog', 'index.html'));
+      }
+
+      // Escape HTML entities for security
+      const escapeHtml = (str) => {
+        if (!str) return '';
+        return str
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+
+      const title = escapeHtml(article.title) || 'Blog Post';
+      const description = escapeHtml(article.excerpt || article.content?.substring(0, 160).replace(/[#*_`]/g, '') + '...');
+      const author = escapeHtml(article.author || 'OneStreamer Team');
+
+      // Build URLs
+      const baseUrl = 'https://onestreamer.live';
+      const articleUrl = `${baseUrl}/blog/${slug}`;
+
+      // Cover image URL
+      let imageUrl = `${baseUrl}/og-blog.png`; // Default blog OG image
+      if (article.cover?.url || article.coverImage?.url) {
+        const coverUrl = article.cover?.url || article.coverImage?.url;
+        if (coverUrl.startsWith('http')) {
+          imageUrl = coverUrl;
+        } else if (coverUrl.startsWith('/uploads')) {
+          // Strapi uploads need to go through /strapi path
+          imageUrl = `${baseUrl}/strapi${coverUrl}`;
+        } else {
+          imageUrl = `${baseUrl}${coverUrl}`;
+        }
+      }
+
+      // Format date
+      const publishedDate = article.publishedAt ? new Date(article.publishedAt).toISOString() : '';
+      const modifiedDate = article.updatedAt ? new Date(article.updatedAt).toISOString() : '';
+
+      // Read the blog index.html template
+      const fs = require('fs');
+      const blogIndexPath = path.join('/var/www/html/blog', 'index.html');
+      let html = fs.readFileSync(blogIndexPath, 'utf8');
+
+      // Update the title tag
+      html = html.replace(
+        /<title[^>]*>.*?<\/title>/,
+        `<title>${title} | OneStreamer Blog</title>`
+      );
+
+      // Update meta tags with article-specific content
+      html = html.replace(/id="page-title">.*?<\/title>/, `id="page-title">${title} | OneStreamer Blog</title>`);
+      html = html.replace(/id="meta-title" content="[^"]*"/, `id="meta-title" content="${title} | OneStreamer Blog"`);
+      html = html.replace(/id="page-description" content="[^"]*"/, `id="page-description" content="${description}"`);
+      html = html.replace(/id="canonical-url" href="[^"]*"/, `id="canonical-url" href="${articleUrl}"`);
+
+      // Open Graph
+      html = html.replace(/id="og-type" content="[^"]*"/, `id="og-type" content="article"`);
+      html = html.replace(/id="og-url" content="[^"]*"/, `id="og-url" content="${articleUrl}"`);
+      html = html.replace(/id="og-title" content="[^"]*"/, `id="og-title" content="${title}"`);
+      html = html.replace(/id="og-description" content="[^"]*"/, `id="og-description" content="${description}"`);
+      html = html.replace(/id="og-image" content="[^"]*"/, `id="og-image" content="${imageUrl}"`);
+
+      // Twitter
+      html = html.replace(/id="twitter-url" content="[^"]*"/, `id="twitter-url" content="${articleUrl}"`);
+      html = html.replace(/id="twitter-title" content="[^"]*"/, `id="twitter-title" content="${title}"`);
+      html = html.replace(/id="twitter-description" content="[^"]*"/, `id="twitter-description" content="${description}"`);
+      html = html.replace(/id="twitter-image" content="[^"]*"/, `id="twitter-image" content="${imageUrl}"`);
+
+      // Article meta
+      html = html.replace(/id="article-author" content="[^"]*"/, `id="article-author" content="${author}"`);
+      html = html.replace(/id="article-published" content="[^"]*"/, `id="article-published" content="${publishedDate}"`);
+      html = html.replace(/id="article-modified" content="[^"]*"/, `id="article-modified" content="${modifiedDate}"`);
+
+      // Update JSON-LD structured data
+      const jsonLd = {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        "headline": title,
+        "description": description,
+        "image": imageUrl,
+        "url": articleUrl,
+        "datePublished": publishedDate,
+        "dateModified": modifiedDate,
+        "author": {
+          "@type": "Person",
+          "name": author
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "OneStreamer",
+          "url": "https://onestreamer.live",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://onestreamer.live/logo.png"
+          }
+        }
+      };
+      html = html.replace(
+        /<script type="application\/ld\+json" id="schema-data">[\s\S]*?<\/script>/,
+        `<script type="application/ld+json" id="schema-data">${JSON.stringify(jsonLd, null, 2)}</script>`
+      );
+
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+
+    } catch (error) {
+      console.error(`❌ Error generating blog meta tags for ${slug}:`, error);
+      // On error, fall back to serving the normal blog page
+      res.sendFile(path.join('/var/www/html/blog', 'index.html'));
+    }
+  });
+
+  // ============================================================================
   // SOCIAL MEDIA EMBED SUPPORT - Dynamic Open Graph meta tags for clip pages
   // ============================================================================
   // This middleware serves custom HTML with proper meta tags for social crawlers

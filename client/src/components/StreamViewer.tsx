@@ -2,7 +2,7 @@ import React from 'react';
 import WebRTCViewer from './WebRTCViewer';
 import WebRTCStreamer from './WebRTCStreamer';
 import { Socket } from 'socket.io-client';
-import { AudioSettingsConfig, VideoSettingsConfig } from './StreamerSettings';
+import { AudioSettingsConfig, VideoSettingsConfig, ScreenShareSettingsConfig } from './StreamerSettings';
 import './StreamViewer.css';
 
 interface StreamViewerProps {
@@ -18,6 +18,10 @@ interface StreamViewerProps {
   onAudioSettingsChange?: (settings: AudioSettingsConfig) => void;
   videoSettings?: VideoSettingsConfig;
   onVideoSettingsChange?: (settings: VideoSettingsConfig) => void;
+  screenShareSettings?: ScreenShareSettingsConfig;
+  isScreenSharing?: boolean;
+  onScreenShareChange?: (isSharing: boolean) => void;
+  onScreenShareMethodsReady?: (methods: { startScreenShare: () => void; stopScreenShare: () => void }) => void;
 }
 
 const StreamViewer: React.FC<StreamViewerProps> = ({
@@ -32,7 +36,11 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
   audioSettings,
   onAudioSettingsChange,
   videoSettings,
-  onVideoSettingsChange
+  onVideoSettingsChange,
+  screenShareSettings,
+  isScreenSharing = false,
+  onScreenShareChange,
+  onScreenShareMethodsReady
 }) => {
   if (!socket) {
     return (
@@ -63,6 +71,10 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
             onAudioSettingsChange={onAudioSettingsChange}
             videoSettings={videoSettings}
             onVideoSettingsChange={onVideoSettingsChange}
+            screenShareSettings={screenShareSettings}
+            isScreenSharing={isScreenSharing}
+            onScreenShareChange={onScreenShareChange}
+            onScreenShareMethodsReady={onScreenShareMethodsReady}
             className="webrtc-streamer-container"
           />
           <div className="streaming-indicator">

@@ -102,6 +102,14 @@ export class LiveKitClient {
   private localAudioTrack: LocalAudioTrack | null = null;
   private localStream: MediaStream | null = null;
 
+  // Screen share state
+  private screenStream: MediaStream | null = null;
+  public isScreenSharing: boolean = false;
+
+  // Saved tracks for seamless screen share switching
+  private savedCameraVideoTrack: MediaStreamTrack | null = null;
+  private savedMicAudioTrack: MediaStreamTrack | null = null;
+
   constructor(config: LiveKitClientConfig) {
     this.socket = config.socket;
     this.serverUrl = config.serverUrl || process.env.REACT_APP_SERVER_URL || 'http://localhost:8080';
@@ -1267,6 +1275,168 @@ export class LiveKitClient {
    */
   get hasVideoProducer(): boolean {
     return this.videoProducer !== null && this.videoProducer !== undefined;
+  }
+
+  /**
+   * Switch from camera to screen share
+   * Uses replaceTrack for seamless switching without disconnecting viewers
+   */
+  async switchToScreenShare(screenStream: MediaStream): Promise<void> {
+    console.log('🖥️ LIVEKIT CLIENT: === SWITCHING TO SCREEN SHARE (SEAMLESS) ===');
+
+    if (!this.isRoomReady()) {
+      throw new Error('Room not ready for screen share');
+    }
+
+    try {
+      const screenVideoTrack = screenStream.getVideoTracks()[0];
+      const screenAudioTrack = screenStream.getAudioTracks()[0];
+
+      console.log('🖥️ LIVEKIT CLIENT: Screen stream analysis:', {
+        videoTracks: screenStream.getVideoTracks().length,
+        audioTracks: screenStream.getAudioTracks().length,
+        hasScreenVideo: !!screenVideoTrack,
+        hasScreenAudio: !!screenAudioTrack
+      });
+
+      if (!screenVideoTrack) {
+        throw new Error('No video track in screen stream');
+      }
+
+      if (screenAudioTrack) {
+        console.log('🖥️ LIVEKIT CLIENT: ✅ Screen DOES have audio track:', {
+          enabled: screenAudioTrack.enabled,
+          muted: screenAudioTrack.muted,
+          readyState: screenAudioTrack.readyState,
+          label: screenAudioTrack.label
+        });
+      } else {
+        console.warn('🖥️ LIVEKIT CLIENT: ⚠️ Screen has NO audio track');
+      }
+
+      // Store the original camera video track for later restoration
+      if (this.localVideoTrack?.mediaStreamTrack) {
+        this.savedCameraVideoTrack = this.localVideoTrack.mediaStreamTrack;
+        console.log('🖥️ LIVEKIT CLIENT: Saved camera video track for later');
+      }
+
+      // Store the original mic audio track for later restoration
+      if (this.localAudioTrack?.mediaStreamTrack) {
+        this.savedMicAudioTrack = this.localAudioTrack.mediaStreamTrack;
+        console.log('🖥️ LIVEKIT CLIENT: Saved mic audio track for later');
+      }
+
+      // SEAMLESS VIDEO REPLACEMENT using replaceTrack
+      if (this.localVideoTrack) {
+        console.log('🖥️ LIVEKIT CLIENT: Seamlessly replacing video track...');
+        try {
+          await this.localVideoTrack.replaceTrack(screenVideoTrack);
+          console.log('🖥️ LIVEKIT CLIENT: ✅ Video track replaced seamlessly');
+        } catch (replaceError) {
+          console.error('🖥️ LIVEKIT CLIENT: ❌ Failed to replace video track:', replaceError);
+          throw replaceError;
+        }
+      }
+
+      // SEAMLESS AUDIO REPLACEMENT using replaceTrack (if screen has audio)
+      if (screenAudioTrack && this.localAudioTrack) {
+        console.log('🖥️ LIVEKIT CLIENT: Seamlessly replacing audio track with system audio...');
+        try {
+          await this.localAudioTrack.replaceTrack(screenAudioTrack);
+          console.log('🖥️ LIVEKIT CLIENT: ✅ Audio track replaced seamlessly with system audio');
+        } catch (replaceError) {
+          console.error('🖥️ LIVEKIT CLIENT: ❌ Failed to replace audio track:', replaceError);
+          // Non-fatal - continue with mic audio
+        }
+      } else {
+        console.log('🖥️ LIVEKIT CLIENT: Keeping mic audio (no system audio available)');
+      }
+
+      this.screenStream = screenStream;
+      this.isScreenSharing = true;
+      console.log('✅ LIVEKIT CLIENT: Switched to screen share seamlessly');
+
+    } catch (error) {
+      console.error('❌ LIVEKIT CLIENT: Failed to switch to screen share:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Switch from screen share back to camera
+   * Uses replaceTrack for seamless switching without disconnecting viewers
+   */
+  async switchToCamera(cameraStream: MediaStream): Promise<void> {
+    console.log('📹 LIVEKIT CLIENT: === SWITCHING BACK TO CAMERA (SEAMLESS) ===');
+
+    if (!this.isRoomReady()) {
+      throw new Error('Room not ready');
+    }
+
+    try {
+      // Prefer saved tracks, fallback to stream tracks
+      const cameraVideoTrack = this.savedCameraVideoTrack || cameraStream.getVideoTracks()[0];
+      const cameraAudioTrack = this.savedMicAudioTrack || cameraStream.getAudioTracks()[0];
+
+      console.log('📹 LIVEKIT CLIENT: Restoration tracks:', {
+        usingSavedVideo: !!this.savedCameraVideoTrack,
+        usingSavedAudio: !!this.savedMicAudioTrack,
+        hasCameraVideo: !!cameraVideoTrack,
+        hasCameraAudio: !!cameraAudioTrack,
+        videoState: cameraVideoTrack?.readyState,
+        audioState: cameraAudioTrack?.readyState
+      });
+
+      // SEAMLESS VIDEO REPLACEMENT using replaceTrack
+      if (this.localVideoTrack && cameraVideoTrack && cameraVideoTrack.readyState === 'live') {
+        console.log('📹 LIVEKIT CLIENT: Seamlessly replacing video with camera...');
+        try {
+          await this.localVideoTrack.replaceTrack(cameraVideoTrack);
+          console.log('📹 LIVEKIT CLIENT: ✅ Video track replaced seamlessly with camera');
+        } catch (replaceError) {
+          console.error('📹 LIVEKIT CLIENT: ❌ Failed to replace video track:', replaceError);
+          throw replaceError;
+        }
+      } else if (cameraVideoTrack?.readyState !== 'live') {
+        console.warn('📹 LIVEKIT CLIENT: ⚠️ Camera video track not live, may need new stream');
+      }
+
+      // SEAMLESS AUDIO REPLACEMENT using replaceTrack
+      if (this.localAudioTrack && cameraAudioTrack && cameraAudioTrack.readyState === 'live') {
+        console.log('📹 LIVEKIT CLIENT: Seamlessly replacing audio with mic...');
+        try {
+          await this.localAudioTrack.replaceTrack(cameraAudioTrack);
+          console.log('📹 LIVEKIT CLIENT: ✅ Audio track replaced seamlessly with mic');
+        } catch (replaceError) {
+          console.error('📹 LIVEKIT CLIENT: ❌ Failed to replace audio track:', replaceError);
+          // Non-fatal
+        }
+      }
+
+      // Stop screen stream tracks (but not the saved camera/mic tracks!)
+      if (this.screenStream) {
+        console.log('📹 LIVEKIT CLIENT: Stopping screen stream tracks...');
+        this.screenStream.getTracks().forEach(track => {
+          // Only stop if it's not one of our saved tracks
+          if (track !== this.savedCameraVideoTrack && track !== this.savedMicAudioTrack) {
+            track.stop();
+          }
+        });
+        this.screenStream = null;
+      }
+
+      // Clear saved tracks
+      this.savedCameraVideoTrack = null;
+      this.savedMicAudioTrack = null;
+
+      this.isScreenSharing = false;
+      this.localStream = cameraStream;
+      console.log('✅ LIVEKIT CLIENT: Switched back to camera seamlessly');
+
+    } catch (error) {
+      console.error('❌ LIVEKIT CLIENT: Failed to switch to camera:', error);
+      throw error;
+    }
   }
 
   /**

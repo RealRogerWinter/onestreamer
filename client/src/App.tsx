@@ -290,11 +290,24 @@ function AppContent() {
 
   const [streamerSettings, setStreamerSettings] = useState<StreamerSettingsConfig>(() => {
     const savedSettings = CookieService.getCookie(COOKIE_NAMES.STREAMER_SETTINGS);
-    return savedSettings || {
+    const defaultScreenShare = {
+      cursor: 'always' as const,
+      audio: false,
+      displaySurface: 'monitor' as const
+    };
+    return savedSettings ? {
+      ...savedSettings,
+      screenShare: savedSettings.screenShare || defaultScreenShare
+    } : {
       audio: audioSettings,
-      video: videoSettings
+      video: videoSettings,
+      screenShare: defaultScreenShare
     };
   });
+
+  // Screen sharing state
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const screenShareMethodsRef = useRef<{ startScreenShare: () => void; stopScreenShare: () => void } | null>(null);
 
   // Sound effects volume (for TTS, soundboards, etc)
   const [soundEffectsVolume, setSoundEffectsVolume] = useState(() => {
@@ -1240,6 +1253,12 @@ function AppContent() {
                   CookieService.setCookie(COOKIE_NAMES.VIDEO_SETTINGS, newVideoSettings);
                   CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
                 }}
+                screenShareSettings={streamerSettings.screenShare}
+                isScreenSharing={isScreenSharing}
+                onScreenShareChange={setIsScreenSharing}
+                onScreenShareMethodsReady={(methods) => {
+                  screenShareMethodsRef.current = methods;
+                }}
               />
               
               {/* Theatre Mode Controls - Only show in theatre mode */}
@@ -1257,6 +1276,9 @@ function AppContent() {
                     setStreamerSettings(newSettings);
                     CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
                   }}
+                  isScreenSharing={isScreenSharing}
+                  onStartScreenShare={() => screenShareMethodsRef.current?.startScreenShare()}
+                  onStopScreenShare={() => screenShareMethodsRef.current?.stopScreenShare()}
                   onExitTheatre={() => setTheatreMode(false)}
                   onTakeOver={() => {
                     if (!socket) {
@@ -1304,7 +1326,7 @@ function AppContent() {
                   Theatre
                 </button>
               )}
-              <StreamerSettings 
+              <StreamerSettings
                 settings={streamerSettings}
                 onSettingsChange={(newSettings) => {
                   setStreamerSettings(newSettings);
@@ -1312,6 +1334,9 @@ function AppContent() {
                 }}
                 isStreaming={isStreaming}
                 compact={true}
+                isScreenSharing={isScreenSharing}
+                onStartScreenShare={() => screenShareMethodsRef.current?.startScreenShare()}
+                onStopScreenShare={() => screenShareMethodsRef.current?.stopScreenShare()}
               />
               <StreamControls 
                 isStreaming={isStreaming}

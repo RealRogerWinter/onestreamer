@@ -20,6 +20,9 @@ interface TheatreControlsProps {
   onVisibilityChange?: (visible: boolean) => void;
   currentUserId?: string;
   streamerBuffs?: any[];
+  isScreenSharing?: boolean;
+  onStartScreenShare?: () => void;
+  onStopScreenShare?: () => void;
 }
 
 const TheatreControls: React.FC<TheatreControlsProps> = ({
@@ -32,6 +35,9 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
   onExitTheatre,
   onTakeOver,
   onStopStream,
+  isScreenSharing = false,
+  onStartScreenShare,
+  onStopScreenShare,
   onVisibilityChange,
   currentUserId,
   streamerBuffs = [],
@@ -645,6 +651,9 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
           onSettingsChange={onSettingsChange}
           isStreaming={isStreaming}
           compact={false}
+          isScreenSharing={isScreenSharing}
+          onStartScreenShare={onStartScreenShare}
+          onStopScreenShare={onStopScreenShare}
         />
       </div>
     )}

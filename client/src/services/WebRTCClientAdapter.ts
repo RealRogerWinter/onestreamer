@@ -255,6 +255,27 @@ export class WebRTCClientAdapter {
     }
   }
 
+  /**
+   * Switch from camera to screen share (replaces main video)
+   */
+  async switchToScreenShare(screenStream: MediaStream): Promise<void> {
+    await this.ensureInitialized();
+    if (this.client && 'switchToScreenShare' in this.client) {
+      return (this.client as any).switchToScreenShare(screenStream);
+    }
+    throw new Error('Screen share switch not supported by current backend');
+  }
+
+  /**
+   * Switch from screen share back to camera
+   */
+  async switchToCamera(cameraStream: MediaStream): Promise<void> {
+    await this.ensureInitialized();
+    if (this.client && 'switchToCamera' in this.client) {
+      return (this.client as any).switchToCamera(cameraStream);
+    }
+  }
+
   // Proxy getters
   get isDestroyed(): boolean {
     return (this.client as any)?.isDestroyed || false;
@@ -300,6 +321,10 @@ export class WebRTCClientAdapter {
       return (this.client as any).hasVideoProducer;
     }
     return (this.client as any)?.videoProducer !== null && (this.client as any)?.videoProducer !== undefined;
+  }
+
+  get isScreenSharing(): boolean {
+    return (this.client as any)?.isScreenSharing || false;
   }
 
   get consumers(): Map<string, any> {

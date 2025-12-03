@@ -297,6 +297,20 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
                     </svg>
                   </a>
 
+                  {/* Blog Link */}
+                  <a
+                    href="https://onestreamer.live/blog/"
+                    className="theatre-blog-btn"
+                    title="Blog"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    </svg>
+                  </a>
+
                   {/* Theatre Dropdown Menu */}
                   <div className="theatre-dropdown-container">
                     <button
@@ -441,6 +455,20 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
                       <path d="M23 7l-7 5 7 5V7z"/>
                       <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                    </svg>
+                  </a>
+
+                  {/* Blog Link */}
+                  <a
+                    href="https://onestreamer.live/blog/"
+                    className="theatre-blog-btn"
+                    title="Blog"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
                     </svg>
                   </a>
 

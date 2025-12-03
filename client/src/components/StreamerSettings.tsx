@@ -23,9 +23,16 @@ export interface AudioSettingsConfig {
   outputDeviceId?: string;
 }
 
+export interface ScreenShareSettingsConfig {
+  cursor: 'always' | 'motion' | 'never';
+  audio: boolean;
+  displaySurface: 'monitor' | 'window' | 'browser';
+}
+
 export interface StreamerSettingsConfig {
   audio: AudioSettingsConfig;
   video: VideoSettingsConfig;
+  screenShare?: ScreenShareSettingsConfig;
 }
 
 interface StreamerSettingsProps {
@@ -33,19 +40,28 @@ interface StreamerSettingsProps {
   onSettingsChange: (settings: StreamerSettingsConfig) => void;
   isStreaming?: boolean;
   compact?: boolean;
+  isScreenSharing?: boolean;
+  onStartScreenShare?: () => void;
+  onStopScreenShare?: () => void;
 }
 
-const StreamerSettings: React.FC<StreamerSettingsProps> = ({ 
-  settings, 
+const StreamerSettings: React.FC<StreamerSettingsProps> = ({
+  settings,
   onSettingsChange,
   isStreaming = false,
-  compact = false
+  compact = false,
+  isScreenSharing = false,
+  onStartScreenShare,
+  onStopScreenShare
 }) => {
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
   const [expanded, setExpanded] = useState(!compact);
-  const [activeTab, setActiveTab] = useState<'audio' | 'video'>('audio');
+  const [activeTab, setActiveTab] = useState<'audio' | 'video' | 'screen'>('audio');
+  const [screenShareSupported] = useState(() => {
+    return !!(navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices);
+  });
   
   // Wrapper function to save settings to cookies when they change
   const handleSettingsChange = (newSettings: StreamerSettingsConfig) => {
@@ -225,6 +241,37 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
       });
     }
   };
+
+  const handleScreenShareToggle = (setting: keyof ScreenShareSettingsConfig) => {
+    const currentValue = settings.screenShare?.[setting];
+    if (typeof currentValue === 'boolean' || setting === 'audio') {
+      handleSettingsChange({
+        ...settings,
+        screenShare: {
+          ...getDefaultScreenShareSettings(),
+          ...settings.screenShare,
+          [setting]: !(currentValue ?? false)
+        }
+      });
+    }
+  };
+
+  const handleScreenShareSelectChange = (setting: keyof ScreenShareSettingsConfig, value: string) => {
+    handleSettingsChange({
+      ...settings,
+      screenShare: {
+        ...getDefaultScreenShareSettings(),
+        ...settings.screenShare,
+        [setting]: value
+      }
+    });
+  };
+
+  const getDefaultScreenShareSettings = (): ScreenShareSettingsConfig => ({
+    cursor: 'always',
+    audio: false,
+    displaySurface: 'monitor'
+  });
 
   const handleAudioSelectChange = (setting: keyof AudioSettingsConfig, value: string | number) => {
     handleSettingsChange({
@@ -545,18 +592,26 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
 
         {/* Tab Navigation */}
         <div className="settings-tabs">
-          <button 
+          <button
             className={`tab-button ${activeTab === 'audio' ? 'active' : ''}`}
             onClick={() => setActiveTab('audio')}
           >
             🎵 Audio
           </button>
-          <button 
+          <button
             className={`tab-button ${activeTab === 'video' ? 'active' : ''}`}
             onClick={() => setActiveTab('video')}
           >
             📹 Video
           </button>
+          {screenShareSupported && (
+            <button
+              className={`tab-button ${activeTab === 'screen' ? 'active' : ''} ${isScreenSharing ? 'screen-active' : ''}`}
+              onClick={() => setActiveTab('screen')}
+            >
+              🖥️ Screen {isScreenSharing && '🔴'}
+            </button>
+          )}
         </div>
 
         {/* Audio Settings Tab */}
@@ -968,10 +1023,174 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
           </div>
         )}
 
+        {/* Screen Share Settings Tab */}
+        {activeTab === 'screen' && screenShareSupported && (
+          <div className="settings-panel screen-panel">
+            {/* Screen Share Status Banner */}
+            {isScreenSharing && (
+              <div className="screen-share-active-banner" style={{
+                background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%)',
+                color: 'white',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                boxShadow: '0 2px 8px rgba(255, 107, 107, 0.3)'
+              }}>
+                <span style={{ fontWeight: 'bold' }}>🖥️ Screen Sharing Active</span>
+                <button
+                  onClick={onStopScreenShare}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    border: '1px solid rgba(255, 255, 255, 0.4)',
+                    color: 'white',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Stop Sharing
+                </button>
+              </div>
+            )}
+
+            {/* Screen Share Controls */}
+            <div className="settings-grid">
+              {/* Start/Stop Screen Share Button */}
+              <div className="setting-group" style={{ gridColumn: '1 / -1' }}>
+                <button
+                  type="button"
+                  className="screen-share-main-button"
+                  onClick={() => {
+                    console.log('🖥️ Screen share button clicked, isStreaming:', isStreaming, 'isScreenSharing:', isScreenSharing);
+                    if (!isStreaming) {
+                      console.log('🖥️ Not streaming, ignoring click');
+                      return;
+                    }
+                    if (isScreenSharing) {
+                      console.log('🖥️ Calling onStopScreenShare:', typeof onStopScreenShare);
+                      onStopScreenShare?.();
+                    } else {
+                      console.log('🖥️ Calling onStartScreenShare:', typeof onStartScreenShare);
+                      onStartScreenShare?.();
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    fontSize: '16px',
+                    background: isStreaming
+                      ? (isScreenSharing
+                        ? 'linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%)'
+                        : 'linear-gradient(135deg, #4ecdc4 0%, #44b3ab 100%)')
+                      : '#444',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: isStreaming ? 'pointer' : 'not-allowed',
+                    opacity: isStreaming ? 1 : 0.6,
+                    position: 'relative',
+                    zIndex: 10
+                  }}
+                >
+                  {isScreenSharing ? '🔴 Stop Screen Share' : '🖥️ Start Screen Share'}
+                </button>
+                {!isStreaming && (
+                  <small style={{ color: '#ff9800', display: 'block', marginTop: '8px' }}>
+                    Start streaming first to enable screen sharing
+                  </small>
+                )}
+              </div>
+
+              {/* Display Surface */}
+              <div className="setting-group">
+                <label className="setting-label">
+                  <span>Share Type</span>
+                  <select
+                    value={settings.screenShare?.displaySurface || 'monitor'}
+                    onChange={(e) => handleScreenShareSelectChange('displaySurface', e.target.value)}
+                    disabled={isScreenSharing}
+                  >
+                    <option value="monitor">Entire Screen</option>
+                    <option value="window">Application Window</option>
+                    <option value="browser">Browser Tab</option>
+                  </select>
+                </label>
+                <small>What to share with viewers</small>
+              </div>
+
+              {/* Cursor Visibility */}
+              <div className="setting-group">
+                <label className="setting-label">
+                  <span>Cursor</span>
+                  <select
+                    value={settings.screenShare?.cursor || 'always'}
+                    onChange={(e) => handleScreenShareSelectChange('cursor', e.target.value)}
+                    disabled={isScreenSharing}
+                  >
+                    <option value="always">Always Visible</option>
+                    <option value="motion">Show on Motion</option>
+                    <option value="never">Hidden</option>
+                  </select>
+                </label>
+                <small>Mouse cursor visibility</small>
+              </div>
+
+              {/* System Audio */}
+              <div className="setting-group">
+                <label className="setting-label">
+                  <input
+                    type="checkbox"
+                    checked={settings.screenShare?.audio ?? false}
+                    onChange={() => handleScreenShareToggle('audio')}
+                    disabled={isScreenSharing}
+                  />
+                  <span>Include System Audio</span>
+                </label>
+                <small>Share audio from screen (Chrome/Edge only)</small>
+                {settings.screenShare?.audio && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px',
+                    background: 'rgba(76, 175, 80, 0.15)',
+                    border: '1px solid rgba(76, 175, 80, 0.4)',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    color: '#81c784'
+                  }}>
+                    <strong>Tip:</strong> When the browser dialog appears, check the <strong>"Share system audio"</strong> checkbox at the bottom to capture game/app audio.
+                    <br />This works for Entire Screen, Window, or Tab sharing.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Screen Share Info */}
+            <div className="screen-share-info" style={{
+              marginTop: '16px',
+              padding: '12px',
+              background: 'rgba(78, 205, 196, 0.1)',
+              borderRadius: '8px',
+              border: '1px solid rgba(78, 205, 196, 0.3)'
+            }}>
+              <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>
+                <strong>Tips:</strong>
+                <br />• Viewers will see your screen instead of camera
+                <br />• Your microphone will be replaced with system audio if enabled
+                <br />• Click stop or use browser controls to end sharing
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="settings-info">
           <p className="current-profile">
-            Audio: <strong>{settings.audio.profile}</strong> | 
+            Audio: <strong>{settings.audio.profile}</strong> |
             Video: <strong>{settings.video.resolution} @ {settings.video.frameRate}fps</strong>
+            {isScreenSharing && <> | Screen: <strong style={{ color: '#ff6b6b' }}>Sharing</strong></>}
           </p>
         </div>
       </div>

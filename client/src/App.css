@@ -1250,6 +1250,31 @@ body:has(.App.theatre-mode) {
   stroke: white;
 }
 
+.theatre-blog-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.theatre-blog-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.theatre-blog-btn svg {
+  stroke: white;
+}
+
 .theatre-dropdown-container {
   position: relative;
 }

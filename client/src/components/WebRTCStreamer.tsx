@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 import { WebRTCClientAdapter } from '../services/WebRTCClientAdapter';
+import { ScreenCaptureService } from '../services/ScreenCaptureService';
 import AudioLevelMeter from './AudioLevelMeter';
-import { AudioSettingsConfig, VideoSettingsConfig } from './StreamerSettings';
+import { AudioSettingsConfig, VideoSettingsConfig, ScreenShareSettingsConfig } from './StreamerSettings';
 import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
 import { useStreamerViewManager } from '../hooks/useStreamerViewManager';
 import { useVisualFxProcessor } from '../hooks/useVisualFxProcessor';
@@ -18,22 +19,32 @@ interface WebRTCStreamerProps {
   onAudioSettingsChange?: (settings: AudioSettingsConfig) => void;
   videoSettings?: VideoSettingsConfig;
   onVideoSettingsChange?: (settings: VideoSettingsConfig) => void;
+  screenShareSettings?: ScreenShareSettingsConfig;
+  isScreenSharing?: boolean;
+  onScreenShareChange?: (isSharing: boolean) => void;
+  onScreenShareMethodsReady?: (methods: { startScreenShare: () => void; stopScreenShare: () => void }) => void;
 }
 
-const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({ 
-  socket, 
-  isStreaming, 
-  onStreamStart, 
-  onStreamStop, 
+const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
+  socket,
+  isStreaming,
+  onStreamStart,
+  onStreamStop,
   className = '',
   audioSettings: externalAudioSettings,
   onAudioSettingsChange: externalOnAudioSettingsChange,
   videoSettings: externalVideoSettings,
-  onVideoSettingsChange: externalOnVideoSettingsChange
+  onVideoSettingsChange: externalOnVideoSettingsChange,
+  screenShareSettings,
+  isScreenSharing = false,
+  onScreenShareChange,
+  onScreenShareMethodsReady
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const mediasoupClientRef = useRef<WebRTCClientAdapter | null>(null);
+  const screenCaptureRef = useRef<ScreenCaptureService>(new ScreenCaptureService());
   const isProcessingRef = useRef(false);
   const lastStreamAttemptRef = useRef(0);
   const STREAM_DEBOUNCE_TIME = 2000; // 2 seconds between attempts
@@ -370,6 +381,144 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     };
   }, [isStreaming]);
 
+  // Get default screen share settings
+  const getDefaultScreenShareSettings = (): ScreenShareSettingsConfig => ({
+    cursor: 'always',
+    audio: false,
+    displaySurface: 'monitor'
+  });
+
+  // Get effective screen share settings
+  const effectiveScreenShareSettings = screenShareSettings || getDefaultScreenShareSettings();
+
+  // Start screen sharing
+  const startScreenShare = useCallback(async () => {
+    console.log('🖥️ Starting screen share...');
+
+    if (!isStreaming) {
+      console.warn('Cannot start screen share - not streaming');
+      return;
+    }
+
+    if (!mediasoupClientRef.current) {
+      console.warn('Cannot start screen share - no WebRTC client');
+      return;
+    }
+
+    try {
+      // Get screen stream with settings
+      console.log('🖥️ Screen share settings:', effectiveScreenShareSettings);
+      const screenStream = await screenCaptureRef.current.getScreenStream({
+        cursor: effectiveScreenShareSettings.cursor,
+        // Don't pass displaySurface - let browser show all options (screen, window, tab)
+        // This is important for Windows system audio capture from entire screen
+        audio: effectiveScreenShareSettings.audio,
+        systemAudio: effectiveScreenShareSettings.audio ? 'include' : 'exclude',
+      });
+
+      // Log what we got
+      console.log('🖥️ Screen stream obtained:', {
+        videoTracks: screenStream.getVideoTracks().length,
+        audioTracks: screenStream.getAudioTracks().length,
+        audioEnabled: screenStream.getAudioTracks()[0]?.enabled,
+        audioLabel: screenStream.getAudioTracks()[0]?.label
+      });
+
+      // Set up callback for when user stops sharing via browser UI
+      screenCaptureRef.current.onStreamEnd(() => {
+        console.log('🖥️ Screen share ended by user');
+        stopScreenShare();
+      });
+
+      // Store current camera stream for later
+      if (streamRef.current) {
+        cameraStreamRef.current = streamRef.current;
+      }
+
+      // Switch to screen share in WebRTC
+      console.log('🖥️ Switching main video to screen share');
+      await mediasoupClientRef.current.switchToScreenShare(screenStream);
+
+      // Update local preview to show screen
+      if (videoRef.current) {
+        videoRef.current.srcObject = screenStream;
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.warn('Video play after screen share failed:', playErr);
+        }
+      }
+
+      streamRef.current = screenStream;
+      onScreenShareChange?.(true);
+      console.log('✅ Screen share started successfully');
+
+    } catch (error: any) {
+      console.error('❌ Failed to start screen share:', error);
+
+      // Clean up on failure
+      screenCaptureRef.current.stopScreenShare();
+
+      // Show user-friendly error
+      if (!error.message.includes('cancelled') && !error.message.includes('denied')) {
+        setError(`Screen share failed: ${error.message}`);
+        setTimeout(() => setError(null), 5000);
+      }
+    }
+  }, [isStreaming, effectiveScreenShareSettings, onScreenShareChange]);
+
+  // Stop screen sharing
+  const stopScreenShare = useCallback(async () => {
+    console.log('🖥️ Stopping screen share...');
+
+    try {
+      // Stop screen capture
+      screenCaptureRef.current.stopScreenShare();
+
+      // If we have a stored camera stream, switch back to it
+      if (cameraStreamRef.current && mediasoupClientRef.current) {
+        // Check if camera stream is still active
+        const videoTrack = cameraStreamRef.current.getVideoTracks()[0];
+        if (videoTrack && videoTrack.readyState === 'live') {
+          console.log('🖥️ Switching back to camera...');
+          await mediasoupClientRef.current.switchToCamera(cameraStreamRef.current);
+
+          // Update preview
+          if (videoRef.current) {
+            videoRef.current.srcObject = cameraStreamRef.current;
+            try {
+              await videoRef.current.play();
+            } catch (playErr) {
+              console.warn('Video play after camera restore failed:', playErr);
+            }
+          }
+
+          streamRef.current = cameraStreamRef.current;
+        } else {
+          console.log('🖥️ Camera stream expired, need to restart');
+          // Camera stream is dead, need to restart streaming
+        }
+      }
+
+      onScreenShareChange?.(false);
+      console.log('✅ Screen share stopped');
+
+    } catch (error: any) {
+      console.error('❌ Failed to stop screen share:', error);
+      onScreenShareChange?.(false);
+    }
+  }, [onScreenShareChange]);
+
+  // Expose screen share methods to parent
+  useEffect(() => {
+    if (onScreenShareMethodsReady) {
+      onScreenShareMethodsReady({
+        startScreenShare,
+        stopScreenShare
+      });
+    }
+  }, [onScreenShareMethodsReady, startScreenShare, stopScreenShare]);
+
   const startStreaming = async () => {
     // Prevent multiple simultaneous stream starts
     if (isProcessingRef.current) {
@@ -590,10 +739,22 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
   const cleanup = async () => {
     // console.log('🧹 WEBRTC STREAMER: Cleaning up...');
-    
+
     // Reset processing flag
     isProcessingRef.current = false;
-    
+
+    // Stop screen sharing if active
+    if (screenCaptureRef.current.isActive()) {
+      screenCaptureRef.current.stopScreenShare();
+      onScreenShareChange?.(false);
+    }
+
+    // Clean up camera stream ref
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+
     if (mediasoupClientRef.current) {
       try {
         await mediasoupClientRef.current.stopProducing();
