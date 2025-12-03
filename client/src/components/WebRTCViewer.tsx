@@ -950,30 +950,88 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         
         // Set the source
         video.srcObject = stream;
-        
-        // Wait for loadedmetadata before attempting to play
+
+        // CRITICAL FIX for iOS Safari: Safari's WebRTC often doesn't fire loadedmetadata
+        // We need to call load() explicitly and use a timeout fallback
+        const isSafariBrowser = isIOSSafari();
+
+        if (isSafariBrowser) {
+          console.log('📱 WEBRTC: iOS Safari detected - using Safari-specific stream handling');
+          // Safari needs explicit load() call for WebRTC streams
+          video.load();
+        }
+
+        // Wait for loadedmetadata with timeout fallback for Safari
         await new Promise<void>((resolve, reject) => {
-          const onLoadedMetadata = () => {
+          let resolved = false;
+
+          const cleanup = () => {
             video.removeEventListener('loadedmetadata', onLoadedMetadata);
             video.removeEventListener('error', onError);
+            video.removeEventListener('canplay', onCanPlay);
+          };
+
+          const onLoadedMetadata = () => {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            console.log('📺 WEBRTC: loadedmetadata fired');
             resolve();
           };
-          
+
+          // Safari fallback: also listen for canplay event which fires more reliably
+          const onCanPlay = () => {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            console.log('📺 WEBRTC: canplay fired (Safari fallback)');
+            resolve();
+          };
+
           const onError = (e: Event) => {
-            video.removeEventListener('loadedmetadata', onLoadedMetadata);
-            video.removeEventListener('error', onError);
+            if (resolved) return;
+            resolved = true;
+            cleanup();
             reject(new Error('Video failed to load'));
           };
-          
+
           video.addEventListener('loadedmetadata', onLoadedMetadata);
           video.addEventListener('error', onError);
-          
+          video.addEventListener('canplay', onCanPlay);
+
           // If metadata is already loaded, resolve immediately
           if (video.readyState >= 1) {
-            video.removeEventListener('loadedmetadata', onLoadedMetadata);
-            video.removeEventListener('error', onError);
+            resolved = true;
+            cleanup();
             resolve();
+            return;
           }
+
+          // CRITICAL: Timeout fallback for iOS Safari where events may not fire
+          // Safari's WebRTC can leave the video in readyState 0 but still playable
+          const timeoutMs = isSafariBrowser ? 3000 : 10000;
+          setTimeout(() => {
+            if (resolved) return;
+
+            // For Safari, if we have a srcObject with tracks, try to proceed anyway
+            if (isSafariBrowser && video.srcObject) {
+              const mediaStream = video.srcObject as MediaStream;
+              if (mediaStream.getTracks().length > 0) {
+                console.log('📱 WEBRTC: Safari timeout - proceeding with tracks despite no metadata event');
+                resolved = true;
+                cleanup();
+                resolve();
+                return;
+              }
+            }
+
+            // Otherwise timeout is a failure
+            if (!resolved) {
+              resolved = true;
+              cleanup();
+              reject(new Error(`Video metadata timeout after ${timeoutMs}ms`));
+            }
+          }, timeoutMs);
         });
         
         // Try to play with comprehensive fallback strategies

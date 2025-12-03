@@ -2751,11 +2751,12 @@ app.get('/api/livekit/token', async (req, res) => {
       roomName: roomName,
       identity: identity,
       turnServers: {
+        // CRITICAL: Use direct IP to bypass Cloudflare proxy (doesn't forward TURN/UDP)
         urls: [
-          'stun:onestreamer.live:3478',
-          'turn:onestreamer.live:3478?transport=udp',
-          'turn:onestreamer.live:3478?transport=tcp',
-          'turns:onestreamer.live:5349?transport=tcp'
+          'stun:<SERVER_IP>:3478',
+          'turn:<SERVER_IP>:3478?transport=udp',
+          'turn:<SERVER_IP>:3478?transport=tcp',
+          'turns:<SERVER_IP>:5349?transport=tcp'
         ],
         username: turnCreds.username,
         credential: turnCreds.credential,

@@ -19,9 +19,20 @@ rtc:
       - 192.168.0.0/16
   # Disable ICE-lite to allow full ICE negotiation (required for mobile/NAT)
   use_ice_lite: false
-  # Provide STUN server for ICE candidates
-  stun_servers:
-    - onestreamer.live:3478
+
+# LiveKit built-in TURN server (replaces external coturn)
+# Integrated authentication - only clients with valid signal connection can use TURN
+# CRITICAL: Use direct IP to bypass Cloudflare proxy (which doesn't forward TURN/UDP)
+turn:
+  enabled: true
+  # Use direct server IP because onestreamer.live resolves to Cloudflare
+  domain: <SERVER_IP>
+  # UDP TURN for standard connections (works without TLS)
+  udp_port: 3478
+  # TLS TURN - keeping for networks that block UDP, but may have cert issues with IP
+  tls_port: 5349
+  cert_file: /etc/letsencrypt/live/onestreamer.live/fullchain.pem
+  key_file: /etc/letsencrypt/live/onestreamer.live/privkey.pem
 keys:
   devkey: secret
 logging:

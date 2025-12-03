@@ -3,11 +3,25 @@
  */
 
 /**
+ * Detects if the device is iOS/iPadOS
+ * iPadOS 13+ in desktop mode reports as Mac, so we check maxTouchPoints
+ */
+const isIOSDevice = (): boolean => {
+  const ua = navigator.userAgent;
+  // Standard iOS detection
+  const isStandardIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+  // iPadOS 13+ in desktop mode - reports as Mac but has touch support
+  const isIPadOSDesktopMode = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  return isStandardIOS || isIPadOSDesktopMode;
+};
+
+/**
  * Detects if the browser is Safari on iOS (iPhone, iPad, iPod)
+ * Includes iPadOS in desktop mode
  */
 export const isIOSSafari = (): boolean => {
   const ua = navigator.userAgent;
-  const iOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+  const iOS = isIOSDevice();
   const webkit = /WebKit/.test(ua);
   const safari = /Safari/.test(ua) && !/Chrome/.test(ua) && !/CriOS/.test(ua);
   return iOS && webkit && safari;
@@ -15,10 +29,10 @@ export const isIOSSafari = (): boolean => {
 
 /**
  * Detects if the browser is any iOS browser (including Chrome on iOS)
+ * Includes iPadOS in desktop mode
  */
 export const isIOS = (): boolean => {
-  const ua = navigator.userAgent;
-  return /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+  return isIOSDevice();
 };
 
 /**

@@ -93,8 +93,8 @@ class ViewBotLiveKitRTMP {
           '-bufsize', '4M',
           '-pix_fmt', 'yuv420p',
           '-g', '60', // GOP size (keyframe interval)
-          '-profile:v', 'high',
-          '-level', '4.1',
+          '-profile:v', 'baseline',  // CRITICAL: iOS Safari only reliably supports Baseline profile in WebRTC
+          '-level', '3.1',
           '-c:a', 'aac', // AAC audio codec
           '-b:a', '128k', // Audio bitrate
           '-ar', '48000', // Audio sample rate
