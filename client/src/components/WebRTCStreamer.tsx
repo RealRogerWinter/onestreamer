@@ -3,6 +3,7 @@ import { Socket } from 'socket.io-client';
 import { WebRTCClientAdapter } from '../services/WebRTCClientAdapter';
 import { ScreenCaptureService } from '../services/ScreenCaptureService';
 import { AudioMixer } from '../services/AudioMixer';
+import { VideoCompositor } from '../services/VideoCompositor';
 import AudioLevelMeter from './AudioLevelMeter';
 import { AudioSettingsConfig, VideoSettingsConfig, ScreenShareSettingsConfig } from './StreamerSettings';
 import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
@@ -47,6 +48,8 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
   const mediasoupClientRef = useRef<WebRTCClientAdapter | null>(null);
   const screenCaptureRef = useRef<ScreenCaptureService>(new ScreenCaptureService());
   const audioMixerRef = useRef<AudioMixer>(new AudioMixer());
+  const videoCompositorRef = useRef<VideoCompositor>(new VideoCompositor());
+  const currentVideoDeviceRef = useRef<string | undefined>(undefined);
   const isProcessingRef = useRef(false);
   const lastStreamAttemptRef = useRef(0);
   const STREAM_DEBOUNCE_TIME = 2000; // 2 seconds between attempts
@@ -279,24 +282,249 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     if (isStreaming && externalAudioSettings) {
       // Check if device changed
       if (localAudioSettings.inputDeviceId !== externalAudioSettings.inputDeviceId && externalAudioSettings.inputDeviceId) {
-        // console.log('🎵 Audio device changed externally, replacing track...');
-        replaceAudioTrack(externalAudioSettings.inputDeviceId);
+        console.log('🎵 Audio device changed externally...', {
+          isScreenSharing,
+          isMixerActive: audioMixerRef.current.getIsActive()
+        });
+
+        if (isScreenSharing) {
+          // During screen sharing, handle audio changes carefully
+          if (audioMixerRef.current.getIsActive()) {
+            // Mixer is active (mic + system audio) - update mic in mixer
+            console.log('🎵 Screen sharing with mixer active - updating mic in mixer...');
+            updateMicForMixer(externalAudioSettings.inputDeviceId);
+          } else {
+            // Screen sharing but mixer not active
+            // This means either: no system audio, or mixWithMic disabled
+            // Just update the stored camera stream's audio for when we switch back
+            console.log('🎵 Screen sharing without mixer - updating stored camera audio...');
+            updateStoredCameraAudio(externalAudioSettings.inputDeviceId);
+          }
+        } else {
+          // Not screen sharing - normal audio track replacement
+          replaceAudioTrack(externalAudioSettings.inputDeviceId);
+        }
         setLocalAudioSettings(externalAudioSettings);
       }
     }
-  }, [externalAudioSettings?.inputDeviceId, isStreaming]);
+  }, [externalAudioSettings?.inputDeviceId, isStreaming, isScreenSharing]);
+
+  // Update the stored camera stream's audio (for when we return from screen share)
+  const updateStoredCameraAudio = async (newDeviceId: string) => {
+    try {
+      console.log('🎤 Updating stored camera audio for later...');
+
+      const audioConstraints: any = {
+        deviceId: { exact: newDeviceId },
+        echoCancellation: audioSettings.echoCancellation,
+        noiseSuppression: audioSettings.noiseSuppression,
+        autoGainControl: audioSettings.autoGainControl,
+        sampleRate: { ideal: audioSettings.sampleRate },
+        channelCount: { ideal: audioSettings.channelCount }
+      };
+
+      const newMicStream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: false
+      });
+
+      if (cameraStreamRef.current) {
+        const oldAudioTrack = cameraStreamRef.current.getAudioTracks()[0];
+        if (oldAudioTrack) {
+          cameraStreamRef.current.removeTrack(oldAudioTrack);
+          oldAudioTrack.stop();
+        }
+        const newAudioTrack = newMicStream.getAudioTracks()[0];
+        if (newAudioTrack) {
+          cameraStreamRef.current.addTrack(newAudioTrack);
+        }
+      }
+
+      console.log('🎤 ✅ Stored camera audio updated');
+    } catch (error) {
+      console.error('🎤 ❌ Failed to update stored camera audio:', error);
+    }
+  };
+
+  // Update microphone track in the AudioMixer during screen share
+  const updateMicForMixer = async (newDeviceId: string) => {
+    try {
+      console.log('🎤 updateMicForMixer called', {
+        newDeviceId,
+        mixerActive: audioMixerRef.current.getIsActive(),
+        hasCameraStream: !!cameraStreamRef.current
+      });
+      console.log('🎤 Getting new mic stream for mixer...');
+
+      // Build audio constraints
+      const audioConstraints: any = {
+        deviceId: { exact: newDeviceId },
+        echoCancellation: audioSettings.echoCancellation,
+        noiseSuppression: audioSettings.noiseSuppression,
+        autoGainControl: audioSettings.autoGainControl,
+        sampleRate: { ideal: audioSettings.sampleRate },
+        channelCount: { ideal: audioSettings.channelCount }
+      };
+
+      // Get new mic stream
+      const newMicStream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: false
+      });
+
+      // Update the camera stream ref with the new audio track
+      if (cameraStreamRef.current) {
+        // Remove old audio track from camera stream ref
+        const oldAudioTrack = cameraStreamRef.current.getAudioTracks()[0];
+        if (oldAudioTrack) {
+          cameraStreamRef.current.removeTrack(oldAudioTrack);
+          oldAudioTrack.stop();
+        }
+        // Add new audio track
+        const newAudioTrack = newMicStream.getAudioTracks()[0];
+        if (newAudioTrack) {
+          cameraStreamRef.current.addTrack(newAudioTrack);
+        }
+      }
+
+      // Update the AudioMixer with new mic track
+      const newMicTrack = newMicStream.getAudioTracks()[0];
+      if (newMicTrack) {
+        await audioMixerRef.current.updateMicTrack(newMicTrack);
+        console.log('🎤 ✅ Mic updated in mixer successfully');
+      }
+
+    } catch (error) {
+      console.error('🎤 ❌ Failed to update mic for mixer:', error);
+    }
+  };
 
   // Watch for video device changes during streaming
   useEffect(() => {
-    if (isStreaming && externalVideoSettings) {
-      // Check if device changed
-      if (localVideoSettings.videoDeviceId !== externalVideoSettings.videoDeviceId && externalVideoSettings.videoDeviceId) {
-        // console.log('📹 Video device changed externally, replacing track...');
-        replaceVideoTrack(externalVideoSettings.videoDeviceId);
-        setLocalVideoSettings(externalVideoSettings);
+    const newDeviceId = externalVideoSettings?.videoDeviceId || videoSettings.videoDeviceId;
+
+    if (isStreaming && newDeviceId && newDeviceId !== currentVideoDeviceRef.current) {
+      console.log('📹 Video device changed:', {
+        from: currentVideoDeviceRef.current,
+        to: newDeviceId,
+        isScreenSharing,
+        isPipActive: videoCompositorRef.current.getIsActive()
+      });
+
+      // Update the ref to track current device
+      currentVideoDeviceRef.current = newDeviceId;
+
+      // If screen sharing with PiP active, update the camera for PiP overlay
+      if (isScreenSharing && videoCompositorRef.current.getIsActive()) {
+        console.log('📹 Screen sharing with PiP - updating webcam overlay...');
+        updateCameraForPiP(newDeviceId);
+      } else if (!isScreenSharing) {
+        // Normal camera replacement when not screen sharing
+        replaceVideoTrack(newDeviceId);
+      }
+      // If screen sharing without PiP, just update the stored camera stream
+      else if (isScreenSharing && !videoCompositorRef.current.getIsActive()) {
+        console.log('📹 Screen sharing without PiP - updating stored camera...');
+        updateStoredCameraVideo(newDeviceId);
       }
     }
-  }, [externalVideoSettings?.videoDeviceId, isStreaming]);
+  }, [externalVideoSettings?.videoDeviceId, videoSettings.videoDeviceId, isStreaming, isScreenSharing]);
+
+  // Update stored camera video track (for when we return from screen share)
+  const updateStoredCameraVideo = async (newDeviceId: string) => {
+    try {
+      console.log('📹 Updating stored camera video for later...');
+
+      const getResolutionConstraints = () => {
+        switch (videoSettings.resolution) {
+          case '480p':
+            return { width: { ideal: 854 }, height: { ideal: 480 } };
+          case '720p':
+            return { width: { ideal: 1280 }, height: { ideal: 720 } };
+          default:
+            return { width: { ideal: 1280 }, height: { ideal: 720 } };
+        }
+      };
+
+      const videoConstraints: any = {
+        deviceId: { exact: newDeviceId },
+        ...getResolutionConstraints(),
+        frameRate: { ideal: videoSettings.frameRate },
+        aspectRatio: { ideal: 16/9 }
+      };
+
+      const newVideoStream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: false
+      });
+
+      if (cameraStreamRef.current) {
+        const oldVideoTrack = cameraStreamRef.current.getVideoTracks()[0];
+        if (oldVideoTrack) {
+          cameraStreamRef.current.removeTrack(oldVideoTrack);
+          oldVideoTrack.stop();
+        }
+        const newVideoTrack = newVideoStream.getVideoTracks()[0];
+        if (newVideoTrack) {
+          cameraStreamRef.current.addTrack(newVideoTrack);
+        }
+      }
+
+      console.log('📹 ✅ Stored camera video updated');
+    } catch (error) {
+      console.error('📹 ❌ Failed to update stored camera video:', error);
+    }
+  };
+
+  // Update camera track for PiP during screen share
+  const updateCameraForPiP = async (newDeviceId: string) => {
+    try {
+      console.log('📹 Getting new camera stream for PiP...');
+
+      // Build video constraints based on current settings
+      const getResolutionConstraints = () => {
+        switch (videoSettings.resolution) {
+          case '480p':
+            return { width: { ideal: 854 }, height: { ideal: 480 } };
+          case '720p':
+            return { width: { ideal: 1280 }, height: { ideal: 720 } };
+          default:
+            return { width: { ideal: 1280 }, height: { ideal: 720 } };
+        }
+      };
+
+      const videoConstraints: any = {
+        deviceId: { exact: newDeviceId },
+        ...getResolutionConstraints(),
+        frameRate: { ideal: videoSettings.frameRate },
+        aspectRatio: { ideal: 16/9 }
+      };
+
+      // Get new camera stream
+      const newCameraStream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: true // Also get audio for the camera stream
+      });
+
+      // Stop old camera stream tracks
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+
+      // Update camera stream ref
+      cameraStreamRef.current = newCameraStream;
+
+      // Update the VideoCompositor with new webcam track
+      const newWebcamTrack = newCameraStream.getVideoTracks()[0];
+      if (newWebcamTrack) {
+        await videoCompositorRef.current.updateWebcamTrack(newWebcamTrack);
+        console.log('📹 ✅ PiP webcam updated successfully');
+      }
+
+    } catch (error) {
+      console.error('📹 ❌ Failed to update camera for PiP:', error);
+    }
+  };
 
   // Save audio settings when they change
   const handleAudioSettingsChange = async (newSettings: AudioSettingsConfig) => {
@@ -390,7 +618,11 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     mixWithMic: true,
     micGain: 100,
     systemGain: 100,
-    displaySurface: 'monitor'
+    displaySurface: 'monitor',
+    // PiP defaults
+    pipEnabled: false,  // Disabled by default
+    pipPosition: 'bottom-right',
+    pipSize: 25
   });
 
   // Get effective screen share settings
@@ -428,8 +660,11 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       console.log('🖥️ Screen stream obtained:', {
         videoTracks: screenStream.getVideoTracks().length,
         audioTracks: screenStream.getAudioTracks().length,
+        hasScreenAudio: !!screenAudioTrack,
         audioEnabled: screenAudioTrack?.enabled,
-        audioLabel: screenAudioTrack?.label
+        audioState: screenAudioTrack?.readyState,
+        audioLabel: screenAudioTrack?.label,
+        audioMixerWasActive: audioMixerRef.current.getIsActive()
       });
 
       // Set up callback for when user stops sharing via browser UI
@@ -445,14 +680,62 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
       // Prepare the final stream to send
       let finalStream = screenStream;
+      let finalVideoTrack: MediaStreamTrack = screenVideoTrack;
+      let finalAudioTrack: MediaStreamTrack | null = screenAudioTrack;
+
+      // Check if PiP (webcam overlay) is enabled and we have a camera stream
+      const shouldUsePip = effectiveScreenShareSettings.pipEnabled !== false; // Default to true
+      console.log('🎬 PiP check:', {
+        pipEnabledSetting: effectiveScreenShareSettings.pipEnabled,
+        shouldUsePip,
+        hasCameraStream: !!cameraStreamRef.current,
+        pipPosition: effectiveScreenShareSettings.pipPosition,
+        pipSize: effectiveScreenShareSettings.pipSize
+      });
+
+      if (shouldUsePip && cameraStreamRef.current) {
+        const webcamTrack = cameraStreamRef.current.getVideoTracks()[0];
+
+        if (webcamTrack && webcamTrack.readyState === 'live') {
+          console.log('🎬 Compositing screen share with webcam overlay...');
+
+          // Use VideoCompositor to overlay webcam on screen
+          const compositedStream = await videoCompositorRef.current.composite(
+            screenVideoTrack,
+            webcamTrack,
+            {
+              pipEnabled: true,
+              pipPosition: effectiveScreenShareSettings.pipPosition || 'bottom-right',
+              pipSize: effectiveScreenShareSettings.pipSize || 25,
+              pipBorderRadius: 8,
+              pipPadding: 20,
+              frameRate: 30
+            }
+          );
+
+          if (compositedStream) {
+            finalVideoTrack = compositedStream.getVideoTracks()[0];
+            console.log('🎬 ✅ Video composition active with PiP overlay');
+          } else {
+            console.warn('🎬 ⚠️ Video composition failed, using screen video only');
+          }
+        } else {
+          console.log('🎬 Webcam track not available for PiP, using screen video only');
+        }
+      }
 
       // If mixWithMic is enabled (default: true) and we have both system audio and mic, mix them
       const shouldMixWithMic = effectiveScreenShareSettings.mixWithMic !== false; // Default to true
+      const micTrackForMix = cameraStreamRef.current?.getAudioTracks()[0];
       console.log('🎚️ Mix with mic check:', {
         mixWithMicSetting: effectiveScreenShareSettings.mixWithMic,
         shouldMixWithMic,
         hasScreenAudio: !!screenAudioTrack,
-        hasCameraStream: !!cameraStreamRef.current
+        screenAudioState: screenAudioTrack?.readyState,
+        hasCameraStream: !!cameraStreamRef.current,
+        hasMicTrack: !!micTrackForMix,
+        micTrackState: micTrackForMix?.readyState,
+        micTrackLabel: micTrackForMix?.label
       });
 
       if (shouldMixWithMic && screenAudioTrack && cameraStreamRef.current) {
@@ -472,15 +755,8 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
           });
 
           if (mixedAudioTrack) {
-            // Create a new stream with screen video + mixed audio
-            finalStream = new MediaStream();
-            finalStream.addTrack(screenVideoTrack);
-            finalStream.addTrack(mixedAudioTrack);
-
-            console.log('🎚️ ✅ Created mixed audio stream:', {
-              videoTracks: finalStream.getVideoTracks().length,
-              audioTracks: finalStream.getAudioTracks().length
-            });
+            finalAudioTrack = mixedAudioTrack;
+            console.log('🎚️ ✅ Audio mixing active');
           } else {
             console.warn('🎚️ ⚠️ Audio mixing failed, using system audio only');
           }
@@ -488,6 +764,24 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
           console.log('🎚️ Mic track not available for mixing, using system audio only');
         }
       }
+
+      // Build the final stream with composited video and mixed audio
+      finalStream = new MediaStream();
+      finalStream.addTrack(finalVideoTrack);
+      if (finalAudioTrack) {
+        finalStream.addTrack(finalAudioTrack);
+      }
+
+      console.log('🖥️ Final stream created:', {
+        videoTracks: finalStream.getVideoTracks().length,
+        audioTracks: finalStream.getAudioTracks().length,
+        finalAudioTrackId: finalAudioTrack?.id,
+        finalAudioTrackState: finalAudioTrack?.readyState,
+        finalAudioTrackLabel: finalAudioTrack?.label,
+        hasPiP: videoCompositorRef.current.getIsActive(),
+        hasAudioMix: audioMixerRef.current.getIsActive(),
+        originalScreenAudioId: screenAudioTrack?.id
+      });
 
       // Switch to screen share in WebRTC
       console.log('🖥️ Switching main video to screen share');
@@ -510,8 +804,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     } catch (error: any) {
       console.error('❌ Failed to start screen share:', error);
 
-      // Clean up on failure
-      screenCaptureRef.current.stopScreenShare();
+      // Clean up on failure - use cleanup() to clear callback too
+      screenCaptureRef.current.cleanup();
+      videoCompositorRef.current.cleanup();
       audioMixerRef.current.cleanup();
 
       // Show user-friendly error
@@ -527,18 +822,27 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     console.log('🖥️ Stopping screen share...');
 
     try {
-      // Stop screen capture
+      // Stop screen capture first (this stops the source)
       screenCaptureRef.current.stopScreenShare();
 
-      // Clean up audio mixer if it was used
-      audioMixerRef.current.cleanup();
-
-      // If we have a stored camera stream, switch back to it
+      // If we have a stored camera stream, switch back to it BEFORE cleaning up mixers
+      // This ensures seamless audio transition for viewers
       if (cameraStreamRef.current && mediasoupClientRef.current) {
         // Check if camera stream is still active
         const videoTrack = cameraStreamRef.current.getVideoTracks()[0];
+        const audioTrack = cameraStreamRef.current.getAudioTracks()[0];
+
+        console.log('🖥️ Camera stream state:', {
+          hasVideo: !!videoTrack,
+          videoState: videoTrack?.readyState,
+          hasAudio: !!audioTrack,
+          audioState: audioTrack?.readyState
+        });
+
         if (videoTrack && videoTrack.readyState === 'live') {
           console.log('🖥️ Switching back to camera...');
+
+          // Switch to camera FIRST - this replaces the tracks in LiveKit
           await mediasoupClientRef.current.switchToCamera(cameraStreamRef.current);
 
           // Update preview
@@ -554,15 +858,23 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
           streamRef.current = cameraStreamRef.current;
         } else {
           console.log('🖥️ Camera stream expired, need to restart');
-          // Camera stream is dead, need to restart streaming
         }
       }
+
+      // Clean up video compositor AFTER switching (so PiP doesn't cut out early)
+      videoCompositorRef.current.cleanup();
+
+      // Clean up audio mixer AFTER switching (so mixed audio doesn't cut out early)
+      audioMixerRef.current.cleanup();
 
       onScreenShareChange?.(false);
       console.log('✅ Screen share stopped');
 
     } catch (error: any) {
       console.error('❌ Failed to stop screen share:', error);
+      // Use cleanup() to ensure callback is cleared on error
+      screenCaptureRef.current.cleanup();
+      videoCompositorRef.current.cleanup();
       audioMixerRef.current.cleanup();
       onScreenShareChange?.(false);
     }
@@ -589,6 +901,20 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       audioMixerRef.current.setSystemGain(systemGain);
     }
   }, [isScreenSharing, effectiveScreenShareSettings.micGain, effectiveScreenShareSettings.systemGain]);
+
+  // Update PiP options (position, size) in real-time when settings change during screen share
+  useEffect(() => {
+    if (isScreenSharing && videoCompositorRef.current.getIsActive()) {
+      console.log('🎬 Updating PiP options:', {
+        position: effectiveScreenShareSettings.pipPosition,
+        size: effectiveScreenShareSettings.pipSize
+      });
+      videoCompositorRef.current.updateOptions({
+        pipPosition: effectiveScreenShareSettings.pipPosition || 'bottom-right',
+        pipSize: effectiveScreenShareSettings.pipSize || 25
+      });
+    }
+  }, [isScreenSharing, effectiveScreenShareSettings.pipPosition, effectiveScreenShareSettings.pipSize]);
 
   const startStreaming = async () => {
     // Prevent multiple simultaneous stream starts
@@ -696,6 +1022,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       }
 
       streamRef.current = stream;
+
+      // Track the current video device ID
+      currentVideoDeviceRef.current = videoSettings.videoDeviceId;
 
       // Display local video
       if (videoRef.current) {
@@ -814,11 +1143,17 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     // Reset processing flag
     isProcessingRef.current = false;
 
-    // Stop screen sharing if active
-    if (screenCaptureRef.current.isActive()) {
-      screenCaptureRef.current.stopScreenShare();
-      onScreenShareChange?.(false);
-    }
+    // Always clean up screen sharing resources - use cleanup() to clear callback too
+    // Don't just check isActive() - the stream may have died but callback still registered
+    screenCaptureRef.current.cleanup();
+    videoCompositorRef.current.cleanup();
+    audioMixerRef.current.cleanup();
+
+    // Reset device tracking ref
+    currentVideoDeviceRef.current = undefined;
+
+    // Notify parent if screen sharing was active
+    onScreenShareChange?.(false);
 
     // Clean up camera stream ref
     if (cameraStreamRef.current) {

@@ -3,6 +3,10 @@
  * Used to combine microphone and system audio for screen sharing
  */
 
+// Disable all non-essential logging for production
+const DEBUG = false;
+const log = DEBUG ? console.log.bind(console) : () => {};
+
 export interface AudioMixerOptions {
   micGain?: number;      // 0-1, default 1.0
   systemGain?: number;   // 0-1, default 1.0
@@ -37,26 +41,30 @@ export class AudioMixer {
     systemTrack: MediaStreamTrack | null,
     options: AudioMixerOptions = {}
   ): Promise<MediaStreamTrack | null> {
-    console.log('🎚️ AUDIO MIXER: Starting mix...', {
+    log('🎚️ AUDIO MIXER: Starting mix...', {
       hasMicTrack: !!micTrack,
       hasSystemTrack: !!systemTrack,
       micState: micTrack?.readyState,
-      systemState: systemTrack?.readyState
+      micLabel: micTrack?.label,
+      systemState: systemTrack?.readyState,
+      systemLabel: systemTrack?.label,
+      wasActive: this.isActive,
+      hadAudioContext: !!this.audioContext
     });
 
     // If only one track, return it directly (no mixing needed)
     if (!micTrack && !systemTrack) {
-      console.warn('🎚️ AUDIO MIXER: No audio tracks to mix');
+      log('🎚️ AUDIO MIXER: No audio tracks to mix');
       return null;
     }
 
     if (!micTrack && systemTrack) {
-      console.log('🎚️ AUDIO MIXER: Only system audio, returning directly');
+      log('🎚️ AUDIO MIXER: Only system audio, returning directly');
       return systemTrack;
     }
 
     if (micTrack && !systemTrack) {
-      console.log('🎚️ AUDIO MIXER: Only mic audio, returning directly');
+      log('🎚️ AUDIO MIXER: Only mic audio, returning directly');
       return micTrack;
     }
 
@@ -65,7 +73,7 @@ export class AudioMixer {
       // Clean up any previous mix
       this.cleanup();
 
-      console.log('🎚️ AUDIO MIXER: Input track details:', {
+      log('🎚️ AUDIO MIXER: Input track details:', {
         micTrackId: micTrack?.id,
         micTrackLabel: micTrack?.label,
         micTrackEnabled: micTrack?.enabled,
@@ -84,9 +92,9 @@ export class AudioMixer {
 
       // Resume audio context if suspended (Chrome autoplay policy)
       if (this.audioContext.state === 'suspended') {
-        console.log('🎚️ AUDIO MIXER: AudioContext suspended, resuming...');
+        log('🎚️ AUDIO MIXER: AudioContext suspended, resuming...');
         await this.audioContext.resume();
-        console.log('🎚️ AUDIO MIXER: AudioContext resumed, state:', this.audioContext.state);
+        log('🎚️ AUDIO MIXER: AudioContext resumed, state:', this.audioContext.state);
       }
 
       // Create destination for mixed output
@@ -96,7 +104,7 @@ export class AudioMixer {
       if (micTrack) {
         // Clone the mic track to avoid issues with the original
         const clonedMicTrack = micTrack.clone();
-        console.log('🎚️ AUDIO MIXER: Cloned mic track:', {
+        log('🎚️ AUDIO MIXER: Cloned mic track:', {
           originalId: micTrack.id,
           clonedId: clonedMicTrack.id,
           clonedEnabled: clonedMicTrack.enabled,
@@ -111,14 +119,14 @@ export class AudioMixer {
         this.micSource.connect(this.micGainNode);
         this.micGainNode.connect(this.destination);
 
-        console.log('🎚️ AUDIO MIXER: Mic source connected, gain:', this.micGainNode.gain.value);
+        log('🎚️ AUDIO MIXER: Mic source connected, gain:', this.micGainNode.gain.value);
       }
 
       // Set up system audio source with gain control
       if (systemTrack) {
         // Clone the system track as well
         const clonedSystemTrack = systemTrack.clone();
-        console.log('🎚️ AUDIO MIXER: Cloned system track:', {
+        log('🎚️ AUDIO MIXER: Cloned system track:', {
           originalId: systemTrack.id,
           clonedId: clonedSystemTrack.id,
           clonedEnabled: clonedSystemTrack.enabled,
@@ -133,7 +141,7 @@ export class AudioMixer {
         this.systemSource.connect(this.systemGainNode);
         this.systemGainNode.connect(this.destination);
 
-        console.log('🎚️ AUDIO MIXER: System source connected, gain:', this.systemGainNode.gain.value);
+        log('🎚️ AUDIO MIXER: System source connected, gain:', this.systemGainNode.gain.value);
       }
 
       // Get the mixed audio track
@@ -145,11 +153,16 @@ export class AudioMixer {
       }
 
       this.isActive = true;
-      console.log('🎚️ AUDIO MIXER: ✅ Mix created successfully', {
+      log('🎚️ AUDIO MIXER: ✅ Mix created successfully', {
         mixedTrackId: mixedTrack.id,
         mixedTrackState: mixedTrack.readyState,
         mixedTrackEnabled: mixedTrack.enabled,
-        audioContextState: this.audioContext.state
+        mixedTrackMuted: mixedTrack.muted,
+        audioContextState: this.audioContext.state,
+        hasMicSource: !!this.micSource,
+        hasSystemSource: !!this.systemSource,
+        micGain: this.micGainNode?.gain.value,
+        systemGain: this.systemGainNode?.gain.value
       });
 
       return mixedTrack;
@@ -167,7 +180,7 @@ export class AudioMixer {
   setMicGain(gain: number): void {
     if (this.micGainNode) {
       this.micGainNode.gain.value = Math.max(0, Math.min(1, gain));
-      console.log('🎚️ AUDIO MIXER: Mic gain set to', this.micGainNode.gain.value);
+      log('🎚️ AUDIO MIXER: Mic gain set to', this.micGainNode.gain.value);
     }
   }
 
@@ -177,7 +190,84 @@ export class AudioMixer {
   setSystemGain(gain: number): void {
     if (this.systemGainNode) {
       this.systemGainNode.gain.value = Math.max(0, Math.min(1, gain));
-      console.log('🎚️ AUDIO MIXER: System gain set to', this.systemGainNode.gain.value);
+      log('🎚️ AUDIO MIXER: System gain set to', this.systemGainNode.gain.value);
+    }
+  }
+
+  /**
+   * Update the microphone track in real-time (e.g., when mic is switched)
+   * This swaps the mic source without disrupting the mixed output
+   * @param newMicTrack - New audio track from microphone
+   */
+  async updateMicTrack(newMicTrack: MediaStreamTrack | null): Promise<void> {
+    log('🎚️ AUDIO MIXER: updateMicTrack called', {
+      isActive: this.isActive,
+      hasAudioContext: !!this.audioContext,
+      audioContextState: this.audioContext?.state,
+      hasDestination: !!this.destination,
+      hasSystemSource: !!this.systemSource,
+      hasSystemGainNode: !!this.systemGainNode,
+      hasMicSource: !!this.micSource,
+      hasMicGainNode: !!this.micGainNode
+    });
+
+    if (!this.isActive || !this.audioContext || !this.destination) {
+      log('🎚️ AUDIO MIXER: Not active, skipping mic update');
+      return;
+    }
+
+    log('🎚️ AUDIO MIXER: Updating mic track...', {
+      hasNewTrack: !!newMicTrack,
+      newTrackState: newMicTrack?.readyState,
+      newTrackLabel: newMicTrack?.label
+    });
+
+    try {
+      // Disconnect old mic source (but keep gain node connected to destination)
+      if (this.micSource) {
+        log('🎚️ AUDIO MIXER: Disconnecting old mic source...');
+        this.micSource.disconnect();
+        this.micSource = null;
+      }
+
+      // If no new track, just continue without mic (system audio only)
+      if (!newMicTrack || newMicTrack.readyState !== 'live') {
+        log('🎚️ AUDIO MIXER: No valid mic track, continuing with system audio only');
+        return;
+      }
+
+      // Resume audio context if needed
+      if (this.audioContext.state === 'suspended') {
+        log('🎚️ AUDIO MIXER: Resuming suspended AudioContext...');
+        await this.audioContext.resume();
+      }
+
+      // Create new mic source from the new track
+      const clonedMicTrack = newMicTrack.clone();
+      const micStream = new MediaStream([clonedMicTrack]);
+      this.micSource = this.audioContext.createMediaStreamSource(micStream);
+
+      // If we don't have a gain node yet, create one
+      if (!this.micGainNode) {
+        log('🎚️ AUDIO MIXER: Creating new mic gain node...');
+        this.micGainNode = this.audioContext.createGain();
+        this.micGainNode.gain.value = 1.0;
+        this.micGainNode.connect(this.destination);
+      }
+
+      // Connect new source to existing gain node
+      this.micSource.connect(this.micGainNode);
+
+      log('🎚️ AUDIO MIXER: ✅ Mic track updated successfully', {
+        newTrackId: clonedMicTrack.id,
+        micGain: this.micGainNode.gain.value,
+        systemSourceStillConnected: !!this.systemSource,
+        systemGain: this.systemGainNode?.gain.value,
+        audioContextState: this.audioContext.state
+      });
+
+    } catch (error) {
+      console.error('🎚️ AUDIO MIXER: ❌ Failed to update mic track:', error);
     }
   }
 
@@ -199,7 +289,7 @@ export class AudioMixer {
    * Clean up all audio resources
    */
   cleanup(): void {
-    console.log('🎚️ AUDIO MIXER: Cleaning up...');
+    log('🎚️ AUDIO MIXER: Cleaning up...');
 
     try {
       // Disconnect sources
@@ -235,7 +325,7 @@ export class AudioMixer {
       }
 
       this.isActive = false;
-      console.log('🎚️ AUDIO MIXER: Cleanup complete');
+      log('🎚️ AUDIO MIXER: Cleanup complete');
 
     } catch (error) {
       console.error('🎚️ AUDIO MIXER: Error during cleanup:', error);

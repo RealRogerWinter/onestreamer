@@ -455,10 +455,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     video.addEventListener('stalled', handleStalled);
     video.addEventListener('waiting', handleWaiting);
     
-    // Apply volume and muted state from saved settings
+    // Apply volume from saved settings
     video.volume = volume;
-    // Always start muted for autoplay to work on all browsers
-    video.muted = true;
+    // Only set muted on initial mount, not on every effect run
+    // The muted state is managed by stream switching and user interaction handlers
     
     // Initial state sync
     const initialPaused = video.paused;
@@ -727,20 +727,50 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
               if (newStream && newStream.getTracks().length > 0) {
                 console.log(`🔄 WEBRTC: Switching to new stream with ${newStream.getTracks().length} tracks (attempt ${attempt})`);
 
-                video.pause();
-                video.srcObject = newStream;
-                // Preserve user's mute preference during stream switch (fixes Android Chrome audio bug)
-                video.muted = isMuted;
-                video.volume = volume;
-                video.load();
+                // Read CURRENT values from cookies to avoid stale closure issues
+                const currentVolume = CookieService.getCookie(COOKIE_NAMES.VOLUME) ?? 0.8;
+                const currentMuted = CookieService.getCookie(COOKIE_NAMES.MUTED) ?? false;
 
-                try {
-                  await video.play();
-                  console.log('✅ WEBRTC: Stream updated and playing successfully');
+                // Only reassign srcObject if it's a different stream object
+                // Reusing the same MediaStream preserves autoplay permissions
+                const sameStream = video.srcObject === newStream;
+
+                if (!sameStream) {
+                  video.srcObject = newStream;
+                  console.log('📺 WEBRTC: Assigned new srcObject');
+                }
+
+                video.muted = currentMuted;
+                video.volume = currentVolume;
+
+                // If same stream and already playing, no need to call play()
+                // Just let the track swap happen naturally
+                if (sameStream && !video.paused) {
+                  console.log(`⚡ WEBRTC: Same stream, already playing - track swap complete (muted=${currentMuted}, volume=${currentVolume})`);
                   setPlaybackState('playing');
-                } catch (playError) {
-                  console.log('⚠️ WEBRTC: Autoplay prevented after stream update:', playError);
-                  setPlaybackState('paused');
+                } else {
+                  // Non-blocking play - don't await, just handle errors
+                  video.play().then(() => {
+                    console.log(`✅ WEBRTC: Stream switch successful (muted=${currentMuted}, volume=${currentVolume})`);
+                    setPlaybackState('playing');
+                  }).catch((playError: any) => {
+                    // Only if unmuted play fails, try muted as fallback
+                    if (playError.name === 'NotAllowedError' && !currentMuted) {
+                      console.log('⚠️ WEBRTC: Unmuted autoplay blocked, trying muted...');
+                      video.muted = true;
+                      video.play().then(() => {
+                        console.log('✅ WEBRTC: Stream playing (muted fallback)');
+                        setPlaybackState('playing');
+                        setupUserInteractionHandlers(video);
+                      }).catch(() => {
+                        setPlaybackState('paused');
+                        setupUserInteractionHandlers(video);
+                      });
+                    } else {
+                      console.log('⚠️ WEBRTC: Playback error:', playError.name);
+                      setPlaybackState('paused');
+                    }
+                  });
                 }
 
                 // Update tracking ref after successful switch
@@ -1090,17 +1120,29 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     const tryPlay = async (): Promise<boolean> => {
       attempts++;
       setAutoPlayAttempts(attempts);
-      
+
+      // Read user's preference from cookies (not stale React state)
+      const savedMuted = CookieService.getCookie(COOKIE_NAMES.MUTED);
+      const savedVolume = CookieService.getCookie(COOKIE_NAMES.VOLUME) ?? 0.8;
+      const userWasUnmuted = savedMuted === false;
+
       try {
-        // console.log(`🎬 WEBRTC: Attempting video playback (attempt ${attempts}/${maxAttempts})`);
-        
-        // Always try muted autoplay for all browsers including iOS
+        // If user had unmuted before, try playing unmuted first
+        if (userWasUnmuted) {
+          video.muted = false;
+          video.volume = savedVolume;
+          await video.play();
+          setPlaybackState('playing');
+          console.log(`✅ WEBRTC: Unmuted autoplay successful (volume=${savedVolume})`);
+          return true;
+        }
+
+        // Otherwise, use muted autoplay
         video.muted = true;
         await video.play();
         setPlaybackState('playing');
-        // console.log('✅ WEBRTC: Video muted autoplay successful');
         return true;
-        
+
       } catch (error: any) {
         console.warn(`⚠️ WEBRTC: Playback attempt ${attempts} failed:`, error);
         
@@ -1498,29 +1540,69 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         console.log(`🎬 WEBRTC: Processing stream-ready for ${data.newStreamId} (verified: ${data.producerVerified})`);
 
         if (isDifferentStream) {
-          // This is a fresh stream (not from takeover), need to setup
-          // console.log('🔄 WEBRTC: Fresh stream detected, setting up switch');
+          // Capture old stream ID before overwriting
+          const previousStreamId = currentStreamIdRef.current;
           currentStreamIdRef.current = data.newStreamId;
+
+          // Check if both old and new are viewbots - can switch without full cleanup
+          // Don't rely on isConnected state (may be stale in closure) - check client directly
+          const oldIsViewbot = previousStreamId?.startsWith('viewbot-');
+          const newIsViewbot = data.newStreamId?.startsWith('viewbot-') || data.streamType === 'viewbot';
+          const hasActiveClient = mediasoupClientRef.current !== null;
+          const canSwitchInPlace = oldIsViewbot && newIsViewbot && hasActiveClient;
+
+          if (canSwitchInPlace && mediasoupClientRef.current) {
+            // Viewbot-to-viewbot: just consume new participant, no cleanup needed
+            console.log(`⚡ WEBRTC: Viewbot-to-viewbot switch - reusing connection`);
+            setSwitchState('switching');
+
+            try {
+              const newStream = await mediasoupClientRef.current.consume();
+              if (newStream && newStream.getTracks().length > 0) {
+                const video = videoRef.current;
+                if (video) {
+                  const currentVolume = CookieService.getCookie(COOKIE_NAMES.VOLUME) ?? 0.8;
+                  const currentMuted = CookieService.getCookie(COOKIE_NAMES.MUTED) ?? false;
+
+                  // Same stream object = no srcObject change needed
+                  if (video.srcObject !== newStream) {
+                    video.srcObject = newStream;
+                  }
+                  video.muted = currentMuted;
+                  video.volume = currentVolume;
+
+                  if (video.paused) {
+                    video.play().catch(() => {});
+                  }
+
+                  console.log(`✅ WEBRTC: Viewbot switch complete (muted=${currentMuted}, volume=${currentVolume})`);
+                  setPlaybackState('playing');
+                }
+                setSwitchState('idle');
+                setError(null);
+                return; // Done - no need to reinitialize
+              }
+            } catch (e) {
+              console.log('⚠️ WEBRTC: In-place switch failed, falling back to full reconnect');
+            }
+          }
+
+          // Full cleanup path (for non-viewbot switches or if in-place failed)
           setSwitchState('switching');
           setError(`Connecting to stream${data.producerVerified ? ' (verified)' : ''}...`);
           setIsLoading(true);
-          
-          // Clean up current connection for fresh streams
+
           if (mediasoupClientRef.current) {
-            // console.log('🧹 WEBRTC: Cleaning up existing connection for fresh stream');
-            
-            // Cancel any ongoing initialization to prevent race conditions
             if (abortControllerRef.current) {
               abortControllerRef.current.abort();
               abortControllerRef.current = null;
             }
             isInitializingRef.current = false;
-            
+
             await mediasoupClientRef.current.cleanup();
             mediasoupClientRef.current = null;
           }
-          
-          // Reset video element
+
           if (videoRef.current) {
             if ((videoRef.current as any)._testPatternAnimation) {
               clearInterval((videoRef.current as any)._testPatternAnimation);
@@ -1530,7 +1612,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             videoRef.current.srcObject = null;
             videoRef.current.load();
           }
-          
+
           setIsConnected(false);
           setPlaybackState('loading');
         } else {

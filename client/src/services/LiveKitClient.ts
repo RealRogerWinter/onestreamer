@@ -25,6 +25,11 @@ import {
 import { Socket } from 'socket.io-client';
 import { isIOSSafari, isIOS, isSafari, isMobile, getBrowserInfo } from '../utils/browserDetection';
 
+// Disable all non-essential logging for production
+const DEBUG = false;
+const log = DEBUG ? console.log.bind(console) : () => {};
+const warn = DEBUG ? console.warn.bind(console) : () => {};
+
 export interface LiveKitClientConfig {
   socket: Socket;
   serverUrl?: string;
@@ -119,7 +124,7 @@ export class LiveKitClient {
     this.onDebugInfo = config.onDebugInfo;
     this.onStreamUpdate = config.onStreamUpdate;
 
-    console.log('🚀 LIVEKIT CLIENT: Initializing LiveKit client');
+    log('🚀 LIVEKIT CLIENT: Initializing LiveKit client');
   }
 
   /**
@@ -132,15 +137,15 @@ export class LiveKitClient {
       const isIOSDevice = isIOS();
       const isIOSSafariBrowser = isIOSSafari();
 
-      console.log('📡 LIVEKIT CLIENT: Getting router capabilities (LiveKit mode)');
-      console.log(`🔍 LIVEKIT CLIENT: Browser detection - iOS: ${isIOSDevice}, iOS Safari: ${isIOSSafariBrowser}, Mobile: ${browserInfo.isMobile}`);
+      log('📡 LIVEKIT CLIENT: Getting router capabilities (LiveKit mode)');
+      log(`🔍 LIVEKIT CLIENT: Browser detection - iOS: ${isIOSDevice}, iOS Safari: ${isIOSSafariBrowser}, Mobile: ${browserInfo.isMobile}`);
 
       // Get "router capabilities" - in LiveKit mode, this returns LiveKit config
       const response = await fetch(`${this.serverUrl}/api/mediasoup/router-capabilities`);
       const capabilities = await response.json();
 
       // LiveKit doesn't need to load device capabilities like MediaSoup
-      console.log('✅ LIVEKIT CLIENT: LiveKit initialized (no device loading needed)');
+      log('✅ LIVEKIT CLIENT: LiveKit initialized (no device loading needed)');
 
       // Create room instance but don't connect yet
       // iOS Safari requires specific configuration for WebRTC compatibility
@@ -194,7 +199,7 @@ export class LiveKitClient {
       };
 
       if (isIOSDevice) {
-        console.log('📱 LIVEKIT CLIENT: iOS detected - configured for H264 codec with 1.5Mbps bitrate');
+        log('📱 LIVEKIT CLIENT: iOS detected - configured for H264 codec with 1.5Mbps bitrate');
       }
 
       this.room = new Room(roomOptions);
@@ -279,7 +284,7 @@ export class LiveKitClient {
     // Set new debounced timer
     this.streamUpdateDebounceTimer = this.createTrackedTimeout(() => {
       if (this.onStreamUpdate && !this.isSwitchingStream && !this.isDestroyed) {
-        console.log(`🔄 LIVEKIT CLIENT: Triggering debounced stream update for pending participants: ${Array.from(this.pendingStreamUpdates).join(', ')}`);
+        log(`🔄 LIVEKIT CLIENT: Triggering debounced stream update for pending participants: ${Array.from(this.pendingStreamUpdates).join(', ')}`);
         this.pendingStreamUpdates.clear();
         try {
           this.onStreamUpdate();
@@ -298,7 +303,7 @@ export class LiveKitClient {
     if (!this.room) return;
     
     this.room.on(RoomEvent.Connected, () => {
-      console.log('✅ LIVEKIT CLIENT: Connected to room');
+      log('✅ LIVEKIT CLIENT: Connected to room');
       this.lastConnectionState = 'connected';
       this.sendTransport = { ...this.sendTransport, state: 'connected' };
       this.recvTransport = { ...this.recvTransport, state: 'connected' };
@@ -309,7 +314,7 @@ export class LiveKitClient {
     });
     
     this.room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
-      console.log('🔌 LIVEKIT CLIENT: Disconnected from room:', reason);
+      log('🔌 LIVEKIT CLIENT: Disconnected from room:', reason);
       this.lastConnectionState = 'disconnected';
       this.sendTransport = { ...this.sendTransport, state: 'disconnected' };
       this.recvTransport = { ...this.recvTransport, state: 'disconnected' };
@@ -325,7 +330,7 @@ export class LiveKitClient {
       participant: RemoteParticipant
     ) => {
       try {
-        console.log(`📺 LIVEKIT CLIENT: Subscribed to ${track.kind} track from ${participant.identity}`);
+        log(`📺 LIVEKIT CLIENT: Subscribed to ${track.kind} track from ${participant.identity}`);
         this.consumers.set(`${participant.identity}-${track.kind}`, track);
 
         // For video tracks, trigger a stream update to ensure we're displaying the best participant
@@ -335,7 +340,7 @@ export class LiveKitClient {
                                    this.activeParticipant.identity !== participant.identity;
 
           if (isNewParticipant) {
-            console.log(`🔄 LIVEKIT CLIENT: New video track from ${participant.identity}, current: ${this.activeParticipant?.identity || 'none'}`);
+            log(`🔄 LIVEKIT CLIENT: New video track from ${participant.identity}, current: ${this.activeParticipant?.identity || 'none'}`);
             // Use safe debounced trigger
             this.triggerStreamUpdate(participant.identity, 200);
           }
@@ -344,7 +349,7 @@ export class LiveKitClient {
         // Force video tracks to start playing immediately
         if (track.kind === 'video' && track.mediaStreamTrack) {
           track.mediaStreamTrack.enabled = true;
-          console.log(`▶️ LIVEKIT CLIENT: Enabled video track from ${participant.identity}`);
+          log(`▶️ LIVEKIT CLIENT: Enabled video track from ${participant.identity}`);
         }
 
         // Debug info
@@ -370,12 +375,12 @@ export class LiveKitClient {
       publication: RemoteTrackPublication,
       participant: RemoteParticipant
     ) => {
-      console.log(`🔇 LIVEKIT CLIENT: Unsubscribed from ${track.kind} track from ${participant.identity}`);
+      log(`🔇 LIVEKIT CLIENT: Unsubscribed from ${track.kind} track from ${participant.identity}`);
       this.consumers.delete(`${participant.identity}-${track.kind}`);
     });
     
     this.room.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
-      console.log(`👤 LIVEKIT CLIENT: Participant connected: ${participant.identity}`);
+      log(`👤 LIVEKIT CLIENT: Participant connected: ${participant.identity}`);
       
       // If this is the first participant and we're not streaming, they might be the streamer
       if (!this.currentStreamerId && this.consumers.size === 0) {
@@ -385,7 +390,7 @@ export class LiveKitClient {
     
     this.room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
       try {
-        console.log(`👋 LIVEKIT CLIENT: Participant disconnected: ${participant.identity}`);
+        log(`👋 LIVEKIT CLIENT: Participant disconnected: ${participant.identity}`);
 
         // Clean up consumers for this participant
         this.consumers.forEach((track, key) => {
@@ -396,7 +401,7 @@ export class LiveKitClient {
 
         // If the active participant disconnected, we need to switch to another one
         if (this.activeParticipant && this.activeParticipant.identity === participant.identity) {
-          console.log(`🔄 LIVEKIT CLIENT: Active participant ${participant.identity} disconnected, switching to next available`);
+          log(`🔄 LIVEKIT CLIENT: Active participant ${participant.identity} disconnected, switching to next available`);
 
           // Clean up the old stream since this participant is gone
           this.cleanupOldStream();
@@ -412,24 +417,24 @@ export class LiveKitClient {
     });
     
     this.room.on(RoomEvent.Reconnecting, () => {
-      console.log('🔄 LIVEKIT CLIENT: Reconnecting to room...');
+      log('🔄 LIVEKIT CLIENT: Reconnecting to room...');
       this.isReconnecting = true;
     });
 
     this.room.on(RoomEvent.Reconnected, () => {
-      console.log('✅ LIVEKIT CLIENT: Reconnected to room');
+      log('✅ LIVEKIT CLIENT: Reconnected to room');
       this.isReconnecting = false;
       this.reconnectionAttempts = 0;
     });
 
     // iOS debugging: Monitor connection state changes
     this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
-      console.log(`🔗 LIVEKIT CLIENT: Connection state changed: ${state}`);
+      log(`🔗 LIVEKIT CLIENT: Connection state changed: ${state}`);
     });
 
     // iOS debugging: Monitor signal connection
     this.room.on(RoomEvent.SignalConnected, () => {
-      console.log('📡 LIVEKIT CLIENT: Signal connection established');
+      log('📡 LIVEKIT CLIENT: Signal connection established');
     });
 
     // iOS debugging: Monitor media device failures
@@ -440,7 +445,7 @@ export class LiveKitClient {
     // iOS debugging: Monitor connection quality
     this.room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
       if (participant.isLocal) {
-        console.log(`📶 LIVEKIT CLIENT: Local connection quality: ${quality}`);
+        log(`📶 LIVEKIT CLIENT: Local connection quality: ${quality}`);
       }
     });
   }
@@ -468,7 +473,7 @@ export class LiveKitClient {
         
         // Check if LiveKit data is present
         if (transportData.livekitData) {
-          console.log('📋 LIVEKIT CLIENT: Got token from transport endpoint');
+          log('📋 LIVEKIT CLIENT: Got token from transport endpoint');
           return {
             token: transportData.livekitData.token,
             url: transportData.livekitData.url,
@@ -489,7 +494,7 @@ export class LiveKitClient {
       }
       
       const tokenData = await tokenResponse.json();
-      console.log('📋 LIVEKIT CLIENT: Got token from LiveKit endpoint');
+      log('📋 LIVEKIT CLIENT: Got token from LiveKit endpoint');
       
       return tokenData;
     } catch (error) {
@@ -503,7 +508,7 @@ export class LiveKitClient {
    * In LiveKit, this gets a token and prepares for connection
    */
   async createSendTransport(): Promise<void> {
-    console.log('📡 LIVEKIT CLIENT: Creating send transport (getting LiveKit token)...');
+    log('📡 LIVEKIT CLIENT: Creating send transport (getting LiveKit token)...');
     
     try {
       // Get LiveKit token and connection info
@@ -514,9 +519,9 @@ export class LiveKitClient {
       this.identity = tokenInfo.identity;
       this.turnServers = tokenInfo.turnServers || null;
 
-      console.log(`✅ LIVEKIT CLIENT: Got token for room ${this.roomName} as ${this.identity}`);
+      log(`✅ LIVEKIT CLIENT: Got token for room ${this.roomName} as ${this.identity}`);
       if (this.turnServers) {
-        console.log('🔄 LIVEKIT CLIENT: TURN servers configured:', this.turnServers.urls);
+        log('🔄 LIVEKIT CLIENT: TURN servers configured:', this.turnServers.urls);
       }
       
       // Update fake transport state
@@ -538,7 +543,7 @@ export class LiveKitClient {
    * In LiveKit, this is a no-op as connection handles both send and receive
    */
   async createRecvTransport(): Promise<void> {
-    console.log('📡 LIVEKIT CLIENT: Creating receive transport (no-op in LiveKit)');
+    log('📡 LIVEKIT CLIENT: Creating receive transport (no-op in LiveKit)');
     // LiveKit handles send and receive in the same connection
     // Update fake transport state for compatibility
     this.recvTransport = { 
@@ -552,8 +557,8 @@ export class LiveKitClient {
    * In LiveKit, this connects to room and publishes tracks
    */
   async produce(stream: MediaStream): Promise<void> {
-    console.log('🎬 LIVEKIT CLIENT: Starting to produce media...');
-    console.log(`📊 Stream tracks - Video: ${stream.getVideoTracks().length} Audio: ${stream.getAudioTracks().length}`);
+    log('🎬 LIVEKIT CLIENT: Starting to produce media...');
+    log(`📊 Stream tracks - Video: ${stream.getVideoTracks().length} Audio: ${stream.getAudioTracks().length}`);
     
     try {
       // Ensure we have token
@@ -563,7 +568,7 @@ export class LiveKitClient {
       
       // Connect to room if not connected
       if (!this.room || this.room.state !== 'connected') {
-        console.log('🔗 LIVEKIT CLIENT: Connecting to room...');
+        log('🔗 LIVEKIT CLIENT: Connecting to room...');
         
         if (!this.room) {
           this.room = new Room({
@@ -588,7 +593,7 @@ export class LiveKitClient {
         
         await Promise.race([connectPromise, timeoutPromise]);
         
-        console.log('✅ LIVEKIT CLIENT: Connected to room');
+        log('✅ LIVEKIT CLIENT: Connected to room');
       }
       
       // Store the stream
@@ -600,12 +605,12 @@ export class LiveKitClient {
       
       // Publish video track
       if (videoTrack) {
-        console.log('📹 LIVEKIT CLIENT: Publishing video track...');
+        log('📹 LIVEKIT CLIENT: Publishing video track...');
         try {
           const publication = await this.room.localParticipant.publishTrack(videoTrack);
           this.localVideoTrack = publication.track as LocalVideoTrack;
           this.videoProducer = this.localVideoTrack;
-          console.log('✅ LIVEKIT CLIENT: Video track published successfully');
+          log('✅ LIVEKIT CLIENT: Video track published successfully');
         } catch (error) {
           console.error('❌ LIVEKIT CLIENT: Failed to publish video track:', error);
           throw error;
@@ -614,12 +619,12 @@ export class LiveKitClient {
 
       // Publish audio track
       if (audioTrack) {
-        console.log('🎤 LIVEKIT CLIENT: Publishing audio track...');
+        log('🎤 LIVEKIT CLIENT: Publishing audio track...');
         try {
           const publication = await this.room.localParticipant.publishTrack(audioTrack);
           this.localAudioTrack = publication.track as LocalAudioTrack;
           this.audioProducer = this.localAudioTrack;
-          console.log('✅ LIVEKIT CLIENT: Audio track published successfully');
+          log('✅ LIVEKIT CLIENT: Audio track published successfully');
         } catch (error) {
           console.error('❌ LIVEKIT CLIENT: Failed to publish audio track:', error);
           throw error;
@@ -629,7 +634,7 @@ export class LiveKitClient {
       // Update current streamer ID
       this.currentStreamerId = this.identity;
       
-      console.log('✅ LIVEKIT CLIENT: Media production started');
+      log('✅ LIVEKIT CLIENT: Media production started');
       
     } catch (error) {
       console.error('❌ LIVEKIT CLIENT: Failed to produce media:', error);
@@ -642,17 +647,17 @@ export class LiveKitClient {
    */
   private isRoomReady(): boolean {
     if (this.isDestroyed) {
-      console.warn('⚠️ LIVEKIT CLIENT: Client is destroyed');
+      warn('⚠️ LIVEKIT CLIENT: Client is destroyed');
       return false;
     }
 
     if (!this.room) {
-      console.warn('⚠️ LIVEKIT CLIENT: Room not initialized');
+      warn('⚠️ LIVEKIT CLIENT: Room not initialized');
       return false;
     }
 
     if (this.room.state !== 'connected') {
-      console.warn(`⚠️ LIVEKIT CLIENT: Room not connected (state: ${this.room.state})`);
+      warn(`⚠️ LIVEKIT CLIENT: Room not connected (state: ${this.room.state})`);
       return false;
     }
 
@@ -665,7 +670,7 @@ export class LiveKitClient {
    */
   private cleanupOldStream(): void {
     if (this.currentStream) {
-      console.log('🧹 LIVEKIT CLIENT: Releasing old stream reference');
+      log('🧹 LIVEKIT CLIENT: Releasing old stream reference');
       // Just release the reference, don't stop tracks
       // LiveKit manages track lifecycle internally
       this.currentStream = null;
@@ -688,14 +693,14 @@ export class LiveKitClient {
 
       // Filter out participants marked as disconnecting
       if (isDisconnecting) {
-        console.log(`🔻 LIVEKIT CLIENT: Filtering out disconnecting participant: ${p.identity}`);
+        log(`🔻 LIVEKIT CLIENT: Filtering out disconnecting participant: ${p.identity}`);
         return false;
       }
 
       return true;
     });
 
-    console.log(`📊 LIVEKIT CLIENT: ${allParticipants.length} total participants, ${connectedParticipants.length} connected`);
+    log(`📊 LIVEKIT CLIENT: ${allParticipants.length} total participants, ${connectedParticipants.length} connected`);
 
     // Helper function to check if participant has active video tracks
     const hasActiveVideoTracks = (p: RemoteParticipant): boolean => {
@@ -718,9 +723,9 @@ export class LiveKitClient {
 
       // If we're switching from viewbot to real streamer, log it
       if (this.activeParticipant?.identity.startsWith('viewbot-')) {
-        console.log(`🔄 LIVEKIT CLIENT: Switching from viewbot to real streamer with tracks: ${selected.identity}`);
+        log(`🔄 LIVEKIT CLIENT: Switching from viewbot to real streamer with tracks: ${selected.identity}`);
       } else if (this.activeParticipant?.identity !== selected.identity) {
-        console.log(`📺 LIVEKIT CLIENT: Selected real streamer with tracks: ${selected.identity}`);
+        log(`📺 LIVEKIT CLIENT: Selected real streamer with tracks: ${selected.identity}`);
       }
 
       return selected;
@@ -728,7 +733,7 @@ export class LiveKitClient {
 
     // If real streamers exist but don't have tracks yet, log it
     if (realStreamers.length > 0) {
-      console.log(`⏳ LIVEKIT CLIENT: Real streamer(s) present but no tracks yet: ${realStreamers.map(p => p.identity).join(', ')}`);
+      log(`⏳ LIVEKIT CLIENT: Real streamer(s) present but no tracks yet: ${realStreamers.map(p => p.identity).join(', ')}`);
     }
 
     // Handle viewbots
@@ -737,7 +742,7 @@ export class LiveKitClient {
       const viewbotsWithTracks = viewbotParticipants.filter(hasActiveVideoTracks);
 
       if (viewbotsWithTracks.length === 0) {
-        console.log('⚠️ LIVEKIT CLIENT: No viewbots with active tracks');
+        log('⚠️ LIVEKIT CLIENT: No viewbots with active tracks');
         return null;
       }
 
@@ -761,7 +766,7 @@ export class LiveKitClient {
           const selected = allViewbotsSorted[0];
 
           if (selected.identity !== this.activeParticipant.identity) {
-            console.log(`🔄 LIVEKIT CLIENT: Viewbot rotation detected, switching from ${this.activeParticipant.identity} to ${selected.identity}`);
+            log(`🔄 LIVEKIT CLIENT: Viewbot rotation detected, switching from ${this.activeParticipant.identity} to ${selected.identity}`);
             return selected;
           } else {
             // Current is still the best choice
@@ -778,9 +783,9 @@ export class LiveKitClient {
       const selected = viewbotsWithTracks[0];
 
       if (viewbotsWithTracks.length > 1) {
-        console.log(`⚠️ LIVEKIT CLIENT: Multiple viewbots with tracks (${viewbotsWithTracks.length}), selected: ${selected.identity}`);
+        log(`⚠️ LIVEKIT CLIENT: Multiple viewbots with tracks (${viewbotsWithTracks.length}), selected: ${selected.identity}`);
       } else {
-        console.log(`📺 LIVEKIT CLIENT: Selected viewbot: ${selected.identity}`);
+        log(`📺 LIVEKIT CLIENT: Selected viewbot: ${selected.identity}`);
       }
 
       return selected;
@@ -797,7 +802,7 @@ export class LiveKitClient {
     const startTime = Date.now();
     const pollInterval = 200; // Check every 200ms
 
-    console.log(`⏳ LIVEKIT CLIENT: Waiting for tracks from ${participant.identity} (timeout: ${timeoutMs}ms)...`);
+    log(`⏳ LIVEKIT CLIENT: Waiting for tracks from ${participant.identity} (timeout: ${timeoutMs}ms)...`);
 
     while (Date.now() - startTime < timeoutMs) {
       const publications = Array.from(participant.trackPublications.values());
@@ -807,14 +812,14 @@ export class LiveKitClient {
 
       if (readyTracks.length > 0) {
         const elapsed = Date.now() - startTime;
-        console.log(`✅ LIVEKIT CLIENT: Participant ${participant.identity} has ${readyTracks.length} ready tracks (waited ${elapsed}ms)`);
+        log(`✅ LIVEKIT CLIENT: Participant ${participant.identity} has ${readyTracks.length} ready tracks (waited ${elapsed}ms)`);
         return true;
       }
 
       // Log progress every second
       const elapsed = Date.now() - startTime;
       if (elapsed % 1000 < pollInterval) {
-        console.log(`⏳ LIVEKIT CLIENT: Still waiting for tracks... (${Math.floor(elapsed/1000)}s/${Math.floor(timeoutMs/1000)}s)`);
+        log(`⏳ LIVEKIT CLIENT: Still waiting for tracks... (${Math.floor(elapsed/1000)}s/${Math.floor(timeoutMs/1000)}s)`);
       }
 
       await new Promise(resolve => setTimeout(resolve, pollInterval));
@@ -829,7 +834,7 @@ export class LiveKitClient {
    * In LiveKit, this returns a MediaStream with subscribed tracks
    */
   async consume(): Promise<MediaStream | null> {
-    console.log('📺 LIVEKIT CLIENT: Starting to consume media...');
+    log('📺 LIVEKIT CLIENT: Starting to consume media...');
 
     // Check if destroyed
     if (this.isDestroyed) {
@@ -839,7 +844,7 @@ export class LiveKitClient {
 
     // Prevent concurrent consume operations
     if (this.isSwitchingStream) {
-      console.log('⏳ LIVEKIT CLIENT: Stream switch in progress, waiting...');
+      log('⏳ LIVEKIT CLIENT: Stream switch in progress, waiting...');
       // Wait for current switch to complete
       let waitTime = 0;
       while (this.isSwitchingStream && waitTime < 5000 && !this.isDestroyed) {
@@ -849,7 +854,7 @@ export class LiveKitClient {
 
       // If still switching or destroyed, return null
       if (this.isSwitchingStream || this.isDestroyed) {
-        console.warn('⚠️ LIVEKIT CLIENT: Consume aborted - still switching or destroyed');
+        warn('⚠️ LIVEKIT CLIENT: Consume aborted - still switching or destroyed');
         return null;
       }
     }
@@ -867,13 +872,13 @@ export class LiveKitClient {
         this.identity = tokenInfo.identity;
         this.turnServers = tokenInfo.turnServers || null;
         if (this.turnServers) {
-          console.log('🔄 LIVEKIT CLIENT: TURN servers configured for viewer:', this.turnServers.urls);
+          log('🔄 LIVEKIT CLIENT: TURN servers configured for viewer:', this.turnServers.urls);
         }
       }
 
       // Connect to room if not connected
       if (!this.room || this.room.state !== 'connected') {
-        console.log('🔗 LIVEKIT CLIENT: Connecting to room as viewer...');
+        log('🔗 LIVEKIT CLIENT: Connecting to room as viewer...');
 
         // iOS Safari detection for viewer configuration
         const isIOSDevice = isIOS();
@@ -901,7 +906,7 @@ export class LiveKitClient {
           };
 
           if (isIOSDevice) {
-            console.log('📱 LIVEKIT CLIENT: iOS viewer - optimized for H264 playback');
+            log('📱 LIVEKIT CLIENT: iOS viewer - optimized for H264 playback');
           }
 
           this.room = new Room(viewerRoomOptions);
@@ -918,7 +923,7 @@ export class LiveKitClient {
         // 3. The SDK handles TURN authentication automatically
         let rtcConfig: RTCConfiguration | undefined;
         if (isIOSDevice) {
-          console.log('📱 LIVEKIT CLIENT: iOS detected - forcing TURN relay mode (SDK handles credentials)');
+          log('📱 LIVEKIT CLIENT: iOS detected - forcing TURN relay mode (SDK handles credentials)');
           // Force relay mode - LiveKit SDK will inject its TURN servers
           // Don't provide custom iceServers - let LiveKit handle it
           rtcConfig = {
@@ -941,37 +946,40 @@ export class LiveKitClient {
 
         await Promise.race([connectPromise, timeoutPromise]);
 
-        console.log('✅ LIVEKIT CLIENT: Connected to room as viewer');
+        log('✅ LIVEKIT CLIENT: Connected to room as viewer');
       }
 
-      // Wait for tracks to be available or timeout
-      // iOS Safari needs longer timeout as ICE negotiation can take time with TURN
+      // Wait for tracks to be available or timeout (only if no consumers yet)
       const isIOSDeviceForWait = isIOS();
-      let waitTime = 0;
-      const maxWait = isIOSDeviceForWait ? 25000 : 8000; // 25 seconds for iOS, 8 seconds for others
-
-      console.log(`⏳ LIVEKIT CLIENT: Waiting for tracks (max ${maxWait}ms, iOS: ${isIOSDeviceForWait})...`);
-
-      while (this.consumers.size === 0 && waitTime < maxWait) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        waitTime += 200;
-
-        // Log progress every 5 seconds for iOS debugging
-        if (isIOSDeviceForWait && waitTime % 5000 === 0) {
-          console.log(`⏳ LIVEKIT CLIENT: Still waiting for tracks... ${waitTime/1000}s/${maxWait/1000}s`);
-        }
-      }
 
       if (this.consumers.size === 0) {
-        console.warn(`⚠️ LIVEKIT CLIENT: No tracks received after ${maxWait}ms - checking room state...`);
-        console.log(`📊 LIVEKIT CLIENT: Room state: ${this.room?.state}, participants: ${this.room?.remoteParticipants.size}`);
+        let waitTime = 0;
+        const maxWait = isIOSDeviceForWait ? 25000 : 8000;
+
+        log(`⏳ LIVEKIT CLIENT: Waiting for tracks (max ${maxWait}ms, iOS: ${isIOSDeviceForWait})...`);
+
+        while (this.consumers.size === 0 && waitTime < maxWait) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          waitTime += 200;
+
+          if (isIOSDeviceForWait && waitTime % 5000 === 0) {
+            log(`⏳ LIVEKIT CLIENT: Still waiting for tracks... ${waitTime/1000}s/${maxWait/1000}s`);
+          }
+        }
+
+        if (this.consumers.size === 0) {
+          warn(`⚠️ LIVEKIT CLIENT: No tracks received after ${maxWait}ms - checking room state...`);
+          log(`📊 LIVEKIT CLIENT: Room state: ${this.room?.state}, participants: ${this.room?.remoteParticipants.size}`);
+        }
+      } else {
+        log(`⚡ LIVEKIT CLIENT: Consumers already available (${this.consumers.size}) - skipping wait`);
       }
 
       // Select the best participant to display
       const selectedParticipant = this.selectActiveParticipant();
 
       if (!selectedParticipant) {
-        console.log('⚠️ LIVEKIT CLIENT: No participants available to consume');
+        log('⚠️ LIVEKIT CLIENT: No participants available to consume');
         this.isSwitchingStream = false;
         return new MediaStream(); // Return empty stream
       }
@@ -981,17 +989,25 @@ export class LiveKitClient {
                                this.activeParticipant.identity !== selectedParticipant.identity;
 
       if (isNewParticipant) {
-        console.log(`🔄 LIVEKIT CLIENT: Switching from ${this.activeParticipant?.identity || 'none'} to ${selectedParticipant.identity}`);
+        log(`🔄 LIVEKIT CLIENT: Switching from ${this.activeParticipant?.identity || 'none'} to ${selectedParticipant.identity}`);
 
-        // CRITICAL FIX: Wait for new participant's tracks to be ready
-        // iOS Safari needs much longer timeout due to slower codec negotiation and ICE setup
-        const trackWaitTimeout = isIOSDeviceForWait ? 30000 : 15000; // 30s for iOS, 15s for others
-        const tracksReady = await this.waitForParticipantTracks(selectedParticipant, trackWaitTimeout);
-        if (!tracksReady) {
-          // FIX: Don't proceed if tracks aren't ready - throw an error instead
-          console.error(`❌ LIVEKIT CLIENT: Cannot consume - tracks not ready for ${selectedParticipant.identity} (timeout: ${trackWaitTimeout}ms)`);
-          this.isSwitchingStream = false;
-          throw new Error(`Tracks not ready for participant ${selectedParticipant.identity}`);
+        // Quick check: are tracks already ready? (common during stream switches)
+        const publications = Array.from(selectedParticipant.trackPublications.values());
+        const readyTracks = publications.filter((pub: any) =>
+          pub.track && pub.subscribed && pub.track.mediaStreamTrack
+        );
+
+        if (readyTracks.length === 0) {
+          // Only wait if tracks aren't already ready
+          const trackWaitTimeout = isIOSDeviceForWait ? 30000 : 15000;
+          const tracksReady = await this.waitForParticipantTracks(selectedParticipant, trackWaitTimeout);
+          if (!tracksReady) {
+            console.error(`❌ LIVEKIT CLIENT: Cannot consume - tracks not ready for ${selectedParticipant.identity}`);
+            this.isSwitchingStream = false;
+            throw new Error(`Tracks not ready for participant ${selectedParticipant.identity}`);
+          }
+        } else {
+          log(`⚡ LIVEKIT CLIENT: Tracks already ready for ${selectedParticipant.identity} - no wait needed`);
         }
 
         // Clean up old stream
@@ -1002,14 +1018,30 @@ export class LiveKitClient {
         this.currentStreamerId = selectedParticipant.identity;
       }
 
-      // Create a new MediaStream with tracks from the active participant
-      const stream = new MediaStream();
+      // CRITICAL: Reuse existing MediaStream to preserve autoplay permissions
+      // Creating a new MediaStream resets browser autoplay state on Android Chrome
+      if (!this.currentStream) {
+        this.currentStream = new MediaStream();
+        log('🆕 LIVEKIT CLIENT: Created new MediaStream');
+      }
 
+      const stream = this.currentStream;
+
+      // Remove old tracks
+      const oldTracks = stream.getTracks();
+      oldTracks.forEach(track => {
+        stream.removeTrack(track);
+      });
+      if (oldTracks.length > 0) {
+        log(`🗑️ LIVEKIT CLIENT: Removed ${oldTracks.length} old tracks`);
+      }
+
+      // Add new tracks from active participant
       if (this.activeParticipant) {
         this.activeParticipant.trackPublications.forEach((publication: any) => {
           if (publication.track && publication.subscribed && publication.track.mediaStreamTrack) {
             stream.addTrack(publication.track.mediaStreamTrack);
-            console.log(`➕ LIVEKIT CLIENT: Added ${publication.kind} track from ${this.activeParticipant!.identity}`);
+            log(`➕ LIVEKIT CLIENT: Added ${publication.kind} track from ${this.activeParticipant!.identity}`);
           }
         });
       }
@@ -1021,10 +1053,7 @@ export class LiveKitClient {
         throw new Error('No tracks available to consume');
       }
 
-      // Store the current stream reference
-      this.currentStream = stream;
-
-      console.log(`✅ LIVEKIT CLIENT: Consuming ${stream.getTracks().length} tracks from ${this.activeParticipant?.identity}`);
+      log(`✅ LIVEKIT CLIENT: Consuming ${stream.getTracks().length} tracks from ${this.activeParticipant?.identity}`);
       return stream;
 
     } catch (error) {
@@ -1043,7 +1072,7 @@ export class LiveKitClient {
    * Stop producing media
    */
   async stopProducing(): Promise<void> {
-    console.log('🛑 LIVEKIT CLIENT: Stopping media production...');
+    log('🛑 LIVEKIT CLIENT: Stopping media production...');
     
     try {
       if (this.room && this.room.localParticipant) {
@@ -1075,7 +1104,7 @@ export class LiveKitClient {
       }
       
       this.currentStreamerId = null;
-      console.log('✅ LIVEKIT CLIENT: Media production stopped');
+      log('✅ LIVEKIT CLIENT: Media production stopped');
       
     } catch (error) {
       console.error('❌ LIVEKIT CLIENT: Failed to stop producing:', error);
@@ -1088,14 +1117,14 @@ export class LiveKitClient {
    */
   async attemptReconnection(): Promise<void> {
     if (this.isReconnecting) {
-      console.log('⏳ LIVEKIT CLIENT: Already reconnecting, skipping');
+      log('⏳ LIVEKIT CLIENT: Already reconnecting, skipping');
       return;
     }
     
     this.isReconnecting = true;
     this.reconnectionAttempts++;
     
-    console.log(`🔄 LIVEKIT CLIENT: Reconnection attempt ${this.reconnectionAttempts}/${this.maxReconnectionAttempts}`);
+    log(`🔄 LIVEKIT CLIENT: Reconnection attempt ${this.reconnectionAttempts}/${this.maxReconnectionAttempts}`);
     
     try {
       if (this.room) {
@@ -1115,7 +1144,7 @@ export class LiveKitClient {
           this.room!.once(RoomEvent.Reconnected, handleReconnected);
         });
         
-        console.log('✅ LIVEKIT CLIENT: Reconnected successfully');
+        log('✅ LIVEKIT CLIENT: Reconnected successfully');
         this.reconnectionAttempts = 0;
         this.isReconnecting = false;
         
@@ -1138,7 +1167,7 @@ export class LiveKitClient {
           this.maxReconnectionDelay
         );
         
-        console.log(`⏱️ LIVEKIT CLIENT: Retrying in ${delay}ms`);
+        log(`⏱️ LIVEKIT CLIENT: Retrying in ${delay}ms`);
         
         this.reconnectionTimer = setTimeout(() => {
           this.attemptReconnection();
@@ -1151,7 +1180,7 @@ export class LiveKitClient {
    * Handle connection recovery
    */
   async handleConnectionRecovery(): Promise<void> {
-    console.log('🔧 LIVEKIT CLIENT: Handling connection recovery...');
+    log('🔧 LIVEKIT CLIENT: Handling connection recovery...');
     
     // LiveKit handles most recovery automatically
     if (this.onConnectionRecovered) {
@@ -1164,7 +1193,7 @@ export class LiveKitClient {
    * LiveKit handles ICE automatically
    */
   async restartIce(): Promise<void> {
-    console.log('🔄 LIVEKIT CLIENT: ICE restart requested (handled automatically by LiveKit)');
+    log('🔄 LIVEKIT CLIENT: ICE restart requested (handled automatically by LiveKit)');
     // LiveKit handles ICE restarts automatically
   }
 
@@ -1172,7 +1201,7 @@ export class LiveKitClient {
    * Reset client with proper cleanup
    */
   async reset(): Promise<void> {
-    console.log('🔄 LIVEKIT CLIENT: Performing complete reset...');
+    log('🔄 LIVEKIT CLIENT: Performing complete reset...');
 
     // Clear all pending timeouts
     this.clearAllTimeouts();
@@ -1210,14 +1239,14 @@ export class LiveKitClient {
     this.isReconnecting = false;
     this.isSwitchingStream = false;
 
-    console.log('✅ LIVEKIT CLIENT: Reset complete');
+    log('✅ LIVEKIT CLIENT: Reset complete');
   }
 
   /**
    * Replace audio track (MediaSoup compatible)
    */
   async replaceAudioTrack(newTrack: MediaStreamTrack): Promise<void> {
-    console.log('🔄 LIVEKIT CLIENT: Replacing audio track...');
+    log('🔄 LIVEKIT CLIENT: Replacing audio track...');
     
     try {
       if (this.room && this.room.localParticipant && this.localAudioTrack) {
@@ -1228,9 +1257,9 @@ export class LiveKitClient {
         this.localAudioTrack = this.room.localParticipant.publishTrack(newTrack) as any;
         this.audioProducer = this.localAudioTrack;
         
-        console.log('✅ LIVEKIT CLIENT: Audio track replaced');
+        log('✅ LIVEKIT CLIENT: Audio track replaced');
       } else {
-        console.warn('⚠️ LIVEKIT CLIENT: No audio track to replace');
+        warn('⚠️ LIVEKIT CLIENT: No audio track to replace');
       }
     } catch (error) {
       console.error('❌ LIVEKIT CLIENT: Failed to replace audio track:', error);
@@ -1242,7 +1271,7 @@ export class LiveKitClient {
    * Replace video track (MediaSoup compatible)
    */
   async replaceVideoTrack(newTrack: MediaStreamTrack): Promise<void> {
-    console.log('🔄 LIVEKIT CLIENT: Replacing video track...');
+    log('🔄 LIVEKIT CLIENT: Replacing video track...');
     
     try {
       if (this.room && this.room.localParticipant && this.localVideoTrack) {
@@ -1253,9 +1282,9 @@ export class LiveKitClient {
         this.localVideoTrack = this.room.localParticipant.publishTrack(newTrack) as any;
         this.videoProducer = this.localVideoTrack;
         
-        console.log('✅ LIVEKIT CLIENT: Video track replaced');
+        log('✅ LIVEKIT CLIENT: Video track replaced');
       } else {
-        console.warn('⚠️ LIVEKIT CLIENT: No video track to replace');
+        warn('⚠️ LIVEKIT CLIENT: No video track to replace');
       }
     } catch (error) {
       console.error('❌ LIVEKIT CLIENT: Failed to replace video track:', error);
@@ -1282,7 +1311,7 @@ export class LiveKitClient {
    * Uses replaceTrack for seamless switching without disconnecting viewers
    */
   async switchToScreenShare(screenStream: MediaStream): Promise<void> {
-    console.log('🖥️ LIVEKIT CLIENT: === SWITCHING TO SCREEN SHARE (SEAMLESS) ===');
+    log('🖥️ LIVEKIT CLIENT: === SWITCHING TO SCREEN SHARE (SEAMLESS) ===');
 
     if (!this.isRoomReady()) {
       throw new Error('Room not ready for screen share');
@@ -1292,7 +1321,7 @@ export class LiveKitClient {
       const screenVideoTrack = screenStream.getVideoTracks()[0];
       const screenAudioTrack = screenStream.getAudioTracks()[0];
 
-      console.log('🖥️ LIVEKIT CLIENT: Screen stream analysis:', {
+      log('🖥️ LIVEKIT CLIENT: Screen stream analysis:', {
         videoTracks: screenStream.getVideoTracks().length,
         audioTracks: screenStream.getAudioTracks().length,
         hasScreenVideo: !!screenVideoTrack,
@@ -1304,34 +1333,34 @@ export class LiveKitClient {
       }
 
       if (screenAudioTrack) {
-        console.log('🖥️ LIVEKIT CLIENT: ✅ Screen DOES have audio track:', {
+        log('🖥️ LIVEKIT CLIENT: ✅ Screen DOES have audio track:', {
           enabled: screenAudioTrack.enabled,
           muted: screenAudioTrack.muted,
           readyState: screenAudioTrack.readyState,
           label: screenAudioTrack.label
         });
       } else {
-        console.warn('🖥️ LIVEKIT CLIENT: ⚠️ Screen has NO audio track');
+        warn('🖥️ LIVEKIT CLIENT: ⚠️ Screen has NO audio track');
       }
 
       // Store the original camera video track for later restoration
       if (this.localVideoTrack?.mediaStreamTrack) {
         this.savedCameraVideoTrack = this.localVideoTrack.mediaStreamTrack;
-        console.log('🖥️ LIVEKIT CLIENT: Saved camera video track for later');
+        log('🖥️ LIVEKIT CLIENT: Saved camera video track for later');
       }
 
       // Store the original mic audio track for later restoration
       if (this.localAudioTrack?.mediaStreamTrack) {
         this.savedMicAudioTrack = this.localAudioTrack.mediaStreamTrack;
-        console.log('🖥️ LIVEKIT CLIENT: Saved mic audio track for later');
+        log('🖥️ LIVEKIT CLIENT: Saved mic audio track for later');
       }
 
       // SEAMLESS VIDEO REPLACEMENT using replaceTrack
       if (this.localVideoTrack) {
-        console.log('🖥️ LIVEKIT CLIENT: Seamlessly replacing video track...');
+        log('🖥️ LIVEKIT CLIENT: Seamlessly replacing video track...');
         try {
           await this.localVideoTrack.replaceTrack(screenVideoTrack);
-          console.log('🖥️ LIVEKIT CLIENT: ✅ Video track replaced seamlessly');
+          log('🖥️ LIVEKIT CLIENT: ✅ Video track replaced seamlessly');
         } catch (replaceError) {
           console.error('🖥️ LIVEKIT CLIENT: ❌ Failed to replace video track:', replaceError);
           throw replaceError;
@@ -1340,7 +1369,7 @@ export class LiveKitClient {
 
       // SEAMLESS AUDIO REPLACEMENT using replaceTrack (if screen has audio)
       if (screenAudioTrack && this.localAudioTrack) {
-        console.log('🖥️ LIVEKIT CLIENT: Seamlessly replacing audio track...', {
+        log('🖥️ LIVEKIT CLIENT: Seamlessly replacing audio track...', {
           screenAudioTrackId: screenAudioTrack.id,
           screenAudioTrackLabel: screenAudioTrack.label,
           screenAudioTrackEnabled: screenAudioTrack.enabled,
@@ -1350,7 +1379,7 @@ export class LiveKitClient {
         });
         try {
           await this.localAudioTrack.replaceTrack(screenAudioTrack);
-          console.log('🖥️ LIVEKIT CLIENT: ✅ Audio track replaced seamlessly', {
+          log('🖥️ LIVEKIT CLIENT: ✅ Audio track replaced seamlessly', {
             newTrackId: this.localAudioTrack.mediaStreamTrack?.id,
             newTrackEnabled: this.localAudioTrack.mediaStreamTrack?.enabled,
             newTrackState: this.localAudioTrack.mediaStreamTrack?.readyState
@@ -1360,7 +1389,7 @@ export class LiveKitClient {
           // Non-fatal - continue with mic audio
         }
       } else {
-        console.log('🖥️ LIVEKIT CLIENT: Keeping mic audio (no system audio available)', {
+        log('🖥️ LIVEKIT CLIENT: Keeping mic audio (no system audio available)', {
           hasScreenAudioTrack: !!screenAudioTrack,
           hasLocalAudioTrack: !!this.localAudioTrack
         });
@@ -1368,7 +1397,7 @@ export class LiveKitClient {
 
       this.screenStream = screenStream;
       this.isScreenSharing = true;
-      console.log('✅ LIVEKIT CLIENT: Switched to screen share seamlessly');
+      log('✅ LIVEKIT CLIENT: Switched to screen share seamlessly');
 
     } catch (error) {
       console.error('❌ LIVEKIT CLIENT: Failed to switch to screen share:', error);
@@ -1381,20 +1410,31 @@ export class LiveKitClient {
    * Uses replaceTrack for seamless switching without disconnecting viewers
    */
   async switchToCamera(cameraStream: MediaStream): Promise<void> {
-    console.log('📹 LIVEKIT CLIENT: === SWITCHING BACK TO CAMERA (SEAMLESS) ===');
+    log('📹 LIVEKIT CLIENT: === SWITCHING BACK TO CAMERA (SEAMLESS) ===');
 
     if (!this.isRoomReady()) {
       throw new Error('Room not ready');
     }
 
     try {
-      // Prefer saved tracks, fallback to stream tracks
-      const cameraVideoTrack = this.savedCameraVideoTrack || cameraStream.getVideoTracks()[0];
-      const cameraAudioTrack = this.savedMicAudioTrack || cameraStream.getAudioTracks()[0];
+      // Get tracks from the camera stream (which may have been updated during screen share)
+      const streamVideoTrack = cameraStream.getVideoTracks()[0];
+      const streamAudioTrack = cameraStream.getAudioTracks()[0];
 
-      console.log('📹 LIVEKIT CLIENT: Restoration tracks:', {
-        usingSavedVideo: !!this.savedCameraVideoTrack,
-        usingSavedAudio: !!this.savedMicAudioTrack,
+      // Prefer stream tracks if they're live (user may have changed camera/mic during screen share)
+      // Fall back to saved tracks only if stream tracks aren't available
+      const cameraVideoTrack = (streamVideoTrack?.readyState === 'live' ? streamVideoTrack : null)
+        || this.savedCameraVideoTrack;
+      const cameraAudioTrack = (streamAudioTrack?.readyState === 'live' ? streamAudioTrack : null)
+        || this.savedMicAudioTrack;
+
+      log('📹 LIVEKIT CLIENT: Restoration tracks:', {
+        streamVideoState: streamVideoTrack?.readyState,
+        streamAudioState: streamAudioTrack?.readyState,
+        savedVideoState: this.savedCameraVideoTrack?.readyState,
+        savedAudioState: this.savedMicAudioTrack?.readyState,
+        usingStreamVideo: streamVideoTrack?.readyState === 'live',
+        usingStreamAudio: streamAudioTrack?.readyState === 'live',
         hasCameraVideo: !!cameraVideoTrack,
         hasCameraAudio: !!cameraAudioTrack,
         videoState: cameraVideoTrack?.readyState,
@@ -1403,24 +1443,24 @@ export class LiveKitClient {
 
       // SEAMLESS VIDEO REPLACEMENT using replaceTrack
       if (this.localVideoTrack && cameraVideoTrack && cameraVideoTrack.readyState === 'live') {
-        console.log('📹 LIVEKIT CLIENT: Seamlessly replacing video with camera...');
+        log('📹 LIVEKIT CLIENT: Seamlessly replacing video with camera...');
         try {
           await this.localVideoTrack.replaceTrack(cameraVideoTrack);
-          console.log('📹 LIVEKIT CLIENT: ✅ Video track replaced seamlessly with camera');
+          log('📹 LIVEKIT CLIENT: ✅ Video track replaced seamlessly with camera');
         } catch (replaceError) {
           console.error('📹 LIVEKIT CLIENT: ❌ Failed to replace video track:', replaceError);
           throw replaceError;
         }
       } else if (cameraVideoTrack?.readyState !== 'live') {
-        console.warn('📹 LIVEKIT CLIENT: ⚠️ Camera video track not live, may need new stream');
+        warn('📹 LIVEKIT CLIENT: ⚠️ Camera video track not live, may need new stream');
       }
 
       // SEAMLESS AUDIO REPLACEMENT using replaceTrack
       if (this.localAudioTrack && cameraAudioTrack && cameraAudioTrack.readyState === 'live') {
-        console.log('📹 LIVEKIT CLIENT: Seamlessly replacing audio with mic...');
+        log('📹 LIVEKIT CLIENT: Seamlessly replacing audio with mic...');
         try {
           await this.localAudioTrack.replaceTrack(cameraAudioTrack);
-          console.log('📹 LIVEKIT CLIENT: ✅ Audio track replaced seamlessly with mic');
+          log('📹 LIVEKIT CLIENT: ✅ Audio track replaced seamlessly with mic');
         } catch (replaceError) {
           console.error('📹 LIVEKIT CLIENT: ❌ Failed to replace audio track:', replaceError);
           // Non-fatal
@@ -1429,7 +1469,7 @@ export class LiveKitClient {
 
       // Stop screen stream tracks (but not the saved camera/mic tracks!)
       if (this.screenStream) {
-        console.log('📹 LIVEKIT CLIENT: Stopping screen stream tracks...');
+        log('📹 LIVEKIT CLIENT: Stopping screen stream tracks...');
         this.screenStream.getTracks().forEach(track => {
           // Only stop if it's not one of our saved tracks
           if (track !== this.savedCameraVideoTrack && track !== this.savedMicAudioTrack) {
@@ -1445,7 +1485,7 @@ export class LiveKitClient {
 
       this.isScreenSharing = false;
       this.localStream = cameraStream;
-      console.log('✅ LIVEKIT CLIENT: Switched back to camera seamlessly');
+      log('✅ LIVEKIT CLIENT: Switched back to camera seamlessly');
 
     } catch (error) {
       console.error('❌ LIVEKIT CLIENT: Failed to switch to camera:', error);
@@ -1457,7 +1497,7 @@ export class LiveKitClient {
    * Cleanup client (MediaSoup compatible)
    */
   async cleanup(): Promise<void> {
-    console.log('🧹 LIVEKIT CLIENT: Cleaning up...');
+    log('🧹 LIVEKIT CLIENT: Cleaning up...');
     await this.destroy();
   }
 
@@ -1472,7 +1512,7 @@ export class LiveKitClient {
    * Force reconnection (MediaSoup compatible)
    */
   async forceReconnection(): Promise<void> {
-    console.log('🔄 LIVEKIT CLIENT: Forcing reconnection...');
+    log('🔄 LIVEKIT CLIENT: Forcing reconnection...');
     if (this.room) {
       this.room.disconnect();
       // Re-connect with same token
@@ -1517,7 +1557,7 @@ export class LiveKitClient {
    * Destroy client with comprehensive cleanup
    */
   async destroy(): Promise<void> {
-    console.log('💥 LIVEKIT CLIENT: Destroying client...');
+    log('💥 LIVEKIT CLIENT: Destroying client...');
 
     // Set destroyed flag first to prevent new operations
     this.isDestroyed = true;
@@ -1564,7 +1604,7 @@ export class LiveKitClient {
     this.localAudioTrack = null;
     this.localStream = null;
 
-    console.log('✅ LIVEKIT CLIENT: Client destroyed');
+    log('✅ LIVEKIT CLIENT: Client destroyed');
   }
 }
 

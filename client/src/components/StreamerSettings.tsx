@@ -23,6 +23,8 @@ export interface AudioSettingsConfig {
   outputDeviceId?: string;
 }
 
+export type PipPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
 export interface ScreenShareSettingsConfig {
   cursor: 'always' | 'motion' | 'never';
   audio: boolean;
@@ -30,6 +32,10 @@ export interface ScreenShareSettingsConfig {
   micGain: number;      // 0-100, microphone volume in mix
   systemGain: number;   // 0-100, system audio volume in mix
   displaySurface: 'monitor' | 'window' | 'browser';
+  // Picture-in-Picture settings
+  pipEnabled: boolean;       // Show webcam overlay on screen share
+  pipPosition: PipPosition;  // Corner position of PiP
+  pipSize: number;           // 10-50, percentage of screen width
 }
 
 export interface StreamerSettingsConfig {
@@ -281,13 +287,28 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
     });
   };
 
+  const handlePipSizeChange = (value: number) => {
+    handleSettingsChange({
+      ...settings,
+      screenShare: {
+        ...getDefaultScreenShareSettings(),
+        ...settings.screenShare,
+        pipSize: value
+      }
+    });
+  };
+
   const getDefaultScreenShareSettings = (): ScreenShareSettingsConfig => ({
     cursor: 'always',
     audio: false,
     mixWithMic: true,  // Default to mixing with mic when system audio is enabled
     micGain: 100,      // Default 100%
     systemGain: 100,   // Default 100%
-    displaySurface: 'monitor'
+    displaySurface: 'monitor',
+    // PiP defaults
+    pipEnabled: false,  // Disabled by default
+    pipPosition: 'bottom-right',
+    pipSize: 25         // 25% of screen width
   });
 
   const handleAudioSelectChange = (setting: keyof AudioSettingsConfig, value: string | number) => {
@@ -1122,154 +1143,270 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
                 )}
               </div>
 
-              {/* Display Surface */}
-              <div className="setting-group">
-                <label className="setting-label">
-                  <span>Share Type</span>
-                  <select
-                    value={settings.screenShare?.displaySurface || 'monitor'}
-                    onChange={(e) => handleScreenShareSelectChange('displaySurface', e.target.value)}
-                    disabled={isScreenSharing}
-                  >
-                    <option value="monitor">Entire Screen</option>
-                    <option value="window">Application Window</option>
-                    <option value="browser">Browser Tab</option>
-                  </select>
-                </label>
-                <small>What to share with viewers</small>
+              {/* Browser Compatibility Notice */}
+              <div style={{
+                gridColumn: '1 / -1',
+                padding: '10px 14px',
+                background: 'rgba(255, 193, 7, 0.1)',
+                border: '1px solid rgba(255, 193, 7, 0.3)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: '#ffc107',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{ fontSize: '16px' }}>💡</span>
+                <span>Screen sharing features work best in <strong>Chrome</strong> or <strong>Edge</strong>. System audio and some features may not be available in other browsers.</span>
               </div>
 
-              {/* Cursor Visibility */}
-              <div className="setting-group">
-                <label className="setting-label">
-                  <span>Cursor</span>
-                  <select
-                    value={settings.screenShare?.cursor || 'always'}
-                    onChange={(e) => handleScreenShareSelectChange('cursor', e.target.value)}
-                    disabled={isScreenSharing}
-                  >
-                    <option value="always">Always Visible</option>
-                    <option value="motion">Show on Motion</option>
-                    <option value="never">Hidden</option>
-                  </select>
-                </label>
-                <small>Mouse cursor visibility</small>
+              {/* Basic Settings Row */}
+              <div style={{
+                gridColumn: '1 / -1',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '16px',
+                marginTop: '8px'
+              }}>
+                {/* Display Surface */}
+                <div className="setting-group" style={{ margin: 0 }}>
+                  <label className="setting-label">
+                    <span>Share Type</span>
+                    <select
+                      value={settings.screenShare?.displaySurface || 'monitor'}
+                      onChange={(e) => handleScreenShareSelectChange('displaySurface', e.target.value)}
+                      disabled={isScreenSharing}
+                    >
+                      <option value="monitor">Entire Screen</option>
+                      <option value="window">Application Window</option>
+                      <option value="browser">Browser Tab</option>
+                    </select>
+                  </label>
+                  <small>What to share with viewers</small>
+                </div>
+
+                {/* Cursor Visibility */}
+                <div className="setting-group" style={{ margin: 0 }}>
+                  <label className="setting-label">
+                    <span>Cursor</span>
+                    <select
+                      value={settings.screenShare?.cursor || 'always'}
+                      onChange={(e) => handleScreenShareSelectChange('cursor', e.target.value)}
+                      disabled={isScreenSharing}
+                    >
+                      <option value="always">Always Visible</option>
+                      <option value="motion">Show on Motion</option>
+                      <option value="never">Hidden</option>
+                    </select>
+                  </label>
+                  <small>Mouse cursor visibility</small>
+                </div>
               </div>
 
-              {/* System Audio */}
-              <div className="setting-group">
-                <label className="setting-label">
-                  <input
-                    type="checkbox"
-                    checked={settings.screenShare?.audio ?? false}
-                    onChange={() => handleScreenShareToggle('audio')}
-                    disabled={isScreenSharing}
-                  />
-                  <span>Include System Audio</span>
-                </label>
-                <small>Share audio from screen (Chrome/Edge only)</small>
-                {settings.screenShare?.audio && (
-                  <>
+              {/* Two Column Layout for Features */}
+              <div style={{
+                gridColumn: '1 / -1',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '20px',
+                marginTop: '16px'
+              }}>
+                {/* Left Column: Webcam Overlay (PiP) */}
+                <div style={{
+                  padding: '16px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                  <label className="setting-label" style={{ marginBottom: '8px' }}>
+                    <input
+                      type="checkbox"
+                      checked={settings.screenShare?.pipEnabled ?? false}
+                      onChange={() => handleScreenShareToggle('pipEnabled')}
+                      disabled={isScreenSharing}
+                    />
+                    <span style={{ fontWeight: 600, fontSize: '14px' }}>📹 Webcam Overlay</span>
+                  </label>
+                  <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#888', lineHeight: 1.4 }}>
+                    Show your camera as a picture-in-picture overlay on your screen share
+                  </p>
+
+                  {/* PiP Options */}
+                  {(settings.screenShare?.pipEnabled ?? false) && (
                     <div style={{
-                      marginTop: '8px',
-                      padding: '8px',
-                      background: 'rgba(76, 175, 80, 0.15)',
-                      border: '1px solid rgba(76, 175, 80, 0.4)',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      color: '#81c784'
+                      padding: '14px',
+                      background: 'rgba(78, 205, 196, 0.08)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(78, 205, 196, 0.2)'
                     }}>
-                      <strong>Tip:</strong> When the browser dialog appears, check the <strong>"Share system audio"</strong> checkbox at the bottom to capture game/app audio.
-                      <br />This works for Entire Screen, Window, or Tab sharing.
-                    </div>
-
-                    {/* Mix with Microphone option */}
-                    <label className="setting-label" style={{ marginTop: '12px' }}>
-                      <input
-                        type="checkbox"
-                        checked={settings.screenShare?.mixWithMic ?? true}
-                        onChange={() => handleScreenShareToggle('mixWithMic')}
-                        disabled={isScreenSharing}
-                      />
-                      <span>Mix with Microphone</span>
-                    </label>
-                    <small>Combine system audio with your mic (for commentary)</small>
-
-                    {/* Volume Mixer - only show when mixing is enabled */}
-                    {(settings.screenShare?.mixWithMic ?? true) && (
-                      <div style={{
-                        marginTop: '12px',
-                        padding: '12px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        borderRadius: '8px',
-                        border: '1px solid rgba(255, 255, 255, 0.1)'
-                      }}>
-                        <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '10px', color: '#aaa' }}>
-                          Audio Mix Balance
+                      {/* Position Selector */}
+                      <div style={{ marginBottom: '14px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '8px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Position
                         </div>
-
-                        {/* Microphone Volume */}
-                        <div style={{ marginBottom: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                            <span style={{ fontSize: '12px' }}>🎤 Microphone</span>
-                            <span style={{ fontSize: '11px', color: '#888' }}>{settings.screenShare?.micGain ?? 100}%</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={settings.screenShare?.micGain ?? 100}
-                            onChange={(e) => handleScreenShareGainChange('micGain', parseInt(e.target.value))}
-                            style={{
-                              width: '100%',
-                              height: '6px',
-                              cursor: 'pointer',
-                              accentColor: '#4ecdc4'
-                            }}
-                          />
-                        </div>
-
-                        {/* System Audio Volume */}
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                            <span style={{ fontSize: '12px' }}>🔊 System Audio</span>
-                            <span style={{ fontSize: '11px', color: '#888' }}>{settings.screenShare?.systemGain ?? 100}%</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={settings.screenShare?.systemGain ?? 100}
-                            onChange={(e) => handleScreenShareGainChange('systemGain', parseInt(e.target.value))}
-                            style={{
-                              width: '100%',
-                              height: '6px',
-                              cursor: 'pointer',
-                              accentColor: '#ff6b6b'
-                            }}
-                          />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                          {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((pos) => (
+                            <button
+                              key={pos}
+                              type="button"
+                              onClick={() => handleScreenShareSelectChange('pipPosition', pos)}
+                              style={{
+                                padding: '10px 8px',
+                                border: (settings.screenShare?.pipPosition || 'bottom-right') === pos
+                                  ? '2px solid #4ecdc4'
+                                  : '1px solid rgba(255,255,255,0.15)',
+                                borderRadius: '6px',
+                                background: (settings.screenShare?.pipPosition || 'bottom-right') === pos
+                                  ? 'rgba(78, 205, 196, 0.25)'
+                                  : 'rgba(255,255,255,0.03)',
+                                color: (settings.screenShare?.pipPosition || 'bottom-right') === pos ? '#4ecdc4' : '#999',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                textTransform: 'capitalize',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              {pos.replace('-', ' ')}
+                            </button>
+                          ))}
                         </div>
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
 
-            {/* Screen Share Info */}
-            <div className="screen-share-info" style={{
-              marginTop: '16px',
-              padding: '12px',
-              background: 'rgba(78, 205, 196, 0.1)',
-              borderRadius: '8px',
-              border: '1px solid rgba(78, 205, 196, 0.3)'
-            }}>
-              <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>
-                <strong>Tips:</strong>
-                <br />• Viewers will see your screen instead of camera
-                <br />• Your microphone will be replaced with system audio if enabled
-                <br />• Click stop or use browser controls to end sharing
-              </p>
+                      {/* Size Slider */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Size</span>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#4ecdc4' }}>{settings.screenShare?.pipSize ?? 25}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10"
+                          max="50"
+                          value={settings.screenShare?.pipSize ?? 25}
+                          onChange={(e) => handlePipSizeChange(parseInt(e.target.value))}
+                          style={{
+                            width: '100%',
+                            height: '6px',
+                            cursor: 'pointer',
+                            accentColor: '#4ecdc4'
+                          }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#666', marginTop: '4px' }}>
+                          <span>Small</span>
+                          <span>Large</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: System Audio */}
+                <div style={{
+                  padding: '16px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                  <label className="setting-label" style={{ marginBottom: '8px' }}>
+                    <input
+                      type="checkbox"
+                      checked={settings.screenShare?.audio ?? false}
+                      onChange={() => handleScreenShareToggle('audio')}
+                      disabled={isScreenSharing}
+                    />
+                    <span style={{ fontWeight: 600, fontSize: '14px' }}>🔊 System Audio</span>
+                  </label>
+                  <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#888', lineHeight: 1.4 }}>
+                    Capture audio from games, apps, or browser tabs along with your screen
+                  </p>
+
+                  {settings.screenShare?.audio && (
+                    <div style={{
+                      padding: '14px',
+                      background: 'rgba(255, 107, 107, 0.08)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 107, 107, 0.2)'
+                    }}>
+                      {/* Tip */}
+                      <div style={{
+                        padding: '10px',
+                        background: 'rgba(76, 175, 80, 0.12)',
+                        border: '1px solid rgba(76, 175, 80, 0.3)',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        color: '#81c784',
+                        marginBottom: '14px',
+                        lineHeight: 1.5
+                      }}>
+                        <strong>💡 Tip:</strong> Check <strong>"Share system audio"</strong> in the browser dialog to capture audio.
+                      </div>
+
+                      {/* Mix with Microphone option */}
+                      <label className="setting-label" style={{ marginBottom: '10px' }}>
+                        <input
+                          type="checkbox"
+                          checked={settings.screenShare?.mixWithMic ?? true}
+                          onChange={() => handleScreenShareToggle('mixWithMic')}
+                          disabled={isScreenSharing}
+                        />
+                        <span style={{ fontSize: '13px' }}>Mix with Microphone</span>
+                      </label>
+
+                      {/* Volume Mixer */}
+                      {(settings.screenShare?.mixWithMic ?? true) && (
+                        <div style={{ marginTop: '12px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '12px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Audio Balance
+                          </div>
+
+                          {/* Microphone Volume */}
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <span style={{ fontSize: '12px' }}>🎤 Microphone</span>
+                              <span style={{ fontSize: '13px', fontWeight: 600, color: '#4ecdc4' }}>{settings.screenShare?.micGain ?? 100}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={settings.screenShare?.micGain ?? 100}
+                              onChange={(e) => handleScreenShareGainChange('micGain', parseInt(e.target.value))}
+                              style={{
+                                width: '100%',
+                                height: '6px',
+                                cursor: 'pointer',
+                                accentColor: '#4ecdc4'
+                              }}
+                            />
+                          </div>
+
+                          {/* System Audio Volume */}
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <span style={{ fontSize: '12px' }}>🔊 System</span>
+                              <span style={{ fontSize: '13px', fontWeight: 600, color: '#ff6b6b' }}>{settings.screenShare?.systemGain ?? 100}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={settings.screenShare?.systemGain ?? 100}
+                              onChange={(e) => handleScreenShareGainChange('systemGain', parseInt(e.target.value))}
+                              style={{
+                                width: '100%',
+                                height: '6px',
+                                cursor: 'pointer',
+                                accentColor: '#ff6b6b'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -9,6 +9,10 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
+// Disable all non-essential logging for production
+const DEBUG = false;
+const log = DEBUG ? console.log.bind(console) : () => {};
+
 class ViewBotLiveKitService {
   constructor(livekitService) {
     this.livekitService = livekitService;
