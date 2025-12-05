@@ -5,6 +5,7 @@ import BuffDisplay from './BuffDisplay';
 import PermissionSetupModal from './PermissionSetupModal';
 import { ClipCreationModal } from './clips';
 import PermissionService, { MediaPermissions } from '../services/PermissionService';
+import CookieService, { COOKIE_NAMES } from '../services/CookieService';
 import './TheatreControls.css';
 
 interface TheatreControlsProps {
@@ -338,11 +339,15 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
     if (videoRef.current) {
       videoRef.current.muted = !videoRef.current.muted;
       setIsMuted(videoRef.current.muted);
+      // Save muted state to cookie
+      CookieService.setCookie(COOKIE_NAMES.MUTED, videoRef.current.muted);
       if (!videoRef.current.muted) {
         setUserHasUnmuted(true);
         if (volume === 0) {
           setVolume(50);
           videoRef.current.volume = 0.5;
+          // Save the new volume to cookie
+          CookieService.setCookie(COOKIE_NAMES.VOLUME, 0.5);
         }
       }
     }
@@ -353,9 +358,13 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
       videoRef.current.muted = false;
       setIsMuted(false);
       setUserHasUnmuted(true);
+      // Save unmuted state to cookie so it persists across stream switches
+      CookieService.setCookie(COOKIE_NAMES.MUTED, false);
       if (volume === 0) {
         setVolume(80);
         videoRef.current.volume = 0.8;
+        // Save the new volume to cookie
+        CookieService.setCookie(COOKIE_NAMES.VOLUME, 0.8);
       }
     }
   };
@@ -363,15 +372,19 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseInt(e.target.value);
     setVolume(newVolume);
+    // Save volume to cookie (convert from 0-100 to 0-1 scale)
+    CookieService.setCookie(COOKIE_NAMES.VOLUME, newVolume / 100);
     if (videoRef.current) {
       videoRef.current.volume = newVolume / 100;
       if (newVolume === 0) {
         videoRef.current.muted = true;
         setIsMuted(true);
+        CookieService.setCookie(COOKIE_NAMES.MUTED, true);
       } else if (videoRef.current.muted) {
         videoRef.current.muted = false;
         setIsMuted(false);
         setUserHasUnmuted(true);
+        CookieService.setCookie(COOKIE_NAMES.MUTED, false);
       }
     }
   };

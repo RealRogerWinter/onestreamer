@@ -9164,6 +9164,20 @@ async function startServer() {
       const indexPath = path.join(__dirname, '..', 'client', 'build', 'index.html');
       let html = fs.readFileSync(indexPath, 'utf8');
 
+      // Google Analytics script
+      const gaScript = `
+    <!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XN4PGT5J9W"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-XN4PGT5J9W', {
+            page_path: window.location.pathname
+        });
+    </script>
+`;
+
       // Build the Open Graph and Twitter Card meta tags
       const metaTags = `
     <!-- Open Graph Meta Tags for Social Media Sharing -->
@@ -9213,6 +9227,12 @@ async function startServer() {
       html = html.replace(
         /(<meta\s+name="description"\s+content="[^"]*"\s*\/?>)/,
         `$1${metaTags}`
+      );
+
+      // Insert Google Analytics script before closing </head> tag
+      html = html.replace(
+        /<\/head>/,
+        `${gaScript}</head>`
       );
 
       res.setHeader('Content-Type', 'text/html');
