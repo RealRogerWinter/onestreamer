@@ -1209,26 +1209,42 @@ export class EffectEngine extends EventEmitter {
   };
 
   private forceCanvasResize(): void {
-// console.log('🔄 EffectEngine: Forcing canvas resize to fix black mask issue');
-    
-    // Try multiple resize attempts with delays to handle async video loading
-    const resizeAttempts = [0, 100, 500, 1000, 2000]; // milliseconds
-    
-    resizeAttempts.forEach(delay => {
-      setTimeout(() => {
-// console.log(`🔄 EffectEngine: Resize attempt after ${delay}ms`);
-        const oldSize = { width: this.canvas.width, height: this.canvas.height };
-        
-        this.setupCanvas();
-        this.initializeTransparentCanvas();
-        
-        const newSize = { width: this.canvas.width, height: this.canvas.height };
-        
-        if (oldSize.width !== newSize.width || oldSize.height !== newSize.height) {
-// console.log(`📐 EffectEngine: Canvas resized from ${oldSize.width}x${oldSize.height} to ${newSize.width}x${newSize.height}`);
-        }
-      }, delay);
-    });
+    // CPU Optimization: Removed 5x setTimeout cascade (was 0, 100, 500, 1000, 2000ms)
+    // Now uses single immediate call + ResizeObserver for async video loading
+
+    // Immediate resize attempt
+    this.setupCanvas();
+    this.initializeTransparentCanvas();
+
+    // If dimensions are still 0, set up a ResizeObserver to detect when video loads
+    if (this.canvas.width === 0 || this.canvas.height === 0) {
+      if ('ResizeObserver' in window) {
+        const resizeObserver = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+              this.setupCanvas();
+              this.initializeTransparentCanvas();
+              // Start render loop if not already running
+              if (!this.isRunning && this.canvas.width > 0 && this.canvas.height > 0) {
+                this.startRenderLoop();
+              }
+              resizeObserver.disconnect();
+              break;
+            }
+          }
+        });
+        resizeObserver.observe(this.videoElement);
+      } else {
+        // Fallback: single retry after 500ms for browsers without ResizeObserver
+        setTimeout(() => {
+          this.setupCanvas();
+          this.initializeTransparentCanvas();
+          if (!this.isRunning && this.canvas.width > 0 && this.canvas.height > 0) {
+            this.startRenderLoop();
+          }
+        }, 500);
+      }
+    }
   }
 
   public handleResize(): void {

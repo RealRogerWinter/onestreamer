@@ -8,15 +8,18 @@ interface AudioLevelMeterProps {
   onToggleVisibility?: () => void;
 }
 
-const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({ 
-  stream, 
+const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
+  stream,
   isActive = true,
   isVisible = true,
-  onToggleVisibility 
+  onToggleVisibility
 }) => {
-  const [audioLevel, setAudioLevel] = useState(0); // 0-1 range
-  const [decibelLevel, setDecibelLevel] = useState(-60); // dB level
-  const [peakLevel, setPeakLevel] = useState(-60); // Peak hold level
+  // CPU Optimization: Batch state updates into single object to reduce re-renders
+  const [meterState, setMeterState] = useState({
+    audioLevel: 0,      // 0-1 range
+    decibelLevel: -60,  // dB level
+    peakLevel: -60      // Peak hold level
+  });
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const dataArrayRef = useRef<Float32Array | null>(null);
@@ -117,24 +120,28 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
       
       // Apply smoothing for more stable display
       const smoothingFactor = 0.85; // Higher = more smoothing
-      smoothedLevelRef.current = smoothedLevelRef.current * smoothingFactor + 
+      smoothedLevelRef.current = smoothedLevelRef.current * smoothingFactor +
                                   instantDb * (1 - smoothingFactor);
-      
-      // Update peak hold
-      const currentTime = Date.now();
-      if (peakDb > peakLevel || currentTime - peakHoldTimeRef.current > 2000) {
-        setPeakLevel(peakDb);
-        peakHoldTimeRef.current = currentTime;
-      }
-      
+
       // Clamp dB range for display (-60 dB to 0 dB)
       const clampedDb = Math.max(-60, Math.min(0, smoothedLevelRef.current));
-      
+
       // Convert to 0-1 range for display (0 = -60dB, 1 = 0dB)
       const normalizedLevel = (clampedDb + 60) / 60;
 
-      setAudioLevel(normalizedLevel);
-      setDecibelLevel(clampedDb);
+      // Update peak hold (use timestamp from RAF instead of Date.now())
+      let newPeakLevel = meterState.peakLevel;
+      if (peakDb > meterState.peakLevel || timestamp - peakHoldTimeRef.current > 2000) {
+        newPeakLevel = peakDb;
+        peakHoldTimeRef.current = timestamp;
+      }
+
+      // CPU Optimization: Single batched state update instead of 3 separate calls
+      setMeterState({
+        audioLevel: normalizedLevel,
+        decibelLevel: clampedDb,
+        peakLevel: newPeakLevel
+      });
 
       // Continue analyzing (throttled to 30fps)
       animationFrameRef.current = requestAnimationFrame(analyze);
@@ -222,7 +229,7 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
     <div className="audio-level-meter-container">
       <div className="meter-header">
         <span className="meter-title">AUDIO LEVEL</span>
-        <span className="meter-db-value">{formatDb(decibelLevel)} dB</span>
+        <span className="meter-db-value">{formatDb(meterState.decibelLevel)} dB</span>
         {onToggleVisibility && (
           <button
             className="audio-level-toggle-compact"
@@ -250,7 +257,7 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
             {/* Create segmented meter */}
             {Array.from({ length: 40 }, (_, i) => {
               const position = i / 39; // 0 to 1
-              const isActive = position <= audioLevel;
+              const isActive = position <= meterState.audioLevel;
               const segmentDb = -60 + (position * 60);
               
               return (
@@ -269,7 +276,7 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
           <div 
             className="meter-peak"
             style={{
-              left: `${Math.max(0, Math.min(100, ((peakLevel + 60) / 60) * 100))}%`
+              left: `${Math.max(0, Math.min(100, ((meterState.peakLevel + 60) / 60) * 100))}%`
             }}
           />
         </div>

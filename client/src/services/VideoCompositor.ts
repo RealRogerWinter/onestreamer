@@ -35,6 +35,18 @@ export class VideoCompositor {
   private lastFrameTime: number = 0;
   private frameInterval: number = 1000 / 30; // ~30 fps
 
+  // CPU Optimization: Cache PiP dimensions to avoid recalculating every frame
+  private cachedPipDimensions: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    canvasWidth: number;
+    canvasHeight: number;
+    videoWidth: number;
+    videoHeight: number;
+  } | null = null;
+
   /**
    * Check if Canvas compositing is supported
    */
@@ -198,21 +210,31 @@ export class VideoCompositor {
   };
 
   /**
-   * Draw the PiP webcam overlay
+   * Get cached PiP dimensions, recalculating only when needed
    */
-  private drawPipOverlay(): void {
-    if (!this.ctx || !this.canvas || !this.pipVideo) return;
+  private getPipDimensions(): { x: number; y: number; width: number; height: number } {
+    if (!this.canvas || !this.pipVideo) {
+      return { x: 0, y: 0, width: 0, height: 0 };
+    }
 
-    const { pipPosition, pipSize, pipBorderRadius, pipPadding } = this.options;
+    // Check if cache is valid
+    if (
+      this.cachedPipDimensions &&
+      this.cachedPipDimensions.canvasWidth === this.canvas.width &&
+      this.cachedPipDimensions.canvasHeight === this.canvas.height &&
+      this.cachedPipDimensions.videoWidth === this.pipVideo.videoWidth &&
+      this.cachedPipDimensions.videoHeight === this.pipVideo.videoHeight
+    ) {
+      return this.cachedPipDimensions;
+    }
 
-    // Calculate PiP dimensions maintaining aspect ratio
+    // Recalculate dimensions
+    const { pipPosition, pipSize, pipPadding } = this.options;
     const pipWidth = (this.canvas.width * pipSize) / 100;
     const aspectRatio = this.pipVideo.videoWidth / this.pipVideo.videoHeight || 16 / 9;
     const pipHeight = pipWidth / aspectRatio;
 
-    // Calculate position based on option
     let x: number, y: number;
-
     switch (pipPosition) {
       case 'top-left':
         x = pipPadding;
@@ -232,6 +254,31 @@ export class VideoCompositor {
         y = this.canvas.height - pipHeight - pipPadding;
         break;
     }
+
+    // Cache the results
+    this.cachedPipDimensions = {
+      x,
+      y,
+      width: pipWidth,
+      height: pipHeight,
+      canvasWidth: this.canvas.width,
+      canvasHeight: this.canvas.height,
+      videoWidth: this.pipVideo.videoWidth,
+      videoHeight: this.pipVideo.videoHeight
+    };
+
+    return this.cachedPipDimensions;
+  }
+
+  /**
+   * Draw the PiP webcam overlay
+   */
+  private drawPipOverlay(): void {
+    if (!this.ctx || !this.canvas || !this.pipVideo) return;
+
+    // CPU Optimization: Use cached dimensions instead of recalculating every frame
+    const { x, y, width: pipWidth, height: pipHeight } = this.getPipDimensions();
+    const { pipBorderRadius } = this.options;
 
     // Save context state
     this.ctx.save();
@@ -282,6 +329,8 @@ export class VideoCompositor {
    */
   updateOptions(options: Partial<VideoCompositorOptions>): void {
     this.options = { ...this.options, ...options };
+    // CPU Optimization: Invalidate cached dimensions when options change
+    this.cachedPipDimensions = null;
     console.log('🎬 VIDEO COMPOSITOR: Options updated', this.options);
   }
 

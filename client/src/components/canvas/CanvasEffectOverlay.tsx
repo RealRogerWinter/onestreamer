@@ -498,7 +498,7 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
             }
           }
         }
-      }, 100);
+      }, 250); // CPU Optimization: Increased from 100ms to reduce resize event processing
     };
 
     window.addEventListener('resize', handleResize);
