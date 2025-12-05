@@ -57,7 +57,8 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
       const analyser = analyserRef.current;
       
       // Configure analyzer for time domain analysis (better for level metering)
-      analyser.fftSize = 2048; // Good balance for accurate RMS calculation
+      // CPU Optimization: Reduced from 2048 to 256 - sufficient for level metering
+      analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0; // No smoothing - we'll do our own
       
       // Create data array for time domain data
@@ -82,8 +83,19 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
     const analyser = analyserRef.current;
     const dataArray = dataArrayRef.current;
 
-    const analyze = () => {
+    // CPU Optimization: Throttle to 30fps (33ms interval) instead of 60fps
+    const METER_UPDATE_INTERVAL = 33;
+    let lastUpdateTime = 0;
+
+    const analyze = (timestamp: number = performance.now()) => {
       if (!analyser || !dataArray || !isActive) return;
+
+      // Throttle updates to 30fps
+      if (timestamp - lastUpdateTime < METER_UPDATE_INTERVAL) {
+        animationFrameRef.current = requestAnimationFrame(analyze);
+        return;
+      }
+      lastUpdateTime = timestamp;
 
       // Get time domain data (waveform)
       analyser.getFloatTimeDomainData(dataArray);
@@ -124,7 +136,7 @@ const AudioLevelMeter: React.FC<AudioLevelMeterProps> = ({
       setAudioLevel(normalizedLevel);
       setDecibelLevel(clampedDb);
 
-      // Continue analyzing at 60fps
+      // Continue analyzing (throttled to 30fps)
       animationFrameRef.current = requestAnimationFrame(analyze);
     };
 

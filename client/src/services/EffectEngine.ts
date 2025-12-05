@@ -1159,32 +1159,9 @@ export class EffectEngine extends EventEmitter {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.ctx.restore();
     
-    // Log transparency debug info every 60 frames when effects are active
-    if (this.activeEffects.size > 0 && this.frameCount % 60 === 0) {
-      const pixelData = this.ctx.getImageData(0, 0, 1, 1).data;
-      const centerPixel = this.ctx.getImageData(Math.floor(this.canvas.width/2), Math.floor(this.canvas.height/2), 1, 1).data;
-      
-// console.log('🔍 TRANSPARENCY DEBUG:', {
-      //   canvasSize: `${this.canvas.width}x${this.canvas.height}`,
-      //   cssSize: `${this.canvas.style.width} x ${this.canvas.style.height}`,
-      //   canvasBackground: this.canvas.style.backgroundColor,
-      //   canvasOpacity: this.canvas.style.opacity,
-      //   contextAlpha: this.ctx.globalAlpha,
-      //   contextComposite: this.ctx.globalCompositeOperation,
-      //   topLeftPixel: `rgba(${pixelData[0]}, ${pixelData[1]}, ${pixelData[2]}, ${pixelData[3]})`,
-      //   centerPixel: `rgba(${centerPixel[0]}, ${centerPixel[1]}, ${centerPixel[2]}, ${centerPixel[3]})`,
-      //   hasAlphaChannel: !!this.ctx.getContextAttributes()?.alpha,
-      //   canvasPosition: {
-      //     left: this.canvas.offsetLeft,
-      //     top: this.canvas.offsetTop,
-      //     zIndex: this.canvas.style.zIndex || 'auto'
-      //   },
-      //   parentInfo: {
-      //     className: this.canvas.parentElement?.className,
-      //     background: this.canvas.parentElement ? window.getComputedStyle(this.canvas.parentElement).backgroundColor : 'none'
-      //   }
-      // });
-    }
+    // CPU Optimization: Removed debug getImageData() calls
+    // getImageData() reads pixels from GPU which is extremely expensive
+    // Only enable in development mode if needed for debugging
     
     // Render all active effects
     const completedEffects: string[] = [];
@@ -1215,7 +1192,18 @@ export class EffectEngine extends EventEmitter {
     
     // Remove completed effects
     completedEffects.forEach(id => this.removeEffect(id));
-    
+
+    // CPU Optimization: Stop render loop when no effects are active
+    // The loop will restart automatically when a new effect is added
+    if (this.activeEffects.size === 0) {
+      this.isRunning = false;
+      if (this.animationId) {
+        cancelAnimationFrame(this.animationId);
+        this.animationId = null;
+      }
+      return;
+    }
+
     // Continue animation loop
     this.animationId = requestAnimationFrame(this.renderFrame);
   };
