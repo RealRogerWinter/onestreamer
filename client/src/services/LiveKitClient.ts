@@ -151,16 +151,17 @@ export class LiveKitClient {
       // iOS Safari requires specific configuration for WebRTC compatibility
       const roomOptions: RoomOptions = {
         adaptiveStream: false,
-        dynacast: false,
+        // CPU Optimization: Dynacast pauses encoding of video layers not being consumed by viewers
+        dynacast: true,
         videoCaptureDefaults: {
           resolution: VideoPresets.h720.resolution,
         },
-        // Publishing defaults - H264 for iOS Safari compatibility
+        // Publishing defaults - H264 for hardware acceleration (lower CPU)
         publishDefaults: {
-          // H264 is required for iOS Safari (VP8/VP9/AV1 not supported)
-          videoCodec: isIOSDevice ? 'h264' : 'vp8',
-          // Enable backup codec for non-iOS subscribers when using H264
-          backupCodec: !isIOSDevice,
+          // H264 is hardware-accelerated on most devices (30-50% less CPU than VP8)
+          videoCodec: 'h264',
+          // Keep backup codec enabled for viewers who can't decode H264
+          backupCodec: true,
           // Simulcast for adaptive quality
           simulcast: true,
           // Video encoding settings
