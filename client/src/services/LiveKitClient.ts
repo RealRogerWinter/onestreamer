@@ -150,28 +150,31 @@ export class LiveKitClient {
       // Create room instance but don't connect yet
       // iOS Safari requires specific configuration for WebRTC compatibility
       const roomOptions: RoomOptions = {
-        adaptiveStream: false,
-        dynacast: false,
+        // CPU Optimization: Enable adaptive stream and dynacast
+        // Dynacast pauses encoding of video layers that no subscribers need
+        adaptiveStream: true,
+        dynacast: true,
         videoCaptureDefaults: {
           resolution: VideoPresets.h720.resolution,
         },
-        // Publishing defaults - H264 for iOS Safari compatibility
+        // Publishing defaults - H264 for hardware acceleration (lower CPU)
         publishDefaults: {
-          // H264 is required for iOS Safari (VP8/VP9/AV1 not supported)
-          videoCodec: isIOSDevice ? 'h264' : 'vp8',
-          // Enable backup codec for non-iOS subscribers when using H264
-          backupCodec: !isIOSDevice,
-          // Simulcast for adaptive quality
+          // H264 is hardware-accelerated on most devices (30-50% less CPU than VP8)
+          // VP8 uses software encoding which is CPU-intensive
+          videoCodec: 'h264',
+          // Disable backup codec to reduce encoding overhead
+          backupCodec: false,
+          // Simulcast for adaptive quality (reduced to single extra layer for lower CPU)
           simulcast: true,
           // Video encoding settings
           videoEncoding: {
             maxBitrate: 1_500_000, // 1.5 Mbps
             maxFramerate: 30,
           },
-          // Simulcast layers for adaptive streaming
+          // CPU Optimization: Single simulcast layer instead of two
+          // Each layer adds ~25% encoding CPU overhead
           videoSimulcastLayers: [
-            VideoPresets.h180,
-            VideoPresets.h360,
+            VideoPresets.h360,  // Single mid-quality layer
           ],
         },
         // iOS Safari-specific: Disable features that may cause issues
@@ -198,8 +201,10 @@ export class LiveKitClient {
         },
       };
 
+      // Log CPU optimization settings
+      log('⚡ LIVEKIT CLIENT: CPU-optimized config - H264 (hardware accel), dynacast enabled, single simulcast layer');
       if (isIOSDevice) {
-        log('📱 LIVEKIT CLIENT: iOS detected - configured for H264 codec with 1.5Mbps bitrate');
+        log('📱 LIVEKIT CLIENT: iOS detected - H264 codec with 1.5Mbps bitrate');
       }
 
       this.room = new Room(roomOptions);

@@ -554,12 +554,19 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
     });
   };
 
-  const applyVideoPreset = (preset: 'low' | 'max') => {
+  const applyVideoPreset = (preset: 'low-cpu' | 'balanced' | 'max') => {
     const presets = {
-      low: {
+      'low-cpu': {
+        // Optimized for minimal CPU usage on low-power devices
         resolution: '480p' as const,
-        frameRate: 15 as const,
-        bitrate: 500000
+        frameRate: 24 as const,  // 24fps uses ~20% less CPU than 30fps
+        bitrate: 800000  // 800kbps - sufficient for 480p
+      },
+      balanced: {
+        // Good balance of quality and CPU usage
+        resolution: '720p' as const,
+        frameRate: 24 as const,
+        bitrate: 1200000
       },
       max: {
         resolution: '720p' as const,
@@ -875,19 +882,26 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
             <div className="video-presets">
               <label>Quick Video Presets:</label>
               <div className="preset-buttons">
-                <button 
+                <button
                   className="preset-btn"
-                  onClick={() => applyVideoPreset('low')}
-                  title="Low quality - minimal bandwidth"
+                  onClick={() => applyVideoPreset('low-cpu')}
+                  title="Optimized for low-power devices - 480p @ 24fps"
                 >
-                  Low (480p)
+                  🔋 Low CPU
                 </button>
-                <button 
+                <button
+                  className="preset-btn"
+                  onClick={() => applyVideoPreset('balanced')}
+                  title="Balanced quality and CPU usage - 720p @ 24fps"
+                >
+                  ⚖️ Balanced
+                </button>
+                <button
                   className="preset-btn"
                   onClick={() => applyVideoPreset('max')}
-                  title="Maximum quality - 720p HD"
+                  title="Maximum quality - 720p @ 30fps"
                 >
-                  Max (720p)
+                  🚀 Max Quality
                 </button>
               </div>
             </div>
