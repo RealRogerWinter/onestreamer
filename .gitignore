@@ -1,5 +1,7 @@
-# Uploaded videos
+# Uploaded videos (but keep emojis)
 uploads/
+!uploads/emojis/
+!**/uploads/emojis/
 
 # Whisper models (large files)
 whisper/models/*.bin
