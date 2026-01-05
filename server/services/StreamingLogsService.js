@@ -4,6 +4,32 @@ const { v4: uuidv4 } = require('uuid');
 class StreamingLogsService {
   constructor() {
     this.activeSessions = new Map(); // Map of streamerId to session data
+    // Clean up orphaned sessions on startup
+    this.cleanupOrphanedSessions();
+  }
+
+  /**
+   * Clean up sessions that were left active due to server restart
+   */
+  async cleanupOrphanedSessions() {
+    try {
+      const endedAt = new Date().toISOString();
+
+      // Find and close all orphaned sessions (active sessions not in memory)
+      const result = await runAsync(`
+        UPDATE streaming_logs
+        SET ended_at = ?,
+            duration = CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER),
+            disconnect_reason = 'server_restart'
+        WHERE ended_at IS NULL
+      `, [endedAt, endedAt]);
+
+      console.log(`🧹 STREAMING LOGS: Cleaned up orphaned sessions on startup`);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ STREAMING LOGS: Failed to cleanup orphaned sessions:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   /**
@@ -11,25 +37,32 @@ class StreamingLogsService {
    */
   async startSession(streamerId, streamerName, userId, ipAddress, userAgent, streamType, isViewbot = false) {
     try {
+      // Check if there's already an active session for this streamer
+      const existingSession = this.activeSessions.get(streamerId);
+      if (existingSession) {
+        console.log(`⚠️ STREAMING LOGS: Session already exists for ${streamerId}, skipping duplicate`);
+        return { success: true, sessionId: existingSession.sessionId, duplicate: true };
+      }
+
       const sessionId = uuidv4();
       const startedAt = new Date().toISOString();
-      
+
       // Store in active sessions
       this.activeSessions.set(streamerId, {
         sessionId,
         startedAt,
         viewerPeak: 0
       });
-      
+
       // Insert into database
       await runAsync(`
-        INSERT INTO streaming_logs 
+        INSERT INTO streaming_logs
         (session_id, streamer_id, streamer_name, user_id, ip_address, user_agent, stream_type, is_viewbot, started_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [sessionId, streamerId, streamerName, userId, ipAddress, userAgent, streamType, isViewbot ? 1 : 0, startedAt]);
-      
+
       console.log(`📝 STREAMING LOGS: Session started for ${streamerName || streamerId} (${ipAddress}) - ViewBot: ${isViewbot}`);
-      
+
       return { success: true, sessionId };
     } catch (error) {
       console.error('❌ STREAMING LOGS: Failed to start session:', error);
@@ -43,33 +76,45 @@ class StreamingLogsService {
   async endSession(streamerId, disconnectReason = 'normal') {
     try {
       const session = this.activeSessions.get(streamerId);
-      if (!session) {
-        console.log(`⚠️ STREAMING LOGS: No active session found for ${streamerId}`);
-        return { success: false, error: 'No active session' };
-      }
-      
       const endedAt = new Date().toISOString();
-      
+
+      if (!session) {
+        // Fallback: Try to end session directly in DB even if not in memory
+        // This handles edge cases like rapid reconnects or missed events
+        console.log(`⚠️ STREAMING LOGS: No in-memory session for ${streamerId}, trying DB fallback`);
+
+        const result = await runAsync(`
+          UPDATE streaming_logs
+          SET ended_at = ?,
+              duration = CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER),
+              disconnect_reason = ?
+          WHERE streamer_id = ? AND ended_at IS NULL
+        `, [endedAt, endedAt, disconnectReason, streamerId]);
+
+        console.log(`📝 STREAMING LOGS: DB fallback completed for ${streamerId}`);
+        return { success: true, duration: 0, fallback: true };
+      }
+
       // Calculate duration
       const startTime = new Date(session.startedAt);
       const endTime = new Date(endedAt);
       const duration = Math.floor((endTime - startTime) / 1000); // in seconds
-      
+
       // Update database
       await runAsync(`
-        UPDATE streaming_logs 
+        UPDATE streaming_logs
         SET ended_at = ?,
             duration = ?,
             viewer_peak = ?,
             disconnect_reason = ?
         WHERE session_id = ?
       `, [endedAt, duration, session.viewerPeak, disconnectReason, session.sessionId]);
-      
+
       // Remove from active sessions
       this.activeSessions.delete(streamerId);
-      
+
       console.log(`📝 STREAMING LOGS: Session ended for ${streamerId} - Duration: ${duration}s`);
-      
+
       return { success: true, duration };
     } catch (error) {
       console.error('❌ STREAMING LOGS: Failed to end session:', error);

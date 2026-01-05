@@ -5,8 +5,74 @@
       "bannedAt": "2025-09-11T07:13:30.778Z",
       "reason": "Banned via admin command",
       "bannedBy": "onestreamer"
+    },
+    {
+      "username": "E77",
+      "bannedAt": "2025-12-05T09:17:14.228Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Turtle145",
+      "bannedAt": "2025-12-05T10:15:44.549Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Newt7818",
+      "bannedAt": "2025-12-05T10:15:54.375Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Ant253",
+      "bannedAt": "2026-01-03T05:41:13.517Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Goose4961",
+      "bannedAt": "2026-01-03T06:16:56.286Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Crab190",
+      "bannedAt": "2026-01-04T22:24:28.110Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Scorpion4643",
+      "bannedAt": "2026-01-04T23:08:17.421Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Spider6860",
+      "bannedAt": "2026-01-05T00:16:36.874Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Penguin7484",
+      "bannedAt": "2026-01-05T00:16:57.163Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Butterfly5185",
+      "bannedAt": "2026-01-05T00:55:31.685Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
+    },
+    {
+      "username": "Jellyfish1674",
+      "bannedAt": "2026-01-05T01:56:25.626Z",
+      "reason": "Banned via admin command",
+      "bannedBy": "onestreamer"
     }
   ],
   "timedOutUsers": [],
-  "lastUpdated": "2025-09-11T07:13:30.779Z"
+  "lastUpdated": "2026-01-05T01:56:25.626Z"
 }

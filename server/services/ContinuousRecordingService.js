@@ -1,4 +1,4 @@
-const { EgressClient, SegmentedFileOutput, SegmentedFileProtocol, RoomServiceClient } = require('livekit-server-sdk');
+const { EgressClient, SegmentedFileOutput, SegmentedFileProtocol, RoomServiceClient, EncodedFileOutput, EncodedFileType } = require('livekit-server-sdk');
 const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
@@ -40,6 +40,8 @@ class ContinuousRecordingService extends EventEmitter {
     this.currentSessionId = null; // Unique ID for current recording session
     this.roomServiceClient = null;
     this.autoRecordInterval = null;
+    this.currentRecordingTarget = null; // 'room' or participant identity (for participant egress)
+    this.lastRealStreamerCheck = null; // Track last detected real streamer
 
     // Initialize
     this.initialize();
@@ -82,7 +84,63 @@ class ContinuousRecordingService extends EventEmitter {
   }
 
   /**
+   * Check if a participant is a viewbot (not a real streamer)
+   */
+  isViewbot(participant) {
+    const identity = participant.identity || '';
+    const name = participant.name || '';
+
+    // Check identity patterns
+    if (identity.startsWith('viewbot-') ||
+        identity.includes('viewbot') ||
+        identity.startsWith('bot-')) {
+      return true;
+    }
+
+    // Check metadata
+    try {
+      const metadata = JSON.parse(participant.metadata || '{}');
+      if (metadata.type === 'viewbot') {
+        return true;
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+
+    return false;
+  }
+
+  /**
+   * Find the real (non-viewbot) streamer with video tracks
+   * Returns the participant identity if found, null otherwise
+   */
+  async findRealStreamer() {
+    try {
+      const participants = await this.roomServiceClient.listParticipants(this.roomName);
+
+      // Find participants with video tracks who are NOT viewbots
+      const realStreamers = participants.filter(p => {
+        const hasVideo = p.tracks && p.tracks.some(t => t.type === 1 && !t.muted);
+        return hasVideo && !this.isViewbot(p);
+      });
+
+      if (realStreamers.length > 0) {
+        // Return the first real streamer found
+        const streamer = realStreamers[0];
+        console.log(`🎯 CONTINUOUS RECORDING: Found real streamer: ${streamer.identity}`);
+        return streamer.identity;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ CONTINUOUS RECORDING: Error finding real streamer:', error.message);
+      return null;
+    }
+  }
+
+  /**
    * Check if room has active publishers and auto-start/stop recording
+   * Prioritizes real streamers over viewbots
    */
   async checkAndAutoRecord() {
     try {
@@ -93,9 +151,29 @@ class ContinuousRecordingService extends EventEmitter {
         p.tracks && p.tracks.some(t => t.type === 1 && !t.muted) // type 1 = VIDEO
       );
 
+      // Find real streamer (non-viewbot)
+      const realStreamer = await this.findRealStreamer();
+
+      // Check if recording target changed (room -> participant or vice versa)
+      const targetChanged = this.isRecording && (
+        (realStreamer && this.currentRecordingTarget === 'room') ||
+        (!realStreamer && this.currentRecordingTarget !== 'room' && this.currentRecordingTarget !== null)
+      );
+
+      if (targetChanged) {
+        console.log(`🔄 CONTINUOUS RECORDING: Recording target changed. Real streamer: ${realStreamer || 'none'}, Current target: ${this.currentRecordingTarget}`);
+        // Stop current recording and restart with new target
+        await this.stopRecording();
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Brief delay
+      }
+
       if (hasPublisher && !this.isRecording) {
-        console.log('🎥 CONTINUOUS RECORDING: Detected publisher, starting recording...');
-        await this.startRecording();
+        if (realStreamer) {
+          console.log(`🎥 CONTINUOUS RECORDING: Detected REAL streamer ${realStreamer}, starting participant recording...`);
+        } else {
+          console.log('🎥 CONTINUOUS RECORDING: Detected viewbot publisher, starting room recording...');
+        }
+        await this.startRecording(realStreamer);
       } else if (!hasPublisher && this.isRecording) {
         // Keep recording for a bit after stream ends to capture final moments
         console.log('🎥 CONTINUOUS RECORDING: No publishers detected, will continue recording briefly...');
@@ -125,38 +203,61 @@ class ContinuousRecordingService extends EventEmitter {
 
   /**
    * Start continuous recording of the room with HLS segments
+   * @param {string|null} targetParticipant - If provided, use Participant Egress for this identity (real streamer).
+   *                                          If null, use Room Composite Egress (viewbot/default).
    */
-  async startRecording() {
+  async startRecording(targetParticipant = null) {
     // If we think we're recording, verify the egress is still active
     if (this.isRecording && this.currentEgressId) {
       const egressInfo = await this.getEgressInfo(this.currentEgressId);
       if (egressInfo && (egressInfo.status === 0 || egressInfo.status === 1)) {
-        console.log('⚠️ CONTINUOUS RECORDING: Already recording, verified egress is active');
-        return { success: true, egressId: this.currentEgressId };
-      } else {
-        // Egress completed or failed, reset state
-        console.log('🔄 CONTINUOUS RECORDING: Previous egress completed/failed, resetting state');
-        this.isRecording = false;
-        this.currentEgressId = null;
-        this.recordingStartTime = null;
-        this.currentSessionId = null;
+        // Check if target changed (need to switch from room to participant or vice versa)
+        if (targetParticipant && this.currentRecordingTarget === 'room') {
+          console.log(`🔄 CONTINUOUS RECORDING: Need to switch from room to participant egress for ${targetParticipant}`);
+          // Will stop and restart below
+        } else if (!targetParticipant && this.currentRecordingTarget !== 'room') {
+          console.log(`🔄 CONTINUOUS RECORDING: Need to switch from participant to room egress`);
+          // Will stop and restart below
+        } else {
+          console.log('⚠️ CONTINUOUS RECORDING: Already recording, verified egress is active');
+          return { success: true, egressId: this.currentEgressId };
+        }
       }
+      // Egress completed or failed or target changed, reset state
+      console.log('🔄 CONTINUOUS RECORDING: Previous egress completed/failed/target changed, resetting state');
+      this.isRecording = false;
+      this.currentEgressId = null;
+      this.recordingStartTime = null;
+      this.currentSessionId = null;
+      this.currentRecordingTarget = null;
     }
 
     try {
       // Check if there's already an active egress for this room
       const activeEgresses = await this.listActiveEgress();
       if (activeEgresses.length > 0) {
-        console.log(`⚠️ CONTINUOUS RECORDING: Found ${activeEgresses.length} active egress job(s), using existing`);
-        this.currentEgressId = activeEgresses[0].egressId;
-        this.isRecording = true;
-        this.recordingStartTime = Date.now();
-        // Try to extract session ID from existing egress
-        this.currentSessionId = this.extractSessionIdFromEgress(activeEgresses[0]);
-        return { success: true, egressId: this.currentEgressId };
+        // If we need participant egress but room egress is running, stop it first
+        if (targetParticipant) {
+          console.log(`🔄 CONTINUOUS RECORDING: Stopping existing room egress to start participant egress for ${targetParticipant}`);
+          for (const egress of activeEgresses) {
+            try {
+              await this.egressClient.stopEgress(egress.egressId);
+            } catch (e) {
+              console.log(`⚠️ Could not stop egress ${egress.egressId}: ${e.message}`);
+            }
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          console.log(`⚠️ CONTINUOUS RECORDING: Found ${activeEgresses.length} active egress job(s), using existing`);
+          this.currentEgressId = activeEgresses[0].egressId;
+          this.isRecording = true;
+          this.recordingStartTime = Date.now();
+          this.currentRecordingTarget = 'room';
+          // Try to extract session ID from existing egress
+          this.currentSessionId = this.extractSessionIdFromEgress(activeEgresses[0]);
+          return { success: true, egressId: this.currentEgressId };
+        }
       }
-
-      console.log('🎬 CONTINUOUS RECORDING: Starting HLS segmented recording...');
 
       // Create a unique session ID for this recording
       this.currentSessionId = `session_${Date.now()}`;
@@ -183,40 +284,70 @@ class ContinuousRecordingService extends EventEmitter {
       // Ensure permissions are correct (mkdirSync mode can be affected by umask)
       fs.chmodSync(hostSessionDir, 0o777);
 
-      // Start room composite egress with segmented output
-      const egressInfo = await this.egressClient.startRoomCompositeEgress(
-        this.roomName,
-        {
-          segments: segmentOutput,
-        },
-        {
-          layout: 'single-speaker',
-          audioOnly: false,
-          videoOnly: false,
-          customBaseUrl: '',
-        }
-      );
+      let egressInfo;
+
+      if (targetParticipant) {
+        // Use Participant Egress for real streamers - records ONLY this participant
+        console.log(`🎬 CONTINUOUS RECORDING: Starting PARTICIPANT egress for ${targetParticipant}...`);
+
+        egressInfo = await this.egressClient.startParticipantEgress(
+          this.roomName,
+          targetParticipant, // participant identity
+          {
+            segments: segmentOutput,
+          },
+          {
+            // screenShare: false, // Don't include screen share
+            // Record both audio and video from this participant
+          }
+        );
+
+        this.currentRecordingTarget = targetParticipant;
+        console.log(`✅ CONTINUOUS RECORDING: Started PARTICIPANT egress for ${targetParticipant}`);
+      } else {
+        // Use Room Composite egress for viewbots (no real streamer)
+        console.log('🎬 CONTINUOUS RECORDING: Starting ROOM COMPOSITE egress (viewbot mode)...');
+
+        egressInfo = await this.egressClient.startRoomCompositeEgress(
+          this.roomName,
+          {
+            segments: segmentOutput,
+          },
+          {
+            layout: 'single-speaker',
+            audioOnly: false,
+            videoOnly: false,
+            customBaseUrl: '',
+          }
+        );
+
+        this.currentRecordingTarget = 'room';
+        console.log('✅ CONTINUOUS RECORDING: Started ROOM COMPOSITE egress');
+      }
 
       this.currentEgressId = egressInfo.egressId;
       this.isRecording = true;
       this.recordingStartTime = Date.now();
 
-      console.log(`✅ CONTINUOUS RECORDING: Started with egress ID: ${this.currentEgressId}`);
+      console.log(`   Egress ID: ${this.currentEgressId}`);
       console.log(`   Session: ${this.currentSessionId}`);
+      console.log(`   Target: ${this.currentRecordingTarget}`);
       console.log(`   Segments: ${hostSessionDir}/`);
 
       this.emit('recording-started', {
         egressId: this.currentEgressId,
         sessionId: this.currentSessionId,
         startTime: this.recordingStartTime,
-        outputPath: hostSessionDir
+        outputPath: hostSessionDir,
+        target: this.currentRecordingTarget
       });
 
       return {
         success: true,
         egressId: this.currentEgressId,
         sessionId: this.currentSessionId,
-        startTime: this.recordingStartTime
+        startTime: this.recordingStartTime,
+        target: this.currentRecordingTarget
       };
 
     } catch (error) {
@@ -273,6 +404,7 @@ class ContinuousRecordingService extends EventEmitter {
       this.isRecording = false;
       this.recordingStartTime = null;
       this.currentSessionId = null;
+      this.currentRecordingTarget = null;
 
       return { success: true, duration };
 
@@ -281,6 +413,7 @@ class ContinuousRecordingService extends EventEmitter {
       // Reset state anyway
       this.currentEgressId = null;
       this.isRecording = false;
+      this.currentRecordingTarget = null;
       return { success: false, error: error.message };
     }
   }
@@ -323,7 +456,9 @@ class ContinuousRecordingService extends EventEmitter {
       startTime: this.recordingStartTime,
       duration: this.isRecording ? Date.now() - this.recordingStartTime : 0,
       outputDir: this.outputDir,
-      isActiveFromDisk
+      isActiveFromDisk,
+      recordingTarget: this.currentRecordingTarget, // 'room' or participant identity
+      isParticipantEgress: this.currentRecordingTarget && this.currentRecordingTarget !== 'room'
     };
   }
 

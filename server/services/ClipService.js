@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const ProfanityFilterService = require('./ProfanityFilterService');
 
 /**
  * ClipService - Business logic for clip management
@@ -34,6 +35,9 @@ class ClipService {
     // Rate limit caches
     this.userRateLimitCache = new Map();   // userId -> { count, resetTime, lastRequest }
     this.ipRateLimitCache = new Map();     // ip -> { count, resetTime, lastRequest }
+
+    // Profanity filter for clip titles and descriptions
+    this.profanityFilter = new ProfanityFilterService();
 
     // Cleanup old entries periodically
     setInterval(() => this.cleanupRateLimitCaches(), 15 * 60 * 1000); // Every 15 minutes
@@ -86,6 +90,20 @@ class ClipService {
     }
     if (title.length > this.MAX_TITLE_LENGTH) {
       throw new Error(`Title must be under ${this.MAX_TITLE_LENGTH} characters`);
+    }
+
+    // Check title for profanity/offensive content
+    const titleValidation = this.profanityFilter.validateClipTitle(title);
+    if (!titleValidation.isValid) {
+      throw new Error(titleValidation.error);
+    }
+
+    // Check description for profanity/offensive content (if provided)
+    if (description) {
+      const descValidation = this.profanityFilter.validateClipDescription(description);
+      if (!descValidation.isValid) {
+        throw new Error(descValidation.error);
+      }
     }
 
     // Check processing queue limit
@@ -349,8 +367,22 @@ class ClipService {
 
     for (const [key, value] of Object.entries(updates)) {
       if (allowedFields.includes(key) && value !== undefined) {
-        if (key === 'title' && (!value || value.length > this.MAX_TITLE_LENGTH)) {
-          throw new Error(`Title must be 1-${this.MAX_TITLE_LENGTH} characters`);
+        if (key === 'title') {
+          if (!value || value.length > this.MAX_TITLE_LENGTH) {
+            throw new Error(`Title must be 1-${this.MAX_TITLE_LENGTH} characters`);
+          }
+          // Check title for profanity/offensive content
+          const titleValidation = this.profanityFilter.validateClipTitle(value);
+          if (!titleValidation.isValid) {
+            throw new Error(titleValidation.error);
+          }
+        }
+        if (key === 'description' && value) {
+          // Check description for profanity/offensive content
+          const descValidation = this.profanityFilter.validateClipDescription(value);
+          if (!descValidation.isValid) {
+            throw new Error(descValidation.error);
+          }
         }
         setClauses.push(`${key} = ?`);
         params.push(key === 'is_public' ? (value ? 1 : 0) : value);

@@ -165,7 +165,37 @@ router.post('/refresh', async (req, res) => {
 router.get('/verify-email/:token', async (req, res) => {
     try {
         const { token } = req.params;
-        await authService.verifyEmail(token);
+        const result = await authService.verifyEmail(token);
+
+        // Grant starter items to newly verified users
+        if (result && result.userId) {
+            const inventoryService = req.app.locals.inventoryService;
+            const itemService = req.app.locals.itemService;
+
+            if (inventoryService && itemService) {
+                try {
+                    // Get item IDs for starter items
+                    const tomato = await itemService.getItemByName('tomato');
+                    const heartSwarm = await itemService.getItemByName('heart_swarm');
+
+                    // Grant 5 tomatoes
+                    if (tomato) {
+                        await inventoryService.addItemToInventory(result.userId, tomato.id, 5);
+                        console.log(`🎁 WELCOME: Granted 5 tomatoes to user ${result.userId}`);
+                    }
+
+                    // Grant 1 heart swarm
+                    if (heartSwarm) {
+                        await inventoryService.addItemToInventory(result.userId, heartSwarm.id, 1);
+                        console.log(`🎁 WELCOME: Granted 1 heart swarm to user ${result.userId}`);
+                    }
+                } catch (grantError) {
+                    console.error('Error granting starter items:', grantError);
+                    // Don't fail verification if item granting fails
+                }
+            }
+        }
+
         res.json({ message: 'Email verified successfully' });
     } catch (error) {
         console.error('Email verification error:', error);

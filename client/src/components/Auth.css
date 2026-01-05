@@ -481,3 +481,53 @@
 .auth-form .cf-turnstile iframe {
   margin: 0 auto;
 }
+
+/* Starter items notice for new signups */
+.starter-items-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(255, 183, 77, 0.12), rgba(255, 152, 0, 0.08));
+  border: 1px solid rgba(255, 183, 77, 0.25);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 20px 0;
+  animation: starterItemsGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes starterItemsGlow {
+  0% {
+    box-shadow: 0 0 10px rgba(255, 183, 77, 0.1);
+  }
+  100% {
+    box-shadow: 0 0 20px rgba(255, 183, 77, 0.2);
+  }
+}
+
+.starter-items-icon {
+  font-size: 24px;
+  animation: giftBounce 1s ease-in-out infinite;
+}
+
+@keyframes giftBounce {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-3px) rotate(-5deg);
+  }
+  75% {
+    transform: translateY(-3px) rotate(5deg);
+  }
+}
+
+.starter-items-notice p {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.5;
+}
+
+.starter-items-notice strong {
+  color: #ffb74d;
+}

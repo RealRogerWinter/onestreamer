@@ -1171,7 +1171,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
             </button>
           )}
           <div className={`connection-indicator ${connectionStatus}`}></div>
-          <span className="user-count">{userCount} viewer{userCount !== 1 ? 's' : ''}</span>
         </div>
       </div>
       

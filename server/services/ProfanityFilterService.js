@@ -139,6 +139,57 @@ class ProfanityFilterService {
     }
     
     /**
+     * Validate clip title
+     * @param {string} title - Clip title to validate
+     * @returns {object} - Validation result with isValid and error message
+     */
+    validateClipTitle(title) {
+        if (!title || typeof title !== 'string') {
+            return { isValid: false, error: 'Title is required' };
+        }
+
+        title = title.trim();
+
+        if (title.length < 1) {
+            return { isValid: false, error: 'Title cannot be empty' };
+        }
+
+        if (title.length > 100) {
+            return { isValid: false, error: 'Title must be 100 characters or less' };
+        }
+
+        if (!this.isClean(title)) {
+            return { isValid: false, error: 'Title contains inappropriate or offensive content' };
+        }
+
+        return { isValid: true };
+    }
+
+    /**
+     * Validate clip description
+     * @param {string} description - Clip description to validate
+     * @returns {object} - Validation result with isValid and error message
+     */
+    validateClipDescription(description) {
+        // Description is optional
+        if (!description || typeof description !== 'string') {
+            return { isValid: true };
+        }
+
+        description = description.trim();
+
+        if (description.length > 500) {
+            return { isValid: false, error: 'Description must be 500 characters or less' };
+        }
+
+        if (!this.isClean(description)) {
+            return { isValid: false, error: 'Description contains inappropriate or offensive content' };
+        }
+
+        return { isValid: true };
+    }
+
+    /**
      * Validate personality prompt
      * @param {string} prompt - Personality prompt to validate
      * @returns {object} - Validation result with isValid and error message

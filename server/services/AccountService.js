@@ -136,7 +136,7 @@ class AccountService {
             [user.id]
         );
 
-        return true;
+        return { success: true, userId: user.id };
     }
 
     async createPasswordResetToken(email) {

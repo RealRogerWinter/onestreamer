@@ -110,7 +110,11 @@ const Signup: React.FC<SignupProps> = ({ onSuccess, onSwitchToLogin, onClose }) 
             We've sent a verification email to <strong>{email}</strong>.
             Please check your inbox and click the verification link to activate your account.
           </p>
-          <button 
+          <div className="starter-items-notice">
+            <span className="starter-items-icon">🎁</span>
+            <p>Verify your email to receive <strong>5 Tomatoes</strong> 🍅 and a <strong>Heart Swarm</strong> 💕 to use on stream!</p>
+          </div>
+          <button
             className="auth-button auth-button-secondary"
             onClick={onSwitchToLogin}
           >

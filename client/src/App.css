@@ -1205,24 +1205,201 @@ body:has(.App.theatre-mode) {
 
 /* Theatre Mode Header Buttons */
 .theatre-inventory-btn {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  position: relative;
+  background: linear-gradient(135deg, rgba(255, 183, 77, 0.15), rgba(255, 152, 0, 0.1));
+  border: 1px solid rgba(255, 183, 77, 0.35);
   color: white;
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  font-size: 20px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 22px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   justify-content: center;
+  animation: inventoryFloat 3s ease-in-out infinite;
+  box-shadow:
+    0 0 15px rgba(255, 183, 77, 0.25),
+    0 4px 12px rgba(0, 0, 0, 0.2),
+    inset 0 0 12px rgba(255, 183, 77, 0.1);
+  overflow: hidden;
+}
+
+/* Floating animation for inventory button */
+@keyframes inventoryFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* Shine sweep effect */
+.theatre-inventory-btn::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -100%;
+  width: 50%;
+  height: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transform: skewX(-20deg);
+  animation: inventoryShine 3s ease-in-out infinite;
+}
+
+@keyframes inventoryShine {
+  0%, 100% {
+    left: -100%;
+  }
+  50%, 60% {
+    left: 150%;
+  }
+}
+
+/* Glowing pulse ring */
+.theatre-inventory-btn::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 183, 77, 0.5), rgba(255, 152, 0, 0.3), rgba(255, 220, 100, 0.5));
+  z-index: -1;
+  animation: inventoryGlow 2s ease-in-out infinite;
+  filter: blur(4px);
+}
+
+@keyframes inventoryGlow {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
 }
 
 .theatre-inventory-btn:hover {
+  background: linear-gradient(135deg, rgba(255, 183, 77, 0.25), rgba(255, 152, 0, 0.2));
+  border-color: rgba(255, 183, 77, 0.5);
+  transform: scale(1.1) translateY(-2px);
+  box-shadow:
+    0 0 25px rgba(255, 183, 77, 0.4),
+    0 8px 20px rgba(0, 0, 0, 0.3),
+    inset 0 0 15px rgba(255, 183, 77, 0.15);
+  animation: none;
+}
+
+.theatre-inventory-btn:hover::before {
+  animation: none;
+  opacity: 0;
+}
+
+.theatre-inventory-btn:hover::after {
+  opacity: 0.9;
+  filter: blur(6px);
+}
+
+/* Inventory button wrapper for tooltip positioning */
+.inventory-btn-wrapper {
+  position: relative;
+}
+
+/* Signup hint tooltip for non-authenticated users */
+.inventory-signup-hint {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, rgba(30, 30, 45, 0.98), rgba(20, 20, 35, 0.98));
+  border: 1px solid rgba(255, 183, 77, 0.3);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(255, 183, 77, 0.15);
+  animation: hintSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 10000;
+}
+
+/* Arrow pointing up */
+.inventory-signup-hint::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(135deg, rgba(30, 30, 45, 0.98), rgba(30, 30, 45, 0.98));
+  border-left: 1px solid rgba(255, 183, 77, 0.3);
+  border-top: 1px solid rgba(255, 183, 77, 0.3);
+}
+
+@keyframes hintSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.inventory-signup-hint .hint-icon {
+  font-size: 14px;
+  animation: hintSparkle 1.5s ease-in-out infinite;
+}
+
+@keyframes hintSparkle {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.2) rotate(10deg);
+  }
+}
+
+.inventory-signup-hint .hint-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 0.2px;
+}
+
+.inventory-signup-hint .hint-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  margin-left: 4px;
+  padding: 0;
+}
+
+.inventory-signup-hint .hint-close:hover {
   background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.3);
-  transform: scale(1.05);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .theatre-clips-btn {
@@ -1273,6 +1450,32 @@ body:has(.App.theatre-mode) {
 
 .theatre-blog-btn svg {
   stroke: white;
+}
+
+.theatre-discord-btn {
+  background: rgba(88, 101, 242, 0.15);
+  border: 1px solid rgba(88, 101, 242, 0.3);
+  color: #5865F2;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.theatre-discord-btn:hover {
+  background: rgba(88, 101, 242, 0.25);
+  border-color: rgba(88, 101, 242, 0.5);
+  transform: scale(1.05);
+  box-shadow: 0 0 12px rgba(88, 101, 242, 0.3);
+}
+
+.theatre-discord-btn svg {
+  fill: #5865F2;
 }
 
 .theatre-dropdown-container {

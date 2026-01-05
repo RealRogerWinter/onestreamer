@@ -1205,6 +1205,7 @@ async function handlePublicCommand(command, args, user, socket, io) {
 !slots [amount] - Play slots (costs 10 points minimum)
 !gift [item] [user] [quantity] - Gift an item to another user
 !claim [code] - Claim points during a claim event
+!discord - Get the Discord invite link
 !help - Show this help message`;
       
       const streamerBotMessage = {
@@ -1562,7 +1563,28 @@ async function handlePublicCommand(command, args, user, socket, io) {
         sendAdminResponse(socket, `❌ Failed to gift item: ${error.response?.data?.error || error.message}`);
       }
       break;
-      
+
+    case 'discord':
+      const discordMessage = `📢 Join the OneStreamer Discord community! Connect with other streamers, get support, and stay updated: https://discord.gg/As5CA3ekYA`;
+
+      const discordBotMessage = {
+        id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        username: '🤖 StreamBot',
+        color: '#5865F2',
+        message: discordMessage,
+        timestamp: formatTime(),
+        fullTimestamp: new Date().toISOString(),
+        isSystem: true
+      };
+
+      chatMessages.push(discordBotMessage);
+      if (chatMessages.length > MAX_CHAT_HISTORY) {
+        chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+      }
+
+      io.emit('new-message', discordBotMessage);
+      break;
+
     default:
       sendAdminResponse(socket, `❓ Unknown command: !${command}. Type !help for available commands.`);
   }

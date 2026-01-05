@@ -166,12 +166,17 @@ const StreamingLogs: React.FC<StreamingLogsProps> = ({ addLog }) => {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString();
+    return date.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
   };
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleTimeString();
+    return date.toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles' });
+  };
+
+  const formatDateShort = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
   };
 
   const getStatusColor = (log: StreamingLog) => {
@@ -357,14 +362,14 @@ const StreamingLogs: React.FC<StreamingLogsProps> = ({ addLog }) => {
                     <td className="time-cell">
                       <div className="time-info">
                         <span className="time-main">{formatTime(log.started_at)}</span>
-                        <span className="time-date">{new Date(log.started_at).toLocaleDateString()}</span>
+                        <span className="time-date">{formatDateShort(log.started_at)}</span>
                       </div>
                     </td>
                     <td className="time-cell">
                       {log.ended_at ? (
                         <div className="time-info">
                           <span className="time-main">{formatTime(log.ended_at)}</span>
-                          <span className="time-date">{new Date(log.ended_at).toLocaleDateString()}</span>
+                          <span className="time-date">{formatDateShort(log.ended_at)}</span>
                         </div>
                       ) : (
                         <span className="live-indicator">LIVE</span>

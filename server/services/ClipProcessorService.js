@@ -202,7 +202,6 @@ class ClipProcessorService extends EventEmitter {
     // Generate output paths
     const clipPath = this.storageService.getClipPath(clipId);
     const thumbnailPath = this.storageService.getThumbnailPath(clipId);
-    const tempConcatPath = this.storageService.getTempPath(clipId, 'ts');
     const concatListPath = this.storageService.getTempPath(clipId, 'txt');
 
     try {
@@ -210,24 +209,18 @@ class ClipProcessorService extends EventEmitter {
       const concatList = segments.map(s => `file '${s.segmentPath}'`).join('\n');
       fs.writeFileSync(concatListPath, concatList);
 
-      // Step 2: Concatenate segments and trim to exact clip boundaries
-      // Calculate trim offsets relative to the first segment
+      // Step 2: Calculate trim offsets relative to the first segment
       const firstSegmentStart = segments[0].startMs;
       const trimStart = Math.max(0, (clipStartMs - firstSegmentStart) / 1000);
       const trimDuration = clipDurationMs / 1000;
 
-      await this.concatenateAndTrim(concatListPath, tempConcatPath, trimStart, trimDuration);
-
-      // Step 3: Re-encode to MP4 with faststart for streaming
-      await this.encodeClip(tempConcatPath, clipPath);
+      // Step 3: Concat, trim, and encode in ONE step to maintain A/V sync
+      await this.concatAndEncode(concatListPath, clipPath, trimStart, trimDuration);
 
       // Step 4: Generate thumbnail
       await this.generateThumbnail(clipPath, thumbnailPath);
 
       // Step 5: Clean up temp files
-      if (fs.existsSync(tempConcatPath)) {
-        fs.unlinkSync(tempConcatPath);
-      }
       if (fs.existsSync(concatListPath)) {
         fs.unlinkSync(concatListPath);
       }
@@ -243,7 +236,6 @@ class ClipProcessorService extends EventEmitter {
 
     } catch (error) {
       // Clean up on failure
-      if (fs.existsSync(tempConcatPath)) fs.unlinkSync(tempConcatPath);
       if (fs.existsSync(concatListPath)) fs.unlinkSync(concatListPath);
       if (fs.existsSync(clipPath)) fs.unlinkSync(clipPath);
       if (fs.existsSync(thumbnailPath)) fs.unlinkSync(thumbnailPath);
@@ -253,53 +245,41 @@ class ClipProcessorService extends EventEmitter {
   }
 
   /**
-   * Concatenate segments and trim to exact boundaries
+   * Concat segments, trim, and encode to MP4 in one step
+   * Using -ss before input maintains A/V sync
    * @param {string} concatListPath - Path to concat list file
-   * @param {string} outputPath - Output file path
+   * @param {string} outputPath - Output MP4 file path
    * @param {number} trimStart - Start offset in seconds
    * @param {number} trimDuration - Duration in seconds
    */
-  concatenateAndTrim(concatListPath, outputPath, trimStart, trimDuration) {
-    // Use concat demuxer with trim
+  concatAndEncode(concatListPath, outputPath, trimStart, trimDuration) {
+    // Use filter_complex with trim/atrim to cut both streams at same point
+    // This maintains perfect A/V sync by trimming video and audio together
+    const trimEnd = trimStart + trimDuration;
+    const filterComplex = `[0:v]trim=start=${trimStart.toFixed(3)}:end=${trimEnd.toFixed(3)},setpts=PTS-STARTPTS[v];[0:a]atrim=start=${trimStart.toFixed(3)}:end=${trimEnd.toFixed(3)},asetpts=PTS-STARTPTS[a]`;
+
     const args = [
       '-f', 'concat',
       '-safe', '0',
       '-i', concatListPath,
-      '-ss', trimStart.toFixed(3),
-      '-t', trimDuration.toFixed(3),
-      '-c', 'copy', // Stream copy for speed
-      '-avoid_negative_ts', 'make_zero',
-      '-y',
-      outputPath
-    ];
-
-    console.log(`📹 CLIP PROCESSOR: Concatenating ${trimDuration.toFixed(1)}s from segments (offset: ${trimStart.toFixed(1)}s)`);
-
-    return this.spawnWithTimeout(args, this.TIMEOUT_CONCAT, 'FFmpeg concat');
-  }
-
-  /**
-   * Re-encode clip to MP4 with faststart for web streaming
-   * @param {string} inputPath - Input file path
-   * @param {string} outputPath - Output file path
-   */
-  encodeClip(inputPath, outputPath) {
-    const args = [
-      '-i', inputPath,
+      '-filter_complex', filterComplex,
+      '-map', '[v]',
+      '-map', '[a]',
       '-c:v', 'libx264',
       '-preset', 'fast',
       '-crf', '23',
+      '-force_key_frames', 'expr:eq(t,0)', // Keyframe at start for instant playback
       '-c:a', 'aac',
       '-b:a', '128k',
-      '-movflags', '+faststart', // Enable progressive download
-      '-pix_fmt', 'yuv420p', // Compatibility
+      '-movflags', '+faststart', // Progressive download
+      '-pix_fmt', 'yuv420p',
       '-y',
       outputPath
     ];
 
-    console.log(`🔄 CLIP PROCESSOR: Encoding to MP4...`);
+    console.log(`📹 CLIP PROCESSOR: Processing ${trimDuration.toFixed(1)}s clip (offset: ${trimStart.toFixed(1)}s)`);
 
-    return this.spawnWithTimeout(args, this.TIMEOUT_ENCODE, 'FFmpeg encode');
+    return this.spawnWithTimeout(args, this.TIMEOUT_ENCODE, 'FFmpeg concat+encode');
   }
 
   /**
