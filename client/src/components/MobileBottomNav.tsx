@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import './MobileBottomNav.css';
+import { ClipCreationModal } from './clips';
 
 interface MobileBottomNavProps {
   isAuthenticated: boolean;
@@ -38,6 +39,9 @@ const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   const [showLoginPrompt, setShowLoginPrompt] = useState<'backpack' | 'shop' | null>(null);
   // Track if we've pushed a history state for the login prompt
   const promptHistoryRef = useRef<boolean>(false);
+  // Clip functionality
+  const [showClipModal, setShowClipModal] = useState(false);
+  const [clipStatus, setClipStatus] = useState<{ available: boolean; isRecording: boolean } | null>(null);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -77,6 +81,25 @@ const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [showLoginPrompt]);
+
+  // Check clip availability
+  useEffect(() => {
+    const checkClipStatus = async () => {
+      try {
+        const response = await fetch('/api/clips/status');
+        const data = await response.json();
+        if (data.success) {
+          setClipStatus({ available: data.available, isRecording: data.isRecording });
+        }
+      } catch (err) {
+        console.error('Failed to check clip status:', err);
+      }
+    };
+
+    checkClipStatus();
+    const interval = setInterval(checkClipStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleBackpackClick = () => {
     if (isAuthenticated) {
@@ -168,12 +191,32 @@ const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           <span className="nav-label">Shop</span>
         </button>
 
+        {/* Clip Button */}
+        <button
+          className={`nav-item nav-clip ${!clipStatus?.available ? 'disabled' : ''}`}
+          onClick={() => clipStatus?.available && setShowClipModal(true)}
+          disabled={!clipStatus?.available}
+        >
+          <span className="nav-icon">✂️</span>
+          <span className="nav-label">Clip</span>
+        </button>
+
         {/* Points Display or Login prompt */}
         <div className="nav-item nav-points">
           <span className="nav-icon">💎</span>
           <span className="nav-points-value">{isAuthenticated ? userPoints : '---'}</span>
         </div>
       </div>
+
+      {/* Clip Creation Modal */}
+      {showClipModal && (
+        <ClipCreationModal
+          onClose={() => setShowClipModal(false)}
+          onSuccess={(clipId) => {
+            console.log('Clip created:', clipId);
+          }}
+        />
+      )}
     </>
   );
 };

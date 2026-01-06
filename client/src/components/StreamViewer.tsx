@@ -22,6 +22,7 @@ interface StreamViewerProps {
   isScreenSharing?: boolean;
   onScreenShareChange?: (isSharing: boolean) => void;
   onScreenShareMethodsReady?: (methods: { startScreenShare: () => void; stopScreenShare: () => void }) => void;
+  landscapeMode?: boolean;
 }
 
 const StreamViewer: React.FC<StreamViewerProps> = ({
@@ -40,11 +41,29 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
   screenShareSettings,
   isScreenSharing = false,
   onScreenShareChange,
-  onScreenShareMethodsReady
+  onScreenShareMethodsReady,
+  landscapeMode = false
 }) => {
+  const landscapeStyles: React.CSSProperties = landscapeMode ? {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    maxHeight: '100%',
+    minHeight: 0,
+    margin: 0,
+    padding: 0,
+    borderRadius: 0,
+    aspectRatio: 'unset',
+    overflow: 'hidden'
+  } : {};
+
   if (!socket) {
     return (
-      <div className="stream-viewer">
+      <div className="stream-viewer" style={landscapeStyles}>
         <div className="no-stream">
           <div className="no-stream-content">
             <h2>Connecting...</h2>
@@ -59,7 +78,7 @@ const StreamViewer: React.FC<StreamViewerProps> = ({
   }
 
   return (
-    <div className="stream-viewer">
+    <div className="stream-viewer" style={landscapeStyles}>
       {isStreaming && !forceViewerMode ? (
         <div className="streaming-view">
           <WebRTCStreamer

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './MobileLandscapeLayout.css';
 import Chat from './Chat';
+import { ClipCreationModal } from './clips';
 
 interface MobileLandscapeLayoutProps {
   // Stream Status
@@ -75,8 +76,10 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   const [streamDuration, setStreamDuration] = useState(initialDuration);
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showLoginPrompt, setShowLoginPrompt] = useState<'backpack' | 'shop' | null>(null);
+  const [showLoginPrompt, setShowLoginPrompt] = useState<'backpack' | 'shop' | 'stream' | null>(null);
   const [showVideoControls, setShowVideoControls] = useState(false);
+  const [showClipModal, setShowClipModal] = useState(false);
+  const [clipStatus, setClipStatus] = useState<{ available: boolean; isRecording: boolean } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -135,6 +138,25 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
     };
   }, [showVideoControls]);
 
+  // Check clip availability
+  useEffect(() => {
+    const checkClipStatus = async () => {
+      try {
+        const response = await fetch('/api/clips/status');
+        const data = await response.json();
+        if (data.success) {
+          setClipStatus({ available: data.available, isRecording: data.isRecording });
+        }
+      } catch (err) {
+        console.error('Failed to check clip status:', err);
+      }
+    };
+
+    checkClipStatus();
+    const interval = setInterval(checkClipStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const formatDuration = (milliseconds: number): string => {
     const seconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(seconds / 60);
@@ -186,10 +208,6 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   };
 
   const handleTakeOverClick = () => {
-    if (!isAuthenticated) {
-      setShowLoginPrompt('backpack');
-      return;
-    }
     setShowVideoControls(false);
     onTakeOver?.();
   };
@@ -202,6 +220,11 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   const handleSettingsClick = () => {
     setShowVideoControls(false);
     onOpenStreamerSettings?.();
+  };
+
+  const handleClipClick = () => {
+    setShowVideoControls(false);
+    setShowClipModal(true);
   };
 
   const canTakeOver = isConnected && !isStreaming && cooldownRemaining <= 0;
@@ -227,6 +250,14 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
                     <span className="control-label">Settings</span>
                   </button>
                   <button
+                    className={`video-control-btn clip-btn ${!clipStatus?.available ? 'disabled' : ''}`}
+                    onClick={handleClipClick}
+                    disabled={!clipStatus?.available}
+                  >
+                    <span className="control-icon">✂️</span>
+                    <span className="control-label">Clip</span>
+                  </button>
+                  <button
                     className="video-control-btn stop-btn"
                     onClick={handleStopStreamClick}
                   >
@@ -242,6 +273,14 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
                   >
                     <span className="control-icon">⚙️</span>
                     <span className="control-label">Settings</span>
+                  </button>
+                  <button
+                    className={`video-control-btn clip-btn ${!clipStatus?.available ? 'disabled' : ''}`}
+                    onClick={handleClipClick}
+                    disabled={!clipStatus?.available}
+                  >
+                    <span className="control-icon">✂️</span>
+                    <span className="control-label">Clip</span>
                   </button>
                   <button
                     className={`video-control-btn takeover-btn ${!canTakeOver ? 'disabled' : ''}`}
@@ -365,34 +404,46 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
             </div>
 
             <div className="menu-section">
-              <a href="/clips/" className="menu-item">Clips</a>
-              <a href="/blog/" className="menu-item">Blog</a>
+              <a href="/clips/" className="menu-item">
+                <span className="menu-icon">🎬</span>
+                <span className="menu-text">Clips</span>
+              </a>
+              <a href="/blog/" className="menu-item">
+                <span className="menu-icon">📰</span>
+                <span className="menu-text">Blog</span>
+              </a>
             </div>
 
             <div className="menu-section">
               <a href="https://discord.gg/As5CA3ekYA" target="_blank" rel="noopener noreferrer" className="menu-item discord">
-                Discord
+                <span className="menu-icon">💬</span>
+                <span className="menu-text">Discord</span>
               </a>
             </div>
 
             <div className="menu-section">
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowTutorial?.())}>
-                Tutorial
+                <span className="menu-icon">❓</span>
+                <span className="menu-text">Tutorial</span>
               </button>
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowBugReport?.())}>
-                Report Bug
+                <span className="menu-icon">🐛</span>
+                <span className="menu-text">Report Bug</span>
               </button>
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowAbout?.())}>
-                About
+                <span className="menu-icon">ℹ️</span>
+                <span className="menu-text">About</span>
               </button>
             </div>
 
             <div className="menu-section">
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowTerms?.())}>
-                Terms
+                <span className="menu-icon">📄</span>
+                <span className="menu-text">Terms</span>
               </button>
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowPrivacy?.())}>
-                Privacy
+                <span className="menu-icon">🔒</span>
+                <span className="menu-text">Privacy</span>
               </button>
             </div>
           </nav>
@@ -404,15 +455,30 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
         <div className="login-prompt-overlay" onClick={() => setShowLoginPrompt(null)}>
           <div className="login-prompt" onClick={e => e.stopPropagation()}>
             <button className="close-btn" onClick={() => setShowLoginPrompt(null)}>×</button>
-            <div className="prompt-icon">{showLoginPrompt === 'backpack' ? '🎒' : '🛒'}</div>
-            <h3>{showLoginPrompt === 'backpack' ? 'Unlock Your Backpack!' : 'Welcome to the Shop!'}</h3>
-            <p>Sign up or log in to access this feature!</p>
+            <div className="prompt-icon">
+              {showLoginPrompt === 'backpack' ? '🎒' : showLoginPrompt === 'shop' ? '🛒' : '🎥'}
+            </div>
+            <h3>
+              {showLoginPrompt === 'backpack' ? 'Unlock Your Backpack!' :
+               showLoginPrompt === 'shop' ? 'Welcome to the Shop!' : 'Go Live!'}
+            </h3>
+            <p>Sign up or log in to {showLoginPrompt === 'stream' ? 'start streaming' : 'access this feature'}!</p>
             <div className="prompt-buttons">
               <button onClick={() => { setShowLoginPrompt(null); onLogin?.(); }}>Login</button>
               <button className="primary" onClick={() => { setShowLoginPrompt(null); onLogin?.(); }}>Sign Up</button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Clip Creation Modal */}
+      {showClipModal && (
+        <ClipCreationModal
+          onClose={() => setShowClipModal(false)}
+          onSuccess={(clipId) => {
+            console.log('Clip created:', clipId);
+          }}
+        />
       )}
     </div>
   );

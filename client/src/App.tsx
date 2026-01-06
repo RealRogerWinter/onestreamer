@@ -1265,14 +1265,28 @@ function AppContent() {
         </>
       ) : null}
 
-      <main className="App-main">
-        {error && !isForceDisconnected && (
+      <main
+        className={`App-main ${isMobile && isLandscape ? 'landscape-video-only' : ''}`}
+        style={isMobile && isLandscape ? {
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 280,
+          bottom: 0,
+          overflow: 'hidden',
+          margin: 0,
+          padding: 0,
+          background: '#000'
+        } : undefined}
+      >
+        {/* Hide error/disconnection banners in mobile landscape */}
+        {!(isMobile && isLandscape) && error && !isForceDisconnected && (
           <div className="error-message">
             {error}
           </div>
         )}
-        
-        {isForceDisconnected && disconnectionReason && (
+
+        {!(isMobile && isLandscape) && isForceDisconnected && disconnectionReason && (
           <div className="disconnection-banner">
             <div className="disconnection-content">
               <div className="disconnection-icon">
@@ -1289,9 +1303,21 @@ function AppContent() {
           </div>
         )}
 
-        <div className={`main-content ${theatreMode ? 'theatre-mode-active' : ''} ${theatreMode && showInventory ? 'inventory-open' : ''} ${theatreMode && theatreChatCollapsed ? 'chat-collapsed' : ''}`}>
-          {/* Admin Controls - Show in regular mode, or in theatre mode for admins */}
-          {(!theatreMode || (theatreMode && isAdmin)) && (
+        <div
+          className={`main-content ${theatreMode ? 'theatre-mode-active' : ''} ${theatreMode && showInventory ? 'inventory-open' : ''} ${theatreMode && theatreChatCollapsed ? 'chat-collapsed' : ''}`}
+          style={isMobile && isLandscape ? {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            overflow: 'hidden',
+            margin: 0,
+            padding: 0
+          } : undefined}
+        >
+          {/* Admin Controls - Hide in mobile landscape */}
+          {!(isMobile && isLandscape) && (!theatreMode || (theatreMode && isAdmin)) && (
             <>
               <div className={theatreMode ? `theatre-admin-controls ${theatreControlsVisible ? 'visible' : ''}` : ''}>
                 <BotsPanel />
@@ -1299,11 +1325,23 @@ function AppContent() {
               </div>
             </>
           )}
-          
-          <div className="stream-layout-container">
-            {!theatreMode && (
+
+          <div
+            className="stream-layout-container"
+            style={isMobile && isLandscape ? {
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              overflow: 'hidden',
+              margin: 0,
+              padding: 0
+            } : undefined}
+          >
+            {!theatreMode && !(isMobile && isLandscape) && (
               <div className="status-effects-sidebar-left">
-                <BuffDisplay 
+                <BuffDisplay
                 showStreamerBuffs={true}
                 className="streamer-buffs-sidebar-left"
                 isCurrentUserStreaming={isStreaming}
@@ -1312,7 +1350,22 @@ function AppContent() {
                 />
               </div>
             )}
-            <div className="stream-viewer-container">
+            <div
+              className="stream-viewer-container"
+              style={isMobile && isLandscape ? {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                overflow: 'hidden',
+                margin: 0,
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              } : undefined}
+            >
               <StreamViewer
                 socket={socket}
                 isStreaming={isStreaming}
@@ -1320,6 +1373,7 @@ function AppContent() {
                 streamType={streamStatus.streamType}
                 currentStreamerId={streamStatus.streamerId}
                 forceViewerMode={forceViewerAfterTakeover}
+                landscapeMode={isMobile && isLandscape}
                 audioSettings={streamerSettings.audio}
                 onAudioSettingsChange={(newAudioSettings) => {
                   const newSettings = {
@@ -1399,8 +1453,8 @@ function AppContent() {
             </div>
           </div>
 
-          {/* Show stream controls only when NOT in theatre mode (theatre mode has its own overlay) */}
-          {!theatreMode && (
+          {/* Show stream controls only when NOT in theatre mode and NOT in mobile landscape */}
+          {!theatreMode && !(isMobile && isLandscape) && (
             <div className="stream-controls-container">
               {/* Theatre mode button - only show on desktop */}
               {!isMobile && (

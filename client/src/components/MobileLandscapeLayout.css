@@ -35,16 +35,17 @@
    VIDEO CONTROLS OVERLAY (shown on tap)
    ============================================ */
 .video-controls-overlay {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
-  right: 0;
+  right: 280px;
   bottom: 0;
   background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   animation: fadeIn 0.2s ease;
+  z-index: 115;
 }
 
 @keyframes fadeIn {
@@ -112,6 +113,11 @@
 .video-control-btn.stop-btn {
   background: rgba(244, 67, 54, 0.3);
   border-color: rgba(244, 67, 54, 0.5);
+}
+
+.video-control-btn.clip-btn {
+  background: rgba(255, 193, 7, 0.3);
+  border-color: rgba(255, 193, 7, 0.5);
 }
 
 /* ============================================
@@ -458,7 +464,9 @@
 }
 
 .menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
   padding: 10px 16px;
   background: transparent;
@@ -476,6 +484,20 @@
 
 .menu-item.discord {
   color: #7289da;
+}
+
+.menu-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.menu-text {
+  flex: 1;
 }
 
 /* ============================================
@@ -575,6 +597,10 @@
   }
 
   .landscape-video-tap-area {
+    left: max(0px, env(safe-area-inset-left));
+  }
+
+  .video-controls-overlay {
     left: max(0px, env(safe-area-inset-left));
   }
 }
