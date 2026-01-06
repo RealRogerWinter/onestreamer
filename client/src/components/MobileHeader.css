@@ -23,6 +23,46 @@
   gap: 8px;
 }
 
+/* Hamburger Menu Button */
+.header-hamburger {
+  display: flex;
+  align-items: center;
+}
+
+.hamburger-button {
+  width: 40px;
+  height: 40px;
+  padding: 10px 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hamburger-line {
+  width: 22px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.hamburger-button.open .hamburger-line:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.hamburger-button.open .hamburger-line:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger-button.open .hamburger-line:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
 /* Header Stats - Common Styles */
 .header-stat {
   display: flex;
@@ -75,47 +115,47 @@
 .streamer-stat {
   flex: 1;
   justify-content: center;
-  max-width: 180px;
+  max-width: 140px;
 }
 
 .streamer-info {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .live-badge {
-  padding: 4px 8px;
+  padding: 3px 6px;
   background: linear-gradient(135deg, #ff3b30 0%, #ff6b6b 100%);
   color: white;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  border-radius: 12px;
+  border-radius: 10px;
   animation: pulse 2s infinite;
   box-shadow: 0 2px 8px rgba(255, 59, 48, 0.4);
 }
 
 @keyframes pulse {
-  0%, 100% { 
+  0%, 100% {
     opacity: 1;
     transform: scale(1);
   }
-  50% { 
+  50% {
     opacity: 0.9;
     transform: scale(0.98);
   }
 }
 
 .streamer-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #ffffff;
   letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100px;
+  max-width: 80px;
 }
 
 .offline-status {
@@ -290,47 +330,205 @@
   opacity: 0.8;
 }
 
+/* ============================================
+   HAMBURGER MENU OVERLAY & SLIDE-OUT DRAWER
+   ============================================ */
+
+.hamburger-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1002;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.hamburger-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 280px;
+  max-width: 85vw;
+  height: 100%;
+  background: rgba(22, 22, 22, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 4px 0 30px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+  animation: slideIn 0.3s ease;
+  z-index: 1003;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.hamburger-menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+}
+
+.menu-brand {
+  font-size: 20px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.menu-close {
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.menu-close:active {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(0.95);
+}
+
+/* Menu Sections */
+.menu-section {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.menu-section:last-child {
+  border-bottom: none;
+}
+
+.menu-section-title {
+  padding: 8px 20px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 20px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.menu-item:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.menu-item-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.menu-item-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.menu-item-text {
+  flex: 1;
+}
+
+/* Discord item special styling */
+.menu-item.discord-item {
+  color: #7289da;
+}
+
+.menu-item.discord-item .menu-item-icon {
+  color: #7289da;
+}
+
 /* Responsive Adjustments */
 @media (max-width: 380px) {
   .mobile-header-v2 {
     padding: 0 8px;
   }
-  
+
   .mobile-header-content {
     gap: 4px;
   }
-  
+
   .stat-pill {
     padding: 5px 8px;
   }
-  
+
   .streamer-name {
-    max-width: 80px;
-    font-size: 13px;
+    max-width: 60px;
+    font-size: 12px;
   }
-  
+
   .user-avatar {
     width: 32px;
     height: 32px;
     font-size: 14px;
   }
-  
+
   .mobile-login-button {
     padding: 6px 12px;
     font-size: 13px;
+  }
+
+  .hamburger-menu {
+    width: 260px;
   }
 }
 
 /* iPhone SE and smaller */
 @media (max-width: 320px) {
   .streamer-stat {
-    max-width: 140px;
+    max-width: 100px;
   }
-  
+
   .streamer-name {
-    max-width: 60px;
+    max-width: 50px;
   }
-  
+
   .duration-stat {
     display: none; /* Hide duration on very small screens */
   }
@@ -341,5 +539,10 @@
   .mobile-header-v2 {
     padding-top: max(0px, env(safe-area-inset-top));
     height: calc(56px + max(0px, env(safe-area-inset-top)));
+  }
+
+  .hamburger-menu {
+    padding-top: max(0px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
   }
 }

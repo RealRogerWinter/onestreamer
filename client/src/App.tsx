@@ -1081,6 +1081,9 @@ function AppContent() {
             onLogin={() => setShowLogin(true)}
             onLogout={handleLogout}
             onProfileSettings={() => setShowProfileSettings(true)}
+            onShowTutorial={() => setShowTutorial(true)}
+            onShowBugReport={() => setShowBugReportModal(true)}
+            onShowAbout={() => setShowAbout(true)}
           />
         </>
       ) : !isMobile ? (
