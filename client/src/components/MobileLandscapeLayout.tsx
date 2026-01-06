@@ -10,6 +10,11 @@ interface MobileLandscapeLayoutProps {
   streamStartTime?: number | null;
   streamerDisplayName?: string | null;
 
+  // Streaming controls
+  isStreaming: boolean;
+  cooldownRemaining: number;
+  isConnected: boolean;
+
   // Auth & User
   isAuthenticated: boolean;
   currentUser?: any;
@@ -32,6 +37,11 @@ interface MobileLandscapeLayoutProps {
   onShowAbout?: () => void;
   onShowTerms?: () => void;
   onShowPrivacy?: () => void;
+
+  // Stream control callbacks
+  onTakeOver?: () => void;
+  onStopStream?: () => void;
+  onOpenStreamerSettings?: () => void;
 }
 
 const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
@@ -40,6 +50,9 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   streamDuration: initialDuration,
   streamStartTime,
   streamerDisplayName,
+  isStreaming,
+  cooldownRemaining,
+  isConnected,
   isAuthenticated,
   currentUser,
   userPoints = 0,
@@ -54,14 +67,19 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   onShowBugReport,
   onShowAbout,
   onShowTerms,
-  onShowPrivacy
+  onShowPrivacy,
+  onTakeOver,
+  onStopStream,
+  onOpenStreamerSettings
 }) => {
   const [streamDuration, setStreamDuration] = useState(initialDuration);
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState<'backpack' | 'shop' | null>(null);
+  const [showVideoControls, setShowVideoControls] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Update duration every second if stream is active
   useEffect(() => {
@@ -99,6 +117,23 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
     }
     return () => { document.body.style.overflow = ''; };
   }, [showHamburgerMenu]);
+
+  // Auto-hide video controls after 4 seconds
+  useEffect(() => {
+    if (showVideoControls) {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowVideoControls(false);
+      }, 4000);
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [showVideoControls]);
 
   const formatDuration = (milliseconds: number): string => {
     const seconds = Math.floor(milliseconds / 1000);
@@ -146,15 +181,98 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
     }
   };
 
+  const handleVideoAreaTap = () => {
+    setShowVideoControls(!showVideoControls);
+  };
+
+  const handleTakeOverClick = () => {
+    if (!isAuthenticated) {
+      setShowLoginPrompt('backpack');
+      return;
+    }
+    setShowVideoControls(false);
+    onTakeOver?.();
+  };
+
+  const handleStopStreamClick = () => {
+    setShowVideoControls(false);
+    onStopStream?.();
+  };
+
+  const handleSettingsClick = () => {
+    setShowVideoControls(false);
+    onOpenStreamerSettings?.();
+  };
+
+  const canTakeOver = isConnected && !isStreaming && cooldownRemaining <= 0;
+
   return (
     <div className="landscape-theatre-layout">
-      {/* Left: Video info bar (minimal) */}
+      {/* Video tap area - covers the video region for tap-to-show controls */}
+      <div
+        className="landscape-video-tap-area"
+        onClick={handleVideoAreaTap}
+      >
+        {/* Video Controls Overlay - shown on tap */}
+        {showVideoControls && (
+          <div className="video-controls-overlay" onClick={(e) => e.stopPropagation()}>
+            <div className="video-controls-content">
+              {isStreaming ? (
+                <>
+                  <button
+                    className="video-control-btn settings-btn"
+                    onClick={handleSettingsClick}
+                  >
+                    <span className="control-icon">⚙️</span>
+                    <span className="control-label">Settings</span>
+                  </button>
+                  <button
+                    className="video-control-btn stop-btn"
+                    onClick={handleStopStreamClick}
+                  >
+                    <span className="control-icon">⏹️</span>
+                    <span className="control-label">Stop Stream</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="video-control-btn settings-btn"
+                    onClick={handleSettingsClick}
+                  >
+                    <span className="control-icon">⚙️</span>
+                    <span className="control-label">Settings</span>
+                  </button>
+                  <button
+                    className={`video-control-btn takeover-btn ${!canTakeOver ? 'disabled' : ''}`}
+                    onClick={handleTakeOverClick}
+                    disabled={!canTakeOver}
+                  >
+                    <span className="control-icon">🎥</span>
+                    <span className="control-label">
+                      {cooldownRemaining > 0
+                        ? `Wait ${cooldownRemaining}s`
+                        : !isConnected
+                          ? 'Connecting...'
+                          : 'Take Over'}
+                    </span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Top info bar overlay */}
       <div className="landscape-video-overlay">
-        {/* Top left: Hamburger + Stream info */}
         <div className="video-top-bar">
           <button
             className={`landscape-hamburger ${showHamburgerMenu ? 'open' : ''}`}
-            onClick={() => setShowHamburgerMenu(!showHamburgerMenu)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowHamburgerMenu(!showHamburgerMenu);
+            }}
             aria-label="Menu"
           >
             <span className="hamburger-line"></span>
@@ -166,7 +284,7 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
             {hasActiveStream ? (
               <>
                 <span className="live-badge">LIVE</span>
-                <span className="viewer-count">👥 {viewerCount}</span>
+                <span className="viewer-count">{viewerCount}</span>
                 {streamerDisplayName && <span className="streamer-name">{getDisplayName()}</span>}
                 {streamStartTime && <span className="stream-duration">{formatDuration(streamDuration)}</span>}
               </>
@@ -198,7 +316,7 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
               🛒
             </button>
             <div className="points-display">
-              💎 {isAuthenticated ? userPoints : '---'}
+              {isAuthenticated ? userPoints : '---'}
             </div>
             {/* User avatar/login */}
             <div className="user-section" ref={userMenuRef}>
@@ -220,10 +338,10 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
                 <div className="user-dropdown">
                   <div className="dropdown-username">{currentUser?.username}</div>
                   <button onClick={() => { onProfileSettings?.(); setShowUserMenu(false); }}>
-                    ⚙️ Settings
+                    Settings
                   </button>
                   <button onClick={() => { onLogout?.(); setShowUserMenu(false); }}>
-                    🚪 Logout
+                    Logout
                   </button>
                 </div>
               )}
@@ -247,8 +365,8 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
             </div>
 
             <div className="menu-section">
-              <a href="/clips/" className="menu-item">🎬 Clips</a>
-              <a href="/blog/" className="menu-item">📰 Blog</a>
+              <a href="/clips/" className="menu-item">Clips</a>
+              <a href="/blog/" className="menu-item">Blog</a>
             </div>
 
             <div className="menu-section">
@@ -259,22 +377,22 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
 
             <div className="menu-section">
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowTutorial?.())}>
-                ❓ Tutorial
+                Tutorial
               </button>
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowBugReport?.())}>
-                🐛 Report Bug
+                Report Bug
               </button>
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowAbout?.())}>
-                ℹ️ About
+                About
               </button>
             </div>
 
             <div className="menu-section">
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowTerms?.())}>
-                📄 Terms
+                Terms
               </button>
               <button className="menu-item" onClick={() => handleMenuItemClick(() => onShowPrivacy?.())}>
-                🔒 Privacy
+                Privacy
               </button>
             </div>
           </nav>

@@ -265,6 +265,9 @@ function AppContent() {
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
 
+  // Mobile landscape streamer settings modal
+  const [showMobileStreamerSettings, setShowMobileStreamerSettings] = useState(false);
+
   // Settings state - Initialize from cookies or use defaults
   const [audioSettings, setAudioSettings] = useState<AudioSettingsConfig>(() => {
     const savedAudioSettings = CookieService.getCookie(COOKIE_NAMES.AUDIO_SETTINGS);
@@ -1666,7 +1669,32 @@ function AppContent() {
         isAuthenticated={isAuthenticated}
         currentUser={currentUser}
       />
-      
+
+      {/* Mobile Landscape Streamer Settings Modal */}
+      {showMobileStreamerSettings && (
+        <div className="mobile-settings-modal-overlay" onClick={() => setShowMobileStreamerSettings(false)}>
+          <div className="mobile-settings-modal" onClick={e => e.stopPropagation()}>
+            <div className="mobile-settings-header">
+              <h3>Stream Settings</h3>
+              <button className="close-btn" onClick={() => setShowMobileStreamerSettings(false)}>×</button>
+            </div>
+            <div className="mobile-settings-content">
+              <StreamerSettings
+                settings={streamerSettings}
+                onSettingsChange={(newSettings) => {
+                  setStreamerSettings(newSettings);
+                }}
+                isStreaming={isStreaming}
+                compact={false}
+                isScreenSharing={isScreenSharing}
+                onStartScreenShare={() => screenShareMethodsRef.current?.startScreenShare()}
+                onStopScreenShare={() => screenShareMethodsRef.current?.stopScreenShare()}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Chat Panel - Different behavior for landscape */}
       {isMobile && !isLandscape && (
         <MobileChat 
@@ -1683,6 +1711,9 @@ function AppContent() {
           streamDuration={streamStatus.streamDuration}
           streamStartTime={streamStatus.streamStartTime}
           streamerDisplayName={streamStatus.streamerDisplayName}
+          isStreaming={isStreaming}
+          cooldownRemaining={cooldownRemaining}
+          isConnected={connected && !!socket}
           isAuthenticated={isAuthenticated}
           currentUser={currentUser}
           userPoints={userPoints}
@@ -1720,6 +1751,30 @@ function AppContent() {
             setTutorialDefaultTab('privacy');
             setShowTutorial(true);
           }}
+          onTakeOver={() => {
+            if (!socket) {
+              console.warn('Cannot take over stream: Socket not connected');
+              return;
+            }
+            socket.emit('request-to-stream', {
+              streamType: 'webcam',
+              timestamp: Date.now(),
+              permissionsGranted: true,
+              permissionStatus: {
+                camera: 'granted',
+                microphone: 'granted'
+              }
+            });
+          }}
+          onStopStream={() => {
+            if (!socket) {
+              console.warn('Cannot stop stream: Socket not connected');
+              return;
+            }
+            socket.emit('stop-streaming');
+            setIsStreaming(false);
+          }}
+          onOpenStreamerSettings={() => setShowMobileStreamerSettings(true)}
         />
       )}
       
