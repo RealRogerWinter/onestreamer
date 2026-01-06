@@ -17,8 +17,10 @@
 }
 
 .mobile-chat-wrapper.expanded {
-  height: 85vh !important;
-  max-height: none;
+  /* Max height is calculated in JS, but set a CSS fallback */
+  /* Leave space for header (56px) + bottom nav (76px) + padding (10px) = 142px */
+  max-height: calc(100vh - 142px);
+  max-height: calc(100dvh - 142px); /* Use dvh for mobile browsers */
 }
 
 /* Swipe indicator */
