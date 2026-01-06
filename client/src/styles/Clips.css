@@ -407,13 +407,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 20000;
   padding: 20px;
+  pointer-events: auto !important;
 }
 
 .clip-modal {
   background: #1e1e3f;
   border-radius: 16px;
+  pointer-events: auto !important;
   width: 100%;
   max-width: 480px;
   padding: 24px;
@@ -492,6 +494,15 @@
   color: #fff;
   font-size: 14px;
   font-family: inherit;
+  pointer-events: auto !important;
+}
+
+.duration-buttons button {
+  pointer-events: auto !important;
+}
+
+.clip-modal-actions button {
+  pointer-events: auto !important;
 }
 
 .clip-form-group input:focus,
@@ -816,7 +827,7 @@
   font-size: 14px;
   font-weight: 500;
   animation: fadeInUp 0.3s ease;
-  z-index: 1001;
+  z-index: 20001;
 }
 
 @keyframes fadeInUp {

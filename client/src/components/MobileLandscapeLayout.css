@@ -36,16 +36,17 @@
    ============================================ */
 .video-controls-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 280px;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  top: 50px;
+  right: 290px;
+  bottom: 50px;
+  width: auto;
+  background: transparent;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   animation: fadeIn 0.2s ease;
   z-index: 115;
+  pointer-events: none;
 }
 
 @keyframes fadeIn {
@@ -55,28 +56,31 @@
 
 .video-controls-content {
   display: flex;
-  gap: 20px;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+  padding-right: 10px;
 }
 
 .video-control-btn {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
-  padding: 16px 24px;
-  background: rgba(255, 255, 255, 0.15);
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
-  min-width: 100px;
+  min-width: 0;
 }
 
 .video-control-btn:active {
   transform: scale(0.95);
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.85);
 }
 
 .video-control-btn.disabled {
@@ -86,38 +90,149 @@
 
 .video-control-btn.disabled:active {
   transform: none;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .control-icon {
-  font-size: 28px;
+  font-size: 20px;
 }
 
 .control-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #fff;
   white-space: nowrap;
 }
 
 .video-control-btn.settings-btn {
-  background: rgba(102, 126, 234, 0.3);
-  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(102, 126, 234, 0.6);
+  border-color: rgba(102, 126, 234, 0.7);
 }
 
 .video-control-btn.takeover-btn {
-  background: rgba(76, 175, 80, 0.3);
-  border-color: rgba(76, 175, 80, 0.5);
+  background: rgba(76, 175, 80, 0.6);
+  border-color: rgba(76, 175, 80, 0.7);
 }
 
 .video-control-btn.stop-btn {
-  background: rgba(244, 67, 54, 0.3);
-  border-color: rgba(244, 67, 54, 0.5);
+  background: rgba(244, 67, 54, 0.6);
+  border-color: rgba(244, 67, 54, 0.7);
 }
 
 .video-control-btn.clip-btn {
-  background: rgba(255, 193, 7, 0.3);
-  border-color: rgba(255, 193, 7, 0.5);
+  background: rgba(255, 193, 7, 0.6);
+  border-color: rgba(255, 193, 7, 0.7);
+}
+
+/* ============================================
+   PLAYBACK CONTROLS BAR (bottom of video)
+   ============================================ */
+.video-playback-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  right: 300px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 120;
+  pointer-events: auto;
+  animation: fadeIn 0.2s ease;
+}
+
+.playback-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  transition: background 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.playback-btn:active {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(0.95);
+}
+
+.volume-slider {
+  width: 80px;
+  height: 4px;
+  background: #444;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #2a2a2a;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #007bff;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #2a2a2a;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #007bff;
+}
+
+.volume-slider::-webkit-slider-track {
+  background: #444;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.volume-slider::-moz-range-track {
+  background: #444;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.playback-live-indicator {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4444;
+  animation: pulse 2s infinite;
+}
+
+.live-text {
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.fullscreen-btn {
+  font-size: 20px;
 }
 
 /* ============================================
@@ -410,9 +525,22 @@
   left: 0;
   right: 0;
   bottom: 0;
+  background: transparent;
+  z-index: 99999;
+  pointer-events: none;
+}
+
+.landscape-menu-close-area {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(0, 0, 0, 0.6);
-  z-index: 9999;
   pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .landscape-hamburger-menu {
@@ -425,7 +553,8 @@
   background: #121212;
   overflow-y: auto;
   animation: slideIn 0.2s ease;
-  pointer-events: auto;
+  pointer-events: auto !important;
+  cursor: default;
 }
 
 @keyframes slideIn {
@@ -599,10 +728,6 @@
   .landscape-video-tap-area {
     left: max(0px, env(safe-area-inset-left));
   }
-
-  .video-controls-overlay {
-    left: max(0px, env(safe-area-inset-left));
-  }
 }
 
 /* Narrower chat for shorter screens */
@@ -619,6 +744,12 @@
     right: 240px;
   }
 
+  .video-controls-overlay {
+    right: 250px;
+    top: 40px;
+    bottom: 40px;
+  }
+
   .chat-sidebar-header {
     padding: 4px 8px;
   }
@@ -630,15 +761,35 @@
   }
 
   .video-control-btn {
-    padding: 12px 16px;
-    min-width: 80px;
+    padding: 8px 10px;
   }
 
   .control-icon {
-    font-size: 22px;
+    font-size: 16px;
   }
 
   .control-label {
-    font-size: 11px;
+    font-size: 10px;
+  }
+
+  .video-playback-bar {
+    right: 260px;
+    bottom: 10px;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .playback-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 18px;
+  }
+
+  .volume-slider {
+    width: 60px;
+  }
+
+  .live-text {
+    font-size: 10px;
   }
 }

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import './MobileLandscapeLayout.css';
 import Chat from './Chat';
 import { ClipCreationModal } from './clips';
@@ -80,9 +81,14 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   const [showVideoControls, setShowVideoControls] = useState(false);
   const [showClipModal, setShowClipModal] = useState(false);
   const [clipStatus, setClipStatus] = useState<{ available: boolean; isRecording: boolean } | null>(null);
+  // Video control states
+  const [isPaused, setIsPaused] = useState(false);
+  const [volume, setVolume] = useState(0.8);
+  const [isMuted, setIsMuted] = useState(true); // Start muted for autoplay
   const menuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const menuHistoryRef = useRef<boolean>(false);
 
   // Update duration every second if stream is active
   useEffect(() => {
@@ -97,9 +103,9 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
     }
   }, [hasActiveStream, streamStartTime]);
 
-  // Close menus when clicking outside
+  // Close menus when clicking/touching outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowHamburgerMenu(false);
       }
@@ -108,7 +114,11 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
   }, []);
 
   // Prevent body scroll when menu is open
@@ -120,6 +130,28 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
     }
     return () => { document.body.style.overflow = ''; };
   }, [showHamburgerMenu]);
+
+  // Handle back button/gesture for hamburger menu
+  useEffect(() => {
+    if (showHamburgerMenu && !menuHistoryRef.current) {
+      window.history.pushState({ menu: 'hamburger' }, '', window.location.href);
+      menuHistoryRef.current = true;
+    } else if (!showHamburgerMenu && menuHistoryRef.current) {
+      menuHistoryRef.current = false;
+    }
+  }, [showHamburgerMenu]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (menuHistoryRef.current) {
+        setShowHamburgerMenu(false);
+        menuHistoryRef.current = false;
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Auto-hide video controls after 4 seconds
   useEffect(() => {
@@ -156,6 +188,74 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
     const interval = setInterval(checkClipStatus, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  // Get the video element from WebRTCViewer
+  const getVideoElement = (): HTMLVideoElement | null => {
+    return document.querySelector('.webrtc-video') as HTMLVideoElement | null;
+  };
+
+  // Sync video state when controls are shown
+  useEffect(() => {
+    if (showVideoControls) {
+      const video = getVideoElement();
+      if (video) {
+        setIsPaused(video.paused);
+        setIsMuted(video.muted);
+        setVolume(video.muted ? 0 : video.volume);
+      }
+    }
+  }, [showVideoControls]);
+
+  // Video control handlers
+  const handlePlayPause = () => {
+    const video = getVideoElement();
+    if (!video) return;
+
+    if (video.paused) {
+      video.play();
+      setIsPaused(false);
+    } else {
+      video.pause();
+      setIsPaused(true);
+    }
+  };
+
+  const handleVolumeToggle = () => {
+    const video = getVideoElement();
+    if (!video) return;
+
+    if (video.muted || video.volume === 0) {
+      video.muted = false;
+      video.volume = 0.8;
+      setIsMuted(false);
+      setVolume(0.8);
+    } else {
+      video.muted = true;
+      setIsMuted(true);
+      setVolume(0);
+    }
+  };
+
+  const handleVolumeChange = (newVolume: number) => {
+    const video = getVideoElement();
+    if (!video) return;
+
+    video.volume = newVolume;
+    video.muted = newVolume === 0;
+    setVolume(newVolume);
+    setIsMuted(newVolume === 0);
+  };
+
+  const handleFullscreen = () => {
+    const videoContainer = document.querySelector('.stream-container') || document.querySelector('.webrtc-viewer-container');
+    if (!videoContainer) return;
+
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      videoContainer.requestFullscreen?.();
+    }
+  };
 
   const formatDuration = (milliseconds: number): string => {
     const seconds = Math.floor(milliseconds / 1000);
@@ -230,6 +330,7 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   const canTakeOver = isConnected && !isStreaming && cooldownRemaining <= 0;
 
   return (
+    <>
     <div className="landscape-theatre-layout">
       {/* Video tap area - covers the video region for tap-to-show controls */}
       <div
@@ -238,68 +339,104 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
       >
         {/* Video Controls Overlay - shown on tap */}
         {showVideoControls && (
-          <div className="video-controls-overlay" onClick={(e) => e.stopPropagation()}>
-            <div className="video-controls-content">
-              {isStreaming ? (
-                <>
-                  <button
-                    className="video-control-btn settings-btn"
-                    onClick={handleSettingsClick}
-                  >
-                    <span className="control-icon">⚙️</span>
-                    <span className="control-label">Settings</span>
-                  </button>
-                  <button
-                    className={`video-control-btn clip-btn ${!clipStatus?.available ? 'disabled' : ''}`}
-                    onClick={handleClipClick}
-                    disabled={!clipStatus?.available}
-                  >
-                    <span className="control-icon">✂️</span>
-                    <span className="control-label">Clip</span>
-                  </button>
-                  <button
-                    className="video-control-btn stop-btn"
-                    onClick={handleStopStreamClick}
-                  >
-                    <span className="control-icon">⏹️</span>
-                    <span className="control-label">Stop Stream</span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    className="video-control-btn settings-btn"
-                    onClick={handleSettingsClick}
-                  >
-                    <span className="control-icon">⚙️</span>
-                    <span className="control-label">Settings</span>
-                  </button>
-                  <button
-                    className={`video-control-btn clip-btn ${!clipStatus?.available ? 'disabled' : ''}`}
-                    onClick={handleClipClick}
-                    disabled={!clipStatus?.available}
-                  >
-                    <span className="control-icon">✂️</span>
-                    <span className="control-label">Clip</span>
-                  </button>
-                  <button
-                    className={`video-control-btn takeover-btn ${!canTakeOver ? 'disabled' : ''}`}
-                    onClick={handleTakeOverClick}
-                    disabled={!canTakeOver}
-                  >
-                    <span className="control-icon">🎥</span>
-                    <span className="control-label">
-                      {cooldownRemaining > 0
-                        ? `Wait ${cooldownRemaining}s`
-                        : !isConnected
-                          ? 'Connecting...'
-                          : 'Take Over'}
-                    </span>
-                  </button>
-                </>
-              )}
+          <>
+            {/* Right side action buttons */}
+            <div className="video-controls-overlay" onClick={(e) => e.stopPropagation()}>
+              <div className="video-controls-content">
+                {isStreaming ? (
+                  <>
+                    <button
+                      className="video-control-btn settings-btn"
+                      onClick={handleSettingsClick}
+                    >
+                      <span className="control-icon">⚙️</span>
+                      <span className="control-label">Settings</span>
+                    </button>
+                    <button
+                      className={`video-control-btn clip-btn ${!clipStatus?.available ? 'disabled' : ''}`}
+                      onClick={handleClipClick}
+                      disabled={!clipStatus?.available}
+                    >
+                      <span className="control-icon">✂️</span>
+                      <span className="control-label">Clip</span>
+                    </button>
+                    <button
+                      className="video-control-btn stop-btn"
+                      onClick={handleStopStreamClick}
+                    >
+                      <span className="control-icon">⏹️</span>
+                      <span className="control-label">Stop Stream</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="video-control-btn settings-btn"
+                      onClick={handleSettingsClick}
+                    >
+                      <span className="control-icon">⚙️</span>
+                      <span className="control-label">Settings</span>
+                    </button>
+                    <button
+                      className={`video-control-btn clip-btn ${!clipStatus?.available ? 'disabled' : ''}`}
+                      onClick={handleClipClick}
+                      disabled={!clipStatus?.available}
+                    >
+                      <span className="control-icon">✂️</span>
+                      <span className="control-label">Clip</span>
+                    </button>
+                    <button
+                      className={`video-control-btn takeover-btn ${!canTakeOver ? 'disabled' : ''}`}
+                      onClick={handleTakeOverClick}
+                      disabled={!canTakeOver}
+                    >
+                      <span className="control-icon">🎥</span>
+                      <span className="control-label">
+                        {cooldownRemaining > 0
+                          ? `Wait ${cooldownRemaining}s`
+                          : !isConnected
+                            ? 'Connecting...'
+                            : 'Take Over'}
+                      </span>
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+
+            {/* Bottom playback controls bar */}
+            <div className="video-playback-bar" onClick={(e) => e.stopPropagation()}>
+              {/* Play/Pause */}
+              <button className="playback-btn" onClick={handlePlayPause}>
+                {isPaused ? '▶️' : '⏸️'}
+              </button>
+
+              {/* Volume */}
+              <button className="playback-btn" onClick={handleVolumeToggle}>
+                {isMuted || volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
+              </button>
+              <input
+                type="range"
+                className="volume-slider"
+                min="0"
+                max="1"
+                step="0.1"
+                value={volume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+              />
+
+              {/* Live indicator */}
+              <div className="playback-live-indicator">
+                <span className="live-dot"></span>
+                <span className="live-text">LIVE</span>
+              </div>
+
+              {/* Fullscreen */}
+              <button className="playback-btn fullscreen-btn" onClick={handleFullscreen}>
+                ⛶
+              </button>
+            </div>
+          </>
         )}
       </div>
 
@@ -394,10 +531,18 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
         </div>
       </div>
 
-      {/* Hamburger Menu Overlay */}
-      {showHamburgerMenu && (
-        <div className="landscape-menu-overlay" onClick={() => setShowHamburgerMenu(false)}>
-          <nav className="landscape-hamburger-menu" ref={menuRef} onClick={e => e.stopPropagation()}>
+    </div>
+
+      {/* Hamburger Menu Overlay - Portal to body */}
+      {showHamburgerMenu && ReactDOM.createPortal(
+        <div className="landscape-menu-overlay">
+          {/* Explicit close area - covers everything except the menu */}
+          <div
+            className="landscape-menu-close-area"
+            onClick={() => setShowHamburgerMenu(false)}
+            onTouchStart={() => setShowHamburgerMenu(false)}
+          />
+          <nav className="landscape-hamburger-menu" ref={menuRef}>
             <div className="menu-header">
               <span className="menu-brand">OneStreamer</span>
               <button className="menu-close" onClick={() => setShowHamburgerMenu(false)}>×</button>
@@ -447,11 +592,12 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
               </button>
             </div>
           </nav>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Login Prompt */}
-      {showLoginPrompt && (
+      {/* Login Prompt - Portal to body */}
+      {showLoginPrompt && ReactDOM.createPortal(
         <div className="login-prompt-overlay" onClick={() => setShowLoginPrompt(null)}>
           <div className="login-prompt" onClick={e => e.stopPropagation()}>
             <button className="close-btn" onClick={() => setShowLoginPrompt(null)}>×</button>
@@ -468,19 +614,21 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
               <button className="primary" onClick={() => { setShowLoginPrompt(null); onLogin?.(); }}>Sign Up</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Clip Creation Modal */}
-      {showClipModal && (
+      {/* Clip Creation Modal - Portal to body */}
+      {showClipModal && ReactDOM.createPortal(
         <ClipCreationModal
           onClose={() => setShowClipModal(false)}
           onSuccess={(clipId) => {
             console.log('Clip created:', clipId);
           }}
-        />
+        />,
+        document.body
       )}
-    </div>
+    </>
   );
 };
 

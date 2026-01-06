@@ -340,10 +340,24 @@
   left: 0;
   right: 0;
   bottom: 0;
+  background: transparent;
+  z-index: 99990;
+  pointer-events: none;
+}
+
+.hamburger-close-area {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  z-index: 99990;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
   animation: fadeIn 0.2s ease;
 }
 
@@ -367,6 +381,7 @@
   overflow-y: auto;
   animation: slideIn 0.3s ease;
   z-index: 99991;
+  pointer-events: auto;
 }
 
 @keyframes slideIn {

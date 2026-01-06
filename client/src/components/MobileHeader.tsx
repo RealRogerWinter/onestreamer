@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import './MobileHeader.css';
 import AnimatedNumber from './AnimatedNumber';
 
@@ -54,6 +55,7 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const hamburgerRef = useRef<HTMLDivElement>(null);
+  const menuHistoryRef = useRef<boolean>(false);
 
   // Update duration every second if stream is active
   useEffect(() => {
@@ -92,6 +94,28 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
       document.body.style.overflow = '';
     };
   }, [showHamburgerMenu]);
+
+  // Handle back button/gesture for hamburger menu
+  useEffect(() => {
+    if (showHamburgerMenu && !menuHistoryRef.current) {
+      window.history.pushState({ menu: 'hamburger' }, '', window.location.href);
+      menuHistoryRef.current = true;
+    } else if (!showHamburgerMenu && menuHistoryRef.current) {
+      menuHistoryRef.current = false;
+    }
+  }, [showHamburgerMenu]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (menuHistoryRef.current) {
+        onHamburgerMenuToggle(false);
+        menuHistoryRef.current = false;
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [onHamburgerMenuToggle]);
 
   // Simple close handler
   const closeMenu = () => {
@@ -238,9 +262,14 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
         </div>
       </header>
 
-      {/* Hamburger Menu Overlay */}
-      {showHamburgerMenu && (
+      {/* Hamburger Menu Overlay - Portal to body */}
+      {showHamburgerMenu && ReactDOM.createPortal(
         <div className="hamburger-overlay">
+          <div
+            className="hamburger-close-area"
+            onClick={closeMenu}
+            onTouchStart={closeMenu}
+          />
           <nav className="hamburger-menu">
             <div className="hamburger-menu-header">
               <span className="menu-brand">OneStreamer</span>
@@ -319,7 +348,8 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
               </button>
             </div>
           </nav>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
