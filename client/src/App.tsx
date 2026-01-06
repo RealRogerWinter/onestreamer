@@ -21,6 +21,7 @@ import SafariTTSNotice from './components/soundfx/SafariTTSNotice';
 import { FloatingPointsManager } from './components/FloatingPoints';
 import MobileBottomNav from './components/MobileBottomNav';
 import MobileHeader from './components/MobileHeader';
+import MobileLandscapeLayout from './components/MobileLandscapeLayout';
 import DesktopHeaderV2 from './components/DesktopHeaderV2';
 import OAuthCallback from './components/OAuthCallback';
 import OAuthUsernameSelection from './components/OAuthUsernameSelection';
@@ -209,10 +210,10 @@ function AppContent() {
   
   // Mobile-specific states
   const [showMobileChat, setShowMobileChat] = useState(false);
+  const [showLandscapeChat, setShowLandscapeChat] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isLandscape, setIsLandscape] = useState(false);
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
-  const [chatCollapsedLandscape, setChatCollapsedLandscape] = useState(true); // Start collapsed in landscape
   
   // Reliable mobile detection and orientation
   useEffect(() => {
@@ -956,15 +957,19 @@ function AppContent() {
       setShowMobileChat(false);
       return true;
     }
+    if (showLandscapeChat) {
+      setShowLandscapeChat(false);
+      return true;
+    }
     return false;
   }, [showBugReportModal, showTutorial, showProfileSettings, showLogin, showSignup,
-      isShopOpen, showInventory, showMobileChat]);
+      isShopOpen, showInventory, showMobileChat, showLandscapeChat]);
 
   // Check if any dialog is currently open
   const hasOpenDialog = useCallback(() => {
-    return showMobileChat || showInventory || isShopOpen || showLogin || showSignup ||
+    return showMobileChat || showLandscapeChat || showInventory || isShopOpen || showLogin || showSignup ||
            showTutorial || showBugReportModal || showProfileSettings;
-  }, [showMobileChat, showInventory, isShopOpen, showLogin, showSignup,
+  }, [showMobileChat, showLandscapeChat, showInventory, isShopOpen, showLogin, showSignup,
       showTutorial, showBugReportModal, showProfileSettings]);
 
   // Mobile back button/gesture handler
@@ -1703,12 +1708,52 @@ function AppContent() {
         />
       )}
       
-      {/* Landscape Mode - Only show user info, no chat */}
-      {isMobile && isLandscape && isAuthenticated && (
-        <div className="landscape-user-info">
-          <span>{currentUser?.username || 'User'}</span>
-          <span className="points-value">🪙 {userPoints}</span>
-        </div>
+      {/* Landscape Mode - Full Layout with chat/shop/inventory */}
+      {isMobile && isLandscape && (
+        <MobileLandscapeLayout
+          viewerCount={streamStatus.viewerCount}
+          hasActiveStream={streamStatus.hasActiveStream}
+          streamDuration={streamStatus.streamDuration}
+          streamStartTime={streamStatus.streamStartTime}
+          streamerDisplayName={streamStatus.streamerDisplayName}
+          isAuthenticated={isAuthenticated}
+          currentUser={currentUser}
+          userPoints={userPoints}
+          showChat={showLandscapeChat}
+          showInventory={showInventory}
+          showShop={isShopOpen}
+          onChatToggle={() => setShowLandscapeChat(!showLandscapeChat)}
+          onInventoryToggle={() => {
+            setShowInventory(!showInventory);
+            setShowLandscapeChat(false);
+            setIsShopOpen(false);
+          }}
+          onShopToggle={() => {
+            setIsShopOpen(!isShopOpen);
+            setShowInventory(false);
+            setShowLandscapeChat(false);
+          }}
+          onLogin={() => setShowLogin(true)}
+          onLogout={handleLogout}
+          onProfileSettings={() => setShowProfileSettings(true)}
+          onShowTutorial={() => {
+            setTutorialDefaultTab('tutorial');
+            setShowTutorial(true);
+          }}
+          onShowBugReport={() => setShowBugReportModal(true)}
+          onShowAbout={() => {
+            setTutorialDefaultTab('about');
+            setShowTutorial(true);
+          }}
+          onShowTerms={() => {
+            setTutorialDefaultTab('terms');
+            setShowTutorial(true);
+          }}
+          onShowPrivacy={() => {
+            setTutorialDefaultTab('privacy');
+            setShowTutorial(true);
+          }}
+        />
       )}
       
       {/* Mobile Bottom Navigation - Hide in landscape */}

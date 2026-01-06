@@ -1,0 +1,781 @@
+/* ============================================
+   MOBILE LANDSCAPE LAYOUT
+   A comprehensive landscape-optimized layout
+   for mobile streaming viewing
+   ============================================ */
+
+/* ============================================
+   LEFT SIDE CONTROLS
+   ============================================ */
+.landscape-left-controls {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.landscape-left-controls > * {
+  pointer-events: auto;
+}
+
+/* Hamburger Button */
+.landscape-hamburger {
+  width: 36px;
+  height: 36px;
+  padding: 8px 6px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.2s ease;
+}
+
+.landscape-hamburger:active {
+  transform: scale(0.95);
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.landscape-hamburger .hamburger-line {
+  width: 18px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.landscape-hamburger.open .hamburger-line:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.landscape-hamburger.open .hamburger-line:nth-child(2) {
+  opacity: 0;
+}
+
+.landscape-hamburger.open .hamburger-line:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+/* Stream Info - Vertical Layout */
+.landscape-stream-info {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.landscape-live-badge {
+  padding: 3px 8px;
+  background: linear-gradient(135deg, #ff3b30 0%, #ff6b6b 100%);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-radius: 8px;
+  animation: pulse 2s infinite;
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.4);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(0.98);
+  }
+}
+
+.landscape-viewers {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #93bbff;
+}
+
+.landscape-viewers .viewer-icon {
+  font-size: 10px;
+}
+
+.landscape-duration {
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  font-family: 'SF Mono', 'Monaco', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.landscape-streamer {
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  max-width: 80px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.landscape-offline {
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ============================================
+   RIGHT SIDE CONTROLS
+   ============================================ */
+.landscape-right-controls {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.landscape-right-controls > * {
+  pointer-events: auto;
+}
+
+/* Points Display */
+.landscape-points {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 14px;
+}
+
+.landscape-points .points-icon {
+  font-size: 12px;
+}
+
+.landscape-points .points-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: gold;
+}
+
+/* Action Buttons */
+.landscape-action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.landscape-action-btn {
+  width: 40px;
+  height: 40px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.landscape-action-btn:active {
+  transform: scale(0.95);
+}
+
+.landscape-action-btn.active {
+  background: rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.5);
+  box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+}
+
+/* User Section */
+.landscape-user-section {
+  position: relative;
+}
+
+.landscape-user-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.landscape-user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  transition: all 0.2s ease;
+}
+
+.landscape-user-button:active .landscape-user-avatar {
+  transform: scale(0.95);
+}
+
+.landscape-login-btn {
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.landscape-login-btn:active {
+  transform: scale(0.98);
+}
+
+/* User Dropdown */
+.landscape-user-dropdown {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  background: rgba(30, 30, 30, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  animation: slideUp 0.2s ease;
+  z-index: 1001;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.landscape-user-dropdown .dropdown-header {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.landscape-user-dropdown .dropdown-username {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.landscape-user-dropdown .dropdown-points {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.landscape-user-dropdown .dropdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.landscape-user-dropdown .dropdown-item {
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.landscape-user-dropdown .dropdown-item:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.landscape-user-dropdown .dropdown-icon {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+/* ============================================
+   CHAT SLIDE PANEL
+   ============================================ */
+.landscape-chat-panel {
+  position: fixed;
+  top: 0;
+  right: -280px;
+  width: 280px;
+  height: 100%;
+  background: rgba(18, 18, 18, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  transition: right 0.3s ease;
+}
+
+.landscape-chat-panel.open {
+  right: 0;
+}
+
+.landscape-chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.landscape-chat-header .chat-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.landscape-chat-header .chat-close-btn {
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.landscape-chat-header .chat-close-btn:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.landscape-chat-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Override chat container styles for landscape panel */
+.landscape-chat-content .chat-container {
+  position: relative !important;
+  height: 100% !important;
+  width: 100% !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+}
+
+.landscape-chat-content .chat-messages {
+  max-height: calc(100% - 110px) !important;
+}
+
+/* ============================================
+   HAMBURGER MENU OVERLAY
+   ============================================ */
+.landscape-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 99990;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.landscape-hamburger-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 260px;
+  height: 100%;
+  background: linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 4px 0 30px rgba(0, 0, 0, 0.7);
+  overflow-y: auto;
+  animation: slideIn 0.3s ease;
+  z-index: 99991;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.landscape-hamburger-menu .menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(30, 30, 30, 0.8), rgba(20, 20, 20, 0.9));
+}
+
+.landscape-hamburger-menu .menu-brand {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.landscape-hamburger-menu .menu-close {
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.landscape-hamburger-menu .menu-close:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.landscape-hamburger-menu .menu-section {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.landscape-hamburger-menu .menu-section:last-child {
+  border-bottom: none;
+}
+
+.landscape-hamburger-menu .menu-section-title {
+  padding: 6px 16px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.landscape-hamburger-menu .menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.landscape-hamburger-menu .menu-item:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.landscape-hamburger-menu .menu-item-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.landscape-hamburger-menu .menu-item-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.landscape-hamburger-menu .menu-item-text {
+  flex: 1;
+}
+
+.landscape-hamburger-menu .menu-item.discord-item {
+  color: #7289da;
+}
+
+.landscape-hamburger-menu .menu-item.discord-item .menu-item-icon {
+  color: #7289da;
+}
+
+/* ============================================
+   LOGIN PROMPT OVERLAY
+   ============================================ */
+.landscape-login-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+
+.landscape-login-prompt {
+  background: linear-gradient(135deg, rgba(26, 26, 26, 0.98), rgba(40, 40, 40, 0.98));
+  border: 2px solid rgba(102, 126, 234, 0.4);
+  border-radius: 16px;
+  padding: 24px 20px;
+  max-width: 300px;
+  width: 100%;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  animation: scaleIn 0.3s ease;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.landscape-login-prompt .prompt-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 20px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.landscape-login-prompt .prompt-close:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.landscape-login-prompt .prompt-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.landscape-login-prompt h3 {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 10px 0;
+}
+
+.landscape-login-prompt p {
+  color: #aaa;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0 0 20px 0;
+}
+
+.landscape-login-prompt .prompt-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.landscape-login-prompt .prompt-btn {
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  flex: 1;
+  text-align: center;
+  cursor: pointer;
+}
+
+.landscape-login-prompt .prompt-login {
+  background: transparent;
+  border: 2px solid rgba(102, 126, 234, 0.6);
+  color: #667eea;
+}
+
+.landscape-login-prompt .prompt-login:active {
+  background: rgba(102, 126, 234, 0.15);
+}
+
+.landscape-login-prompt .prompt-signup {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.landscape-login-prompt .prompt-signup:active {
+  transform: translateY(-1px);
+}
+
+/* ============================================
+   SAFE AREA SUPPORT
+   ============================================ */
+@supports (padding: max(0px)) {
+  .landscape-left-controls {
+    padding-left: max(8px, env(safe-area-inset-left));
+  }
+
+  .landscape-right-controls {
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+
+  .landscape-hamburger-menu {
+    padding-left: max(0px, env(safe-area-inset-left));
+  }
+
+  .landscape-chat-panel {
+    padding-right: max(0px, env(safe-area-inset-right));
+  }
+}
+
+/* ============================================
+   COMPACT MODE FOR VERY SHORT SCREENS
+   ============================================ */
+@media (max-height: 400px) {
+  .landscape-hamburger {
+    width: 32px;
+    height: 32px;
+    padding: 6px 5px;
+  }
+
+  .landscape-hamburger .hamburger-line {
+    width: 16px;
+  }
+
+  .landscape-stream-info {
+    margin-top: 8px;
+    gap: 4px;
+  }
+
+  .landscape-live-badge,
+  .landscape-viewers,
+  .landscape-duration,
+  .landscape-streamer,
+  .landscape-offline {
+    padding: 2px 6px;
+    font-size: 9px;
+  }
+
+  .landscape-action-btn {
+    width: 34px;
+    height: 34px;
+    font-size: 16px;
+  }
+
+  .landscape-points {
+    padding: 4px 8px;
+  }
+
+  .landscape-user-avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 12px;
+  }
+
+  .landscape-chat-panel {
+    width: 240px;
+    right: -240px;
+  }
+
+  .landscape-hamburger-menu {
+    width: 220px;
+  }
+}

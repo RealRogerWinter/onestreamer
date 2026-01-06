@@ -643,56 +643,31 @@
 /* Mobile landscape mode styles */
 @media (max-width: 768px) and (orientation: landscape) {
   .App-main {
-    padding-top: 10px;
+    padding-top: 0;
   }
 
+  /* Full-screen video in landscape */
   .stream-viewer-container {
-    max-height: calc(100vh - 120px);
+    max-height: 100vh;
+    height: 100vh;
   }
 
   .stream-viewer {
-    max-height: calc(100vh - 120px);
+    max-height: 100vh;
+    height: 100vh;
   }
 
+  /* Hide stream controls in landscape - using new overlay layout */
   .stream-controls-container {
-    position: fixed;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 100;
-    flex-direction: row;
-    gap: 0.5rem;
-    background: rgba(0, 0, 0, 0.8);
-    padding: 0.5rem;
-    border-radius: 8px;
+    display: none !important;
   }
 
   /* Hide chat and status effects in landscape mobile */
   .chat-sidebar,
   .status-effects-sidebar-left,
-  .status-effects-sidebar-right {
-    display: none;
-  }
-
-  /* Landscape user info */
-  .landscape-user-info {
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    z-index: 100;
-    font-size: 14px;
-  }
-
-  .landscape-user-info .points-value {
-    color: gold;
-    font-weight: bold;
+  .status-effects-sidebar-right,
+  .chat-and-status-container {
+    display: none !important;
   }
 
   /* Hide help buttons in landscape mobile */
@@ -701,34 +676,44 @@
   .discord-link {
     display: none !important;
   }
-  
+
   /* Hide theatre mode controls in landscape mobile */
   .theatre-mode-btn,
   .theatre-mode-toggle {
     display: none !important;
   }
-  
-  /* Make streamer settings more compact in landscape */
-  .streamer-settings.compact {
-    padding: 6px 12px;
-  }
-
-  .settings-button-icon {
-    width: 18px;
-    height: 18px;
-  }
 
   /* Hide admin panel toggle in landscape mobile */
   .admin-panel-toggle {
-    display: none;
+    display: none !important;
+  }
+
+  /* Full-screen main content */
+  .main-content {
+    padding: 0;
+    margin: 0;
+    max-width: 100%;
+  }
+
+  .stream-layout-container {
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Hide buff displays in landscape */
+  .status-effects-sidebar-left,
+  .streamer-buffs-sidebar-left,
+  .personal-buffs-right-sidebar {
+    display: none !important;
   }
 }
 
-/* Fix for stream viewer aspect ratio in landscape */
+/* Fix for stream viewer aspect ratio in landscape - full screen */
 @media (orientation: landscape) and (max-height: 500px) {
   .stream-viewer {
-    max-height: calc(100vh - 80px);
-    min-height: 200px;
+    max-height: 100vh;
+    height: 100vh;
+    min-height: unset;
   }
 }
 
