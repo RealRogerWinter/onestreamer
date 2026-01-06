@@ -87,6 +87,35 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
     };
   }, [showHamburgerMenu]);
 
+  // Back button/gesture handler for hamburger menu
+  const menuHistoryRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (showHamburgerMenu && !menuHistoryRef.current) {
+      // Menu opened - push state
+      window.history.pushState({ menu: 'hamburger' }, '', window.location.href);
+      menuHistoryRef.current = true;
+    } else if (!showHamburgerMenu && menuHistoryRef.current) {
+      // Menu closed by other means - clean up history
+      menuHistoryRef.current = false;
+      if (window.history.state?.menu === 'hamburger') {
+        window.history.back();
+      }
+    }
+  }, [showHamburgerMenu]);
+
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (menuHistoryRef.current && showHamburgerMenu) {
+        setShowHamburgerMenu(false);
+        menuHistoryRef.current = false;
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showHamburgerMenu]);
+
   const formatDuration = (milliseconds: number): string => {
     const seconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(seconds / 60);

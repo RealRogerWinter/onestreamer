@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import './MobileBottomNav.css';
 
 interface MobileBottomNavProps {
@@ -32,6 +32,8 @@ const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   const [isMobile, setIsMobile] = useState(false);
   // State for login prompt overlay
   const [showLoginPrompt, setShowLoginPrompt] = useState<'backpack' | 'shop' | null>(null);
+  // Track if we've pushed a history state for the login prompt
+  const promptHistoryRef = useRef<boolean>(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -44,6 +46,33 @@ const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Back button/gesture handler for login prompt
+  useEffect(() => {
+    if (showLoginPrompt && !promptHistoryRef.current) {
+      // Prompt opened - push state
+      window.history.pushState({ prompt: 'login' }, '', window.location.href);
+      promptHistoryRef.current = true;
+    } else if (!showLoginPrompt && promptHistoryRef.current) {
+      // Prompt closed by other means - clean up history
+      promptHistoryRef.current = false;
+      if (window.history.state?.prompt === 'login') {
+        window.history.back();
+      }
+    }
+  }, [showLoginPrompt]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (promptHistoryRef.current && showLoginPrompt) {
+        setShowLoginPrompt(null);
+        promptHistoryRef.current = false;
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showLoginPrompt]);
 
   const handleBackpackClick = () => {
     if (isAuthenticated) {

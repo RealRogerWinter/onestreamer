@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { SocketProvider, useMainSocket } from './contexts/SocketContext';
 import './App.css';
 import StreamViewer from './components/StreamViewer';
@@ -233,7 +233,7 @@ function AppContent() {
       window.removeEventListener('orientationchange', checkMobileAndOrientation);
     };
   }, []);
-  
+
   // Tutorial state
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialDefaultTab, setTutorialDefaultTab] = useState<'about' | 'support' | 'tutorial' | 'terms' | 'privacy' | undefined>(undefined);
@@ -914,6 +914,104 @@ function AppContent() {
     window.addEventListener('openAdminPanel', handleOpenAdminPanel as EventListener);
     return () => window.removeEventListener('openAdminPanel', handleOpenAdminPanel as EventListener);
   }, [isAdmin]);
+
+  // Track if we've pushed a dialog state to history for mobile back gesture
+  const dialogHistoryRef = useRef<string | null>(null);
+
+  // Close dialog handler - returns true if a dialog was closed
+  const closeActiveDialog = useCallback(() => {
+    // Priority order: modals first, then panels
+    if (showBugReportModal) {
+      setShowBugReportModal(false);
+      return true;
+    }
+    if (showTutorial) {
+      setShowTutorial(false);
+      return true;
+    }
+    if (showProfileSettings) {
+      setShowProfileSettings(false);
+      return true;
+    }
+    if (showLogin) {
+      setShowLogin(false);
+      return true;
+    }
+    if (showSignup) {
+      setShowSignup(false);
+      return true;
+    }
+    if (showAbout) {
+      setShowAbout(false);
+      return true;
+    }
+    if (showTerms) {
+      setShowTerms(false);
+      return true;
+    }
+    if (showPrivacy) {
+      setShowPrivacy(false);
+      return true;
+    }
+    if (isShopOpen) {
+      setIsShopOpen(false);
+      return true;
+    }
+    if (showInventory) {
+      setShowInventory(false);
+      return true;
+    }
+    if (showMobileChat) {
+      setShowMobileChat(false);
+      return true;
+    }
+    return false;
+  }, [showBugReportModal, showTutorial, showProfileSettings, showLogin, showSignup,
+      showAbout, showTerms, showPrivacy, isShopOpen, showInventory, showMobileChat]);
+
+  // Check if any dialog is currently open
+  const hasOpenDialog = useCallback(() => {
+    return showMobileChat || showInventory || isShopOpen || showLogin || showSignup ||
+           showTutorial || showBugReportModal || showProfileSettings ||
+           showAbout || showTerms || showPrivacy;
+  }, [showMobileChat, showInventory, isShopOpen, showLogin, showSignup,
+      showTutorial, showBugReportModal, showProfileSettings, showAbout, showTerms, showPrivacy]);
+
+  // Mobile back button/gesture handler
+  useEffect(() => {
+    if (!isMobile) return;
+
+    const handlePopState = () => {
+      // If we have an open dialog, close it
+      if (dialogHistoryRef.current && hasOpenDialog()) {
+        closeActiveDialog();
+        dialogHistoryRef.current = null;
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isMobile, hasOpenDialog, closeActiveDialog]);
+
+  // Push/pop history state when dialogs open/close
+  useEffect(() => {
+    if (!isMobile) return;
+
+    const dialogOpen = hasOpenDialog();
+
+    if (dialogOpen && !dialogHistoryRef.current) {
+      // Dialog opened - push state
+      window.history.pushState({ dialog: 'open' }, '', window.location.href);
+      dialogHistoryRef.current = 'open';
+    } else if (!dialogOpen && dialogHistoryRef.current) {
+      // All dialogs closed by other means (button click, etc.) - clean up history
+      dialogHistoryRef.current = null;
+      // Go back to remove our pushed state if it's still there
+      if (window.history.state?.dialog === 'open') {
+        window.history.back();
+      }
+    }
+  }, [isMobile, hasOpenDialog]);
 
   // Keyboard shortcuts
   useEffect(() => {
