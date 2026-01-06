@@ -9007,7 +9007,8 @@ async function startServer() {
       };
 
       const title = escapeHtml(article.title) || 'Blog Post';
-      const description = escapeHtml(article.excerpt || article.content?.substring(0, 160).replace(/[#*_`]/g, '') + '...');
+      const rawDescription = article.excerpt || article.content?.trim().substring(0, 160).replace(/[#*_`\n\r]/g, ' ').replace(/\s+/g, ' ').trim() + '...';
+      const description = escapeHtml(rawDescription);
       const author = escapeHtml(article.author || 'OneStreamer Team');
 
       // Build URLs
@@ -9046,26 +9047,26 @@ async function startServer() {
       // Update meta tags with article-specific content
       html = html.replace(/id="page-title">.*?<\/title>/, `id="page-title">${title} | OneStreamer Blog</title>`);
       html = html.replace(/id="meta-title" content="[^"]*"/, `id="meta-title" content="${title} | OneStreamer Blog"`);
-      html = html.replace(/id="page-description" content="[^"]*"/, `id="page-description" content="${description}"`);
+      html = html.replace(/id="page-description"[^>]*content="[^"]*"/, `id="page-description" name="description" content="${description}"`);
       html = html.replace(/id="canonical-url" href="[^"]*"/, `id="canonical-url" href="${articleUrl}"`);
 
-      // Open Graph
-      html = html.replace(/id="og-type" content="[^"]*"/, `id="og-type" content="article"`);
-      html = html.replace(/id="og-url" content="[^"]*"/, `id="og-url" content="${articleUrl}"`);
-      html = html.replace(/id="og-title" content="[^"]*"/, `id="og-title" content="${title}"`);
-      html = html.replace(/id="og-description" content="[^"]*"/, `id="og-description" content="${description}"`);
-      html = html.replace(/id="og-image" content="[^"]*"/, `id="og-image" content="${imageUrl}"`);
+      // Open Graph - match id, any attributes, then content
+      html = html.replace(/id="og-type"[^>]*content="[^"]*"/, `id="og-type" property="og:type" content="article"`);
+      html = html.replace(/id="og-url"[^>]*content="[^"]*"/, `id="og-url" property="og:url" content="${articleUrl}"`);
+      html = html.replace(/id="og-title"[^>]*content="[^"]*"/, `id="og-title" property="og:title" content="${title}"`);
+      html = html.replace(/id="og-description"[^>]*content="[^"]*"/, `id="og-description" property="og:description" content="${description}"`);
+      html = html.replace(/id="og-image"[^>]*content="[^"]*"/, `id="og-image" property="og:image" content="${imageUrl}"`);
 
-      // Twitter
-      html = html.replace(/id="twitter-url" content="[^"]*"/, `id="twitter-url" content="${articleUrl}"`);
-      html = html.replace(/id="twitter-title" content="[^"]*"/, `id="twitter-title" content="${title}"`);
-      html = html.replace(/id="twitter-description" content="[^"]*"/, `id="twitter-description" content="${description}"`);
-      html = html.replace(/id="twitter-image" content="[^"]*"/, `id="twitter-image" content="${imageUrl}"`);
+      // Twitter - match id, any attributes, then content
+      html = html.replace(/id="twitter-url"[^>]*content="[^"]*"/, `id="twitter-url" name="twitter:url" content="${articleUrl}"`);
+      html = html.replace(/id="twitter-title"[^>]*content="[^"]*"/, `id="twitter-title" name="twitter:title" content="${title}"`);
+      html = html.replace(/id="twitter-description"[^>]*content="[^"]*"/, `id="twitter-description" name="twitter:description" content="${description}"`);
+      html = html.replace(/id="twitter-image"[^>]*content="[^"]*"/, `id="twitter-image" name="twitter:image" content="${imageUrl}"`);
 
-      // Article meta
-      html = html.replace(/id="article-author" content="[^"]*"/, `id="article-author" content="${author}"`);
-      html = html.replace(/id="article-published" content="[^"]*"/, `id="article-published" content="${publishedDate}"`);
-      html = html.replace(/id="article-modified" content="[^"]*"/, `id="article-modified" content="${modifiedDate}"`);
+      // Article meta - match id, any attributes, then content
+      html = html.replace(/id="article-author"[^>]*content="[^"]*"/, `id="article-author" property="article:author" content="${author}"`);
+      html = html.replace(/id="article-published"[^>]*content="[^"]*"/, `id="article-published" property="article:published_time" content="${publishedDate}"`);
+      html = html.replace(/id="article-modified"[^>]*content="[^"]*"/, `id="article-modified" property="article:modified_time" content="${modifiedDate}"`);
 
       // Update JSON-LD structured data
       const jsonLd = {

@@ -15,6 +15,10 @@ interface MobileHeaderProps {
   currentUser?: any;
   userPoints?: number;
 
+  // Hamburger menu state (lifted to parent to survive remounts)
+  showHamburgerMenu: boolean;
+  onHamburgerMenuToggle: (show: boolean) => void;
+
   // Callbacks
   onLogin?: () => void;
   onLogout?: () => void;
@@ -35,6 +39,8 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
   isAuthenticated,
   currentUser,
   userPoints = 0,
+  showHamburgerMenu,
+  onHamburgerMenuToggle,
   onLogin,
   onLogout,
   onProfileSettings,
@@ -46,7 +52,6 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
 }) => {
   const [streamDuration, setStreamDuration] = useState(initialDuration);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const hamburgerRef = useRef<HTMLDivElement>(null);
 
@@ -64,14 +69,11 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
     }
   }, [hasActiveStream, streamStartTime]);
 
-  // Close menus when clicking outside
+  // Close user menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
-      }
-      if (hamburgerRef.current && !hamburgerRef.current.contains(event.target as Node)) {
-        setShowHamburgerMenu(false);
       }
     };
 
@@ -91,34 +93,10 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
     };
   }, [showHamburgerMenu]);
 
-  // Back button/gesture handler for hamburger menu
-  const menuHistoryRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    if (showHamburgerMenu && !menuHistoryRef.current) {
-      // Menu opened - push state
-      window.history.pushState({ menu: 'hamburger' }, '', window.location.href);
-      menuHistoryRef.current = true;
-    } else if (!showHamburgerMenu && menuHistoryRef.current) {
-      // Menu closed by other means - clean up history
-      menuHistoryRef.current = false;
-      if (window.history.state?.menu === 'hamburger') {
-        window.history.back();
-      }
-    }
-  }, [showHamburgerMenu]);
-
-  useEffect(() => {
-    const handlePopState = (event: PopStateEvent) => {
-      if (menuHistoryRef.current && showHamburgerMenu) {
-        setShowHamburgerMenu(false);
-        menuHistoryRef.current = false;
-      }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [showHamburgerMenu]);
+  // Simple close handler
+  const closeMenu = () => {
+    onHamburgerMenuToggle(false);
+  };
 
   const formatDuration = (milliseconds: number): string => {
     const seconds = Math.floor(milliseconds / 1000);
@@ -147,19 +125,19 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
   };
 
   const handleMenuItemClick = (action: () => void) => {
-    setShowHamburgerMenu(false);
+    closeMenu();
     action();
   };
 
   return (
     <>
-      <header className="mobile-header-v2">
+      <header className="mobile-header-v2" style={showHamburgerMenu ? { pointerEvents: 'none' } : undefined}>
         <div className="mobile-header-content">
           {/* Hamburger Menu Button */}
           <div className="header-hamburger" ref={hamburgerRef}>
             <button
               className={`hamburger-button ${showHamburgerMenu ? 'open' : ''}`}
-              onClick={() => setShowHamburgerMenu(!showHamburgerMenu)}
+              onClick={() => onHamburgerMenuToggle(!showHamburgerMenu)}
               aria-label="Menu"
             >
               <span className="hamburger-line"></span>
@@ -262,20 +240,20 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
 
       {/* Hamburger Menu Overlay */}
       {showHamburgerMenu && (
-        <div className="hamburger-overlay" onClick={() => setShowHamburgerMenu(false)}>
-          <nav className="hamburger-menu" onClick={e => e.stopPropagation()}>
+        <div className="hamburger-overlay">
+          <nav className="hamburger-menu">
             <div className="hamburger-menu-header">
               <span className="menu-brand">OneStreamer</span>
-              <button className="menu-close" onClick={() => setShowHamburgerMenu(false)}>×</button>
+              <button className="menu-close" onClick={closeMenu}>×</button>
             </div>
 
             <div className="menu-section">
               <div className="menu-section-title">Navigation</div>
-              <a href="/clips/" className="menu-item" onClick={() => setShowHamburgerMenu(false)}>
+              <a href="/clips/" className="menu-item">
                 <span className="menu-item-icon">🎬</span>
                 <span className="menu-item-text">Clips</span>
               </a>
-              <a href="/blog/" className="menu-item" onClick={() => setShowHamburgerMenu(false)}>
+              <a href="/blog/" className="menu-item">
                 <span className="menu-item-icon">📰</span>
                 <span className="menu-item-text">Blog</span>
               </a>
@@ -288,7 +266,6 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="menu-item discord-item"
-                onClick={() => setShowHamburgerMenu(false)}
               >
                 <span className="menu-item-icon">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">

@@ -211,6 +211,7 @@ function AppContent() {
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isLandscape, setIsLandscape] = useState(false);
+  const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
   const [chatCollapsedLandscape, setChatCollapsedLandscape] = useState(true); // Start collapsed in landscape
   
   // Reliable mobile detection and orientation
@@ -917,6 +918,8 @@ function AppContent() {
 
   // Track if we've pushed a dialog state to history for mobile back gesture
   const dialogHistoryRef = useRef<string | null>(null);
+  // Track when dialog was opened to prevent race conditions with menu cleanup
+  const dialogOpenTimeRef = useRef<number>(0);
 
   // Close dialog handler - returns true if a dialog was closed
   const closeActiveDialog = useCallback(() => {
@@ -941,18 +944,6 @@ function AppContent() {
       setShowSignup(false);
       return true;
     }
-    if (showAbout) {
-      setShowAbout(false);
-      return true;
-    }
-    if (showTerms) {
-      setShowTerms(false);
-      return true;
-    }
-    if (showPrivacy) {
-      setShowPrivacy(false);
-      return true;
-    }
     if (isShopOpen) {
       setIsShopOpen(false);
       return true;
@@ -967,22 +958,27 @@ function AppContent() {
     }
     return false;
   }, [showBugReportModal, showTutorial, showProfileSettings, showLogin, showSignup,
-      showAbout, showTerms, showPrivacy, isShopOpen, showInventory, showMobileChat]);
+      isShopOpen, showInventory, showMobileChat]);
 
   // Check if any dialog is currently open
   const hasOpenDialog = useCallback(() => {
     return showMobileChat || showInventory || isShopOpen || showLogin || showSignup ||
-           showTutorial || showBugReportModal || showProfileSettings ||
-           showAbout || showTerms || showPrivacy;
+           showTutorial || showBugReportModal || showProfileSettings;
   }, [showMobileChat, showInventory, isShopOpen, showLogin, showSignup,
-      showTutorial, showBugReportModal, showProfileSettings, showAbout, showTerms, showPrivacy]);
+      showTutorial, showBugReportModal, showProfileSettings]);
 
   // Mobile back button/gesture handler
   useEffect(() => {
     if (!isMobile) return;
 
-    const handlePopState = () => {
-      // If we have an open dialog, close it
+    const handlePopState = (event: PopStateEvent) => {
+      // Ignore popstate events within 300ms of opening a dialog
+      // This prevents race conditions when hamburger menu cleanup triggers back()
+      if (Date.now() - dialogOpenTimeRef.current < 300) {
+        return;
+      }
+
+      // Only handle our own dialog state
       if (dialogHistoryRef.current && hasOpenDialog()) {
         closeActiveDialog();
         dialogHistoryRef.current = null;
@@ -1000,9 +996,10 @@ function AppContent() {
     const dialogOpen = hasOpenDialog();
 
     if (dialogOpen && !dialogHistoryRef.current) {
-      // Dialog opened - push state
+      // Dialog opened - push state and record timestamp
       window.history.pushState({ dialog: 'open' }, '', window.location.href);
       dialogHistoryRef.current = 'open';
+      dialogOpenTimeRef.current = Date.now();
     } else if (!dialogOpen && dialogHistoryRef.current) {
       // All dialogs closed by other means (button click, etc.) - clean up history
       dialogHistoryRef.current = null;
@@ -1176,14 +1173,28 @@ function AppContent() {
             isAuthenticated={isAuthenticated}
             currentUser={currentUser}
             userPoints={userPoints}
+            showHamburgerMenu={showHamburgerMenu}
+            onHamburgerMenuToggle={setShowHamburgerMenu}
             onLogin={() => setShowLogin(true)}
             onLogout={handleLogout}
             onProfileSettings={() => setShowProfileSettings(true)}
-            onShowTutorial={() => setShowTutorial(true)}
+            onShowTutorial={() => {
+              setTutorialDefaultTab('tutorial');
+              setShowTutorial(true);
+            }}
             onShowBugReport={() => setShowBugReportModal(true)}
-            onShowAbout={() => setShowAbout(true)}
-            onShowTerms={() => setShowTerms(true)}
-            onShowPrivacy={() => setShowPrivacy(true)}
+            onShowAbout={() => {
+              setTutorialDefaultTab('about');
+              setShowTutorial(true);
+            }}
+            onShowTerms={() => {
+              setTutorialDefaultTab('terms');
+              setShowTutorial(true);
+            }}
+            onShowPrivacy={() => {
+              setTutorialDefaultTab('privacy');
+              setShowTutorial(true);
+            }}
           />
         </>
       ) : !isMobile ? (
