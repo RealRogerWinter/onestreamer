@@ -1736,10 +1736,6 @@ function AppContent() {
           onLogin={() => setShowLogin(true)}
           onLogout={handleLogout}
           onProfileSettings={() => setShowProfileSettings(true)}
-          onShowTutorial={() => {
-            setTutorialDefaultTab('tutorial');
-            setShowTutorial(true);
-          }}
           onShowAbout={() => {
             setTutorialDefaultTab('about');
             setShowTutorial(true);

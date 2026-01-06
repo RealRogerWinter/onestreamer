@@ -642,19 +642,38 @@
 
 /* Mobile landscape mode styles */
 @media (max-width: 768px) and (orientation: landscape) {
-  .App-main {
-    padding-top: 44px; /* Account for landscape header */
+  .App {
+    overflow: hidden !important;
   }
 
-  /* Video fits within remaining space below header */
-  .stream-viewer-container {
-    max-height: calc(100vh - 44px);
+  .App-main {
+    padding-top: 44px; /* Account for landscape header */
     height: calc(100vh - 44px);
+    overflow: hidden;
+  }
+
+  /* Video container - fit within viewport, no scrolling */
+  .stream-viewer-container {
+    max-height: calc(100vh - 44px) !important;
+    height: calc(100vh - 44px) !important;
+    width: calc(100% - 70px) !important; /* Leave space for action bar */
+    margin-left: 0 !important;
+    margin-right: auto !important;
+    overflow: hidden !important;
   }
 
   .stream-viewer {
-    max-height: calc(100vh - 44px);
-    height: calc(100vh - 44px);
+    max-height: calc(100vh - 44px) !important;
+    height: calc(100vh - 44px) !important;
+    width: 100% !important;
+    object-fit: contain !important;
+  }
+
+  .stream-viewer video {
+    max-height: 100% !important;
+    height: 100% !important;
+    width: auto !important;
+    object-fit: contain !important;
   }
 
   /* Hide stream controls in landscape - using new overlay layout */
@@ -688,16 +707,16 @@
     display: none !important;
   }
 
-  /* Full-screen main content */
+  /* Full-screen main content - push to left */
   .main-content {
-    padding: 0;
-    margin: 0;
-    max-width: 100%;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: calc(100% - 70px) !important;
   }
 
   .stream-layout-container {
-    padding: 0;
-    margin: 0;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   /* Hide buff displays in landscape */
@@ -706,14 +725,28 @@
   .personal-buffs-right-sidebar {
     display: none !important;
   }
+
+  /* Prevent any scrolling */
+  body {
+    overflow: hidden !important;
+  }
 }
 
 /* Fix for stream viewer aspect ratio in landscape - account for header */
 @media (orientation: landscape) and (max-height: 500px) {
-  .stream-viewer {
-    max-height: calc(100vh - 38px); /* Compact header is 38px */
+  .App-main {
+    padding-top: 38px;
     height: calc(100vh - 38px);
-    min-height: unset;
+  }
+
+  .stream-viewer-container {
+    max-height: calc(100vh - 38px) !important;
+    height: calc(100vh - 38px) !important;
+  }
+
+  .stream-viewer {
+    max-height: calc(100vh - 38px) !important;
+    height: calc(100vh - 38px) !important;
   }
 }
 
