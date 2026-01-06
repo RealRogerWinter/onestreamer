@@ -22,6 +22,8 @@ interface MobileHeaderProps {
   onShowTutorial?: () => void;
   onShowBugReport?: () => void;
   onShowAbout?: () => void;
+  onShowTerms?: () => void;
+  onShowPrivacy?: () => void;
 }
 
 const MobileHeader: React.FC<MobileHeaderProps> = ({
@@ -38,7 +40,9 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
   onProfileSettings,
   onShowTutorial,
   onShowBugReport,
-  onShowAbout
+  onShowAbout,
+  onShowTerms,
+  onShowPrivacy
 }) => {
   const [streamDuration, setStreamDuration] = useState(initialDuration);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -267,11 +271,11 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
 
             <div className="menu-section">
               <div className="menu-section-title">Navigation</div>
-              <a href="/clips" className="menu-item" onClick={() => setShowHamburgerMenu(false)}>
+              <a href="/clips/" className="menu-item" onClick={() => setShowHamburgerMenu(false)}>
                 <span className="menu-item-icon">🎬</span>
                 <span className="menu-item-text">Clips</span>
               </a>
-              <a href="/blog" className="menu-item" onClick={() => setShowHamburgerMenu(false)}>
+              <a href="/blog/" className="menu-item" onClick={() => setShowHamburgerMenu(false)}>
                 <span className="menu-item-icon">📰</span>
                 <span className="menu-item-text">Blog</span>
               </a>
@@ -322,14 +326,20 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
 
             <div className="menu-section">
               <div className="menu-section-title">Legal</div>
-              <a href="/terms" className="menu-item" onClick={() => setShowHamburgerMenu(false)}>
+              <button
+                className="menu-item"
+                onClick={() => handleMenuItemClick(() => onShowTerms?.())}
+              >
                 <span className="menu-item-icon">📄</span>
                 <span className="menu-item-text">Terms of Service</span>
-              </a>
-              <a href="/privacy" className="menu-item" onClick={() => setShowHamburgerMenu(false)}>
+              </button>
+              <button
+                className="menu-item"
+                onClick={() => handleMenuItemClick(() => onShowPrivacy?.())}
+              >
                 <span className="menu-item-icon">🔒</span>
                 <span className="menu-item-text">Privacy Policy</span>
-              </a>
+              </button>
             </div>
           </nav>
         </div>

@@ -13,6 +13,8 @@ interface MobileBottomNavProps {
   onStreamToggle?: () => void;
   isStreaming?: boolean;
   hasActiveStream?: boolean;
+  onLogin?: () => void;
+  onSignup?: () => void;
 }
 
 const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
@@ -26,7 +28,9 @@ const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onShopToggle,
   onStreamToggle,
   isStreaming,
-  hasActiveStream
+  hasActiveStream,
+  onLogin,
+  onSignup
 }) => {
   // Use state for mobile detection to handle SSR
   const [isMobile, setIsMobile] = useState(false);
@@ -112,8 +116,24 @@ const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                 : 'Sign up or log in to buy items, power-ups, and exclusive effects!'}
             </p>
             <div className="mobile-login-buttons">
-              <a href="/login" className="mobile-auth-btn mobile-login-btn">Login</a>
-              <a href="/signup" className="mobile-auth-btn mobile-signup-btn">Sign Up</a>
+              <button
+                className="mobile-auth-btn mobile-login-btn"
+                onClick={() => {
+                  setShowLoginPrompt(null);
+                  onLogin?.();
+                }}
+              >
+                Login
+              </button>
+              <button
+                className="mobile-auth-btn mobile-signup-btn"
+                onClick={() => {
+                  setShowLoginPrompt(null);
+                  onSignup?.();
+                }}
+              >
+                Sign Up
+              </button>
             </div>
           </div>
         </div>

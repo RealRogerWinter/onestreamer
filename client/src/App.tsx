@@ -1182,6 +1182,8 @@ function AppContent() {
             onShowTutorial={() => setShowTutorial(true)}
             onShowBugReport={() => setShowBugReportModal(true)}
             onShowAbout={() => setShowAbout(true)}
+            onShowTerms={() => setShowTerms(true)}
+            onShowPrivacy={() => setShowPrivacy(true)}
           />
         </>
       ) : !isMobile ? (
@@ -1736,6 +1738,8 @@ function AppContent() {
           }
           isStreaming={isStreaming}
           hasActiveStream={streamStatus.hasActiveStream}
+          onLogin={() => setShowLogin(true)}
+          onSignup={() => setShowSignup(true)}
         />
       )}
     </div>
