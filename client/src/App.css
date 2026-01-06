@@ -643,18 +643,18 @@
 /* Mobile landscape mode styles */
 @media (max-width: 768px) and (orientation: landscape) {
   .App-main {
-    padding-top: 0;
+    padding-top: 44px; /* Account for landscape header */
   }
 
-  /* Full-screen video in landscape */
+  /* Video fits within remaining space below header */
   .stream-viewer-container {
-    max-height: 100vh;
-    height: 100vh;
+    max-height: calc(100vh - 44px);
+    height: calc(100vh - 44px);
   }
 
   .stream-viewer {
-    max-height: 100vh;
-    height: 100vh;
+    max-height: calc(100vh - 44px);
+    height: calc(100vh - 44px);
   }
 
   /* Hide stream controls in landscape - using new overlay layout */
@@ -708,11 +708,11 @@
   }
 }
 
-/* Fix for stream viewer aspect ratio in landscape - full screen */
+/* Fix for stream viewer aspect ratio in landscape - account for header */
 @media (orientation: landscape) and (max-height: 500px) {
   .stream-viewer {
-    max-height: 100vh;
-    height: 100vh;
+    max-height: calc(100vh - 38px); /* Compact header is 38px */
+    height: calc(100vh - 38px);
     min-height: unset;
   }
 }

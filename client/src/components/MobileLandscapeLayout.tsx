@@ -54,7 +54,6 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   onLogout,
   onProfileSettings,
   onShowTutorial,
-  onShowBugReport,
   onShowAbout,
   onShowTerms,
   onShowPrivacy
@@ -156,131 +155,140 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
 
   return (
     <>
-      {/* Left Side Controls */}
-      <div className="landscape-left-controls">
-        {/* Hamburger Menu Button */}
-        <button
-          className={`landscape-hamburger ${showHamburgerMenu ? 'open' : ''}`}
-          onClick={() => setShowHamburgerMenu(!showHamburgerMenu)}
-          aria-label="Menu"
-        >
-          <span className="hamburger-line"></span>
-          <span className="hamburger-line"></span>
-          <span className="hamburger-line"></span>
-        </button>
+      {/* Horizontal Header Bar */}
+      <header className="landscape-header">
+        <div className="landscape-header-content">
+          {/* Left: Hamburger Menu */}
+          <div className="header-left">
+            <button
+              className={`landscape-hamburger ${showHamburgerMenu ? 'open' : ''}`}
+              onClick={() => setShowHamburgerMenu(!showHamburgerMenu)}
+              aria-label="Menu"
+            >
+              <span className="hamburger-line"></span>
+              <span className="hamburger-line"></span>
+              <span className="hamburger-line"></span>
+            </button>
+          </div>
 
-        {/* Stream Info */}
-        <div className="landscape-stream-info">
-          {hasActiveStream ? (
-            <>
-              <span className="landscape-live-badge">LIVE</span>
-              <span className="landscape-viewers">
-                <span className="viewer-icon">👥</span>
-                {viewerCount}
-              </span>
-              {streamStartTime && (
-                <span className="landscape-duration">{formatDuration(streamDuration)}</span>
-              )}
-              {streamerDisplayName && (
-                <span className="landscape-streamer">{getDisplayName()}</span>
-              )}
-            </>
-          ) : (
-            <span className="landscape-offline">OFFLINE</span>
-          )}
+          {/* Center: Stream Info */}
+          <div className="header-center">
+            {hasActiveStream ? (
+              <div className="landscape-stream-info">
+                <span className="landscape-live-badge">LIVE</span>
+                <span className="landscape-viewers">
+                  <span className="viewer-icon">👥</span>
+                  {viewerCount}
+                </span>
+                {streamerDisplayName && (
+                  <span className="landscape-streamer">{getDisplayName()}</span>
+                )}
+                {streamStartTime && (
+                  <span className="landscape-duration">{formatDuration(streamDuration)}</span>
+                )}
+              </div>
+            ) : (
+              <span className="landscape-offline">OFFLINE</span>
+            )}
+          </div>
+
+          {/* Right: User Section */}
+          <div className="header-right" ref={userMenuRef}>
+            {isAuthenticated ? (
+              <>
+                <button
+                  className="landscape-user-button"
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  aria-label="User menu"
+                >
+                  <div className="landscape-user-avatar">
+                    {getUserInitial()}
+                  </div>
+                </button>
+
+                {/* User Dropdown */}
+                {showUserMenu && (
+                  <div className="landscape-user-dropdown">
+                    <div className="dropdown-header">
+                      <div className="dropdown-username">{currentUser?.username || 'User'}</div>
+                      <div className="dropdown-points">
+                        <span className="points-icon">💎</span>
+                        <AnimatedNumber value={userPoints} />
+                      </div>
+                    </div>
+                    <div className="dropdown-divider"></div>
+                    <button
+                      className="dropdown-item"
+                      onClick={() => {
+                        onProfileSettings?.();
+                        setShowUserMenu(false);
+                      }}
+                    >
+                      <span className="dropdown-icon">⚙️</span>
+                      Settings
+                    </button>
+                    <button
+                      className="dropdown-item"
+                      onClick={() => {
+                        onLogout?.();
+                        setShowUserMenu(false);
+                      }}
+                    >
+                      <span className="dropdown-icon">🚪</span>
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <button
+                className="landscape-login-btn"
+                onClick={onLogin}
+              >
+                Login
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
-      {/* Right Side Controls */}
-      <div className="landscape-right-controls">
+      {/* Right Side Action Bar */}
+      <div className="landscape-action-bar">
         {/* Points Display */}
-        <div className="landscape-points">
-          <span className="points-icon">💎</span>
+        <div className="landscape-action-item landscape-points">
+          <span className="action-icon">💎</span>
           <span className="points-value">{isAuthenticated ? userPoints : '---'}</span>
         </div>
 
-        {/* Action Buttons */}
-        <div className="landscape-action-buttons">
-          <button
-            className={`landscape-action-btn ${showChat ? 'active' : ''}`}
-            onClick={onChatToggle}
-            title="Chat"
-          >
-            💬
-          </button>
-          <button
-            className={`landscape-action-btn ${showInventory ? 'active' : ''}`}
-            onClick={handleBackpackClick}
-            title="Backpack"
-          >
-            🎒
-          </button>
-          <button
-            className={`landscape-action-btn ${showShop ? 'active' : ''}`}
-            onClick={handleShopClick}
-            title="Shop"
-          >
-            🛒
-          </button>
-        </div>
+        {/* Chat Button */}
+        <button
+          className={`landscape-action-item ${showChat ? 'active' : ''}`}
+          onClick={onChatToggle}
+          title="Chat"
+        >
+          <span className="action-icon">💬</span>
+          <span className="action-label">Chat</span>
+        </button>
 
-        {/* User Section */}
-        <div className="landscape-user-section" ref={userMenuRef}>
-          {isAuthenticated ? (
-            <>
-              <button
-                className="landscape-user-button"
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                aria-label="User menu"
-              >
-                <div className="landscape-user-avatar">
-                  {getUserInitial()}
-                </div>
-              </button>
+        {/* Backpack Button */}
+        <button
+          className={`landscape-action-item ${showInventory ? 'active' : ''}`}
+          onClick={handleBackpackClick}
+          title="Backpack"
+        >
+          <span className="action-icon">🎒</span>
+          <span className="action-label">Bag</span>
+        </button>
 
-              {/* User Dropdown */}
-              {showUserMenu && (
-                <div className="landscape-user-dropdown">
-                  <div className="dropdown-header">
-                    <div className="dropdown-username">{currentUser?.username || 'User'}</div>
-                    <div className="dropdown-points">
-                      <span className="points-icon">💎</span>
-                      <AnimatedNumber value={userPoints} />
-                    </div>
-                  </div>
-                  <div className="dropdown-divider"></div>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => {
-                      onProfileSettings?.();
-                      setShowUserMenu(false);
-                    }}
-                  >
-                    <span className="dropdown-icon">⚙️</span>
-                    Settings
-                  </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => {
-                      onLogout?.();
-                      setShowUserMenu(false);
-                    }}
-                  >
-                    <span className="dropdown-icon">🚪</span>
-                    Logout
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <button
-              className="landscape-login-btn"
-              onClick={onLogin}
-            >
-              Login
-            </button>
-          )}
-        </div>
+        {/* Shop Button */}
+        <button
+          className={`landscape-action-item ${showShop ? 'active' : ''}`}
+          onClick={handleShopClick}
+          title="Shop"
+        >
+          <span className="action-icon">🛒</span>
+          <span className="action-label">Shop</span>
+        </button>
       </div>
 
       {/* Chat Slide Panel */}
@@ -333,20 +341,13 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
             </div>
 
             <div className="menu-section">
-              <div className="menu-section-title">Help & Support</div>
+              <div className="menu-section-title">Help & Info</div>
               <button
                 className="menu-item"
                 onClick={() => handleMenuItemClick(() => onShowTutorial?.())}
               >
                 <span className="menu-item-icon">❓</span>
                 <span className="menu-item-text">Tutorial</span>
-              </button>
-              <button
-                className="menu-item"
-                onClick={() => handleMenuItemClick(() => onShowBugReport?.())}
-              >
-                <span className="menu-item-icon">🐛</span>
-                <span className="menu-item-text">Report Bug</span>
               </button>
               <button
                 className="menu-item"

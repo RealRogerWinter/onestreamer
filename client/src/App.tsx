@@ -1740,7 +1740,6 @@ function AppContent() {
             setTutorialDefaultTab('tutorial');
             setShowTutorial(true);
           }}
-          onShowBugReport={() => setShowBugReportModal(true)}
           onShowAbout={() => {
             setTutorialDefaultTab('about');
             setShowTutorial(true);
