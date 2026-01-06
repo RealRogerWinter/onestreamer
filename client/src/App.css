@@ -104,12 +104,15 @@
   height: 28px;
 }
 
-/* Hide on mobile */
+/* Hide on mobile - all orientations */
 @media (max-width: 768px) {
   .help-button-bottom,
   .bug-report-button,
   .discord-link {
-    display: none;
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
   }
 }
 

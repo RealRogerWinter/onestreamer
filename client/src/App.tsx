@@ -1736,6 +1736,11 @@ function AppContent() {
           onLogin={() => setShowLogin(true)}
           onLogout={handleLogout}
           onProfileSettings={() => setShowProfileSettings(true)}
+          onShowTutorial={() => {
+            setTutorialDefaultTab('tutorial');
+            setShowTutorial(true);
+          }}
+          onShowBugReport={() => setShowBugReportModal(true)}
           onShowAbout={() => {
             setTutorialDefaultTab('about');
             setShowTutorial(true);
