@@ -345,13 +345,12 @@
 /* Mobile Portrait Mode - Optimized video placement */
 @media (max-width: 768px) and (orientation: portrait) {
   .stream-viewer {
-    /* Width-based sizing - aspect ratio determines height, no black bars */
+    /* Maximum height: viewport - header(56px) - button area(120px) */
     width: 100% !important;
     max-width: 100% !important;
-    height: auto !important;
-    min-height: auto !important;
-    max-height: none !important;
-    aspect-ratio: 16 / 9 !important;
+    height: calc(100dvh - 176px) !important;
+    min-height: calc(100dvh - 176px) !important;
+    max-height: calc(100dvh - 176px) !important;
     /* Remove extra spacing */
     margin: 0 !important;
     margin-bottom: 0 !important;
@@ -392,13 +391,13 @@
 
   .no-stream {
     width: 100% !important;
-    aspect-ratio: 16 / 9 !important;
+    height: 100% !important;
     min-height: auto !important;
-    height: auto !important;
   }
 
   .no-stream-content {
     min-height: auto !important;
+    height: 100% !important;
   }
 }
 

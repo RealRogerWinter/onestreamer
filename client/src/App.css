@@ -653,12 +653,12 @@ html, body {
     flex-direction: column !important;
   }
 
-  /* Video container - width-based, aspect ratio determines height */
+  /* Video container - maximum height leaving room for button */
   .stream-viewer-container {
     width: 100% !important;
-    height: auto !important;
-    min-height: auto !important;
-    max-height: none !important;
+    height: calc(100dvh - 176px) !important;
+    min-height: calc(100dvh - 176px) !important;
+    max-height: calc(100dvh - 176px) !important;
     margin: 0 !important;
     padding: 0 !important;
     flex-shrink: 0 !important;
