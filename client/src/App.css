@@ -651,18 +651,17 @@ html, body {
     margin: 0 !important;
     gap: 0 !important;
     flex-direction: column !important;
+    align-items: center !important;
   }
 
-  /* Video container - height-based width for 16:9, no black bars */
+  /* Video container - full width, 16:9 ratio, capped height */
   .stream-viewer-container {
-    --video-height: calc(100dvh - 176px);
-    height: var(--video-height) !important;
-    min-height: var(--video-height) !important;
-    max-height: var(--video-height) !important;
-    /* Width matches 16:9 ratio based on height, capped at 100% */
-    width: min(100%, calc(var(--video-height) * 16 / 9)) !important;
+    width: 100% !important;
     max-width: 100% !important;
-    margin: 0 auto !important;
+    aspect-ratio: 16 / 9;
+    height: auto !important;
+    max-height: calc(100dvh - 176px) !important;
+    margin: 0 !important;
     padding: 0 !important;
     flex-shrink: 0 !important;
   }

@@ -345,21 +345,19 @@
 /* Mobile Portrait Mode - Optimized video placement */
 @media (max-width: 768px) and (orientation: portrait) {
   .stream-viewer {
-    /* Container sized to 16:9 based on height - crops pillarbox bars */
-    --video-height: calc(100dvh - 176px);
-    height: var(--video-height) !important;
-    min-height: var(--video-height) !important;
-    max-height: var(--video-height) !important;
-    /* Width matches 16:9 ratio, capped at screen width */
-    width: min(100%, calc(var(--video-height) * 16 / 9)) !important;
+    /* Full width with 16:9 aspect ratio, capped at available height */
+    width: 100% !important;
     max-width: 100% !important;
-    /* Center horizontally */
-    margin: 0 auto !important;
+    aspect-ratio: 16 / 9 !important;
+    height: auto !important;
+    max-height: calc(100dvh - 176px) !important;
+    /* No margins - directly below header */
+    margin: 0 !important;
     padding: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
     background: transparent !important;
-    overflow: hidden !important; /* Crops any black bars */
+    overflow: hidden !important;
   }
 
   .streaming-view,
