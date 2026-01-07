@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import ItemTooltip from './ItemTooltip';
+import MobileItemModal from './MobileItemModal';
 
 interface InventoryItemData {
   inventory_id: number;
@@ -25,8 +26,15 @@ interface InventoryItemProps {
 const InventoryItem: React.FC<InventoryItemProps> = ({ item, onUse, cooldownRemaining }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [showMobileModal, setShowMobileModal] = useState(false);
+
+  // Detect mobile device
+  const isMobile = useMemo(() => {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+  }, []);
 
   const handleMouseEnter = (e: React.MouseEvent) => {
+    if (isMobile) return; // Don't show tooltip on mobile
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltipPosition({
       x: rect.left - 10,
@@ -39,7 +47,19 @@ const InventoryItem: React.FC<InventoryItemProps> = ({ item, onUse, cooldownRema
     setShowTooltip(false);
   };
 
-  const handleUse = () => {
+  const handleClick = () => {
+    if (isMobile) {
+      // On mobile, show item details modal instead of directly using
+      setShowMobileModal(true);
+    } else {
+      // On desktop, use item directly (existing behavior)
+      if (cooldownRemaining === 0 && item.quantity > 0) {
+        onUse();
+      }
+    }
+  };
+
+  const handleMobileUse = () => {
     if (cooldownRemaining === 0 && item.quantity > 0) {
       onUse();
     }
@@ -54,12 +74,12 @@ const InventoryItem: React.FC<InventoryItemProps> = ({ item, onUse, cooldownRema
 
   return (
     <>
-      <div 
+      <div
         className={`inventory-item ${getRarityClass()} ${isOnCooldown ? 'cooldown' : ''} ${isEmpty ? 'empty' : ''}`}
         data-type={item.item_type}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        onClick={handleUse}
+        onClick={handleClick}
       >
         <div className="item-emoji">{item.emoji}</div>
         {item.quantity > 1 && (
@@ -71,11 +91,19 @@ const InventoryItem: React.FC<InventoryItemProps> = ({ item, onUse, cooldownRema
           </div>
         )}
       </div>
-      {showTooltip && (
-        <ItemTooltip 
+      {showTooltip && !isMobile && (
+        <ItemTooltip
           item={item}
           position={tooltipPosition}
           cooldownRemaining={cooldownRemaining}
+        />
+      )}
+      {showMobileModal && (
+        <MobileItemModal
+          item={item}
+          cooldownRemaining={cooldownRemaining}
+          onUse={handleMobileUse}
+          onClose={() => setShowMobileModal(false)}
         />
       )}
     </>
