@@ -109,12 +109,14 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
     e.preventDefault(); // Prevent scroll interference
     currentYRef.current = e.touches[0].clientY;
     const distance = currentYRef.current - startYRef.current;
-    
+
     // Use requestAnimationFrame for smoother updates
     requestAnimationFrame(() => {
       const viewportHeight = window.innerHeight;
+      const headerHeight = 56; // Layout header height
+      const maxHeightVh = ((viewportHeight - headerHeight) / viewportHeight) * 100; // Max height that won't cover header
       const distanceInVh = (distance / viewportHeight) * 100;
-      const newHeight = Math.max(20, Math.min(85, startHeightRef.current - distanceInVh));
+      const newHeight = Math.max(20, Math.min(maxHeightVh, startHeightRef.current - distanceInVh));
       
       if (panelRef.current) {
         panelRef.current.style.height = `${newHeight}vh`;
@@ -134,12 +136,14 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
     setIsDragging(false);
     const distance = currentYRef.current - startYRef.current;
     const viewportHeight = window.innerHeight;
+    const headerHeight = 56; // Layout header height
+    const maxHeightVh = ((viewportHeight - headerHeight) / viewportHeight) * 100; // Max height that won't cover header
     const distanceInVh = (distance / viewportHeight) * 100;
     const currentHeight = startHeightRef.current - distanceInVh;
 
     if (panelRef.current) {
       panelRef.current.style.transition = 'all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-      
+
       if (startHeightRef.current === 40 && distance > 100) {
         panelRef.current.style.transform = 'translateY(100%)';
         panelRef.current.style.height = '40vh';
@@ -151,15 +155,16 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
           }
         }, 300);
       } else if (currentHeight > 60) {
-        panelRef.current.style.height = '85vh';
+        // Cap at max height that doesn't cover header
+        panelRef.current.style.height = `${maxHeightVh}vh`;
         panelRef.current.style.transform = '';
         setIsExpanded(true);
-      } else if (currentHeight < 30 && startHeightRef.current === 85) {
+      } else if (currentHeight < 30 && startHeightRef.current >= maxHeightVh - 5) {
         panelRef.current.style.height = '40vh';
         panelRef.current.style.transform = '';
         setIsExpanded(false);
       } else {
-        panelRef.current.style.height = isExpanded ? '85vh' : '40vh';
+        panelRef.current.style.height = isExpanded ? `${maxHeightVh}vh` : '40vh';
         panelRef.current.style.transform = '';
       }
     }
@@ -726,10 +731,10 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
     <>
       {/* Hide floating button on mobile since we have bottom nav, and in theatre mode */}
       {!isOpen && !isMobile && !hideToggleButton && (
-        <button 
+        <button
           className="inventory-toggle-btn"
           onClick={onToggle}
-          title="Open Inventory (B)"
+          title="Open Backpack (B)"
         >
           🎒
         </button>
@@ -743,8 +748,8 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
         onTouchEnd={isMobile ? handleTouchEnd : undefined}
       >
         <div className="inventory-header">
-          <h2>Inventory</h2>
-          <button 
+          <h2>Backpack</h2>
+          <button
             className="inventory-close-btn"
             onClick={onToggle}
           >
@@ -753,10 +758,10 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
         </div>
 
         <div className="inventory-main-tabs">
-          <button 
+          <button
             className="inventory-main-tab active"
           >
-            🎒 Inventory
+            🎒 Backpack
           </button>
           <button 
             className="inventory-main-tab shop-toggle"

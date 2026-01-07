@@ -29,8 +29,8 @@ const MobileInventory: React.FC<MobileInventoryProps> = ({
   const handleTouchStart = (e: React.TouchEvent) => {
     // Only allow dragging from the header area
     const target = e.target as HTMLElement;
-    const isHeader = target.closest('.inventory-mobile-header') || target.closest('.swipe-indicator');
-    
+    const isHeader = target.closest('.backpack-mobile-header') || target.closest('.swipe-handle');
+
     if (isHeader) {
       setIsDragging(true);
       startYRef.current = e.touches[0].clientY;
@@ -100,15 +100,13 @@ const MobileInventory: React.FC<MobileInventoryProps> = ({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Swipe indicator */}
-      <div className="swipe-indicator">
+      {/* Compact header with swipe handle and close button */}
+      <div className="backpack-mobile-header">
         <div className="swipe-handle"></div>
-      </div>
-      
-      {/* Custom mobile header */}
-      <div className="inventory-mobile-header">
-        <h3>🎒 Inventory</h3>
-        <button className="close-btn" onClick={onClose}>×</button>
+        <div className="backpack-title-row">
+          <span className="backpack-title">🎒 Backpack</span>
+          <button className="backpack-close-btn" onClick={onClose}>×</button>
+        </div>
       </div>
       
       {/* Inventory panel content */}

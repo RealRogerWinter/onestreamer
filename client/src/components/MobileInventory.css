@@ -1,0 +1,167 @@
+/* Mobile Inventory/Backpack Wrapper */
+.mobile-inventory-wrapper {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  /* Max height caps at viewport minus header (56px) minus some buffer */
+  max-height: calc(100dvh - 56px);
+  min-height: 200px;
+  background: rgba(26, 26, 26, 0.98);
+  backdrop-filter: blur(10px);
+  border-radius: 20px 20px 0 0;
+  border-top: 2px solid #444;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mobile-inventory-wrapper.open {
+  transform: translateY(0);
+}
+
+/* Compact Backpack Header */
+.backpack-mobile-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 16px 12px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(116, 75, 162, 0.15) 100%);
+  border-bottom: 1px solid #444;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  flex-shrink: 0;
+}
+
+.backpack-mobile-header:active {
+  cursor: grabbing;
+}
+
+/* Swipe handle */
+.swipe-handle {
+  width: 40px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 2px;
+  margin-bottom: 8px;
+}
+
+/* Title row with close button */
+.backpack-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.backpack-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.3px;
+}
+
+.backpack-close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #999;
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.backpack-close-btn:hover,
+.backpack-close-btn:active {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+/* Inventory content area */
+.mobile-inventory-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Hide the InventoryPanel's own header and tabs on mobile */
+.mobile-inventory-content .inventory-header {
+  display: none !important;
+}
+
+.mobile-inventory-content .inventory-main-tabs {
+  display: none !important;
+}
+
+.mobile-inventory-content .inventory-tabs {
+  display: none !important;
+}
+
+/* Adjust inventory panel styling when inside mobile wrapper */
+.mobile-inventory-content .inventory-panel {
+  position: static !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: auto !important;
+  max-height: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.mobile-inventory-content .inventory-panel.open {
+  right: auto !important;
+  bottom: auto !important;
+}
+
+/* Override inventory content to fill available space */
+.mobile-inventory-content .inventory-content {
+  padding: 8px;
+  overflow: visible;
+}
+
+/* Larger grid items for mobile backpack */
+.mobile-inventory-content .inventory-grid {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  padding: 8px;
+}
+
+.mobile-inventory-content .inventory-item {
+  aspect-ratio: 1;
+  max-height: none;
+  max-width: none;
+  min-height: 56px;
+  min-width: 56px;
+}
+
+.mobile-inventory-content .item-emoji {
+  font-size: 28px;
+}
+
+/* Mobile Portrait Mode - Cap max height to stay below header */
+@media (max-width: 768px) and (orientation: portrait) {
+  .mobile-inventory-wrapper {
+    /* Cannot expand above the header bar (56px from top) */
+    max-height: calc(100dvh - 56px);
+    /* Start at reasonable default */
+    height: 50vh;
+  }
+
+  .mobile-inventory-wrapper.expanded {
+    height: calc(100dvh - 56px);
+    max-height: calc(100dvh - 56px);
+  }
+}

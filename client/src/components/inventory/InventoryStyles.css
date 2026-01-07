@@ -1012,10 +1012,10 @@
     right: 0 !important;
   }
   
-  /* Mobile-specific expanded state */
+  /* Mobile-specific expanded state - capped to not cover header */
   .inventory-panel.mobile.expanded {
-    height: 85vh !important;
-    max-height: 85vh !important;
+    height: calc(100dvh - 56px) !important;
+    max-height: calc(100dvh - 56px) !important;
   }
   
   /* Swipe indicator for mobile - visual cue for dragging */
