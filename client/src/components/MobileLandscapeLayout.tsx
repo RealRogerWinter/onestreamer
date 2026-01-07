@@ -81,10 +81,6 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   const [showVideoControls, setShowVideoControls] = useState(false);
   const [showClipModal, setShowClipModal] = useState(false);
   const [clipStatus, setClipStatus] = useState<{ available: boolean; isRecording: boolean } | null>(null);
-  // Video control states
-  const [isPaused, setIsPaused] = useState(false);
-  const [volume, setVolume] = useState(0.8);
-  const [isMuted, setIsMuted] = useState(true); // Start muted for autoplay
   const menuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -170,6 +166,29 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
     };
   }, [showVideoControls]);
 
+  // Listen for clicks on the video area to toggle controls
+  useEffect(() => {
+    const handleVideoAreaClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+
+      // Check if click is on video element or stream container
+      const isVideoClick = target.closest('.webrtc-video, .stream-container, .webrtc-viewer-container, .stream-viewer');
+
+      // Don't toggle if clicking on interactive elements like unmute button
+      const isInteractiveElement = target.closest('button, input, a, [role="button"]');
+
+      // Don't toggle if clicking on chat sidebar or other UI
+      const isUIElement = target.closest('.landscape-chat-sidebar, .landscape-hamburger-menu, .video-controls-overlay, .video-playback-bar');
+
+      if (isVideoClick && !isInteractiveElement && !isUIElement) {
+        setShowVideoControls(prev => !prev);
+      }
+    };
+
+    document.addEventListener('click', handleVideoAreaClick);
+    return () => document.removeEventListener('click', handleVideoAreaClick);
+  }, []);
+
   // Check clip availability
   useEffect(() => {
     const checkClipStatus = async () => {
@@ -188,74 +207,6 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
     const interval = setInterval(checkClipStatus, 10000);
     return () => clearInterval(interval);
   }, []);
-
-  // Get the video element from WebRTCViewer
-  const getVideoElement = (): HTMLVideoElement | null => {
-    return document.querySelector('.webrtc-video') as HTMLVideoElement | null;
-  };
-
-  // Sync video state when controls are shown
-  useEffect(() => {
-    if (showVideoControls) {
-      const video = getVideoElement();
-      if (video) {
-        setIsPaused(video.paused);
-        setIsMuted(video.muted);
-        setVolume(video.muted ? 0 : video.volume);
-      }
-    }
-  }, [showVideoControls]);
-
-  // Video control handlers
-  const handlePlayPause = () => {
-    const video = getVideoElement();
-    if (!video) return;
-
-    if (video.paused) {
-      video.play();
-      setIsPaused(false);
-    } else {
-      video.pause();
-      setIsPaused(true);
-    }
-  };
-
-  const handleVolumeToggle = () => {
-    const video = getVideoElement();
-    if (!video) return;
-
-    if (video.muted || video.volume === 0) {
-      video.muted = false;
-      video.volume = 0.8;
-      setIsMuted(false);
-      setVolume(0.8);
-    } else {
-      video.muted = true;
-      setIsMuted(true);
-      setVolume(0);
-    }
-  };
-
-  const handleVolumeChange = (newVolume: number) => {
-    const video = getVideoElement();
-    if (!video) return;
-
-    video.volume = newVolume;
-    video.muted = newVolume === 0;
-    setVolume(newVolume);
-    setIsMuted(newVolume === 0);
-  };
-
-  const handleFullscreen = () => {
-    const videoContainer = document.querySelector('.stream-container') || document.querySelector('.webrtc-viewer-container');
-    if (!videoContainer) return;
-
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      videoContainer.requestFullscreen?.();
-    }
-  };
 
   const formatDuration = (milliseconds: number): string => {
     const seconds = Math.floor(milliseconds / 1000);
@@ -303,10 +254,6 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
     }
   };
 
-  const handleVideoAreaTap = () => {
-    setShowVideoControls(!showVideoControls);
-  };
-
   const handleTakeOverClick = () => {
     setShowVideoControls(false);
     onTakeOver?.();
@@ -332,11 +279,8 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   return (
     <>
     <div className="landscape-theatre-layout">
-      {/* Video tap area - covers the video region for tap-to-show controls */}
-      <div
-        className="landscape-video-tap-area"
-        onClick={handleVideoAreaTap}
-      >
+      {/* Video tap area - transparent overlay for controls (clicks pass through) */}
+      <div className="landscape-video-tap-area">
         {/* Video Controls Overlay - shown on tap */}
         {showVideoControls && (
           <>
@@ -402,39 +346,6 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
                   </>
                 )}
               </div>
-            </div>
-
-            {/* Bottom playback controls bar */}
-            <div className="video-playback-bar" onClick={(e) => e.stopPropagation()}>
-              {/* Play/Pause */}
-              <button className="playback-btn" onClick={handlePlayPause}>
-                {isPaused ? '▶️' : '⏸️'}
-              </button>
-
-              {/* Volume */}
-              <button className="playback-btn" onClick={handleVolumeToggle}>
-                {isMuted || volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
-              </button>
-              <input
-                type="range"
-                className="volume-slider"
-                min="0"
-                max="1"
-                step="0.1"
-                value={volume}
-                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-              />
-
-              {/* Live indicator */}
-              <div className="playback-live-indicator">
-                <span className="live-dot"></span>
-                <span className="live-text">LIVE</span>
-              </div>
-
-              {/* Fullscreen */}
-              <button className="playback-btn fullscreen-btn" onClick={handleFullscreen}>
-                ⛶
-              </button>
             </div>
           </>
         )}

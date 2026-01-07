@@ -27,7 +27,7 @@
   right: 280px;
   bottom: 0;
   z-index: 110;
-  pointer-events: auto;
+  pointer-events: none; /* Let clicks pass through to video/unmute button */
   cursor: pointer;
 }
 
@@ -122,117 +122,6 @@
 .video-control-btn.clip-btn {
   background: rgba(255, 193, 7, 0.6);
   border-color: rgba(255, 193, 7, 0.7);
-}
-
-/* ============================================
-   PLAYBACK CONTROLS BAR (bottom of video)
-   ============================================ */
-.video-playback-bar {
-  position: fixed;
-  bottom: 20px;
-  left: 20px;
-  right: 300px;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-radius: 12px;
-  padding: 10px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  z-index: 120;
-  pointer-events: auto;
-  animation: fadeIn 0.2s ease;
-}
-
-.playback-btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 22px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  transition: background 0.2s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.playback-btn:active {
-  background: rgba(255, 255, 255, 0.2);
-  transform: scale(0.95);
-}
-
-.volume-slider {
-  width: 80px;
-  height: 4px;
-  background: #444;
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  background: #2a2a2a;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid #007bff;
-}
-
-.volume-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  background: #2a2a2a;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid #007bff;
-}
-
-.volume-slider::-webkit-slider-track {
-  background: #444;
-  height: 4px;
-  border-radius: 2px;
-}
-
-.volume-slider::-moz-range-track {
-  background: #444;
-  height: 4px;
-  border-radius: 2px;
-}
-
-.playback-live-indicator {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.live-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ff4444;
-  animation: pulse 2s infinite;
-}
-
-.live-text {
-  color: white;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-
-.fullscreen-btn {
-  font-size: 20px;
 }
 
 /* ============================================
@@ -769,27 +658,6 @@
   }
 
   .control-label {
-    font-size: 10px;
-  }
-
-  .video-playback-bar {
-    right: 260px;
-    bottom: 10px;
-    padding: 8px 12px;
-    gap: 8px;
-  }
-
-  .playback-btn {
-    width: 30px;
-    height: 30px;
-    font-size: 18px;
-  }
-
-  .volume-slider {
-    width: 60px;
-  }
-
-  .live-text {
     font-size: 10px;
   }
 }
