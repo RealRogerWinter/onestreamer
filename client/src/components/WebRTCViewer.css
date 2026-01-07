@@ -159,25 +159,26 @@
 /* Mobile Portrait Mode - Optimized layout with no wasted space */
 @media (max-width: 768px) and (orientation: portrait) {
   .webrtc-viewer {
-    /* Maximum height: viewport - header(56px) - button area(120px) */
-    width: 100% !important;
+    /* Height-based width calculation for 16:9 - no pillarbox bars */
+    --video-height: calc(100dvh - 176px);
+    height: var(--video-height) !important;
+    min-height: var(--video-height) !important;
+    max-height: var(--video-height) !important;
+    /* Width = height * 16/9, but capped at 100% */
+    width: min(100%, calc(var(--video-height) * 16 / 9)) !important;
     max-width: 100% !important;
-    height: calc(100dvh - 176px) !important;
-    min-height: calc(100dvh - 176px) !important;
-    max-height: calc(100dvh - 176px) !important;
-    /* Remove any margins/padding */
-    margin: 0 !important;
+    /* Center horizontally */
+    margin: 0 auto !important;
     padding: 0 !important;
     border-radius: 0 !important;
-    background: #000;
+    background: transparent !important;
   }
 
   .webrtc-video {
-    /* Fill container while preserving aspect ratio */
+    /* Fill container exactly - container is already correct ratio */
     width: 100% !important;
     height: 100% !important;
-    object-fit: contain !important; /* Preserve aspect ratio */
-    /* Remove any spacing */
+    object-fit: fill !important;
     margin: 0 !important;
     padding: 0 !important;
   }
