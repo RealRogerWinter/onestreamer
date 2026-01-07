@@ -115,6 +115,24 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
     }
   }, [isActive, onVisibilityChange]);
 
+  // Handle browser back gesture for settings panel
+  useEffect(() => {
+    if (showSettings) {
+      // Push history state so back gesture can be intercepted
+      window.history.pushState({ nestedPanel: 'theatreSettings' }, '');
+
+      // Register close handler for App.tsx to call on back gesture
+      (window as any).__closeNestedPanel = () => {
+        setShowSettings(false);
+        (window as any).__closeNestedPanel = null;
+      };
+
+      return () => {
+        (window as any).__closeNestedPanel = null;
+      };
+    }
+  }, [showSettings]);
+
   useEffect(() => {
     // Show controls when hovering over stream OR theatre controls/admin panels
     let isOverInteractiveArea = false;

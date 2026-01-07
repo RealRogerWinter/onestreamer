@@ -228,21 +228,181 @@
     padding: 20px;
     min-width: 300px;
   }
-  
+
   .shop-quantity-emoji {
     font-size: 36px;
   }
-  
+
   .shop-quantity-title {
     font-size: 18px;
   }
-  
+
   .shop-quantity-actions {
     flex-direction: column;
   }
-  
+
   .shop-quantity-cancel,
   .shop-quantity-purchase {
     width: 100%;
+  }
+}
+
+/* Mobile Landscape - More compact layout */
+@media (max-height: 500px) and (orientation: landscape) {
+  .shop-quantity-overlay {
+    padding: 10px;
+  }
+
+  .shop-quantity-modal {
+    padding: 15px 20px;
+    min-width: unset;
+    width: 90vw;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .shop-quantity-close {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 20px;
+    width: 24px;
+    height: 24px;
+  }
+
+  .shop-quantity-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 0;
+    text-align: left;
+  }
+
+  .shop-quantity-emoji {
+    font-size: 32px;
+    display: inline-block;
+    margin-bottom: 0;
+  }
+
+  .shop-quantity-title {
+    font-size: 16px;
+    margin: 0;
+  }
+
+  .shop-quantity-controls {
+    flex: 1 1 auto;
+    margin-bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .shop-quantity-label {
+    margin-bottom: 0;
+    font-size: 12px;
+  }
+
+  .shop-quantity-input-group {
+    gap: 6px;
+  }
+
+  .shop-quantity-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
+  .shop-quantity-input {
+    width: 60px;
+    height: 32px;
+    font-size: 14px;
+  }
+
+  .shop-quantity-summary {
+    flex: 1 1 100%;
+    padding: 10px 15px;
+    margin-bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .shop-quantity-cost {
+    margin-bottom: 0;
+    font-size: 14px;
+  }
+
+  .shop-quantity-total {
+    font-size: 16px;
+  }
+
+  .shop-quantity-balance {
+    margin-bottom: 0;
+    font-size: 12px;
+  }
+
+  .shop-quantity-warning {
+    font-size: 12px;
+    padding: 5px 10px;
+    flex: 1 1 100%;
+    text-align: center;
+  }
+
+  .shop-quantity-actions {
+    flex: 1 1 100%;
+    flex-direction: row;
+    gap: 10px;
+  }
+
+  .shop-quantity-cancel,
+  .shop-quantity-purchase {
+    padding: 10px 20px;
+    font-size: 13px;
+    min-width: 80px;
+    flex: 1;
+  }
+}
+
+/* Very small landscape screens (e.g., iPhone SE landscape) */
+@media (max-height: 400px) and (orientation: landscape) {
+  .shop-quantity-modal {
+    padding: 12px 15px;
+    gap: 10px;
+  }
+
+  .shop-quantity-emoji {
+    font-size: 24px;
+  }
+
+  .shop-quantity-title {
+    font-size: 14px;
+  }
+
+  .shop-quantity-summary {
+    padding: 8px 12px;
+  }
+
+  .shop-quantity-cost {
+    font-size: 13px;
+  }
+
+  .shop-quantity-total {
+    font-size: 14px;
+  }
+
+  .shop-quantity-cancel,
+  .shop-quantity-purchase {
+    padding: 8px 16px;
+    font-size: 12px;
   }
 }

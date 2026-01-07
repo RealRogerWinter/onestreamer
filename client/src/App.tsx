@@ -940,6 +940,10 @@ function AppContent() {
       setShowProfileSettings(false);
       return true;
     }
+    if (showMobileStreamerSettings) {
+      setShowMobileStreamerSettings(false);
+      return true;
+    }
     if (showLogin) {
       setShowLogin(false);
       return true;
@@ -965,15 +969,15 @@ function AppContent() {
       return true;
     }
     return false;
-  }, [showBugReportModal, showTutorial, showProfileSettings, showLogin, showSignup,
+  }, [showBugReportModal, showTutorial, showProfileSettings, showMobileStreamerSettings, showLogin, showSignup,
       isShopOpen, showInventory, showMobileChat, showLandscapeChat]);
 
   // Check if any dialog is currently open
   const hasOpenDialog = useCallback(() => {
     return showMobileChat || showLandscapeChat || showInventory || isShopOpen || showLogin || showSignup ||
-           showTutorial || showBugReportModal || showProfileSettings;
+           showTutorial || showBugReportModal || showProfileSettings || showMobileStreamerSettings;
   }, [showMobileChat, showLandscapeChat, showInventory, isShopOpen, showLogin, showSignup,
-      showTutorial, showBugReportModal, showProfileSettings]);
+      showTutorial, showBugReportModal, showProfileSettings, showMobileStreamerSettings]);
 
   // Mobile back button/gesture handler
   useEffect(() => {
@@ -983,6 +987,15 @@ function AppContent() {
       // Ignore popstate events within 300ms of opening a dialog
       // This prevents race conditions when hamburger menu cleanup triggers back()
       if (Date.now() - dialogOpenTimeRef.current < 300) {
+        return;
+      }
+
+      // Check if any nested panel registered a close handler
+      const closeNestedPanel = (window as any).__closeNestedPanel;
+      if (closeNestedPanel && typeof closeNestedPanel === 'function') {
+        closeNestedPanel();
+        // Push state back to prevent leaving the page
+        window.history.pushState({ nestedClosed: true }, '');
         return;
       }
 

@@ -180,11 +180,17 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
     };
   }, [isOpen]);
 
-  // Add keyboard shortcut for ESC to close shop
+  // Add keyboard shortcut for ESC to close shop (or quantity selector if open)
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && isOpen) {
-        onClose();
+        // If quantity selector is open, close it instead of the shop
+        if (showQuantitySelector) {
+          setShowQuantitySelector(false);
+          setSelectedItem(null);
+        } else {
+          onClose();
+        }
       }
     };
 
@@ -195,7 +201,26 @@ const ModalShopPanel: React.FC<ModalShopPanelProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyPress);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, showQuantitySelector]);
+
+  // Handle browser back gesture for quantity selector
+  useEffect(() => {
+    if (showQuantitySelector) {
+      // Push history state so back gesture can be intercepted
+      window.history.pushState({ nestedPanel: 'quantitySelector' }, '');
+
+      // Register close handler for App.tsx to call on back gesture
+      (window as any).__closeNestedPanel = () => {
+        setShowQuantitySelector(false);
+        setSelectedItem(null);
+        (window as any).__closeNestedPanel = null;
+      };
+
+      return () => {
+        (window as any).__closeNestedPanel = null;
+      };
+    }
+  }, [showQuantitySelector]);
 
   useEffect(() => {
     if (!socket) return;

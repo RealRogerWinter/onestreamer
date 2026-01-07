@@ -456,6 +456,31 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
   }, [isPoppedOut]);
 
+  // Handle browser back gesture for emoji picker and settings panels
+  useEffect(() => {
+    const hasNestedPanel = showEmojiPicker || showSettings;
+
+    if (hasNestedPanel) {
+      // Push history state so back gesture can be intercepted
+      window.history.pushState({ nestedPanel: 'chatPanel' }, '');
+
+      // Register close handler for App.tsx to call on back gesture
+      (window as any).__closeNestedPanel = () => {
+        if (showEmojiPicker) {
+          setShowEmojiPicker(false);
+        }
+        if (showSettings) {
+          setShowSettings(false);
+        }
+        (window as any).__closeNestedPanel = null;
+      };
+
+      return () => {
+        (window as any).__closeNestedPanel = null;
+      };
+    }
+  }, [showEmojiPicker, showSettings]);
+
   // Fetch custom emojis for parsing
   useEffect(() => {
     const fetchEmojis = async () => {

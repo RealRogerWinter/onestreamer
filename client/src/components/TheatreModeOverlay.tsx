@@ -93,6 +93,24 @@ const TheatreModeOverlay: React.FC<TheatreModeOverlayProps> = ({
     };
   }, []);
 
+  // Handle browser back gesture for settings panel
+  useEffect(() => {
+    if (showSettings) {
+      // Push history state so back gesture can be intercepted
+      window.history.pushState({ nestedPanel: 'theatreOverlaySettings' }, '');
+
+      // Register close handler for App.tsx to call on back gesture
+      (window as any).__closeNestedPanel = () => {
+        setShowSettings(false);
+        (window as any).__closeNestedPanel = null;
+      };
+
+      return () => {
+        (window as any).__closeNestedPanel = null;
+      };
+    }
+  }, [showSettings]);
+
   const handleUnmute = () => {
     setUserInteracted(true);
     onToggleMute();
