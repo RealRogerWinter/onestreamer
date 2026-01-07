@@ -299,7 +299,7 @@
     display: flex;
     flex-direction: column;
   }
-  
+
   .streaming-indicator,
   .viewer-indicator {
     top: 0.5rem;
@@ -307,7 +307,7 @@
     padding: 0.25rem 0.75rem;
     font-size: 0.9rem;
   }
-  
+
   .no-stream-content {
     min-height: 50vh; /* Match stream viewer height */
     padding: 30px;
@@ -315,22 +315,22 @@
     flex-direction: column;
     justify-content: center;
   }
-  
+
   .no-stream-content h2 {
     font-size: 1.8rem;
     margin-bottom: 1rem;
   }
-  
+
   .no-stream-content p {
     font-size: 1.1rem;
     margin-bottom: 1.5rem;
   }
-  
+
   .placeholder-video {
     width: 180px;
     height: 110px;
   }
-  
+
   /* Ensure no-stream div fills the larger container */
   .no-stream {
     min-height: 50vh;
@@ -339,6 +339,59 @@
     align-items: center;
     justify-content: center;
     background: #f5f5f5;
+  }
+}
+
+/* Mobile Portrait Mode - Optimized video placement */
+@media (max-width: 768px) and (orientation: portrait) {
+  .stream-viewer {
+    /* Fixed 60% of viewport height */
+    height: 60vh !important;
+    min-height: 60vh !important;
+    max-height: 60vh !important;
+    /* Remove extra spacing that creates black space */
+    margin: 0 !important;
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    /* Ensure full width */
+    width: 100% !important;
+    max-width: 100% !important;
+    background: #000;
+  }
+
+  .streaming-view,
+  .viewing-mode {
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .local-video,
+  .remote-video,
+  .hls-remote-video,
+  .hls-video {
+    height: 100% !important;
+    width: 100% !important;
+    object-fit: contain !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .hls-viewer {
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .no-stream {
+    min-height: 60vh !important;
+    height: 60vh !important;
+  }
+
+  .no-stream-content {
+    min-height: 60vh !important;
   }
 }
 

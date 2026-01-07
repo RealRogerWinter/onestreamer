@@ -285,9 +285,55 @@
     padding: 8px 16px;
     margin-bottom: 12px;
   }
-  
+
   .control-button.permission-required {
     font-size: 14px;
     padding: 14px 24px;
+  }
+}
+
+/* Mobile Portrait Mode - Compact controls directly below video */
+@media (max-width: 768px) and (orientation: portrait) {
+  .stream-controls {
+    margin: 0 !important;
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    text-align: center;
+  }
+
+  .control-button {
+    width: 100% !important;
+    max-width: 280px !important;
+    margin: 0 auto !important;
+    padding: 14px 24px !important;
+    font-size: 1rem !important;
+    border-radius: 12px !important;
+  }
+
+  .controls-info {
+    margin-top: 8px !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .streaming-info,
+  .takeover-info,
+  .start-info {
+    padding: 8px 12px !important;
+    font-size: 0.8rem !important;
+    margin: 4px 0 !important;
+    border-radius: 8px !important;
+  }
+
+  .takeover-cooldown-info {
+    margin-top: 8px !important;
+    padding: 8px 12px !important;
+    font-size: 0.85rem !important;
+  }
+
+  .mobile-permission-status {
+    margin-bottom: 10px !important;
+    padding: 6px 12px !important;
+    font-size: 12px !important;
   }
 }

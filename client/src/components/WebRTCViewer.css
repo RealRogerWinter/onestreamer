@@ -121,7 +121,7 @@
     position: relative;
     background: #000;
   }
-  
+
   .webrtc-video {
     /* Optimize for mobile performance */
     -webkit-optimize-contrast: optimizeSpeed;
@@ -134,7 +134,7 @@
     max-width: 100% !important;
     object-fit: contain !important; /* Prevent stretching but fill space */
   }
-  
+
   /* Ensure canvas overlay works on mobile */
   .stream-effects-overlay {
     /* Force proper rendering on mobile */
@@ -143,7 +143,7 @@
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
   }
-  
+
   /* Fix for mobile Chrome black canvas issue */
   .stream-effects-overlay .effect-overlay-canvas {
     /* Ensure canvas is transparent on mobile */
@@ -153,5 +153,35 @@
     /* Force GPU acceleration */
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
+  }
+}
+
+/* Mobile Portrait Mode - Optimized layout with no wasted space */
+@media (max-width: 768px) and (orientation: portrait) {
+  .webrtc-viewer {
+    /* Fixed 60% of viewport height */
+    height: 60vh !important;
+    min-height: 60vh !important;
+    max-height: 60vh !important;
+    /* Remove any margins/padding that could create black space */
+    margin: 0 !important;
+    padding: 0 !important;
+    /* Ensure it fills width completely */
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    background: #000;
+  }
+
+  .webrtc-video {
+    /* Fill container completely */
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 60vh !important;
+    max-height: 60vh !important;
+    object-fit: contain !important;
+    /* Remove any spacing */
+    margin: 0 !important;
+    padding: 0 !important;
   }
 }
