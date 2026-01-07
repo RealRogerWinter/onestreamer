@@ -139,8 +139,8 @@
 .video-top-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 12px 6px 4px; /* Minimal left padding to align with screen edge */
+  gap: 8px;
+  padding: 4px 12px 4px 0; /* Flush left */
   background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%);
   pointer-events: auto;
 }
@@ -606,16 +606,8 @@
    SAFE AREA SUPPORT
    ============================================ */
 @supports (padding: max(0px)) {
-  .landscape-video-overlay {
-    padding-left: max(0px, env(safe-area-inset-left));
-  }
-
   .landscape-chat-sidebar {
     padding-right: max(0px, env(safe-area-inset-right));
-  }
-
-  .landscape-video-tap-area {
-    left: max(0px, env(safe-area-inset-left));
   }
 }
 
