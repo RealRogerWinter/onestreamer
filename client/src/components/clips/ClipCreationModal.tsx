@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import authService from '../../services/AuthService';
 import '../../styles/Clips.css';
 
@@ -31,6 +31,31 @@ const ClipCreationModal: React.FC<ClipCreationModalProps> = ({ onClose, onSucces
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<SuccessInfo | null>(null);
+
+  // Track if modal was closed via back button
+  const closedViaBackRef = useRef(false);
+
+  // Handle browser back button/gesture to close modal
+  useEffect(() => {
+    // Push a state so back gesture closes the modal instead of navigating away
+    window.history.pushState({ clipModal: true }, '');
+
+    const handlePopState = () => {
+      // Mark that we're closing via back button
+      closedViaBackRef.current = true;
+      onClose();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      // If modal closes normally (not via back), remove the history entry we added
+      if (!closedViaBackRef.current) {
+        window.history.back();
+      }
+    };
+  }, [onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
