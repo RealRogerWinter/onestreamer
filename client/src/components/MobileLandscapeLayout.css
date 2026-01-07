@@ -140,7 +140,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 6px 12px 6px 4px; /* Minimal left padding to align with screen edge */
   background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%);
   pointer-events: auto;
 }
