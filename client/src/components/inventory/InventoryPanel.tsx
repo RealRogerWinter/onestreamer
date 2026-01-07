@@ -46,18 +46,20 @@ interface InventoryPanelProps {
   onLogin?: () => void;
   onSignup?: () => void;
   hideToggleButton?: boolean;
+  hideHeader?: boolean;
 }
 
-const InventoryPanel: React.FC<InventoryPanelProps> = ({ 
-  socket, 
-  isAuthenticated, 
-  userProfile, 
-  isOpen = false, 
-  onToggle, 
+const InventoryPanel: React.FC<InventoryPanelProps> = ({
+  socket,
+  isAuthenticated,
+  userProfile,
+  isOpen = false,
+  onToggle,
   onToggleShop,
   onLogin,
   onSignup,
-  hideToggleButton = false
+  hideToggleButton = false,
+  hideHeader = false
 }) => {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [cooldowns, setCooldowns] = useState<ItemCooldown[]>([]);
@@ -747,30 +749,34 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
         onTouchMove={isMobile ? handleTouchMove : undefined}
         onTouchEnd={isMobile ? handleTouchEnd : undefined}
       >
-        <div className="inventory-header">
-          <h2>Backpack</h2>
-          <button
-            className="inventory-close-btn"
-            onClick={onToggle}
-          >
-            ×
-          </button>
-        </div>
+        {!hideHeader && (
+          <>
+            <div className="inventory-header">
+              <h2>Backpack</h2>
+              <button
+                className="inventory-close-btn"
+                onClick={onToggle}
+              >
+                ×
+              </button>
+            </div>
 
-        <div className="inventory-main-tabs">
-          <button
-            className="inventory-main-tab active"
-          >
-            🎒 Backpack
-          </button>
-          <button 
-            className="inventory-main-tab shop-toggle"
-            onClick={onToggleShop}
-            title="Open Shop"
-          >
-            🛒 Shop
-          </button>
-        </div>
+            <div className="inventory-main-tabs">
+              <button
+                className="inventory-main-tab active"
+              >
+                🎒 Backpack
+              </button>
+              <button
+                className="inventory-main-tab shop-toggle"
+                onClick={onToggleShop}
+                title="Open Shop"
+              >
+                🛒 Shop
+              </button>
+            </div>
+          </>
+        )}
 
         {!isMobile && (
           <div className="inventory-tabs">

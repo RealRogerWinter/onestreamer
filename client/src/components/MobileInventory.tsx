@@ -118,6 +118,7 @@ const MobileInventory: React.FC<MobileInventoryProps> = ({
           isOpen={true} // Always render as open since wrapper controls visibility
           onToggle={() => {}} // No-op since mobile wrapper handles this
           onToggleShop={onToggleShop}
+          hideHeader={true} // Hide header and tabs in mobile wrapper
         />
       </div>
     </div>
