@@ -91,8 +91,8 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
   const handleTouchStart = (e: React.TouchEvent) => {
     const target = e.target as HTMLElement;
-    const isHeader = target.closest('.inventory-header');
-    
+    const isHeader = target.closest('.inventory-header') || target.closest('.backpack-mobile-header');
+
     if (isHeader && isOpen) {
       setIsDragging(true);
       startYRef.current = e.touches[0].clientY;
@@ -749,7 +749,19 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
         onTouchMove={isMobile ? handleTouchMove : undefined}
         onTouchEnd={isMobile ? handleTouchEnd : undefined}
       >
-        {!hideHeader && (
+        {/* Mobile portrait: compact header with swipe handle */}
+        {isMobile && (
+          <div className="backpack-mobile-header">
+            <div className="swipe-handle"></div>
+            <div className="backpack-title-row">
+              <span className="backpack-title">🎒 Backpack</span>
+              <button className="backpack-close-btn" onClick={onToggle}>×</button>
+            </div>
+          </div>
+        )}
+
+        {/* Desktop: full header and tabs */}
+        {!isMobile && !hideHeader && (
           <>
             <div className="inventory-header">
               <h2>Backpack</h2>
