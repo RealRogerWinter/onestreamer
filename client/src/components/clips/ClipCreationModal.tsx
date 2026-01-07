@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import authService from '../../services/AuthService';
 import '../../styles/Clips.css';
 
@@ -32,29 +32,44 @@ const ClipCreationModal: React.FC<ClipCreationModalProps> = ({ onClose, onSucces
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<SuccessInfo | null>(null);
 
-  // Track if modal was closed via back button
+  // Track if modal was closed via back button to prevent double-close
   const closedViaBackRef = useRef(false);
+  const historyPushedRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   // Handle browser back button/gesture to close modal
   useEffect(() => {
-    // Push a state so back gesture closes the modal instead of navigating away
-    window.history.pushState({ clipModal: true }, '');
+    // Only push history state once
+    if (!historyPushedRef.current) {
+      window.history.pushState({ clipModal: true }, '');
+      historyPushedRef.current = true;
+    }
 
     const handlePopState = () => {
-      // Mark that we're closing via back button
-      closedViaBackRef.current = true;
-      onClose();
+      // Only close if we haven't already
+      if (!closedViaBackRef.current) {
+        closedViaBackRef.current = true;
+        onCloseRef.current();
+      }
     };
 
     window.addEventListener('popstate', handlePopState);
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
-      // If modal closes normally (not via back), remove the history entry we added
-      if (!closedViaBackRef.current) {
-        window.history.back();
-      }
     };
+  }, []);
+
+  // Handle normal close (not via back button) - clean up history
+  const handleClose = useCallback(() => {
+    if (!closedViaBackRef.current && historyPushedRef.current) {
+      // We're closing normally, need to go back to remove our history entry
+      closedViaBackRef.current = true;
+      window.history.back();
+    } else {
+      onClose();
+    }
   }, [onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -112,7 +127,7 @@ const ClipCreationModal: React.FC<ClipCreationModalProps> = ({ onClose, onSucces
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -154,7 +169,7 @@ const ClipCreationModal: React.FC<ClipCreationModalProps> = ({ onClose, onSucces
           <button
             type="button"
             className="btn-close-success"
-            onClick={onClose}
+            onClick={handleClose}
           >
             Close
           </button>
@@ -220,7 +235,7 @@ const ClipCreationModal: React.FC<ClipCreationModalProps> = ({ onClose, onSucces
             <button
               type="button"
               className="btn-cancel"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={creating}
             >
               Cancel
