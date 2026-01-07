@@ -1040,6 +1040,8 @@
     width: 100% !important;
     height: 40vh !important;
     min-height: unset !important;
+    /* CRITICAL: Never go above the header (56px from top) */
+    max-height: calc(100dvh - 56px) !important;
     border-radius: 20px 20px 0 0 !important;
     transition: bottom 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), height 0.3s ease !important;
     border-left: none !important;
@@ -1078,6 +1080,9 @@
   .inventory-panel.mobile.expanded {
     height: calc(100dvh - 56px) !important;
     max-height: calc(100dvh - 56px) !important;
+    /* Ensure it stays at bottom, not covering header */
+    top: auto !important;
+    bottom: 0 !important;
   }
   
   /* Swipe indicator for mobile - visual cue for dragging */

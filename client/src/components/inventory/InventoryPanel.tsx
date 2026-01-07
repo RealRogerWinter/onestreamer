@@ -97,7 +97,11 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
       setIsDragging(true);
       startYRef.current = e.touches[0].clientY;
       currentYRef.current = e.touches[0].clientY;
-      startHeightRef.current = isExpanded ? 85 : 40;
+      // Calculate max height that stays below header (56px)
+      const viewportHeight = window.innerHeight;
+      const headerHeight = 56;
+      const maxHeightVh = ((viewportHeight - headerHeight) / viewportHeight) * 100;
+      startHeightRef.current = isExpanded ? Math.min(maxHeightVh, 85) : 40;
       
       if (panelRef.current) {
         panelRef.current.style.transition = 'none';
