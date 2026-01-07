@@ -359,6 +359,7 @@
     width: 100% !important;
     max-width: 100% !important;
     background: #000;
+    overflow: hidden !important;
   }
 
   .streaming-view,
@@ -366,6 +367,7 @@
     height: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    overflow: hidden !important;
   }
 
   .local-video,
@@ -374,7 +376,8 @@
   .hls-video {
     height: 100% !important;
     width: 100% !important;
-    object-fit: contain !important;
+    object-fit: cover !important; /* Fill container, crop edges if needed */
+    object-position: center center !important;
     margin: 0 !important;
     padding: 0 !important;
   }
@@ -383,6 +386,7 @@
     height: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    overflow: hidden !important;
   }
 
   .no-stream {
