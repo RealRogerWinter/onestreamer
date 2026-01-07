@@ -24,7 +24,24 @@ class URLStreamExtractorService extends EventEmitter {
 
     // Tool paths
     this.streamlinkPath = 'streamlink';
-    this.ytdlpPath = 'yt-dlp';
+    this.ytdlpPath = '/usr/local/bin/yt-dlp'; // Use updated version for better YouTube support
+
+    // YouTube cookies file path (optional - for bypassing bot detection)
+    this.youtubeCookiesPath = '/root/onestreamer/youtube-cookies.txt';
+
+    // Check if cookies file exists and has content
+    try {
+      const fs = require('fs');
+      if (fs.existsSync(this.youtubeCookiesPath)) {
+        const stats = fs.statSync(this.youtubeCookiesPath);
+        if (stats.size > 100) { // More than just header
+          this.hasYoutubeCookies = true;
+          console.log('🍪 YouTube cookies file found');
+        }
+      }
+    } catch (e) {
+      this.hasYoutubeCookies = false;
+    }
 
     // Cache for stream info (5 minute TTL)
     this.streamInfoCache = new Map();
@@ -130,7 +147,16 @@ class URLStreamExtractorService extends EventEmitter {
    */
   async _getYtdlpQualities(url) {
     return new Promise((resolve, reject) => {
-      const process = spawn(this.ytdlpPath, ['-F', '--no-playlist', url], {
+      const platform = this.detectPlatform(url);
+      const args = ['-F', '--no-playlist'];
+
+      // Add YouTube cookies if available
+      if (platform === 'youtube' && this.hasYoutubeCookies) {
+        args.push('--cookies', this.youtubeCookiesPath);
+      }
+      args.push(url);
+
+      const process = spawn(this.ytdlpPath, args, {
         timeout: 30000
       });
 
@@ -190,6 +216,25 @@ class URLStreamExtractorService extends EventEmitter {
       title: null,
       error: null
     };
+
+    // Check if this is a direct HLS URL (e.g., from Kick API)
+    // These are always valid and live
+    if (url.includes('.m3u8') || url.includes('playback.live-video.net')) {
+      console.log(`📡 Direct HLS URL detected, assuming valid and live`);
+      result.valid = true;
+      result.isLive = true;
+      result.title = 'Live Stream';
+      result.qualities = ['best'];
+      result.tool = 'direct';
+      result.isHLS = true;
+
+      // Cache and return
+      this.streamInfoCache.set(cacheKey, {
+        timestamp: Date.now(),
+        data: result
+      });
+      return result;
+    }
 
     try {
       // Try streamlink for live detection
@@ -268,9 +313,16 @@ class URLStreamExtractorService extends EventEmitter {
    */
   async _getYtdlpInfo(url) {
     return new Promise((resolve, reject) => {
-      const process = spawn(this.ytdlpPath, [
-        '-j', '--no-playlist', '--no-download', url
-      ], {
+      const platform = this.detectPlatform(url);
+      const args = ['-j', '--no-playlist', '--no-download'];
+
+      // Add YouTube cookies if available
+      if (platform === 'youtube' && this.hasYoutubeCookies) {
+        args.push('--cookies', this.youtubeCookiesPath);
+      }
+      args.push(url);
+
+      const process = spawn(this.ytdlpPath, args, {
         timeout: 30000
       });
 
@@ -298,7 +350,14 @@ class URLStreamExtractorService extends EventEmitter {
             reject(new Error('Failed to parse yt-dlp output'));
           }
         } else {
-          reject(new Error(stderr || 'No stream found'));
+          // Check for specific YouTube errors
+          if (stderr && stderr.includes('Sign in to confirm you\'re not a bot')) {
+            reject(new Error('YouTube bot detection: This video requires authentication. Please add YouTube cookies to /root/onestreamer/youtube-cookies.txt'));
+          } else if (stderr && stderr.includes('Video unavailable')) {
+            reject(new Error('Video unavailable or private'));
+          } else {
+            reject(new Error(stderr || 'No stream found'));
+          }
         }
       });
 
@@ -309,10 +368,46 @@ class URLStreamExtractorService extends EventEmitter {
   /**
    * Get the direct stream URL for piping to FFmpeg
    * Returns the URL that can be passed to FFmpeg -i
+   *
+   * NOTE: For live streaming platforms (Twitch, YouTube, Kick), we ALWAYS use pipe mode
+   * because extracted URLs contain auth tokens that expire quickly. Streamlink/yt-dlp
+   * handle token refresh internally when piping.
+   *
+   * EXCEPTION: Direct HLS URLs (.m3u8) can be passed directly to FFmpeg
    */
   async getStreamURL(url, quality = 'best') {
     const platform = this.detectPlatform(url);
 
+    // Check if this is a direct HLS URL (e.g., from Kick API)
+    // These can be passed directly to FFmpeg without streamlink
+    if (url.includes('.m3u8') || url.includes('playback.live-video.net')) {
+      console.log(`📡 Using direct HLS URL (no streamlink needed): ${url.substring(0, 80)}...`);
+      return {
+        success: true,
+        streamUrl: url,
+        platform: platform === 'unknown' ? 'hls' : platform,
+        tool: 'direct',
+        quality,
+        pipeMode: false, // Direct URL - FFmpeg can read it directly
+        isHLS: true
+      };
+    }
+
+    // Live streaming platforms MUST use pipe mode - direct URLs have expiring tokens
+    const liveStreamingPlatforms = ['twitch', 'youtube', 'kick', 'facebook'];
+    if (liveStreamingPlatforms.includes(platform)) {
+      console.log(`📡 Using pipe mode for ${platform} (auth tokens expire quickly)`);
+      return {
+        success: true,
+        streamUrl: url,
+        platform,
+        tool: 'streamlink',
+        quality,
+        pipeMode: true // Pipe streamlink output directly to FFmpeg
+      };
+    }
+
+    // For other platforms, try direct URL extraction first
     try {
       // Try streamlink first (preferred for live streams)
       const streamUrl = await this._getStreamlinkURL(url, quality);
@@ -437,10 +532,26 @@ class URLStreamExtractorService extends EventEmitter {
 
   /**
    * Create a process that pipes stream data to stdout
-   * Used when direct URL extraction fails
+   * Uses yt-dlp for YouTube (better compatibility), streamlink for others
    */
   createStreamPipe(url, quality = 'best') {
-    console.log(`🔄 Creating stream pipe for ${url} at quality ${quality}`);
+    const platform = this.detectPlatform(url);
+    console.log(`🔄 Creating stream pipe for ${url} at quality ${quality} (platform: ${platform})`);
+
+    // Use yt-dlp for YouTube - streamlink has login issues with YouTube
+    if (platform === 'youtube') {
+      return this._createYtdlpPipe(url, quality);
+    }
+
+    // Use streamlink for Twitch, Kick, and other platforms
+    return this._createStreamlinkPipe(url, quality);
+  }
+
+  /**
+   * Create streamlink pipe process
+   */
+  _createStreamlinkPipe(url, quality) {
+    console.log(`📺 Using streamlink for ${url}`);
 
     const process = spawn(this.streamlinkPath, [
       '--stdout',
@@ -455,6 +566,80 @@ class URLStreamExtractorService extends EventEmitter {
       const msg = data.toString();
       if (msg.includes('error') || msg.includes('Error')) {
         console.error(`❌ Streamlink error: ${msg}`);
+      }
+    });
+
+    return process;
+  }
+
+  /**
+   * Create yt-dlp pipe process (better for YouTube)
+   */
+  _createYtdlpPipe(url, quality) {
+    console.log(`📺 Using yt-dlp for ${url}`);
+
+    const platform = this.detectPlatform(url);
+
+    // Map quality to yt-dlp format selector
+    // For YouTube, prefer HLS formats (91-96) or format 18 which have both video+audio
+    // HLS formats: 91=144p, 92=240p, 93=360p, 94=480p, 95=720p, 96=1080p
+    let formatSelector;
+    if (quality === 'best' || quality === 'source') {
+      // Prefer HLS 1080p (96), then 720p (95), then combined format 18 (360p), then any best
+      formatSelector = '96/95/94/93/18/best';
+    } else if (quality === 'worst' || quality === 'audio_only') {
+      formatSelector = 'worst/91/139';
+    } else {
+      // Try to match resolution (e.g., "720p60" -> 720)
+      const resMatch = quality.match(/(\d+)p/);
+      if (resMatch) {
+        const height = parseInt(resMatch[1]);
+        if (height >= 1080) {
+          formatSelector = '96/95/94/93/18/best';
+        } else if (height >= 720) {
+          formatSelector = '95/94/93/18/best';
+        } else if (height >= 480) {
+          formatSelector = '94/93/18/best';
+        } else if (height >= 360) {
+          formatSelector = '93/18/92/best';
+        } else {
+          formatSelector = '92/91/18/best';
+        }
+      } else {
+        formatSelector = '95/94/93/18/best';  // Default to 720p
+      }
+    }
+
+    const args = [
+      '-f', formatSelector,
+      '-o', '-',              // Output to stdout
+      '--no-playlist',        // Don't download playlists
+      '--no-part',            // Don't use .part files
+      '--no-mtime',           // Don't set mtime
+      '--no-warnings',        // Suppress warnings for cleaner output
+    ];
+
+    // Add YouTube cookies if available (helps bypass bot detection)
+    if (platform === 'youtube' && this.hasYoutubeCookies) {
+      args.push('--cookies', this.youtubeCookiesPath);
+      console.log('🍪 Using YouTube cookies for authentication');
+    }
+
+    args.push(url);
+
+    console.log(`📺 yt-dlp args: ${args.join(' ')}`);
+
+    const process = spawn(this.ytdlpPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    process.stderr.on('data', (data) => {
+      const msg = data.toString();
+      if (msg.includes('ERROR') || msg.includes('error:')) {
+        console.error(`❌ yt-dlp error: ${msg}`);
+      } else if (msg.includes('[download]') && !msg.includes('ETA')) {
+        // Log download progress occasionally (skip ETA spam)
+        console.log(`📥 yt-dlp: ${msg.trim()}`);
       }
     });
 

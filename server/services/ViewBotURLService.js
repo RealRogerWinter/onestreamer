@@ -11,6 +11,8 @@
 const { spawn } = require('child_process');
 const EventEmitter = require('events');
 const URLStreamExtractorService = require('./URLStreamExtractorService');
+const StreamProbeService = require('./StreamProbeService');
+const AdaptiveEncodingSettings = require('./AdaptiveEncodingSettings');
 const webrtcConfig = require('../config/webrtc.config');
 
 class ViewBotURLService extends EventEmitter {
@@ -19,8 +21,12 @@ class ViewBotURLService extends EventEmitter {
 
     // Dependencies
     this.extractorService = new URLStreamExtractorService();
+    this.probeService = new StreamProbeService();
     this.streamService = null;
     this.livekitService = null;
+
+    // Adaptive encoding settings - configured per backend
+    this.adaptiveSettings = null; // Initialized after backend detection
 
     // Active URL streams
     this.activeStreams = new Map(); // urlId -> stream info
@@ -37,7 +43,29 @@ class ViewBotURLService extends EventEmitter {
     // Stream counter for unique IDs
     this.streamCounter = 0;
 
-    console.log(`🔗 ViewBotURLService initialized (backend: ${this.backend})`);
+    // FFmpeg path - use system FFmpeg which has HTTPS support
+    // The custom /usr/local/bin/ffmpeg lacks HTTPS protocol
+    this.ffmpegPath = '/usr/bin/ffmpeg';
+
+    // CRITICAL: Mutex to prevent concurrent stream starts
+    // This ensures only one stream can ever be starting at a time
+    this._startingStream = false;
+
+    // Adaptive encoding configuration
+    this.adaptiveConfig = {
+      enabled: true,           // Enable adaptive encoding by default
+      mode: 'balanced',        // 'performance', 'balanced', or 'quality'
+      maxWidth: 1920,          // Max output resolution
+      maxHeight: 1080,
+      maxVideoBitrate: 6000,   // kbps
+      maxFps: 60,
+      probeTimeout: 8000       // ms to wait for probe
+    };
+
+    // Initialize adaptive settings with backend type
+    this._initAdaptiveSettings();
+
+    console.log(`🔗 ViewBotURLService initialized (backend: ${this.backend}, adaptive: ${this.adaptiveConfig.enabled})`);
   }
 
   /**
@@ -54,6 +82,264 @@ class ViewBotURLService extends EventEmitter {
   setLiveKitService(livekitService) {
     this.livekitService = livekitService;
     console.log('✅ LiveKitService registered with ViewBotURLService');
+  }
+
+  /**
+   * Set ViewBot rotation service for pausing/resuming viewbots
+   */
+  setViewBotRotation(viewBotRotation) {
+    this.viewBotRotation = viewBotRotation;
+    console.log('✅ ViewBotRotation registered with ViewBotURLService');
+  }
+
+  /**
+   * Set socket.io instance for broadcasting to viewers
+   */
+  setSocketIO(io) {
+    this.io = io;
+    console.log('✅ Socket.IO registered with ViewBotURLService');
+  }
+
+  /**
+   * Initialize adaptive encoding settings
+   */
+  _initAdaptiveSettings() {
+    this.adaptiveSettings = new AdaptiveEncodingSettings({
+      backend: this.backend,
+      mode: this.adaptiveConfig.mode,
+      maxWidth: this.adaptiveConfig.maxWidth,
+      maxHeight: this.adaptiveConfig.maxHeight,
+      maxVideoBitrate: this.adaptiveConfig.maxVideoBitrate,
+      maxFps: this.adaptiveConfig.maxFps
+    });
+  }
+
+  /**
+   * Update adaptive encoding configuration
+   * @param {object} config - New configuration values
+   */
+  setAdaptiveConfig(config) {
+    Object.assign(this.adaptiveConfig, config);
+    this._initAdaptiveSettings();
+    console.log('🎯 Adaptive encoding config updated:', this.adaptiveConfig);
+    return this.adaptiveConfig;
+  }
+
+  /**
+   * Get current adaptive encoding configuration
+   */
+  getAdaptiveConfig() {
+    return { ...this.adaptiveConfig };
+  }
+
+  /**
+   * Probe a stream URL to get its properties (resolution, fps, bitrate)
+   * @param {string} url - Stream URL
+   * @param {string} quality - Quality preference
+   * @returns {Promise<object>} Stream properties
+   */
+  async probeStreamSource(url, quality = 'best') {
+    try {
+      // First get the actual stream URL via extractor
+      const streamInfo = await this.extractorService.getStreamURL(url, quality);
+
+      if (streamInfo.pipeMode) {
+        // For pipe mode, we can't easily probe - use defaults with platform hints
+        console.log(`📊 Probe: Pipe mode detected, using platform-based defaults`);
+        return this._getDefaultPropsForPlatform(streamInfo.platform || 'unknown', quality);
+      }
+
+      // Direct URL - probe it
+      const props = await this.probeService.probeStream(streamInfo.streamUrl, {
+        timeout: this.adaptiveConfig.probeTimeout
+      });
+
+      return props;
+    } catch (error) {
+      console.warn(`⚠️ Probe failed: ${error.message}, using defaults`);
+      return this.probeService.defaults;
+    }
+  }
+
+  /**
+   * Get default stream properties based on platform and quality
+   */
+  _getDefaultPropsForPlatform(platform, quality) {
+    // Platform-specific defaults based on typical stream characteristics
+    const platformDefaults = {
+      twitch: {
+        best: { width: 1920, height: 1080, fps: 60, videoBitrate: 6000000 },
+        '1080p': { width: 1920, height: 1080, fps: 60, videoBitrate: 6000000 },
+        '720p': { width: 1280, height: 720, fps: 60, videoBitrate: 3000000 },
+        '480p': { width: 854, height: 480, fps: 30, videoBitrate: 1500000 },
+        worst: { width: 640, height: 360, fps: 30, videoBitrate: 800000 }
+      },
+      youtube: {
+        best: { width: 1920, height: 1080, fps: 60, videoBitrate: 8000000 },
+        '1080p': { width: 1920, height: 1080, fps: 60, videoBitrate: 8000000 },
+        '720p': { width: 1280, height: 720, fps: 60, videoBitrate: 4000000 },
+        '480p': { width: 854, height: 480, fps: 30, videoBitrate: 2000000 },
+        worst: { width: 640, height: 360, fps: 30, videoBitrate: 1000000 }
+      },
+      kick: {
+        best: { width: 1920, height: 1080, fps: 60, videoBitrate: 8000000 },
+        '1080p': { width: 1920, height: 1080, fps: 60, videoBitrate: 8000000 },
+        '720p': { width: 1280, height: 720, fps: 60, videoBitrate: 4000000 },
+        '480p': { width: 854, height: 480, fps: 30, videoBitrate: 1500000 },
+        worst: { width: 640, height: 360, fps: 30, videoBitrate: 800000 }
+      },
+      default: {
+        best: { width: 1280, height: 720, fps: 30, videoBitrate: 3000000 },
+        worst: { width: 640, height: 360, fps: 30, videoBitrate: 1000000 }
+      }
+    };
+
+    const platformSettings = platformDefaults[platform] || platformDefaults.default;
+    const qualitySettings = platformSettings[quality] || platformSettings.best || platformSettings.default?.best;
+
+    return {
+      ...this.probeService.defaults,
+      ...qualitySettings,
+      hasAudio: true,
+      audioBitrate: 128000,
+      probeNote: `platform_default_${platform}`
+    };
+  }
+
+  /**
+   * Stop current viewbot and pause rotation
+   */
+  async _stopViewBotsForURLStream() {
+    if (!this.viewBotRotation) {
+      console.warn('⚠️ ViewBotRotation not available - cannot stop viewbots');
+      return;
+    }
+
+    console.log('🛑 URL STREAM: Stopping viewbots to make room for URL stream');
+
+    // Remember if rotation was enabled so we can restore it later
+    this._wasRotationEnabled = this.viewBotRotation.settings?.enabled || false;
+
+    // Stop current viewbot and disable rotation
+    await this.viewBotRotation.stopRotation();
+
+    console.log('✅ URL STREAM: Viewbots stopped, rotation paused');
+  }
+
+  /**
+   * Resume viewbot rotation after URL stream ends
+   */
+  async _resumeViewBots() {
+    if (!this.viewBotRotation) {
+      return;
+    }
+
+    // Only resume if rotation was previously enabled
+    if (this._wasRotationEnabled) {
+      console.log('▶️ URL STREAM: Resuming viewbot rotation');
+      this.viewBotRotation.updateSettings({ enabled: true });
+      await this.viewBotRotation.startRotation();
+    } else {
+      console.log('ℹ️ URL STREAM: Viewbot rotation was not enabled before, not resuming');
+    }
+  }
+
+  /**
+   * Wait for stream to be ready, then notify viewers
+   * Polls LiveKit to check if participant has published tracks
+   */
+  async _notifyViewersWhenReady(urlId, streamEntry, validation) {
+    if (!this.io) {
+      console.warn('⚠️ URL STREAM: Socket.IO not available - viewers may not auto-switch');
+      return;
+    }
+
+    const maxWaitTime = 15000; // Max 15 seconds to wait
+    const pollInterval = 1000; // Check every 1 second
+    const startTime = Date.now();
+
+    console.log(`⏳ URL STREAM: Waiting for stream ${urlId} to be ready for viewers...`);
+
+    const checkStreamReady = async () => {
+      // Check if stream is still active
+      if (!this.activeStreams.has(urlId)) {
+        console.log(`⚠️ URL STREAM: Stream ${urlId} ended before becoming ready`);
+        return;
+      }
+
+      // If using LiveKit, check if participant has tracks
+      if (this.backend === 'livekit' && this.livekitService) {
+        try {
+          const { RoomServiceClient } = require('livekit-server-sdk');
+          const config = require('../config/livekit.config');
+          const host = config.host.startsWith('http') ? config.host : `http://${config.host}`;
+          const roomClient = new RoomServiceClient(host, config.apiKey, config.apiSecret);
+
+          const participants = await roomClient.listParticipants(config.roomName);
+          const urlParticipant = participants.find(p => p.identity === urlId);
+
+          if (urlParticipant && urlParticipant.tracks && urlParticipant.tracks.length > 0) {
+            console.log(`✅ URL STREAM: Stream ${urlId} is now live with ${urlParticipant.tracks.length} tracks`);
+            this._broadcastNewStreamer(urlId, streamEntry, validation);
+            return;
+          }
+        } catch (err) {
+          console.warn(`⚠️ URL STREAM: Error checking participant status: ${err.message}`);
+        }
+      }
+
+      // Check if we've waited long enough
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= maxWaitTime) {
+        console.log(`⏰ URL STREAM: Max wait time reached, notifying viewers anyway`);
+        this._broadcastNewStreamer(urlId, streamEntry, validation);
+        return;
+      }
+
+      // Continue polling
+      setTimeout(checkStreamReady, pollInterval);
+    };
+
+    // Start polling after initial delay (let FFmpeg establish connection)
+    setTimeout(checkStreamReady, 2000);
+  }
+
+  /**
+   * Broadcast new-streamer event to all viewers
+   */
+  _broadcastNewStreamer(urlId, streamEntry, validation) {
+    if (!this.io) return;
+
+    // CRITICAL: Register the URL stream as the current streamer
+    // This ensures viewers switch to consuming from the URL stream
+    if (this.streamService) {
+      console.log(`📢 URL STREAM: Registering ${urlId} as current streamer`);
+      this.streamService.setStreamer(urlId);
+    }
+
+    // Also set on MediasoupService/WebRTCAdapter if available
+    if (global.mediasoupService) {
+      console.log(`📢 URL STREAM: Setting MediaSoup currentStreamer to ${urlId}`);
+      global.mediasoupService.currentStreamer = urlId;
+    }
+
+    console.log('📢 URL STREAM: Broadcasting new-streamer event to all viewers');
+    this.io.emit('new-streamer', {
+      streamer: {
+        odyseeId: urlId,
+        odysee_username: streamEntry.displayName || validation.title || 'URL Stream',
+        userId: urlId,
+        isUrlStream: true,
+        platform: validation.platform
+      }
+    });
+
+    // Also emit stream-started event for any listeners
+    this.io.emit('stream-started', {
+      streamerId: urlId,
+      streamerName: streamEntry.displayName || validation.title || 'URL Stream',
+      isUrlStream: true
+    });
   }
 
   /**
@@ -90,59 +376,90 @@ class ViewBotURLService extends EventEmitter {
       autoReconnect = true
     } = options;
 
-    // Generate unique ID
-    const urlId = `url-stream-${Date.now()}-${++this.streamCounter}`;
-
-    console.log(`🚀 Starting URL stream: ${urlId}`);
-    console.log(`   URL: ${url}`);
-    console.log(`   Quality: ${quality}`);
-
-    // Validate URL first
-    const validation = await this.validateURL(url);
-    if (!validation.valid) {
+    // CRITICAL: Mutex to prevent concurrent stream starts
+    // This prevents race conditions where multiple streams could start simultaneously
+    if (this._startingStream) {
+      console.log('⚠️ URL STREAM: Another stream is currently starting, rejecting request');
       return {
         success: false,
-        error: validation.error || 'Invalid stream URL',
-        urlId
+        error: 'Another stream is currently starting, please wait',
+        urlId: null
       };
     }
 
-    console.log(`✅ URL validated: ${validation.title} (${validation.platform})`);
+    this._startingStream = true;
 
-    // Check if already streaming from this URL
-    for (const [existingId, info] of this.activeStreams) {
-      if (info.sourceUrl === url) {
-        return {
-          success: false,
-          error: 'Already streaming from this URL',
-          existingUrlId: existingId
-        };
-      }
-    }
-
-    // Get stream URL/pipe mode
-    const streamInfo = await this.extractorService.getStreamURL(url, quality);
-
-    // Create stream entry
-    const streamEntry = {
-      urlId,
-      sourceUrl: url,
-      platform: validation.platform,
-      quality,
-      displayName: displayName || validation.title || 'URL Stream',
-      status: 'starting',
-      startedAt: Date.now(),
-      validation,
-      streamInfo,
-      processes: [],
-      autoReconnect,
-      reconnectAttempts: 0,
-      maxReconnectAttempts: 3
-    };
-
-    this.activeStreams.set(urlId, streamEntry);
+    // Generate unique ID early so we can reference it in all code paths
+    const urlId = `url-stream-${Date.now()}-${++this.streamCounter}`;
 
     try {
+      console.log(`🚀 Starting URL stream: ${urlId}`);
+      console.log(`   URL: ${url}`);
+      console.log(`   Quality: ${quality}`);
+
+      // Validate URL first
+      const validation = await this.validateURL(url);
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error || 'Invalid stream URL',
+          urlId
+        };
+      }
+
+      console.log(`✅ URL validated: ${validation.title} (${validation.platform})`);
+
+      // CRITICAL: Stop ALL existing URL streams before starting a new one
+      // This ensures only ONE stream is ever active at a time
+      if (this.activeStreams.size > 0) {
+        console.log(`🛑 URL STREAM: Stopping ${this.activeStreams.size} existing URL stream(s) before starting new one`);
+        await this.stopAllURLStreams();
+        // Small delay to ensure cleanup is complete
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      // Get stream URL/pipe mode
+      const streamInfo = await this.extractorService.getStreamURL(url, quality);
+
+      // ADAPTIVE ENCODING: Use platform-based defaults (no blocking probe)
+      let encodingSettings = null;
+      let sourceProps = null;
+
+      if (this.adaptiveConfig.enabled) {
+        // Use platform+quality based defaults - fast and reliable, no probe delay
+        sourceProps = this._getDefaultPropsForPlatform(validation.platform, quality);
+
+        // Calculate optimal encoding settings based on platform defaults
+        encodingSettings = this.adaptiveSettings.calculate(sourceProps);
+        console.log(`🎯 Adaptive (${validation.platform}/${quality}): ` +
+                   `${encodingSettings.width}x${encodingSettings.height}@${encodingSettings.fps}fps, ` +
+                   `${encodingSettings.videoBitrate}kbps, preset=${encodingSettings.preset || encodingSettings.cpuUsed}`);
+      }
+
+      // Create stream entry
+      const streamEntry = {
+        urlId,
+        sourceUrl: url,
+        platform: validation.platform,
+        quality,
+        displayName: displayName || validation.title || 'URL Stream',
+        status: 'starting',
+        startedAt: Date.now(),
+        validation,
+        streamInfo,
+        sourceProps,          // Source stream properties from probe
+        encodingSettings,     // Calculated adaptive encoding settings
+        processes: [],
+        autoReconnect,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 3
+      };
+
+      this.activeStreams.set(urlId, streamEntry);
+
+      // IMPORTANT: Stop any running viewbots first to clear the stream slot
+      await this._stopViewBotsForURLStream();
+
       // Start the streaming pipeline
       if (this.backend === 'livekit' && this.livekitService) {
         await this._startLiveKitStream(urlId, streamEntry);
@@ -162,6 +479,10 @@ class ViewBotURLService extends EventEmitter {
 
       console.log(`✅ URL stream started: ${urlId}`);
 
+      // CRITICAL: Wait for stream to be actually ready before notifying viewers
+      // The FFmpeg pipeline needs time to connect to LiveKit and publish tracks
+      this._notifyViewersWhenReady(urlId, streamEntry, validation);
+
       return {
         success: true,
         urlId,
@@ -178,6 +499,9 @@ class ViewBotURLService extends EventEmitter {
         error: error.message,
         urlId
       };
+    } finally {
+      // CRITICAL: Always release the mutex, regardless of success or failure
+      this._startingStream = false;
     }
   }
 
@@ -241,17 +565,27 @@ class ViewBotURLService extends EventEmitter {
 
     console.log(`🎥 Starting LiveKit pipeline for ${urlId}`);
 
-    // Get RTMP ingress URL from LiveKit service
-    const ingressInfo = await this.livekitService.createIngress({
-      name: streamEntry.displayName,
-      type: 'rtmp'
+    // Create ingress with bot-like object (createIngress expects bot.id)
+    const ingress = await this.livekitService.createIngress({
+      id: urlId,
+      name: streamEntry.displayName
     });
 
-    if (!ingressInfo.success) {
-      throw new Error(ingressInfo.error || 'Failed to create LiveKit ingress');
+    if (!ingress || !ingress.streamKey) {
+      throw new Error('Failed to create LiveKit ingress - no stream key returned');
     }
 
-    streamEntry.ingressInfo = ingressInfo;
+    // Build RTMP URL from stream key
+    const rtmpUrl = `rtmp://127.0.0.1:1935/live/${ingress.streamKey}`;
+
+    streamEntry.ingressInfo = {
+      ingressId: ingress.ingressId,
+      streamKey: ingress.streamKey,
+      rtmpUrl
+    };
+
+    console.log(`🔗 LiveKit ingress created: ${ingress.ingressId}`);
+    console.log(`📡 RTMP URL: ${rtmpUrl}`);
 
     let ffmpegProcess;
 
@@ -260,19 +594,30 @@ class ViewBotURLService extends EventEmitter {
       const streamlinkProcess = this.extractorService.createStreamPipe(sourceUrl, quality);
       streamEntry.processes.push({ type: 'streamlink', process: streamlinkProcess });
 
-      ffmpegProcess = this._createFFmpegRTMPProcess('-', ingressInfo.rtmpUrl, streamEntry);
+      ffmpegProcess = this._createFFmpegRTMPProcess('-', rtmpUrl, streamEntry);
       streamEntry.processes.push({ type: 'ffmpeg', process: ffmpegProcess });
+
+      // Handle pipe errors to prevent EPIPE crashes
+      ffmpegProcess.stdin.on('error', (err) => {
+        if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') {
+          console.log(`ℹ️ FFmpeg stdin closed for ${urlId} (normal during shutdown)`);
+        } else {
+          console.error(`❌ FFmpeg stdin error for ${urlId}:`, err.message);
+        }
+      });
 
       streamlinkProcess.stdout.pipe(ffmpegProcess.stdin);
 
       streamlinkProcess.on('error', (err) => this._handleStreamError(urlId, 'streamlink', err));
       streamlinkProcess.on('exit', (code) => {
-        if (code !== 0) this._handleStreamError(urlId, 'streamlink', new Error(`Exit code ${code}`));
+        if (code !== 0 && code !== 130) { // 130 = SIGINT, normal during shutdown
+          this._handleStreamError(urlId, 'streamlink', new Error(`Exit code ${code}`));
+        }
       });
 
     } else {
       // Direct URL mode
-      ffmpegProcess = this._createFFmpegRTMPProcess(streamInfo.streamUrl, ingressInfo.rtmpUrl, streamEntry);
+      ffmpegProcess = this._createFFmpegRTMPProcess(streamInfo.streamUrl, rtmpUrl, streamEntry);
       streamEntry.processes.push({ type: 'ffmpeg', process: ffmpegProcess });
     }
 
@@ -284,36 +629,61 @@ class ViewBotURLService extends EventEmitter {
 
   /**
    * Create FFmpeg process for RTP output (MediaSoup)
+   * Uses adaptive encoding settings when available
    */
   _createFFmpegRTPProcess(input, streamEntry) {
+    const settings = streamEntry.encodingSettings;
+    const useAdaptive = this.adaptiveConfig.enabled && settings;
+
+    // Build video filter if scaling/fps change needed
+    let vfArg = null;
+    if (useAdaptive && settings.scale) {
+      vfArg = settings.scale;
+    }
+
     const args = [
       '-re', // Read input at native frame rate
       '-i', input,
-      // Video encoding
-      '-map', '0:v:0',
-      '-c:v', 'libvpx', // VP8 for MediaSoup
-      '-deadline', 'realtime',
-      '-cpu-used', '8',
-      '-b:v', '1500k',
-      '-maxrate', '2000k',
-      '-bufsize', '4000k',
-      '-g', '30', // Keyframe every 30 frames
-      '-keyint_min', '30',
-      '-f', 'rtp',
-      `rtp://127.0.0.1:${this.rtpPorts.video}?pkt_size=1200`,
-      // Audio encoding
-      '-map', '0:a:0?', // Optional audio stream
-      '-c:a', 'libopus',
-      '-b:a', '128k',
-      '-ar', '48000',
-      '-ac', '2',
-      '-f', 'rtp',
-      `rtp://127.0.0.1:${this.rtpPorts.audio}?pkt_size=1200`
     ];
 
-    console.log(`🎬 FFmpeg RTP command: ffmpeg ${args.join(' ')}`);
+    // Add video filter if needed
+    if (vfArg) {
+      args.push('-vf', vfArg);
+    }
 
-    const process = spawn('ffmpeg', args, {
+    // Video encoding with adaptive or default settings
+    args.push(
+      '-map', '0:v:0',
+      '-c:v', 'libvpx', // VP8 for MediaSoup
+      '-deadline', useAdaptive ? settings.deadline : 'realtime',
+      '-cpu-used', useAdaptive ? String(settings.cpuUsed) : '8',
+      '-b:v', useAdaptive ? `${settings.videoBitrate}k` : '1500k',
+      '-maxrate', useAdaptive ? `${settings.maxrate}k` : '2000k',
+      '-bufsize', useAdaptive ? `${settings.bufsize}k` : '4000k',
+      '-g', useAdaptive ? String(settings.gopSize) : '30',
+      '-keyint_min', useAdaptive ? String(settings.keyintMin) : '30',
+      '-f', 'rtp',
+      `rtp://127.0.0.1:${this.rtpPorts.video}?pkt_size=1200`
+    );
+
+    // Audio encoding
+    args.push(
+      '-map', '0:a:0?', // Optional audio stream
+      '-c:a', 'libopus',
+      '-b:a', useAdaptive && settings.audioBitrate ? `${settings.audioBitrate}k` : '128k',
+      '-ar', '48000',
+      '-ac', useAdaptive ? String(settings.audioChannels || 2) : '2',
+      '-f', 'rtp',
+      `rtp://127.0.0.1:${this.rtpPorts.audio}?pkt_size=1200`
+    );
+
+    const logSettings = useAdaptive
+      ? `ADAPTIVE ${settings.width}x${settings.height}@${settings.fps}fps ${settings.videoBitrate}kbps`
+      : 'FIXED 720p 1500kbps';
+
+    console.log(`🎬 FFmpeg RTP (${logSettings}): ${this.ffmpegPath} ${args.slice(0, 5).join(' ')}...`);
+
+    const process = spawn(this.ffmpegPath, args, {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -322,35 +692,92 @@ class ViewBotURLService extends EventEmitter {
 
   /**
    * Create FFmpeg process for RTMP output (LiveKit)
+   * Uses adaptive encoding settings when available, falls back to fixed 720p
    */
   _createFFmpegRTMPProcess(input, rtmpUrl, streamEntry) {
-    const args = [
-      '-re',
-      '-i', input,
-      // Video encoding for RTMP (H.264)
-      '-c:v', 'libx264',
-      '-preset', 'veryfast',
-      '-tune', 'zerolatency',
-      '-profile:v', 'baseline', // iOS Safari compatibility
-      '-level', '3.1',
-      '-b:v', '2000k',
-      '-maxrate', '2500k',
-      '-bufsize', '5000k',
-      '-g', '60',
-      '-keyint_min', '60',
-      // Audio encoding
+    const settings = streamEntry.encodingSettings;
+    const useAdaptive = this.adaptiveConfig.enabled && settings;
+
+    const args = [];
+
+    // Input settings
+    args.push('-fflags', '+genpts+discardcorrupt');
+
+    // Add -re flag for direct HLS/URL inputs (not piped stdin)
+    if (input !== '-') {
+      args.push('-re');
+      console.log(`📡 Using -re flag for direct URL input: ${input.substring(0, 60)}...`);
+    }
+
+    // Input
+    args.push('-i', input);
+
+    // Video filter - use adaptive scale or default 720p
+    if (useAdaptive && settings.scale) {
+      args.push('-vf', settings.scale);
+    } else if (useAdaptive) {
+      // No scaling needed if source matches target
+      // Add fps filter if needed
+      if (settings.sourceFps && Math.abs(settings.sourceFps - settings.fps) > 2) {
+        args.push('-vf', `fps=${settings.fps}`);
+      }
+    } else {
+      // Default: scale to 720p
+      args.push('-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2');
+    }
+
+    // Video encoding - use adaptive or default settings
+    if (useAdaptive) {
+      args.push(
+        '-c:v', 'libx264',
+        '-preset', settings.preset,
+        '-profile:v', settings.profile,
+        '-level', settings.level,
+        '-b:v', `${settings.videoBitrate}k`,
+        '-maxrate', `${settings.maxrate}k`,
+        '-bufsize', `${settings.bufsize}k`,
+        '-pix_fmt', settings.pixFmt,
+        '-r', String(settings.fps),
+        '-g', String(settings.gopSize),
+        '-keyint_min', String(settings.keyintMin),
+        '-sc_threshold', String(settings.scThreshold)
+      );
+    } else {
+      // Default fixed settings (720p @ 4Mbps)
+      args.push(
+        '-c:v', 'libx264',
+        '-preset', 'superfast',
+        '-profile:v', 'main',
+        '-level', '3.1',
+        '-b:v', '4000k',
+        '-maxrate', '4500k',
+        '-bufsize', '6000k',
+        '-pix_fmt', 'yuv420p',
+        '-r', '30',
+        '-g', '60',
+        '-keyint_min', '30',
+        '-sc_threshold', '0'
+      );
+    }
+
+    // Audio encoding
+    args.push(
       '-c:a', 'aac',
-      '-b:a', '128k',
+      '-b:a', useAdaptive && settings.audioBitrate ? `${settings.audioBitrate}k` : '160k',
       '-ar', '48000',
-      '-ac', '2',
-      // Output
-      '-f', 'flv',
-      rtmpUrl
-    ];
+      '-ac', useAdaptive ? String(settings.audioChannels || 2) : '2'
+    );
 
-    console.log(`🎬 FFmpeg RTMP command: ffmpeg ${args.slice(0, 5).join(' ')}... -> ${rtmpUrl}`);
+    // Output
+    args.push('-f', 'flv', rtmpUrl);
 
-    const process = spawn('ffmpeg', args, {
+    const logSettings = useAdaptive
+      ? `ADAPTIVE ${settings.width}x${settings.height}@${settings.fps}fps ${settings.videoBitrate}kbps`
+      : 'FIXED 720p@30fps 4000kbps';
+
+    console.log(`🎬 FFmpeg RTMP (${logSettings}): ${this.ffmpegPath} ... -> ${rtmpUrl}`);
+
+    const process = spawn(this.ffmpegPath, args, {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -465,7 +892,7 @@ class ViewBotURLService extends EventEmitter {
   /**
    * Handle stream ending
    */
-  _handleStreamEnd(urlId, reason) {
+  async _handleStreamEnd(urlId, reason) {
     const streamEntry = this.activeStreams.get(urlId);
     if (!streamEntry) return;
 
@@ -489,6 +916,21 @@ class ViewBotURLService extends EventEmitter {
       sourceUrl: streamEntry.sourceUrl,
       duration: streamEntry.endedAt - streamEntry.startedAt
     });
+
+    // Notify viewers that URL stream has ended
+    if (this.io) {
+      console.log('📢 URL STREAM: Broadcasting stream-ended event (natural end)');
+      this.io.emit('stream-ended', {
+        reason: `url_stream_${reason}`,
+        streamerId: urlId,
+        isUrlStream: true
+      });
+    }
+
+    // Resume viewbot rotation if no more URL streams are active
+    if (this.activeStreams.size === 0) {
+      await this._resumeViewBots();
+    }
   }
 
   /**
@@ -545,7 +987,22 @@ class ViewBotURLService extends EventEmitter {
     // Emit event
     this.emit('url-stream-stopped', { urlId });
 
+    // Notify viewers that URL stream has ended
+    if (this.io) {
+      console.log('📢 URL STREAM: Broadcasting stream-ended event to all viewers');
+      this.io.emit('stream-ended', {
+        reason: 'url_stream_stopped',
+        streamerId: urlId,
+        isUrlStream: true
+      });
+    }
+
     console.log(`✅ URL stream stopped: ${urlId}`);
+
+    // Resume viewbot rotation if no more URL streams are active
+    if (this.activeStreams.size === 0) {
+      await this._resumeViewBots();
+    }
 
     return { success: true };
   }

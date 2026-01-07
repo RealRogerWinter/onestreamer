@@ -81,76 +81,6 @@ module.exports = function(viewBotURLService, healthService = null) {
   });
 
   /**
-   * DELETE /api/url-stream/:urlId
-   * Stop a URL stream
-   */
-  router.delete('/:urlId', async (req, res) => {
-    try {
-      const { urlId } = req.params;
-
-      const result = await viewBotURLService.stopURLStream(urlId);
-
-      if (!result.success) {
-        return res.status(404).json({ error: result.error || 'Stream not found' });
-      }
-
-      // Update database
-      try {
-        await dbService.updateURLStreamStatus(urlId, 'stopped', 'manual_stop');
-        await dbService.addLog(urlId, 'stopped', 'URL stream stopped manually');
-      } catch (dbErr) {
-        console.error('Failed to update URL stream in database:', dbErr);
-      }
-
-      res.json({ success: true });
-
-    } catch (error) {
-      console.error('Error stopping URL stream:', error);
-      res.status(500).json({ error: 'Failed to stop URL stream' });
-    }
-  });
-
-  /**
-   * GET /api/url-stream/:urlId
-   * Get status of a specific URL stream
-   */
-  router.get('/:urlId', async (req, res) => {
-    try {
-      const { urlId } = req.params;
-
-      const status = viewBotURLService.getStreamStatus(urlId);
-
-      if (!status) {
-        // Check database for historical data
-        const dbRecord = await dbService.getURLStream(urlId);
-        if (dbRecord) {
-          return res.json({
-            ...dbRecord,
-            isActive: false
-          });
-        }
-        return res.status(404).json({ error: 'Stream not found' });
-      }
-
-      // Add health info if available
-      let health = null;
-      if (healthService) {
-        health = healthService.getHealthSummary(urlId);
-      }
-
-      res.json({
-        ...status,
-        health,
-        isActive: true
-      });
-
-    } catch (error) {
-      console.error('Error getting URL stream status:', error);
-      res.status(500).json({ error: 'Failed to get stream status' });
-    }
-  });
-
-  /**
    * GET /api/url-stream
    * Get all active URL streams
    */
@@ -218,6 +148,144 @@ module.exports = function(viewBotURLService, healthService = null) {
       res.status(500).json({ error: 'Failed to get history' });
     }
   });
+
+  // ==================== ADAPTIVE ENCODING ====================
+
+  /**
+   * GET /api/url-stream/adaptive
+   * Get current adaptive encoding configuration
+   */
+  router.get('/adaptive', (req, res) => {
+    try {
+      const config = viewBotURLService.getAdaptiveConfig();
+      res.json({
+        success: true,
+        config,
+        modes: ['performance', 'balanced', 'quality'],
+        description: {
+          enabled: 'Enable/disable adaptive encoding (true/false)',
+          mode: 'Encoding mode: performance (fast), balanced (default), quality (best)',
+          maxWidth: 'Maximum output width in pixels',
+          maxHeight: 'Maximum output height in pixels',
+          maxVideoBitrate: 'Maximum video bitrate in kbps',
+          maxFps: 'Maximum output framerate',
+          probeTimeout: 'Stream probe timeout in milliseconds'
+        }
+      });
+    } catch (error) {
+      console.error('Error getting adaptive config:', error);
+      res.status(500).json({ error: 'Failed to get adaptive config' });
+    }
+  });
+
+  /**
+   * PUT /api/url-stream/adaptive
+   * Update adaptive encoding configuration
+   */
+  router.put('/adaptive', (req, res) => {
+    try {
+      const validKeys = ['enabled', 'mode', 'maxWidth', 'maxHeight', 'maxVideoBitrate', 'maxFps', 'probeTimeout'];
+      const validModes = ['performance', 'balanced', 'quality'];
+
+      // Validate input
+      const updates = {};
+      for (const key of validKeys) {
+        if (req.body[key] !== undefined) {
+          if (key === 'enabled') {
+            updates[key] = Boolean(req.body[key]);
+          } else if (key === 'mode') {
+            if (!validModes.includes(req.body[key])) {
+              return res.status(400).json({
+                error: `Invalid mode. Must be one of: ${validModes.join(', ')}`
+              });
+            }
+            updates[key] = req.body[key];
+          } else {
+            // Numeric values
+            const num = parseInt(req.body[key]);
+            if (isNaN(num) || num < 0) {
+              return res.status(400).json({
+                error: `Invalid value for ${key}. Must be a positive number.`
+              });
+            }
+            updates[key] = num;
+          }
+        }
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({
+          error: 'No valid configuration keys provided',
+          validKeys
+        });
+      }
+
+      const newConfig = viewBotURLService.setAdaptiveConfig(updates);
+      res.json({
+        success: true,
+        config: newConfig,
+        updated: Object.keys(updates)
+      });
+    } catch (error) {
+      console.error('Error updating adaptive config:', error);
+      res.status(500).json({ error: 'Failed to update adaptive config' });
+    }
+  });
+
+  /**
+   * POST /api/url-stream/probe
+   * Probe a URL to get stream properties without starting it
+   */
+  router.post('/probe', async (req, res) => {
+    try {
+      const { url, quality } = req.body;
+
+      if (!url) {
+        return res.status(400).json({ error: 'URL is required' });
+      }
+
+      const props = await viewBotURLService.probeStreamSource(url, quality || 'best');
+
+      // Also calculate what encoding settings would be used
+      let recommendedSettings = null;
+      if (viewBotURLService.adaptiveSettings) {
+        recommendedSettings = viewBotURLService.adaptiveSettings.calculate(props);
+      }
+
+      res.json({
+        success: true,
+        sourceProperties: {
+          width: props.width,
+          height: props.height,
+          fps: props.fps,
+          videoBitrate: Math.round(props.videoBitrate / 1000),
+          audioBitrate: Math.round(props.audioBitrate / 1000),
+          hasAudio: props.hasAudio,
+          hasVideo: props.hasVideo,
+          videoCodec: props.videoCodec,
+          audioCodec: props.audioCodec
+        },
+        recommendedSettings: recommendedSettings ? {
+          width: recommendedSettings.width,
+          height: recommendedSettings.height,
+          fps: recommendedSettings.fps,
+          videoBitrate: recommendedSettings.videoBitrate,
+          audioBitrate: recommendedSettings.audioBitrate,
+          preset: recommendedSettings.preset || recommendedSettings.cpuUsed,
+          profile: recommendedSettings.profile
+        } : null,
+        probeNote: props.probeNote || null
+      });
+    } catch (error) {
+      console.error('Error probing stream:', error);
+      res.status(500).json({
+        error: 'Failed to probe stream',
+        details: error.message
+      });
+    }
+  });
+
+  // ==================== STREAM DETAILS (Parameterized routes MUST be last) ====================
 
   /**
    * GET /api/url-stream/:urlId/logs
@@ -377,6 +445,78 @@ module.exports = function(viewBotURLService, healthService = null) {
     } catch (error) {
       console.error('Error stopping all streams:', error);
       res.status(500).json({ error: 'Failed to stop all streams' });
+    }
+  });
+
+  // ==================== PARAMETERIZED ROUTES (Must be last!) ====================
+
+  /**
+   * DELETE /api/url-stream/:urlId
+   * Stop a URL stream
+   */
+  router.delete('/:urlId', async (req, res) => {
+    try {
+      const { urlId } = req.params;
+
+      const result = await viewBotURLService.stopURLStream(urlId);
+
+      if (!result.success) {
+        return res.status(404).json({ error: result.error || 'Stream not found' });
+      }
+
+      // Update database
+      try {
+        await dbService.updateURLStreamStatus(urlId, 'stopped', 'manual_stop');
+        await dbService.addLog(urlId, 'stopped', 'URL stream stopped manually');
+      } catch (dbErr) {
+        console.error('Failed to update URL stream in database:', dbErr);
+      }
+
+      res.json({ success: true });
+
+    } catch (error) {
+      console.error('Error stopping URL stream:', error);
+      res.status(500).json({ error: 'Failed to stop URL stream' });
+    }
+  });
+
+  /**
+   * GET /api/url-stream/:urlId
+   * Get status of a specific URL stream
+   */
+  router.get('/:urlId', async (req, res) => {
+    try {
+      const { urlId } = req.params;
+
+      const status = viewBotURLService.getStreamStatus(urlId);
+
+      if (!status) {
+        // Check database for historical data
+        const dbRecord = await dbService.getURLStream(urlId);
+        if (dbRecord) {
+          return res.json({
+            ...dbRecord,
+            isActive: false
+          });
+        }
+        return res.status(404).json({ error: 'Stream not found' });
+      }
+
+      // Add health info if available
+      let health = null;
+      if (healthService) {
+        health = healthService.getHealthSummary(urlId);
+      }
+
+      res.json({
+        ...status,
+        health,
+        isActive: true
+      });
+
+    } catch (error) {
+      console.error('Error getting URL stream status:', error);
+      res.status(500).json({ error: 'Failed to get stream status' });
     }
   });
 

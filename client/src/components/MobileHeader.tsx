@@ -11,6 +11,12 @@ interface MobileHeaderProps {
   streamStartTime?: number | null;
   streamerDisplayName?: string | null;
 
+  // Random rotation info
+  isRandomRotation?: boolean;
+  randomRotationPlatform?: string | null;
+  randomRotationStreamerUrl?: string | null;
+  randomRotationStreamerUsername?: string | null;
+
   // Auth & User
   isAuthenticated: boolean;
   currentUser?: any;
@@ -37,6 +43,10 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
   streamDuration: initialDuration,
   streamStartTime,
   streamerDisplayName,
+  isRandomRotation = false,
+  randomRotationPlatform,
+  randomRotationStreamerUrl,
+  randomRotationStreamerUsername,
   isAuthenticated,
   currentUser,
   userPoints = 0,
@@ -183,7 +193,26 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
             {hasActiveStream ? (
               <div className="streamer-info">
                 <span className="live-badge">LIVE</span>
-                <span className="streamer-name">{getDisplayName()}</span>
+                {isRandomRotation && randomRotationPlatform && (
+                  <span className="platform-icon-mobile">
+                    {randomRotationPlatform === 'kick' ? '🟢' : '🟣'}
+                  </span>
+                )}
+                {isRandomRotation && randomRotationStreamerUrl && randomRotationStreamerUsername ? (
+                  <a
+                    href={randomRotationStreamerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="streamer-name streamer-link-mobile"
+                    title={`Watch on ${randomRotationPlatform === 'kick' ? 'Kick' : 'Twitch'}`}
+                  >
+                    {randomRotationStreamerUsername.length > 10
+                      ? randomRotationStreamerUsername.substring(0, 8) + '...'
+                      : randomRotationStreamerUsername}
+                  </a>
+                ) : (
+                  <span className="streamer-name">{getDisplayName()}</span>
+                )}
               </div>
             ) : (
               <div className="offline-status">

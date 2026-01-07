@@ -29,6 +29,7 @@ const ViewBotLiveKitService = require('./services/ViewBotLiveKitService');
 const SimpleViewBotRotation = require('./services/SimpleViewBotRotation');
 const ViewBotURLService = require('./services/ViewBotURLService');
 const URLStreamHealthService = require('./services/URLStreamHealthService');
+const RandomStreamRotationService = require('./services/RandomStreamRotationService');
 const SimpleMediaStreamService = require('./services/SimpleMediaStreamService');
 const MediasoupService = require('./services/MediasoupService');
 const AudioOptimizationService = require('./services/AudioOptimizationService');
@@ -822,6 +823,10 @@ canvasFxService.setDependencies(io, itemService, buffDebuffService, streamServic
 
 // Set dependencies for visual fx service
 visualFxService.setDependencies(mediasoupService, buffDebuffService, streamService, io, sessionService, streamInterceptorService);
+
+// Set dependencies for StreamBot auto-summon feature
+streamBotService.setChatBotService(chatBotService);
+streamBotService.setChatBotLLMService(chatBotService.llmService);
 
 // Make services available to routes
 app.set('sessionService', sessionService);
@@ -6245,7 +6250,18 @@ io.on('connection', async (socket) => {
     // Enrich with streamer display name
     const enrichedStatus = await enrichStreamStatus(status);
     socket.emit('stream-status', enrichedStatus);
-    
+
+    // Send random rotation status if active
+    if (global.randomStreamRotationService) {
+      const rotationStatus = global.randomStreamRotationService.getStatus();
+      if (rotationStatus.enabled && rotationStatus.currentStream) {
+        socket.emit('random-rotation-status', {
+          enabled: true,
+          currentStream: rotationStatus.currentStream
+        });
+      }
+    }
+
     // Visual effects sync temporarily disabled to debug rotate_90 issue
     // try {
     //   const activeVisualEffects = await getActiveVisualEffects();
@@ -6696,6 +6712,17 @@ io.on('connection', async (socket) => {
       
       // Start streaming log session for real streamers
       if (!isViewBot) {
+        // CRITICAL: Pause random rotation when a real streamer starts
+        // It will auto-restart when the real streamer ends
+        if (global.randomStreamRotationService && global.randomStreamRotationService.isEnabled) {
+          console.log('⏸️ RANDOM ROTATION: Pausing - real streamer taking over');
+          try {
+            await global.randomStreamRotationService.pause();
+          } catch (err) {
+            console.error('❌ RANDOM ROTATION: Failed to pause:', err.message);
+          }
+        }
+
         await streamingLogsService.startSession(
           socket.id,
           streamerName,
@@ -8695,6 +8722,7 @@ async function startServer() {
       // Initialize URL Stream ViewBot Service for MediaSoup backend
       const viewBotURLService = new ViewBotURLService();
       viewBotURLService.setStreamService(streamService);
+      viewBotURLService.setViewBotRotation(SimpleViewBotRotation); // For stopping/resuming viewbots
       // No LiveKit service for MediaSoup backend
       const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
       urlStreamHealthService.start();
@@ -8713,6 +8741,28 @@ async function startServer() {
       const urlStreamRoutes = require('./routes/url-stream');
       app.use('/api/url-stream', urlStreamRoutes(viewBotURLService, urlStreamHealthService));
       console.log('✅ URL STREAM: API routes initialized at /api/url-stream (MediaSoup backend)');
+
+      // Initialize Random Stream Rotation Service (MediaSoup backend)
+      const randomStreamRotationService = new RandomStreamRotationService();
+      randomStreamRotationService.setViewBotURLService(viewBotURLService);
+      randomStreamRotationService.setViewBotRotation(SimpleViewBotRotation);
+      randomStreamRotationService.setSocketIO(io);
+      global.randomStreamRotationService = randomStreamRotationService;
+      console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized (MediaSoup backend)');
+
+      // Initialize Random Stream API routes
+      const randomStreamRoutes = require('./routes/random-stream');
+      app.use('/api/random-stream', randomStreamRoutes(randomStreamRotationService));
+      console.log('✅ RANDOM STREAM: API routes initialized at /api/random-stream (MediaSoup backend)');
+
+      // Auto-start random rotation if it was enabled before restart
+      setTimeout(async () => {
+        try {
+          await randomStreamRotationService.autoStartIfEnabled();
+        } catch (error) {
+          console.error('❌ RANDOM STREAM: Auto-start failed:', error.message);
+        }
+      }, 5000); // Wait 5 seconds for all services to be ready
     } else {
       console.log('ℹ️ VIEWBOT: Skipping ViewBotWebRTCService (using LiveKit backend)');
 
@@ -8735,6 +8785,8 @@ async function startServer() {
       const viewBotURLService = new ViewBotURLService();
       viewBotURLService.setStreamService(streamService);
       viewBotURLService.setLiveKitService(viewBotLiveKitService);
+      viewBotURLService.setViewBotRotation(SimpleViewBotRotation); // For stopping/resuming viewbots
+      viewBotURLService.setSocketIO(io); // For notifying viewers when URL stream starts
       const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
       urlStreamHealthService.start();
       console.log('✅ URL STREAM: ViewBotURLService initialized');
@@ -8751,6 +8803,28 @@ async function startServer() {
       const urlStreamRoutes = require('./routes/url-stream');
       app.use('/api/url-stream', urlStreamRoutes(viewBotURLService, urlStreamHealthService));
       console.log('✅ URL STREAM: API routes initialized at /api/url-stream');
+
+      // Initialize Random Stream Rotation Service
+      const randomStreamRotationService = new RandomStreamRotationService();
+      randomStreamRotationService.setViewBotURLService(viewBotURLService);
+      randomStreamRotationService.setViewBotRotation(SimpleViewBotRotation);
+      randomStreamRotationService.setSocketIO(io);
+      global.randomStreamRotationService = randomStreamRotationService;
+      console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized');
+
+      // Initialize Random Stream API routes
+      const randomStreamRoutes = require('./routes/random-stream');
+      app.use('/api/random-stream', randomStreamRoutes(randomStreamRotationService));
+      console.log('✅ RANDOM STREAM: API routes initialized at /api/random-stream');
+
+      // Auto-start random rotation if it was enabled before restart
+      setTimeout(async () => {
+        try {
+          await randomStreamRotationService.autoStartIfEnabled();
+        } catch (error) {
+          console.error('❌ RANDOM STREAM: Auto-start failed:', error.message);
+        }
+      }, 5000); // Wait 5 seconds for all services to be ready
 
       // Store for later registration with ViewBotRotationService
       global.viewBotLiveKitService = viewBotLiveKitService;

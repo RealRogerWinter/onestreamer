@@ -1,0 +1,1419 @@
+.url-stream-management {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Header */
+.url-stream-management .manager-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.url-stream-management .header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.url-stream-management .header-title h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.url-stream-management .header-subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 8px;
+}
+
+.url-stream-management .header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.url-stream-management .stop-all-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid #ef4444;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .stop-all-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.url-stream-management .refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .refresh-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Tools Status */
+.url-stream-management .tools-status {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.url-stream-management .tool-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.url-stream-management .tool-badge.available {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.url-stream-management .tool-badge.unavailable {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* New Stream Section */
+.url-stream-management .new-stream-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.url-stream-management .new-stream-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: #ffffff;
+}
+
+/* Form */
+.url-stream-management .stream-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.url-stream-management .form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.url-stream-management .input-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.url-stream-management .input-group.url-input-group {
+  flex: 2;
+  min-width: 400px;
+}
+
+.url-stream-management .input-group label {
+  display: block;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 6px;
+}
+
+.url-stream-management .url-input-wrapper {
+  display: flex;
+  gap: 8px;
+}
+
+.url-stream-management .url-input {
+  flex: 1;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .url-input:focus {
+  outline: none;
+  border-color: #64ffda;
+  box-shadow: 0 0 0 3px rgba(100, 255, 218, 0.1);
+}
+
+.url-stream-management .url-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.url-stream-management .validate-btn {
+  padding: 10px 20px;
+  background: rgba(100, 255, 218, 0.2);
+  color: #64ffda;
+  border: 1px solid #64ffda;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.url-stream-management .validate-btn:hover:not(:disabled) {
+  background: rgba(100, 255, 218, 0.3);
+}
+
+.url-stream-management .validate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.url-stream-management .quality-select,
+.url-stream-management .name-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+}
+
+.url-stream-management .quality-select {
+  cursor: pointer;
+}
+
+.url-stream-management .quality-select option {
+  background: #1a1a2e;
+  color: white;
+}
+
+/* Validation Result */
+.url-stream-management .validation-result {
+  padding: 14px;
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+.url-stream-management .validation-result.valid {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.url-stream-management .validation-result.invalid {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.url-stream-management .validation-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.url-stream-management .platform-badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.url-stream-management .live-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.url-stream-management .live-status.live {
+  color: #22c55e;
+}
+
+.url-stream-management .live-status.offline {
+  color: #6b7280;
+}
+
+.url-stream-management .validation-title {
+  font-size: 14px;
+  color: white;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.url-stream-management .validation-qualities {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.url-stream-management .validation-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ef4444;
+  font-size: 13px;
+}
+
+/* Checkbox */
+.url-stream-management .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+}
+
+.url-stream-management .checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #64ffda;
+}
+
+/* Form Actions */
+.url-stream-management .form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.url-stream-management .start-stream-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #64ffda, #4fc3f7);
+  color: #0a0a0a;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .start-stream-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(100, 255, 218, 0.4);
+}
+
+.url-stream-management .start-stream-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.url-stream-management .save-preset-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: rgba(234, 179, 8, 0.2);
+  color: #eab308;
+  border: 1px solid #eab308;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .save-preset-btn:hover {
+  background: rgba(234, 179, 8, 0.3);
+}
+
+/* Preset Form */
+.url-stream-management .preset-form {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(234, 179, 8, 0.1);
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+.url-stream-management .preset-name-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: white;
+  font-size: 14px;
+}
+
+.url-stream-management .preset-form .save-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  background: #eab308;
+  color: #0a0a0a;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.url-stream-management .preset-form .cancel-btn {
+  padding: 8px 12px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Tabs */
+.url-stream-management .tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.url-stream-management .tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.url-stream-management .tab.active {
+  background: rgba(100, 255, 218, 0.2);
+  border-color: #64ffda;
+  color: #64ffda;
+}
+
+/* Streams List */
+.url-stream-management .streams-grid,
+.url-stream-management .presets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+/* Stream Card */
+.url-stream-management .stream-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .stream-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.url-stream-management .stream-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.url-stream-management .platform-tag {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.url-stream-management .status-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.url-stream-management .status-tag.streaming {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.url-stream-management .status-tag.connecting,
+.url-stream-management .status-tag.reconnecting {
+  background: rgba(234, 179, 8, 0.2);
+  color: #eab308;
+}
+
+.url-stream-management .status-tag.error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.url-stream-management .stream-name {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: white;
+}
+
+.url-stream-management .stream-url {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 12px;
+}
+
+.url-stream-management .stream-url a {
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: none;
+}
+
+.url-stream-management .stream-url a:hover {
+  color: #64ffda;
+}
+
+.url-stream-management .stream-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.url-stream-management .stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.url-stream-management .reconnect-info {
+  font-size: 11px;
+  color: #eab308;
+  margin-bottom: 12px;
+}
+
+.url-stream-management .stop-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .stop-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+/* Preset Card */
+.url-stream-management .preset-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .preset-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.url-stream-management .preset-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.url-stream-management .use-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.url-stream-management .preset-name {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: white;
+}
+
+.url-stream-management .preset-url {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.url-stream-management .preset-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 12px;
+}
+
+.url-stream-management .preset-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.url-stream-management .start-preset-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .start-preset-btn:hover {
+  background: rgba(34, 197, 94, 0.3);
+}
+
+.url-stream-management .delete-preset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  padding: 10px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .delete-preset-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Empty State */
+.url-stream-management .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.url-stream-management .empty-state h3 {
+  margin: 16px 0 8px;
+  font-size: 18px;
+  color: #ffffff;
+}
+
+.url-stream-management .empty-state p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Loading State */
+.url-stream-management .loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 100px 20px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.url-stream-management .loading-state svg {
+  margin-bottom: 16px;
+}
+
+.url-stream-management .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Tab Badge */
+.url-stream-management .tab-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.url-stream-management .tab-badge.live {
+  background: #ef4444;
+  color: white;
+  animation: pulseBadge 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseBadge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Random Rotation Section */
+.url-stream-management .random-rotation-section {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Warning Banner */
+.url-stream-management .warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  margin-bottom: 20px;
+  color: #ef4444;
+}
+
+.url-stream-management .warning-content strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.url-stream-management .warning-content p {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+/* Random Control Panel */
+.url-stream-management .random-control-panel {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.url-stream-management .control-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.url-stream-management .control-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.url-stream-management .control-title h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  color: white;
+}
+
+.url-stream-management .control-title p {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.url-stream-management .status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.url-stream-management .status-indicator.active {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.url-stream-management .status-indicator.inactive {
+  background: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+}
+
+.url-stream-management .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.url-stream-management .status-indicator.active .status-dot {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+/* Control Actions */
+.url-stream-management .control-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.url-stream-management .control-actions .start-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .control-actions .start-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(34, 197, 94, 0.4);
+}
+
+.url-stream-management .control-actions .start-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.url-stream-management .control-actions .skip-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: rgba(234, 179, 8, 0.2);
+  color: #eab308;
+  border: 1px solid #eab308;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .control-actions .skip-btn:hover:not(:disabled) {
+  background: rgba(234, 179, 8, 0.3);
+}
+
+.url-stream-management .control-actions .stop-btn.danger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid #ef4444;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: auto;
+}
+
+.url-stream-management .control-actions .stop-btn.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.url-stream-management .control-actions .settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .control-actions .settings-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Current Stream Card */
+.url-stream-management .current-stream-card {
+  background: linear-gradient(135deg, rgba(145, 70, 255, 0.2), rgba(100, 255, 218, 0.1));
+  border: 1px solid rgba(145, 70, 255, 0.3);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.url-stream-management .stream-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.url-stream-management .live-badge {
+  background: #ef4444;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  animation: pulseBadge 1.5s ease-in-out infinite;
+}
+
+.url-stream-management .stream-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.url-stream-management .animal-name {
+  margin: 0 0 12px;
+  font-size: 32px;
+  font-weight: 700;
+  color: white;
+  background: linear-gradient(135deg, #ffffff, #64ffda);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.url-stream-management .twitch-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.url-stream-management .twitch-badge,
+.url-stream-management .game-badge,
+.url-stream-management .viewers-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+}
+
+.url-stream-management .twitch-badge {
+  background: rgba(145, 70, 255, 0.3);
+  color: #c4b5fd;
+}
+
+.url-stream-management .game-badge {
+  background: rgba(100, 255, 218, 0.2);
+  color: #64ffda;
+}
+
+.url-stream-management .viewers-badge {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.url-stream-management .stream-title {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* Settings Panel */
+.url-stream-management .settings-panel {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.url-stream-management .settings-panel h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: white;
+}
+
+.url-stream-management .settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.url-stream-management .setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.url-stream-management .setting-group label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.url-stream-management .setting-group input,
+.url-stream-management .setting-group select {
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: white;
+  font-size: 14px;
+}
+
+.url-stream-management .setting-group select {
+  cursor: pointer;
+}
+
+.url-stream-management .setting-group select option {
+  background: #1a1a2e;
+  color: white;
+}
+
+.url-stream-management .settings-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.url-stream-management .settings-actions .save-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  background: #64ffda;
+  color: #0a0a0a;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .settings-actions .save-btn:hover {
+  background: #4fc3f7;
+}
+
+.url-stream-management .settings-actions .cancel-btn {
+  padding: 10px 20px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.url-stream-management .settings-actions .cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Random Stats */
+.url-stream-management .random-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.url-stream-management .random-stats .stat-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+
+.url-stream-management .random-stats .stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #64ffda;
+  margin-bottom: 4px;
+}
+
+.url-stream-management .random-stats .stat-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* History Section */
+.url-stream-management .history-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.url-stream-management .history-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: white;
+}
+
+.url-stream-management .history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.url-stream-management .history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.url-stream-management .history-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.url-stream-management .history-name {
+  font-weight: 600;
+  color: white;
+}
+
+.url-stream-management .history-twitch {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.url-stream-management .history-game {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: rgba(100, 255, 218, 0.15);
+  color: #64ffda;
+  border-radius: 12px;
+}
+
+/* Platform Badges in Control Panel */
+.url-stream-management .platform-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.url-stream-management .platform-badges .platform-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.url-stream-management .platform-badges .platform-badge.disabled {
+  opacity: 0.4;
+}
+
+/* Platform Source Badge in Current Stream */
+.url-stream-management .platform-source-badge {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Streamer Info (replaces twitch-info) */
+.url-stream-management .streamer-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.url-stream-management .streamer-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* History Platform Icon */
+.url-stream-management .history-platform {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
+}
+
+.url-stream-management .history-streamer {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Settings Section */
+.url-stream-management .settings-section {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.url-stream-management .settings-section h5 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+}
+
+/* Platform Selection Checkboxes */
+.url-stream-management .platform-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.url-stream-management .platform-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.url-stream-management .platform-checkbox:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.url-stream-management .platform-checkbox.unavailable {
+  opacity: 0.6;
+}
+
+.url-stream-management .platform-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.url-stream-management .platform-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.url-stream-management .platform-label.twitch {
+  color: #9146ff;
+}
+
+.url-stream-management .platform-label.kick {
+  color: #53fc18;
+}
+
+.url-stream-management .config-warning {
+  font-size: 12px;
+  color: #ef4444;
+  margin-left: auto;
+}
+
+.url-stream-management .config-ok {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: auto;
+}
+
+/* Platform Weight Slider */
+.url-stream-management .platform-weight-section {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.url-stream-management .platform-weight-section > label {
+  display: block;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 12px;
+}
+
+.url-stream-management .weight-slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.url-stream-management .weight-slider input[type="range"] {
+  flex: 1;
+  height: 8px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: linear-gradient(to right, #9146ff 0%, #9146ff 50%, #53fc18 50%, #53fc18 100%);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.url-stream-management .weight-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.url-stream-management .weight-slider input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  border: none;
+}
+
+.url-stream-management .weight-label {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.url-stream-management .weight-label.twitch {
+  color: #9146ff;
+}
+
+.url-stream-management .weight-label.kick {
+  color: #53fc18;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .url-stream-management .manager-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .url-stream-management .input-group.url-input-group {
+    min-width: 100%;
+  }
+
+  .url-stream-management .form-row {
+    flex-direction: column;
+  }
+
+  .url-stream-management .streams-grid,
+  .url-stream-management .presets-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .url-stream-management .tabs {
+    flex-wrap: wrap;
+  }
+
+  .url-stream-management .control-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .url-stream-management .control-actions {
+    flex-direction: column;
+  }
+
+  .url-stream-management .control-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .url-stream-management .random-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .url-stream-management .animal-name {
+    font-size: 24px;
+  }
+}

@@ -141,10 +141,16 @@ class SimpleViewBotRotation {
    */
   async startRotation() {
     console.log('🎬 Starting viewbot rotation system');
-    
+
+    // Check if random rotation is active - it takes priority
+    if (global.randomStreamRotationService && global.randomStreamRotationService.isRandomRotationActive()) {
+      console.log('🛡️ VIEWBOT ROTATION BLOCKED: Random stream rotation is active - viewbots disabled');
+      return;
+    }
+
     // Stop any existing rotation
     await this.stopRotation();
-    
+
     // Start first bot
     await this.rotateToNextBot();
   }
@@ -170,6 +176,12 @@ class SimpleViewBotRotation {
    */
   async rotateToNextBot() {
     console.log('🔄 Rotating to next viewbot');
+
+    // Check if random rotation is active - it takes priority
+    if (global.randomStreamRotationService && global.randomStreamRotationService.isRandomRotationActive()) {
+      console.log('🛡️ VIEWBOT ROTATION BLOCKED: Random stream rotation is active - viewbots disabled');
+      return;
+    }
 
     // CRITICAL: Check if real streamer is active before rotation
     if (this.isRealStreamerActive()) {

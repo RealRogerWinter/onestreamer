@@ -55,6 +55,11 @@ interface StreamStatus {
   streamStartTime: number | null;
   streamDuration: number;
   streamerDisplayName?: string | null;
+  // Random rotation info
+  isRandomRotation?: boolean;
+  randomRotationPlatform?: string | null;
+  randomRotationStreamerUrl?: string | null;
+  randomRotationStreamerUsername?: string | null;
 }
 
 let appContentInstanceCount = 0;
@@ -512,6 +517,38 @@ function AppContent() {
       setStreamStatus(prev => ({ ...prev, viewerCount: count }));
     });
 
+    // Listen for random rotation status updates
+    socket.on('random-rotation-status', (data: {
+      enabled: boolean;
+      currentStream?: {
+        displayName: string;
+        platform: string;
+        streamerUsername: string;
+        url: string;
+      };
+    }) => {
+      console.log('🎲 CLIENT: Random rotation status update:', data);
+      if (data.enabled && data.currentStream) {
+        setStreamStatus(prev => ({
+          ...prev,
+          isRandomRotation: true,
+          randomRotationPlatform: data.currentStream!.platform,
+          randomRotationStreamerUrl: data.currentStream!.url,
+          randomRotationStreamerUsername: data.currentStream!.streamerUsername,
+          streamerDisplayName: data.currentStream!.displayName
+        }));
+      } else {
+        // Clear random rotation info when disabled
+        setStreamStatus(prev => ({
+          ...prev,
+          isRandomRotation: false,
+          randomRotationPlatform: null,
+          randomRotationStreamerUrl: null,
+          randomRotationStreamerUsername: null
+        }));
+      }
+    });
+
     socket.on('global-cooldown', (data: { cooldownRemaining: number }) => {
       setCooldownRemaining(data.cooldownRemaining);
       startCooldownTimer(data.cooldownRemaining);
@@ -756,6 +793,7 @@ function AppContent() {
       socket.off('stream-started');
       socket.off('stream-ended');
       socket.off('viewer-count-update');
+      socket.off('random-rotation-status');
       socket.off('global-cooldown');
       socket.off('cooldown-status-update');
       socket.off('streaming-approved');
@@ -1158,6 +1196,10 @@ function AppContent() {
             streamDuration={streamStatus.streamDuration}
             streamStartTime={streamStatus.streamStartTime}
             streamerDisplayName={streamStatus.streamerDisplayName}
+            isRandomRotation={streamStatus.isRandomRotation}
+            randomRotationPlatform={streamStatus.randomRotationPlatform}
+            randomRotationStreamerUrl={streamStatus.randomRotationStreamerUrl}
+            randomRotationStreamerUsername={streamStatus.randomRotationStreamerUsername}
             isAuthenticated={isAuthenticated}
             currentUser={currentUser}
             userPoints={userPoints}
@@ -1194,6 +1236,10 @@ function AppContent() {
             streamDuration={streamStatus.streamDuration}
             streamStartTime={streamStatus.streamStartTime}
             streamerDisplayName={streamStatus.streamerDisplayName}
+            isRandomRotation={streamStatus.isRandomRotation}
+            randomRotationPlatform={streamStatus.randomRotationPlatform}
+            randomRotationStreamerUrl={streamStatus.randomRotationStreamerUrl}
+            randomRotationStreamerUsername={streamStatus.randomRotationStreamerUsername}
             isAuthenticated={isAuthenticated}
             currentUser={currentUser}
             userPoints={userPoints}
@@ -1778,6 +1824,10 @@ function AppContent() {
           streamDuration={streamStatus.streamDuration}
           streamStartTime={streamStatus.streamStartTime}
           streamerDisplayName={streamStatus.streamerDisplayName}
+          isRandomRotation={streamStatus.isRandomRotation}
+          randomRotationPlatform={streamStatus.randomRotationPlatform}
+          randomRotationStreamerUrl={streamStatus.randomRotationStreamerUrl}
+          randomRotationStreamerUsername={streamStatus.randomRotationStreamerUsername}
           isStreaming={isStreaming}
           cooldownRemaining={cooldownRemaining}
           isConnected={connected && !!socket}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import authService from '../services/AuthService';
 import './UserInfoPopup.css';
 
@@ -34,14 +34,26 @@ const UserInfoPopup: React.FC<UserInfoPopupProps> = ({ username, position, onClo
   const [moderating, setModerating] = useState(false);
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [isCurrentUserModerator, setIsCurrentUserModerator] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
-  
+  const onCloseRef = useRef(onClose);
+
+  // Keep onClose ref updated
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   // Get current user's admin/moderator status
   const currentUser = authService.getUser();
 
   useEffect(() => {
+    // Reset states when username changes
+    setAvatarError(false);
+    setUserProfile(null);
+    setError(null);
+
     loadUserProfile();
-    
+
     // Check admin/moderator status using sync methods
     setIsCurrentUserAdmin(authService.isAdminSync());
     setIsCurrentUserModerator(authService.isModeratorSync());
@@ -49,14 +61,14 @@ const UserInfoPopup: React.FC<UserInfoPopupProps> = ({ username, position, onClo
     // Close popup when clicking outside
     const handleClickOutside = (event: MouseEvent) => {
       if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
-        onClose();
+        onCloseRef.current();
       }
     };
 
     // Close popup on escape key
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
       }
     };
 
@@ -67,7 +79,7 @@ const UserInfoPopup: React.FC<UserInfoPopupProps> = ({ username, position, onClo
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [username, onClose]);
+  }, [username]); // Removed onClose from dependencies
 
   const loadUserProfile = async () => {
     try {
@@ -89,6 +101,29 @@ const UserInfoPopup: React.FC<UserInfoPopupProps> = ({ username, position, onClo
       month: 'long',
       day: 'numeric'
     });
+  };
+
+  const formatTimeCompact = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = hours % 24;
+      if (remainingHours > 0) {
+        return `${days}d ${remainingHours}h`;
+      }
+      return `${days}d`;
+    }
+
+    if (hours > 0) {
+      if (minutes > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      return `${hours}h`;
+    }
+
+    return `${minutes}m`;
   };
 
   // Moderation functions
@@ -252,7 +287,9 @@ const UserInfoPopup: React.FC<UserInfoPopupProps> = ({ username, position, onClo
     };
   }, [position.x, position.y]);
 
-  const isMobileView = window.innerWidth <= 768 || window.innerWidth <= 600 || window.innerHeight <= 600;
+  const isMobileView = useMemo(() => {
+    return window.innerWidth <= 768 || window.innerHeight <= 600;
+  }, []);
 
   return (
     <>
@@ -284,11 +321,12 @@ const UserInfoPopup: React.FC<UserInfoPopupProps> = ({ username, position, onClo
               <div className="user-info-avatar-placeholder chatbot">
                 <span className="chatbot-icon">🤖</span>
               </div>
-            ) : userProfile.avatar_url ? (
-              <img 
-                src={userProfile.avatar_url} 
+            ) : userProfile.avatar_url && !avatarError ? (
+              <img
+                src={userProfile.avatar_url}
                 alt={`${userProfile.username}'s avatar`}
                 className="user-info-avatar"
+                onError={() => setAvatarError(true)}
               />
             ) : (
               <div className="user-info-avatar-placeholder">
@@ -359,14 +397,14 @@ const UserInfoPopup: React.FC<UserInfoPopupProps> = ({ username, position, onClo
                       <div className="stat-item">
                         <span className="stat-icon">📹</span>
                         <span className="stat-label">Stream Time:</span>
-                        <span className="stat-value">{Math.round(userProfile.total_stream_time / 60)}h</span>
+                        <span className="stat-value">{formatTimeCompact(userProfile.total_stream_time)}</span>
                       </div>
                     )}
                     {userProfile.total_view_time !== undefined && userProfile.total_view_time > 0 && (
                       <div className="stat-item">
                         <span className="stat-icon">👀</span>
                         <span className="stat-label">Watch Time:</span>
-                        <span className="stat-value">{Math.round(userProfile.total_view_time / 60)}h</span>
+                        <span className="stat-value">{formatTimeCompact(userProfile.total_view_time)}</span>
                       </div>
                     )}
                     {userProfile.stream_count !== undefined && userProfile.stream_count > 0 && (

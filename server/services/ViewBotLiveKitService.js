@@ -417,8 +417,7 @@ class ViewBotLiveKitService {
 
       const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
 
-      // WORKING IMPLEMENTATION: Explicit single-layer encoding prevents simulcast layer switching (no freezing)
-      // Manually configure single 720p layer at 2500kbps (no simulcast)
+      // BALANCED QUALITY: Single-layer 720p encoding at good bitrate
       const { TrackSource, IngressVideoOptions, IngressAudioOptions } = require('livekit-server-sdk');
 
       const ingress = await ingressClient.createIngress(IngressInput.RTMP_INPUT, {
@@ -426,7 +425,7 @@ class ViewBotLiveKitService {
         roomName: this.config.roomName,
         participantIdentity: bot.id,
         participantName: `ViewBot ${bot.id}`,
-        // Explicit single layer configuration
+        // Balanced quality single layer configuration - 720p @ 4Mbps
         video: {
           source: TrackSource.CAMERA,
           encodingOptions: {
@@ -438,7 +437,7 @@ class ViewBotLiveKitService {
                 quality: 2, // HIGH
                 width: 1280,
                 height: 720,
-                bitrate: 2500000
+                bitrate: 4000000  // 4Mbps for 720p
               }]
             }
           }
@@ -449,7 +448,7 @@ class ViewBotLiveKitService {
             case: 'options',
             value: {
               audioCodec: 1, // OPUS
-              bitrate: 96000,
+              bitrate: 160000,  // 160kbps
               channels: 2,
               disableDtx: false
             }
@@ -463,6 +462,27 @@ class ViewBotLiveKitService {
     } catch (error) {
       console.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Failed to create ingress:`, error);
       return null;
+    }
+  }
+
+  /**
+   * Delete a LiveKit ingress by ID
+   * Used by ViewBotURLService to clean up URL stream ingresses
+   */
+  async deleteIngress(ingressId) {
+    try {
+      const { IngressClient } = require('livekit-server-sdk');
+      const host = this.config.host.startsWith('http')
+        ? this.config.host
+        : `http://${this.config.host}`;
+      const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
+
+      await ingressClient.deleteIngress(ingressId);
+      console.log(`✅ LIVEKIT: Deleted ingress ${ingressId}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ LIVEKIT: Failed to delete ingress ${ingressId}:`, error.message);
+      return false;
     }
   }
 

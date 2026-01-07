@@ -591,8 +591,7 @@ router.get('/user/:username', async (req, res) => {
         }
         
         // Get user stats if available
-        const accountService = require('../services/AccountService');
-        const userStats = await accountService.getUserStats(user.id);
+        const userStats = await authService.accountService.getUserStats(user.id);
         
         // Return only public information
         res.json({

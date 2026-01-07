@@ -12,6 +12,12 @@ interface MobileLandscapeLayoutProps {
   streamStartTime?: number | null;
   streamerDisplayName?: string | null;
 
+  // Random rotation info
+  isRandomRotation?: boolean;
+  randomRotationPlatform?: string | null;
+  randomRotationStreamerUrl?: string | null;
+  randomRotationStreamerUsername?: string | null;
+
   // Streaming controls
   isStreaming: boolean;
   cooldownRemaining: number;
@@ -52,6 +58,10 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   streamDuration: initialDuration,
   streamStartTime,
   streamerDisplayName,
+  isRandomRotation = false,
+  randomRotationPlatform,
+  randomRotationStreamerUrl,
+  randomRotationStreamerUsername,
   isStreaming,
   cooldownRemaining,
   isConnected,
@@ -372,7 +382,25 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
               <>
                 <span className="live-badge">LIVE</span>
                 <span className="viewer-count">{viewerCount}</span>
-                {streamerDisplayName && <span className="streamer-name">{getDisplayName()}</span>}
+                {isRandomRotation && randomRotationPlatform && (
+                  <span className="platform-icon-landscape">
+                    {randomRotationPlatform === 'kick' ? '🟢' : '🟣'}
+                  </span>
+                )}
+                {isRandomRotation && randomRotationStreamerUrl && randomRotationStreamerUsername ? (
+                  <a
+                    href={randomRotationStreamerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="streamer-name streamer-link-landscape"
+                  >
+                    {randomRotationStreamerUsername.length > 10
+                      ? randomRotationStreamerUsername.substring(0, 8) + '...'
+                      : randomRotationStreamerUsername}
+                  </a>
+                ) : (
+                  streamerDisplayName && <span className="streamer-name">{getDisplayName()}</span>
+                )}
                 {streamStartTime && <span className="stream-duration">{formatDuration(streamDuration)}</span>}
               </>
             ) : (

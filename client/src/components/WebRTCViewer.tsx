@@ -1477,6 +1477,26 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       (globalThis as any)._webrtcFallbackTimer = fallbackTimer;
     };
 
+    // Handler for stream-switching event (random rotation starting)
+    // This triggers the switching UI BEFORE the stream actually changes
+    const handleStreamSwitching = (data: {
+      previousStream?: {
+        displayName: string;
+        platform: string;
+        streamerUsername: string;
+      };
+      reason: string;
+    }) => {
+      console.log('🔄 WEBRTC: Received stream-switching notification:', data);
+
+      // Immediately show the switching UI
+      setSwitchState('switching');
+      setError('Switching stream...');
+      setIsLoading(true);
+
+      console.log('🔄 WEBRTC: Switching UI activated early for smooth transition');
+    };
+
     const handleStreamReady = async (data: {
       newStreamId: string,
       streamerId: string,
@@ -1817,16 +1837,18 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
     socket.on('new-streamer', handleStreamSwitch);
     socket.on('stream-ready', handleStreamReady);
+    socket.on('stream-switching', handleStreamSwitching);
     socket.on('test-stream-available', handleTestStreamRequest);
     socket.on('test-pattern-stream', handleTestPatternStream);
     socket.on('stream-ended', handleStreamEnded);
-    
+
     // console.log('✅ WEBRTC: Event listeners registered (simple mode)');
 
     return () => {
       // console.log('🧹 WEBRTC: Cleaning up event listeners');
       socket.off('new-streamer', handleStreamSwitch);
       socket.off('stream-ready', handleStreamReady);
+      socket.off('stream-switching', handleStreamSwitching);
       socket.off('test-stream-available', handleTestStreamRequest);
       socket.off('test-pattern-stream', handleTestPatternStream);
       socket.off('stream-ended', handleStreamEnded);

@@ -1,29 +1,135 @@
 class ProfanityFilterService {
     constructor() {
-        // Basic profanity word list - expandable
+        // Comprehensive profanity word list with evasion variants
         this.badWords = [
-            // Racial slurs
-            'nigger', 'nigga', 'chink', 'gook', 'spic', 'wetback', 'kike', 'kyke',
-            'beaner', 'coon', 'jigaboo', 'raghead', 'towelhead', 'sand nigger',
-            
-            // Sexual/vulgar terms
-            'fuck', 'shit', 'bitch', 'cunt', 'cock', 'dick', 'pussy', 'asshole',
-            'faggot', 'fag', 'dyke', 'whore', 'slut', 'bastard', 'piss', 'cum',
-            'jizz', 'penis', 'vagina', 'dildo', 'vibrator', 'anal', 'rape',
-            
-            // Variations and leetspeak
-            'f4ck', 'fuk', 'fvck', 'sh1t', 'b1tch', 'a55', '@ss', 'd1ck',
-            'p3nis', 'v4gina', 'r4pe', 'f@g', 'n1gger', 'n1gga',
-            
-            // Other offensive terms
-            'retard', 'retarded', 'nazi', 'hitler', 'autism', 'autistic',
-            'cancer', 'aids', 'kill yourself', 'kys', 'kms'
+            // N-word and variants
+            'nigger', 'nigga', 'niggers', 'niggas', 'nigg3r', 'n1gger', 'n1gga',
+            'nigg4', 'nigguh', 'niggah', 'nig', 'nigs', 'nigg', 'n1g', 'n1gg',
+            'niqqer', 'niqqa', 'niqqah', 'nikka', 'nikker', 'niglet', 'nigglet',
+            'negro', 'negr0', 'negroid', 'neger', 'neeger', 'neegah',
+            'ngr', 'nggr', 'ngga', 'n*gger', 'n*gga', 'ni99er', 'ni99a',
+            'knigger', 'kneeger', 'nignag', 'nignog', 'niggardly',
+
+            // F-slur and variants
+            'faggot', 'faggots', 'fag', 'fags', 'faggy', 'fagg0t', 'f4ggot',
+            'f@ggot', 'f@g', 'phag', 'phaggot', 'fgt', 'fggt', 'fagit',
+            'fagget', 'faggit', 'fagett', 'fagoot', 'faghat', 'fagbag',
+            'feg', 'fegg', 'feggit', 'fagoid', 'fagmo', 'fa99ot',
+
+            // Other anti-LGBTQ slurs
+            'dyke', 'dykes', 'd1ke', 'dyk3', 'tranny', 'trannies', 'tr4nny',
+            'shemale', 'she-male', 'ladyboy', 'heshe', 'he-she', 'homo', 'homos',
+            'h0mo', 'hom0', 'queer', 'queers', 'qu33r',
+
+            // Asian slurs and variants
+            'chink', 'chinks', 'ch1nk', 'chinky', 'chonky', 'ching chong',
+            'chingchong', 'gook', 'gooks', 'g00k', 'gooky', 'zipperhead',
+            'slant', 'slanteye', 'slant-eye', 'jap', 'japs', 'nip', 'nips',
+            'chankoro', 'chinaman', 'orientals',
+
+            // Hispanic/Latino slurs
+            'spic', 'spics', 'sp1c', 'spick', 'spik', 'wetback', 'wetbacks',
+            'w3tback', 'beaner', 'beaners', 'b3aner', 'border bunny',
+            'border hopper', 'illegal',
+
+            // Jewish slurs
+            'kike', 'kikes', 'k1ke', 'kyke', 'kykes', 'hebe', 'heeb',
+            'sheeny', 'yid', 'zhid', 'jewboy', 'jew boy',
+
+            // Black slurs (additional)
+            'coon', 'coons', 'c00n', 'darkie', 'darkies', 'darky',
+            'jigaboo', 'jiggaboo', 'jig', 'jigg', 'pickaninny', 'piccaninny',
+            'sambo', 'spook', 'spade', 'tar baby', 'tarbaby', 'porch monkey',
+            'porchmonkey', 'jungle bunny', 'junglebunny', 'moon cricket',
+            'mooncricket', 'mud person', 'mudshark', 'colored', 'coloreds',
+
+            // Middle Eastern/South Asian slurs
+            'raghead', 'ragheads', 'r4ghead', 'towelhead', 'towelheads',
+            't0welhead', 'sand nigger', 'sandnigger', 'camel jockey',
+            'cameljockey', 'hajji', 'haji', 'hadji', 'paki', 'pakis',
+            'currymuncher', 'curry muncher', 'dothead', 'dot-head',
+
+            // Native American slurs
+            'redskin', 'redskins', 'injun', 'injuns', 'prairie nigger',
+            'squaw', 'wagon burner',
+
+            // White slurs (for completeness)
+            'cracker', 'crackers', 'honky', 'honkey', 'honkie', 'gringo',
+            'redneck', 'white trash', 'whitetrash', 'peckerwood',
+
+            // General derogatory
+            'subhuman', 'untermensch', 'mongrel', 'half breed', 'halfbreed',
+            'mutt', 'mixed breed', 'race traitor', 'race mixer',
+
+            // Ableist slurs
+            'retard', 'retards', 'retarded', 'r3tard', 'ret4rd', 'tard', 'tards',
+            'libtard', 'fucktard', 'spaz', 'spazz', 'spastic', 'mong', 'mongoloid',
+            'window licker', 'special ed',
+
+            // Nazi/white supremacist terms
+            'nazi', 'nazis', 'n4zi', 'naz1', 'hitler', 'h1tler', 'heil',
+            'sieg heil', 'white power', 'whitepower', 'white pride',
+            '1488', '14/88', 'rahowa', 'wpww', 'kkk', 'ku klux',
+
+            // Self-harm/violence
+            'kill yourself', 'kys', 'kms', 'kill myself', 'hang yourself',
+            'neck yourself', 'rope yourself', 'end yourself', 'die in a fire',
+            'drink bleach', 'commit suicide', 'slit your wrists'
         ];
         
+        // Character substitution map for normalization
+        this.charSubstitutions = {
+            '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '6': 'g', '7': 't',
+            '8': 'b', '9': 'g', '@': 'a', '$': 's', '!': 'i', '+': 't',
+            '(': 'c', ')': 'o', '[': 'c', ']': 'i', '{': 'c', '}': 'o',
+            '<': 'c', '>': 'o', '|': 'i', '\\': 'l', '/': 'l',
+            '*': '', '^': 'a', '#': 'h', '%': 'x', '&': 'and',
+            // Unicode lookalikes
+            '\u0430': 'a', '\u0435': 'e', '\u0456': 'i', '\u043e': 'o', // Cyrillic
+            '\u0440': 'p', '\u0441': 'c', '\u0445': 'x', '\u0443': 'y',
+            '\u03b1': 'a', '\u03b5': 'e', '\u03b9': 'i', '\u03bf': 'o', // Greek
+            '\u00e0': 'a', '\u00e1': 'a', '\u00e2': 'a', '\u00e3': 'a', '\u00e4': 'a',
+            '\u00e8': 'e', '\u00e9': 'e', '\u00ea': 'e', '\u00eb': 'e',
+            '\u00ec': 'i', '\u00ed': 'i', '\u00ee': 'i', '\u00ef': 'i',
+            '\u00f2': 'o', '\u00f3': 'o', '\u00f4': 'o', '\u00f5': 'o', '\u00f6': 'o',
+            '\u00f9': 'u', '\u00fa': 'u', '\u00fb': 'u', '\u00fc': 'u',
+            '\u00f1': 'n', '\u00e7': 'c',
+        };
+
         // Create regex patterns for each bad word
         this.patterns = this.compilePatterns();
     }
-    
+
+    /**
+     * Normalize text by converting leetspeak and unicode lookalikes to standard chars
+     * @param {string} text - Text to normalize
+     * @returns {string} - Normalized text
+     */
+    normalizeText(text) {
+        if (!text) return '';
+
+        let normalized = text.toLowerCase();
+
+        // Remove zero-width characters
+        normalized = normalized.replace(/[\u200b\u200c\u200d\ufeff\u00ad]/g, '');
+
+        // Remove combining diacritical marks (zalgo text)
+        normalized = normalized.replace(/[\u0300-\u036f]/g, '');
+
+        // Apply character substitutions
+        for (const [char, replacement] of Object.entries(this.charSubstitutions)) {
+            normalized = normalized.split(char).join(replacement);
+        }
+
+        // Remove repeated characters (n-n-n-i-i-g-g -> nig)
+        normalized = normalized.replace(/(.)\1{2,}/g, '$1$1');
+
+        // Remove separators between letters (n.i.g.g.e.r -> nigger)
+        normalized = normalized.replace(/[\s\-_.,:;|\/\\`'"~]+/g, '');
+
+        return normalized;
+    }
+
     compilePatterns() {
         return this.badWords.map(word => {
             // Escape special regex characters
@@ -42,33 +148,67 @@ class ProfanityFilterService {
         if (!text || typeof text !== 'string') {
             return true;
         }
-        
+
         const lowerText = text.toLowerCase();
-        
-        // Check against patterns
+
+        // Check against patterns (direct match)
         for (const pattern of this.patterns) {
+            pattern.lastIndex = 0; // Reset regex state
             if (pattern.test(lowerText)) {
                 console.log(`🚫 Profanity detected: ${pattern}`);
                 return false;
             }
         }
-        
-        // Check for attempts to bypass filter with spaces/special chars
-        const noSpaces = lowerText.replace(/[\s\-_.]/g, '');
+
+        // Normalize text to catch evasion attempts
+        const normalized = this.normalizeText(text);
+
+        // Check normalized text against base words (without spaces)
         for (const word of this.badWords) {
-            if (noSpaces.includes(word.replace(/\s/g, ''))) {
-                console.log(`🚫 Profanity detected (bypass attempt): ${word}`);
+            const normalizedWord = word.replace(/\s/g, '');
+            if (normalized.includes(normalizedWord)) {
+                console.log(`🚫 Profanity detected (normalized): ${word}`);
                 return false;
             }
         }
-        
+
+        // Additional check: look for partial matches of the worst slurs
+        // These are the most commonly evaded terms
+        const criticalPatterns = [
+            /n+[i1!|]+g+[e3]+r/i,      // n-word variations
+            /n+[i1!|]+g+[a4@]+/i,      // n-word soft-a variations
+            /f+[a4@]+g+[o0]+t/i,       // f-slur variations
+            /f+[a4@]+g+s*/i,           // shortened f-slur
+            /ch+[i1!|]+n+k/i,          // asian slur
+            /g+[o0]+[o0]+k/i,          // asian slur
+            /k+[i1!|]+k+[e3]+/i,       // jewish slur
+            /sp+[i1!|]+c+k*/i,         // hispanic slur
+            /c+[o0]+[o0]+n+s*/i,       // racial slur
+            /tr+[a4@]+n+n+y/i,         // anti-trans slur
+            /d+y+k+[e3]+/i,            // anti-lgbtq slur
+        ];
+
+        for (const pattern of criticalPatterns) {
+            if (pattern.test(normalized)) {
+                console.log(`🚫 Profanity detected (critical pattern): ${pattern}`);
+                return false;
+            }
+        }
+
         // Check for zalgo text or excessive special characters
         const specialCharRatio = (text.match(/[^\w\s]/g) || []).length / text.length;
-        if (specialCharRatio > 0.3) {
+        if (specialCharRatio > 0.3 && text.length > 5) {
             console.log(`🚫 Excessive special characters detected`);
             return false;
         }
-        
+
+        // Check for excessive combining characters (zalgo)
+        const combiningChars = (text.match(/[\u0300-\u036f]/g) || []).length;
+        if (combiningChars > 5) {
+            console.log(`🚫 Excessive combining characters (zalgo) detected`);
+            return false;
+        }
+
         return true;
     }
     

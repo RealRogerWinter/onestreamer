@@ -9,8 +9,12 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
+const ProfanityFilterService = require('../server/services/ProfanityFilterService');
 
 const app = express();
+
+// Initialize profanity filter for chat messages
+const profanityFilter = new ProfanityFilterService();
 
 // Create both HTTP and HTTPS servers
 const httpServer = createServer(app);
@@ -1199,6 +1203,7 @@ async function handlePublicCommand(command, args, user, socket, io) {
 !stats - Show your own stats
 !top - Show points leaderboard
 !uptime - Show stream uptime
+!channel - Show current random channel info
 !roll - Roll a dice (1-6)
 !coinflip - Flip a coin
 !gamble [amount] - 50/50 chance to double or lose
@@ -1583,6 +1588,58 @@ async function handlePublicCommand(command, args, user, socket, io) {
       }
 
       io.emit('new-message', discordBotMessage);
+      break;
+
+    case 'channel':
+      // Show current random rotation channel info
+      try {
+        const response = await axios.get(
+          `${MAIN_SERVER_URL}/api/random-stream/current-channel`,
+          getAxiosConfig({ timeout: 10000 })
+        );
+
+        if (response.data.success && response.data.active) {
+          const channel = response.data.channel;
+          const channelMessage = `${channel.platformIcon} Currently watching: ${channel.streamerDisplayName || channel.streamerUsername} on ${channel.platformName} | ${channel.game || 'Unknown Game'} | ${channel.url}`;
+
+          const channelBotMessage = {
+            id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            username: '🤖 StreamBot',
+            color: '#00FF00',
+            message: channelMessage,
+            timestamp: formatTime(),
+            fullTimestamp: new Date().toISOString(),
+            isSystem: true
+          };
+
+          chatMessages.push(channelBotMessage);
+          if (chatMessages.length > MAX_CHAT_HISTORY) {
+            chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+          }
+
+          io.emit('new-message', channelBotMessage);
+        } else {
+          const noChannelMessage = {
+            id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            username: '🤖 StreamBot',
+            color: '#00FF00',
+            message: '📺 Random rotation is not currently active. Be the streamer we need - go live!',
+            timestamp: formatTime(),
+            fullTimestamp: new Date().toISOString(),
+            isSystem: true
+          };
+
+          chatMessages.push(noChannelMessage);
+          if (chatMessages.length > MAX_CHAT_HISTORY) {
+            chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+          }
+
+          io.emit('new-message', noChannelMessage);
+        }
+      } catch (error) {
+        console.error('❌ CHAT: Failed to get current channel:', error.message);
+        sendAdminResponse(socket, '❌ Failed to get current channel info');
+      }
       break;
 
     default:
@@ -2185,15 +2242,11 @@ io.on('connection', async (socket) => {
     // We only need to validate it's a valid string and limit length
     const trimmedMessage = message.trim().substring(0, 2000); // Max 2000 characters
     
-    // Profanity filter - silently block messages containing banned words
-    const bannedWords = ['nigger', 'faggot'];
-    const lowerMessage = trimmedMessage.toLowerCase();
-    for (const word of bannedWords) {
-      if (lowerMessage.includes(word)) {
-        console.log(`🚫 PROFANITY: Blocked message from ${user.username} containing banned word`);
-        // Silently return without sending the message
-        return;
-      }
+    // Profanity filter - silently block messages containing slurs/hate speech
+    if (!profanityFilter.isClean(trimmedMessage)) {
+      console.log(`🚫 PROFANITY: Blocked message from ${user.username} containing hate speech/slurs`);
+      // Silently return without sending the message
+      return;
     }
     
     const sanitizedMessage = trimmedMessage;

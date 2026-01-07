@@ -12,6 +12,12 @@ interface DesktopHeaderV2Props {
   streamDuration: number;
   streamStartTime: number | null;
   streamerDisplayName?: string | null;
+
+  // Random rotation info
+  isRandomRotation?: boolean;
+  randomRotationPlatform?: string | null;
+  randomRotationStreamerUrl?: string | null;
+  randomRotationStreamerUsername?: string | null;
   
   // Auth
   isAuthenticated: boolean;
@@ -54,6 +60,10 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
   streamDuration: initialDuration,
   streamStartTime,
   streamerDisplayName,
+  isRandomRotation = false,
+  randomRotationPlatform,
+  randomRotationStreamerUrl,
+  randomRotationStreamerUsername,
   isAuthenticated,
   currentUser,
   userPoints,
@@ -229,13 +239,34 @@ const DesktopHeaderV2: React.FC<DesktopHeaderV2Props> = ({
             {hasActiveStream && streamerDisplayName && (
               <div className="stat-card streamer-card">
                 <div className="stat-icon-wrapper">
-                  <div className="streamer-avatar">
-                    {streamerDisplayName.charAt(0).toUpperCase()}
-                  </div>
+                  {isRandomRotation && randomRotationPlatform ? (
+                    <div className="platform-icon">
+                      {randomRotationPlatform === 'kick' ? '🟢' : '🟣'}
+                    </div>
+                  ) : (
+                    <div className="streamer-avatar">
+                      {streamerDisplayName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                 </div>
                 <div className="stat-info">
                   <span className="stat-label">Streaming</span>
-                  <span className="stat-value streamer-name">{streamerDisplayName}</span>
+                  {isRandomRotation && randomRotationStreamerUrl && randomRotationStreamerUsername ? (
+                    <a
+                      href={randomRotationStreamerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="stat-value streamer-name streamer-link"
+                      title={`Watch ${randomRotationStreamerUsername} on ${randomRotationPlatform === 'kick' ? 'Kick' : 'Twitch'}`}
+                    >
+                      {randomRotationStreamerUsername}
+                      <svg className="external-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/>
+                      </svg>
+                    </a>
+                  ) : (
+                    <span className="stat-value streamer-name">{streamerDisplayName}</span>
+                  )}
                 </div>
               </div>
             )}

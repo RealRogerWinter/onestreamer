@@ -175,7 +175,7 @@ router.post('/test', async (req, res) => {
     try {
         const streamBotService = req.app.get('streamBotService');
         const { message } = req.body;
-        
+
         if (!message) {
             // Send the next message in the queue
             await streamBotService.sendNextMessage();
@@ -183,11 +183,118 @@ router.post('/test', async (req, res) => {
             // Send a custom test message
             streamBotService.emit('sendMessage', message);
         }
-        
+
         res.json({ success: true });
     } catch (error) {
         console.error('Error sending test StreamBot message:', error);
         res.status(500).json({ error: 'Failed to send test message' });
+    }
+});
+
+// ==========================================
+// AUTO-SUMMON BOT ROUTES
+// ==========================================
+
+// Get auto-summon settings
+router.get('/auto-summon/settings', async (req, res) => {
+    try {
+        const streamBotService = req.app.get('streamBotService');
+        const settings = await streamBotService.getAutoSummonSettings();
+        res.json(settings);
+    } catch (error) {
+        console.error('Error fetching auto-summon settings:', error);
+        res.status(500).json({ error: 'Failed to fetch auto-summon settings' });
+    }
+});
+
+// Update auto-summon settings
+router.put('/auto-summon/settings', async (req, res) => {
+    try {
+        const streamBotService = req.app.get('streamBotService');
+        const { enabled, interval_minutes, bot_duration_seconds } = req.body;
+
+        const updates = {};
+        if (enabled !== undefined) {
+            updates.enabled = enabled;
+        }
+        if (interval_minutes !== undefined) {
+            updates.interval_minutes = interval_minutes;
+        }
+        if (bot_duration_seconds !== undefined) {
+            updates.bot_duration_seconds = bot_duration_seconds;
+        }
+
+        await streamBotService.updateAutoSummonSettings(updates);
+
+        // Restart auto-summon if enabled was changed
+        if (enabled !== undefined) {
+            if (enabled) {
+                await streamBotService.startAutoSummon();
+            } else {
+                await streamBotService.stopAutoSummon();
+            }
+        } else if (interval_minutes !== undefined) {
+            // Restart with new interval if auto-summon is enabled
+            const settings = await streamBotService.getAutoSummonSettings();
+            if (settings.enabled) {
+                await streamBotService.startAutoSummon();
+            }
+        }
+
+        const newSettings = await streamBotService.getAutoSummonSettings();
+        res.json(newSettings);
+    } catch (error) {
+        console.error('Error updating auto-summon settings:', error);
+        res.status(500).json({ error: 'Failed to update auto-summon settings' });
+    }
+});
+
+// Toggle auto-summon enabled status
+router.post('/auto-summon/toggle', async (req, res) => {
+    try {
+        const streamBotService = req.app.get('streamBotService');
+        const enabled = await streamBotService.toggleAutoSummon();
+        res.json({ enabled });
+    } catch (error) {
+        console.error('Error toggling auto-summon:', error);
+        res.status(500).json({ error: 'Failed to toggle auto-summon' });
+    }
+});
+
+// Trigger immediate auto-summon (manual)
+router.post('/auto-summon/trigger', async (req, res) => {
+    try {
+        const streamBotService = req.app.get('streamBotService');
+        await streamBotService.triggerManualAutoSummon();
+        res.json({ success: true, message: 'Auto-summon triggered successfully' });
+    } catch (error) {
+        console.error('Error triggering auto-summon:', error);
+        res.status(500).json({ error: 'Failed to trigger auto-summon' });
+    }
+});
+
+// Get auto-summoned bot history
+router.get('/auto-summon/history', async (req, res) => {
+    try {
+        const streamBotService = req.app.get('streamBotService');
+        const limit = parseInt(req.query.limit) || 20;
+        const history = await streamBotService.getAutoSummonedBotHistory(limit);
+        res.json(history);
+    } catch (error) {
+        console.error('Error fetching auto-summon history:', error);
+        res.status(500).json({ error: 'Failed to fetch auto-summon history' });
+    }
+});
+
+// Test Groq character generation (preview without creating bot)
+router.post('/auto-summon/preview-character', async (req, res) => {
+    try {
+        const streamBotService = req.app.get('streamBotService');
+        const character = await streamBotService.generateWhimsicalCharacter();
+        res.json(character);
+    } catch (error) {
+        console.error('Error generating preview character:', error);
+        res.status(500).json({ error: 'Failed to generate character preview' });
     }
 });
 

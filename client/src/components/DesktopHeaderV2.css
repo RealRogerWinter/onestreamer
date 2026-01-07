@@ -405,6 +405,42 @@
   color: #a78bfa;
 }
 
+/* Platform Icon for Random Rotation */
+.platform-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+/* Streamer Link for Random Rotation */
+.streamer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.streamer-link:hover {
+  color: #c4b5fd;
+  text-decoration: underline;
+}
+
+.streamer-link .external-link-icon {
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+  flex-shrink: 0;
+}
+
+.streamer-link:hover .external-link-icon {
+  opacity: 1;
+}
+
 /* Duration Card */
 .duration-card .stat-icon-wrapper svg {
   stroke: #34d399;
