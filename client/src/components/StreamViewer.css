@@ -345,12 +345,12 @@
 /* Mobile Portrait Mode - Optimized video placement */
 @media (max-width: 768px) and (orientation: portrait) {
   .stream-viewer {
-    /* Height-based width calculation for 16:9 - no pillarbox bars */
+    /* Container sized to 16:9 based on height - crops pillarbox bars */
     --video-height: calc(100dvh - 176px);
     height: var(--video-height) !important;
     min-height: var(--video-height) !important;
     max-height: var(--video-height) !important;
-    /* Width = height * 16/9, but capped at 100% */
+    /* Width matches 16:9 ratio, capped at screen width */
     width: min(100%, calc(var(--video-height) * 16 / 9)) !important;
     max-width: 100% !important;
     /* Center horizontally */
@@ -359,7 +359,7 @@
     border-radius: 0 !important;
     box-shadow: none !important;
     background: transparent !important;
-    overflow: hidden !important;
+    overflow: hidden !important; /* Crops any black bars */
   }
 
   .streaming-view,
@@ -378,7 +378,7 @@
   .hls-video {
     width: 100% !important;
     height: 100% !important;
-    object-fit: fill !important; /* Fill exactly - container is already correct ratio */
+    object-fit: contain !important; /* Preserve aspect ratio */
     margin: 0 !important;
     padding: 0 !important;
   }
