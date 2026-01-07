@@ -86,102 +86,117 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const startYRef = useRef<number>(0);
-  const currentYRef = useRef<number>(0);
-  const startHeightRef = useRef<number>(40);
+  const startHeightRef = useRef<number>(0);
+  const rafIdRef = useRef<number | null>(null);
+
+  // Get max height in pixels (viewport height minus header)
+  const getMaxHeight = () => window.innerHeight - 56;
+  const getCollapsedHeight = () => Math.min(window.innerHeight * 0.4, 300); // 40vh or 300px max
 
   const handleTouchStart = (e: React.TouchEvent) => {
     const target = e.target as HTMLElement;
-    const isHeader = target.closest('.inventory-header') || target.closest('.backpack-mobile-header');
+    // Allow dragging from header, swipe handle, or title row
+    const isDragTarget = target.closest('.backpack-mobile-header') ||
+                         target.closest('.inventory-header') ||
+                         target.closest('.swipe-handle');
 
-    if (isHeader && isOpen) {
+    if (isDragTarget && isOpen && panelRef.current) {
       setIsDragging(true);
       startYRef.current = e.touches[0].clientY;
-      currentYRef.current = e.touches[0].clientY;
-      // Calculate max height that stays below header (56px)
-      const viewportHeight = window.innerHeight;
-      const headerHeight = 56;
-      const maxHeightVh = ((viewportHeight - headerHeight) / viewportHeight) * 100;
-      startHeightRef.current = isExpanded ? Math.min(maxHeightVh, 85) : 40;
-      
-      if (panelRef.current) {
-        panelRef.current.style.transition = 'none';
-      }
+      startHeightRef.current = panelRef.current.offsetHeight;
+      panelRef.current.style.transition = 'none';
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
+    if (!isDragging || !panelRef.current) return;
 
-    e.preventDefault(); // Prevent scroll interference
-    currentYRef.current = e.touches[0].clientY;
-    const distance = currentYRef.current - startYRef.current;
+    // Cancel any pending RAF to avoid frame buildup
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+    }
 
-    // Use requestAnimationFrame for smoother updates
-    requestAnimationFrame(() => {
-      const viewportHeight = window.innerHeight;
-      const headerHeight = 56; // Layout header height
-      const maxHeightVh = ((viewportHeight - headerHeight) / viewportHeight) * 100; // Max height that won't cover header
-      const distanceInVh = (distance / viewportHeight) * 100;
-      const newHeight = Math.max(20, Math.min(maxHeightVh, startHeightRef.current - distanceInVh));
-      
-      if (panelRef.current) {
-        panelRef.current.style.height = `${newHeight}vh`;
-        
-        if (startHeightRef.current === 40 && distance > 100) {
-          panelRef.current.style.transform = `translateY(${distance - 100}px)`;
-        } else {
-          panelRef.current.style.transform = '';
-        }
+    const currentY = e.touches[0].clientY;
+    const deltaY = startYRef.current - currentY; // Positive = dragging up (expanding)
+
+    rafIdRef.current = requestAnimationFrame(() => {
+      if (!panelRef.current) return;
+
+      const newHeight = startHeightRef.current + deltaY;
+      const maxHeight = getMaxHeight();
+      const minHeight = 100; // Minimum height before closing
+
+      // Clamp height between min and max
+      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+      panelRef.current.style.height = `${clampedHeight}px`;
+
+      // If dragging down past minimum, start translating for close gesture
+      if (newHeight < minHeight) {
+        const translateY = minHeight - newHeight;
+        panelRef.current.style.transform = `translateY(${translateY}px)`;
+      } else {
+        panelRef.current.style.transform = '';
       }
     });
   };
 
   const handleTouchEnd = () => {
-    if (!isDragging) return;
+    if (!isDragging || !panelRef.current) return;
+
+    // Cancel any pending RAF
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
 
     setIsDragging(false);
-    const distance = currentYRef.current - startYRef.current;
-    const viewportHeight = window.innerHeight;
-    const headerHeight = 56; // Layout header height
-    const maxHeightVh = ((viewportHeight - headerHeight) / viewportHeight) * 100; // Max height that won't cover header
-    const distanceInVh = (distance / viewportHeight) * 100;
-    const currentHeight = startHeightRef.current - distanceInVh;
 
-    if (panelRef.current) {
-      panelRef.current.style.transition = 'all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+    const currentHeight = panelRef.current.offsetHeight;
+    const maxHeight = getMaxHeight();
+    const collapsedHeight = getCollapsedHeight();
+    const midPoint = (maxHeight + collapsedHeight) / 2;
 
-      if (startHeightRef.current === 40 && distance > 100) {
-        panelRef.current.style.transform = 'translateY(100%)';
-        panelRef.current.style.height = '40vh';
-        setTimeout(() => {
-          if (onToggle) onToggle();
-          if (panelRef.current) {
-            panelRef.current.style.transform = '';
-            setIsExpanded(false);
-          }
-        }, 300);
-      } else if (currentHeight > 60) {
-        // Cap at max height that doesn't cover header
-        panelRef.current.style.height = `${maxHeightVh}vh`;
-        panelRef.current.style.transform = '';
-        setIsExpanded(true);
-      } else if (currentHeight < 30 && startHeightRef.current >= maxHeightVh - 5) {
-        panelRef.current.style.height = '40vh';
-        panelRef.current.style.transform = '';
-        setIsExpanded(false);
-      } else {
-        panelRef.current.style.height = isExpanded ? `${maxHeightVh}vh` : '40vh';
-        panelRef.current.style.transform = '';
-      }
+    // Re-enable transitions for snap animation
+    panelRef.current.style.transition = 'height 0.3s ease-out, transform 0.3s ease-out';
+
+    // Check if should close (dragged down significantly from collapsed state)
+    const draggedDownToClose = currentHeight < 100 ||
+      (startHeightRef.current <= collapsedHeight + 50 && currentHeight < collapsedHeight * 0.6);
+
+    if (draggedDownToClose) {
+      // Close the panel
+      panelRef.current.style.transform = 'translateY(100%)';
+      panelRef.current.style.height = `${collapsedHeight}px`;
+      setTimeout(() => {
+        if (onToggle) onToggle();
+        if (panelRef.current) {
+          panelRef.current.style.transform = '';
+          setIsExpanded(false);
+        }
+      }, 300);
+    } else if (currentHeight > midPoint) {
+      // Snap to expanded
+      panelRef.current.style.height = `${maxHeight}px`;
+      panelRef.current.style.transform = '';
+      setIsExpanded(true);
+    } else {
+      // Snap to collapsed
+      panelRef.current.style.height = `${collapsedHeight}px`;
+      panelRef.current.style.transform = '';
+      setIsExpanded(false);
     }
   };
 
   useEffect(() => {
     if (isOpen && panelRef.current && isMobile) {
-      // Only apply initial height and transform on mobile
-      panelRef.current.style.transform = 'translateY(0)';
-      panelRef.current.style.height = '40vh';
-      setIsExpanded(false);
+      // Only apply initial height and transform on mobile portrait
+      const isPortrait = window.innerHeight > window.innerWidth;
+      if (isPortrait) {
+        panelRef.current.style.transform = 'translateY(0)';
+        panelRef.current.style.height = `${getCollapsedHeight()}px`;
+        panelRef.current.style.transition = 'none';
+        setIsExpanded(false);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]); // isMobile won't change during component lifecycle
