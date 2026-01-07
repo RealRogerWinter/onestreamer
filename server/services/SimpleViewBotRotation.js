@@ -21,6 +21,7 @@ class SimpleViewBotRotation {
     this.livekitViewBotService = null;
     this.livekitViewBotId = null;
     this.streamService = null; // Reference to StreamService for real streamer protection
+    this.urlViewBotService = null; // Reference to ViewBotURLService for URL stream protection
 
     // Bot pool - these should be loaded from config/database
     this.availableBots = [];
@@ -56,9 +57,40 @@ class SimpleViewBotRotation {
   }
 
   /**
-   * Check if a real streamer (non-viewbot) is currently active
+   * Set ViewBotURLService reference for URL stream protection
+   * URL streams are treated like real streamers - viewbots cannot interrupt them
+   */
+  setURLViewBotService(urlViewBotService) {
+    this.urlViewBotService = urlViewBotService;
+    console.log('✅ ViewBotURLService registered with SimpleViewBotRotation for URL stream protection');
+  }
+
+  /**
+   * Check if a URL stream is currently active
+   * URL streams are protected like real streamers
+   */
+  isURLStreamActive() {
+    if (!this.urlViewBotService) {
+      return false;
+    }
+
+    const isActive = this.urlViewBotService.isURLStreamActive();
+    if (isActive) {
+      const activeStream = this.urlViewBotService.getActiveURLStream();
+      console.log(`🛡️ PROTECTION: URL stream ${activeStream?.urlId} is active - viewbots blocked`);
+    }
+    return isActive;
+  }
+
+  /**
+   * Check if a real streamer (non-viewbot) OR URL stream is currently active
    */
   isRealStreamerActive() {
+    // First check for URL streams - they are treated like real streamers
+    if (this.isURLStreamActive()) {
+      return true;
+    }
+
     if (!this.streamService) {
       console.warn('⚠️ SimpleViewBotRotation: No StreamService - cannot check for real streamer');
       return false;
@@ -72,7 +104,8 @@ class SimpleViewBotRotation {
     // Check if current streamer is NOT a viewbot
     const isViewbot = currentStreamer.startsWith('viewbot-') ||
                       currentStreamer.includes('viewbot') ||
-                      currentStreamer.startsWith('bot-');
+                      currentStreamer.startsWith('bot-') ||
+                      currentStreamer.startsWith('url-stream-'); // URL streams use this prefix
 
     const isRealStreamer = !isViewbot;
 

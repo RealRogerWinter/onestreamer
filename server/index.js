@@ -27,6 +27,8 @@ const ViewBotClientService = require('./services/ViewBotClientService');
 const ViewBotWebRTCService = require('./services/ViewBotWebRTCService');
 const ViewBotLiveKitService = require('./services/ViewBotLiveKitService');
 const SimpleViewBotRotation = require('./services/SimpleViewBotRotation');
+const ViewBotURLService = require('./services/ViewBotURLService');
+const URLStreamHealthService = require('./services/URLStreamHealthService');
 const SimpleMediaStreamService = require('./services/SimpleMediaStreamService');
 const MediasoupService = require('./services/MediasoupService');
 const AudioOptimizationService = require('./services/AudioOptimizationService');
@@ -8689,6 +8691,28 @@ async function startServer() {
     if (!livekitService) {
       viewBotWebRTCService = new ViewBotWebRTCService(mediasoupService);
       console.log('✅ VIEWBOT: ViewBotWebRTCService initialized for mobile 5G/TURN support');
+
+      // Initialize URL Stream ViewBot Service for MediaSoup backend
+      const viewBotURLService = new ViewBotURLService();
+      viewBotURLService.setStreamService(streamService);
+      // No LiveKit service for MediaSoup backend
+      const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
+      urlStreamHealthService.start();
+      console.log('✅ URL STREAM: ViewBotURLService initialized (MediaSoup backend)');
+
+      // Register URL ViewBot service with rotation for protection
+      SimpleViewBotRotation.setURLViewBotService(viewBotURLService);
+      SimpleViewBotRotation.setStreamService(streamService);
+      console.log('✅ URL STREAM: Registered with SimpleViewBotRotation for URL stream protection');
+
+      // Store globally for API routes
+      global.viewBotURLService = viewBotURLService;
+      global.urlStreamHealthService = urlStreamHealthService;
+
+      // Initialize URL Stream API routes
+      const urlStreamRoutes = require('./routes/url-stream');
+      app.use('/api/url-stream', urlStreamRoutes(viewBotURLService, urlStreamHealthService));
+      console.log('✅ URL STREAM: API routes initialized at /api/url-stream (MediaSoup backend)');
     } else {
       console.log('ℹ️ VIEWBOT: Skipping ViewBotWebRTCService (using LiveKit backend)');
 
@@ -8706,6 +8730,27 @@ async function startServer() {
       // CRITICAL: Register StreamService for real streamer protection
       SimpleViewBotRotation.setStreamService(streamService);
       console.log('✅ VIEWBOT: Registered StreamService with SimpleViewBotRotation for real streamer protection');
+
+      // Initialize URL Stream ViewBot Service
+      const viewBotURLService = new ViewBotURLService();
+      viewBotURLService.setStreamService(streamService);
+      viewBotURLService.setLiveKitService(viewBotLiveKitService);
+      const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
+      urlStreamHealthService.start();
+      console.log('✅ URL STREAM: ViewBotURLService initialized');
+
+      // Register URL ViewBot service with rotation for protection
+      SimpleViewBotRotation.setURLViewBotService(viewBotURLService);
+      console.log('✅ URL STREAM: Registered with SimpleViewBotRotation for URL stream protection');
+
+      // Store globally for API routes
+      global.viewBotURLService = viewBotURLService;
+      global.urlStreamHealthService = urlStreamHealthService;
+
+      // Initialize URL Stream API routes
+      const urlStreamRoutes = require('./routes/url-stream');
+      app.use('/api/url-stream', urlStreamRoutes(viewBotURLService, urlStreamHealthService));
+      console.log('✅ URL STREAM: API routes initialized at /api/url-stream');
 
       // Store for later registration with ViewBotRotationService
       global.viewBotLiveKitService = viewBotLiveKitService;
