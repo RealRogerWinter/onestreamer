@@ -159,28 +159,27 @@
 /* Mobile Portrait Mode - Optimized layout with no wasted space */
 @media (max-width: 768px) and (orientation: portrait) {
   .webrtc-viewer {
-    /* Fixed 60% of viewport height */
-    height: 60vh !important;
-    min-height: 60vh !important;
-    max-height: 60vh !important;
-    /* Remove any margins/padding that could create black space */
-    margin: 0 !important;
-    padding: 0 !important;
-    /* Ensure it fills width completely */
+    /* Width-based height preserves aspect ratio with no black bars */
     width: 100% !important;
     max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    aspect-ratio: 16 / 9 !important; /* Match typical stream aspect ratio */
+    /* Remove any margins/padding */
+    margin: 0 !important;
+    padding: 0 !important;
     border-radius: 0 !important;
     background: #000;
   }
 
   .webrtc-video {
-    /* Fill container completely - cover eliminates black bars */
+    /* Fill container while preserving aspect ratio */
     width: 100% !important;
     height: 100% !important;
-    min-height: 60vh !important;
-    max-height: 60vh !important;
-    object-fit: cover !important; /* Fill entire container, crop edges if needed */
-    object-position: center center !important;
+    min-height: auto !important;
+    max-height: none !important;
+    object-fit: contain !important; /* Preserve aspect ratio */
     /* Remove any spacing */
     margin: 0 !important;
     padding: 0 !important;

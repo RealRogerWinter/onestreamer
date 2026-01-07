@@ -653,12 +653,12 @@ html, body {
     flex-direction: column !important;
   }
 
-  /* Video container - fixed 60vh height, directly below header */
+  /* Video container - width-based, aspect ratio determines height */
   .stream-viewer-container {
     width: 100% !important;
-    height: 60vh !important;
-    min-height: 60vh !important;
-    max-height: 60vh !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
     flex-shrink: 0 !important;
