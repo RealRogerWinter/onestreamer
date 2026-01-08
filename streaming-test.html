@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OneStreamer Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        .status { font-weight: bold; }
+        .success { color: green; }
+        .error { color: red; }
+        video { max-width: 400px; border: 1px solid #ccc; margin: 10px 0; }
+        button { margin: 5px; padding: 8px 16px; }
+    </style>
+</head>
+<body>
+    <h1>OneStreamer Streaming Debug Test</h1>
+    
+    <div class="test-section">
+        <h2>Server Connection Test</h2>
+        <button onclick="testServerConnection()">Test Server</button>
+        <div id="server-status"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Admin Test Stream</h2>
+        <button onclick="startTestStream()">Start Test Stream</button>
+        <button onclick="stopTestStream()">Stop Test Stream</button>
+        <div id="test-stream-status"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Canvas Test Stream</h2>
+        <button onclick="createTestCanvas()">Create Test Canvas</button>
+        <video id="testVideo" autoplay muted></video>
+        <div id="canvas-status"></div>
+    </div>
+    
+    <script>
+        async function testServerConnection() {
+            const statusDiv = document.getElementById('server-status');
+            try {
+                const response = await fetch('http://localhost:8080/health');
+                const data = await response.json();
+                statusDiv.innerHTML = `<div class="status success">✅ Server is running: ${data.status}</div>`;
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Server connection failed: ${error.message}</div>`;
+            }
+        }
+        
+        async function startTestStream() {
+            const statusDiv = document.getElementById('test-stream-status');
+            try {
+                const response = await fetch('http://localhost:8080/admin/test-stream/start', {
+                    method: 'POST',
+                    headers: {
+                        'x-admin-key': 'onestreamer-admin-2024'
+                    }
+                });
+                const data = await response.json();
+                statusDiv.innerHTML = `<div class="status success">✅ ${data.message} (Stream ID: ${data.streamId})</div>`;
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Test stream start failed: ${error.message}</div>`;
+            }
+        }
+        
+        async function stopTestStream() {
+            const statusDiv = document.getElementById('test-stream-status');
+            try {
+                const response = await fetch('http://localhost:8080/admin/test-stream/stop', {
+                    method: 'POST',
+                    headers: {
+                        'x-admin-key': 'onestreamer-admin-2024'
+                    }
+                });
+                const data = await response.json();
+                statusDiv.innerHTML = `<div class="status success">✅ ${data.message}</div>`;
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Test stream stop failed: ${error.message}</div>`;
+            }
+        }
+        
+        function createTestCanvas() {
+            const statusDiv = document.getElementById('canvas-status');
+            const video = document.getElementById('testVideo');
+            
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1280;
+                canvas.height = 720;
+                const ctx = canvas.getContext('2d');
+                
+                if (!ctx) {
+                    statusDiv.innerHTML = `<div class="status error">❌ Failed to get canvas context</div>`;
+                    return;
+                }
+                
+                // Create color bars pattern (same as in the app)
+                const colors = ['#ffffff', '#ffff00', '#00ffff', '#00ff00', '#ff00ff', '#ff0000', '#0000ff', '#000000'];
+                const barWidth = canvas.width / colors.length;
+                
+                const drawFrame = () => {
+                    // Clear canvas
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw color bars
+                    colors.forEach((color, index) => {
+                        ctx.fillStyle = color;
+                        ctx.fillRect(index * barWidth, 0, barWidth, canvas.height * 0.7);
+                    });
+                    
+                    // Add moving text
+                    const time = Date.now() / 1000;
+                    const x = (time * 100) % (canvas.width + 300) - 300;
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 48px Arial';
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 3;
+                    ctx.strokeText('DEBUG TEST STREAM', x, canvas.height * 0.85);
+                    ctx.fillText('DEBUG TEST STREAM', x, canvas.height * 0.85);
+                    
+                    // Add timestamp
+                    ctx.font = 'bold 24px Arial';
+                    const timeStr = new Date().toLocaleTimeString();
+                    ctx.strokeText(timeStr, 20, canvas.height * 0.95);
+                    ctx.fillText(timeStr, 20, canvas.height * 0.95);
+                    
+                    requestAnimationFrame(drawFrame);
+                };
+                
+                drawFrame();
+                
+                // Convert canvas to video stream
+                const stream = canvas.captureStream(30);
+                video.srcObject = stream;
+                
+                statusDiv.innerHTML = `<div class="status success">✅ Test canvas created and streaming</div>`;
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Canvas creation failed: ${error.message}</div>`;
+            }
+        }
+        
+        // Auto-test server connection on load
+        window.onload = () => {
+            testServerConnection();
+        };
+    </script>
+</body>
+</html>

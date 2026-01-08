@@ -1,0 +1,1013 @@
+/* Theatre Controls CSS - Complete implementation */
+
+.theatre-controls-wrapper {
+  position: fixed; /* Changed from absolute to fixed */
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none !important; /* Force none with !important */
+  z-index: 100;
+  /* Don't create any stacking context */
+  isolation: isolate;
+  /* Ensure this element doesn't capture any mouse events */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* IMPORTANT: Allow canvas interactions to work in theatre mode */
+/* Apply pointer-events: none only to specific containers, not all children */
+.theatre-controls-wrapper > div:not(.theatre-settings-dropdown-bottom) {
+  pointer-events: none;
+}
+
+/* Only these specific elements should be clickable */
+.theatre-controls-wrapper .theatre-control-btn,
+.theatre-controls-wrapper .theatre-settings-dropdown,
+.theatre-controls-wrapper .theatre-settings-dropdown-bottom,
+.theatre-controls-wrapper .theatre-settings-dropdown-bottom *,
+.theatre-controls-wrapper .exit-theatre-btn,
+.theatre-controls-wrapper .theatre-playback-btn,
+.theatre-controls-wrapper .theatre-volume-btn,
+.theatre-controls-wrapper .theatre-volume-slider,
+.theatre-controls-wrapper .theatre-fullscreen-btn,
+.theatre-controls-wrapper .theatre-clip-btn,
+.theatre-controls-wrapper .theatre-status-effects .buff-item,
+.theatre-controls-wrapper .theatre-status-effects .status-effects-toggle,
+.theatre-controls-wrapper .theatre-settings-close,
+.theatre-controls-wrapper .tooltip-close-btn,
+.theatre-controls-wrapper .permission-status-indicator {
+  pointer-events: auto !important;
+}
+
+/* Status Effects Overlay - Left Side */
+.theatre-status-effects {
+  position: absolute;
+  top: 80px;
+  left: 20px;
+  width: 250px;
+  max-height: calc(100vh - 200px);
+  opacity: 0;
+  transform: translateX(-20px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 95;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.theatre-status-effects.visible {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: none; /* Don't block canvas clicks */
+}
+
+/* Collapsed state - only show toggle button */
+.theatre-status-effects.collapsed {
+  width: auto;
+}
+
+.theatre-status-effects.collapsed.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Status Effects Toggle Button */
+.status-effects-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.9) 0%, rgba(20, 20, 30, 0.85) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  pointer-events: auto !important;
+  margin-bottom: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.status-effects-toggle:hover {
+  background: linear-gradient(135deg, rgba(40, 40, 60, 0.95) 0%, rgba(30, 30, 50, 0.9) 100%);
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: translateX(3px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.status-effects-toggle .toggle-icon {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.status-effects-toggle:hover .toggle-icon {
+  transform: translateX(-2px);
+}
+
+.theatre-status-effects.collapsed .status-effects-toggle:hover .toggle-icon {
+  transform: translateX(2px);
+}
+
+.status-effects-toggle .toggle-label {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Only the buff items themselves should be clickable */
+.theatre-status-effects .buff-item {
+  pointer-events: auto !important;
+}
+
+/* Style the BuffDisplay inside theatre mode */
+.theatre-status-effects .theatre-buffs-overlay {
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.95) 0%, rgba(10, 10, 20, 0.9) 100%);
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 
+    0 10px 40px rgba(0, 0, 0, 0.7),
+    0 2px 10px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.theatre-status-effects .buff-display {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+.theatre-status-effects .buff-item {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.04) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: all 0.2s ease;
+  margin-bottom: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.theatre-status-effects .buff-item:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.08) 100%);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateX(5px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.theatre-status-effects .buff-header {
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* Custom scrollbar for status effects */
+.theatre-status-effects::-webkit-scrollbar {
+  width: 6px;
+}
+
+.theatre-status-effects::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.theatre-status-effects::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.theatre-status-effects::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Ensure buffs update in real-time */
+.theatre-status-effects .buff-timer {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  margin-top: 4px;
+  font-weight: 500;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.theatre-status-effects .buff-name {
+  color: rgba(255, 255, 255, 0.95) !important;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.theatre-status-effects .buff-progress {
+  height: 3px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 6px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.theatre-status-effects .buff-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  transition: width 0.3s linear;
+  box-shadow: 0 0 8px rgba(102, 126, 234, 0.6);
+}
+
+/* No active effects message styling */
+.theatre-status-effects .no-buffs {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* Enhanced buff type colors for theatre mode */
+.theatre-status-effects .buff-positive {
+  background: linear-gradient(135deg, rgba(40, 167, 69, 0.25) 0%, rgba(40, 167, 69, 0.15) 100%);
+  border-color: rgba(40, 167, 69, 0.5);
+}
+
+.theatre-status-effects .buff-positive:hover {
+  background: linear-gradient(135deg, rgba(40, 167, 69, 0.35) 0%, rgba(40, 167, 69, 0.25) 100%);
+  border-color: rgba(40, 167, 69, 0.7);
+}
+
+.theatre-status-effects .buff-negative {
+  background: linear-gradient(135deg, rgba(220, 53, 69, 0.25) 0%, rgba(220, 53, 69, 0.15) 100%);
+  border-color: rgba(220, 53, 69, 0.5);
+}
+
+.theatre-status-effects .buff-negative:hover {
+  background: linear-gradient(135deg, rgba(220, 53, 69, 0.35) 0%, rgba(220, 53, 69, 0.25) 100%);
+  border-color: rgba(220, 53, 69, 0.7);
+}
+
+.theatre-status-effects .buff-positive .buff-progress-bar {
+  background: linear-gradient(90deg, #28a745, #20c997);
+  box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
+}
+
+.theatre-status-effects .buff-negative .buff-progress-bar {
+  background: linear-gradient(90deg, #dc3545, #fd7e14);
+  box-shadow: 0 0 8px rgba(220, 53, 69, 0.6);
+}
+
+/* Remove old pointer events rule - we're handling it more specifically now */
+
+/* Top Bar */
+.theatre-top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 40px;
+  opacity: 0; /* Hidden by default */
+  transition: opacity 0.3s ease;
+  pointer-events: none !important; /* Never block clicks */
+}
+
+/* Show top bar when controls are active */
+.theatre-controls-wrapper.active .theatre-top-bar {
+  opacity: 1;
+  pointer-events: none !important; /* Still don't block clicks, buttons handle their own */
+}
+
+.theatre-controls-left {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  position: relative;
+  opacity: 1 !important; /* Ensure left controls are visible */
+  visibility: visible !important;
+}
+
+.theatre-controls-right {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Bottom Bar */
+.theatre-bottom-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+  padding: 30px 40px;
+  opacity: 0; /* Hidden by default */
+  transition: opacity 0.3s ease;
+  pointer-events: none !important; /* Never block clicks */
+  display: flex;
+  justify-content: space-between; /* Space between left, center, right */
+  align-items: center;
+  z-index: 101; /* Ensure it's above video but below interactive canvas */
+}
+
+.theatre-controls-wrapper.active .theatre-bottom-bar {
+  opacity: 1;
+  pointer-events: none !important; /* Still don't block clicks, buttons handle their own */
+}
+
+/* Playback Section - Left side */
+.theatre-playback-section {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.theatre-playback-btn {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theatre-playback-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Volume Controls */
+.theatre-volume-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  padding: 8px 16px;
+  border-radius: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theatre-volume-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+.theatre-volume-btn:hover {
+  transform: scale(1.1);
+}
+
+.theatre-volume-slider {
+  width: 100px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  outline: none;
+}
+
+.theatre-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.theatre-volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.theatre-volume-label {
+  color: white;
+  font-size: 12px;
+  min-width: 35px;
+  text-align: right;
+}
+
+/* Stream Controls Section - Center */
+.theatre-stream-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Control Buttons */
+.theatre-control-btn {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theatre-control-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.05);
+}
+
+.theatre-control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary Button (Start Stream) */
+.theatre-control-btn.primary {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  font-weight: 600;
+  padding: 14px 32px;
+  font-size: 16px;
+}
+
+.theatre-control-btn.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c8ff0, #8459b3);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+}
+
+/* Takeover Button - Special glowing animation */
+@keyframes glowPulse {
+  0% {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.6),
+                0 0 40px rgba(255, 215, 0, 0.4),
+                0 0 60px rgba(255, 215, 0, 0.2);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.8),
+                0 0 50px rgba(255, 215, 0, 0.6),
+                0 0 70px rgba(255, 215, 0, 0.4);
+    transform: scale(1.05);
+  }
+  100% {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.6),
+                0 0 40px rgba(255, 215, 0, 0.4),
+                0 0 60px rgba(255, 215, 0, 0.2);
+    transform: scale(1);
+  }
+}
+
+.theatre-control-btn.takeover {
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  border: 2px solid rgba(255, 215, 0, 0.5);
+  font-weight: 700;
+  padding: 16px 40px;
+  font-size: 18px;
+  min-width: 220px; /* Ensure prominent centered appearance */
+  animation: glowPulse 2s infinite;
+  position: relative;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.theatre-control-btn.takeover:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ffed4e, #ff9500);
+  animation: glowPulse 0.5s infinite;
+  transform: scale(1.1) !important;
+}
+
+.takeover-icon {
+  margin-right: 8px;
+  font-size: 20px;
+  display: inline-block;
+  animation: bounce 1s infinite;
+}
+
+.stop-icon {
+  margin-right: 8px;
+  font-size: 20px;
+  display: inline-block;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* Button wrapper for tooltip */
+.theatre-control-btn-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+/* Takeover Tooltip */
+.theatre-takeover-tooltip {
+  position: absolute;
+  bottom: calc(100% + 15px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.95), rgba(255, 140, 0, 0.95));
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  padding: 12px 20px;
+  min-width: 280px;
+  z-index: 1000;
+  pointer-events: auto; /* Changed to auto to allow close button clicks */
+  animation: tooltipFadeIn 0.5s ease;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Close button for tooltip */
+.tooltip-close-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  padding: 0;
+  line-height: 1;
+  pointer-events: auto !important;
+}
+
+.tooltip-close-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: scale(1.1);
+}
+
+.tooltip-close-btn:active {
+  transform: scale(0.95);
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.tooltip-arrow {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid rgba(255, 140, 0, 0.95);
+}
+
+.tooltip-content {
+  color: #fff;
+  text-align: center;
+  padding-top: 8px; /* Add padding to avoid overlap with close button */
+}
+
+.tooltip-content strong {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 8px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.tooltip-content p {
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.tooltip-hint {
+  font-style: italic;
+  opacity: 0.9;
+  font-size: 12px !important;
+  margin-top: 8px !important;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Danger Button (Stop Stream) */
+.theatre-control-btn.danger {
+  background: rgba(239, 68, 68, 0.9);
+  border: none;
+  font-weight: 600;
+  padding: 14px 32px;
+  font-size: 16px;
+}
+
+.theatre-control-btn.danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 1);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+}
+
+/* Exit Theatre Button */
+.exit-theatre-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.exit-theatre-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: scale(1.05);
+}
+
+/* Status Badges */
+.theatre-status-badge {
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.theatre-status-badge.streaming {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+
+.theatre-status-badge.viewing {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #22c55e;
+}
+
+/* Cooldown Badge */
+.theatre-cooldown-badge {
+  background: rgba(255, 152, 0, 0.2);
+  border: 1px solid rgba(255, 152, 0, 0.4);
+  color: #ff9800;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Settings Dropdown - Bottom position */
+.theatre-settings-dropdown-bottom {
+  position: fixed !important; /* Use fixed positioning to escape any parent contexts */
+  bottom: 100px; /* Above the bottom bar */
+  left: 50%;
+  transform: translateX(-50%);
+  width: 500px;
+  max-width: 90vw;
+  max-height: 60vh;
+  background: rgba(20, 20, 20, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  overflow-y: auto;
+  z-index: 99999 !important; /* Extremely high z-index */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  pointer-events: all !important; /* Use 'all' instead of 'auto' for maximum compatibility */
+  isolation: isolate; /* Create new stacking context */
+}
+
+/* Ensure all content inside settings dropdown is interactive */
+.theatre-settings-dropdown-bottom,
+.theatre-settings-dropdown-bottom * {
+  pointer-events: all !important;
+}
+
+/* Old left position - keeping for reference but unused now */
+.theatre-settings-dropdown-left {
+  display: none;
+}
+
+.theatre-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theatre-settings-header h3 {
+  color: white;
+  font-size: 18px;
+  margin: 0;
+}
+
+.theatre-settings-close {
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: all 0.2s;
+}
+
+.theatre-settings-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+/* Override streamer settings styles in theatre mode */
+.theatre-settings-dropdown-left .streamer-settings {
+  position: static !important;
+  transform: none !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Ensure StreamerSettings component is fully interactive in theatre mode */
+.theatre-settings-dropdown-bottom .streamer-settings,
+.theatre-settings-dropdown-bottom .streamer-settings * {
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 10000 !important;
+}
+
+/* Specifically ensure all interactive elements work */
+.theatre-settings-dropdown-bottom input,
+.theatre-settings-dropdown-bottom button,
+.theatre-settings-dropdown-bottom select,
+.theatre-settings-dropdown-bottom label,
+.theatre-settings-dropdown-bottom .tab-button,
+.theatre-settings-dropdown-bottom .test-button,
+.theatre-settings-dropdown-bottom .preset-button,
+.theatre-settings-dropdown-bottom input[type="checkbox"],
+.theatre-settings-dropdown-bottom input[type="radio"],
+.theatre-settings-dropdown-bottom textarea,
+.theatre-settings-dropdown-bottom .setting-group,
+.theatre-settings-dropdown-bottom .setting-label {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  position: relative !important;
+  z-index: 10001 !important;
+}
+
+/* Ensure dropdowns and selects work */
+.theatre-settings-dropdown-bottom select option {
+  pointer-events: auto !important;
+  z-index: 10002 !important;
+}
+
+/* Fullscreen Button */
+.theatre-fullscreen-btn {
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theatre-fullscreen-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.theatre-fullscreen-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.05);
+}
+
+.theatre-fullscreen-btn:hover svg {
+  stroke-width: 2.5;
+}
+
+.theatre-fullscreen-btn:active {
+  transform: scale(0.95);
+}
+
+/* Clip Button */
+.theatre-clip-btn {
+  height: 48px;
+  padding: 0 16px;
+  border: none;
+  background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.theatre-clip-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.theatre-clip-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #a569bd 0%, #9b59b6 100%);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+  box-shadow: 0 4px 15px rgba(155, 89, 182, 0.4);
+}
+
+.theatre-clip-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.theatre-clip-btn:disabled {
+  background: rgba(100, 100, 100, 0.5);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.theatre-clip-btn span {
+  white-space: nowrap;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .theatre-top-bar,
+  .theatre-bottom-bar {
+    padding: 16px 20px;
+  }
+
+  .theatre-control-btn {
+    padding: 10px 20px;
+    font-size: 14px;
+  }
+
+  .theatre-control-btn.primary,
+  .theatre-control-btn.danger {
+    padding: 12px 24px;
+    font-size: 15px;
+  }
+
+  .theatre-settings-dropdown-left {
+    left: 20px;
+    right: 20px;
+    width: auto;
+  }
+
+  .theatre-playback-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
+  .theatre-volume-controls {
+    padding: 6px 12px;
+  }
+
+  .theatre-volume-slider {
+    width: 80px;
+  }
+}
+
+/* Permission Status Indicator */
+.permission-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-right: 12px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.permission-status-indicator span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.permission-ready {
+  color: #4caf50;
+}
+
+.permission-denied {
+  color: #f44336;
+}
+
+.permission-checking {
+  color: #2196f3;
+  animation: pulse 1.5s infinite;
+}
+
+.permission-required {
+  color: #ff9800;
+}
+
+/* Permission Required Button Style */
+.theatre-control-btn.permission-required {
+  background: linear-gradient(135deg, #ff9800 0%, #ff6b00 100%);
+  border: 2px solid rgba(255, 152, 0, 0.3);
+  animation: permission-pulse 2s infinite;
+}
+
+@keyframes permission-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 152, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 152, 0, 0.4);
+  }
+}
+
+.theatre-control-btn.permission-required:hover {
+  background: linear-gradient(135deg, #ffab00 0%, #ff7c00 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(255, 152, 0, 0.4);
+}
+
+.permission-icon {
+  font-size: 18px;
+  margin-right: 8px;
+}

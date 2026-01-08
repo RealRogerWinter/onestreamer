@@ -1,0 +1,323 @@
+/* Mobile Bottom Navigation */
+.mobile-bottom-nav {
+  position: fixed !important;
+  bottom: 8px !important; /* Add spacing for device UI elements like home indicators */
+  left: 8px !important;
+  right: 8px !important;
+  width: calc(100% - 16px) !important;
+  height: 60px;
+  background: rgba(26, 26, 26, 0.98);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px; /* Rounded corners for modern look */
+  display: flex !important;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 9999 !important;
+  padding: 0 10px;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.4);
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+/* Navigation Items */
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  min-height: 50px;
+  border-radius: 12px;
+  margin: 0 2px;
+}
+
+/* Disabled state */
+.nav-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.nav-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.nav-item:active {
+  transform: scale(0.95);
+}
+
+.nav-item.active {
+  color: #fff;
+  background: rgba(102, 126, 234, 0.2);
+}
+
+.nav-item.active .nav-icon {
+  transform: scale(1.1);
+}
+
+/* Navigation Icons */
+.nav-icon {
+  font-size: 24px;
+  margin-bottom: 2px;
+  transition: transform 0.3s ease;
+}
+
+.nav-icon-large {
+  font-size: 28px !important;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+/* Navigation Labels */
+.nav-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+/* Stream Button Special Styling */
+.nav-stream {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.nav-stream.streaming {
+  background: linear-gradient(135deg, #ff4757 0%, #ff6348 100%);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { 
+    box-shadow: 0 4px 12px rgba(255, 71, 87, 0.4);
+  }
+  50% { 
+    box-shadow: 0 4px 20px rgba(255, 71, 87, 0.6);
+  }
+}
+
+/* Inventory Button Special Styling */
+.nav-inventory {
+  position: relative;
+}
+
+.nav-inventory .nav-icon {
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* Badge for notifications */
+.nav-badge {
+  position: absolute;
+  top: 8px;
+  right: 20%;
+  background: #ff4757;
+  color: white;
+  border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  font-size: 0;
+  animation: badge-pulse 1s infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.2);
+    opacity: 0.8;
+  }
+}
+
+/* Points Display */
+.nav-points {
+  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  color: gold;
+  pointer-events: none;
+}
+
+.nav-points-value {
+  font-size: 14px;
+  font-weight: bold;
+  margin-top: 2px;
+}
+
+/* Adjust for smaller screens */
+@media (max-width: 360px) {
+  .mobile-bottom-nav {
+    height: 55px;
+    padding: 0 5px;
+  }
+  
+  .nav-item {
+    padding: 6px;
+    margin: 0 1px;
+  }
+  
+  .nav-icon {
+    font-size: 20px;
+  }
+  
+  .nav-icon-large {
+    font-size: 24px !important;
+  }
+  
+  .nav-label {
+    font-size: 9px;
+  }
+}
+
+/* Hide on desktop */
+@media (min-width: 769px) {
+  .mobile-bottom-nav {
+    display: none;
+  }
+}
+
+/* Mobile Login Prompt Overlay */
+.mobile-login-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mobile-login-prompt {
+  background: linear-gradient(135deg, rgba(26, 26, 26, 0.98), rgba(40, 40, 40, 0.98));
+  border: 2px solid rgba(102, 126, 234, 0.4);
+  border-radius: 20px;
+  padding: 30px 25px;
+  max-width: 340px;
+  width: 100%;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mobile-login-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 24px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.mobile-login-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.mobile-login-icon {
+  font-size: 48px;
+  margin-bottom: 15px;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
+.mobile-login-prompt h3 {
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+}
+
+.mobile-login-prompt p {
+  color: #aaa;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 25px 0;
+}
+
+.mobile-login-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.mobile-auth-btn {
+  padding: 12px 28px;
+  border-radius: 25px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  flex: 1;
+  text-align: center;
+}
+
+.mobile-login-btn {
+  background: transparent;
+  border: 2px solid rgba(102, 126, 234, 0.6);
+  color: #667eea;
+}
+
+.mobile-login-btn:hover {
+  background: rgba(102, 126, 234, 0.15);
+  border-color: #667eea;
+}
+
+.mobile-signup-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.mobile-signup-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+}

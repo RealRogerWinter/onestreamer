@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Raw Audio Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #1a1a1a; color: white; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+        #status { margin: 20px 0; padding: 10px; background: #333; border-radius: 5px; }
+        .meter { height: 20px; background: #222; margin: 10px 0; }
+        .meter-bar { height: 100%; background: lime; width: 0%; transition: width 0.1s; }
+    </style>
+</head>
+<body>
+    <h1>Raw Audio Streaming Test</h1>
+    <p>This page captures completely RAW, unprocessed audio.</p>
+    
+    <button onclick="startCapture()">Start Raw Audio</button>
+    <button onclick="stopCapture()">Stop</button>
+    <button onclick="playTestTone()">Play Test Tone</button>
+    
+    <div id="status">Ready</div>
+    <div class="meter"><div class="meter-bar" id="level"></div></div>
+    
+    <audio id="localAudio" autoplay muted></audio>
+    
+    <script>
+        let stream = null;
+        let audioContext = null;
+        let analyser = null;
+        let microphone = null;
+        let oscillator = null;
+        
+        async function startCapture() {
+            try {
+                // Request raw audio with NO processing
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        // Disable ALL processing
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false,
+                        sampleRate: 48000,
+                        channelCount: 2,
+                        
+                        // Chrome-specific
+                        googEchoCancellation: false,
+                        googAutoGainControl: false,
+                        googNoiseSuppression: false,
+                        googHighpassFilter: false,
+                        googTypingNoiseDetection: false,
+                        googNoiseReduction: false,
+                        googAudioMirroring: false,
+                        googBeamforming: false,
+                        
+                        // Experimental
+                        googExperimentalEchoCancellation: false,
+                        googExperimentalAutoGainControl: false,
+                        googExperimentalNoiseSuppression: false,
+                        
+                        // Other
+                        voiceActivityDetection: false,
+                        noiseCancellation: false
+                    }
+                });
+                
+                document.getElementById('localAudio').srcObject = stream;
+                document.getElementById('status').innerText = 'Capturing RAW audio - NO processing active';
+                
+                // Setup level meter
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                
+                function updateMeter() {
+                    if (!analyser) return;
+                    analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < bufferLength; i++) {
+                        sum += dataArray[i];
+                    }
+                    const average = sum / bufferLength;
+                    document.getElementById('level').style.width = (average / 2.55) + '%';
+                    requestAnimationFrame(updateMeter);
+                }
+                updateMeter();
+                
+                // Log the actual constraints applied
+                const audioTrack = stream.getAudioTracks()[0];
+                const settings = audioTrack.getSettings();
+                console.log('Applied audio settings:', settings);
+                
+            } catch (error) {
+                document.getElementById('status').innerText = 'Error: ' + error.message;
+                console.error('Failed to capture audio:', error);
+            }
+        }
+        
+        function stopCapture() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            document.getElementById('status').innerText = 'Stopped';
+            document.getElementById('level').style.width = '0%';
+        }
+        
+        function playTestTone() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            if (oscillator) {
+                oscillator.stop();
+                oscillator = null;
+                document.getElementById('status').innerText = 'Test tone stopped';
+                return;
+            }
+            
+            oscillator = audioContext.createOscillator();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // A4 note
+            oscillator.connect(audioContext.destination);
+            oscillator.start();
+            
+            document.getElementById('status').innerText = 'Playing 440Hz test tone';
+            
+            // Auto-stop after 3 seconds
+            setTimeout(() => {
+                if (oscillator) {
+                    oscillator.stop();
+                    oscillator = null;
+                    document.getElementById('status').innerText = 'Test tone stopped';
+                }
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

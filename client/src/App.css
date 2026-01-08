@@ -1,0 +1,1847 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background: #000000;
+  min-height: 100%;
+  height: 100%;
+}
+
+.App {
+  min-height: 100vh;
+  height: 100%;
+  background: #000000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+/* Help Button - Bottom Left */
+.help-button-bottom {
+  position: fixed;
+  bottom: 140px; /* Above Bug Report button */
+  left: 20px;
+  width: 48px;
+  height: 48px;
+  background: #1a1a1a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 24px;
+  font-weight: bold;
+  border: 2px solid #333;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  z-index: 1000;
+}
+.help-button-bottom:hover {
+  background: #2c2c2c;
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+  border-color: #4a9eff;
+  color: #4a9eff;
+}
+
+/* Bug Report Button */
+.bug-report-button {
+  position: fixed;
+  bottom: 80px; /* Above Discord button */
+  left: 20px;
+  width: 48px;
+  height: 48px;
+  background: #1a1a1a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ff6b6b;
+  border: 2px solid rgba(255, 107, 107, 0.3);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+.bug-report-button:hover {
+  background: #2c2c2c;
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+  border-color: #ff6b6b;
+  color: #ff8787;
+}
+
+.bug-report-button svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* Discord Link */
+.discord-link {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 48px;
+  height: 48px;
+  background: #1a1a1a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7289da;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  border: 2px solid rgba(114, 137, 218, 0.3);
+}
+
+.discord-link:hover {
+  background: #2c2c2c;
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+  border-color: #7289da;
+  color: #99aab5;
+}
+
+.discord-link svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* Hide on mobile - all orientations */
+@media (max-width: 768px) {
+  .help-button-bottom,
+  .bug-report-button,
+  .discord-link {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+}
+
+.App-header {
+  padding: 0.25rem 2rem;
+  color: white;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  position: relative;
+  z-index: 10;
+  min-height: 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+
+.header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+
+.auth-buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.auth-button {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+}
+
+.auth-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.user-points {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 0.375rem;
+  color: gold;
+  font-weight: bold;
+}
+
+.points-icon {
+  font-size: 1.2rem;
+}
+
+.current-streamer-display {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.streamer-label {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.streamer-name {
+  color: white;
+  font-weight: bold;
+}
+
+.stream-container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+/* Points counter styles */
+.points-counter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 8px 16px;
+  backdrop-filter: blur(5px);
+}
+
+.points-emoji {
+  font-size: 1.2rem;
+}
+
+.points-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffd700;
+  min-width: 60px;
+  display: inline-block;
+  text-align: center;
+}
+
+.animated-number.animating {
+  transform: scale(1.05);
+  transition: transform 0.3s ease;
+}
+
+.points-label {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.auth-header-button {
+  padding: 10px 24px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid white;
+  border-radius: 8px;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.auth-header-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.App-main {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 88px 2rem 2rem; /* Add top padding for fixed header */
+  display: flex;
+  gap: 2rem;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0; /* Allow content to shrink below its minimum content width */
+}
+
+/* Chat and Status Effects Container */
+.chat-and-status-container {
+  display: flex;
+  gap: 1rem;
+  height: calc(100vh - 200px); /* Adjust based on header height */
+  position: sticky;
+  top: 2rem;
+  z-index: 1;
+}
+
+.chat-sidebar {
+  width: 320px;
+  min-width: 280px;
+  max-width: 350px;
+  height: 100%;
+}
+
+.error-message {
+  background: rgba(255, 59, 48, 0.9);
+  color: white;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  text-align: center;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
+}
+
+/* Stream layout container styles */
+.stream-layout-container {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+.stream-viewer-container {
+  flex: 1;
+  position: relative;
+}
+
+/* Sidebar status effects - left */
+.status-effects-sidebar-left {
+  width: 200px;
+  flex-shrink: 0;
+}
+
+/* Sidebar status effects - right */
+.status-effects-sidebar-right {
+  width: 200px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Stream controls container */
+.stream-controls-container {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Admin Panel Toggle Button */
+.admin-panel-toggle {
+  position: fixed;
+  top: 100px;
+  right: 20px;
+  background: rgba(30, 30, 30, 0.95);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  z-index: 100;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.admin-panel-toggle:hover {
+  background: rgba(40, 40, 40, 0.95);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Takeover Overlay Styles */
+.takeover-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.takeover-content,
+.transition-content {
+  text-align: center;
+  color: white;
+  animation: slideUp 0.5s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.takeover-icon,
+.transition-icon {
+  font-size: 80px;
+  margin-bottom: 20px;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.takeover-title,
+.transition-title {
+  font-size: 48px;
+  font-weight: bold;
+  margin-bottom: 20px;
+  background: linear-gradient(45deg, #ff6b6b, #ff8787);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.takeover-message,
+.transition-message {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 30px;
+}
+
+.takeover-transition-info {
+  margin-top: 50px;
+}
+
+.transition-arrow {
+  font-size: 30px;
+  animation: bounce 1s ease-in-out infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(10px);
+  }
+}
+
+.takeover-countdown {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Transition overlay specific styles */
+.takeover-overlay.takeover-transition {
+  background: rgba(0, 0, 0, 0.9);
+}
+
+.takeover-overlay.takeover-transition .transition-title {
+  background: linear-gradient(45deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Disconnection Banner */
+.disconnection-banner {
+  background: linear-gradient(135deg, rgba(255, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+  color: white;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(255, 68, 68, 0.4);
+  animation: slideDown 0.5s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.disconnection-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.disconnection-icon {
+  font-size: 32px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.disconnection-text {
+  flex: 1;
+}
+
+.disconnection-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.disconnection-reason {
+  font-size: 14px;
+  opacity: 0.95;
+}
+
+.disconnection-status {
+  display: flex;
+  align-items: center;
+}
+
+.viewer-mode-badge {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .App-main {
+    flex-direction: column;
+    padding: 0.5rem;
+    padding-top: 56px; /* Account for mobile header */
+    min-height: 100vh;
+  }
+
+  /* Make stream viewer container use maximum space on mobile */
+  .stream-viewer-container {
+    width: 100% !important;
+    min-height: 50vh !important;
+    height: auto !important;
+    max-height: 70vh !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  .chat-sidebar {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    position: static;
+  }
+
+  .stream-layout-container {
+    flex-direction: column;
+  }
+
+  .status-effects-sidebar-left,
+  .status-effects-sidebar-right {
+    width: 100%;
+    margin-bottom: 1rem;
+  }
+
+  .stream-controls-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-panel-toggle {
+    top: 70px;
+    right: 10px;
+    padding: 8px 16px;
+    font-size: 12px;
+  }
+
+  .takeover-icon,
+  .transition-icon {
+    font-size: 60px;
+  }
+
+  .takeover-title,
+  .transition-title {
+    font-size: 32px;
+  }
+
+  .takeover-message,
+  .transition-message {
+    font-size: 18px;
+  }
+
+  .disconnection-banner {
+    margin: 1rem;
+  }
+
+  .disconnection-content {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .disconnection-icon {
+    font-size: 48px;
+  }
+}
+
+/* Mobile Portrait Mode - Optimized layout with video directly below header */
+@media (max-width: 768px) and (orientation: portrait) {
+  .App-main {
+    padding: 0 !important;
+    padding-top: 56px !important; /* Header height */
+    margin: 0 !important;
+    gap: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  .main-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+
+  .stream-layout-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 0 !important;
+    flex-direction: column !important;
+    align-items: center !important;
+  }
+
+  /* Video container - full width, 16:9 ratio, capped height */
+  .stream-viewer-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    aspect-ratio: 16 / 9;
+    height: auto !important;
+    max-height: calc(100dvh - 176px) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Stream controls (Take over button) - directly below video */
+  .stream-controls-container {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 12px 16px !important;
+    flex-shrink: 0 !important;
+    background: rgba(0, 0, 0, 0.95) !important;
+  }
+
+  /* Hide sidebars in portrait mode */
+  .status-effects-sidebar-left,
+  .status-effects-sidebar-right {
+    display: none !important;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .status-effects-sidebar-left,
+  .status-effects-sidebar-right {
+    width: 150px;
+  }
+}
+
+@media (max-width: 992px) {
+  .App-main {
+    gap: 1rem;
+  }
+
+  .chat-sidebar {
+    width: 280px;
+    min-width: 240px;
+  }
+
+  .status-effects-sidebar-left,
+  .status-effects-sidebar-right {
+    display: none;
+  }
+}
+
+/* Mobile landscape mode styles */
+@media (max-width: 768px) and (orientation: landscape) {
+  /* Lock viewport - absolutely no scrolling */
+  html, body {
+    overflow: hidden !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100vh !important;
+    max-height: 100dvh !important;
+    position: fixed !important;
+    width: 100vw !important;
+    background: #000 !important;
+    touch-action: manipulation !important;
+  }
+
+  .App {
+    overflow: hidden !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100vh !important;
+    max-height: 100dvh !important;
+    position: fixed !important;
+    width: 100vw !important;
+    top: 0 !important;
+    left: 0 !important;
+    background: #000 !important;
+  }
+
+  /* Video area - landscape-video-only class for clean layout */
+  .App-main.landscape-video-only {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 280px !important;
+    bottom: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100vh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    width: auto !important;
+    background: #000 !important;
+  }
+
+  .App-main.landscape-video-only .main-content {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .App-main.landscape-video-only .stream-layout-container {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .App-main.landscape-video-only .stream-viewer-container {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .App-main.landscape-video-only .stream-viewer {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: hidden !important;
+  }
+
+  .App-main.landscape-video-only .stream-viewer video,
+  .App-main.landscape-video-only .stream-viewer iframe {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+  }
+
+  /* Override StreamViewer defaults that cause scroll */
+  .App-main.landscape-video-only .stream-viewer {
+    aspect-ratio: unset !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    margin-bottom: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .App-main.landscape-video-only .streaming-view,
+  .App-main.landscape-video-only .viewing-mode {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+  }
+
+  .App-main.landscape-video-only .local-video,
+  .App-main.landscape-video-only .remote-video,
+  .App-main.landscape-video-only .hls-remote-video,
+  .App-main.landscape-video-only .hls-video,
+  .App-main.landscape-video-only .hls-viewer {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+  }
+
+  /* Hide everything else with fallback */
+  .stream-controls-container,
+  .streamer-settings,
+  .stream-controls,
+  .chat-sidebar,
+  .status-effects-sidebar-left,
+  .status-effects-sidebar-right,
+  .chat-and-status-container,
+  .help-button-bottom,
+  .bug-report-button,
+  .discord-link,
+  .theatre-mode-btn,
+  .theatre-mode-toggle,
+  .admin-panel-toggle,
+  .streamer-buffs-sidebar-left,
+  .personal-buffs-right-sidebar,
+  .mobile-header-v2,
+  .mobile-bottom-nav,
+  .error-message,
+  .disconnection-banner {
+    display: none !important;
+  }
+}
+
+/* Narrower chat for very short screens */
+@media (max-width: 768px) and (orientation: landscape) and (max-height: 400px) {
+  .App-main.landscape-video-only {
+    right: 240px !important;
+  }
+}
+
+/* Mobile Streamer Settings Modal */
+.mobile-settings-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.mobile-settings-modal {
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #121212;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mobile-settings-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.mobile-settings-header .close-btn {
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-settings-content {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.mobile-settings-content .streamer-settings {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* Ensure proper layering */
+.chat-container {
+  position: relative;
+  z-index: 2;
+}
+
+.status-effects-container {
+  position: relative;
+  z-index: 2;
+}
+
+/* User info display styles */
+.user-info-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-name {
+  font-weight: 600;
+  color: white;
+}
+
+/* Theatre Mode Button */
+.theatre-mode-btn {
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 1rem;
+}
+
+.theatre-mode-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.05);
+}
+
+/* Theatre Mode Layout */
+.App.theatre-mode {
+  background: #000;
+}
+
+/* Prevent body overflow in theatre mode */
+body:has(.App.theatre-mode) {
+  overflow: hidden;
+}
+
+/* Theatre Mode Admin Controls Overlay */
+.theatre-admin-controls {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 150; /* Above stream but below theatre controls */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 300px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none; /* Invisible panels don't block clicks */
+}
+
+.theatre-admin-controls.visible {
+  opacity: 1;
+  pointer-events: auto; /* Visible panels can be clicked */
+}
+
+/* Ensure admin control children are clickable when visible */
+.theatre-admin-controls.visible * {
+  pointer-events: auto !important;
+}
+
+/* Style admin panels in theatre mode */
+.theatre-admin-controls > div {
+  background: rgba(20, 20, 20, 0.95) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+  padding: 15px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+}
+
+.App.theatre-mode .App-main {
+  max-width: 100%;
+  padding: 0;
+  padding-top: 64px;
+  display: flex;
+  gap: 0;
+  height: calc(100vh - 64px);
+  position: relative;
+  overflow: hidden; /* Prevent vertical scrollbar in theatre mode */
+}
+
+.App.theatre-mode .main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+.App.theatre-mode .stream-layout-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.App.theatre-mode .stream-viewer-container {
+  width: 100%;
+  height: 100%;
+  max-height: calc(100vh - 64px);
+  position: relative;
+}
+
+.App.theatre-mode .stream-viewer {
+  height: 100%;
+  max-height: calc(100vh - 64px);
+  border-radius: 0;
+  box-shadow: none;
+  background: #000;
+  margin: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* Theatre Mode Controls Container */
+.theatre-controls-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.theatre-controls-wrapper.active {
+  pointer-events: auto;
+}
+
+/* Theatre Mode Top Bar */
+.theatre-top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent);
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: all 0.3s ease;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 40px;
+  pointer-events: none;
+}
+
+.theatre-controls-wrapper.active .theatre-top-bar {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Theatre Mode Bottom Bar */
+.theatre-bottom-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+  padding: 30px 40px;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.theatre-controls-wrapper.active .theatre-bottom-bar {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Theatre Mode Control Buttons */
+.theatre-control-btn {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theatre-control-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.05);
+}
+
+.theatre-control-btn.primary {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  font-weight: 600;
+}
+
+.theatre-control-btn.primary:hover {
+  background: linear-gradient(135deg, #7c8ff0, #8459b3);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.theatre-control-btn.danger {
+  background: rgba(239, 68, 68, 0.8);
+  border-color: transparent;
+}
+
+.theatre-control-btn.danger:hover {
+  background: rgba(220, 38, 38, 0.9);
+}
+
+/* Exit Theatre Button */
+.exit-theatre-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.exit-theatre-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Theatre Mode Chat and Inventory Sidebar */
+.theatre-mode-sidebar {
+  position: fixed;
+  right: 0;
+  top: 64px;
+  height: calc(100vh - 64px);
+  background: rgba(0, 0, 0, 0.95);
+  transition: all 0.3s ease;
+  z-index: 150; /* Higher than theatre controls */
+  display: flex;
+  overflow: hidden;
+}
+
+/* When only chat is open */
+.theatre-mode-sidebar:not(.inventory-open) {
+  width: 320px;
+}
+
+/* When both inventory and chat are open */
+.theatre-mode-sidebar.inventory-open {
+  width: 640px;
+}
+
+/* When sidebar is collapsed */
+.theatre-mode-sidebar.collapsed {
+  transform: translateX(100%);
+}
+
+/* Inventory panel - left side of sidebar */
+.theatre-mode-inventory {
+  width: 320px;
+  height: 100%;
+  background: rgba(15, 15, 15, 0.98);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden; /* Changed from overflow-y: auto to prevent scrollbar */
+  flex-shrink: 0;
+}
+
+/* Override inventory panel styles in theatre mode */
+.theatre-mode-inventory .inventory-panel {
+  position: static !important;
+  transform: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  overflow-y: auto !important; /* Allow internal scrolling if needed */
+  overflow-x: hidden !important;
+}
+
+/* Chat panel - right side of sidebar */
+.theatre-mode-chat {
+  width: 320px;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Fix chat container height in theatre mode */
+.theatre-mode-chat .theatre-chat-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.theatre-mode-chat .chat-container {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.theatre-mode-chat .chat-messages-container {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+.theatre-mode-chat .chat-input-container {
+  flex-shrink: 0 !important;
+  margin-top: auto !important;
+  padding: 10px !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.theatre-chat-toggle {
+  position: fixed;
+  right: 320px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px 0 0 8px;
+  padding: 15px 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 149; /* Just below the sidebar */
+  font-size: 18px;
+  pointer-events: auto;
+}
+
+/* Adjust toggle position when inventory is open */
+.App.theatre-mode .main-content.inventory-open .theatre-chat-toggle,
+.theatre-chat-toggle.inventory-open {
+  right: 640px;
+}
+
+.theatre-chat-toggle.collapsed {
+  right: 0;
+  border-radius: 8px;
+}
+
+.theatre-chat-toggle:hover {
+  background: rgba(0, 0, 0, 0.95);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Adjust stream viewer position based on sidebar state */
+.App.theatre-mode .main-content {
+  height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+.App.theatre-mode .stream-layout-container {
+  height: 100%;
+  width: 100%;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.App.theatre-mode .stream-viewer-container {
+  transition: all 0.3s ease;
+  width: 100%;
+  height: 100%;
+}
+
+/* When only chat is visible (not collapsed) */
+.App.theatre-mode .main-content.theatre-mode-active:not(.chat-collapsed):not(.inventory-open) .stream-layout-container {
+  width: calc(100vw - 320px);
+}
+
+/* When both inventory and chat are visible */
+.App.theatre-mode .main-content.theatre-mode-active.inventory-open:not(.chat-collapsed) .stream-layout-container {
+  width: calc(100vw - 640px);
+}
+
+/* When chat is collapsed */
+.App.theatre-mode .main-content.theatre-mode-active.chat-collapsed .stream-layout-container {
+  width: 100vw;
+}
+
+/* Ensure stream viewer scales properly */
+.App.theatre-mode .stream-viewer {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* CRITICAL: Ensure canvas interactions work in theatre mode */
+.App.theatre-mode .canvas-effect-overlay-container {
+  z-index: 90 !important; /* Below theatre controls (100) but high enough to be interactive */
+  pointer-events: auto !important; /* Canvas should receive clicks when active */
+}
+
+.App.theatre-mode .canvas-effect-overlay-container.interactive {
+  pointer-events: auto !important;
+}
+
+.App.theatre-mode .effect-overlay-canvas {
+  z-index: 91 !important;
+  pointer-events: inherit !important;
+}
+
+/* Compact header in theatre mode */
+.App.theatre-mode .desktop-header-v2 {
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Hide elements in theatre mode */
+.App.theatre-mode .help-button-bottom,
+.App.theatre-mode .bug-report-button,
+.App.theatre-mode .discord-link {
+  display: none;
+}
+
+/* Old muted indicator - DISABLED - Using TheatreMuteIndicator component instead */
+/*
+.App.theatre-mode .muted-audio-indicator {
+  z-index: 500 !important;
+  position: absolute !important;
+  bottom: 100px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: 300px !important;
+  top: auto !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+*/
+
+/* Theatre Mode Header Buttons */
+.theatre-inventory-btn {
+  position: relative;
+  background: linear-gradient(135deg, rgba(255, 183, 77, 0.15), rgba(255, 152, 0, 0.1));
+  border: 1px solid rgba(255, 183, 77, 0.35);
+  color: white;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 22px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: inventoryFloat 3s ease-in-out infinite;
+  box-shadow:
+    0 0 15px rgba(255, 183, 77, 0.25),
+    0 4px 12px rgba(0, 0, 0, 0.2),
+    inset 0 0 12px rgba(255, 183, 77, 0.1);
+  overflow: hidden;
+}
+
+/* Floating animation for inventory button */
+@keyframes inventoryFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* Shine sweep effect */
+.theatre-inventory-btn::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -100%;
+  width: 50%;
+  height: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transform: skewX(-20deg);
+  animation: inventoryShine 3s ease-in-out infinite;
+}
+
+@keyframes inventoryShine {
+  0%, 100% {
+    left: -100%;
+  }
+  50%, 60% {
+    left: 150%;
+  }
+}
+
+/* Glowing pulse ring */
+.theatre-inventory-btn::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 183, 77, 0.5), rgba(255, 152, 0, 0.3), rgba(255, 220, 100, 0.5));
+  z-index: -1;
+  animation: inventoryGlow 2s ease-in-out infinite;
+  filter: blur(4px);
+}
+
+@keyframes inventoryGlow {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+.theatre-inventory-btn:hover {
+  background: linear-gradient(135deg, rgba(255, 183, 77, 0.25), rgba(255, 152, 0, 0.2));
+  border-color: rgba(255, 183, 77, 0.5);
+  transform: scale(1.1) translateY(-2px);
+  box-shadow:
+    0 0 25px rgba(255, 183, 77, 0.4),
+    0 8px 20px rgba(0, 0, 0, 0.3),
+    inset 0 0 15px rgba(255, 183, 77, 0.15);
+  animation: none;
+}
+
+.theatre-inventory-btn:hover::before {
+  animation: none;
+  opacity: 0;
+}
+
+.theatre-inventory-btn:hover::after {
+  opacity: 0.9;
+  filter: blur(6px);
+}
+
+/* Inventory button wrapper for tooltip positioning */
+.inventory-btn-wrapper {
+  position: relative;
+}
+
+/* Signup hint tooltip for non-authenticated users */
+.inventory-signup-hint {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, rgba(30, 30, 45, 0.98), rgba(20, 20, 35, 0.98));
+  border: 1px solid rgba(255, 183, 77, 0.3);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(255, 183, 77, 0.15);
+  animation: hintSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 10000;
+}
+
+/* Arrow pointing up */
+.inventory-signup-hint::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(135deg, rgba(30, 30, 45, 0.98), rgba(30, 30, 45, 0.98));
+  border-left: 1px solid rgba(255, 183, 77, 0.3);
+  border-top: 1px solid rgba(255, 183, 77, 0.3);
+}
+
+@keyframes hintSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.inventory-signup-hint .hint-icon {
+  font-size: 14px;
+  animation: hintSparkle 1.5s ease-in-out infinite;
+}
+
+@keyframes hintSparkle {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.2) rotate(10deg);
+  }
+}
+
+.inventory-signup-hint .hint-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 0.2px;
+}
+
+.inventory-signup-hint .hint-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  margin-left: 4px;
+  padding: 0;
+}
+
+.inventory-signup-hint .hint-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.theatre-clips-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.theatre-clips-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.theatre-clips-btn svg {
+  stroke: white;
+}
+
+.theatre-blog-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.theatre-blog-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.theatre-blog-btn svg {
+  stroke: white;
+}
+
+.theatre-discord-btn {
+  background: rgba(88, 101, 242, 0.15);
+  border: 1px solid rgba(88, 101, 242, 0.3);
+  color: #5865F2;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.theatre-discord-btn:hover {
+  background: rgba(88, 101, 242, 0.25);
+  border-color: rgba(88, 101, 242, 0.5);
+  transform: scale(1.05);
+  box-shadow: 0 0 12px rgba(88, 101, 242, 0.3);
+}
+
+.theatre-discord-btn svg {
+  fill: #5865F2;
+}
+
+.theatre-dropdown-container {
+  position: relative;
+}
+
+.theatre-dropdown-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  font-size: 24px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theatre-dropdown-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.theatre-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: rgba(20, 20, 20, 0.98);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px;
+  min-width: 200px;
+  z-index: 1000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.theatre-dropdown-item {
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.theatre-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.dropdown-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.dropdown-label {
+  flex: 1;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 4px 0;
+}
+
+.header-divider-vertical {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 12px;
+}
+
+/* Responsive Theatre Mode */
+@media (max-width: 768px) {
+  .App.theatre-mode .App-main {
+    flex-direction: column;
+    padding-top: 56px;
+    height: calc(100vh - 56px);
+  }
+  
+  .theatre-mode-chat {
+    width: 100%;
+    height: 180px;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    order: 1;
+  }
+  
+  .App.theatre-mode .stream-layout-container {
+    height: calc(100vh - 236px);
+  }
+  
+  .App.theatre-mode .stream-viewer-container,
+  .App.theatre-mode .stream-viewer {
+    max-height: calc(100vh - 236px);
+  }
+}
+
+/* Theatre Mode - Canvas Interaction Fix */
+/* When canvas is in interactive mode, it must be above theatre controls */
+.App.theatre-mode .stream-effects-overlay {
+  z-index: 150 !important; /* Above theatre controls when interactive */
+  position: relative !important;
+}
+
+.App.theatre-mode .canvas-effect-overlay-container {
+  z-index: 150 !important; /* Above theatre controls at 100 */
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+}
+
+.App.theatre-mode .canvas-effect-overlay-container .effect-overlay-canvas {
+  z-index: 151 !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Ensure WebRTC viewer container doesn't block canvas */
+.App.theatre-mode .webrtc-viewer {
+  position: relative;
+  z-index: 1;
+}
+
+/* Theatre controls must not block any clicks when pointer-events is none */
+.App.theatre-mode .theatre-controls-wrapper {
+  z-index: 100;
+  pointer-events: none !important;
+}
+
+/* When canvas has interactive pointer events, ensure it's absolutely clickable */
+.App.theatre-mode .canvas-effect-overlay-container[style*="pointer-events: auto"] {
+  z-index: 200 !important; /* Above everything when interactive */
+  pointer-events: auto !important; /* Force auto */
+}
+
+.App.theatre-mode .canvas-effect-overlay-container[style*="pointer-events: auto"] .effect-overlay-canvas {
+  z-index: 201 !important;
+  pointer-events: auto !important; /* Force auto */
+  cursor: crosshair !important; /* Visual feedback */
+}

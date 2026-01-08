@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LiveKit Streaming Test</title>
+    <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        video {
+            width: 100%;
+            background: #000;
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            background: #222;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        #log {
+            background: #111;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LiveKit Streaming Test</h1>
+        
+        <div class="status">
+            <strong>Backend:</strong> <span id="backend">Checking...</span><br>
+            <strong>Connection Status:</strong> <span id="status">Disconnected</span><br>
+            <strong>Room:</strong> <span id="roomName">-</span><br>
+            <strong>Participant ID:</strong> <span id="participantId">-</span>
+        </div>
+
+        <div class="controls">
+            <button id="getToken">Get LiveKit Token</button>
+            <button id="connect" disabled>Connect to LiveKit</button>
+            <button id="publish" disabled>Start Publishing</button>
+            <button id="unpublish" disabled>Stop Publishing</button>
+            <button id="disconnect" disabled>Disconnect</button>
+        </div>
+
+        <div class="video-grid">
+            <div>
+                <h3>Local Video</h3>
+                <video id="localVideo" autoplay muted></video>
+            </div>
+            <div>
+                <h3>Remote Video</h3>
+                <video id="remoteVideo" autoplay></video>
+            </div>
+        </div>
+
+        <h3>Log</h3>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const LivekitClient = window.LivekitClient;
+        let room;
+        let token;
+        let localTracks = [];
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML = `[${timestamp}] ${message}<br>` + logDiv.innerHTML;
+            console.log(message);
+        }
+
+        async function checkBackend() {
+            try {
+                const response = await fetch('http://localhost:8080/api/webrtc/backend');
+                const data = await response.json();
+                document.getElementById('backend').textContent = 
+                    `${data.backend} (Adapter: ${data.adapterEnabled ? 'Yes' : 'No'})`;
+                log(`Backend: ${data.backend}, Initialized: ${data.stats?.initialized}`);
+                
+                if (data.backend === 'livekit' && data.adapterEnabled) {
+                    document.getElementById('getToken').disabled = false;
+                } else {
+                    log('Error: LiveKit backend not active');
+                }
+            } catch (error) {
+                log(`Error checking backend: ${error.message}`);
+            }
+        }
+
+        async function getToken() {
+            try {
+                // For testing, we'll use the transport creation endpoint
+                // In production, you'd have a proper token endpoint
+                const response = await fetch('http://localhost:8080/api/mediasoup/create-transport', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        socketId: `test-${Date.now()}`,
+                        isMobile: false 
+                    })
+                });
+                
+                const data = await response.json();
+                log(`Transport created: ${JSON.stringify(data)}`);
+                
+                if (data.livekitData) {
+                    token = data.livekitData.token;
+                    document.getElementById('roomName').textContent = data.livekitData.roomName;
+                    document.getElementById('connect').disabled = false;
+                    log(`Got LiveKit token for room: ${data.livekitData.roomName}`);
+                } else {
+                    // Fallback: Generate a token directly if not provided
+                    // This is just for testing
+                    const testToken = await generateTestToken();
+                    token = testToken;
+                    document.getElementById('roomName').textContent = 'onestreamer-main';
+                    document.getElementById('connect').disabled = false;
+                    log('Using test token');
+                }
+            } catch (error) {
+                log(`Error getting token: ${error.message}`);
+            }
+        }
+
+        async function generateTestToken() {
+            // For testing only - normally this would come from the server
+            // This creates a simple JWT token for LiveKit
+            const apiKey = 'devkey';
+            const apiSecret = 'secret';
+            const roomName = 'onestreamer-main';
+            const participantName = `test-${Date.now()}`;
+            
+            // Since we can't generate JWT client-side properly, 
+            // we'll need to use the server's token generation
+            log('Note: Token generation should be done server-side');
+            
+            // For now, we'll try to connect with the URL directly
+            return 'will-be-replaced';
+        }
+
+        async function connectToLiveKit() {
+            try {
+                log('Connecting to LiveKit...');
+                
+                room = new LivekitClient.Room({
+                    adaptiveStream: true,
+                    dynacast: true,
+                });
+
+                // Set up event handlers
+                room.on('connected', () => {
+                    log(`Connected to room: ${room.name}`);
+                    document.getElementById('status').textContent = 'Connected';
+                    document.getElementById('participantId').textContent = room.localParticipant.identity;
+                    document.getElementById('publish').disabled = false;
+                    document.getElementById('disconnect').disabled = false;
+                });
+
+                room.on('disconnected', () => {
+                    log('Disconnected from room');
+                    document.getElementById('status').textContent = 'Disconnected';
+                    document.getElementById('publish').disabled = true;
+                    document.getElementById('unpublish').disabled = true;
+                    document.getElementById('disconnect').disabled = true;
+                });
+
+                room.on('participantConnected', (participant) => {
+                    log(`Participant connected: ${participant.identity}`);
+                });
+
+                room.on('trackSubscribed', (track, publication, participant) => {
+                    log(`Subscribed to ${track.kind} track from ${participant.identity}`);
+                    if (track.kind === 'video') {
+                        track.attach(document.getElementById('remoteVideo'));
+                    }
+                });
+
+                // Connect to LiveKit
+                // If we don't have a proper token, try connecting directly
+                const wsUrl = 'ws://localhost:7880';
+                
+                // Try to connect with a minimal configuration
+                await room.connect(wsUrl, token || undefined, {
+                    autoSubscribe: true,
+                });
+                
+            } catch (error) {
+                log(`Error connecting: ${error.message}`);
+                document.getElementById('status').textContent = 'Error';
+            }
+        }
+
+        async function publishTracks() {
+            try {
+                log('Getting user media...');
+                
+                // Get local media
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true
+                });
+
+                // Display local video
+                document.getElementById('localVideo').srcObject = stream;
+
+                // Publish to LiveKit
+                const videoTrack = stream.getVideoTracks()[0];
+                const audioTrack = stream.getAudioTracks()[0];
+
+                if (room && room.state === 'connected') {
+                    log('Publishing tracks to LiveKit...');
+                    
+                    const videoPublication = await room.localParticipant.publishTrack(videoTrack);
+                    const audioPublication = await room.localParticipant.publishTrack(audioTrack);
+                    
+                    localTracks = [videoTrack, audioTrack];
+                    
+                    log('Tracks published successfully');
+                    document.getElementById('publish').disabled = true;
+                    document.getElementById('unpublish').disabled = false;
+                } else {
+                    log('Room not connected');
+                }
+            } catch (error) {
+                log(`Error publishing: ${error.message}`);
+            }
+        }
+
+        async function unpublishTracks() {
+            try {
+                if (room && localTracks.length > 0) {
+                    log('Unpublishing tracks...');
+                    
+                    for (const track of localTracks) {
+                        room.localParticipant.unpublishTrack(track);
+                        track.stop();
+                    }
+                    
+                    localTracks = [];
+                    document.getElementById('localVideo').srcObject = null;
+                    
+                    log('Tracks unpublished');
+                    document.getElementById('publish').disabled = false;
+                    document.getElementById('unpublish').disabled = true;
+                }
+            } catch (error) {
+                log(`Error unpublishing: ${error.message}`);
+            }
+        }
+
+        function disconnect() {
+            if (room) {
+                room.disconnect();
+                room = null;
+            }
+            document.getElementById('connect').disabled = false;
+        }
+
+        // Set up button handlers
+        document.getElementById('getToken').onclick = getToken;
+        document.getElementById('connect').onclick = connectToLiveKit;
+        document.getElementById('publish').onclick = publishTracks;
+        document.getElementById('unpublish').onclick = unpublishTracks;
+        document.getElementById('disconnect').onclick = disconnect;
+
+        // Check backend on load
+        checkBackend();
+    </script>
+</body>
+</html>

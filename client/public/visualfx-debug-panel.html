@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VisualFX Debug Panel</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            background: #0d1117;
+            color: #e6edf3;
+            line-height: 1.4;
+            overflow: hidden;
+        }
+
+        /* Debug Panel Overlay */
+        #visualfx-debug-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(13, 17, 23, 0.95);
+            backdrop-filter: blur(10px);
+            z-index: 10000;
+            display: none;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        #visualfx-debug-panel.visible {
+            display: flex;
+            flex-direction: column;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* Header */
+        .debug-header {
+            background: linear-gradient(90deg, #1f6feb 0%, #8b5cf6 100%);
+            padding: 15px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .debug-title {
+            font-size: 20px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .debug-title::before {
+            content: "🎬";
+            font-size: 24px;
+        }
+
+        .debug-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .close-btn {
+            background: #da3633;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .close-btn:hover {
+            background: #b91c1c;
+            transform: translateY(-1px);
+        }
+
+        .status-indicator {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-connected {
+            background: #238636;
+            color: white;
+        }
+
+        .status-disconnected {
+            background: #da3633;
+            color: white;
+        }
+
+        /* Main Content */
+        .debug-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        /* Effects Panel */
+        .effects-panel {
+            background: #161b22;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            background: #21262d;
+            padding: 15px 20px;
+            border-bottom: 1px solid #30363d;
+            font-weight: bold;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        /* Effect Categories */
+        .effect-category {
+            margin-bottom: 25px;
+        }
+
+        .category-title {
+            color: #58a6ff;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 8px;
+        }
+
+        .effect-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .effect-button {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #e6edf3;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            font-size: 12px;
+            text-align: left;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .effect-button:hover {
+            background: #30363d;
+            border-color: #58a6ff;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(88, 166, 255, 0.2);
+        }
+
+        .effect-button:active {
+            transform: translateY(0);
+        }
+
+        .effect-button.active {
+            background: linear-gradient(45deg, #238636, #2ea043);
+            border-color: #2ea043;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(46, 160, 67, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(46, 160, 67, 0); }
+        }
+
+        .effect-name {
+            font-weight: bold;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .effect-description {
+            font-size: 10px;
+            color: #8b949e;
+            opacity: 0.8;
+        }
+
+        .effect-duration {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            font-size: 9px;
+            background: rgba(88, 166, 255, 0.2);
+            color: #58a6ff;
+            padding: 2px 6px;
+            border-radius: 10px;
+        }
+
+        /* Presets Section */
+        .presets-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #30363d;
+        }
+
+        .preset-button {
+            background: linear-gradient(45deg, #8b5cf6, #a855f7);
+            border: none;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: bold;
+            margin: 5px 10px 5px 0;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .preset-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        /* Info Panel */
+        .info-panel {
+            background: #161b22;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Statistics */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            background: #21262d;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #30363d;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #58a6ff;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Active Effects List */
+        .active-effects {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .active-effect-item {
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .active-effect-info {
+            flex: 1;
+        }
+
+        .active-effect-name {
+            font-weight: bold;
+            color: #2ea043;
+            margin-bottom: 2px;
+        }
+
+        .active-effect-time {
+            font-size: 10px;
+            color: #8b949e;
+        }
+
+        .remove-effect-btn {
+            background: #da3633;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .remove-effect-btn:hover {
+            background: #b91c1c;
+        }
+
+        /* Console Log */
+        .console-log {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 11px;
+            line-height: 1.4;
+            margin-top: 15px;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .log-time {
+            color: #8b949e;
+            min-width: 60px;
+        }
+
+        .log-level {
+            min-width: 50px;
+            font-weight: bold;
+        }
+
+        .log-level.info { color: #58a6ff; }
+        .log-level.success { color: #2ea043; }
+        .log-level.error { color: #f85149; }
+        .log-level.warning { color: #d29922; }
+
+        .log-message {
+            color: #e6edf3;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #21262d;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #484f58;
+        }
+
+        /* Utility Classes */
+        .text-center { text-align: center; }
+        .mb-10 { margin-bottom: 10px; }
+        .mt-10 { margin-top: 10px; }
+        
+        /* Loading Animation */
+        .loading {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #30363d;
+            border-top: 2px solid #58a6ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .debug-content {
+                grid-template-columns: 1fr;
+                grid-template-rows: 2fr 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .effect-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .debug-content {
+                padding: 10px;
+            }
+            
+            .panel-content {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- VisualFX Debug Panel -->
+    <div id="visualfx-debug-panel">
+        <!-- Header -->
+        <div class="debug-header">
+            <div class="debug-title">
+                VisualFX Debug Panel
+            </div>
+            <div class="debug-controls">
+                <span id="connection-status" class="status-indicator status-disconnected">Disconnected</span>
+                <span id="shortcut-hint" style="font-size: 11px; color: #8b949e;">Press Ctrl+Shift+V to toggle</span>
+                <button class="close-btn" onclick="closeDebugPanel()">✕ Close</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="debug-content">
+            <!-- Effects Panel -->
+            <div class="effects-panel">
+                <div class="panel-header">
+                    🎬 Visual Effects Control
+                    <div style="font-size: 11px; font-weight: normal; color: #8b949e;">
+                        <span id="total-effects-count">0</span> effects available
+                    </div>
+                </div>
+                <div class="panel-content" id="effects-content">
+                    <div class="text-center" style="padding: 40px 0; color: #8b949e;">
+                        <div class="loading"></div>
+                        <div style="margin-top: 10px;">Loading effects...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Panel -->
+            <div class="info-panel">
+                <div class="panel-header">
+                    📊 System Status
+                </div>
+                <div class="panel-content">
+                    <!-- Statistics -->
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="active-effects-count">0</div>
+                            <div class="stat-label">Active Effects</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="queued-effects-count">0</div>
+                            <div class="stat-label">Queued Effects</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="cpu-usage">0%</div>
+                            <div class="stat-label">CPU Usage</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="memory-usage">0MB</div>
+                            <div class="stat-label">Memory Usage</div>
+                        </div>
+                    </div>
+
+                    <!-- Stream Info -->
+                    <div style="background: #21262d; padding: 10px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #30363d;">
+                        <div style="font-size: 11px; color: #8b949e; margin-bottom: 5px;">CURRENT STREAM</div>
+                        <div id="current-stream-id" style="font-family: monospace; font-size: 12px; color: #58a6ff;">No active stream</div>
+                    </div>
+
+                    <!-- Active Effects -->
+                    <div style="margin-bottom: 15px;">
+                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 10px; color: #2ea043;">
+                            Active Effects <span id="active-effects-badge" class="status-indicator" style="background: #21262d; color: #8b949e; margin-left: 8px;">0</span>
+                        </div>
+                        <div id="active-effects-list" class="active-effects">
+                            <div style="text-align: center; color: #8b949e; font-size: 11px; padding: 20px 0;">
+                                No active effects
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Console Log -->
+                    <div>
+                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 8px;">
+                            Console Log
+                            <button onclick="clearConsoleLog()" style="float: right; background: none; border: none; color: #8b949e; cursor: pointer; font-size: 10px;">Clear</button>
+                        </div>
+                        <div id="console-log" class="console-log"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let socket = null;
+        let isConnected = false;
+        let effects = [];
+        let activeEffects = [];
+        let stats = {};
+        let currentStreamId = null;
+        let isAdmin = false;
+
+        // Initialize debug panel
+        function initializeDebugPanel() {
+            // Check if user is admin
+            checkAdminStatus();
+            
+            // Initialize socket connection
+            connectToServer();
+            
+            // Set up keyboard shortcuts
+            setupKeyboardShortcuts();
+            
+            // Start stats polling
+            startStatsPolling();
+            
+            log('info', 'Debug panel initialized');
+        }
+
+        // Check admin status
+        async function checkAdminStatus() {
+            try {
+                // This would need to be implemented based on your auth system
+                // For now, we'll assume admin access for testing
+                isAdmin = true;
+                log('success', 'Admin access confirmed');
+            } catch (error) {
+                log('error', 'Admin access denied: ' + error.message);
+                isAdmin = false;
+                // Could hide the panel or show limited functionality
+            }
+        }
+
+        // Connect to server via Socket.IO
+        function connectToServer() {
+            // Use the current page's origin for the socket connection
+            socket = io();
+            
+            socket.on('connect', () => {
+                isConnected = true;
+                updateConnectionStatus();
+                log('success', 'Connected to server');
+                
+                // Join as viewer to get stream updates
+                socket.emit('join-as-viewer');
+                
+                // Request initial data with delay to ensure connection is stable
+                setTimeout(() => {
+                    requestEffectsList();
+                    requestStats();
+                }, 1000);
+            });
+
+            socket.on('disconnect', () => {
+                isConnected = false;
+                updateConnectionStatus();
+                log('error', 'Disconnected from server');
+            });
+
+            // VisualFX event listeners
+            socket.on('visual-effect-applied', (data) => {
+                log('success', `Effect applied: ${data.effectName} (${data.duration}ms)`);
+                updateActiveEffects();
+                playSuccessAnimation();
+            });
+
+            socket.on('visual-effect-removed', (data) => {
+                log('info', `Effect removed: ${data.effectInstanceId}`);
+                updateActiveEffects();
+            });
+
+            socket.on('visual-effects-cleared', (data) => {
+                log('warning', `Cleared ${data.clearedCount} effects`);
+                updateActiveEffects();
+            });
+
+            socket.on('visual-effect-error', (error) => {
+                log('error', `Effect error: ${error.error}`);
+            });
+
+            socket.on('visual-effects-list', (data) => {
+                effects = data.availableEffects || [];
+                activeEffects = data.activeEffects || [];
+                renderEffectsPanel();
+                updateActiveEffectsList();
+                log('info', `Loaded ${effects.length} effects`);
+            });
+
+            socket.on('visual-fx-stats', (data) => {
+                stats = data.stats || {};
+                currentStreamId = data.streamId;
+                updateStatsDisplay();
+            });
+
+            socket.on('stream-status', (data) => {
+                currentStreamId = data.currentStreamer;
+                updateStreamInfo();
+            });
+        }
+
+        // Update connection status indicator
+        function updateConnectionStatus() {
+            const statusEl = document.getElementById('connection-status');
+            if (isConnected) {
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'status-indicator status-connected';
+            } else {
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'status-indicator status-disconnected';
+            }
+        }
+
+        // Set up keyboard shortcuts
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                // Ctrl+Shift+V to toggle debug panel
+                if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') {
+                    e.preventDefault();
+                    toggleDebugPanel();
+                }
+                
+                // ESC to close debug panel
+                if (e.code === 'Escape' && isDebugPanelVisible()) {
+                    closeDebugPanel();
+                }
+                
+                // Ctrl+Shift+C to clear all effects (when panel is open)
+                if (e.ctrlKey && e.shiftKey && e.code === 'KeyC' && isDebugPanelVisible()) {
+                    e.preventDefault();
+                    clearAllEffects();
+                }
+            });
+        }
+
+        // Toggle debug panel visibility
+        function toggleDebugPanel() {
+            if (!isAdmin) {
+                log('error', 'Admin access required');
+                return;
+            }
+            
+            const panel = document.getElementById('visualfx-debug-panel');
+            if (panel.classList.contains('visible')) {
+                closeDebugPanel();
+            } else {
+                openDebugPanel();
+            }
+        }
+
+        // Open debug panel
+        function openDebugPanel() {
+            const panel = document.getElementById('visualfx-debug-panel');
+            panel.classList.add('visible');
+            
+            // Refresh data when opening
+            requestEffectsList();
+            requestStats();
+            
+            log('info', 'Debug panel opened');
+        }
+
+        // Close debug panel
+        function closeDebugPanel() {
+            const panel = document.getElementById('visualfx-debug-panel');
+            panel.classList.remove('visible');
+            log('info', 'Debug panel closed');
+        }
+
+        // Check if debug panel is visible
+        function isDebugPanelVisible() {
+            return document.getElementById('visualfx-debug-panel').classList.contains('visible');
+        }
+
+        // Request effects list from server
+        function requestEffectsList() {
+            if (socket && isConnected) {
+                socket.emit('get-visual-effects');
+                
+                // Also try direct API as fallback
+                setTimeout(() => {
+                    if (effects.length === 0) {
+                        log('warning', 'Socket request timeout, trying API fallback...');
+                        fetchEffectsFromAPI();
+                    }
+                }, 5000);
+            } else {
+                log('warning', 'No socket connection, using API...');
+                fetchEffectsFromAPI();
+            }
+        }
+        
+        // Fetch effects directly from API as fallback
+        async function fetchEffectsFromAPI() {
+            try {
+                const response = await fetch('/api/visualfx/effects');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.effects) {
+                        effects = data.effects;
+                        log('success', `Loaded ${effects.length} effects via API`);
+                        renderEffectsPanel();
+                        
+                        // Also get active effects
+                        const activeResponse = await fetch('/api/visualfx/active');
+                        if (activeResponse.ok) {
+                            const activeData = await activeResponse.json();
+                            if (activeData.success) {
+                                activeEffects = activeData.activeEffects || [];
+                                updateActiveEffectsList();
+                            }
+                        }
+                    } else {
+                        throw new Error('Invalid API response');
+                    }
+                } else {
+                    throw new Error(`API request failed: ${response.status}`);
+                }
+            } catch (error) {
+                log('error', `API fallback failed: ${error.message}`);
+                // Show error state
+                showErrorState();
+            }
+        }
+
+        // Request stats from server
+        function requestStats() {
+            if (socket && isConnected) {
+                socket.emit('get-visual-fx-stats');
+            }
+        }
+
+        // Start stats polling
+        function startStatsPolling() {
+            setInterval(() => {
+                if (isConnected && isDebugPanelVisible()) {
+                    requestStats();
+                    updateActiveEffects();
+                }
+            }, 2000); // Update every 2 seconds
+        }
+
+        // Update active effects
+        function updateActiveEffects() {
+            requestEffectsList();
+        }
+
+        // Show error state
+        function showErrorState() {
+            const content = document.getElementById('effects-content');
+            content.innerHTML = `
+                <div class="text-center" style="padding: 40px 0; color: #f85149;">
+                    <div style="font-size: 18px; margin-bottom: 10px;">⚠️</div>
+                    <div>Failed to load effects</div>
+                    <div style="font-size: 10px; margin-top: 5px; color: #8b949e;">Check server connection and try refreshing</div>
+                    <button onclick="retryLoadEffects()" style="background: #1f6feb; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; font-size: 12px;">
+                        Retry
+                    </button>
+                </div>
+            `;
+        }
+        
+        // Retry loading effects
+        function retryLoadEffects() {
+            log('info', 'Retrying to load effects...');
+            effects = [];
+            activeEffects = [];
+            
+            const content = document.getElementById('effects-content');
+            content.innerHTML = `
+                <div class="text-center" style="padding: 40px 0; color: #8b949e;">
+                    <div class="loading"></div>
+                    <div style="margin-top: 10px;">Retrying to load effects...</div>
+                </div>
+            `;
+            
+            requestEffectsList();
+            requestStats();
+        }
+
+        // Render effects panel
+        function renderEffectsPanel() {
+            const content = document.getElementById('effects-content');
+            const totalCount = document.getElementById('total-effects-count');
+            
+            totalCount.textContent = effects.length;
+            
+            if (effects.length === 0) {
+                content.innerHTML = `
+                    <div class="text-center" style="padding: 40px 0; color: #8b949e;">
+                        <div>No effects available</div>
+                        <div style="font-size: 10px; margin-top: 5px;">Check server connection</div>
+                        <button onclick="retryLoadEffects()" style="background: #1f6feb; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; font-size: 12px;">
+                            Retry
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            // Group effects by category
+            const categories = {};
+            effects.forEach(effect => {
+                const category = getCategoryName(effect.type);
+                if (!categories[category]) {
+                    categories[category] = [];
+                }
+                categories[category].push(effect);
+            });
+
+            let html = '';
+            
+            // Render each category
+            Object.keys(categories).forEach(categoryName => {
+                html += `
+                    <div class="effect-category">
+                        <div class="category-title">${categoryName}</div>
+                        <div class="effect-grid">
+                `;
+                
+                categories[categoryName].forEach(effect => {
+                    const isActive = activeEffects.some(ae => ae.effectId === effect.id);
+                    const duration = Math.round(effect.duration / 1000);
+                    
+                    html += `
+                        <button class="effect-button ${isActive ? 'active' : ''}" 
+                                onclick="applyEffect('${effect.id}')" 
+                                data-effect-id="${effect.id}">
+                            <span class="effect-duration">${duration}s</span>
+                            <span class="effect-name">${effect.name}</span>
+                            <span class="effect-description">${getEffectDescription(effect)}</span>
+                        </button>
+                    `;
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Add presets section
+            html += `
+                <div class="presets-section">
+                    <div class="category-title">Effect Presets</div>
+                    <div style="margin-top: 15px;">
+                        <button class="preset-button" onclick="applyPreset('chaos_mode')">
+                            Chaos Mode
+                        </button>
+                        <button class="preset-button" onclick="applyPreset('retro_mode')">
+                            Retro Mode
+                        </button>
+                        <button class="preset-button" onclick="applyPreset('lag_fest')">
+                            Lag Festival
+                        </button>
+                        <button class="preset-button" onclick="applyPreset('artistic')">
+                            Artistic Vision
+                        </button>
+                        <button class="preset-button" onclick="applyPreset('comedy_hour')">
+                            Comedy Hour
+                        </button>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <button onclick="clearAllEffects()" 
+                                style="background: #da3633; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 12px;">
+                            🗑️ Clear All Effects
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            content.innerHTML = html;
+        }
+
+        // Get category name for effect type
+        function getCategoryName(type) {
+            const categoryMap = {
+                'resolution': 'Resolution Control',
+                'bitrate': 'Bitrate Throttling',
+                'framerate': 'Frame Rate Control',
+                'packet_loss': 'Network Simulation',
+                'jitter': 'Network Simulation',
+                'filter': 'Visual Filters',
+                'audio': 'Audio Effects',
+                'freeze': 'Special Effects',
+                'stutter': 'Special Effects'
+            };
+            return categoryMap[type] || 'Other Effects';
+        }
+
+        // Get effect description
+        function getEffectDescription(effect) {
+            const descriptions = {
+                'resolution_240p': 'Force 240p resolution',
+                'resolution_360p': 'Force 360p resolution',
+                'resolution_480p': 'Force 480p resolution',
+                'bitrate_potato': 'Ultra low bitrate (100kbps)',
+                'bitrate_low': 'Low bitrate (250kbps)',
+                'bitrate_throttle': 'Throttled bitrate (500kbps)',
+                'framerate_slideshow': 'Slideshow mode (1 FPS)',
+                'framerate_choppy': 'Choppy video (10 FPS)',
+                'framerate_cinematic': 'Cinematic mode (24 FPS)',
+                'packet_loss_mild': 'Mild packet loss (2%)',
+                'packet_loss_severe': 'Severe packet loss (10%)',
+                'jitter': 'Network jitter simulation',
+                'pixelate': 'Heavy pixelation effect',
+                'blur': 'Motion blur effect',
+                'grayscale': 'Black and white filter',
+                'sepia': 'Vintage sepia tone',
+                'static_noise': 'TV static overlay',
+                'glitch': 'Digital glitch artifacts',
+                'audio_pitch_high': 'Chipmunk voice effect',
+                'audio_pitch_low': 'Demon voice effect',
+                'audio_echo': 'Echo chamber effect',
+                'freeze_frame': '3-second freeze',
+                'stutter': 'Video stuttering pattern'
+            };
+            return descriptions[effect.id] || `${effect.type} effect`;
+        }
+
+        // Apply effect
+        function applyEffect(effectId) {
+            if (!socket || !isConnected) {
+                log('error', 'Not connected to server');
+                return;
+            }
+
+            if (!currentStreamId) {
+                log('error', 'No active stream');
+                return;
+            }
+
+            log('info', `Applying effect: ${effectId}`);
+            
+            socket.emit('apply-visual-effect', {
+                effectId: effectId,
+                options: {
+                    requestedBy: 'debug-panel',
+                    debugMode: true
+                }
+            });
+        }
+
+        // Apply preset
+        function applyPreset(presetName) {
+            if (!socket || !isConnected) {
+                log('error', 'Not connected to server');
+                return;
+            }
+
+            log('info', `Applying preset: ${presetName}`);
+            
+            // Use fetch API for preset application
+            fetch('/api/visualfx/preset/' + presetName, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    options: {
+                        requestedBy: 'debug-panel',
+                        debugMode: true
+                    }
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    log('success', `Preset applied: ${presetName}`);
+                } else {
+                    log('error', `Preset failed: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                log('error', `Preset request failed: ${error.message}`);
+            });
+        }
+
+        // Clear all effects
+        function clearAllEffects() {
+            if (!socket || !isConnected) {
+                log('error', 'Not connected to server');
+                return;
+            }
+
+            if (!currentStreamId) {
+                log('error', 'No active stream');
+                return;
+            }
+
+            log('warning', 'Clearing all effects...');
+            
+            // Use fetch API for clearing effects
+            fetch(`/api/visualfx/clear/${currentStreamId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    log('success', `Cleared ${data.clearedEffects} effects`);
+                } else {
+                    log('error', `Clear failed: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                log('error', `Clear request failed: ${error.message}`);
+            });
+        }
+
+        // Remove specific effect
+        function removeEffect(effectInstanceId) {
+            if (!socket || !isConnected) {
+                log('error', 'Not connected to server');
+                return;
+            }
+
+            socket.emit('remove-visual-effect', {
+                effectInstanceId: effectInstanceId
+            });
+        }
+
+        // Update stats display
+        function updateStatsDisplay() {
+            document.getElementById('active-effects-count').textContent = stats.activeEffects || 0;
+            document.getElementById('queued-effects-count').textContent = stats.queuedEffects || 0;
+            document.getElementById('cpu-usage').textContent = stats.cpuUsage || '0%';
+            document.getElementById('memory-usage').textContent = stats.memoryUsage || '0MB';
+        }
+
+        // Update stream info
+        function updateStreamInfo() {
+            const streamEl = document.getElementById('current-stream-id');
+            streamEl.textContent = currentStreamId || 'No active stream';
+        }
+
+        // Update active effects list
+        function updateActiveEffectsList() {
+            const listEl = document.getElementById('active-effects-list');
+            const badgeEl = document.getElementById('active-effects-badge');
+            
+            badgeEl.textContent = activeEffects.length;
+            
+            if (activeEffects.length === 0) {
+                listEl.innerHTML = `
+                    <div style="text-align: center; color: #8b949e; font-size: 11px; padding: 20px 0;">
+                        No active effects
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            activeEffects.forEach(effect => {
+                const timeRemaining = Math.max(0, effect.duration - (Date.now() - effect.startTime));
+                const secondsRemaining = Math.round(timeRemaining / 1000);
+                
+                html += `
+                    <div class="active-effect-item">
+                        <div class="active-effect-info">
+                            <div class="active-effect-name">${effect.config.name}</div>
+                            <div class="active-effect-time">${secondsRemaining}s remaining</div>
+                        </div>
+                        <button class="remove-effect-btn" onclick="removeEffect('${effect.id}')">
+                            Remove
+                        </button>
+                    </div>
+                `;
+            });
+
+            listEl.innerHTML = html;
+        }
+
+        // Success animation
+        function playSuccessAnimation() {
+            // Add a subtle flash to indicate success
+            const panel = document.getElementById('visualfx-debug-panel');
+            panel.style.boxShadow = '0 0 20px rgba(46, 160, 67, 0.5)';
+            setTimeout(() => {
+                panel.style.boxShadow = '';
+            }, 300);
+        }
+
+        // Logging function
+        function log(level, message) {
+            const logEl = document.getElementById('console-log');
+            const time = new Date().toLocaleTimeString();
+            
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `
+                <span class="log-time">${time}</span>
+                <span class="log-level ${level}">[${level.toUpperCase()}]</span>
+                <span class="log-message">${message}</span>
+            `;
+            
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+
+            // Keep only last 50 log entries
+            while (logEl.children.length > 50) {
+                logEl.removeChild(logEl.firstChild);
+            }
+        }
+
+        // Clear console log
+        function clearConsoleLog() {
+            document.getElementById('console-log').innerHTML = '';
+            log('info', 'Console cleared');
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeDebugPanel();
+        });
+
+        // Make functions globally available
+        window.toggleDebugPanel = toggleDebugPanel;
+        window.closeDebugPanel = closeDebugPanel;
+        window.applyEffect = applyEffect;
+        window.applyPreset = applyPreset;
+        window.removeEffect = removeEffect;
+        window.clearAllEffects = clearAllEffects;
+        window.clearConsoleLog = clearConsoleLog;
+        window.retryLoadEffects = retryLoadEffects;
+        window.showErrorState = showErrorState;
+        window.fetchEffectsFromAPI = fetchEffectsFromAPI;
+    </script>
+</body>
+</html>

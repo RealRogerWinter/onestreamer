@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Visual FX Integration Test</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/ClientVisualFxProcessor.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .video-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            background: #000;
+            border: 2px solid #333;
+            margin: 20px 0;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+        }
+        button {
+            margin: 5px;
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .log {
+            background: #222;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status {
+            padding: 10px;
+            background: #333;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🥔 Visual FX Integration Test</h1>
+        
+        <div class="status" id="status">
+            Status: Not connected
+        </div>
+        
+        <div class="video-container">
+            <video id="testVideo" autoplay muted></video>
+        </div>
+        
+        <div>
+            <button onclick="connectSocket()">Connect Socket</button>
+            <button onclick="initProcessor()">Initialize Processor</button>
+            <button onclick="testPotatoEffect()">Test Potato Effect</button>
+            <button onclick="clearEffects()">Clear Effects</button>
+            <button onclick="startTestVideo()">Start Test Video</button>
+        </div>
+        
+        <h3>Log:</h3>
+        <div class="log" id="log"></div>
+    </div>
+    
+    <script>
+        let socket = null;
+        let processor = null;
+        const log = document.getElementById('log');
+        const status = document.getElementById('status');
+        const video = document.getElementById('testVideo');
+        
+        function addLog(message, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff6b6b' : type === 'success' ? '#51cf66' : '#74c0fc';
+            log.innerHTML += `<div style="color: ${color}">[${time}] ${message}</div>`;
+            log.scrollTop = log.scrollHeight;
+            console.log(message);
+        }
+        
+        function updateStatus(message) {
+            status.textContent = `Status: ${message}`;
+        }
+        
+        function connectSocket() {
+            try {
+                socket = io('http://localhost:8080');
+                
+                socket.on('connect', () => {
+                    addLog('✅ Socket connected', 'success');
+                    updateStatus('Connected to server');
+                });
+                
+                socket.on('disconnect', () => {
+                    addLog('❌ Socket disconnected', 'error');
+                    updateStatus('Disconnected from server');
+                });
+                
+                socket.on('visual-effect-applied', (data) => {
+                    addLog(`📡 Received visual-effect-applied: ${JSON.stringify(data)}`, 'success');
+                    
+                    // Apply the effect if processor is initialized
+                    if (processor) {
+                        const success = processor.applyEffect(data.effectId, {
+                            duration: data.duration,
+                            isStreamer: true,
+                            isStreamerPreview: true
+                        });
+                        addLog(`🎨 Applied effect ${data.effectId}: ${success}`, success ? 'success' : 'error');
+                    }
+                });
+                
+                socket.on('visual-effect-removed', (data) => {
+                    addLog(`📡 Received visual-effect-removed: ${JSON.stringify(data)}`, 'info');
+                });
+                
+                addLog('🔌 Connecting to socket...', 'info');
+            } catch (error) {
+                addLog(`❌ Socket connection error: ${error.message}`, 'error');
+            }
+        }
+        
+        function initProcessor() {
+            try {
+                if (typeof ClientVisualFxProcessor === 'undefined') {
+                    addLog('❌ ClientVisualFxProcessor not loaded', 'error');
+                    return;
+                }
+                
+                processor = new ClientVisualFxProcessor();
+                const success = processor.initialize(video);
+                
+                if (success) {
+                    addLog('✅ Processor initialized', 'success');
+                    updateStatus('Processor ready');
+                } else {
+                    addLog('❌ Failed to initialize processor', 'error');
+                }
+            } catch (error) {
+                addLog(`❌ Processor init error: ${error.message}`, 'error');
+            }
+        }
+        
+        function testPotatoEffect() {
+            if (!processor) {
+                addLog('❌ Processor not initialized', 'error');
+                return;
+            }
+            
+            try {
+                const success = processor.applyEffect('bitrate_potato', {
+                    duration: 35000,
+                    isStreamer: true,
+                    isStreamerPreview: true
+                });
+                
+                if (success) {
+                    addLog('🥔 Applied Potato Quality effect for 35 seconds', 'success');
+                    updateStatus('Potato effect active');
+                    
+                    // Auto-clear after 35 seconds
+                    setTimeout(() => {
+                        clearEffects();
+                        addLog('⏱️ Potato effect expired', 'info');
+                    }, 35000);
+                } else {
+                    addLog('❌ Failed to apply Potato effect', 'error');
+                }
+            } catch (error) {
+                addLog(`❌ Effect application error: ${error.message}`, 'error');
+            }
+        }
+        
+        function clearEffects() {
+            if (!processor) {
+                addLog('❌ Processor not initialized', 'error');
+                return;
+            }
+            
+            processor.clearAllEffects();
+            addLog('🧹 Cleared all effects', 'info');
+            updateStatus('Effects cleared');
+        }
+        
+        function startTestVideo() {
+            // Create a test video stream using getUserMedia
+            navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                .then(stream => {
+                    video.srcObject = stream;
+                    addLog('📹 Test video stream started', 'success');
+                    updateStatus('Video streaming');
+                })
+                .catch(error => {
+                    addLog(`❌ Failed to start video: ${error.message}`, 'error');
+                });
+        }
+        
+        // Auto-start test video on load
+        window.addEventListener('load', () => {
+            addLog('🎬 Visual FX Integration Test Ready', 'info');
+            startTestVideo();
+        });
+    </script>
+</body>
+</html>

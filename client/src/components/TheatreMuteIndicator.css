@@ -1,0 +1,110 @@
+/* Theatre Mute Indicator - Simple and Clickable */
+.theatre-mute-indicator {
+  position: fixed;
+  bottom: 300px; /* Moved much higher to avoid any overlap */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000; /* Very high to ensure it's on top */
+  
+  /* Button reset */
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+  
+  /* Ensure it's clickable */
+  pointer-events: all !important;
+  user-select: none;
+}
+
+.mute-indicator-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  animation: mutePulse 2s ease-in-out infinite;
+}
+
+@keyframes mutePulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+  }
+}
+
+.theatre-mute-indicator:hover .mute-indicator-content {
+  background: rgba(20, 20, 20, 0.95);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.05);
+  animation: none;
+}
+
+.theatre-mute-indicator:active .mute-indicator-content {
+  transform: scale(0.98);
+}
+
+.mute-icon {
+  font-size: 24px;
+  line-height: 1;
+  display: block;
+}
+
+.mute-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.mute-title {
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mute-subtitle {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Hide in non-theatre mode */
+.App:not(.theatre-mode) .theatre-mute-indicator {
+  display: none;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  .theatre-mute-indicator {
+    bottom: 150px; /* Higher on mobile too */
+  }
+  
+  .mute-indicator-content {
+    padding: 10px 16px;
+  }
+  
+  .mute-icon {
+    font-size: 20px;
+  }
+  
+  .mute-title {
+    font-size: 13px;
+  }
+  
+  .mute-subtitle {
+    font-size: 11px;
+  }
+}

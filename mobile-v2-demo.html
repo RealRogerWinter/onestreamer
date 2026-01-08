@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OneStreamer Mobile v2 - Enhanced Layout Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: #1a1a1a;
+            color: white;
+            overflow-x: hidden;
+            padding-bottom: 60px;
+        }
+        
+        /* Header */
+        .header {
+            position: sticky;
+            top: 0;
+            background: rgba(26, 26, 26, 0.98);
+            backdrop-filter: blur(10px);
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .logo {
+            font-size: 20px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .points-display {
+            background: rgba(255, 215, 0, 0.1);
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            color: gold;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        /* Main Content */
+        .main-content {
+            padding: 16px;
+        }
+        
+        /* Stream Container */
+        .stream-container {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: linear-gradient(45deg, #333 25%, #444 25%, #444 50%, #333 50%, #333 75%, #444 75%, #444);
+            background-size: 20px 20px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            position: relative;
+            margin-bottom: 16px;
+        }
+        
+        .stream-placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        
+        .stream-icon {
+            font-size: 48px;
+            margin-bottom: 8px;
+        }
+        
+        /* Stream Controls */
+        .stream-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .control-btn {
+            flex: 1;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            min-height: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .control-btn:active {
+            transform: scale(0.95);
+        }
+        
+        .control-btn.stop {
+            background: linear-gradient(135deg, #ff4757 0%, #ff6348 100%);
+        }
+        
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: rgba(26, 26, 26, 0.98);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 1000;
+            padding: 0 10px;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+        }
+        
+        .nav-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+            color: rgba(255, 255, 255, 0.6);
+            cursor: pointer;
+            transition: all 0.3s;
+            border-radius: 12px;
+            margin: 0 2px;
+        }
+        
+        .nav-item.active {
+            color: white;
+            background: rgba(102, 126, 234, 0.2);
+        }
+        
+        .nav-icon {
+            font-size: 24px;
+            margin-bottom: 2px;
+        }
+        
+        .nav-label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        /* Inventory Icon - Larger and prominent */
+        .nav-item.nav-inventory .nav-icon {
+            font-size: 28px;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+            animation: bounce 2s infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+        
+        /* Floating Inventory Button */
+        .inventory-fab {
+            position: fixed;
+            right: 15px;
+            bottom: 80px;
+            width: 65px;
+            height: 65px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            cursor: pointer;
+            animation: pulse 2s infinite;
+            z-index: 999;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        /* Slide-up Panels */
+        .panel {
+            position: fixed;
+            bottom: -100%;
+            left: 0;
+            right: 0;
+            height: 85vh;
+            background: rgba(26, 26, 26, 0.98);
+            backdrop-filter: blur(10px);
+            border-radius: 20px 20px 0 0;
+            border-top: 3px solid #444;
+            transition: bottom 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            z-index: 998;
+            display: none;
+        }
+        
+        .panel.open {
+            bottom: 0;
+            display: block;
+        }
+        
+        .panel-handle {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+        }
+        
+        .panel-header {
+            padding: 16px 20px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(116, 75, 162, 0.2) 100%);
+            border-bottom: 2px solid #444;
+            border-radius: 20px 20px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-title {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .panel-close {
+            width: 44px;
+            height: 44px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        
+        /* Inventory Grid */
+        .inventory-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            padding: 20px;
+        }
+        
+        .inventory-item {
+            aspect-ratio: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .inventory-item:active {
+            transform: scale(0.95);
+        }
+        
+        .item-emoji {
+            font-size: 32px;
+            margin-bottom: 4px;
+        }
+        
+        .item-name {
+            font-size: 11px;
+            text-align: center;
+        }
+        
+        /* Chat Messages */
+        .chat-messages {
+            padding: 16px;
+            height: calc(100% - 140px);
+            overflow-y: auto;
+        }
+        
+        .chat-message {
+            padding: 10px 14px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .message-author {
+            font-size: 13px;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 4px;
+        }
+        
+        .message-text {
+            font-size: 15px;
+            line-height: 1.5;
+        }
+        
+        .chat-input-area {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 16px;
+            background: rgba(42, 42, 42, 0.95);
+            border-top: 2px solid #444;
+        }
+        
+        .chat-input {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            color: white;
+            font-size: 16px;
+            outline: none;
+        }
+        
+        .chat-input:focus {
+            border-color: rgba(78, 205, 196, 0.5);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        /* Info Box */
+        .info-box {
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .info-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #667eea;
+        }
+        
+        .info-text {
+            font-size: 14px;
+            line-height: 1.5;
+            color: rgba(255, 255, 255, 0.8);
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="logo">🎮 OneStreamer</div>
+        <div class="user-info">
+            <div class="points-display">💎 1,337</div>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Stream Container -->
+        <div class="stream-container">
+            <div class="stream-placeholder">
+                <div class="stream-icon">📹</div>
+                <div>Stream View</div>
+            </div>
+        </div>
+        
+        <!-- Stream Controls -->
+        <div class="stream-controls">
+            <button class="control-btn">Start Stream</button>
+            <button class="control-btn stop">Stop</button>
+        </div>
+        
+        <!-- Info Box -->
+        <div class="info-box">
+            <div class="info-title">📱 Mobile v2 Enhancements</div>
+            <div class="info-text">
+                • Larger backpack icon with animation<br>
+                • Full-screen panels with swipe gestures<br>
+                • Bottom navigation bar for easy access<br>
+                • Larger, more readable chat interface<br>
+                • Responsive inventory grid (4 columns)<br>
+                • All touch targets ≥ 44x44px<br>
+                • Smooth animations and transitions
+            </div>
+        </div>
+    </div>
+    
+    <!-- Floating Inventory Button -->
+    <div class="inventory-fab" onclick="togglePanel('inventory')">🎒</div>
+    
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav">
+        <div class="nav-item" onclick="togglePanel('stream')">
+            <span class="nav-icon">📹</span>
+            <span class="nav-label">Stream</span>
+        </div>
+        <div class="nav-item" onclick="togglePanel('chat')">
+            <span class="nav-icon">💬</span>
+            <span class="nav-label">Chat</span>
+        </div>
+        <div class="nav-item nav-inventory" onclick="togglePanel('inventory')">
+            <span class="nav-icon">🎒</span>
+            <span class="nav-label">Backpack</span>
+        </div>
+        <div class="nav-item" onclick="togglePanel('shop')">
+            <span class="nav-icon">🛒</span>
+            <span class="nav-label">Shop</span>
+        </div>
+    </div>
+    
+    <!-- Inventory Panel -->
+    <div class="panel" id="inventory-panel">
+        <div class="panel-handle"></div>
+        <div class="panel-header">
+            <div class="panel-title">🎒 Inventory</div>
+            <button class="panel-close" onclick="closePanel('inventory')">×</button>
+        </div>
+        <div class="inventory-grid">
+            <div class="inventory-item">
+                <span class="item-emoji">⚔️</span>
+                <span class="item-name">Sword</span>
+            </div>
+            <div class="inventory-item">
+                <span class="item-emoji">🛡️</span>
+                <span class="item-name">Shield</span>
+            </div>
+            <div class="inventory-item">
+                <span class="item-emoji">🧪</span>
+                <span class="item-name">Potion</span>
+            </div>
+            <div class="inventory-item">
+                <span class="item-emoji">💎</span>
+                <span class="item-name">Gem</span>
+            </div>
+            <div class="inventory-item">
+                <span class="item-emoji">🔮</span>
+                <span class="item-name">Orb</span>
+            </div>
+            <div class="inventory-item">
+                <span class="item-emoji">📜</span>
+                <span class="item-name">Scroll</span>
+            </div>
+            <div class="inventory-item">
+                <span class="item-emoji">🗝️</span>
+                <span class="item-name">Key</span>
+            </div>
+            <div class="inventory-item">
+                <span class="item-emoji">🎁</span>
+                <span class="item-name">Gift</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Chat Panel -->
+    <div class="panel" id="chat-panel">
+        <div class="panel-handle"></div>
+        <div class="panel-header">
+            <div class="panel-title">💬 Chat</div>
+            <button class="panel-close" onclick="closePanel('chat')">×</button>
+        </div>
+        <div class="chat-messages">
+            <div class="chat-message">
+                <div class="message-author">User123</div>
+                <div class="message-text">This mobile layout is amazing! 🎉</div>
+            </div>
+            <div class="chat-message">
+                <div class="message-author">Streamer</div>
+                <div class="message-text">Thanks! The new v2 design makes everything so much easier to use on mobile.</div>
+            </div>
+            <div class="chat-message">
+                <div class="message-author">Viewer456</div>
+                <div class="message-text">Love the larger chat and inventory! 🎒</div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" class="chat-input" placeholder="Type a message...">
+        </div>
+    </div>
+    
+    <script>
+        let currentPanel = null;
+        
+        function togglePanel(panelName) {
+            const panel = document.getElementById(panelName + '-panel');
+            if (!panel) return;
+            
+            // Close other panels
+            document.querySelectorAll('.panel').forEach(p => {
+                if (p !== panel) {
+                    p.classList.remove('open');
+                }
+            });
+            
+            // Toggle current panel
+            if (panel.classList.contains('open')) {
+                panel.classList.remove('open');
+                currentPanel = null;
+            } else {
+                panel.classList.add('open');
+                currentPanel = panelName;
+            }
+            
+            // Update nav item states
+            updateNavStates();
+        }
+        
+        function closePanel(panelName) {
+            const panel = document.getElementById(panelName + '-panel');
+            if (panel) {
+                panel.classList.remove('open');
+                currentPanel = null;
+                updateNavStates();
+            }
+        }
+        
+        function updateNavStates() {
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            if (currentPanel) {
+                const activeNav = document.querySelector(`.nav-item[onclick*="${currentPanel}"]`);
+                if (activeNav) {
+                    activeNav.classList.add('active');
+                }
+            }
+        }
+        
+        // Swipe down to close panels
+        let touchStartY = 0;
+        
+        document.querySelectorAll('.panel').forEach(panel => {
+            panel.addEventListener('touchstart', (e) => {
+                touchStartY = e.touches[0].clientY;
+            });
+            
+            panel.addEventListener('touchmove', (e) => {
+                const touchY = e.touches[0].clientY;
+                const deltaY = touchY - touchStartY;
+                
+                // Swipe down to close
+                if (deltaY > 100) {
+                    panel.classList.remove('open');
+                    currentPanel = null;
+                    updateNavStates();
+                }
+            });
+        });
+        
+        // Animate inventory button on load
+        setTimeout(() => {
+            const fab = document.querySelector('.inventory-fab');
+            fab.style.animation = 'pulse 2s infinite, bounce 2s infinite';
+        }, 1000);
+    </script>
+</body>
+</html>

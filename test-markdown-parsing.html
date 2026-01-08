@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Markdown Parsing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test-case {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #333;
+            border-radius: 5px;
+        }
+        .input {
+            background: #2a2a2a;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .output {
+            background: #333;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        h2 { color: #4a9eff; }
+        em { color: #ff9; font-style: italic; }
+        strong { color: #f66; font-weight: bold; }
+        code { background: #444; padding: 2px 5px; border-radius: 3px; }
+        a { color: #4a9eff; text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>Markdown Parser Test</h1>
+    
+    <div id="test-results"></div>
+
+    <script type="module">
+        // Recreate the formatInlineText function from Tutorial.tsx
+        function formatInlineText(text) {
+            const elements = [];
+            let remaining = text;
+            let keyCounter = 0;
+            
+            while (remaining.length > 0) {
+                let matched = false;
+                
+                // Check for links [text](url)
+                const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+                if (linkMatch) {
+                    const [fullMatch, linkText, url] = linkMatch;
+                    elements.push(`<a href="${url}" target="_blank">${linkText}</a>`);
+                    remaining = remaining.slice(fullMatch.length);
+                    matched = true;
+                }
+                
+                // Check for bold **text**
+                if (!matched) {
+                    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
+                    if (boldMatch) {
+                        const [fullMatch, boldText] = boldMatch;
+                        elements.push(`<strong>${boldText}</strong>`);
+                        remaining = remaining.slice(fullMatch.length);
+                        matched = true;
+                    }
+                }
+                
+                // Check for italics *text* or _text_
+                if (!matched) {
+                    const italicMatch = remaining.match(/^(\*([^*]+)\*|_([^_]+)_)/);
+                    if (italicMatch) {
+                        const [fullMatch, , starText, underscoreText] = italicMatch;
+                        const italicText = starText || underscoreText;
+                        elements.push(`<em>${italicText}</em>`);
+                        remaining = remaining.slice(fullMatch.length);
+                        matched = true;
+                    }
+                }
+                
+                // Check for code `code`
+                if (!matched) {
+                    const codeMatch = remaining.match(/^`([^`]+)`/);
+                    if (codeMatch) {
+                        const [fullMatch, codeText] = codeMatch;
+                        elements.push(`<code>${codeText}</code>`);
+                        remaining = remaining.slice(fullMatch.length);
+                        matched = true;
+                    }
+                }
+                
+                // If no markdown matched, take the next character as plain text
+                if (!matched) {
+                    const nextSpecial = remaining.search(/[\[*_`]/);
+                    if (nextSpecial > 0) {
+                        elements.push(remaining.slice(0, nextSpecial));
+                        remaining = remaining.slice(nextSpecial);
+                    } else {
+                        elements.push(remaining);
+                        remaining = '';
+                    }
+                }
+            }
+            
+            return elements.join('');
+        }
+
+        // Test cases
+        const testCases = [
+            {
+                name: "Bold text",
+                input: "This is **bold text** in a sentence",
+                expected: "This is <strong>bold text</strong> in a sentence"
+            },
+            {
+                name: "Italic with asterisks",
+                input: "This is *italic text* in a sentence",
+                expected: "This is <em>italic text</em> in a sentence"
+            },
+            {
+                name: "Italic with underscores",
+                input: "This is _also italic_ text",
+                expected: "This is <em>also italic</em> text"
+            },
+            {
+                name: "Code inline",
+                input: "Use the `console.log()` function",
+                expected: "Use the <code>console.log()</code> function"
+            },
+            {
+                name: "Link",
+                input: "Visit [Google](https://google.com) for search",
+                expected: 'Visit <a href="https://google.com" target="_blank">Google</a> for search'
+            },
+            {
+                name: "Mixed formatting",
+                input: "This has **bold**, *italic*, `code` and [a link](https://example.com)",
+                expected: 'This has <strong>bold</strong>, <em>italic</em>, <code>code</code> and <a href="https://example.com" target="_blank">a link</a>'
+            },
+            {
+                name: "Real example from tutorial",
+                input: "OneStreamer is a platform where only **one user can be live at a time**",
+                expected: "OneStreamer is a platform where only <strong>one user can be live at a time</strong>"
+            },
+            {
+                name: "Real Discord link",
+                input: "Join our Discord: [Join OneStreamer Discord](https://discord.com/invite/As5CA3ekYA)",
+                expected: 'Join our Discord: <a href="https://discord.com/invite/As5CA3ekYA" target="_blank">Join OneStreamer Discord</a>'
+            }
+        ];
+
+        // Run tests
+        const resultsDiv = document.getElementById('test-results');
+        
+        testCases.forEach(test => {
+            const result = formatInlineText(test.input);
+            const passed = result === test.expected;
+            
+            const testDiv = document.createElement('div');
+            testDiv.className = 'test-case';
+            testDiv.innerHTML = `
+                <h2>${test.name} ${passed ? '✅' : '❌'}</h2>
+                <div class="input">Input: ${test.input.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                <div class="output">Output: ${result}</div>
+                <div class="output">Rendered: ${result}</div>
+                ${!passed ? `<div style="color: #f66;">Expected: ${test.expected.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>` : ''}
+            `;
+            resultsDiv.appendChild(testDiv);
+        });
+    </script>
+</body>
+</html>

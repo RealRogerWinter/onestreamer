@@ -1,0 +1,293 @@
+.tutorial-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.tutorial-modal {
+  background: #1a1a1a;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.tutorial-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: #222;
+}
+
+.tutorial-header h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.tutorial-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 28px;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.tutorial-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.tutorial-tabs {
+  display: flex;
+  background: #1a1a1a;
+  border-bottom: 1px solid #333;
+  padding: 0 24px;
+}
+
+.tutorial-tab {
+  background: none;
+  border: none;
+  color: #999;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tutorial-tab:hover {
+  color: #ccc;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tutorial-tab.active {
+  color: #4a9eff;
+  border-bottom-color: #4a9eff;
+  background: rgba(74, 158, 255, 0.1);
+}
+
+.tutorial-tab.active:hover {
+  color: #4a9eff;
+  background: rgba(74, 158, 255, 0.15);
+}
+
+.tutorial-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.tutorial-loading {
+  text-align: center;
+  color: #999;
+  padding: 40px;
+  font-size: 14px;
+}
+
+.tutorial-error {
+  text-align: center;
+  color: #ef4444;
+  padding: 40px;
+  font-size: 14px;
+}
+
+.tutorial-markdown {
+  color: #fff;
+  line-height: 1.6;
+}
+
+/* Markdown Styles */
+.tutorial-markdown h1 {
+  color: #fff;
+  font-size: 28px;
+  margin: 0 0 20px 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #4a9eff;
+}
+
+.tutorial-markdown h2 {
+  color: #fff;
+  font-size: 22px;
+  margin: 30px 0 15px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #333;
+}
+
+.tutorial-markdown h3 {
+  color: #4a9eff;
+  font-size: 18px;
+  margin: 20px 0 10px 0;
+}
+
+.tutorial-markdown h4 {
+  color: #fff;
+  font-size: 16px;
+  margin: 15px 0 10px 0;
+}
+
+.tutorial-markdown p {
+  margin: 10px 0;
+  color: #ccc;
+}
+
+.tutorial-markdown ul,
+.tutorial-markdown ol {
+  margin: 10px 0;
+  padding-left: 30px;
+  color: #ccc;
+}
+
+.tutorial-markdown li {
+  margin: 5px 0;
+}
+
+.tutorial-markdown strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+.tutorial-markdown em {
+  color: #999;
+  font-style: italic;
+}
+
+.tutorial-markdown code {
+  background: #222;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #4a9eff;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+}
+
+.tutorial-markdown pre {
+  background: #222;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 15px 0;
+  border: 1px solid #333;
+}
+
+.tutorial-markdown pre code {
+  background: none;
+  padding: 0;
+  color: #fff;
+}
+
+.tutorial-markdown blockquote {
+  border-left: 4px solid #4a9eff;
+  padding-left: 15px;
+  margin: 15px 0;
+  color: #999;
+  font-style: italic;
+}
+
+.tutorial-markdown hr {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 30px 0;
+}
+
+.tutorial-markdown a {
+  color: #4a9eff;
+  text-decoration: none;
+}
+
+.tutorial-markdown a:hover {
+  text-decoration: underline;
+}
+
+/* Scrollbar */
+.tutorial-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.tutorial-content::-webkit-scrollbar-track {
+  background: #222;
+  border-radius: 4px;
+}
+
+.tutorial-content::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+.tutorial-content::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Help Icon Button */
+.help-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  background: #222;
+  border: 1px solid #333;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 1000;
+  font-size: 18px;
+  color: #999;
+  font-weight: bold;
+}
+
+.help-button:hover {
+  background: #333;
+  border-color: #4a9eff;
+  color: #4a9eff;
+  transform: scale(1.1);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .tutorial-modal {
+    width: 95%;
+    max-height: 95vh;
+  }
+  
+  .tutorial-markdown h1 {
+    font-size: 24px;
+  }
+  
+  .tutorial-markdown h2 {
+    font-size: 20px;
+  }
+  
+  .tutorial-markdown h3 {
+    font-size: 16px;
+  }
+}

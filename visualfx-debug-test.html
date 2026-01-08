@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VisualFX Debug Panel - Test Page</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+        }
+        
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.5rem;
+        }
+        
+        .header p {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+        
+        .instructions {
+            background: #2d2d2d;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            border-left: 4px solid #00ff88;
+        }
+        
+        .instructions h2 {
+            margin-top: 0;
+            color: #00ff88;
+        }
+        
+        .shortcut-list {
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #444;
+        }
+        
+        .shortcut-item:last-child {
+            border-bottom: none;
+        }
+        
+        .shortcut-key {
+            background: #444;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        
+        .status-panel {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #444;
+        }
+        
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .status-indicator {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-connected {
+            background: #00ff88;
+            color: #000;
+        }
+        
+        .status-disconnected {
+            background: #ff4444;
+            color: #fff;
+        }
+        
+        .test-buttons {
+            background: #2d2d2d;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .test-button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .test-button:active {
+            transform: translateY(0);
+        }
+        
+        .preset-button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+        }
+        
+        .preset-button:hover {
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+        }
+        
+        .danger-button {
+            background: linear-gradient(45deg, #ff4757, #c44569);
+        }
+        
+        .danger-button:hover {
+            box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
+        }
+        
+        .log-section {
+            background: #1e1e1e;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .log-header {
+            background: #333;
+            padding: 15px 20px;
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .log-content {
+            height: 300px;
+            overflow-y: auto;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .log-time {
+            color: #888;
+            min-width: 80px;
+        }
+        
+        .log-level {
+            min-width: 60px;
+            font-weight: bold;
+        }
+        
+        .log-level.info { color: #00bfff; }
+        .log-level.success { color: #00ff88; }
+        .log-level.error { color: #ff4444; }
+        .log-level.warning { color: #ffaa00; }
+        
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            border-top: 1px solid #444;
+            color: #888;
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 VisualFX Debug Panel</h1>
+            <p>Interactive testing interface for stream visual effects</p>
+        </div>
+        
+        <div class="instructions">
+            <h2>🚀 Quick Start</h2>
+            <p>This page demonstrates the VisualFX debug panel functionality. The debug panel can be accessed from any page on the site using keyboard shortcuts.</p>
+            
+            <div class="shortcut-list">
+                <div class="shortcut-item">
+                    <span>Open/Close Debug Panel</span>
+                    <span class="shortcut-key">Ctrl + Shift + V</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Close Panel (when open)</span>
+                    <span class="shortcut-key">ESC</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Clear All Effects (when panel open)</span>
+                    <span class="shortcut-key">Ctrl + Shift + C</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="status-panel">
+            <h2>📊 System Status</h2>
+            <div class="status-item">
+                <span>Socket Connection</span>
+                <span id="connection-status" class="status-indicator status-disconnected">Disconnected</span>
+            </div>
+            <div class="status-item">
+                <span>Active Stream</span>
+                <span id="stream-status">No active stream</span>
+            </div>
+            <div class="status-item">
+                <span>Active Effects</span>
+                <span id="effects-count">0</span>
+            </div>
+            <div class="status-item">
+                <span>Admin Access</span>
+                <span id="admin-status" class="status-indicator status-disconnected">Checking...</span>
+            </div>
+        </div>
+        
+        <div class="test-buttons">
+            <h2>🎯 Quick Test Effects</h2>
+            <p>Test individual effects or try preset combinations:</p>
+            
+            <div class="button-grid">
+                <button class="test-button" onclick="testEffect('resolution_240p')">
+                    📱 Low Resolution
+                </button>
+                <button class="test-button" onclick="testEffect('pixelate')">
+                    🎮 Pixelate
+                </button>
+                <button class="test-button" onclick="testEffect('grayscale')">
+                    ⚫ Grayscale
+                </button>
+                <button class="test-button" onclick="testEffect('packet_loss_mild')">
+                    📡 Packet Loss
+                </button>
+                <button class="test-button" onclick="testEffect('audio_pitch_high')">
+                    🐿️ Chipmunk Voice
+                </button>
+                <button class="test-button" onclick="testEffect('freeze_frame')">
+                    ⏸️ Freeze Frame
+                </button>
+                
+                <button class="preset-button" onclick="testPreset('chaos_mode')">
+                    🌪️ Chaos Mode
+                </button>
+                <button class="preset-button" onclick="testPreset('retro_mode')">
+                    📺 Retro Mode
+                </button>
+                <button class="preset-button" onclick="testPreset('comedy_hour')">
+                    😂 Comedy Hour
+                </button>
+                
+                <button class="danger-button" onclick="clearAllEffects()">
+                    🗑️ Clear All Effects
+                </button>
+                <button class="test-button" onclick="openDebugPanel()">
+                    🔧 Open Debug Panel
+                </button>
+                <button class="test-button" onclick="getEffectsStats()">
+                    📊 Refresh Stats
+                </button>
+            </div>
+        </div>
+        
+        <div class="log-section">
+            <div class="log-header">
+                <h3>📝 Activity Log</h3>
+                <button onclick="clearLog()" style="background: #666; color: white; border: none; padding: 5px 15px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                    Clear Log
+                </button>
+            </div>
+            <div id="log-content" class="log-content">
+                <div class="log-entry">
+                    <span class="log-time">--:--:--</span>
+                    <span class="log-level info">[INFO]</span>
+                    <span>Initializing VisualFX test interface...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>VisualFX Debug Panel v1.0 | Press <strong>Ctrl+Shift+V</strong> to open the full debug interface</p>
+        </div>
+    </div>
+
+    <!-- Load the debug panel integration -->
+    <script src="/visualfx-debug.js"></script>
+    
+    <script>
+        // Global variables
+        let socket = null;
+        let isConnected = false;
+        let isAdmin = false;
+        let effectsCount = 0;
+        let currentStreamId = null;
+        
+        // Initialize the test page
+        function initializeTestPage() {
+            log('info', 'Test page loaded');
+            connectToServer();
+            checkAdminStatus();
+            
+            // Show pulse animation on connection status
+            document.getElementById('connection-status').classList.add('pulse');
+        }
+        
+        // Connect to server
+        function connectToServer() {
+            log('info', 'Connecting to server...');
+            socket = io();
+            
+            socket.on('connect', () => {
+                isConnected = true;
+                updateConnectionStatus();
+                log('success', 'Connected to server');
+                
+                // Join as viewer
+                socket.emit('join-as-viewer');
+                
+                // Get initial data
+                requestStats();
+            });
+            
+            socket.on('disconnect', () => {
+                isConnected = false;
+                updateConnectionStatus();
+                log('error', 'Disconnected from server');
+            });
+            
+            // VisualFX events
+            socket.on('visual-effect-applied', (data) => {
+                log('success', `Effect applied: ${data.effectName} (${data.duration}ms)`);
+                requestStats();
+            });
+            
+            socket.on('visual-effect-removed', (data) => {
+                log('info', `Effect removed: ${data.effectInstanceId}`);
+                requestStats();
+            });
+            
+            socket.on('visual-effects-cleared', (data) => {
+                log('warning', `Cleared ${data.clearedCount} effects from stream`);
+                requestStats();
+            });
+            
+            socket.on('visual-effect-error', (error) => {
+                log('error', `Effect error: ${error.error}`);
+            });
+            
+            socket.on('visual-fx-stats', (data) => {
+                effectsCount = data.stats.activeEffects || 0;
+                currentStreamId = data.streamId;
+                updateStats();
+            });
+            
+            socket.on('stream-status', (data) => {
+                currentStreamId = data.currentStreamer;
+                updateStreamStatus();
+            });
+        }
+        
+        // Check admin status
+        async function checkAdminStatus() {
+            try {
+                const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+                
+                if (!token) {
+                    // For testing purposes, assume admin access
+                    isAdmin = true;
+                    updateAdminStatus();
+                    log('warning', 'No auth token found, assuming admin access for testing');
+                    return;
+                }
+                
+                const response = await fetch('/api/internal/verify-admin', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    isAdmin = data.isAdmin || false;
+                    updateAdminStatus();
+                    log('info', `Admin status: ${isAdmin ? 'Granted' : 'Denied'}`);
+                } else {
+                    isAdmin = false;
+                    updateAdminStatus();
+                    log('warning', 'Admin status check failed');
+                }
+            } catch (error) {
+                log('error', `Admin check error: ${error.message}`);
+                isAdmin = false;
+                updateAdminStatus();
+            }
+        }
+        
+        // Update connection status display
+        function updateConnectionStatus() {
+            const statusEl = document.getElementById('connection-status');
+            if (isConnected) {
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'status-indicator status-connected';
+                statusEl.classList.remove('pulse');
+            } else {
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'status-indicator status-disconnected pulse';
+            }
+        }
+        
+        // Update admin status display
+        function updateAdminStatus() {
+            const statusEl = document.getElementById('admin-status');
+            if (isAdmin) {
+                statusEl.textContent = 'Granted';
+                statusEl.className = 'status-indicator status-connected';
+            } else {
+                statusEl.textContent = 'Denied';
+                statusEl.className = 'status-indicator status-disconnected';
+            }
+        }
+        
+        // Update stream status
+        function updateStreamStatus() {
+            const statusEl = document.getElementById('stream-status');
+            statusEl.textContent = currentStreamId || 'No active stream';
+        }
+        
+        // Update stats
+        function updateStats() {
+            document.getElementById('effects-count').textContent = effectsCount;
+        }
+        
+        // Request stats from server
+        function requestStats() {
+            if (socket && isConnected) {
+                socket.emit('get-visual-fx-stats');
+            }
+        }
+        
+        // Test effect function
+        function testEffect(effectId) {
+            if (!socket || !isConnected) {
+                log('error', 'Not connected to server');
+                return;
+            }
+            
+            log('info', `Testing effect: ${effectId}`);
+            
+            socket.emit('apply-visual-effect', {
+                effectId: effectId,
+                options: {
+                    requestedBy: 'test-page',
+                    testMode: true
+                }
+            });
+        }
+        
+        // Test preset function
+        function testPreset(presetName) {
+            if (!isConnected) {
+                log('error', 'Not connected to server');
+                return;
+            }
+            
+            log('info', `Testing preset: ${presetName}`);
+            
+            fetch(`/api/visualfx/preset/${presetName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    options: {
+                        requestedBy: 'test-page',
+                        testMode: true
+                    }
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    log('success', `Preset applied: ${presetName}`);
+                } else {
+                    log('error', `Preset failed: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                log('error', `Preset request failed: ${error.message}`);
+            });
+        }
+        
+        // Clear all effects
+        function clearAllEffects() {
+            if (!isConnected) {
+                log('error', 'Not connected to server');
+                return;
+            }
+            
+            if (!currentStreamId) {
+                log('error', 'No active stream to clear effects from');
+                return;
+            }
+            
+            log('warning', 'Clearing all effects...');
+            
+            fetch(`/api/visualfx/clear/${currentStreamId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    log('success', `Cleared ${data.clearedEffects} effects`);
+                } else {
+                    log('error', `Clear failed: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                log('error', `Clear request failed: ${error.message}`);
+            });
+        }
+        
+        // Open debug panel
+        function openDebugPanel() {
+            if (window.visualFxDebugPanel) {
+                window.visualFxDebugPanel.openPanel();
+                log('info', 'Debug panel opened via button');
+            } else {
+                log('warning', 'Debug panel not loaded yet, try keyboard shortcut: Ctrl+Shift+V');
+            }
+        }
+        
+        // Get effects stats
+        function getEffectsStats() {
+            requestStats();
+            log('info', 'Requesting updated statistics...');
+        }
+        
+        // Logging function
+        function log(level, message) {
+            const logContent = document.getElementById('log-content');
+            const time = new Date().toLocaleTimeString();
+            
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `
+                <span class="log-time">${time}</span>
+                <span class="log-level ${level}">[${level.toUpperCase()}]</span>
+                <span>${message}</span>
+            `;
+            
+            logContent.appendChild(entry);
+            logContent.scrollTop = logContent.scrollHeight;
+            
+            // Keep only last 100 entries
+            while (logContent.children.length > 100) {
+                logContent.removeChild(logContent.firstChild);
+            }
+        }
+        
+        // Clear log
+        function clearLog() {
+            document.getElementById('log-content').innerHTML = '';
+            log('info', 'Log cleared');
+        }
+        
+        // Initialize when DOM is ready
+        document.addEventListener('DOMContentLoaded', initializeTestPage);
+        
+        // Show instructions in console
+        console.log(`
+        🎬 VisualFX Debug Panel Test Page
+        
+        📋 Available Functions:
+           • testEffect(effectId) - Test a specific effect
+           • testPreset(presetName) - Test a preset combination
+           • clearAllEffects() - Clear all active effects
+           • openDebugPanel() - Open the full debug panel
+           
+        ⌨️ Keyboard Shortcuts:
+           • Ctrl+Shift+V - Toggle debug panel
+           • ESC - Close debug panel (when open)
+           • Ctrl+Shift+C - Clear all effects (when panel open)
+           
+        🔧 Example Usage:
+           testEffect('pixelate')
+           testPreset('chaos_mode')
+        `);
+    </script>
+</body>
+</html>

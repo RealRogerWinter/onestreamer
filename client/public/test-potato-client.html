@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Potato Effect Client Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #0f0;
+        }
+        
+        #video {
+            width: 640px;
+            height: 480px;
+            background: #000;
+            border: 2px solid #0f0;
+        }
+        
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #0f0;
+            min-height: 200px;
+            white-space: pre-wrap;
+        }
+        
+        button {
+            background: #0f0;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            background: #0a0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🥔 Potato Effect Client Test</h1>
+    
+    <video id="video" autoplay muted></video>
+    
+    <div>
+        <button onclick="testPotatoEffect()">Apply Potato Effect</button>
+        <button onclick="clearEffects()">Clear Effects</button>
+        <button onclick="connectSocket()">Connect Socket</button>
+    </div>
+    
+    <div id="status">Initializing...</div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/ClientVisualFxProcessor.js"></script>
+    <script>
+        let socket = null;
+        let processor = null;
+        let statusLog = [];
+        
+        function log(message) {
+            const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
+            const logMessage = `[${timestamp}] ${message}`;
+            statusLog.push(logMessage);
+            if (statusLog.length > 20) statusLog.shift();
+            document.getElementById('status').textContent = statusLog.join('\n');
+            console.log(logMessage);
+        }
+        
+        // Initialize video with test stream
+        async function initVideo() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: false 
+                });
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                log('✅ Video initialized with camera stream');
+                
+                // Initialize processor
+                processor = new ClientVisualFxProcessor();
+                const success = processor.initialize(video);
+                log(`🎨 Processor initialized: ${success}`);
+                
+                if (success) {
+                    log('✅ ClientVisualFxProcessor ready');
+                    log(`Available effects: ${Object.keys(processor.effectDefinitions).length}`);
+                }
+            } catch (error) {
+                log(`❌ Failed to initialize video: ${error.message}`);
+            }
+        }
+        
+        // Connect to socket server
+        function connectSocket() {
+            log('🔌 Connecting to socket server...');
+            
+            socket = io('http://localhost:8080', {
+                transports: ['websocket']
+            });
+            
+            socket.on('connect', () => {
+                log(`✅ Connected: ${socket.id}`);
+                setupSocketListeners();
+            });
+            
+            socket.on('disconnect', () => {
+                log('❌ Disconnected from server');
+            });
+            
+            socket.on('connect_error', (error) => {
+                log(`❌ Connection error: ${error.message}`);
+            });
+        }
+        
+        // Setup socket listeners
+        function setupSocketListeners() {
+            socket.on('visual-effect-applied', (data) => {
+                log(`📨 Received: visual-effect-applied`);
+                log(`   effectId: ${data.effectId}`);
+                log(`   duration: ${data.duration}ms`);
+                log(`   applyToAllViewers: ${data.applyToAllViewers}`);
+                
+                if (processor && data.effectId === 'bitrate_potato') {
+                    log('🥔 APPLYING POTATO EFFECT!');
+                    const result = processor.applyEffect('bitrate_potato', {
+                        duration: data.duration
+                    });
+                    log(`   Result: ${result}`);
+                }
+            });
+            
+            socket.onAny((eventName, ...args) => {
+                if (eventName.includes('visual')) {
+                    log(`📡 Event: ${eventName}`);
+                }
+            });
+        }
+        
+        // Test potato effect locally
+        function testPotatoEffect() {
+            if (!processor) {
+                log('❌ Processor not initialized');
+                return;
+            }
+            
+            log('🥔 Testing potato effect locally...');
+            
+            // Apply the effect
+            const result = processor.applyEffect('bitrate_potato', {
+                duration: 10000
+            });
+            
+            log(`🥔 Effect applied: ${result}`);
+            
+            if (result) {
+                log('✅ Potato effect active for 10 seconds');
+                log('Expected: blur(1px) + low contrast/saturation');
+                
+                // Check what's actually applied
+                const video = document.getElementById('video');
+                log(`Video filter: "${video.style.filter}"`);
+                log(`Video transform: "${video.style.transform}"`);
+                
+                const stats = processor.getStats();
+                log(`Active effects: ${stats.activeEffects}`);
+                log(`Effects list: ${stats.effectsList.join(', ')}`);
+            }
+        }
+        
+        // Clear all effects
+        function clearEffects() {
+            if (!processor) {
+                log('❌ Processor not initialized');
+                return;
+            }
+            
+            processor.clearAllEffects();
+            log('✅ All effects cleared');
+            
+            const video = document.getElementById('video');
+            log(`Video filter: "${video.style.filter}"`);
+            log(`Video transform: "${video.style.transform}"`);
+        }
+        
+        // Initialize on load
+        window.addEventListener('load', () => {
+            log('🚀 Page loaded, initializing...');
+            initVideo();
+        });
+    </script>
+</body>
+</html>

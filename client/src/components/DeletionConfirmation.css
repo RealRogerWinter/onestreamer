@@ -1,0 +1,143 @@
+.deletion-confirmation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+}
+
+.deletion-confirmation-modal {
+  background: #1a1a1a;
+  border-radius: 12px;
+  padding: 40px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
+  border: 1px solid #333;
+}
+
+.deletion-confirmation-content {
+  text-align: center;
+}
+
+.deletion-spinner {
+  width: 50px;
+  height: 50px;
+  border: 3px solid #333;
+  border-top: 3px solid #dc2626;
+  border-radius: 50%;
+  margin: 0 auto 20px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.deletion-success-icon {
+  width: 60px;
+  height: 60px;
+  background: #22c55e;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  font-size: 30px;
+  color: white;
+  font-weight: bold;
+}
+
+.deletion-error-icon {
+  width: 60px;
+  height: 60px;
+  background: #dc2626;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  font-size: 30px;
+  color: white;
+  font-weight: bold;
+}
+
+.deletion-confirmation-modal h2 {
+  color: #fff;
+  margin-bottom: 20px;
+  font-size: 24px;
+}
+
+.deletion-confirmation-modal p {
+  color: #ccc;
+  line-height: 1.6;
+  margin-bottom: 15px;
+}
+
+.deletion-success-message {
+  margin-top: 20px;
+}
+
+.deletion-warning {
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+  text-align: left;
+}
+
+.deletion-warning p {
+  color: #ff6b6b;
+  margin: 0 0 10px 0;
+  font-weight: bold;
+}
+
+.deletion-warning ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.deletion-warning li {
+  color: #ccc;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.deletion-countdown {
+  color: #999;
+  font-style: italic;
+  margin-top: 20px;
+  font-size: 14px;
+}
+
+.deletion-error-message {
+  color: #ff6b6b;
+  margin: 20px 0;
+}
+
+.btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 20px;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0056b3;
+}

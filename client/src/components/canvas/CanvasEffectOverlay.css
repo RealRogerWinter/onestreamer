@@ -1,0 +1,134 @@
+.canvas-effect-overlay-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none; /* Default to none, JavaScript will override when needed */
+  z-index: 10; /* Lower z-index to prevent blocking video controls but still above video */
+  /* Mobile-specific fixes for transparency */
+  background: transparent !important;
+  background-color: transparent !important;
+  -webkit-tap-highlight-color: transparent;
+  isolation: isolate; /* Create new stacking context */
+}
+
+.canvas-effect-overlay-container .effect-overlay-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: transparent !important;
+  background: none !important;
+  opacity: 1 !important;
+  pointer-events: inherit; /* Inherit from container */
+  z-index: 11; /* Just above container */
+  image-rendering: optimizeSpeed;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: optimize-contrast;
+  -ms-interpolation-mode: nearest-neighbor;
+  /* Ensure canvas never shows any background */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  /* Mobile-specific rendering fixes */
+  -webkit-transform: translateZ(0); /* Force hardware acceleration */
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: contents; /* Optimize for content changes, not transforms */
+}
+
+.canvas-debug-info {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  pointer-events: none;
+  z-index: 1002; /* Above canvas to ensure debug panel is always visible */
+}
+
+.debug-panel {
+  background: rgba(0, 0, 0, 0.8);
+  color: #00ff00;
+  padding: 10px 15px;
+  border-radius: 4px;
+  border: 1px solid #00ff00;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  min-width: 200px;
+  pointer-events: auto; /* Allow clicking on debug panel buttons */
+}
+
+.debug-panel h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #00ff00;
+  border-bottom: 1px solid #00ff00;
+  padding-bottom: 4px;
+}
+
+.debug-panel p {
+  margin: 4px 0;
+  color: #00ff00;
+}
+
+/* Animation for effect entry */
+@keyframes effectPulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Pulse animation for click-to-throw indicator */
+@keyframes pulse {
+  0% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translateX(-50%) scale(1.05);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Performance optimization for canvas during effects */
+.canvas-effect-overlay-container.rendering {
+  will-change: transform;
+}
+
+/* Ensure canvas doesn't interfere with video controls */
+.canvas-effect-overlay-container.controls-visible {
+  pointer-events: none !important;
+}
+
+/* Mobile optimization */
+@media (max-width: 768px) {
+  .canvas-debug-info {
+    top: 5px;
+    right: 5px;
+  }
+  
+  .debug-panel {
+    font-size: 10px;
+    padding: 8px 10px;
+    min-width: 150px;
+  }
+  
+  .debug-panel h4 {
+    font-size: 12px;
+  }
+}

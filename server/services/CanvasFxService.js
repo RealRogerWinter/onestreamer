@@ -1,0 +1,1896 @@
+const EventEmitter = require('events');
+
+class CanvasFxService extends EventEmitter {
+    constructor(io = null, itemService = null, buffDebuffService = null) {
+        super();
+        this.io = io;
+        this.itemService = itemService;
+        this.buffDebuffService = buffDebuffService;
+        
+        // Track active visual effects
+        this.activeEffects = new Map();
+        
+        // Track effects that sync with buff duration
+        this.buffSyncedEffects = new Map(); // effectId -> buffId
+        
+        // Effect queue for sequential rendering
+        this.effectQueue = [];
+        
+        // Performance monitoring
+        this.effectStats = {
+            totalTriggered: 0,
+            activeCount: 0,
+            droppedEffects: 0
+        };
+        
+        // Configuration
+        this.config = {
+            maxConcurrentEffects: 10,
+            effectQueueSize: 20,
+            defaultDuration: 2000
+        };
+        
+        console.log('🎨 CANVASFX: Service initialized');
+    }
+    
+    // Set dependencies after initialization if needed
+    setDependencies(io, itemService, buffDebuffService, streamService = null, sessionService = null) {
+        this.io = io;
+        this.itemService = itemService;
+        this.buffDebuffService = buffDebuffService;
+        this.streamService = streamService;
+        this.sessionService = sessionService;
+        
+        // Hook into buff service events
+        if (this.buffDebuffService) {
+            this.buffDebuffService.on('buff-applied', this.handleBuffApplied.bind(this));
+            this.buffDebuffService.on('buff-expired', this.handleBuffExpired.bind(this));
+        }
+        
+        // Track current streamer for change detection
+        this.currentStreamer = null;
+        this.streamerCheckInterval = null;
+        
+        // Start monitoring streamer changes if we have stream service
+        if (this.streamService) {
+            this.startStreamerMonitoring();
+        }
+    }
+    
+    // Handle buff applied event from BuffDebuffService
+    async handleBuffApplied(buffData) {
+        console.log(`🎨 CANVASFX: handleBuffApplied called with buffData:`, JSON.stringify(buffData, null, 2));
+        
+        // Check if this is a resumed buff (streamer coming back online with active buff)
+        if (buffData.isResumed) {
+            console.log(`🎨 CANVASFX: This is a RESUMED buff for ${buffData.item_name} - re-applying visual effect`);
+        }
+        
+        try {
+            // Check if this buff has visual effects
+            const item = await this.itemService.getItemById(buffData.item_id);
+            console.log(`🎨 CANVASFX: Retrieved item:`, item ? item.name : 'null');
+            if (item && this.hasVisualEffect(item)) {
+                console.log(`🎨 CANVASFX: Triggering visual effect for ${item.name}`);
+                console.log(`🎨 CANVASFX: Buff data for ${item.name}:`, JSON.stringify(buffData, null, 2));
+                const buffDuration = buffData.remaining_seconds || buffData.duration_seconds || 60;
+                console.log(`🎨 CANVASFX: Using buff duration ${buffDuration}s for ${item.name}`);
+                
+                const effect = await this.triggerItemEffect(
+                    buffData.user_id,
+                    buffData.item_id,
+                    buffData.stream_id,
+                    { 
+                        triggeredByBuff: true,
+                        buffId: buffData.id,
+                        buffDuration: buffDuration
+                    }
+                );
+                
+                // Track buff-synced effects (like smoke bomb)
+                if (effect && this.isBuffSyncedEffect(item)) {
+                    if (effect.isMultiPhase) {
+                        // For multi-phase effects, we need to track all phases
+                        const phaseEffects = Array.from(this.activeEffects.values()).filter(e => 
+                            e.mainEffectId === effect.id || e.id.startsWith(effect.id + '_phase')
+                        );
+                        for (const phaseEffect of phaseEffects) {
+                            this.buffSyncedEffects.set(phaseEffect.id, buffData.id);
+                        }
+                        console.log(`🎨 CANVASFX: Tracking multi-phase buff-synced effect ${effect.id} (${phaseEffects.length} phases) with buff ${buffData.id}`);
+                    } else {
+                        this.buffSyncedEffects.set(effect.id, buffData.id);
+                        console.log(`🎨 CANVASFX: Tracking buff-synced effect ${effect.id} with buff ${buffData.id}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('❌ CANVASFX: Error handling buff visual effect:', error);
+        }
+    }
+    
+    // Check if an item has visual effects
+    hasVisualEffect(item) {
+        const visualEffectItems = [
+            'tomato',
+            'confetti_cannon',
+            'smoke_bomb',
+            'rainbow_effect',
+            'disco_ball',
+            'spotlight',
+            'freeze_frame',
+            'red_marker',
+            'blue_marker',
+            'green_marker',
+            'yellow_marker',
+            'purple_marker',
+            'orange_marker',
+            'pink_marker',
+            'black_marker',
+            'white_marker',
+            'rainbow_marker',
+            'heart_swarm',
+            'arrow',
+            'molotov',
+            'lsd',
+            'bugs'
+        ];
+        
+        return visualEffectItems.includes(item.name);
+    }
+    
+    // Check if an item's effect should be synced with buff duration
+    isBuffSyncedEffect(item) {
+        const buffSyncedItems = [
+            'smoke_bomb'
+        ];
+        
+        return buffSyncedItems.includes(item.name);
+    }
+    
+    // Handle buff expired event from BuffDebuffService
+    async handleBuffExpired(buffData) {
+        try {
+            // Find any effects that are synced to this buff
+            const effectsToCancel = [];
+            this.buffSyncedEffects.forEach((buffId, effectId) => {
+                if (buffId === buffData.id) {
+                    effectsToCancel.push(effectId);
+                }
+            });
+            
+            // Cancel the synced effects
+            for (const effectId of effectsToCancel) {
+                await this.cancelEffect(effectId, 'buff-expired');
+                this.buffSyncedEffects.delete(effectId);
+            }
+            
+            if (effectsToCancel.length > 0) {
+                console.log(`🎨 CANVASFX: Cancelled ${effectsToCancel.length} buff-synced effects for expired buff ${buffData.id}`);
+            }
+        } catch (error) {
+            console.error('❌ CANVASFX: Error handling buff expiry:', error);
+        }
+    }
+    
+    // Start monitoring for streamer changes
+    startStreamerMonitoring() {
+        // Initialize current streamer
+        this.currentStreamer = this.streamService.getCurrentStreamer();
+        console.log(`🎨 CANVASFX: Started streamer monitoring - Initial streamer: ${this.currentStreamer}`);
+        
+        // Check for streamer changes every 2 seconds
+        this.streamerCheckInterval = setInterval(async () => {
+            await this.checkStreamerChange();
+        }, 2000);
+    }
+    
+    // Check for streamer changes and handle them
+    async checkStreamerChange() {
+        try {
+            const newStreamer = this.streamService.getCurrentStreamer();
+            
+            // Log every change for debugging
+            if (this.currentStreamer !== newStreamer) {
+                console.log(`🎨 CANVASFX: Streamer change detected - Previous: ${this.currentStreamer}, New: ${newStreamer}`);
+            }
+            
+            // Streamer changed or went offline
+            if (this.currentStreamer !== newStreamer) {
+                const previousStreamer = this.currentStreamer;
+                this.currentStreamer = newStreamer;
+                
+                console.log(`🎨 CANVASFX: DEBUG - Conditions: prev=${previousStreamer}, new=${newStreamer}, prev&&!new=${previousStreamer && !newStreamer}, prev&&new&&different=${previousStreamer && newStreamer && previousStreamer !== newStreamer}, !prev&&new=${!previousStreamer && newStreamer}`);
+                
+                if (previousStreamer && !newStreamer) {
+                    // Stream ended
+                    console.log(`🎨 CANVASFX: BRANCH: Stream ended`);
+                    await this.handleStreamEnded();
+                    console.log(`🎨 CANVASFX: Stream ended, previous streamer was ${previousStreamer}`);
+                } else if (previousStreamer && newStreamer && previousStreamer !== newStreamer) {
+                    // Streamer switched
+                    console.log(`🎨 CANVASFX: BRANCH: Streamer switched`);
+                    console.log(`🎨 CANVASFX: ABOUT TO CALL handleStreamerChanged(${previousStreamer}, ${newStreamer})`);
+                    try {
+                        await this.handleStreamerChanged(previousStreamer, newStreamer);
+                        console.log(`🎨 CANVASFX: COMPLETED handleStreamerChanged call`);
+                    } catch (error) {
+                        console.error(`❌ CANVASFX: ERROR in handleStreamerChanged:`, error);
+                    }
+                    console.log(`🎨 CANVASFX: Streamer changed from ${previousStreamer} to ${newStreamer}`);
+                } else if (!previousStreamer && newStreamer) {
+                    // New streamer went live
+                    console.log(`🎨 CANVASFX: BRANCH: New streamer went live`);
+                    // New streamer went live - but check if this might be a takeover
+                    console.log(`🎨 CANVASFX: NEW STREAMER DETECTED - calling handleStreamerWentLive(${newStreamer})`);
+                    
+                    // Clear any existing buff-synced effects first (in case this is actually a takeover)
+                    const existingEffects = Array.from(this.buffSyncedEffects.keys());
+                    if (existingEffects.length > 0) {
+                        console.log(`🎨 CANVASFX: Clearing ${existingEffects.length} existing buff-synced effects before new streamer`);
+                        for (const effectId of existingEffects) {
+                            await this.cancelEffect(effectId, 'new-streamer-cleanup');
+                            this.buffSyncedEffects.delete(effectId);
+                        }
+                        
+                        // Send cleanup to all clients
+                        if (this.io) {
+                            this.io.emit('canvas-effects-clear-buff-synced');
+                            console.log(`📡 CANVASFX: Sent buff-synced effects clear before new streamer`);
+                        }
+                    }
+                    
+                    await this.handleStreamerWentLive(newStreamer);
+                    console.log(`🎨 CANVASFX: New streamer went live: ${newStreamer}`);
+                }
+            }
+        } catch (error) {
+            console.error('❌ CANVASFX: Error checking streamer change:', error);
+        }
+    }
+    
+    // Handle streamer change
+    async handleStreamerChanged(previousStreamer, newStreamer) {
+        console.log(`🎨 CANVASFX: ENTERED handleStreamerChanged method - ${previousStreamer} -> ${newStreamer}`);
+        try {
+            console.log(`🎨 CANVASFX: Handling streamer switch from ${previousStreamer} to ${newStreamer}`);
+            console.log(`🎨 CANVASFX: DEBUG - Starting STEP 1: Clear existing effects`);
+            
+            // STEP 1: Clear all existing buff-synced effects from previous streamer
+            const effectsToCancel = [];
+            
+            this.buffSyncedEffects.forEach((buffId, effectId) => {
+                // Cancel all buff-synced effects on streamer switch
+                effectsToCancel.push(effectId);
+                console.log(`🎨 CANVASFX: Marking buff-synced effect ${effectId} for cancellation`);
+            });
+            
+            console.log(`🎨 CANVASFX: DEBUG - Found ${effectsToCancel.length} effects to cancel`);
+            
+            // Cancel all found effects
+            for (const effectId of effectsToCancel) {
+                await this.cancelEffect(effectId, 'streamer-switched');
+                this.buffSyncedEffects.delete(effectId);
+            }
+            
+            // Also clear any remaining active effects that might be lingering
+            const remainingEffects = [];
+            this.activeEffects.forEach((effect, effectId) => {
+                if (this.isBuffSyncedEffect({ name: effect.itemName })) {
+                    remainingEffects.push(effectId);
+                }
+            });
+            
+            console.log(`🎨 CANVASFX: DEBUG - Found ${remainingEffects.length} remaining effects to cleanup`);
+            
+            for (const effectId of remainingEffects) {
+                if (!effectsToCancel.includes(effectId)) {
+                    await this.cancelEffect(effectId, 'streamer-switched-cleanup');
+                }
+            }
+            
+            if (effectsToCancel.length > 0) {
+                console.log(`🎨 CANVASFX: Cancelled ${effectsToCancel.length} buff-synced effects from previous streamer`);
+            }
+            
+            // Send cleanup broadcast to all clients
+            if (this.io) {
+                this.io.emit('canvas-effects-clear-buff-synced');
+                console.log(`📡 CANVASFX: Sent buff-synced effects clear to all clients`);
+            }
+            
+            // Force cleanup for the previous streamer specifically
+            if (previousStreamer) {
+                this.forceCleanupForSocket(previousStreamer, 'streamer-switched');
+            }
+            
+            console.log(`🎨 CANVASFX: DEBUG - Starting STEP 2: Check new streamer buffs`);
+            
+            // STEP 2: Check if NEW streamer has active smoke bomb buffs and trigger them
+            console.log(`🎨 CANVASFX: Calling handleStreamerWentLive for new streamer ${newStreamer}`);
+            await this.handleStreamerWentLive(newStreamer);
+            console.log(`🎨 CANVASFX: Completed handleStreamerWentLive for new streamer ${newStreamer}`);
+            
+            console.log(`🎨 CANVASFX: DEBUG - Completed streamer switch handling`);
+            
+        } catch (error) {
+            console.error('❌ CANVASFX: Error handling streamer change:', error);
+            console.error('❌ CANVASFX: Error stack:', error.stack);
+        }
+    }
+    
+    // Handle streamer going live
+    async handleStreamerWentLive(newStreamerSocketId) {
+        try {
+            // Map socket ID to user ID
+            if (!this.sessionService) {
+                console.warn('⚠️ CANVASFX: SessionService not available for mapping streamer socket to user');
+                return;
+            }
+            
+            const session = this.sessionService.getSessionBySocketId(newStreamerSocketId);
+            if (!session || !session.userId) {
+                console.log(`🎨 CANVASFX: No session found for new streamer socketId ${newStreamerSocketId}`);
+                return;
+            }
+            
+            const streamerId = session.userId;
+            console.log(`🎨 CANVASFX: Checking for existing buffs for new streamer userId ${streamerId}`);
+            
+            // Check for active smoke bomb debuffs on this streamer
+            if (this.buffDebuffService) {
+                const activeBuffs = await this.buffDebuffService.getActiveBuffsForUser(streamerId);
+                
+                // Find smoke bomb buffs
+                const smokeBombBuffs = activeBuffs.filter(buff => 
+                    buff.itemName === 'smoke_bomb' && buff.remainingSeconds > 0
+                );
+                
+                if (smokeBombBuffs.length > 0) {
+                    console.log(`🎨 CANVASFX: Found ${smokeBombBuffs.length} active smoke bomb buff(s) on new streamer`);
+                    
+                    // For each smoke bomb buff, trigger the persistent smoke phase
+                    for (const buff of smokeBombBuffs) {
+                        const item = await this.itemService.getItemById(buff.itemId);
+                        if (item) {
+                            console.log(`🎨 CANVASFX: Triggering existing smoke bomb animation for streamer (${buff.remainingSeconds}s remaining)`);
+                            
+                            // Calculate remaining duration in milliseconds
+                            const remainingDurationMs = buff.remainingSeconds * 1000;
+                            
+                            // Create persistent smoke effect (skip initial puff since buff is already active)
+                            const persistentSmokeEffect = {
+                                id: `fx_live_smoke_${buff.itemId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                userId: streamerId,
+                                itemId: buff.itemId,
+                                streamId: null, // Current stream
+                                itemName: item.name,
+                                displayName: item.display_name,
+                                emoji: item.emoji,
+                                type: 'overlay',
+                                duration: remainingDurationMs,
+                                config: {
+                                    phaseName: 'persistent_smoke',
+                                    phaseIndex: 1,
+                                    totalPhases: 2,
+                                    color: 'rgba(100, 100, 100, 0.6)',
+                                    animation: 'smoke-fill',
+                                    spread: true,
+                                    opacity: 0.6,
+                                    width: 'full',
+                                    height: 'full',
+                                    fadeIn: true,
+                                    fadeInDuration: 2000, // Quick fade-in since buff is already active
+                                    persistent: true,
+                                    waveEffect: true,
+                                    density: 0.7,
+                                    triggeredByBuff: true,
+                                    buffId: buff.id,
+                                    buffDuration: buff.remainingSeconds,
+                                    streamerWentLive: true // Flag to indicate this was triggered by streamer going live
+                                },
+                                startTime: Date.now(),
+                                position: { x: 0.5, y: 0.5 }, // Center screen
+                                buffId: buff.id,
+                                isMultiPhase: false // This is just the persistent phase
+                            };
+                            
+                            // Store active effect
+                            this.activeEffects.set(persistentSmokeEffect.id, persistentSmokeEffect);
+                            this.effectStats.totalTriggered++;
+                            this.effectStats.activeCount = this.activeEffects.size;
+                            
+                            // Track as buff-synced effect
+                            this.buffSyncedEffects.set(persistentSmokeEffect.id, buff.id);
+                            
+                            // Broadcast to all viewers immediately
+                            if (this.io) {
+                                this.io.emit('canvas-effect-trigger', persistentSmokeEffect);
+                                console.log(`📡 CANVASFX: Broadcasted existing smoke bomb effect for new streamer (${remainingDurationMs}ms remaining)`);
+                            }
+                            
+                            // Emit local event
+                            this.emit('effect-triggered', persistentSmokeEffect);
+                            
+                            console.log(`✅ CANVASFX: Activated persistent smoke for streamer with existing buff (${buff.remainingSeconds}s remaining)`);
+                        }
+                    }
+                } else {
+                    console.log(`🎨 CANVASFX: No active smoke bomb buffs found for new streamer userId ${streamerId}`);
+                }
+            } else {
+                console.warn('⚠️ CANVASFX: BuffDebuffService not available for checking existing buffs');
+            }
+            
+        } catch (error) {
+            console.error('❌ CANVASFX: Error handling streamer went live:', error);
+        }
+    }
+    
+    // Handle stream ending
+    async handleStreamEnded() {
+        try {
+            console.log(`🎨 CANVASFX: Handling stream end - cleaning up all buff-synced effects`);
+            
+            // Cancel all buff-synced effects when stream ends
+            const effectsToCancel = Array.from(this.buffSyncedEffects.keys());
+            
+            for (const effectId of effectsToCancel) {
+                await this.cancelEffect(effectId, 'stream-ended');
+                this.buffSyncedEffects.delete(effectId);
+            }
+            
+            // Also clean up any remaining smoke bomb effects in active effects
+            const remainingEffects = [];
+            this.activeEffects.forEach((effect, effectId) => {
+                if (this.isBuffSyncedEffect({ name: effect.itemName })) {
+                    remainingEffects.push(effectId);
+                }
+            });
+            
+            for (const effectId of remainingEffects) {
+                if (!effectsToCancel.includes(effectId)) {
+                    await this.cancelEffect(effectId, 'stream-ended-cleanup');
+                }
+            }
+            
+            // Force a complete cleanup broadcast
+            if (this.io) {
+                this.io.emit('canvas-effects-clear-buff-synced');
+                console.log(`📡 CANVASFX: Sent complete buff-synced effects clear to all clients (stream ended)`);
+            }
+            
+            if (effectsToCancel.length > 0 || remainingEffects.length > 0) {
+                console.log(`🎨 CANVASFX: Cancelled ${effectsToCancel.length} buff-synced effects + ${remainingEffects.length} remaining effects due to stream ending`);
+            }
+        } catch (error) {
+            console.error('❌ CANVASFX: Error handling stream end:', error);
+        }
+    }
+    
+    // Check if an item requires interactive behavior (click-to-throw)
+    isInteractiveItem(item) {
+        const interactiveItems = [
+            'tomato',
+            'snowball',
+            'paint_balloon',
+            'water_balloon',
+            'confetti_cannon',
+            'smoke_bomb',
+            'disco_ball',
+            'spotlight',
+            'rainbow_effect',
+            'red_marker',
+            'blue_marker',
+            'green_marker',
+            'yellow_marker',
+            'purple_marker',
+            'orange_marker',
+            'pink_marker',
+            'black_marker',
+            'white_marker',
+            'rainbow_marker',
+            'heart_swarm',
+            'arrow',
+            'molotov',
+            'lsd',
+            'bugs'
+        ];
+        
+        return interactiveItems.includes(item.name);
+    }
+    
+    // Get interaction configuration for an item
+    getInteractionConfig(item) {
+        const interactionConfigs = {
+            'tomato': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🍅 Click anywhere to throw {itemName}!',
+                chatMessage: '{username} threw a tomato! 🍅',
+                borderColor: 'rgba(255, 0, 0, 0.8)',
+                glowColor: 'rgba(255, 0, 0, 0.5)'
+            },
+            'snowball': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '❄️ Click anywhere to throw {itemName}!',
+                chatMessage: '{username} threw a snowball! ❄️',
+                borderColor: 'rgba(0, 150, 255, 0.8)',
+                glowColor: 'rgba(0, 150, 255, 0.5)'
+            },
+            'paint_balloon': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🎨 Click anywhere to throw {itemName}!',
+                chatMessage: '{username} threw a paint balloon! 🎨',
+                borderColor: 'rgba(255, 100, 255, 0.8)',
+                glowColor: 'rgba(255, 100, 255, 0.5)'
+            },
+            'water_balloon': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '💧 Click anywhere to throw {itemName}!',
+                chatMessage: '{username} threw a water balloon! 💧',
+                borderColor: 'rgba(0, 200, 255, 0.8)',
+                glowColor: 'rgba(0, 200, 255, 0.5)'
+            },
+            'confetti_cannon': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🎊 Click anywhere to fire {itemName}!',
+                chatMessage: '{username} fired a confetti cannon! 🎊',
+                borderColor: 'rgba(255, 215, 0, 0.8)',
+                glowColor: 'rgba(255, 215, 0, 0.5)'
+            },
+            'smoke_bomb': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '💨 Click anywhere to deploy {itemName}!',
+                chatMessage: '{username} deployed a smoke bomb! 💨',
+                borderColor: 'rgba(128, 128, 128, 0.8)',
+                glowColor: 'rgba(128, 128, 128, 0.5)'
+            },
+            'disco_ball': {
+                mode: 'click-to-throw',
+                cursor: 'pointer',
+                indicator: '🪩 Click anywhere to drop {itemName}!',
+                chatMessage: '{username} dropped a disco ball! 🪩',
+                borderColor: 'rgba(255, 0, 255, 0.8)',
+                glowColor: 'rgba(255, 0, 255, 0.5)'
+            },
+            'spotlight': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🌟 Click anywhere to shine {itemName}!',
+                chatMessage: '{username} activated a spotlight! 🌟',
+                borderColor: 'rgba(255, 255, 0, 0.8)',
+                glowColor: 'rgba(255, 255, 0, 0.5)'
+            },
+            'rainbow_effect': {
+                mode: 'click-to-throw',
+                cursor: 'pointer',
+                indicator: '🌈 Click anywhere to create {itemName}!',
+                chatMessage: '{username} created a rainbow effect! 🌈',
+                borderColor: 'rgba(255, 0, 128, 0.8)',
+                glowColor: 'rgba(255, 0, 128, 0.5)'
+            },
+            'red_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '🔴 Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! 🔴',
+                borderColor: 'rgba(255, 0, 0, 0.8)',
+                glowColor: 'rgba(255, 0, 0, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'blue_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '🔵 Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! 🔵',
+                borderColor: 'rgba(0, 0, 255, 0.8)',
+                glowColor: 'rgba(0, 0, 255, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'green_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '🟢 Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! 🟢',
+                borderColor: 'rgba(0, 170, 0, 0.8)',
+                glowColor: 'rgba(0, 170, 0, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'yellow_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '🟡 Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! 🟡',
+                borderColor: 'rgba(255, 221, 0, 0.8)',
+                glowColor: 'rgba(255, 221, 0, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'purple_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '🟣 Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! 🟣',
+                borderColor: 'rgba(170, 0, 170, 0.8)',
+                glowColor: 'rgba(170, 0, 170, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'orange_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '🟠 Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! 🟠',
+                borderColor: 'rgba(255, 136, 0, 0.8)',
+                glowColor: 'rgba(255, 136, 0, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'pink_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '🩷 Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! 🩷',
+                borderColor: 'rgba(255, 105, 180, 0.8)',
+                glowColor: 'rgba(255, 105, 180, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'black_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '⚫ Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! ⚫',
+                borderColor: 'rgba(0, 0, 0, 0.8)',
+                glowColor: 'rgba(64, 64, 64, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'white_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '⚪ Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! ⚪',
+                borderColor: 'rgba(255, 255, 255, 0.8)',
+                glowColor: 'rgba(255, 255, 255, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'rainbow_marker': {
+                mode: 'click-to-draw',
+                cursor: 'crosshair',
+                indicator: '🌈 Click and drag to draw on the stream!',
+                chatMessage: '{username} is drawing on the stream! 🌈',
+                borderColor: 'rgba(255, 0, 128, 0.8)',
+                glowColor: 'rgba(255, 0, 128, 0.5)',
+                drawingMode: true,
+                drawDuration: 10000,
+                displayDuration: 10000
+            },
+            'heart_swarm': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '💕 Click anywhere to release hearts!',
+                chatMessage: '{username} released a heart swarm! 💕',
+                borderColor: 'rgba(255, 105, 180, 0.8)',
+                glowColor: 'rgba(255, 105, 180, 0.5)'
+            },
+            'arrow': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🏹 Click anywhere to fire an arrow!',
+                chatMessage: '{username} fired an arrow! 🏹',
+                borderColor: 'rgba(139, 69, 19, 0.8)',
+                glowColor: 'rgba(139, 69, 19, 0.5)'
+            },
+            'molotov': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🔥 Click anywhere to throw a Molotov cocktail!',
+                chatMessage: '{username} threw a Molotov cocktail! 🔥',
+                borderColor: 'rgba(255, 69, 0, 0.8)',
+                glowColor: 'rgba(255, 69, 0, 0.5)'
+            },
+            'lsd': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🌈 Click anywhere to drop acid!',
+                chatMessage: '{username} is taking everyone on a trip! 🌈',
+                borderColor: 'rgba(255, 0, 255, 0.8)',
+                glowColor: 'rgba(255, 0, 255, 0.5)'
+            },
+            'bugs': {
+                mode: 'click-to-throw',
+                cursor: 'crosshair',
+                indicator: '🐛 Click to release the bugs!',
+                chatMessage: '{username} released a bug infestation! 🐛',
+                borderColor: 'rgba(101, 67, 33, 0.8)',
+                glowColor: 'rgba(101, 67, 33, 0.5)'
+            },
+            'fart': {
+                mode: 'auto-trigger',
+                cursor: 'default',
+                indicator: '💨 Releasing fart cloud!',
+                chatMessage: '{username} let one rip! 💨',
+                borderColor: 'rgba(139, 90, 43, 0.6)',
+                glowColor: 'rgba(107, 142, 35, 0.4)',
+                autoTrigger: true,
+                triggerDelay: 500
+            }
+        };
+        
+        const config = interactionConfigs[item.name];
+        if (!config) return null;
+        
+        // Replace placeholders with actual values
+        const itemDisplayName = item.display_name || item.displayName || item.name || 'item';
+        return {
+            ...config,
+            indicator: config.indicator.replace('{itemName}', itemDisplayName),
+            chatMessage: config.chatMessage // Will be replaced at runtime with username
+        };
+    }
+    
+    // Trigger visual effect from item usage
+    async triggerItemEffect(userId, itemId, streamId, effectParams = {}) {
+        try {
+            console.log(`🎨 CANVASFX: === TRIGGERING ITEM EFFECT ===`);
+            console.log(`🎨 CANVASFX DEBUG: triggerItemEffect called - userId: ${userId}, itemId: ${itemId}, streamId: ${streamId}`);
+            console.log(`🎨 CANVASFX DEBUG: effectParams:`, JSON.stringify(effectParams, null, 2));
+            
+            // Check concurrent effect limit
+            if (this.activeEffects.size >= this.config.maxConcurrentEffects) {
+                console.warn('⚠️ CANVASFX: Max concurrent effects reached, dropping effect');
+                this.effectStats.droppedEffects++;
+                return null;
+            }
+            
+            const item = await this.itemService.getItemById(itemId);
+            if (!item) {
+                console.error('❌ CANVASFX: Item not found:', itemId);
+                return null;
+            }
+            
+            console.log(`🎨 CANVASFX DEBUG: Item found - name: ${item.name}, display_name: ${item.display_name}`);
+            
+            const effectConfig = this.getEffectConfig(item);
+            console.log(`🎨 CANVASFX DEBUG: Effect config retrieved:`, effectConfig);
+            
+            // Handle buff-duration effects specially
+            let effectDuration = effectConfig.duration;
+            if (effectConfig.duration === 'buff-duration' && effectParams.buffDuration) {
+                effectDuration = effectParams.buffDuration * 1000; // Convert seconds to milliseconds
+                console.log(`🎨 CANVASFX: Using buff duration of ${effectParams.buffDuration}s for ${item.name}`);
+            }
+            
+            // Handle multi-phase effects
+            if (effectConfig.type === 'multi-phase') {
+                return await this.triggerMultiPhaseEffect(userId, itemId, streamId, item, effectConfig, effectDuration, effectParams);
+            }
+            
+            // Create single-phase effect instance
+            const effect = {
+                id: `fx_${userId}_${itemId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                userId,
+                itemId,
+                streamId,
+                itemName: item.name,
+                displayName: item.display_name,
+                emoji: item.emoji,
+                type: effectConfig.type,
+                duration: effectDuration,
+                config: { ...effectConfig.config, ...effectParams },
+                startTime: Date.now(),
+                position: this.getRandomPosition(),
+                buffId: effectParams.buffId || null
+            };
+            
+            // Store active effect
+            this.activeEffects.set(effect.id, effect);
+            this.effectStats.totalTriggered++;
+            this.effectStats.activeCount = this.activeEffects.size;
+            
+            // Broadcast to all viewers
+            if (this.io) {
+                console.log(`📡 CANVASFX: About to broadcast canvas-effect-trigger for ${item.display_name}`);
+                console.log(`📡 CANVASFX: Effect data being sent:`, JSON.stringify(effect, null, 2));
+                this.io.emit('canvas-effect-trigger', effect);
+                console.log(`📡 CANVASFX: Broadcasted effect ${effect.type} for item ${item.display_name}`);
+            } else {
+                console.error(`❌ CANVASFX: No io instance available to broadcast effect!`);
+            }
+            
+            // Emit local event
+            this.emit('effect-triggered', effect);
+            
+            // Auto-cleanup after duration (but only for non-buff-synced effects)
+            if (!this.isBuffSyncedEffect(item)) {
+                setTimeout(() => {
+                    this.cleanupEffect(effect.id);
+                }, effectDuration);
+            } else {
+                console.log(`🎨 CANVASFX: Buff-synced effect ${effect.id} will be managed by buff lifecycle`);
+            }
+            
+            return effect;
+            
+        } catch (error) {
+            console.error('❌ CANVASFX: Error triggering item effect:', error);
+            return null;
+        }
+    }
+    
+    // Trigger visual effect at specific position (for click-to-throw functionality)
+    async triggerItemEffectAtPosition(userId, itemId, streamId, position, effectParams = {}) {
+        try {
+            // Check concurrent effect limit
+            if (this.activeEffects.size >= this.config.maxConcurrentEffects) {
+                console.warn('⚠️ CANVASFX: Max concurrent effects reached, dropping effect');
+                this.effectStats.droppedEffects++;
+                return null;
+            }
+            
+            const item = await this.itemService.getItemById(itemId);
+            if (!item) {
+                console.error('❌ CANVASFX: Item not found:', itemId);
+                return null;
+            }
+            
+            const effectConfig = this.getEffectConfig(item);
+            
+            // Handle buff-duration effects specially
+            let effectDuration = effectConfig.duration;
+            if (effectConfig.duration === 'buff-duration' && effectParams.buffDuration) {
+                effectDuration = effectParams.buffDuration * 1000; // Convert seconds to milliseconds
+                console.log(`🎨 CANVASFX: Using buff duration of ${effectParams.buffDuration}s for positioned ${item.name}`);
+            }
+            
+            // Handle multi-phase effects
+            if (effectConfig.type === 'multi-phase') {
+                // For positioned multi-phase effects, pass the position to all phases
+                return await this.triggerMultiPhaseEffect(userId, itemId, streamId, item, effectConfig, effectDuration, { 
+                    ...effectParams, 
+                    position: { 
+                        x: Math.max(0, Math.min(1, position.x)), // Clamp between 0 and 1
+                        y: Math.max(0, Math.min(1, position.y))  // Clamp between 0 and 1
+                    }
+                });
+            }
+            
+            // Create single-phase effect instance with specified position
+            const effect = {
+                id: `fx_throw_${userId}_${itemId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                userId,
+                itemId,
+                streamId,
+                itemName: item.name,
+                displayName: item.display_name,
+                emoji: item.emoji,
+                type: effectConfig.type,
+                duration: effectDuration,
+                config: { ...effectConfig.config, ...effectParams },
+                startTime: Date.now(),
+                position: { 
+                    x: Math.max(0, Math.min(1, position.x)), // Clamp between 0 and 1
+                    y: Math.max(0, Math.min(1, position.y))  // Clamp between 0 and 1
+                }
+            };
+            
+            // Store active effect
+            this.activeEffects.set(effect.id, effect);
+            this.effectStats.totalTriggered++;
+            this.effectStats.activeCount = this.activeEffects.size;
+            
+            // Broadcast to all viewers
+            if (this.io) {
+                this.io.emit('canvas-effect-trigger', effect);
+                console.log(`📡 CANVASFX: Broadcasted positioned effect ${effect.type} for item ${item.display_name} at (${position.x}, ${position.y})`);
+            }
+            
+            // Emit local event
+            this.emit('effect-triggered', effect);
+            
+            // Auto-cleanup after duration (but only for non-buff-synced effects)
+            if (!this.isBuffSyncedEffect(item)) {
+                setTimeout(() => {
+                    this.cleanupEffect(effect.id);
+                }, effectDuration);
+            } else {
+                console.log(`🎨 CANVASFX: Buff-synced positioned effect ${effect.id} will be managed by buff lifecycle`);
+            }
+            
+            return effect;
+            
+        } catch (error) {
+            console.error('❌ CANVASFX: Error triggering positioned item effect:', error);
+            return null;
+        }
+    }
+    
+    // Trigger multi-phase effect (like smoke bomb with initial puff + persistent smoke)
+    async triggerMultiPhaseEffect(userId, itemId, streamId, item, effectConfig, totalDuration, effectParams) {
+        try {
+            console.log(`🎨 CANVASFX: Triggering multi-phase effect for ${item.name} with total duration ${totalDuration}ms`);
+            
+            const mainEffectId = `fx_multi_${userId}_${itemId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const phaseEffects = [];
+            let currentTime = 0;
+            
+            for (const [phaseIndex, phase] of effectConfig.config.phases.entries()) {
+                const phaseId = `${mainEffectId}_phase${phaseIndex}`;
+                const phaseStartTime = Date.now() + (phase.delay || 0);
+                
+                // Calculate phase duration
+                let phaseDuration = phase.duration;
+                if (phase.duration === 'remaining-duration') {
+                    // Calculate remaining duration after initial phases
+                    const usedTime = (phase.delay || 0) + 2000; // Account for initial puff + delay
+                    phaseDuration = Math.max(1000, totalDuration - usedTime); // At least 1 second
+                }
+                
+                const phaseEffect = {
+                    id: phaseId,
+                    mainEffectId: mainEffectId,
+                    userId,
+                    itemId,
+                    streamId,
+                    itemName: item.name,
+                    displayName: item.display_name,
+                    emoji: item.emoji,
+                    type: phase.type,
+                    duration: phaseDuration,
+                    config: { 
+                        ...phase.config, 
+                        ...effectParams,
+                        phaseName: phase.name,
+                        phaseIndex: phaseIndex,
+                        totalPhases: effectConfig.config.phases.length
+                    },
+                    startTime: phaseStartTime,
+                    position: effectParams.position || this.getRandomPosition(),
+                    buffId: effectParams.buffId || null,
+                    isMultiPhase: true,
+                    delay: phase.delay || 0
+                };
+                
+                phaseEffects.push(phaseEffect);
+                
+                // Store phase effect in active effects
+                this.activeEffects.set(phaseEffect.id, phaseEffect);
+                
+                // Schedule the phase to start
+                setTimeout(async () => {
+                    if (this.activeEffects.has(phaseEffect.id)) {
+                        // Broadcast phase to all viewers
+                        if (this.io) {
+                            this.io.emit('canvas-effect-trigger', phaseEffect);
+                            console.log(`📡 CANVASFX: Broadcasted phase "${phase.name}" of ${item.display_name} (${phaseDuration}ms)`);
+                        }
+                        
+                        // Auto-cleanup after phase duration (only for non-buff-synced phases or last phase)
+                        if (!this.isBuffSyncedEffect(item) || phaseIndex === effectConfig.config.phases.length - 1) {
+                            setTimeout(() => {
+                                this.cleanupEffect(phaseEffect.id);
+                            }, phaseDuration);
+                        } else {
+                            console.log(`🎨 CANVASFX: Phase "${phase.name}" will be managed by buff lifecycle`);
+                        }
+                    }
+                }, phase.delay || 0);
+            }
+            
+            // Update stats
+            this.effectStats.totalTriggered++;
+            this.effectStats.activeCount = this.activeEffects.size;
+            
+            // Emit local event for main effect
+            const mainEffect = {
+                id: mainEffectId,
+                userId,
+                itemId,
+                streamId,
+                itemName: item.name,
+                displayName: item.display_name,
+                type: 'multi-phase',
+                phases: phaseEffects.length,
+                totalDuration,
+                isMultiPhase: true
+            };
+            this.emit('effect-triggered', mainEffect);
+            
+            console.log(`✅ CANVASFX: Multi-phase effect "${item.name}" scheduled with ${phaseEffects.length} phases`);
+            
+            // Return the main effect for tracking
+            return mainEffect;
+            
+        } catch (error) {
+            console.error('❌ CANVASFX: Error triggering multi-phase effect:', error);
+            return null;
+        }
+    }
+
+    // Get effect configuration for an item
+    getEffectConfig(item) {
+        // Map items to visual effects
+        const effectMappings = {
+            'tomato': {
+                type: 'splat',
+                duration: 3000,
+                config: {
+                    color: '#ff4444',
+                    splashColor: '#cc0000',
+                    particles: 12,
+                    size: 'large',
+                    animation: 'splat',
+                    drip: true,
+                    sound: 'splat'
+                }
+            },
+            'confetti_cannon': {
+                type: 'particles',
+                duration: 8000,
+                config: {
+                    colors: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500', '#ff69b4'],
+                    particleCount: 150,
+                    spread: 120,
+                    startVelocity: 25,
+                    gravity: 0.15,
+                    animation: 'confetti',
+                    sound: 'pop',
+                    animationSpeed: 0.5
+                }
+            },
+            'smoke_bomb': {
+                type: 'multi-phase',
+                duration: 'buff-duration', // Special flag to use buff duration
+                config: {
+                    tracksBuff: true, // Track buff status for duration
+                    phases: [
+                        {
+                            name: 'initial_puff',
+                            type: 'particles',
+                            duration: 2000, // 2 seconds for initial puff
+                            config: {
+                                color: 'rgba(120, 120, 120, 0.9)',
+                                animation: 'smoke-puff',
+                                particleCount: 25,
+                                spread: 45,
+                                startVelocity: 8,
+                                gravity: -0.02, // Slight upward drift for smoke
+                                particleSize: 'large',
+                                smokeStyle: true,
+                                billowing: true,
+                                turbulence: 0.3,
+                                sound: 'poof',
+                                fadeOut: true,
+                                expandingCloud: true
+                            }
+                        },
+                        {
+                            name: 'persistent_smoke',
+                            type: 'overlay',
+                            duration: 'remaining-duration', // Rest of buff duration
+                            delay: 1500, // Start 1.5s after initial puff begins
+                            config: {
+                                color: 'rgba(100, 100, 100, 0.6)',
+                                animation: 'smoke-fill',
+                                spread: true,
+                                opacity: 0.6,
+                                width: 'full',
+                                height: 'full',
+                                fadeIn: true,
+                                fadeInDuration: 3000,
+                                persistent: true,
+                                waveEffect: true,
+                                density: 0.7,
+                                hazeEffect: true,
+                                smokeClouds: true,
+                                cloudCount: 8,
+                                cloudMovement: {
+                                    enabled: true,
+                                    speed: 0.5,
+                                    direction: 'random',
+                                    drift: 0.2,
+                                    rotation: true,
+                                    rotationSpeed: 0.3
+                                },
+                                smokeGrowth: {
+                                    enabled: true,
+                                    rate: 0.15,
+                                    maxScale: 2.5,
+                                    pulsing: true,
+                                    pulseSpeed: 0.8
+                                },
+                                turbulence: {
+                                    enabled: true,
+                                    strength: 0.4,
+                                    frequency: 0.6,
+                                    scale: 1.2
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            'rainbow_effect': {
+                type: 'overlay',
+                duration: 6000,
+                config: {
+                    animation: 'rainbow',
+                    speed: 1.5,
+                    intensity: 0.6,
+                    opacity: 0.7,
+                    waveWidth: 200
+                }
+            },
+            'disco_ball': {
+                type: 'disco',
+                duration: 10000,
+                config: {
+                    colors: ['#ff00ff', '#00ff00', '#ffff00', '#00ffff', '#ff0080', '#8000ff', '#ff3333', '#33ff33', '#3333ff', '#ffff33', '#ff33ff', '#33ffff'],
+                    rotationSpeed: 2.5,
+                    lightBeams: 16,
+                    sparkleSize: 12,
+                    pulsate: true,
+                    glitterCount: 200,
+                    beamIntensity: 0.8,
+                    reflectionSpots: 30,
+                    colorCycleSpeed: 1.5,
+                    glitterDensity: 0.8,
+                    sound: 'disco'
+                }
+            },
+            'spotlight': {
+                type: 'overlay',
+                duration: 6000,
+                config: {
+                    animation: 'spotlight',
+                    color: '#ffffff',
+                    beamWidth: 150,
+                    intensity: 0.9,
+                    sweepSpeed: 2,
+                    fadeEdges: true,
+                    rotateBeam: true
+                }
+            },
+            'freeze_frame': {
+                type: 'freeze',
+                duration: 3000,
+                config: {
+                    freezeDuration: 1000,
+                    glitchEffect: true,
+                    sound: 'freeze'
+                }
+            },
+            'slow_mode': {
+                type: 'timeWarp',
+                duration: 5000,
+                config: {
+                    speed: 0.5,
+                    warpEffect: true,
+                    color: 'rgba(0, 0, 255, 0.2)'
+                }
+            },
+            'speed_boost': {
+                type: 'speedLines',
+                duration: 3000,
+                config: {
+                    color: '#00ff00',
+                    lineCount: 20,
+                    speed: 3,
+                    blur: true
+                }
+            },
+            'golden_mic': {
+                type: 'aura',
+                duration: 6000,
+                config: {
+                    color: '#ffd700',
+                    pulseSpeed: 1,
+                    particles: true,
+                    sound: 'shine'
+                }
+            },
+            'red_marker': {
+                type: 'multi-phase',
+                duration: 20000, // 10s draw + 10s display
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 3,
+                                lineColor: '#FF0000',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0
+                            }
+                        }
+                    ]
+                }
+            },
+            'blue_marker': {
+                type: 'multi-phase',
+                duration: 20000,
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 3,
+                                lineColor: '#0000FF',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0
+                            }
+                        }
+                    ]
+                }
+            },
+            'green_marker': {
+                type: 'multi-phase',
+                duration: 20000,
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 3,
+                                lineColor: '#00AA00',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0
+                            }
+                        }
+                    ]
+                }
+            },
+            'yellow_marker': {
+                type: 'multi-phase',
+                duration: 20000,
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 3,
+                                lineColor: '#FFDD00',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0
+                            }
+                        }
+                    ]
+                }
+            },
+            'purple_marker': {
+                type: 'multi-phase',
+                duration: 20000,
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 3,
+                                lineColor: '#AA00AA',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0
+                            }
+                        }
+                    ]
+                }
+            },
+            'orange_marker': {
+                type: 'multi-phase',
+                duration: 20000,
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 3,
+                                lineColor: '#FF8800',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0
+                            }
+                        }
+                    ]
+                }
+            },
+            'pink_marker': {
+                type: 'multi-phase',
+                duration: 20000,
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 3,
+                                lineColor: '#FF69B4',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0
+                            }
+                        }
+                    ]
+                }
+            },
+            'black_marker': {
+                type: 'multi-phase',
+                duration: 20000,
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 3,
+                                lineColor: '#000000',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0
+                            }
+                        }
+                    ]
+                }
+            },
+            'white_marker': {
+                type: 'multi-phase',
+                duration: 20000,
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 3,
+                                lineColor: '#FFFFFF',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0
+                            }
+                        }
+                    ]
+                }
+            },
+            'rainbow_marker': {
+                type: 'multi-phase',
+                duration: 20000,
+                config: {
+                    phases: [
+                        {
+                            name: 'drawing_phase',
+                            type: 'drawing',
+                            duration: 10000,
+                            config: {
+                                interactive: true,
+                                captureMode: 'continuous',
+                                lineWidth: 4,
+                                lineColor: 'rainbow',
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                enableDrawing: true,
+                                opacity: 1.0,
+                                rainbowMode: true
+                            }
+                        },
+                        {
+                            name: 'display_phase',
+                            type: 'static_drawing',
+                            duration: 10000,
+                            delay: 10000, // Start after drawing phase ends
+                            config: {
+                                preserveDrawing: true,
+                                fadeOut: true,
+                                fadeOutDuration: 2000,
+                                fadeStartDelay: 8000,
+                                opacity: 1.0,
+                                rainbowMode: true
+                            }
+                        }
+                    ]
+                }
+            },
+            'heart_swarm': {
+                type: 'particles',
+                duration: 15000, // 15 seconds for full animation
+                config: {
+                    particleType: 'hearts',
+                    hearts: ['❤️', '💕', '💖', '💗', '💓', '💜', '💙', '💚', '💛', '🧡'],
+                    particleCount: 85,
+                    spread: 35, // Tighter spread
+                    startVelocity: 5, // Much slower initial upward velocity
+                    gravity: -0.015, // Gentler upward force
+                    gravityShiftTime: 2000, // Start falling after just 2 seconds!
+                    fallGravity: 0.12, // Strong downward gravity for quick fall
+                    drift: true,
+                    driftSpeed: 0.4, // More sideways drift for floating effect
+                    rotation: true,
+                    rotationSpeed: 0.08, // Gentle rotation
+                    sizeVariation: true,
+                    minSize: 0.8,
+                    maxSize: 1.5,
+                    fadeOut: true,
+                    fadeStartTime: 10000, // Start fading at 10 seconds
+                    animation: 'heart-swarm',
+                    sound: 'love',
+                    waveMotion: true,
+                    waveAmplitude: 40, // Larger wave for more floating
+                    waveFrequency: 0.0025, // Slightly faster wave
+                    floatPattern: 'rise-and-fall', // Special pattern
+                    spawnPattern: 'burst' // All hearts spawn at once from click point
+                }
+            },
+            'arrow': {
+                type: 'projectile',
+                duration: 8500, // 500ms flight + 8000ms stuck
+                config: {
+                    projectileType: 'arrow',
+                    emoji: '🏹',
+                    size: 80,
+                    flightDuration: 500,
+                    stickDuration: 8000,
+                    animation: 'arrow-flight',
+                    sound: 'whoosh',
+                    color: '#8B4513',
+                    trailEffect: true,
+                    trailColor: 'rgba(139, 69, 19, 0.3)',
+                    rotateToTarget: true,
+                    impactEffect: true,
+                    wobbleOnStick: true,
+                    fadeOut: true,
+                    fadeStartTime: 7000
+                }
+            },
+            'molotov': {
+                type: 'fire',
+                duration: 12000, // 12 seconds of burning
+                config: {
+                    fireType: 'molotov',
+                    emoji: '🔥',
+                    spreadRadius: 120,
+                    flameHeight: 80,
+                    flameCount: 25,
+                    animation: 'burning',
+                    sound: 'fire-crackle',
+                    colors: ['#FF4500', '#FF6347', '#FF8C00', '#FFD700', '#FFA500'],
+                    smokeEffect: true,
+                    smokeColor: 'rgba(50, 50, 50, 0.4)',
+                    sparkles: true,
+                    fadeOut: true,
+                    fadeStartTime: 10000,
+                    heatDistortion: true,
+                    glowEffect: true,
+                    glowRadius: 150,
+                    glowColor: 'rgba(255, 69, 0, 0.3)'
+                }
+            },
+            'lsd': {
+                type: 'psychedelic',
+                duration: 20000, // 20 seconds trip
+                config: {
+                    tripType: 'lsd',
+                    emoji: '🌈',
+                    animation: 'psychedelic-trip',
+                    sound: 'psychedelic',
+                    intensity: 'high',
+                    waveAmplitude: 30,
+                    waveFrequency: 0.02,
+                    colorShiftSpeed: 0.001,
+                    hueRotationSpeed: 2,
+                    saturationBoost: 1.5,
+                    fractalDepth: 5,
+                    kaleidoscopeSegments: 6,
+                    trailLength: 10,
+                    pulseSpeed: 0.005,
+                    chromaShift: true,
+                    melting: true,
+                    breathing: true,
+                    fadeIn: true,
+                    fadeOut: true,
+                    fadeInDuration: 2000,
+                    fadeOutDuration: 3000
+                }
+            },
+            'bugs': {
+                type: 'bugs',
+                duration: 15000, // 15 seconds of bugs crawling
+                config: {
+                    bugType: 'infestation',
+                    bugCount: 15,
+                    bugTypes: ['🐛', '🐜', '🕷️', '🦗', '🪲', '🪳', '🦟', '🐞'],
+                    animation: 'crawling',
+                    sound: 'creepy-crawly',
+                    minSpeed: 0.5,
+                    maxSpeed: 2,
+                    wiggleAmount: 5,
+                    turnSpeed: 0.02,
+                    sizeVariation: 0.5,
+                    opacity: 0.9,
+                    shadowEffect: true,
+                    scatterOnClick: false,
+                    fadeOut: true,
+                    fadeStartTime: 13000
+                }
+            },
+            'fart': {
+                type: 'fart_clouds',
+                duration: 8000, // 8 seconds total animation
+                config: {
+                    cloudType: 'fart',
+                    emoji: '💨',
+                    cloudCount: 12,
+                    animation: 'fart-dispersion',
+                    sound: 'fart',
+                    minSize: 40,
+                    maxSize: 120,
+                    startOpacity: 0.7,
+                    endOpacity: 0,
+                    cloudColor: 'rgba(139, 90, 43, 0.4)', // Brown-green gas color
+                    dispersionSpeed: 1.5,
+                    riseSpeed: -0.8, // Negative for upward movement
+                    driftSpeed: 0.6,
+                    rotationSpeed: 0.02,
+                    fadeStartTime: 3000,
+                    fadeOutDuration: 5000,
+                    spawnRadius: 50,
+                    spawnPattern: 'explosion', // Clouds burst outward
+                    wobbleAmount: 15,
+                    greenTint: true,
+                    particleTrail: true,
+                    trailColor: 'rgba(107, 142, 35, 0.2)' // Olive green trail
+                }
+            },
+            'thunderstorm': {
+                type: 'thunderstorm_rain',
+                duration: 68000, // 68 seconds to match sound effect
+                config: {
+                    rainIntensity: 200,
+                    lightningFrequency: 'moderate',
+                    opacity: 0.8
+                }
+            }
+        };
+        
+        return effectMappings[item.name] || {
+            type: 'default',
+            duration: this.config.defaultDuration,
+            config: {
+                color: '#ffffff',
+                animation: 'fade'
+            }
+        };
+    }
+    
+    // Get random position for effect placement
+    getRandomPosition() {
+        return {
+            x: 0.1 + Math.random() * 0.8, // 10% to 90% of width
+            y: 0.1 + Math.random() * 0.8  // 10% to 90% of height
+        };
+    }
+    
+    // Cleanup an effect
+    cleanupEffect(effectId) {
+        const effect = this.activeEffects.get(effectId);
+        if (effect) {
+            this.activeEffects.delete(effectId);
+            this.effectStats.activeCount = this.activeEffects.size;
+            
+            // Remove from buff-synced tracking if needed
+            this.buffSyncedEffects.delete(effectId);
+            
+            // Notify clients
+            if (this.io) {
+                this.io.emit('canvas-effect-complete', { effectId });
+            }
+            
+            // Emit local event
+            this.emit('effect-completed', effect);
+            
+            console.log(`🧹 CANVASFX: Cleaned up effect ${effectId}`);
+        }
+    }
+    
+    // Cancel an effect immediately (used for buff expiry or streamer switching)
+    async cancelEffect(effectId, reason = 'cancelled') {
+        const effect = this.activeEffects.get(effectId);
+        if (effect) {
+            this.activeEffects.delete(effectId);
+            this.effectStats.activeCount = this.activeEffects.size;
+            
+            // Remove from buff-synced tracking if needed
+            this.buffSyncedEffects.delete(effectId);
+            
+            // Notify clients to immediately cancel the effect
+            if (this.io) {
+                this.io.emit('canvas-effect-cancelled', { 
+                    effectId, 
+                    reason,
+                    itemName: effect.itemName 
+                });
+                
+                // For smoke bomb effects, send additional force clear to ensure cleanup
+                if (effect.itemName === 'smoke_bomb') {
+                    this.io.emit('canvas-effect-force-clear-item', { 
+                        itemName: 'smoke_bomb',
+                        reason: reason,
+                        effectId: effectId
+                    });
+                    console.log(`📡 CANVASFX: Sent additional smoke bomb force clear for ${effectId}`);
+                }
+            }
+            
+            // Emit local event
+            this.emit('effect-cancelled', { ...effect, reason });
+            
+            console.log(`🚫 CANVASFX: Cancelled effect ${effectId} (${effect.itemName}) - ${reason}`);
+            return true;
+        }
+        return false;
+    }
+    
+    // Clear all active effects
+    clearAllEffects() {
+        const effectIds = Array.from(this.activeEffects.keys());
+        effectIds.forEach(id => this.cleanupEffect(id));
+        
+        if (this.io) {
+            this.io.emit('canvas-effects-clear');
+        }
+        
+        console.log('🧹 CANVASFX: Cleared all active effects');
+    }
+    
+    // Force clear smoke bomb effects for a specific socket (e.g., former streamer)
+    forceCleanupForSocket(socketId, reason = 'manual') {
+        console.log(`🎨 CANVASFX: Force cleaning up effects for socket ${socketId} - ${reason}`);
+        
+        if (this.io && socketId) {
+            // Send multiple cleanup events to ensure the client clears the effects
+            this.io.to(socketId).emit('canvas-effects-clear');
+            this.io.to(socketId).emit('canvas-effects-clear-buff-synced');
+            this.io.to(socketId).emit('canvas-effect-force-clear', { 
+                reason: reason,
+                effects: ['smoke_bomb'],
+                forceComplete: true
+            });
+            
+            console.log(`📡 CANVASFX: Sent comprehensive cleanup to socket ${socketId}`);
+        }
+    }
+    
+    // Get active effects for a user
+    getActiveEffectsForUser(userId) {
+        const userEffects = [];
+        this.activeEffects.forEach(effect => {
+            if (effect.userId === userId) {
+                userEffects.push(effect);
+            }
+        });
+        return userEffects;
+    }
+    
+    // Get all active effects
+    getAllActiveEffects() {
+        return Array.from(this.activeEffects.values());
+    }
+    
+    // Get effect statistics
+    getStats() {
+        return {
+            ...this.effectStats,
+            activeEffects: Array.from(this.activeEffects.keys())
+        };
+    }
+    
+    // Handle socket connection for a client
+    handleClientConnection(socket) {
+        // Send current active effects to new viewer
+        const activeEffects = this.getAllActiveEffects();
+        if (activeEffects.length > 0) {
+            socket.emit('canvas-effects-sync', { effects: activeEffects });
+        }
+        
+        // Handle effect requests
+        socket.on('request-effect-sync', () => {
+            socket.emit('canvas-effects-sync', { effects: this.getAllActiveEffects() });
+        });
+        
+        console.log(`🔌 CANVASFX: Client connected, sent ${activeEffects.length} active effects`);
+    }
+    
+    // Shutdown cleanup
+    shutdown() {
+        if (this.streamerCheckInterval) {
+            clearInterval(this.streamerCheckInterval);
+            this.streamerCheckInterval = null;
+        }
+        
+        this.activeEffects.clear();
+        this.buffSyncedEffects.clear();
+        console.log('🎨 CANVASFX: Service shutdown complete');
+    }
+}
+
+module.exports = CanvasFxService;

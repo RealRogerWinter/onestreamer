@@ -1,0 +1,440 @@
+.stream-viewer {
+  background: #1a1a1a;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  margin-bottom: 2rem;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  max-height: 70vh;
+  min-height: 400px; /* Ensure minimum height for better viewing */
+}
+
+.streaming-view,
+.viewing-mode {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+.local-video,
+.remote-video,
+.hls-remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain !important; /* Changed from cover to contain - ensures full frame visible */
+  background: #000; /* Black letterbox */
+}
+
+.hls-viewer {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #000;
+}
+
+.hls-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain !important; /* Changed from cover to contain - ensures full frame visible */
+  background: #000; /* Black letterbox */
+}
+
+.hls-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: white;
+  z-index: 2;
+}
+
+/* Pulse animation for muted audio indicator */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 10px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hls-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #ff6b6b;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 20px;
+  border-radius: 8px;
+  z-index: 2;
+}
+
+.streaming-indicator,
+.viewer-indicator {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+}
+
+.stream-type {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.audio-level-container {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  right: 1rem;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+}
+
+.audio-level-label {
+  color: white;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.audio-level-meter {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.audio-level-fill {
+  height: 100%;
+  width: 0%;
+  background: #44ff44;
+  border-radius: 4px;
+  transition: width 0.1s ease-out;
+  box-shadow: 0 0 8px rgba(68, 255, 68, 0.5);
+}
+
+.live-badge {
+  background: #ff3b30;
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.no-stream {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 400px; /* Larger minimum for desktop */
+  width: 100%;
+  background: linear-gradient(45deg, #f0f0f0, #e0e0e0);
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.no-stream-content {
+  text-align: center;
+  color: #666;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.no-stream-content h2 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.no-stream-content p {
+  font-size: 1.1rem;
+  margin-bottom: 2rem;
+}
+
+.placeholder-video {
+  width: 200px;
+  height: 120px;
+  background: #ddd;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.placeholder-icon {
+  font-size: 3rem;
+  opacity: 0.5;
+}
+
+/* WebRTC Viewer States */
+.webrtc-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  z-index: 5;
+}
+
+.webrtc-error {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(139, 0, 0, 0.8);
+  color: white;
+  text-align: center;
+  z-index: 5;
+}
+
+.webrtc-waiting {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  text-align: center;
+  z-index: 5;
+}
+
+.retry-button {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 15px;
+  font-size: 16px;
+  transition: background-color 0.2s ease;
+}
+
+.retry-button:hover {
+  background: #0056b3;
+}
+
+@media (max-width: 768px) {
+  .stream-viewer {
+    margin-bottom: 1rem;
+    min-height: 50vh !important; /* Half the viewport minimum */
+    height: 55vh; /* Default to 55% of viewport */
+    max-height: 70vh; /* Allow up to 70% of viewport */
+    aspect-ratio: auto; /* Remove aspect ratio constraint for mobile */
+    width: 100%; /* Full width */
+    max-width: 100%; /* Prevent overflow */
+    display: flex;
+    flex-direction: column;
+  }
+
+  .streaming-indicator,
+  .viewer-indicator {
+    top: 0.5rem;
+    left: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .no-stream-content {
+    min-height: 50vh; /* Match stream viewer height */
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .no-stream-content h2 {
+    font-size: 1.8rem;
+    margin-bottom: 1rem;
+  }
+
+  .no-stream-content p {
+    font-size: 1.1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .placeholder-video {
+    width: 180px;
+    height: 110px;
+  }
+
+  /* Ensure no-stream div fills the larger container */
+  .no-stream {
+    min-height: 50vh;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f5f5f5;
+  }
+}
+
+/* Mobile Portrait Mode - Optimized video placement */
+@media (max-width: 768px) and (orientation: portrait) {
+  .stream-viewer {
+    /* Full width with 16:9 aspect ratio, capped at available height */
+    width: 100% !important;
+    max-width: 100% !important;
+    aspect-ratio: 16 / 9 !important;
+    height: auto !important;
+    max-height: calc(100dvh - 176px) !important;
+    /* No margins - directly below header */
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    overflow: hidden !important;
+  }
+
+  .streaming-view,
+  .viewing-mode {
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: transparent !important;
+  }
+
+  .local-video,
+  .remote-video,
+  .hls-remote-video,
+  .hls-video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important; /* Preserve aspect ratio */
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .hls-viewer {
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .no-stream {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: auto !important;
+  }
+
+  .no-stream-content {
+    min-height: auto !important;
+    height: 100% !important;
+  }
+}
+
+/* Custom video controls styling */
+.video-controls input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.video-controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2a2a2a;
+  cursor: pointer;
+  border: 2px solid #007bff;
+}
+
+.video-controls input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2a2a2a;
+  cursor: pointer;
+  border: 2px solid #007bff;
+}
+
+.video-controls input[type="range"]::-webkit-slider-track {
+  background: #444;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.video-controls input[type="range"]::-moz-range-track {
+  background: #444;
+  height: 4px;
+  border-radius: 2px;
+}

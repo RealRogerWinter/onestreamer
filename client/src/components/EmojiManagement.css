@@ -1,0 +1,260 @@
+.emoji-management {
+  padding: 20px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.emoji-management-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.emoji-management-header h3 {
+  margin: 0;
+  color: #fff;
+}
+
+.emoji-management-loading {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+}
+
+/* Upload Form */
+.emoji-upload-form {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.emoji-upload-form h4 {
+  margin-top: 0;
+  color: #fff;
+}
+
+.emoji-upload-form .form-group {
+  margin-bottom: 15px;
+}
+
+.emoji-upload-form label {
+  display: block;
+  margin-bottom: 5px;
+  color: #bbb;
+  font-size: 14px;
+}
+
+.emoji-upload-form input[type="text"],
+.emoji-upload-form select {
+  width: 100%;
+  padding: 8px 12px;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.emoji-upload-form input[type="file"] {
+  display: block;
+  margin-top: 5px;
+  color: #bbb;
+}
+
+.emoji-upload-form small {
+  display: block;
+  margin-top: 4px;
+  color: #888;
+  font-size: 12px;
+}
+
+.emoji-upload-form .form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* Stats */
+.emoji-stats {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #2a2a2a;
+  border-radius: 8px;
+}
+
+.emoji-stats .stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.emoji-stats .stat-label {
+  color: #888;
+  font-size: 14px;
+}
+
+.emoji-stats .stat-value {
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* Table */
+.emoji-list {
+  background: #1a1a1a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.emoji-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.emoji-table thead {
+  background: #2a2a2a;
+}
+
+.emoji-table th {
+  text-align: left;
+  padding: 12px;
+  color: #bbb;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 1px solid #444;
+}
+
+.emoji-table tbody tr {
+  border-bottom: 1px solid #333;
+  transition: background 0.2s;
+}
+
+.emoji-table tbody tr:hover {
+  background: #252525;
+}
+
+.emoji-table tbody tr.inactive {
+  opacity: 0.5;
+}
+
+.emoji-table td {
+  padding: 12px;
+  color: #ddd;
+  font-size: 14px;
+}
+
+.emoji-preview img {
+  display: block;
+  object-fit: contain;
+}
+
+.emoji-table code {
+  background: #333;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 13px;
+  color: #4ECDC4;
+}
+
+/* Inline Edit */
+.inline-edit {
+  padding: 4px 8px;
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 13px;
+  width: 100%;
+}
+
+/* Status Toggle */
+.status-toggle {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.status-toggle.active {
+  background: #28a745;
+  color: #fff;
+}
+
+.status-toggle.inactive {
+  background: #6c757d;
+  color: #fff;
+}
+
+.status-toggle:hover {
+  opacity: 0.8;
+}
+
+/* Actions */
+.emoji-actions {
+  display: flex;
+  gap: 5px;
+}
+
+/* Buttons */
+.btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: #fff;
+}
+
+.btn-success {
+  background: #28a745;
+  color: #fff;
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: #fff;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: #fff;
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.btn:hover {
+  opacity: 0.8;
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+/* Empty State */
+.emoji-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #888;
+}
+
+.emoji-empty p {
+  margin: 10px 0;
+  font-size: 14px;
+}

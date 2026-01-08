@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Points Update Testing</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .points-display {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .points-counter {
+            font-size: 36px;
+            font-weight: bold;
+            color: #00ff88;
+            margin: 20px 0;
+        }
+        .animated-number {
+            transition: color 0.3s ease;
+        }
+        .animated-number.animating {
+            color: #ffff00;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .log {
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            background: #444;
+            border-radius: 3px;
+        }
+        .error { color: #ff6666; }
+        .success { color: #66ff66; }
+        .info { color: #6666ff; }
+        .warn { color: #ffff66; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Points Update Testing Dashboard</h1>
+        
+        <div class="points-display">
+            <h2>Current Points Display</h2>
+            <div class="user-points points-counter">
+                <span class="points-icon">💎</span>
+                <span class="animated-number" id="points-value">0</span>
+                <span class="points-label">Points</span>
+            </div>
+            <div>
+                <small>Target Value: <span id="target-value">0</span></small><br>
+                <small>Display Value: <span id="display-value">0</span></small><br>
+                <small>Animation State: <span id="animation-state">idle</span></small>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h3>Test Controls</h3>
+            <button onclick="simulatePointsUpdate(100)">Add 100 Points</button>
+            <button onclick="simulatePointsUpdate(500)">Add 500 Points</button>
+            <button onclick="simulatePointsUpdate(1000)">Add 1000 Points</button>
+            <button onclick="simulatePointsUpdate(-50)">Remove 50 Points</button>
+            <button onclick="setExactPoints(2500)">Set to 2500</button>
+            <button onclick="setExactPoints(0)">Reset to 0</button>
+            <button onclick="rapidUpdates()">Rapid Updates Test</button>
+            <button onclick="connectSocket()">Reconnect Socket</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+
+        <div class="log-container">
+            <h3>Event Log</h3>
+            <div class="log" id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let currentPoints = 0;
+        let targetPoints = 0;
+        let animationFrame = null;
+        let isAnimating = false;
+
+        class AnimatedNumber {
+            constructor(element, options = {}) {
+                this.element = element;
+                this.displayValue = 0;
+                this.targetValue = 0;
+                this.duration = options.duration || 500;
+                this.formatNumber = options.formatNumber !== false;
+                this.animationFrame = null;
+                this.isAnimating = false;
+            }
+
+            setValue(newValue) {
+                log(`AnimatedNumber.setValue called with: ${newValue}`, 'info');
+                
+                // Cancel any existing animation
+                if (this.animationFrame) {
+                    cancelAnimationFrame(this.animationFrame);
+                }
+
+                const oldTarget = this.targetValue;
+                this.targetValue = newValue;
+
+                // If value hasn't changed, don't animate
+                if (newValue === oldTarget) {
+                    log(`Value unchanged (${newValue} === ${oldTarget}), skipping animation`, 'warn');
+                    return;
+                }
+
+                this.animate();
+            }
+
+            animate() {
+                const startValue = this.displayValue;
+                const difference = this.targetValue - startValue;
+                const startTime = Date.now();
+
+                log(`Starting animation: ${startValue} → ${this.targetValue} (diff: ${difference})`, 'success');
+                this.isAnimating = true;
+                this.element.classList.add('animating');
+                document.getElementById('animation-state').textContent = 'animating';
+
+                const animateFrame = () => {
+                    const now = Date.now();
+                    const elapsed = now - startTime;
+                    const progress = Math.min(elapsed / this.duration, 1);
+                    
+                    // Easing function
+                    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+                    const easedProgress = easeOutCubic(progress);
+                    
+                    const currentValue = Math.round(startValue + (difference * easedProgress));
+                    this.displayValue = currentValue;
+                    
+                    // Update display
+                    this.element.textContent = this.formatNumber ? 
+                        currentValue.toLocaleString() : currentValue;
+                    
+                    document.getElementById('display-value').textContent = currentValue;
+                    
+                    if (progress < 1) {
+                        this.animationFrame = requestAnimationFrame(animateFrame);
+                    } else {
+                        // Animation complete
+                        this.displayValue = this.targetValue;
+                        this.element.textContent = this.formatNumber ? 
+                            this.targetValue.toLocaleString() : this.targetValue;
+                        this.isAnimating = false;
+                        this.element.classList.remove('animating');
+                        document.getElementById('animation-state').textContent = 'idle';
+                        document.getElementById('display-value').textContent = this.targetValue;
+                        log(`Animation complete. Final value: ${this.targetValue}`, 'success');
+                    }
+                };
+
+                this.animationFrame = requestAnimationFrame(animateFrame);
+            }
+        }
+
+        // Initialize animated number
+        const pointsElement = document.getElementById('points-value');
+        const animatedNumber = new AnimatedNumber(pointsElement);
+
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logElement.insertBefore(entry, logElement.firstChild);
+            
+            // Keep only last 50 entries
+            while (logElement.children.length > 50) {
+                logElement.removeChild(logElement.lastChild);
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            log('Log cleared', 'info');
+        }
+
+        function connectSocket() {
+            if (socket) {
+                socket.disconnect();
+            }
+
+            log('Connecting to socket...', 'info');
+            socket = io('http://localhost:3001');
+
+            socket.on('connect', () => {
+                log('Socket connected! ID: ' + socket.id, 'success');
+            });
+
+            socket.on('disconnect', () => {
+                log('Socket disconnected', 'error');
+            });
+
+            socket.on('time-stats-update', (data) => {
+                log(`Received time-stats-update: points=${data.points}`, 'success');
+                updatePoints(data.points);
+            });
+
+            socket.on('points-updated', (data) => {
+                log(`Received points-updated: points=${data.points}`, 'success');
+                updatePoints(data.points);
+            });
+        }
+
+        function updatePoints(newPoints) {
+            const oldPoints = currentPoints;
+            currentPoints = newPoints;
+            targetPoints = newPoints;
+            
+            log(`Updating points: ${oldPoints} → ${newPoints}`, 'info');
+            
+            // Update target display
+            document.getElementById('target-value').textContent = newPoints;
+            
+            // Trigger animation
+            animatedNumber.setValue(newPoints);
+        }
+
+        function simulatePointsUpdate(delta) {
+            const newPoints = Math.max(0, currentPoints + delta);
+            log(`Simulating points update: ${currentPoints} + ${delta} = ${newPoints}`, 'info');
+            updatePoints(newPoints);
+        }
+
+        function setExactPoints(points) {
+            log(`Setting exact points to: ${points}`, 'info');
+            updatePoints(points);
+        }
+
+        async function rapidUpdates() {
+            log('Starting rapid updates test...', 'warn');
+            const delays = [100, 200, 150, 300, 50];
+            const increments = [50, 100, 75, 200, 150];
+            
+            for (let i = 0; i < delays.length; i++) {
+                await new Promise(resolve => setTimeout(resolve, delays[i]));
+                simulatePointsUpdate(increments[i]);
+            }
+            
+            log('Rapid updates test complete', 'success');
+        }
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            log('Page loaded, initializing...', 'info');
+            connectSocket();
+            updatePoints(0);
+        });
+
+        // Test React-like behavior
+        function testReactBehavior() {
+            log('Testing React-like component behavior...', 'warn');
+            
+            // Simulate React component with hooks
+            class ReactLikeComponent {
+                constructor() {
+                    this.state = {
+                        userPoints: 0,
+                        displayValue: 0,
+                        targetValue: 0
+                    };
+                    this.effects = [];
+                }
+
+                useState(initialValue) {
+                    let value = initialValue;
+                    const setValue = (newValue) => {
+                        log(`useState: ${value} → ${newValue}`, 'info');
+                        value = newValue;
+                        this.render();
+                    };
+                    return [value, setValue];
+                }
+
+                useEffect(callback, deps) {
+                    // Simplified effect implementation
+                    callback();
+                }
+
+                render() {
+                    log(`Component re-rendering with points: ${this.state.userPoints}`, 'info');
+                }
+            }
+
+            const component = new ReactLikeComponent();
+            component.render();
+        }
+    </script>
+</body>
+</html>

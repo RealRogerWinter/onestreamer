@@ -1,0 +1,2059 @@
+/* Inventory Toggle Button */
+.inventory-toggle-btn {
+  position: fixed;
+  right: 20px;
+  bottom: 100px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  z-index: 1000;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Desktop-only enhanced backpack button */
+@media (min-width: 769px) {
+  .inventory-toggle-btn {
+    width: 70px;
+    height: 70px;
+    font-size: 36px;
+    bottom: 120px;
+    right: 30px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 
+      0 6px 25px rgba(102, 126, 234, 0.5),
+      inset 0 0 20px rgba(255, 255, 255, 0.1);
+    animation: 
+      subtleBounce 4s ease-in-out infinite,
+      glowPulse 3s ease-in-out infinite,
+      occasionalWiggle 15s ease-in-out infinite;
+    position: fixed;
+    overflow: visible;
+  }
+  
+  .inventory-toggle-btn::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    right: -5px;
+    bottom: -5px;
+    background: linear-gradient(45deg, #ff6ec4, #7873f5, #4a9eff, #00d4ff);
+    border-radius: 50%;
+    opacity: 0;
+    z-index: -1;
+    animation: rainbowGlow 6s linear infinite;
+    filter: blur(10px);
+  }
+  
+  .inventory-toggle-btn::after {
+    content: '✨';
+    position: absolute;
+    top: -10px;
+    right: -5px;
+    font-size: 20px;
+    animation: sparkleFloat 6s ease-in-out infinite;
+    opacity: 0;
+  }
+  
+  .inventory-toggle-btn:hover {
+    transform: scale(1.15) rotate(10deg);
+    box-shadow: 
+      0 10px 40px rgba(102, 126, 234, 0.7),
+      inset 0 0 30px rgba(255, 255, 255, 0.2);
+    animation: 
+      hoverShake 0.5s ease-in-out,
+      glowPulse 1s ease-in-out infinite;
+  }
+  
+  .inventory-toggle-btn:hover::before {
+    opacity: 0.6;
+  }
+  
+  .inventory-toggle-btn:hover::after {
+    opacity: 1;
+  }
+}
+
+/* Keyframe Animations for Desktop Backpack */
+@keyframes subtleBounce {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-5px); }
+  75% { transform: translateY(3px); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { 
+    box-shadow: 
+      0 6px 25px rgba(102, 126, 234, 0.5),
+      inset 0 0 20px rgba(255, 255, 255, 0.1);
+  }
+  50% { 
+    box-shadow: 
+      0 8px 35px rgba(102, 126, 234, 0.8),
+      inset 0 0 25px rgba(255, 255, 255, 0.2);
+  }
+}
+
+@keyframes occasionalWiggle {
+  0%, 94%, 100% { transform: rotate(0deg); }
+  95% { transform: rotate(-8deg); }
+  96% { transform: rotate(8deg); }
+  97% { transform: rotate(-5deg); }
+  98% { transform: rotate(5deg); }
+}
+
+@keyframes rainbowGlow {
+  0% { 
+    transform: rotate(0deg);
+    filter: blur(10px) hue-rotate(0deg);
+  }
+  100% { 
+    transform: rotate(360deg);
+    filter: blur(10px) hue-rotate(360deg);
+  }
+}
+
+@keyframes sparkleFloat {
+  0%, 100% { 
+    transform: translate(0, 0) scale(0);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-5px, -10px) scale(1);
+    opacity: 1;
+  }
+  40% {
+    transform: translate(5px, -20px) scale(1.2);
+    opacity: 0.8;
+  }
+  60% {
+    transform: translate(-3px, -30px) scale(0.8);
+    opacity: 0.5;
+  }
+  80% {
+    transform: translate(2px, -35px) scale(0.5);
+    opacity: 0.2;
+  }
+}
+
+@keyframes hoverShake {
+  0%, 100% { transform: scale(1.15) rotate(10deg); }
+  25% { transform: scale(1.15) rotate(15deg); }
+  75% { transform: scale(1.15) rotate(5deg); }
+}
+
+/* Notification badge animation for desktop */
+@media (min-width: 769px) {
+  .inventory-toggle-btn.has-new-items::before {
+    content: '!';
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 25px;
+    height: 25px;
+    background: radial-gradient(circle, #ff6b6b, #ff4444);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: bold;
+    color: white;
+    border: 2px solid white;
+    animation: 
+      notificationPulse 1s ease-in-out infinite,
+      notificationBounce 2s ease-in-out infinite;
+    box-shadow: 0 0 15px rgba(255, 68, 68, 0.8);
+  }
+}
+
+@keyframes notificationPulse {
+  0%, 100% { 
+    transform: scale(1);
+    box-shadow: 0 0 15px rgba(255, 68, 68, 0.8);
+  }
+  50% { 
+    transform: scale(1.1);
+    box-shadow: 0 0 25px rgba(255, 68, 68, 1);
+  }
+}
+
+@keyframes notificationBounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-10px); }
+}
+
+/* Move inventory button when shop is open */
+.inventory-toggle-btn.shop-open {
+  right: 160px; /* Move left by shop width + margin */
+}
+
+.inventory-toggle-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+/* Inventory Panel - Desktop by default */
+.inventory-panel {
+  position: fixed;
+  right: -200px; /* Narrow panel for desktop */
+  top: 0;
+  bottom: 0;
+  width: 200px; /* Skinny panel that won't cover chat */
+  height: 100vh;
+  min-height: 100vh;
+  background: #1a1a1a;
+  border-left: 1px solid #333;
+  transition: right 0.3s ease;
+  z-index: 1100; /* Higher than header (1000) to appear on top */
+  display: flex;
+  flex-direction: column;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.5);
+  overflow: visible; /* Allow tooltips to show on desktop */
+}
+
+/* Desktop specific styles */
+.inventory-panel.desktop {
+  /* Ensure desktop always uses full height */
+  height: 100vh !important;
+  min-height: 100vh !important;
+  top: 0;
+  bottom: 0;
+}
+
+.inventory-panel.desktop.open {
+  right: 0; /* Stay on right edge */
+}
+
+/* When shop is also open, move inventory left */
+.inventory-panel.open.shop-also-open {
+  right: 200px; /* Move left by shop width */
+}
+
+/* Inventory Header */
+.inventory-header {
+  padding: 10px 12px;
+  background: #2a2a2a;
+  border-bottom: 1px solid #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.inventory-header h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 16px; /* Moderate size for narrow panel */
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.inventory-close-btn {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.inventory-close-btn:hover {
+  color: #fff;
+}
+
+/* Inventory Main Tabs */
+.inventory-main-tabs {
+  display: flex;
+  padding: 8px;
+  gap: 4px;
+  background: #333;
+  border-bottom: 1px solid #444;
+  flex-shrink: 0;
+}
+
+.inventory-main-tab {
+  flex: 1;
+  padding: 8px 6px;
+  background: #2a2a2a;
+  color: #bbb;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.2px;
+}
+
+.inventory-main-tab:hover {
+  background: #3a3a3a;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.inventory-main-tab.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  font-weight: 700;
+}
+
+/* Shop toggle button styling */
+.inventory-main-tab.shop-toggle.shop-open {
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+}
+
+/* Inventory Sub Tabs */
+.inventory-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 6px;
+  gap: 4px;
+  background: #222;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.inventory-tab {
+  padding: 5px 8px;
+  background: #2a2a2a;
+  color: #aaa;
+  border: 1px solid #333;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 28px;
+}
+
+.inventory-tab:hover {
+  background: #333;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.inventory-tab.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-color: transparent;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.inventory-admin-button {
+  padding: 5px 8px;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(255, 107, 107, 0.3);
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inventory-admin-button:hover {
+  background: linear-gradient(135deg, #ff5252 0%, #d32f2f 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+}
+
+/* Inventory Content */
+.inventory-loading,
+.inventory-empty,
+.inventory-error {
+  padding: 40px 20px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+}
+
+/* V2 Guest Prompt Design - Optimized for narrow panel */
+.inventory-guest-prompt-v2 {
+  padding: 20px 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  background: radial-gradient(circle at center, rgba(102, 126, 234, 0.08), transparent);
+}
+
+/* Icon Header */
+.guest-icon-header {
+  text-align: center;
+  margin-bottom: 25px;
+}
+
+.locked-icon {
+  font-size: 48px;
+  margin-bottom: 10px;
+  animation: subtle-pulse 2s ease-in-out infinite;
+}
+
+@keyframes subtle-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+.guest-icon-header h3 {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+/* Benefits List */
+.guest-benefits {
+  width: 100%;
+  max-width: 240px;
+  margin-bottom: 30px;
+}
+
+.benefit-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid rgba(102, 126, 234, 0.5);
+  transition: all 0.3s ease;
+}
+
+.benefit-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(3px);
+}
+
+.benefit-icon {
+  font-size: 20px;
+}
+
+.benefit-item span:last-child {
+  color: #ccc;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Auth CTA Section */
+.auth-cta-section {
+  width: 100%;
+  max-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.inventory-login-btn,
+.inventory-signup-btn {
+  width: 100%;
+  padding: 12px 20px;
+  text-decoration: none;
+  border-radius: 10px;
+  font-weight: 600;
+  text-align: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+  border: none;
+  font-family: inherit;
+  outline: none;
+}
+
+.inventory-login-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 14px;
+}
+
+.inventory-login-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.divider-text {
+  color: #666;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: relative;
+  width: 100%;
+  text-align: center;
+  margin: 5px 0;
+}
+
+.divider-text::before,
+.divider-text::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 40%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.divider-text::before {
+  left: 0;
+}
+
+.divider-text::after {
+  right: 0;
+}
+
+.inventory-signup-btn {
+  background: linear-gradient(135deg, #f093fb, #f5576c);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 20px;
+  box-shadow: 0 4px 15px rgba(240, 147, 251, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.inventory-signup-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.inventory-signup-btn:hover::before {
+  left: 100%;
+}
+
+.inventory-signup-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(240, 147, 251, 0.4);
+}
+
+.signup-text {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.signup-bonus {
+  font-size: 11px;
+  opacity: 0.95;
+  font-weight: 500;
+}
+
+/* Old v1 styles - keeping for backwards compatibility */
+.inventory-guest-prompt {
+  padding: 30px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
+}
+
+.inventory-guest-prompt .guest-prompt-content {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+  border: 2px solid rgba(102, 126, 234, 0.5);
+  border-radius: 16px;
+  padding: 30px 25px;
+  text-align: center;
+  max-width: 320px;
+  width: 90%;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2);
+  animation: subtle-glow 3s ease-in-out infinite;
+}
+
+@keyframes subtle-glow {
+  0%, 100% { box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2); }
+  50% { box-shadow: 0 8px 32px rgba(102, 126, 234, 0.35); }
+}
+
+.inventory-guest-prompt h4 {
+  color: #fff;
+  font-size: 20px;
+  margin: 0 0 12px 0;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.inventory-guest-prompt p {
+  color: #bbb;
+  font-size: 14px;
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+.inventory-guest-prompt .guest-actions {
+  margin-top: 15px;
+}
+
+.inventory-guest-prompt .guest-actions p {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffd700;
+  margin: 0 0 20px 0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.inventory-guest-prompt .auth-buttons {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px;
+  justify-content: center;
+  align-items: stretch;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.inventory-guest-prompt .auth-button {
+  display: block;
+  width: 100%;
+  padding: 14px 28px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: visible;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.inventory-guest-prompt .login-button {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border: 2px solid transparent;
+}
+
+.inventory-guest-prompt .login-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.inventory-guest-prompt .signup-button {
+  background: linear-gradient(135deg, #f093fb, #f5576c);
+  color: white;
+  border: 2px solid transparent;
+  position: relative;
+}
+
+.inventory-guest-prompt .signup-button::after {
+  content: '🎁';
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  background: #ffd700;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  animation: bounce 2s ease-in-out infinite;
+  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.5);
+  z-index: 1;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.inventory-guest-prompt .signup-button:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
+}
+
+.inventory-error {
+  color: #ff4444;
+  background: rgba(255, 68, 68, 0.1);
+  margin: 10px;
+  padding: 15px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+/* Inventory content wrapper - fills remaining space */
+.inventory-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0; /* Important for flexbox overflow */
+  overflow: hidden;
+}
+
+/* Desktop: Allow overflow visible for tooltips */
+.inventory-panel.desktop .inventory-content {
+  overflow: visible;
+}
+
+/* Mobile: Keep overflow hidden for proper scrolling */
+.inventory-panel.mobile .inventory-content {
+  overflow: hidden;
+}
+
+/* Inventory Grid */
+.inventory-grid {
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr); /* 3 columns for narrow panel */
+  grid-auto-rows: 55px; /* Smaller items to fit more vertically */
+  gap: 6px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0; /* Important for proper scrolling */
+  align-content: start;
+}
+
+/* Inventory Item */
+.inventory-item {
+  width: 100%;
+  height: 100%;
+  min-height: 50px;
+  min-width: 50px;
+  max-height: 55px;
+  max-width: 55px;
+  background: #2a2a2a;
+  border: 2px solid #444;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.inventory-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.inventory-item.empty {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.inventory-item.cooldown {
+  cursor: not-allowed;
+}
+
+/* Item Emoji */
+.item-emoji {
+  font-size: 24px; /* Moderate emoji size for narrow panel */
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Item Quantity */
+.item-quantity {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: bold;
+  min-width: 18px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Cooldown Overlay */
+.item-cooldown-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.cooldown-text {
+  color: #ff9999;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+/* Rarity Borders */
+.inventory-item.rarity-common {
+  border-color: #9d9d9d;
+}
+
+.inventory-item.rarity-uncommon {
+  border-color: #1eff00;
+}
+
+.inventory-item.rarity-rare {
+  border-color: #0070dd;
+}
+
+.inventory-item.rarity-epic {
+  border-color: #a335ee;
+}
+
+.inventory-item.rarity-legendary {
+  border-color: #ff8000;
+  background: linear-gradient(135deg, rgba(255, 128, 0, 0.1), rgba(255, 128, 0, 0.05));
+}
+
+/* Item Type Styling */
+.inventory-item[data-type="guard"] {
+  position: relative;
+}
+
+.inventory-item[data-type="guard"]::before {
+  content: '🛡️';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 10px;
+  opacity: 0.7;
+  background: rgba(0, 150, 255, 0.3);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inventory-item[data-type="weapon"] {
+  position: relative;
+}
+
+.inventory-item[data-type="weapon"]::before {
+  content: '⚔️';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 10px;
+  opacity: 0.7;
+  background: rgba(255, 100, 100, 0.3);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Keep buttons stacked vertically on all screen sizes */
+
+/* Mobile Backpack Header - Compact design */
+.backpack-mobile-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 16px 14px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(116, 75, 162, 0.15) 100%);
+  border-bottom: 1px solid #444;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+
+.backpack-mobile-header:active {
+  cursor: grabbing;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.25) 0%, rgba(116, 75, 162, 0.25) 100%);
+}
+
+.backpack-mobile-header .swipe-handle {
+  width: 48px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 3px;
+  margin-bottom: 10px;
+  transition: all 0.2s ease;
+}
+
+.backpack-mobile-header:active .swipe-handle {
+  width: 60px;
+  background: rgba(102, 126, 234, 0.8);
+}
+
+.backpack-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.backpack-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.3px;
+}
+
+.backpack-close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #999;
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.backpack-close-btn:hover,
+.backpack-close-btn:active {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  /* V2 Guest prompt mobile styles */
+  .inventory-guest-prompt-v2 {
+    padding: 15px 10px;
+  }
+
+  .locked-icon {
+    font-size: 40px;
+  }
+
+  .guest-icon-header h3 {
+    font-size: 16px;
+  }
+
+  .guest-benefits {
+    max-width: 100%;
+  }
+
+  .benefit-item {
+    padding: 6px 10px;
+  }
+
+  .benefit-item span:last-child {
+    font-size: 12px;
+  }
+
+  .auth-cta-section {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+
+  /* Old Guest prompt mobile styles */
+  .inventory-guest-prompt {
+    padding: 20px 10px;
+  }
+
+  .inventory-guest-prompt .guest-prompt-content {
+    max-width: 95%;
+    padding: 25px 20px;
+    width: 100%;
+  }
+
+  .inventory-guest-prompt h4 {
+    font-size: 18px;
+  }
+
+  .inventory-guest-prompt .guest-actions p {
+    font-size: 14px;
+  }
+
+  .inventory-guest-prompt .auth-buttons {
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .inventory-guest-prompt .auth-button {
+    width: 100%;
+    padding: 16px 20px;
+    font-size: 15px;
+  }
+
+  /* Override desktop styles completely for mobile */
+  .inventory-panel.mobile {
+    position: fixed !important;
+    bottom: -100% !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    width: 100% !important;
+    /* Height controlled by JavaScript for smooth drag gestures */
+    height: 40vh;
+    min-height: 100px !important;
+    /* CRITICAL: Never go above the header (56px from top) */
+    max-height: calc(100dvh - 56px) !important;
+    border-radius: 20px 20px 0 0 !important;
+    /* Transition controlled by JavaScript during drag */
+    border-left: none !important;
+    border-top: 3px solid #444 !important;
+    background: rgba(26, 26, 26, 0.98) !important;
+    backdrop-filter: blur(10px) !important;
+    z-index: 998 !important;
+    overflow: hidden !important;
+    /* Ensure smooth touch interaction */
+    touch-action: none;
+    will-change: height, transform;
+  }
+  
+  /* Make inventory toggle button much larger on mobile */
+  .inventory-toggle-btn {
+    position: fixed;
+    right: 15px;
+    bottom: 70px; /* Above bottom nav */
+    width: 65px;
+    height: 65px;
+    font-size: 32px;
+    border-width: 3px;
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+    animation: mobile-pulse 2s infinite;
+  }
+  
+  @keyframes mobile-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+  }
+  
+  /* Mobile-specific open state */
+  .inventory-panel.mobile.open {
+    bottom: 76px !important; /* Above bottom nav, leaving space for stream */
+    right: 0 !important;
+  }
+  
+  /* Mobile-specific expanded state - capped to not cover header */
+  .inventory-panel.mobile.expanded {
+    /* Height controlled by JavaScript */
+    max-height: calc(100dvh - 56px) !important;
+    /* Ensure it stays at bottom, not covering header */
+    top: auto !important;
+    bottom: 0 !important;
+  }
+  
+  /* Swipe indicator for mobile - visual cue for dragging */
+  .inventory-panel.mobile::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    z-index: 1;
+  }
+  
+  /* Larger header for mobile - draggable area for swipe gestures */
+  .inventory-header {
+    padding: 16px 20px;
+    padding-top: 20px; /* Extra space for swipe indicator */
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(116, 75, 162, 0.2) 100%);
+    border-bottom: 2px solid #444;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    flex-shrink: 0;
+  }
+  
+  .inventory-header:active {
+    cursor: grabbing;
+  }
+  
+  .inventory-header h2 {
+    font-size: 20px;
+    font-weight: 700;
+  }
+  
+  .inventory-close-btn {
+    font-size: 32px;
+    width: 44px;
+    height: 44px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+  }
+  
+  /* Larger tabs for mobile */
+  .inventory-main-tabs {
+    padding: 12px;
+    gap: 8px;
+  }
+  
+  .inventory-main-tab {
+    padding: 14px 12px;
+    font-size: 14px;
+    border-radius: 8px;
+    min-height: 48px;
+  }
+  
+  /* Better sub-tabs layout for mobile */
+  .inventory-tabs {
+    display: flex;
+    overflow-x: auto;
+    padding: 10px;
+    gap: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .inventory-tab {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    font-size: 13px;
+    border-radius: 20px;
+    white-space: nowrap;
+    min-height: 40px;
+  }
+  
+  /* Larger inventory grid for mobile */
+  .inventory-content {
+    padding: 12px;
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    padding: 8px;
+  }
+  
+  .inventory-item {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 12px;
+    border-width: 2px;
+  }
+  
+  .item-emoji {
+    font-size: 32px;
+  }
+  
+  .item-name {
+    font-size: 11px;
+    padding: 0 2px;
+  }
+  
+  .item-quantity {
+    font-size: 12px;
+    padding: 2px 6px;
+    min-width: 20px;
+  }
+  
+  /* Pagination controls for mobile */
+  .inventory-pagination {
+    padding: 12px;
+    gap: 12px;
+  }
+  
+  .pagination-btn {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 14px;
+  }
+  
+  .pagination-info {
+    font-size: 14px;
+  }
+  
+  /* Swipe hint for mobile */
+  .inventory-panel::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Even more compact for small phones */
+  .inventory-panel {
+    /* Height handled dynamically by JavaScript */
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  
+  .item-emoji {
+    font-size: 28px;
+  }
+  
+  .item-name {
+    font-size: 10px;
+  }
+}
+
+/* Item Tooltip */
+.item-tooltip {
+  position: fixed;
+  background: #1a1a1a;
+  border: 2px solid #444;
+  border-radius: 8px;
+  padding: 15px;
+  min-width: 250px;
+  max-width: 350px;
+  z-index: 11000 !important; /* Above everything including header and modals */
+  pointer-events: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+  display: block;
+  opacity: 1;
+}
+
+.tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 2px solid;
+}
+
+.tooltip-emoji {
+  font-size: 28px;
+}
+
+.tooltip-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.tooltip-type {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #999;
+}
+
+.type-icon {
+  font-size: 16px;
+}
+
+.type-text {
+  text-transform: capitalize;
+}
+
+.rarity-text {
+  margin-left: auto;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.tooltip-description {
+  color: #ccc;
+  font-size: 14px;
+  line-height: 1.4;
+  margin-bottom: 15px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+}
+
+.tooltip-stats {
+  margin-bottom: 10px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.stat-label {
+  color: #999;
+}
+
+.stat-value {
+  color: #fff;
+  font-weight: 500;
+}
+
+.stat-row.cooldown-active {
+  color: #ff9999;
+}
+
+.stat-row.cooldown-active .stat-value {
+  color: #ff9999;
+}
+
+.tooltip-footer {
+  padding-top: 10px;
+  border-top: 1px solid #333;
+  text-align: center;
+}
+
+.tooltip-hint {
+  font-size: 12px;
+  color: #4CAF50;
+  font-style: italic;
+}
+
+.tooltip-hint.cooldown {
+  color: #ff9999;
+}
+
+.tooltip-hint.empty {
+  color: #666;
+}
+
+/* Large desktop screens - maintain narrow width */
+@media (min-width: 1440px) {
+  .inventory-panel {
+    width: 220px;
+    right: -220px;
+  }
+  
+  .inventory-panel.open.shop-also-open {
+    right: 220px;
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 65px;
+  }
+}
+
+/* Medium screens - maintain narrow width */
+@media (min-width: 1025px) and (max-width: 1439px) {
+  .inventory-panel {
+    width: 200px;
+    right: -200px;
+  }
+  
+  .inventory-panel.open.shop-also-open {
+    right: 200px;
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* When layout becomes columnar (chat goes below main content) */
+@media (max-width: 1024px) {
+  .inventory-panel {
+    width: 200px;
+    right: -200px;
+  }
+  
+  .inventory-panel.open {
+    right: 0;
+  }
+  
+  .inventory-panel.open.shop-also-open {
+    right: 200px; /* Move left by shop width on tablets */
+  }
+  
+  /* Adjust grid for narrow panel on smaller screens */
+  .inventory-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .inventory-tabs {
+    flex-wrap: wrap;
+  }
+  
+  .inventory-tab {
+    font-size: 11px;
+    padding: 5px 8px;
+  }
+}
+
+
+@media (max-width: 480px) {
+  .inventory-panel {
+    width: 100%;
+    right: auto;
+    /* Height handled by JavaScript */
+  }
+  
+  .inventory-panel.open {
+    right: auto;
+  }
+  
+  .inventory-grid {
+    grid-template-columns: repeat(5, 1fr);
+    grid-auto-rows: 58px;
+    gap: 10px;
+    padding: 12px;
+  }
+  
+  .inventory-item {
+    min-height: 58px;
+    min-width: 58px;
+    max-height: 70px;
+    max-width: 70px;
+  }
+  
+  .item-emoji {
+    font-size: clamp(24px, 4vw, 32px);
+  }
+  
+  .item-quantity {
+    font-size: 13px;
+    min-width: 28px;
+    padding: 2px 8px;
+  }
+}
+
+/* Inventory Pagination */
+.inventory-pagination {
+  padding: 8px 10px;
+  background: #222;
+  border-top: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+  height: auto;
+}
+
+.inventory-pagination .pagination-info {
+  color: #999;
+  font-size: 11px;
+  text-align: center;
+}
+
+.inventory-pagination .pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.inventory-pagination .pagination-btn {
+  padding: 5px 10px;
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.inventory-pagination .pagination-btn:hover:not(.disabled) {
+  background: #333;
+  border-color: #555;
+}
+
+.inventory-pagination .pagination-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: #666;
+}
+
+.inventory-pagination .pagination-pages {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.inventory-pagination .pagination-page {
+  padding: 5px 8px;
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 30px;
+}
+
+.inventory-pagination .pagination-page:hover {
+  background: #333;
+  border-color: #555;
+}
+
+.inventory-pagination .pagination-page.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: #fff;
+}
+
+/* Responsive Inventory Pagination */
+@media (max-width: 768px) {
+  .inventory-pagination {
+    padding: 12px 15px;
+  }
+  
+  .inventory-pagination .pagination-controls {
+    gap: 6px;
+  }
+  
+  .inventory-pagination .pagination-btn,
+  .inventory-pagination .pagination-page {
+    padding: 5px 8px;
+    font-size: 10px;
+    min-width: 28px;
+  }
+}
+
+@media (max-width: 480px) {
+  .inventory-pagination .pagination-pages {
+    max-width: 180px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #667eea #2a2a2a;
+  }
+
+  .inventory-pagination .pagination-pages::-webkit-scrollbar {
+    height: 3px;
+  }
+
+  .inventory-pagination .pagination-pages::-webkit-scrollbar-track {
+    background: #2a2a2a;
+  }
+
+  .inventory-pagination .pagination-pages::-webkit-scrollbar-thumb {
+    background: #667eea;
+    border-radius: 2px;
+  }
+}
+
+/* ========================================
+   Mobile Item Detail Modal
+   ======================================== */
+
+.mobile-item-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mobile-item-modal {
+  background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%);
+  border-radius: 16px;
+  border: 1px solid #444;
+  max-width: 340px;
+  width: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.25s ease-out;
+  overflow: hidden;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mobile-item-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 2px solid;
+}
+
+.mobile-item-emoji {
+  font-size: 42px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.mobile-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-item-name {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.mobile-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #888;
+}
+
+.mobile-item-meta .type-icon {
+  font-size: 14px;
+}
+
+.mobile-item-meta .type-text {
+  text-transform: capitalize;
+}
+
+.mobile-item-meta .rarity-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.mobile-item-description {
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #ccc;
+  border-bottom: 1px solid #333;
+}
+
+.mobile-item-stats {
+  padding: 12px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-bottom: 1px solid #333;
+}
+
+.mobile-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 70px;
+}
+
+.mobile-stat .stat-label {
+  font-size: 10px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mobile-stat .stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.mobile-stat.cooldown-active .stat-label {
+  color: #ff6b6b;
+}
+
+.mobile-stat.cooldown-active .stat-value {
+  color: #ff6b6b;
+}
+
+.mobile-item-actions {
+  display: flex;
+  gap: 10px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.mobile-item-cancel-btn {
+  flex: 1;
+  padding: 14px 20px;
+  border: 1px solid #444;
+  border-radius: 10px;
+  background: transparent;
+  color: #aaa;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mobile-item-cancel-btn:active {
+  background: rgba(255, 255, 255, 0.05);
+  transform: scale(0.98);
+}
+
+.mobile-item-use-btn {
+  flex: 2;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.mobile-item-use-btn:active:not(.disabled) {
+  transform: scale(0.98);
+  box-shadow: 0 2px 10px rgba(102, 126, 234, 0.4);
+}
+
+.mobile-item-use-btn.disabled {
+  background: #444;
+  color: #777;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ========================================
+   Mobile Landscape - Inventory Panel as Sidebar
+   Same width as chat (280px) for consistency
+   ======================================== */
+@media (max-width: 932px) and (orientation: landscape) {
+  /* Make inventory panel a full-height sidebar like chat */
+  .inventory-panel.mobile {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: auto !important;
+    width: 280px !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    border-top: none !important;
+    border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+    background: #121212 !important;
+    z-index: 200 !important;
+    transform: translateX(100%) !important;
+    transition: transform 0.3s ease !important;
+  }
+
+  .inventory-panel.mobile.open {
+    transform: translateX(0) !important;
+    bottom: 0 !important;
+  }
+
+  .inventory-panel.mobile.expanded {
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+  }
+
+  /* Landscape backpack header - compact */
+  .inventory-panel.mobile .backpack-mobile-header {
+    padding: 8px 12px;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    background: #1a1a1a;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .inventory-panel.mobile .backpack-mobile-header .swipe-handle {
+    display: none; /* Hide swipe handle in landscape - use close button */
+  }
+
+  .inventory-panel.mobile .backpack-title-row {
+    width: 100%;
+  }
+
+  .inventory-panel.mobile .backpack-title {
+    font-size: 14px;
+  }
+
+  .inventory-panel.mobile .backpack-close-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+  }
+
+  /* Inventory content fills remaining space */
+  .inventory-panel.mobile .inventory-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Landscape inventory grid - more columns for sidebar */
+  .inventory-panel.mobile .inventory-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  .inventory-panel.mobile .inventory-item {
+    min-height: 48px !important;
+    min-width: 48px !important;
+  }
+
+  .inventory-panel.mobile .item-emoji {
+    font-size: 22px !important;
+  }
+
+  /* Guest prompt adjustments for landscape */
+  .inventory-panel.mobile .inventory-guest-prompt-v2 {
+    padding: 16px;
+  }
+
+  .inventory-panel.mobile .inventory-guest-prompt-v2 .guest-icon-header {
+    margin-bottom: 12px;
+  }
+
+  .inventory-panel.mobile .inventory-guest-prompt-v2 .locked-icon {
+    font-size: 32px;
+  }
+
+  .inventory-panel.mobile .inventory-guest-prompt-v2 h3 {
+    font-size: 16px;
+  }
+
+  .inventory-panel.mobile .inventory-guest-prompt-v2 .guest-benefits {
+    margin-bottom: 16px;
+  }
+
+  .inventory-panel.mobile .inventory-guest-prompt-v2 .benefit-item {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+
+  .inventory-panel.mobile .inventory-guest-prompt-v2 .inventory-login-btn,
+  .inventory-panel.mobile .inventory-guest-prompt-v2 .inventory-signup-btn {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  /* Pagination compact for landscape */
+  .inventory-panel.mobile .inventory-pagination {
+    padding: 8px;
+  }
+
+  .inventory-panel.mobile .inventory-pagination .pagination-info {
+    font-size: 10px;
+  }
+
+  .inventory-panel.mobile .inventory-pagination .pagination-btn,
+  .inventory-panel.mobile .inventory-pagination .pagination-page {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+}
+
+/* Narrower inventory for very short landscape screens */
+@media (max-height: 400px) and (orientation: landscape) {
+  .inventory-panel.mobile {
+    width: 240px !important;
+  }
+
+  .inventory-panel.mobile .inventory-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 4px !important;
+  }
+
+  .inventory-panel.mobile .inventory-item {
+    min-height: 42px !important;
+    min-width: 42px !important;
+  }
+
+  .inventory-panel.mobile .item-emoji {
+    font-size: 18px !important;
+  }
+}
+
+/* ========================================
+   Mobile Item Modal - Landscape adjustments
+   ======================================== */
+@media (max-width: 932px) and (orientation: landscape) {
+  .mobile-item-modal-backdrop {
+    padding: 10px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobile-item-modal {
+    max-width: 380px;
+    width: 90%;
+    max-height: calc(100dvh - 20px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mobile-item-modal-header {
+    padding: 12px 14px;
+    flex-shrink: 0;
+  }
+
+  .mobile-item-emoji {
+    font-size: 36px;
+  }
+
+  .mobile-item-name {
+    font-size: 16px;
+  }
+
+  .mobile-item-meta {
+    font-size: 11px;
+  }
+
+  .mobile-item-description {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.4;
+    flex-shrink: 0;
+  }
+
+  .mobile-item-stats {
+    padding: 8px 14px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+
+  .mobile-stat {
+    min-width: 60px;
+  }
+
+  .mobile-stat .stat-label {
+    font-size: 9px;
+  }
+
+  .mobile-stat .stat-value {
+    font-size: 13px;
+  }
+
+  .mobile-item-actions {
+    padding: 12px 14px;
+    flex-shrink: 0;
+  }
+
+  .mobile-item-cancel-btn,
+  .mobile-item-use-btn {
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+}
+
+/* Very short screens - even more compact modal */
+@media (max-height: 400px) and (orientation: landscape) {
+  .mobile-item-modal {
+    max-width: 340px;
+    max-height: calc(100dvh - 16px);
+  }
+
+  .mobile-item-modal-header {
+    padding: 8px 12px;
+  }
+
+  .mobile-item-emoji {
+    font-size: 28px;
+  }
+
+  .mobile-item-name {
+    font-size: 14px;
+  }
+
+  .mobile-item-description {
+    padding: 8px 12px;
+    font-size: 12px;
+    max-height: 60px;
+    overflow-y: auto;
+  }
+
+  .mobile-item-stats {
+    padding: 6px 12px;
+  }
+
+  .mobile-item-actions {
+    padding: 8px 12px;
+  }
+
+  .mobile-item-cancel-btn,
+  .mobile-item-use-btn {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+}

@@ -1,0 +1,225 @@
+.chat-moderation {
+  padding: 20px;
+  height: 100%;
+  overflow-y: auto;
+  background: #1a1a1a;
+}
+
+.chat-moderation-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  color: #888;
+  font-size: 14px;
+}
+
+.moderation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #333;
+}
+
+.moderation-header h3 {
+  margin: 0;
+  color: #fff;
+  font-size: 20px;
+}
+
+.refresh-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+/* Forms Section */
+.moderation-forms {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.moderation-form {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.moderation-form h4 {
+  margin: 0 0 15px 0;
+  color: #fff;
+  font-size: 16px;
+}
+
+.moderation-form form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.moderation-form input {
+  padding: 8px 12px;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.moderation-form input:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.moderation-form input::placeholder {
+  color: #666;
+}
+
+/* Lists Section */
+.moderation-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.banned-users,
+.timed-out-users {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.banned-users h4,
+.timed-out-users h4 {
+  margin: 0 0 15px 0;
+  color: #fff;
+  font-size: 16px;
+}
+
+.moderation-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.moderation-table thead {
+  background: #333;
+}
+
+.moderation-table th {
+  padding: 10px;
+  text-align: left;
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-bottom: 2px solid #444;
+}
+
+.moderation-table tbody tr {
+  border-bottom: 1px solid #333;
+}
+
+.moderation-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.moderation-table td {
+  padding: 12px 10px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.username-cell {
+  font-weight: 500;
+  color: #4ECDC4;
+}
+
+.time-remaining {
+  color: #FFA500;
+  font-weight: 500;
+}
+
+.no-data {
+  text-align: center;
+  color: #666;
+  padding: 20px;
+  font-style: italic;
+}
+
+/* Buttons */
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c82333;
+}
+
+.btn-warning {
+  background: #ffc107;
+  color: #212529;
+}
+
+.btn-warning:hover {
+  background: #e0a800;
+}
+
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-success:hover {
+  background: #218838;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #5a6268;
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .moderation-forms {
+    grid-template-columns: 1fr;
+  }
+  
+  .moderation-table {
+    font-size: 12px;
+  }
+  
+  .moderation-table th,
+  .moderation-table td {
+    padding: 8px 5px;
+  }
+}

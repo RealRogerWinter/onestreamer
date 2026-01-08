@@ -1,0 +1,253 @@
+.bug-report-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.bug-report-modal {
+  background: #2a2a2a;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bug-report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #444;
+}
+
+.bug-report-header h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bug-report-header h2::before {
+  content: '🐛';
+  font-size: 28px;
+}
+
+.bug-report-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 32px;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.bug-report-close:hover {
+  color: #fff;
+}
+
+.bug-report-form {
+  padding: 20px;
+}
+
+.bug-report-info {
+  margin-bottom: 20px;
+}
+
+.bug-report-info p {
+  color: #ccc;
+  margin: 0 0 10px 0;
+  font-size: 14px;
+}
+
+.bug-report-user {
+  color: #999;
+  font-size: 13px;
+}
+
+.bug-report-user strong {
+  color: #4CAF50;
+}
+
+.bug-report-field {
+  margin-bottom: 20px;
+}
+
+.bug-report-field label {
+  display: block;
+  color: #fff;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.bug-report-field textarea {
+  width: 100%;
+  padding: 12px;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.2s;
+}
+
+.bug-report-field textarea:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.bug-report-field textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.character-count {
+  text-align: right;
+  color: #666;
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.bug-report-status {
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bug-report-status.success {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4CAF50;
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.bug-report-status.error {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.bug-report-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.bug-report-cancel,
+.bug-report-submit {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.bug-report-cancel {
+  background: #444;
+  color: #ccc;
+}
+
+.bug-report-cancel:hover:not(:disabled) {
+  background: #555;
+  color: #fff;
+}
+
+.bug-report-submit {
+  background: #4CAF50;
+  color: white;
+}
+
+.bug-report-submit:hover:not(:disabled) {
+  background: #45a049;
+}
+
+.bug-report-submit:disabled,
+.bug-report-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bug-report-footer {
+  padding: 15px 20px;
+  background: #1a1a1a;
+  border-top: 1px solid #444;
+  border-radius: 0 0 12px 12px;
+}
+
+.bug-report-footer p {
+  margin: 0;
+  color: #666;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .bug-report-modal {
+    width: 95%;
+    max-height: 90vh;
+  }
+  
+  .bug-report-header {
+    padding: 15px;
+  }
+  
+  .bug-report-form {
+    padding: 15px;
+  }
+  
+  .bug-report-header h2 {
+    font-size: 20px;
+  }
+}

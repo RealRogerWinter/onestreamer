@@ -1,0 +1,280 @@
+.user-management {
+  padding: 20px;
+  max-width: 100%;
+}
+
+.user-management-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.user-management-header h3 {
+  margin: 0;
+  color: #333;
+}
+
+.search-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.search-input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 300px;
+}
+
+.search-btn, .clear-btn, .refresh-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.search-btn {
+  background: #007bff;
+  color: white;
+}
+
+.search-btn:hover {
+  background: #0056b3;
+}
+
+.clear-btn {
+  background: #6c757d;
+  color: white;
+}
+
+.clear-btn:hover {
+  background: #545b62;
+}
+
+.refresh-btn {
+  background: #28a745;
+  color: white;
+}
+
+.refresh-btn:hover {
+  background: #1e7e34;
+}
+
+.error-message {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 12px;
+  border: 1px solid #f1aeb5;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.error-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #721c24;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 10px;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 16px;
+  color: #666;
+}
+
+.users-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.users-table-container {
+  overflow-x: auto;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.users-table th {
+  background: #f8f9fa;
+  padding: 12px 8px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid #dee2e6;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.users-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
+}
+
+.users-table tr:hover {
+  background: #f8f9fa;
+}
+
+.banned-user {
+  background: #ffe6e6 !important;
+}
+
+.banned-user:hover {
+  background: #ffcccc !important;
+}
+
+.user-badges {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.badge.admin {
+  background: #dc3545;
+  color: white;
+}
+
+.badge.moderator {
+  background: #17a2b8;
+  color: white;
+}
+
+.badge.banned {
+  background: #6c757d;
+  color: white;
+}
+
+.badge.verified {
+  background: #28a745;
+  color: white;
+}
+
+.user-actions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.promote-btn {
+  background: #007bff;
+  color: white;
+}
+
+.promote-btn:hover {
+  background: #0056b3;
+}
+
+.demote-btn {
+  background: #ffc107;
+  color: #212529;
+}
+
+.demote-btn:hover {
+  background: #e0a800;
+}
+
+.ban-btn {
+  background: #dc3545;
+  color: white;
+}
+
+.ban-btn:hover {
+  background: #c82333;
+}
+
+.unban-btn {
+  background: #28a745;
+  color: white;
+}
+
+.unban-btn:hover {
+  background: #1e7e34;
+}
+
+.delete-btn {
+  background: #6c757d;
+  color: white;
+}
+
+.delete-btn:hover {
+  background: #545b62;
+}
+
+.no-users {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .user-management-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .search-form {
+    flex-direction: column;
+  }
+  
+  .search-input {
+    width: 100%;
+  }
+  
+  .users-table {
+    font-size: 12px;
+  }
+  
+  .users-table th,
+  .users-table td {
+    padding: 8px 4px;
+  }
+  
+  .action-btn {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+}

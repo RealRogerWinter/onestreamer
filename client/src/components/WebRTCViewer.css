@@ -1,0 +1,184 @@
+/* WebRTC Viewer Styles */
+.webrtc-viewer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  /* Create proper stacking context for mobile */
+  isolation: isolate;
+  z-index: 1;
+}
+
+/* WebRTC Video Element */
+.webrtc-video {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  object-fit: contain !important; /* Force contain to show full frame - no cropping */
+  background: #000;
+  z-index: 1;
+  /* Mobile Chrome video rendering optimizations */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  /* Prevent video layout shifts on mobile */
+  will-change: auto;
+}
+
+/* Ensure canvas overlay container is properly positioned */
+.webrtc-viewer .stream-effects-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2; /* Lower z-index for mobile compatibility */
+  pointer-events: none; /* Ensure it doesn't block interactions by default */
+}
+
+/* Override z-index in theatre mode when canvas needs interaction */
+.theatre-mode .webrtc-viewer .stream-effects-overlay:has(.canvas-effect-overlay-container[style*="pointer-events: auto"]) {
+  z-index: 150 !important; /* Above theatre controls when interactive */
+}
+
+/* WebRTC Streamer Styles */
+.webrtc-streamer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Local Video Element */
+.local-video {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  object-fit: contain !important; /* Force contain to show full frame - no cropping */
+  background: #000;
+  z-index: 1;
+}
+
+/* Ensure canvas overlay container is properly positioned for streamer */
+.webrtc-streamer .stream-effects-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2; /* Lower z-index for mobile compatibility */
+  pointer-events: none; /* Ensure it doesn't block interactions by default */
+}
+
+/* Loading and error states should be above video but below canvas */
+.webrtc-loading,
+.webrtc-error,
+.webrtc-waiting {
+  z-index: 5;
+}
+
+/* Playback overlay should be above video but below canvas */
+.playback-overlay {
+  z-index: 10;
+}
+
+/* Video controls should be above everything except debug panel */
+.video-controls {
+  z-index: 150;
+}
+
+/* Mobile Chrome specific video fixes */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+  .webrtc-video {
+    /* Force hardware acceleration on Webkit/Chrome */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+  }
+  
+  .webrtc-viewer {
+    /* Ensure proper compositing on mobile */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+}
+
+/* Additional mobile optimizations */
+@media (max-width: 768px) {
+  .webrtc-viewer {
+    /* Take up maximum available space */
+    min-height: 50vh !important;
+    height: 55vh !important;
+    max-height: 70vh !important;
+    /* Prevent overscroll issues on mobile */
+    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
+    /* Ensure proper sizing */
+    width: 100%;
+    max-width: 100%;
+    position: relative;
+    background: #000;
+  }
+
+  .webrtc-video {
+    /* Optimize for mobile performance */
+    -webkit-optimize-contrast: optimizeSpeed;
+    image-rendering: optimizeSpeed;
+    image-rendering: -webkit-optimize-contrast;
+    /* Fill the container properly */
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 50vh !important;
+    max-width: 100% !important;
+    object-fit: contain !important; /* Prevent stretching but fill space */
+  }
+
+  /* Ensure canvas overlay works on mobile */
+  .stream-effects-overlay {
+    /* Force proper rendering on mobile */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+
+  /* Fix for mobile Chrome black canvas issue */
+  .stream-effects-overlay .effect-overlay-canvas {
+    /* Ensure canvas is transparent on mobile */
+    background: transparent !important;
+    background-color: transparent !important;
+    opacity: 1 !important;
+    /* Force GPU acceleration */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+}
+
+/* Mobile Portrait Mode - Optimized layout with no wasted space */
+@media (max-width: 768px) and (orientation: portrait) {
+  .webrtc-viewer {
+    /* Full width with 16:9 aspect ratio, capped at available height */
+    width: 100% !important;
+    max-width: 100% !important;
+    aspect-ratio: 16 / 9 !important;
+    height: auto !important;
+    max-height: calc(100dvh - 176px) !important;
+    /* No margins - directly below header */
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    overflow: hidden !important;
+  }
+
+  .webrtc-video {
+    /* Preserve aspect ratio */
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
