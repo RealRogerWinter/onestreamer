@@ -22,6 +22,7 @@ class ViewBotLiveKitService {
     this.videoFiles = [];
     this.currentVideoIndex = 0;
     this.streamService = null; // For real streamer protection
+    this.urlViewBotService = null; // For URL stream protection
   }
 
   /**
@@ -33,9 +34,40 @@ class ViewBotLiveKitService {
   }
 
   /**
+   * Set ViewBotURLService reference for URL stream protection
+   * URL streams are protected - viewbots cannot run while URL stream is active
+   */
+  setURLViewBotService(urlViewBotService) {
+    this.urlViewBotService = urlViewBotService;
+    console.log('✅ LIVEKIT VIEWBOT: ViewBotURLService registered for URL stream protection');
+  }
+
+  /**
+   * Check if a URL stream is currently active
+   * URL streams should block viewbot creation
+   */
+  isURLStreamActive() {
+    if (!this.urlViewBotService) {
+      return false;
+    }
+    const isActive = this.urlViewBotService.isURLStreamActive();
+    if (isActive) {
+      const activeStream = this.urlViewBotService.getActiveURLStream();
+      console.log(`🛡️ LIVEKIT VIEWBOT: URL stream ${activeStream?.urlId} is active - viewbot creation blocked`);
+    }
+    return isActive;
+  }
+
+  /**
    * Check if a real streamer is currently active
+   * Real human streamers block viewbot creation
    */
   isRealStreamerActive() {
+    // First check for URL streams - they also block viewbot creation
+    if (this.isURLStreamActive()) {
+      return true;
+    }
+
     if (!this.streamService) {
       return false;
     }
@@ -45,7 +77,8 @@ class ViewBotLiveKitService {
       return false;
     }
 
-    // Check if current streamer is NOT a viewbot
+    // Check if current streamer is NOT a viewbot (viewbots don't block other viewbots)
+    // URL streams are already handled above, so we don't need to check here
     const isViewbot = currentStreamer.startsWith('viewbot-') ||
                       currentStreamer.includes('viewbot') ||
                       currentStreamer.startsWith('bot-');

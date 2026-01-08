@@ -271,7 +271,8 @@ class ViewBotURLService extends EventEmitter {
       if (this.backend === 'livekit' && this.livekitService) {
         try {
           const { RoomServiceClient } = require('livekit-server-sdk');
-          const config = require('../config/livekit.config');
+          const webrtcConfig = require('../config/webrtc.config');
+          const config = webrtcConfig.livekit;
           const host = config.host.startsWith('http') ? config.host : `http://${config.host}`;
           const roomClient = new RoomServiceClient(host, config.apiKey, config.apiSecret);
 
@@ -867,8 +868,20 @@ class ViewBotURLService extends EventEmitter {
       // Stop current processes
       await this._stopProcesses(streamEntry);
 
+      // Clean up LiveKit ingress before reconnect (critical to prevent "Publish failed" errors)
+      if (streamEntry.ingressInfo && this.livekitService) {
+        try {
+          console.log(`🧹 Cleaning up old LiveKit ingress ${streamEntry.ingressInfo.ingressId} before reconnect`);
+          await this.livekitService.deleteIngress(streamEntry.ingressInfo.ingressId);
+          streamEntry.ingressInfo = null;
+        } catch (err) {
+          console.error(`⚠️ Error cleaning up old ingress for ${urlId}:`, err.message);
+        }
+      }
+
       // Wait before reconnecting (exponential backoff)
       const delay = Math.min(5000 * Math.pow(2, streamEntry.reconnectAttempts - 1), 30000);
+      console.log(`⏳ Waiting ${delay/1000}s before reconnect attempt for ${urlId}`);
       await new Promise(resolve => setTimeout(resolve, delay));
 
       // Attempt restart
@@ -879,9 +892,10 @@ class ViewBotURLService extends EventEmitter {
           await this._startMediaSoupStream(urlId, streamEntry);
         }
         streamEntry.status = 'streaming';
+        streamEntry.reconnectAttempts = 0; // Reset on success
         console.log(`✅ Reconnected successfully: ${urlId}`);
       } catch (reconnectError) {
-        console.error(`❌ Reconnect failed for ${urlId}:`, reconnectError);
+        console.error(`❌ Reconnect failed for ${urlId}:`, reconnectError.message);
         this._handleStreamEnd(urlId, 'reconnect_failed');
       }
     } else {
@@ -899,7 +913,18 @@ class ViewBotURLService extends EventEmitter {
     console.log(`🛑 URL stream ended: ${urlId} (reason: ${reason})`);
 
     // Stop all processes
-    this._stopProcesses(streamEntry);
+    await this._stopProcesses(streamEntry);
+
+    // Clean up LiveKit ingress if exists
+    if (streamEntry.ingressInfo && this.livekitService) {
+      try {
+        console.log(`🧹 Cleaning up LiveKit ingress ${streamEntry.ingressInfo.ingressId} for ${urlId}`);
+        await this.livekitService.deleteIngress(streamEntry.ingressInfo.ingressId);
+        streamEntry.ingressInfo = null;
+      } catch (err) {
+        console.error(`⚠️ Error cleaning up LiveKit ingress for ${urlId}:`, err.message);
+      }
+    }
 
     // Update status
     streamEntry.status = 'ended';
@@ -935,25 +960,72 @@ class ViewBotURLService extends EventEmitter {
 
   /**
    * Stop all processes for a stream
+   * Properly waits for process termination with fallback to SIGKILL
    */
   async _stopProcesses(streamEntry) {
-    for (const { type, process } of streamEntry.processes) {
-      try {
-        if (process && !process.killed) {
-          console.log(`🛑 Killing ${type} process for ${streamEntry.urlId}`);
-          process.kill('SIGTERM');
-
-          // Force kill after timeout
-          setTimeout(() => {
-            if (!process.killed) {
-              process.kill('SIGKILL');
-            }
-          }, 3000);
-        }
-      } catch (err) {
-        console.error(`⚠️ Error killing ${type} process:`, err);
+    const killPromises = streamEntry.processes.map(async ({ type, process }) => {
+      if (!process || process.killed) {
+        return;
       }
-    }
+
+      const pid = process.pid;
+      console.log(`🛑 Killing ${type} process (PID ${pid}) for ${streamEntry.urlId}`);
+
+      return new Promise((resolve) => {
+        let resolved = false;
+
+        // Handle process exit
+        const onExit = () => {
+          if (!resolved) {
+            resolved = true;
+            console.log(`✅ ${type} process (PID ${pid}) terminated for ${streamEntry.urlId}`);
+            resolve();
+          }
+        };
+
+        process.once('exit', onExit);
+        process.once('close', onExit);
+
+        // Try SIGTERM first
+        try {
+          process.kill('SIGTERM');
+        } catch (err) {
+          // Process might already be dead
+          if (err.code !== 'ESRCH') {
+            console.error(`⚠️ Error sending SIGTERM to ${type} (PID ${pid}):`, err.message);
+          }
+          if (!resolved) {
+            resolved = true;
+            resolve();
+          }
+          return;
+        }
+
+        // Force SIGKILL after 3 seconds if not dead
+        setTimeout(() => {
+          if (!resolved && !process.killed) {
+            console.log(`⚠️ Force killing ${type} process (PID ${pid}) with SIGKILL`);
+            try {
+              process.kill('SIGKILL');
+            } catch (err) {
+              // Ignore errors - process may already be dead
+            }
+          }
+        }, 3000);
+
+        // Final timeout to prevent hanging - resolve after 5 seconds max
+        setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            console.log(`⏱️ ${type} process (PID ${pid}) cleanup timeout - continuing`);
+            resolve();
+          }
+        }, 5000);
+      });
+    });
+
+    // Wait for all processes to be killed (with timeout protection)
+    await Promise.all(killPromises);
     streamEntry.processes = [];
   }
 

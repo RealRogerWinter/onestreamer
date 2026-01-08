@@ -102,6 +102,24 @@ const MIN_CLAIM_INTERVAL = 20 * 60 * 1000; // Minimum 20 minutes between events
 const MAX_CLAIM_INTERVAL = 60 * 60 * 1000; // Maximum 60 minutes between events
 const CLAIM_TIMEOUT = 60 * 1000; // Claim events expire after 60 seconds if not claimed
 
+// Vote system constants
+const SKIP_VOTE_DURATION = 2 * 60 * 1000; // 2 minutes voting window
+const SKIP_VOTE_THRESHOLD = 0.75; // 75% of viewers needed
+const VOTE_COOLDOWN_FAILED = 2 * 60 * 1000; // 2 minute cooldown after failed vote
+const VOTE_COOLDOWN_SUCCESS = 5 * 60 * 1000; // 5 minute cooldown after successful vote
+
+// Skip vote system (for !next command)
+let activeSkipVote = null; // { startTime, voters: Set, requiredVotes, totalViewers, initiator }
+let skipVoteTimers = []; // Array of timer IDs for warnings
+let lastSkipVoteEndTime = 0; // Track when last vote ended for cooldown
+let lastSkipVotePassed = false; // Track if last vote passed (for cooldown duration)
+
+// Swap vote system (for !swap command)
+let activeSwapVote = null; // { startTime, voters: Set, requiredVotes, totalViewers, initiator, targetUrl, platform }
+let swapVoteTimers = []; // Array of timer IDs for warnings
+let lastSwapVoteEndTime = 0; // Track when last swap vote ended for cooldown
+let lastSwapVotePassed = false; // Track if last vote passed (for cooldown duration)
+
 // Persistence paths
 const MODERATION_DATA_PATH = path.join(__dirname, 'moderation_data.json');
 
@@ -489,6 +507,379 @@ function scheduleNextClaimEvent() {
   }, nextEventDelay);
 }
 
+// ============================================
+// Skip Vote System (!next command)
+// ============================================
+
+// Get current unique viewer count
+function getUniqueViewerCount() {
+  const uniqueIps = new Set();
+  connectedUsers.forEach(user => uniqueIps.add(user.ip));
+  return uniqueIps.size;
+}
+
+// Send StreamBot message for skip vote
+function sendSkipVoteMessage(message, io) {
+  const botMessage = {
+    id: `streambot_skip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    username: '🤖 StreamBot',
+    color: '#FF6B6B',
+    message: message,
+    timestamp: formatTime(),
+    fullTimestamp: new Date().toISOString(),
+    isSystem: true
+  };
+
+  chatMessages.push(botMessage);
+  if (chatMessages.length > MAX_CHAT_HISTORY) {
+    chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+  }
+
+  io.emit('new-message', botMessage);
+}
+
+// Clear all skip vote timers
+function clearSkipVoteTimers() {
+  skipVoteTimers.forEach(timerId => clearTimeout(timerId));
+  skipVoteTimers = [];
+}
+
+// End the skip vote and tally results
+async function endSkipVote(io) {
+  if (!activeSkipVote) return;
+
+  const vote = activeSkipVote;
+  const voteCount = vote.voters.size;
+  const requiredVotes = vote.requiredVotes;
+  const passed = voteCount >= requiredVotes;
+
+  // Clear timers and vote state
+  clearSkipVoteTimers();
+  activeSkipVote = null;
+  lastSkipVoteEndTime = Date.now();
+  lastSkipVotePassed = passed; // Track for cooldown duration
+
+  if (passed) {
+    sendSkipVoteMessage(`🗳️ VOTE PASSED! ${voteCount}/${requiredVotes} votes (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). Skipping to the next stream...`, io);
+    console.log(`🗳️ SKIP VOTE: Vote passed with ${voteCount}/${requiredVotes} votes. Triggering stream rotation.`);
+
+    // Trigger the stream rotation via API
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/rotate`,
+        {},
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        console.log('🗳️ SKIP VOTE: Stream rotation triggered successfully');
+        // Emit event to update the streaming header
+        io.emit('stream-info-update', { source: 'skip-vote', message: 'Stream skipped by chat vote' });
+      } else {
+        sendSkipVoteMessage('⚠️ Vote passed but failed to skip stream. Try again later.', io);
+        console.error('🗳️ SKIP VOTE: Stream rotation failed:', response.data.error);
+      }
+    } catch (error) {
+      sendSkipVoteMessage('⚠️ Vote passed but failed to skip stream. Try again later.', io);
+      console.error('🗳️ SKIP VOTE: Error triggering stream rotation:', error.message);
+    }
+  } else {
+    sendSkipVoteMessage(`🗳️ VOTE FAILED. Only ${voteCount}/${requiredVotes} votes received (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). The stream continues!`, io);
+    sendSkipVoteMessage(`⏳ Next !next vote available in 2 minutes.`, io);
+    console.log(`🗳️ SKIP VOTE: Vote failed with ${voteCount}/${requiredVotes} votes.`);
+  }
+}
+
+// Start a new skip vote
+function startSkipVote(initiator, io) {
+  const totalViewers = getUniqueViewerCount();
+  const requiredVotes = Math.ceil(totalViewers * SKIP_VOTE_THRESHOLD);
+
+  activeSkipVote = {
+    startTime: Date.now(),
+    voters: new Set([initiator.ip]), // Use IP to prevent duplicate votes
+    voterUsernames: new Set([initiator.username]), // Track usernames for display
+    requiredVotes: Math.max(requiredVotes, 1), // At least 1 vote required
+    totalViewers: totalViewers,
+    initiator: initiator.username
+  };
+
+  // Announce the vote
+  sendSkipVoteMessage(`🗳️ SKIP VOTE STARTED by ${initiator.username}! Type !next to vote to skip to the next stream.`, io);
+  sendSkipVoteMessage(`📊 ${requiredVotes} votes needed (75% of ${totalViewers} viewers). Vote ends in 2 minutes!`, io);
+  sendSkipVoteMessage(`ℹ️ If the vote passes, we'll rotate to a random Twitch/Kick stream.`, io);
+  sendSkipVoteMessage(`✅ ${initiator.username} voted to skip! (1/${requiredVotes})`, io);
+
+  console.log(`🗳️ SKIP VOTE: Started by ${initiator.username}. Need ${requiredVotes}/${totalViewers} votes (75%).`);
+
+  // Schedule warning timers
+  // Note: We're at 0 seconds, vote ends at 120 seconds (2 minutes)
+
+  // 1 minute warning (at 60 seconds, 60 seconds remaining)
+  skipVoteTimers.push(setTimeout(() => {
+    if (activeSkipVote) {
+      const currentVotes = activeSkipVote.voters.size;
+      sendSkipVoteMessage(`⏰ 1 MINUTE remaining! ${currentVotes}/${activeSkipVote.requiredVotes} votes so far. Type !next to vote!`, io);
+    }
+  }, 60 * 1000));
+
+  // 30 second warning
+  skipVoteTimers.push(setTimeout(() => {
+    if (activeSkipVote) {
+      const currentVotes = activeSkipVote.voters.size;
+      sendSkipVoteMessage(`⏰ 30 SECONDS remaining! ${currentVotes}/${activeSkipVote.requiredVotes} votes. Hurry!`, io);
+    }
+  }, 90 * 1000));
+
+  // 5 second warning
+  skipVoteTimers.push(setTimeout(() => {
+    if (activeSkipVote) {
+      const currentVotes = activeSkipVote.voters.size;
+      sendSkipVoteMessage(`⏰ 5 SECONDS! Final count: ${currentVotes}/${activeSkipVote.requiredVotes} votes!`, io);
+    }
+  }, 115 * 1000));
+
+  // End vote timer (2 minutes)
+  skipVoteTimers.push(setTimeout(() => {
+    endSkipVote(io);
+  }, SKIP_VOTE_DURATION));
+}
+
+// Register a vote for skipping
+function registerSkipVote(user, io) {
+  if (!activeSkipVote) return false;
+
+  // Check if user already voted (by IP)
+  if (activeSkipVote.voters.has(user.ip)) {
+    return false; // Already voted
+  }
+
+  // Add vote
+  activeSkipVote.voters.add(user.ip);
+  activeSkipVote.voterUsernames.add(user.username);
+
+  const currentVotes = activeSkipVote.voters.size;
+  const requiredVotes = activeSkipVote.requiredVotes;
+
+  sendSkipVoteMessage(`✅ ${user.username} voted to skip! (${currentVotes}/${requiredVotes})`, io);
+  console.log(`🗳️ SKIP VOTE: ${user.username} voted. ${currentVotes}/${requiredVotes} votes.`);
+
+  // Check if threshold reached early
+  if (currentVotes >= requiredVotes) {
+    sendSkipVoteMessage(`🎉 Vote threshold reached early!`, io);
+    endSkipVote(io);
+  }
+
+  return true;
+}
+
+// ============================================
+// Swap Vote System (!swap command)
+// ============================================
+
+// Validate and parse Twitch/Kick URL
+function parseStreamUrl(url) {
+  // Twitch URL patterns
+  const twitchPatterns = [
+    /(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)/i,
+    /(?:https?:\/\/)?(?:m\.)?twitch\.tv\/([a-zA-Z0-9_]+)/i
+  ];
+
+  // Kick URL patterns
+  const kickPatterns = [
+    /(?:https?:\/\/)?(?:www\.)?kick\.com\/([a-zA-Z0-9_-]+)/i
+  ];
+
+  for (const pattern of twitchPatterns) {
+    const match = url.match(pattern);
+    if (match) {
+      return { platform: 'twitch', channel: match[1], url: `https://twitch.tv/${match[1]}` };
+    }
+  }
+
+  for (const pattern of kickPatterns) {
+    const match = url.match(pattern);
+    if (match) {
+      return { platform: 'kick', channel: match[1], url: `https://kick.com/${match[1]}` };
+    }
+  }
+
+  return null;
+}
+
+// Send StreamBot message for swap vote
+function sendSwapVoteMessage(message, io) {
+  const botMessage = {
+    id: `streambot_swap_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    username: '🤖 StreamBot',
+    color: '#9B59B6', // Purple color for swap votes
+    message: message,
+    timestamp: formatTime(),
+    fullTimestamp: new Date().toISOString(),
+    isSystem: true
+  };
+
+  chatMessages.push(botMessage);
+  if (chatMessages.length > MAX_CHAT_HISTORY) {
+    chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+  }
+
+  io.emit('new-message', botMessage);
+}
+
+// Clear all swap vote timers
+function clearSwapVoteTimers() {
+  swapVoteTimers.forEach(timerId => clearTimeout(timerId));
+  swapVoteTimers = [];
+}
+
+// End the swap vote and tally results
+async function endSwapVote(io) {
+  if (!activeSwapVote) return;
+
+  const vote = activeSwapVote;
+  const voteCount = vote.voters.size;
+  const requiredVotes = vote.requiredVotes;
+  const passed = voteCount >= requiredVotes;
+
+  // Clear timers and vote state
+  clearSwapVoteTimers();
+  activeSwapVote = null;
+  lastSwapVoteEndTime = Date.now();
+  lastSwapVotePassed = passed; // Track for cooldown duration
+
+  if (passed) {
+    const platformIcon = vote.platform === 'twitch' ? '📺' : '🟢';
+    sendSwapVoteMessage(`🗳️ SWAP VOTE PASSED! ${voteCount}/${requiredVotes} votes (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). Swapping to ${platformIcon} ${vote.channel}...`, io);
+    console.log(`🗳️ SWAP VOTE: Vote passed with ${voteCount}/${requiredVotes} votes. Swapping to ${vote.targetUrl}`);
+
+    // Trigger the stream swap via URL stream API
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/url-stream`,
+        {
+          url: vote.targetUrl,
+          quality: 'best',
+          displayName: `${vote.channel} (Chat Vote)`,
+          autoReconnect: true
+        },
+        getAxiosConfig({ timeout: 15000 })
+      );
+
+      if (response.data.success) {
+        sendSwapVoteMessage(`✅ Successfully swapped to ${vote.platform === 'twitch' ? 'Twitch' : 'Kick'} channel: ${vote.channel}`, io);
+        console.log('🗳️ SWAP VOTE: Stream swap triggered successfully');
+        // Emit event to update the streaming header
+        io.emit('stream-info-update', {
+          source: 'swap-vote',
+          channel: vote.channel,
+          platform: vote.platform,
+          message: `Swapped to ${vote.channel} by chat vote`
+        });
+      } else {
+        sendSwapVoteMessage(`⚠️ Vote passed but failed to swap: ${response.data.error || 'Unknown error'}. The stream may be offline.`, io);
+        console.error('🗳️ SWAP VOTE: Stream swap failed:', response.data.error);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message;
+      sendSwapVoteMessage(`⚠️ Vote passed but failed to swap: ${errorMsg}. The stream may be offline.`, io);
+      console.error('🗳️ SWAP VOTE: Error triggering stream swap:', error.message);
+    }
+  } else {
+    sendSwapVoteMessage(`🗳️ SWAP VOTE FAILED. Only ${voteCount}/${requiredVotes} votes received (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). Staying on current stream!`, io);
+    sendSwapVoteMessage(`⏳ Next !swap vote available in 2 minutes.`, io);
+    console.log(`🗳️ SWAP VOTE: Vote failed with ${voteCount}/${requiredVotes} votes.`);
+  }
+}
+
+// Start a new swap vote
+function startSwapVote(initiator, targetUrl, parsedUrl, io) {
+  const totalViewers = getUniqueViewerCount();
+  const requiredVotes = Math.ceil(totalViewers * SKIP_VOTE_THRESHOLD);
+  const platformIcon = parsedUrl.platform === 'twitch' ? '📺' : '🟢';
+  const platformName = parsedUrl.platform === 'twitch' ? 'Twitch' : 'Kick';
+
+  activeSwapVote = {
+    startTime: Date.now(),
+    voters: new Set([initiator.ip]), // Use IP to prevent duplicate votes
+    voterUsernames: new Set([initiator.username]), // Track usernames for display
+    requiredVotes: Math.max(requiredVotes, 1), // At least 1 vote required
+    totalViewers: totalViewers,
+    initiator: initiator.username,
+    targetUrl: parsedUrl.url,
+    platform: parsedUrl.platform,
+    channel: parsedUrl.channel
+  };
+
+  // Announce the vote
+  sendSwapVoteMessage(`🔄 SWAP VOTE STARTED by ${initiator.username}!`, io);
+  sendSwapVoteMessage(`${platformIcon} Target: ${platformName} channel "${parsedUrl.channel}" - ${parsedUrl.url}`, io);
+  sendSwapVoteMessage(`📊 ${requiredVotes} votes needed (75% of ${totalViewers} viewers). Type !swap to vote! Vote ends in 2 minutes!`, io);
+  sendSwapVoteMessage(`ℹ️ If the vote passes, we'll switch to ${parsedUrl.channel}'s ${platformName} stream (if they're live).`, io);
+  sendSwapVoteMessage(`✅ ${initiator.username} voted to swap! (1/${requiredVotes})`, io);
+
+  console.log(`🗳️ SWAP VOTE: Started by ${initiator.username} for ${parsedUrl.url}. Need ${requiredVotes}/${totalViewers} votes (75%).`);
+
+  // Schedule warning timers (same timing as skip vote)
+
+  // 1 minute warning
+  swapVoteTimers.push(setTimeout(() => {
+    if (activeSwapVote) {
+      const currentVotes = activeSwapVote.voters.size;
+      sendSwapVoteMessage(`⏰ 1 MINUTE remaining! ${currentVotes}/${activeSwapVote.requiredVotes} votes to swap to ${activeSwapVote.channel}. Type !swap to vote!`, io);
+    }
+  }, 60 * 1000));
+
+  // 30 second warning
+  swapVoteTimers.push(setTimeout(() => {
+    if (activeSwapVote) {
+      const currentVotes = activeSwapVote.voters.size;
+      sendSwapVoteMessage(`⏰ 30 SECONDS remaining! ${currentVotes}/${activeSwapVote.requiredVotes} votes. Hurry!`, io);
+    }
+  }, 90 * 1000));
+
+  // 5 second warning
+  swapVoteTimers.push(setTimeout(() => {
+    if (activeSwapVote) {
+      const currentVotes = activeSwapVote.voters.size;
+      sendSwapVoteMessage(`⏰ 5 SECONDS! Final count: ${currentVotes}/${activeSwapVote.requiredVotes} votes!`, io);
+    }
+  }, 115 * 1000));
+
+  // End vote timer (2 minutes)
+  swapVoteTimers.push(setTimeout(() => {
+    endSwapVote(io);
+  }, SKIP_VOTE_DURATION));
+}
+
+// Register a vote for swapping
+function registerSwapVote(user, io) {
+  if (!activeSwapVote) return false;
+
+  // Check if user already voted (by IP)
+  if (activeSwapVote.voters.has(user.ip)) {
+    return false; // Already voted
+  }
+
+  // Add vote
+  activeSwapVote.voters.add(user.ip);
+  activeSwapVote.voterUsernames.add(user.username);
+
+  const currentVotes = activeSwapVote.voters.size;
+  const requiredVotes = activeSwapVote.requiredVotes;
+
+  sendSwapVoteMessage(`✅ ${user.username} voted to swap! (${currentVotes}/${requiredVotes})`, io);
+  console.log(`🗳️ SWAP VOTE: ${user.username} voted. ${currentVotes}/${requiredVotes} votes.`);
+
+  // Check if threshold reached early
+  if (currentVotes >= requiredVotes) {
+    sendSwapVoteMessage(`🎉 Vote threshold reached early!`, io);
+    endSwapVote(io);
+  }
+
+  return true;
+}
+
 // Update user's message history for throttling
 function updateUserMessageHistory(username, message) {
   const currentTime = Date.now();
@@ -528,7 +919,9 @@ const adminCommands = {
 /award [username] [amount] - Award points to a user (admin only)
 /claim - Manually trigger a claim event
 /take [username] [amount] - Take points from a user (admin only)
-/announce [message] - Send a highlighted announcement`;
+/announce [message] - Send a highlighted announcement
+/next - Skip to next stream (no vote required)
+/swap [url] - Swap to specific stream (no vote required)`;
     } else if (userInfo.isModerator) {
       // Moderator commands only
       helpMessage = `Available moderator commands:
@@ -538,7 +931,9 @@ const adminCommands = {
 /timeout [username] [seconds] - Timeout a user for specified duration
 /clear - Clear all chat messages
 /tts [message] - Send a TTS message
-/announce [message] - Send a highlighted announcement`;
+/announce [message] - Send a highlighted announcement
+/next - Skip to next stream (no vote required)
+/swap [url] - Swap to specific stream (no vote required)`;
     } else {
       helpMessage = 'You do not have permission to use admin commands.';
     }
@@ -906,6 +1301,117 @@ const adminCommands = {
       console.error('❌ ADMIN: Failed to take points:', error.message);
       sendAdminResponse(socket, `❌ Failed to take points: ${error.response?.data?.error || error.message}`);
     }
+  },
+
+  next: async (socket, args, userInfo, io) => {
+    // Skip to next stream without voting
+    sendAdminResponse(socket, '⏳ Skipping to next stream...');
+    console.log(`🎬 ADMIN: ${userInfo.username} triggered stream skip via /next command`);
+
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/rotate`,
+        {},
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        // Send public message
+        const skipMessage = {
+          id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          username: '🤖 StreamBot',
+          color: '#FF6B6B',
+          message: `⏭️ ${userInfo.username} skipped to the next stream.`,
+          timestamp: formatTime(),
+          fullTimestamp: new Date().toISOString(),
+          isSystem: true
+        };
+
+        chatMessages.push(skipMessage);
+        if (chatMessages.length > MAX_CHAT_HISTORY) {
+          chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+        }
+
+        io.emit('new-message', skipMessage);
+        // Emit event to update the streaming header
+        io.emit('stream-info-update', { source: 'admin-skip', message: 'Stream skipped by admin' });
+        sendAdminResponse(socket, '✅ Successfully skipped to next stream');
+      } else {
+        sendAdminResponse(socket, `❌ Failed to skip: ${response.data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('❌ ADMIN: Failed to skip stream:', error.message);
+      sendAdminResponse(socket, `❌ Failed to skip stream: ${error.response?.data?.error || error.message}`);
+    }
+  },
+
+  swap: async (socket, args, userInfo, io) => {
+    // Swap to specific stream without voting
+    if (args.length === 0) {
+      sendAdminResponse(socket, 'Usage: /swap [twitch.tv/channel or kick.com/channel]');
+      return;
+    }
+
+    const targetUrl = args[0];
+    const parsedUrl = parseStreamUrl(targetUrl);
+
+    if (!parsedUrl) {
+      sendAdminResponse(socket, '❌ Invalid URL. Please provide a valid Twitch or Kick channel URL (e.g., twitch.tv/channelname or kick.com/channelname)');
+      return;
+    }
+
+    const platformIcon = parsedUrl.platform === 'twitch' ? '📺' : '🟢';
+    const platformName = parsedUrl.platform === 'twitch' ? 'Twitch' : 'Kick';
+
+    sendAdminResponse(socket, `⏳ Swapping to ${platformName} channel: ${parsedUrl.channel}...`);
+    console.log(`🎬 ADMIN: ${userInfo.username} triggered stream swap to ${parsedUrl.url} via /swap command`);
+
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/url-stream`,
+        {
+          url: parsedUrl.url,
+          quality: 'best',
+          displayName: `${parsedUrl.channel} (Admin)`,
+          autoReconnect: true
+        },
+        getAxiosConfig({ timeout: 15000 })
+      );
+
+      if (response.data.success) {
+        // Send public message
+        const swapMessage = {
+          id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          username: '🤖 StreamBot',
+          color: '#9B59B6',
+          message: `🔄 ${userInfo.username} swapped to ${platformIcon} ${platformName} channel: ${parsedUrl.channel}`,
+          timestamp: formatTime(),
+          fullTimestamp: new Date().toISOString(),
+          isSystem: true
+        };
+
+        chatMessages.push(swapMessage);
+        if (chatMessages.length > MAX_CHAT_HISTORY) {
+          chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+        }
+
+        io.emit('new-message', swapMessage);
+        // Emit event to update the streaming header
+        io.emit('stream-info-update', {
+          source: 'admin-swap',
+          channel: parsedUrl.channel,
+          platform: parsedUrl.platform,
+          message: `Swapped to ${parsedUrl.channel} by admin`
+        });
+        sendAdminResponse(socket, `✅ Successfully swapped to ${platformName} channel: ${parsedUrl.channel}`);
+      } else {
+        sendAdminResponse(socket, `❌ Failed to swap: ${response.data.error || 'Unknown error'}. The stream may be offline.`);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message;
+      console.error('❌ ADMIN: Failed to swap stream:', error.message);
+      sendAdminResponse(socket, `❌ Failed to swap stream: ${errorMsg}. The stream may be offline.`);
+    }
   }
 };
 
@@ -1204,6 +1710,8 @@ async function handlePublicCommand(command, args, user, socket, io) {
 !top - Show points leaderboard
 !uptime - Show stream uptime
 !channel - Show current random channel info
+!next - Vote to skip to next stream (75% needed)
+!swap [url] - Vote to swap to a specific stream (75% needed)
 !roll - Roll a dice (1-6)
 !coinflip - Flip a coin
 !gamble [amount] - 50/50 chance to double or lose
@@ -1640,6 +2148,95 @@ async function handlePublicCommand(command, args, user, socket, io) {
         console.error('❌ CHAT: Failed to get current channel:', error.message);
         sendAdminResponse(socket, '❌ Failed to get current channel info');
       }
+      break;
+
+    case 'next':
+      // Skip vote command - allows viewers to vote to skip to the next stream
+
+      // Check if there's already an active vote
+      if (activeSkipVote) {
+        // Try to register a vote
+        const voted = registerSkipVote(user, io);
+        if (!voted) {
+          sendAdminResponse(socket, '❌ You have already voted in this skip vote!');
+        }
+        return;
+      }
+
+      // Check cooldown (2 min after failed, 5 min after success)
+      const skipCooldownDuration = lastSkipVotePassed ? VOTE_COOLDOWN_SUCCESS : VOTE_COOLDOWN_FAILED;
+      const timeSinceLastSkipVote = Date.now() - lastSkipVoteEndTime;
+      if (lastSkipVoteEndTime > 0 && timeSinceLastSkipVote < skipCooldownDuration) {
+        const remainingSkipCooldown = Math.ceil((skipCooldownDuration - timeSinceLastSkipVote) / 1000);
+        const cooldownReason = lastSkipVotePassed ? 'after a successful skip' : 'after a failed vote';
+        sendAdminResponse(socket, `⏳ Please wait ${remainingSkipCooldown} seconds before starting another skip vote (${cooldownReason}).`);
+        return;
+      }
+
+      // Check minimum viewers (at least 2 viewers needed for a meaningful vote)
+      const currentViewerCount = getUniqueViewerCount();
+      if (currentViewerCount < 2) {
+        sendAdminResponse(socket, '❌ At least 2 viewers are needed to start a skip vote.');
+        return;
+      }
+
+      // Start a new skip vote
+      startSkipVote(user, io);
+      break;
+
+    case 'swap':
+      // Swap vote command - allows viewers to vote to swap to a specific Twitch/Kick stream
+
+      // Check if there's already an active swap vote
+      if (activeSwapVote) {
+        // Try to register a vote (no URL needed to vote on existing swap)
+        const swapVoted = registerSwapVote(user, io);
+        if (!swapVoted) {
+          sendAdminResponse(socket, '❌ You have already voted in this swap vote!');
+        }
+        return;
+      }
+
+      // Check if there's an active skip vote (can't have both at once)
+      if (activeSkipVote) {
+        sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+
+      // Check cooldown (2 min after failed, 5 min after success)
+      const swapCooldownDuration = lastSwapVotePassed ? VOTE_COOLDOWN_SUCCESS : VOTE_COOLDOWN_FAILED;
+      const timeSinceLastSwapVote = Date.now() - lastSwapVoteEndTime;
+      if (lastSwapVoteEndTime > 0 && timeSinceLastSwapVote < swapCooldownDuration) {
+        const remainingSwapCooldown = Math.ceil((swapCooldownDuration - timeSinceLastSwapVote) / 1000);
+        const swapCooldownReason = lastSwapVotePassed ? 'after a successful swap' : 'after a failed vote';
+        sendAdminResponse(socket, `⏳ Please wait ${remainingSwapCooldown} seconds before starting another swap vote (${swapCooldownReason}).`);
+        return;
+      }
+
+      // Starting a new swap vote requires a URL
+      if (args.length === 0) {
+        sendAdminResponse(socket, '❌ Usage: !swap [twitch.tv/channel or kick.com/channel]');
+        return;
+      }
+
+      // Parse the URL
+      const swapTargetUrl = args[0];
+      const parsedSwapUrl = parseStreamUrl(swapTargetUrl);
+
+      if (!parsedSwapUrl) {
+        sendAdminResponse(socket, '❌ Invalid URL. Please provide a valid Twitch or Kick channel URL (e.g., twitch.tv/channelname or kick.com/channelname)');
+        return;
+      }
+
+      // Check minimum viewers (at least 2 viewers needed for a meaningful vote)
+      const swapViewerCount = getUniqueViewerCount();
+      if (swapViewerCount < 2) {
+        sendAdminResponse(socket, '❌ At least 2 viewers are needed to start a swap vote.');
+        return;
+      }
+
+      // Start a new swap vote
+      startSwapVote(user, swapTargetUrl, parsedSwapUrl, io);
       break;
 
     default:

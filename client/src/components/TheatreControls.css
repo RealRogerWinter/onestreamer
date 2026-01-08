@@ -35,6 +35,7 @@
 .theatre-controls-wrapper .theatre-fullscreen-btn,
 .theatre-controls-wrapper .theatre-clip-btn,
 .theatre-controls-wrapper .theatre-status-effects .buff-item,
+.theatre-controls-wrapper .theatre-status-effects .status-effects-toggle,
 .theatre-controls-wrapper .theatre-settings-close,
 .theatre-controls-wrapper .tooltip-close-btn,
 .theatre-controls-wrapper .permission-status-indicator {
@@ -61,6 +62,62 @@
   opacity: 1;
   transform: translateX(0);
   pointer-events: none; /* Don't block canvas clicks */
+}
+
+/* Collapsed state - only show toggle button */
+.theatre-status-effects.collapsed {
+  width: auto;
+}
+
+.theatre-status-effects.collapsed.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Status Effects Toggle Button */
+.status-effects-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.9) 0%, rgba(20, 20, 30, 0.85) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  pointer-events: auto !important;
+  margin-bottom: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.status-effects-toggle:hover {
+  background: linear-gradient(135deg, rgba(40, 40, 60, 0.95) 0%, rgba(30, 30, 50, 0.9) 100%);
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: translateX(3px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.status-effects-toggle .toggle-icon {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.status-effects-toggle:hover .toggle-icon {
+  transform: translateX(-2px);
+}
+
+.theatre-status-effects.collapsed .status-effects-toggle:hover .toggle-icon {
+  transform: translateX(2px);
+}
+
+.status-effects-toggle .toggle-label {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* Only the buff items themselves should be clickable */

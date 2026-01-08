@@ -60,6 +60,11 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
   const [permissionStream, setPermissionStream] = useState<MediaStream | null>(null);
   const [showClipModal, setShowClipModal] = useState(false);
   const [clipStatus, setClipStatus] = useState<{ available: boolean; isRecording: boolean } | null>(null);
+  const [statusEffectsVisible, setStatusEffectsVisible] = useState<boolean>(() => {
+    // Load initial state from cookie, default to true (visible)
+    const saved = CookieService.getCookie(COOKIE_NAMES.STATUS_EFFECTS_VISIBLE);
+    return saved !== false; // Default to true if not set or any truthy value
+  });
   const hideTimeout = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -407,6 +412,12 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
     }
   };
 
+  const handleStatusEffectsToggle = () => {
+    const newValue = !statusEffectsVisible;
+    setStatusEffectsVisible(newValue);
+    CookieService.setCookie(COOKIE_NAMES.STATUS_EFFECTS_VISIBLE, newValue);
+  };
+
   const handleFullscreenToggle = () => {
     if (!document.fullscreenElement) {
       // Enter fullscreen
@@ -473,14 +484,33 @@ const TheatreControls: React.FC<TheatreControlsProps> = ({
         style={{ pointerEvents: 'none' }} // Explicitly set pointer-events inline
       >
         {/* Status Effects Overlay - Left Side */}
-        <div className={`theatre-status-effects ${isActive ? 'visible' : ''}`}>
-          <BuffDisplay 
-            showStreamerBuffs={true}
-            className="theatre-buffs-overlay"
-            isCurrentUserStreaming={isStreaming}
-            currentUserId={currentUserId}
-            initialBuffs={streamerBuffs}
-          />
+        <div className={`theatre-status-effects ${isActive ? 'visible' : ''} ${!statusEffectsVisible ? 'collapsed' : ''}`}>
+          <button
+            className="status-effects-toggle"
+            onClick={handleStatusEffectsToggle}
+            title={statusEffectsVisible ? "Hide Status Effects" : "Show Status Effects"}
+          >
+            {statusEffectsVisible ? (
+              <>
+                <span className="toggle-icon">◀</span>
+                <span className="toggle-label">Hide</span>
+              </>
+            ) : (
+              <>
+                <span className="toggle-icon">▶</span>
+                <span className="toggle-label">Effects</span>
+              </>
+            )}
+          </button>
+          {statusEffectsVisible && (
+            <BuffDisplay
+              showStreamerBuffs={true}
+              className="theatre-buffs-overlay"
+              isCurrentUserStreaming={isStreaming}
+              currentUserId={currentUserId}
+              initialBuffs={streamerBuffs}
+            />
+          )}
         </div>
         
         {/* Top Bar */}

@@ -8726,6 +8726,24 @@ async function startServer() {
       // No LiveKit service for MediaSoup backend
       const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
       urlStreamHealthService.start();
+
+      // Handle health service events for automatic recovery
+      urlStreamHealthService.on('source-offline', async ({ urlId, sourceUrl }) => {
+        console.log(`🏥 HEALTH: Source offline detected for ${urlId}, triggering reconnect...`);
+        const stream = viewBotURLService.activeStreams.get(urlId);
+        if (stream) {
+          viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Source stream went offline'));
+        }
+      });
+
+      urlStreamHealthService.on('stream-stale', async ({ urlId }) => {
+        console.log(`🏥 HEALTH: Stale stream detected for ${urlId}, triggering reconnect...`);
+        const stream = viewBotURLService.activeStreams.get(urlId);
+        if (stream) {
+          viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Stream became stale - no progress'));
+        }
+      });
+
       console.log('✅ URL STREAM: ViewBotURLService initialized (MediaSoup backend)');
 
       // Register URL ViewBot service with rotation for protection
@@ -8789,11 +8807,34 @@ async function startServer() {
       viewBotURLService.setSocketIO(io); // For notifying viewers when URL stream starts
       const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
       urlStreamHealthService.start();
+
+      // Handle health service events for automatic recovery
+      urlStreamHealthService.on('source-offline', async ({ urlId, sourceUrl }) => {
+        console.log(`🏥 HEALTH: Source offline detected for ${urlId}, triggering reconnect...`);
+        const stream = viewBotURLService.activeStreams.get(urlId);
+        if (stream) {
+          viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Source stream went offline'));
+        }
+      });
+
+      urlStreamHealthService.on('stream-stale', async ({ urlId }) => {
+        console.log(`🏥 HEALTH: Stale stream detected for ${urlId}, triggering reconnect...`);
+        const stream = viewBotURLService.activeStreams.get(urlId);
+        if (stream) {
+          viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Stream became stale - no progress'));
+        }
+      });
+
       console.log('✅ URL STREAM: ViewBotURLService initialized');
 
       // Register URL ViewBot service with rotation for protection
       SimpleViewBotRotation.setURLViewBotService(viewBotURLService);
       console.log('✅ URL STREAM: Registered with SimpleViewBotRotation for URL stream protection');
+
+      // CRITICAL: Register URL ViewBot service with LiveKit ViewBot service for protection
+      // This prevents viewbot creation when URL stream is active
+      viewBotLiveKitService.setURLViewBotService(viewBotURLService);
+      console.log('✅ URL STREAM: Registered with ViewBotLiveKitService for URL stream protection');
 
       // Store globally for API routes
       global.viewBotURLService = viewBotURLService;
@@ -9542,6 +9583,12 @@ process.on('SIGINT', async () => {
       }
       // Always cleanup to ensure WebRTC service is stopped
       await viewbotService.cleanup();
+    }
+
+    // Stop URL Stream ViewBot service (critical for cleanup of FFmpeg processes)
+    if (global.viewBotURLService) {
+      console.log('   Stopping URL Stream ViewBot service...');
+      await global.viewBotURLService.stopAllURLStreams();
     }
     
     // Stop Simple Media Stream Service

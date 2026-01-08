@@ -15,7 +15,7 @@ const authService = new AuthService();
 // Configure multer for avatar uploads
 const storage = multer.diskStorage({
     destination: async (req, file, cb) => {
-        const uploadPath = '/var/www/html/uploads/avatars';
+        const uploadPath = '/var/www/uploads/avatars';
         try {
             await fs.mkdir(uploadPath, { recursive: true });
             cb(null, uploadPath);
@@ -444,7 +444,7 @@ router.delete('/avatar', authenticateToken, async (req, res) => {
         if (user.avatar_url) {
             // Extract filename from URL path
             const filename = user.avatar_url.split('/').pop();
-            const avatarPath = path.join('/var/www/html/uploads/avatars', filename);
+            const avatarPath = path.join('/var/www/uploads/avatars', filename);
             try {
                 await fs.unlink(avatarPath);
             } catch (err) {
