@@ -14,7 +14,8 @@ import {
   PlayerAction,
   GameFullState,
   GameStateDelta,
-  GameStatus
+  GameStatus,
+  EnemyState
 } from '../../types/game';
 
 type GameEventCallback = (...args: any[]) => void;
@@ -94,6 +95,7 @@ export class GameClient {
       this.stateManager.applyDelta({
         playerUpdates: {},
         itemUpdates: [{ type: 'spawned', itemId: item.id, item }],
+        enemyUpdates: [],
         worldChanges: [],
         timestamp: Date.now()
       });
@@ -105,9 +107,38 @@ export class GameClient {
       this.stateManager.applyDelta({
         playerUpdates: {},
         itemUpdates: [{ type: 'removed', itemId: data.id }],
+        enemyUpdates: [],
         worldChanges: [],
         timestamp: Date.now()
       });
+    });
+
+    // Enemy spawned
+    this.socket.on('game:enemy-spawned', (data: { enemy: EnemyState }) => {
+      console.log('[GameClient] Enemy spawned:', data.enemy.id);
+      this.stateManager.addEnemy(data.enemy);
+      this.emit('enemy-spawned', data.enemy);
+      this.emit('state-update', this.getGameState());
+    });
+
+    // Enemy killed
+    this.socket.on('game:enemy-killed', (data: { enemyId: string }) => {
+      console.log('[GameClient] Enemy killed:', data.enemyId);
+      this.stateManager.removeEnemy(data.enemyId);
+      this.emit('enemy-killed', data.enemyId);
+      this.emit('state-update', this.getGameState());
+    });
+
+    // Player damaged
+    this.socket.on('game:player-damaged', (data: { playerId: string; damage: number; health: number }) => {
+      console.log('[GameClient] Player damaged:', data.playerId, 'health:', data.health);
+      this.emit('player-damaged', data);
+    });
+
+    // Player respawned
+    this.socket.on('game:player-respawned', (data: { playerId: string; x: number; y: number }) => {
+      console.log('[GameClient] Player respawned:', data.playerId);
+      this.emit('player-respawned', data);
     });
 
     // Error handling
@@ -161,6 +192,11 @@ export class GameClient {
   private handleAction(action: PlayerAction): void {
     if (!this.isConnected) return;
 
+    // Trigger attack animation for primary action
+    if (action.type === 'primary' && this.renderer) {
+      this.renderer.triggerAttack();
+    }
+
     this.socket.emit('game:input', {
       type: 'action',
       action,
@@ -194,6 +230,7 @@ export class GameClient {
           state.world,
           state.players,
           state.items,
+          state.enemies,
           state.localPlayer,
           deltaTime
         );
@@ -257,6 +294,7 @@ export class GameClient {
     players: Record<string, PlayerState>;
     world: WorldState | null;
     items: WorldItem[];
+    enemies: EnemyState[];
     playerCount: number;
   } {
     return {
@@ -264,6 +302,7 @@ export class GameClient {
       players: this.stateManager.getPlayersRecord(),
       world: this.stateManager.getWorldState(),
       items: this.stateManager.getItems(),
+      enemies: this.stateManager.getEnemies(),
       playerCount: this.stateManager.getPlayerCount()
     };
   }
@@ -347,6 +386,10 @@ export class GameClient {
     this.socket.off('game:item-pickup');
     this.socket.off('game:item-spawned');
     this.socket.off('game:item-removed');
+    this.socket.off('game:enemy-spawned');
+    this.socket.off('game:enemy-killed');
+    this.socket.off('game:player-damaged');
+    this.socket.off('game:player-respawned');
     this.socket.off('game:error');
     this.socket.off('game:joined');
 

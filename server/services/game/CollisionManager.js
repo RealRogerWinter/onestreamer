@@ -6,6 +6,8 @@ class CollisionManager {
     constructor() {
         this.PLAYER_RADIUS = 14; // Collision radius for players
         this.PICKUP_RADIUS = 24; // Radius for item pickups
+        this.ENEMY_RADIUS = 14; // Collision radius for enemies
+        this.ATTACK_RANGE = 40; // Range of player attack
     }
 
     /**
@@ -131,6 +133,105 @@ class CollisionManager {
         const pickupRadiusSquared = this.PICKUP_RADIUS * this.PICKUP_RADIUS;
 
         return distanceSquared < pickupRadiusSquared;
+    }
+
+    /**
+     * Check if enemy collides with any walls/obstacles
+     * Returns resolution vector or null
+     */
+    checkEnemyWallCollisions(enemy, collidables) {
+        let totalResolutionX = 0;
+        let totalResolutionY = 0;
+        let hasCollision = false;
+
+        for (const obstacle of collidables) {
+            const collision = this.checkCircleRectCollision(
+                enemy.x, enemy.y, this.ENEMY_RADIUS,
+                obstacle.x, obstacle.y, obstacle.width, obstacle.height
+            );
+
+            if (collision) {
+                totalResolutionX += collision.x;
+                totalResolutionY += collision.y;
+                hasCollision = true;
+            }
+        }
+
+        if (hasCollision) {
+            return { x: totalResolutionX, y: totalResolutionY };
+        }
+
+        return null;
+    }
+
+    /**
+     * Check collisions between players and enemies
+     * Returns array of { playerId, enemyId, enemy }
+     */
+    checkEnemyCollisions(players, enemies) {
+        const collisions = [];
+        const minDistance = this.PLAYER_RADIUS + this.ENEMY_RADIUS;
+        const minDistanceSquared = minDistance * minDistance;
+
+        for (const player of players) {
+            for (const enemy of enemies) {
+                const dx = player.x - enemy.x;
+                const dy = player.y - enemy.y;
+                const distanceSquared = dx * dx + dy * dy;
+
+                if (distanceSquared < minDistanceSquared) {
+                    collisions.push({
+                        playerId: player.id,
+                        enemyId: enemy.id,
+                        enemy
+                    });
+                }
+            }
+        }
+
+        return collisions;
+    }
+
+    /**
+     * Check if player attack hits enemies
+     * Returns array of enemy IDs that were hit
+     */
+    checkAttackHits(attacker, enemies) {
+        const hits = [];
+
+        // Get attack direction vector
+        const dirVectors = {
+            up: { x: 0, y: -1 },
+            down: { x: 0, y: 1 },
+            left: { x: -1, y: 0 },
+            right: { x: 1, y: 0 }
+        };
+        const dir = dirVectors[attacker.direction] || dirVectors.down;
+
+        for (const enemy of enemies) {
+            const dx = enemy.x - attacker.x;
+            const dy = enemy.y - attacker.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Check if in range
+            if (distance > this.ATTACK_RANGE + this.ENEMY_RADIUS) {
+                continue;
+            }
+
+            // Check if in attack arc (90 degrees in front)
+            if (distance > 0) {
+                const dotProduct = (dx * dir.x + dy * dir.y) / distance;
+                // cos(45deg) = 0.707, so dot product > 0 means within 90 degree arc
+                if (dotProduct > 0) {
+                    hits.push(enemy.id);
+                }
+            } else {
+                // Enemy is at same position, always hit
+                hits.push(enemy.id);
+            }
+        }
+
+        return hits;
     }
 
     /**

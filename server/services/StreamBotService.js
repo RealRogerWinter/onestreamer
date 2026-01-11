@@ -126,15 +126,127 @@ class StreamBotService extends EventEmitter {
             { positive: 'wholesome and sweet', negative: 'edgy and snarky' }
         ];
 
-        // Common online username patterns for realistic names
-        this.usernamePatterns = [
-            'common first name + numbers (mike_92, sarah2001, jenny_xo)',
-            'adjective + noun (quietstorm, lazypanda, happycat)',
-            'hobby/interest reference (bookworm42, gamerdude, musiclover)',
-            'name + underscore + word (alex_gaming, emma_draws, tom_chill)',
-            'simple word + numbers (shadow99, night_owl23, starlight7)',
-            'initials or nickname style (jdog, kmart, lil_e)',
-            'self-deprecating or ironic (definitelynotabot, sendhelp, idk_anymore)'
+        // Diverse username inspiration sources - vastly expanded for creativity
+        this.usernameCategories = [
+            // Classic internet patterns
+            'first name + birth year (mike_92, sarah2001, jenny_87, chris_03)',
+            'adjective + animal (quietwolf, lazypanda, silentbear, happycat)',
+            'hobby + numbers (gamer2847, bookworm42, musiclover99, artsy_kid)',
+            // Cultural/regional flavors
+            'K-pop/anime fan style (bts_army_forever, sakura_chan22, oppa_fan, senpai_noticed)',
+            'Spanish/Latin style (corazon_loco, el_gamer, chica_bonita99, amigo_del_sol)',
+            'British slang style (proper_lad, cheeky_nando, bruv_moment, gobsmacked_gary)',
+            'Australian style (g_day_mate, straya_steve, drop_bear_dan, no_wukkas)',
+            // Generational patterns
+            'zoomer style (no_cap_kelly, lowkey_vibing, its_giving_mike, slay_queen_23)',
+            'millennial style (adulting_is_hard, avocado_toast_tim, i_cant_even, big_mood_mary)',
+            'elder internet (AOL_steve_99, netscape_nancy, dial_up_dan, yahoo_yolanda)',
+            // Occupation/life stage hints
+            'night owl (3am_thoughts, insomnia_ian, late_shift_larry, cant_sleep_sam)',
+            'parent life (tired_dad_47, wine_mom_life, snack_dealer_sara, carpool_carl)',
+            'student vibes (finals_week_frank, ramen_budget_rick, dorm_life_diana)',
+            'office worker (excel_ella, meetings_mike, coffee_IV_needed, reply_all_regret)',
+            // Personality-revealing
+            'self-aware/ironic (definitelynotabot, sendhelp_pls, idk_anymore, this_was_taken)',
+            'confident (literally_the_best, main_character_energy, flawless_frank)',
+            'anxious/relatable (overthinking_oliver, panic_at_the_chat, stress_sweater_sue)',
+            'laid back (whatever_works, chill_pill_phil, no_drama_derek, goes_with_flow)',
+            // Hobby-specific deep cuts
+            'gamer specific (lag_is_real, console_peasant, kb_m_master, touch_grass_never)',
+            'music nerd (vinyl_only_vic, bass_dropped_bob, playlist_curator_pat)',
+            'sports fan (fantasy_league_fred, bench_warmer_bill, ref_was_blind)',
+            'foodie (michelin_mouth_mark, hot_sauce_helen, picky_eater_pete)',
+            // Aesthetic/vibe usernames
+            'cottagecore (frog_on_a_log, mushroom_maiden, cozy_knitter)',
+            'dark academia (dead_poets_dan, library_ghost, coffee_and_virgil)',
+            'Y2K revival (glitter_gel_pen, butterfly_clips_betty, mp3_player_mary)',
+            'chaos goblin (unhinged_ursula, chaos_carol, feral_frank)',
+            // Location hints
+            'city pride (brooklyn_bob, midwest_mark, socal_steve, texas_toast_tim)',
+            'weather-based (rainy_seattle_sam, desert_dweller_dan, snow_day_sue)',
+            // Absurdist/surreal
+            'random objects (lamp_enthusiast, spoon_theory_sam, chair_connoisseur)',
+            'food combos (pizza_pineapple_paul, ranch_on_everything, ketchup_on_eggs)',
+            'animal crossing style (isabelle_stan, nook_miles_nancy, turnip_trader)',
+            // Meme-influenced
+            'current meme format (ohio_final_boss, skibidi_skeptic, sigma_grindset_sam)',
+            'vintage meme (ermahgerd_earl, doge_fan_dave, overly_attached_omar)',
+            // Number-heavy patterns
+            'all numbers style (user847291, anon_2847, guest_9182)',
+            'leetspeak adjacent (h4x0r_harry, n00b_nancy, pr0_gamer)',
+            // Emotional state
+            'permanently tired (need_coffee_now, running_on_fumes, zombie_mode_zack)',
+            'chaotic neutral (here_for_drama, popcorn_ready, watching_chaos)',
+            'wholesome (hug_dealer, good_vibes_gina, sunshine_steve)'
+        ];
+
+        // Moods that affect how the character engages with chat
+        this.characterMoods = [
+            'excited and cant contain it', 'mildly annoyed but trying to be nice',
+            'extremely chill almost sleepy', 'nervously enthusiastic', 'smugly confident',
+            'pleasantly confused', 'aggressively positive', 'quietly judging everyone',
+            'suspiciously interested', 'performatively bored', 'genuinely delighted',
+            'sarcastically engaged', 'mysteriously knowing', 'chaotically invested',
+            'peacefully content', 'dramatically affected', 'casually unbothered',
+            'intensely focused', 'whimsically distracted', 'grumpily endeared',
+            'cautiously optimistic', 'recklessly enthusiastic', 'serenely unimpressed',
+            'gleefully chaotic', 'stoically amused', 'warmly skeptical'
+        ];
+
+        // Strong opinions characters might hold
+        this.characterOpinions = [
+            'thinks this stream is underrated and tells everyone',
+            'believes pineapple on pizza is a war crime',
+            'insists cats are superior to dogs (will die on this hill)',
+            'thinks modern music peaked in 2012',
+            'believes everyone should drink more water',
+            'is convinced theyre witnessing history right now',
+            'thinks early morning is the only correct time to be awake',
+            'believes snacks should be their own food group',
+            'insists subtitles should always be on',
+            'thinks phones have too many cameras now',
+            'believes naps are a human right',
+            'is passionate about proper grammar usage',
+            'thinks dark mode should be mandatory everywhere',
+            'believes the book is always better than the movie',
+            'insists cereal is soup and will not be convinced otherwise',
+            'thinks everyone is sleeping on this content',
+            'believes hot take culture has gone too far (ironic)',
+            'is convinced astrology explains everything',
+            'thinks retro games hit different than modern ones',
+            'believes in eating dessert first',
+            'insists all meetings could be emails',
+            'thinks autocorrect is a government conspiracy',
+            'believes rain sounds are the ultimate background noise',
+            'is passionate about the oxford comma'
+        ];
+
+        // Quirks and biases that make characters unique
+        this.characterQuirks = [
+            'always mentions what theyre currently snacking on',
+            'uses way too many emotes in their messages',
+            'types in all lowercase for aesthetic',
+            'RANDOMLY capitalizes WORDS for emphasis',
+            'always asks follow-up questions',
+            'relates everything back to their pet',
+            'makes obscure references nobody gets',
+            'thinks out loud in chat',
+            'always playing devils advocate',
+            'cant help but give unsolicited advice',
+            'remembers details from hours ago',
+            'gets weirdly competitive about random things',
+            'always has a relevant story',
+            'asks the most obvious questions sincerely',
+            'treats chat like a group therapy session',
+            'responds to rhetorical questions literally',
+            'always late to conversations but jumps in anyway',
+            'keeps accidentally revealing too much about themselves',
+            'treats every message like a dramatic reveal',
+            'uses outdated slang unironically',
+            'always has to one-up stories',
+            'gets distracted mid-message and switches topics',
+            'acts like everyone should know their inside jokes',
+            'writes messages like tweets with character limits'
         ];
     }
 
@@ -693,32 +805,56 @@ Respond in EXACTLY this JSON format (no other text):
         return character;
     }
 
-    // Fallback pairs for when Groq is unavailable
+    // Fallback pairs for when Groq is unavailable - diverse personalities with contrasting energies
     generateFallbackPair() {
         const fallbackPairs = [
             {
-                positive: { name: 'sunny_day99', personality: 'Relentlessly optimistic. Finds the silver lining in everything. Spreads good vibes!' },
-                negative: { name: 'realistically_speaking', personality: 'Cynical realist. "Well actually..." energy. Skeptical of everything but not mean about it.' }
+                positive: { name: 'cozy_vibes_only', personality: 'Warmly enthusiastic. Types cozy encouragements. Believes in hot cocoa solutions. Currently mood: blessed.' },
+                negative: { name: 'seen_better_tbh', personality: 'Chronically unimpressed millennial. "its fine i guess." Always tired. Secretly watching intently.' }
             },
             {
-                positive: { name: 'hype_queen', personality: 'Gets excited about EVERYTHING. Caps lock enthusiast. Your biggest cheerleader!' },
-                negative: { name: 'meh_whatever', personality: 'Aggressively indifferent. Nothing impresses them. Deadpan reactions only.' }
+                positive: { name: 'caps_lock_carol', personality: 'EVERYTHING IS EXCITING. Uses emotes liberally. Your personal hype squad. LETS GOOOO energy.' },
+                negative: { name: 'lowercase_larry', personality: 'types in all lowercase for the aesthetic. too cool to use caps. still here tho.' }
             },
             {
-                positive: { name: 'friendlyFred', personality: 'Welcomes everyone warmly. Remembers details about people. Genuinely kind.' },
-                negative: { name: 'leave_me_alone', personality: 'Here for the content not the conversation. Brief responses. Secretly engaged.' }
+                positive: { name: 'wholesome_dan_42', personality: 'Genuinely nice dad energy. "Great job, kiddo!" Has snacks to share. Supportive of everything.' },
+                negative: { name: 'actually_karen_lol', personality: 'Plays the villain but lovingly. "I have NOTES." Secretly invested. Sarcastic mom energy.' }
             },
             {
-                positive: { name: 'giggles_247', personality: 'Finds everything hilarious. Infectious laughter energy. Makes everything fun!' },
-                negative: { name: 'not_amused', personality: 'Hard to impress. Dry humor when they do engage. Secretly enjoying themselves.' }
+                positive: { name: 'coffee_run_rachel', personality: 'Perpetually caffeinated and chatty. Currently on 3rd coffee. Thinks everyone is doing amazing.' },
+                negative: { name: 'decaf_derek', personality: 'Running on fumes. Gave up caffeine, regrets it. Every message sounds tired but present.' }
             },
             {
-                positive: { name: 'hope_springs', personality: 'Believes in everyone. Encouraging words always ready. Sees potential everywhere.' },
-                negative: { name: 'been_there_done', personality: 'Jaded veteran energy. Seen it all before. Wise but weary.' }
+                positive: { name: 'first_timer_here', personality: 'Wide-eyed newbie energy. Asks obvious questions genuinely. Easily amazed. Types with exclamation!!' },
+                negative: { name: 'veteran_since_09', personality: '"Oh I remember when..." Gatekeeps gently. Has opinions about the old days. Reluctantly adapts.' }
             },
             {
-                positive: { name: 'lovelife_xo', personality: 'Romantic optimist. Believes in happy endings. Wholesome takes on everything.' },
-                negative: { name: 'pragmatic_pat', personality: 'Practical to a fault. No time for sentiment. Gets straight to the point.' }
+                positive: { name: 'dog_dad_steve', personality: 'Relates everything to his dog. Shares pet pics unsolicited. Pure golden retriever energy.' },
+                negative: { name: 'cat_stan_nina', personality: 'Cat superiority complex. Judges silently. Only speaks to drop wisdom. Aloof but present.' }
+            },
+            {
+                positive: { name: 'emoji_enthusiast', personality: 'Communicates 50% in emojis. Believes in good vibes. Probably uses sparkle emotes unironically.' },
+                negative: { name: 'no_emoji_policy', personality: 'Refuses emojis on principle. Dry text only. Somehow still expressive. Old school chatter.' }
+            },
+            {
+                positive: { name: 'snack_break_sam', personality: 'Always eating something. Shares what snack theyre on. Comfort creature. Easily pleased.' },
+                negative: { name: 'intermittent_ian', personality: 'Currently fasting (mentions it). Grumpy about food content. Still engaged though. Hangry undertones.' }
+            },
+            {
+                positive: { name: 'early_bird_emma', personality: 'Up at 5am by choice. Aggressively morning person. Perky beyond reason. "rise and grind!"' },
+                negative: { name: 'night_shift_nick', personality: '3am energy at all hours. Questionable sleep schedule. Philosophical at weird times.' }
+            },
+            {
+                positive: { name: 'chaos_goblin_01', personality: 'Thrives in mayhem. "this is fine" as things escalate. Finds everything hilarious. Agent of chaos.' },
+                negative: { name: 'needs_order_nancy', personality: 'Tries to organize chat. Slightly stressed by chaos. Makes lists. "can we focus please?"' }
+            },
+            {
+                positive: { name: 'plant_parent_pat', personality: 'Owns too many plants. Treats them like children. Gentle soul. Easily emotional about nature.' },
+                negative: { name: 'brown_thumb_brad', personality: 'Has killed every plant ever. Suspicious of plant content. "how do they survive." Resigned acceptance.' }
+            },
+            {
+                positive: { name: 'nostalgia_nerd', personality: '"Remember when..." but positively. Collects happy memories. Rose tinted glasses but sweet.' },
+                negative: { name: 'moving_on_mike', personality: '"Thats the past." Future focused to a fault. Impatient with callbacks. Lives in the now.' }
             }
         ];
 
@@ -742,40 +878,82 @@ Respond in EXACTLY this JSON format (no other text):
                 return this.generateFallbackPair();
             }
 
-            // Pick a random opposing pair theme
+            // Select random elements for variety - pick 2-3 of each for diversity
             const opposingPair = this.opposingPairs[Math.floor(Math.random() * this.opposingPairs.length)];
-            const usernameStyle = this.usernamePatterns[Math.floor(Math.random() * this.usernamePatterns.length)];
 
-            const generationPrompt = `You are creating TWO contrasting chat personalities for a stream. They should have OPPOSITE vibes but both be entertaining.
+            // Pick 3 random username style inspirations
+            const shuffledCategories = [...this.usernameCategories].sort(() => Math.random() - 0.5);
+            const usernameStyles = shuffledCategories.slice(0, 3).join('\n- ');
 
-PERSONALITY CONTRAST:
-- Character 1: ${opposingPair.positive}
-- Character 2: ${opposingPair.negative}
+            // Pick random moods for each character
+            const positiveMood = this.characterMoods[Math.floor(Math.random() * this.characterMoods.length)];
+            const negativeMood = this.characterMoods[Math.floor(Math.random() * this.characterMoods.length)];
 
-USERNAME STYLE: Use realistic online usernames like ${usernameStyle}
-Examples of good usernames: mike_92, lazypanda, bookworm42, sarah2001, nightowl_23, sendhelp_lol, jenny_xo, just_a_guy
+            // Pick random opinions
+            const opinion1 = this.characterOpinions[Math.floor(Math.random() * this.characterOpinions.length)];
+            const opinion2 = this.characterOpinions[Math.floor(Math.random() * this.characterOpinions.length)];
 
-Create two characters with:
-1. Realistic online usernames (NOT fantasy names like "Stardust" or "Professor Moonbeam" - use common names, words, numbers like real users)
-2. Personality descriptions for how they chat (max 150 characters each)
+            // Pick random quirks
+            const quirk1 = this.characterQuirks[Math.floor(Math.random() * this.characterQuirks.length)];
+            const quirk2 = this.characterQuirks[Math.floor(Math.random() * this.characterQuirks.length)];
 
-The characters should:
-- Feel like real people you'd find in any stream chat
-- Have contrasting energies that play off each other
-- Be appropriate for all audiences
-- Use casual, internet-native communication styles
+            // Generate a unique seed to encourage variety
+            const uniqueSeed = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
-Respond in EXACTLY this JSON format (no other text):
-{"positive": {"name": "username1", "personality": "brief personality"}, "negative": {"name": "username2", "personality": "brief personality"}}`;
+            const generationPrompt = `CREATE TWO UNIQUE STREAM CHATTERS [Seed: ${uniqueSeed}]
 
-            const systemPrompt = "You generate realistic stream chat personas with normal online usernames. Respond only with valid JSON.";
+You're inventing TWO completely original chat personas who contrast with each other. Make them feel like REAL internet users with distinct personalities, NOT generic chatbot templates.
 
-            const result = await this.chatBotLLMService.callGroqAPI(systemPrompt, generationPrompt);
+═══ CORE CONTRAST ═══
+Character 1 vibe: ${opposingPair.positive}
+Character 2 vibe: ${opposingPair.negative}
+
+═══ USERNAME INSPIRATION (pick ONE style, invent a FRESH name) ═══
+- ${usernameStyles}
+
+IMPORTANT: Create BRAND NEW usernames. Do NOT use: mike_92, sarah2001, lazypanda, bookworm42, sunny_day, shadow99, or ANY example usernames. Invent something original that fits the style.
+
+═══ MAKE THEM REAL ═══
+Character 1:
+- Current mood: ${positiveMood}
+- Has this opinion: ${opinion1}
+- Quirk: ${quirk1}
+
+Character 2:
+- Current mood: ${negativeMood}
+- Has this opinion: ${opinion2}
+- Quirk: ${quirk2}
+
+═══ OUTPUT FORMAT ═══
+Create a CONCISE personality prompt for each (max 120 chars). This prompt will instruct a small AI to roleplay as them, so include:
+- Their core vibe/energy
+- Their current mood
+- One specific opinion or quirk
+- How they type (casual, caps, lowercase, emotes, etc.)
+
+Respond ONLY with valid JSON:
+{"positive": {"name": "unique_username", "personality": "concise prompt for AI"}, "negative": {"name": "unique_username2", "personality": "concise prompt for AI"}}`;
+
+            const systemPrompt = `You are a creative character designer who invents unique, realistic internet personas.
+Each character must feel like a real person with genuine quirks, not a generic bot.
+Never repeat usernames you've used before. Every name should be fresh and creative.
+Respond only with valid JSON, no markdown.`;
+
+            // Use the larger, more capable model for character generation
+            const result = await this.chatBotLLMService.callGroqAPIWithModel(
+                systemPrompt,
+                generationPrompt,
+                'llama-3.3-70b-versatile',
+                500,
+                0.95 // High temperature for creativity
+            );
 
             if (!result || !result.message) {
                 console.error('❌ StreamBot: Empty response from Groq for pair');
                 return this.generateFallbackPair();
             }
+
+            console.log(`🎭 StreamBot: Generated characters using ${result.model}`);
 
             // Parse the JSON response
             let pair;
@@ -800,12 +978,14 @@ Respond in EXACTLY this JSON format (no other text):
 
             // Truncate if too long
             pair.positive.name = pair.positive.name.substring(0, 25);
-            pair.positive.personality = pair.positive.personality.substring(0, 180);
+            pair.positive.personality = pair.positive.personality.substring(0, 200);
             pair.positive.generatedPrompt = generationPrompt;
 
             pair.negative.name = pair.negative.name.substring(0, 25);
-            pair.negative.personality = pair.negative.personality.substring(0, 180);
+            pair.negative.personality = pair.negative.personality.substring(0, 200);
             pair.negative.generatedPrompt = generationPrompt;
+
+            console.log(`✨ StreamBot: Created contrasting pair - "${pair.positive.name}" vs "${pair.negative.name}"`);
 
             return pair;
 

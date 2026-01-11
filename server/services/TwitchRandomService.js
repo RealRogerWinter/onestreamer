@@ -24,9 +24,9 @@ class TwitchRandomService {
       'Pools, Hot Tubs, and Beaches', // May have content issues
     ]);
 
-    // Viewer range - wide open by default
+    // Viewer range - capped to avoid mega-streamers and increase variety
     this.minViewers = 1;
-    this.maxViewers = 999999;
+    this.maxViewers = 5000;
 
     console.log('🎮 TwitchRandomService initialized');
 
@@ -159,9 +159,47 @@ class TwitchRandomService {
   /**
    * Get list of top games/categories
    */
-  async getTopGames(first = 20) {
+  async getTopGames(first = 100) {
     const response = await this.twitchRequest(`/helix/games/top?first=${first}`);
     return response.data || [];
+  }
+
+  /**
+   * Get streams from a random category for better variety
+   * This avoids the bias toward mega-streamers by picking a random game first
+   */
+  async getStreamsFromRandomCategory(options = {}) {
+    const { language = 'en', first = 100 } = options;
+
+    try {
+      // Get top 100 categories - this includes a good mix of popular and niche games
+      const games = await this.getTopGames(100);
+
+      if (!games || games.length === 0) {
+        console.warn('⚠️ No games found, falling back to general streams');
+        return { streams: await this.getLiveStreams({ language, first }), category: null };
+      }
+
+      // Pick a random category (weighted toward variety, not just top games)
+      // Use square root weighting to give smaller categories better odds
+      const weightedIndex = Math.floor(Math.pow(Math.random(), 0.7) * games.length);
+      const randomGame = games[weightedIndex];
+
+      console.log(`🎲 Selected random category: ${randomGame.name}`);
+
+      // Get streams from this category
+      const streams = await this.getLiveStreams({
+        language,
+        first,
+        gameId: randomGame.id
+      });
+
+      return { streams, category: randomGame.name };
+    } catch (error) {
+      console.error('❌ Error getting streams from random category:', error.message);
+      // Fallback to general streams
+      return { streams: await this.getLiveStreams({ language, first }), category: null };
+    }
   }
 
   /**
@@ -177,13 +215,15 @@ class TwitchRandomService {
       minViewers = this.minViewers,
       maxViewers = this.maxViewers,
       preferredCategories = null, // Array of game IDs, or null for any
-      excludeUsernames = []
+      excludeUsernames = [],
+      useCategoryDiversification = true // NEW: use random category selection for variety
     } = options;
 
     console.log('🔍 Searching for random Twitch streamer...');
 
     try {
       let streams = [];
+      let selectedCategory = null;
 
       // If preferred categories, get streams from those
       if (preferredCategories && preferredCategories.length > 0) {
@@ -191,8 +231,14 @@ class TwitchRandomService {
           const gameStreams = await this.getLiveStreams({ language, gameId, first: 50 });
           streams = streams.concat(gameStreams);
         }
+      } else if (useCategoryDiversification) {
+        // NEW: Use category diversification for better variety
+        // This picks a random game category first, then selects from streams in that category
+        const result = await this.getStreamsFromRandomCategory({ language, first: 100 });
+        streams = result.streams;
+        selectedCategory = result.category;
       } else {
-        // Get general live streams
+        // Fallback: Get general live streams (biased toward top streamers)
         streams = await this.getLiveStreams({ language, first: 100 });
       }
 
@@ -236,7 +282,8 @@ class TwitchRandomService {
         this.recentStreamers.shift();
       }
 
-      console.log(`✅ Found random streamer: ${selected.user_name} playing ${selected.game_name} (${selected.viewer_count} viewers)`);
+      const categoryNote = selectedCategory ? ` (from random category: ${selectedCategory})` : '';
+      console.log(`✅ Found random streamer: ${selected.user_name} playing ${selected.game_name} (${selected.viewer_count} viewers)${categoryNote}`);
 
       return {
         username: selected.user_login,

@@ -210,10 +210,8 @@ export class GameInputHandler {
       vector.y /= magnitude;
     }
 
-    // Always emit if we have keys pressed or had movement recently
-    if (vector.x !== 0 || vector.y !== 0 || this.keysPressed.size > 0) {
-      this.movementCallback(vector);
-    }
+    // Always emit movement state (including {0, 0} when no keys pressed)
+    this.movementCallback(vector);
   }
 
   /**

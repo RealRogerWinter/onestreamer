@@ -23,6 +23,8 @@ export interface PlayerState {
   direction: Direction;
   spriteId: string;
   color: string;
+  health: number;
+  maxHealth: number;
   inventory?: InventoryItem[];
   lastInputSequence?: number;
 }
@@ -39,6 +41,24 @@ export interface PlayerAction {
   type: 'interact' | 'use-item' | 'primary';
   itemId?: string;
   targetPosition?: { x: number; y: number };
+}
+
+// ============================================
+// Enemy Types
+// ============================================
+
+export type EnemyType = 'slime';
+
+export interface EnemyState {
+  id: string;
+  type: EnemyType;
+  x: number;
+  y: number;
+  velocityX: number;
+  velocityY: number;
+  direction: Direction;
+  health: number;
+  maxHealth: number;
 }
 
 // ============================================
@@ -117,6 +137,7 @@ export interface GameFullState {
   players: Record<string, PlayerState>;
   world: WorldState;
   items: WorldItem[];
+  enemies: EnemyState[];
   sessionId?: number;
   startedAt?: number;
   timestamp?: number;
@@ -125,8 +146,16 @@ export interface GameFullState {
 export interface GameStateDelta {
   playerUpdates: Record<string, Partial<PlayerState>>;
   itemUpdates: ItemUpdate[];
+  enemyUpdates: EnemyUpdate[];
   worldChanges: WorldChange[];
   timestamp: number;
+}
+
+export interface EnemyUpdate {
+  type: 'spawned' | 'removed' | 'damaged' | 'moved';
+  enemyId: string;
+  enemy?: EnemyState;
+  health?: number;
 }
 
 export interface ItemUpdate {

@@ -7,6 +7,7 @@ import URLStreamManagement from './URLStreamManagement';
 import ItemManagement from './ItemManagement';
 import ChatBotManagement from './ChatBotManagement';
 import RecordingManagement from './RecordingManagement';
+import AdminRecordingReview from './AdminRecordingReview';
 import TranscriptionManagement from './TranscriptionManagement';
 import EmojiManagement from './EmojiManagement';
 import ChatModeration from './ChatModeration';
@@ -54,6 +55,7 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
     { id: 'chatbots', label: 'Chat Bots', icon: '💬', category: 'Services' },
     { id: 'streambot', label: 'StreamBot', icon: '📢', category: 'Services' },
     { id: 'recordings', label: 'Recordings', icon: '📹', category: 'Media' },
+    { id: 'recording-review', label: 'Recording Review', icon: '🎬', category: 'Media' },
     { id: 'transcriptions', label: 'Transcriptions', icon: '🎙️', category: 'Media' },
     { id: 'emojis', label: 'Emoji Manager', icon: '😊', category: 'Content' },
     { id: 'moderation', label: 'Chat Moderation', icon: '🛡️', category: 'Moderation' },
@@ -220,6 +222,8 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
         return <StreamBotManager />;
       case 'recordings':
         return <RecordingManagement addLog={addLog} />;
+      case 'recording-review':
+        return <AdminRecordingReview makeApiCall={makeApiCall} addLog={addLog} />;
       case 'transcriptions':
         return <TranscriptionManagement addLog={addLog} />;
       case 'emojis':

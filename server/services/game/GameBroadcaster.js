@@ -22,6 +22,7 @@ class GameBroadcaster {
             playerUpdates: stateDelta.playerUpdates || {},
             itemUpdates: stateDelta.itemUpdates || [],
             worldChanges: stateDelta.worldChanges || [],
+            enemyUpdates: stateDelta.enemyUpdates || [],
             timestamp: Date.now()
         });
 

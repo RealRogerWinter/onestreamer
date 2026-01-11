@@ -1164,9 +1164,9 @@ class ChatBotLLMService {
         if (!this.groqApiKey) {
             throw new Error('Groq API key not configured');
         }
-        
+
         const startTime = Date.now();
-        
+
         try {
             const response = await fetch(this.groqApiUrl, {
                 method: 'POST',
@@ -1185,17 +1185,17 @@ class ChatBotLLMService {
                     stream: false
                 })
             });
-            
+
             if (!response.ok) {
                 const error = await response.text();
                 throw new Error(`Groq API error: ${response.status} - ${error}`);
             }
-            
+
             const data = await response.json();
             const responseTime = Date.now() - startTime;
-            
+
             console.log(`⚡ Groq response in ${responseTime}ms`);
-            
+
             return {
                 message: data.choices[0].message.content,
                 model: this.groqModel,
@@ -1203,6 +1203,55 @@ class ChatBotLLMService {
             };
         } catch (error) {
             console.error('❌ Groq API call failed:', error);
+            throw error;
+        }
+    }
+
+    // Call Groq API with a specific model override (for character generation with larger models)
+    async callGroqAPIWithModel(systemPrompt, userPrompt, modelOverride, maxTokens = 400, temperature = 0.95) {
+        if (!this.groqApiKey) {
+            throw new Error('Groq API key not configured');
+        }
+
+        const model = modelOverride || 'llama-3.3-70b-versatile';
+        const startTime = Date.now();
+
+        try {
+            const response = await fetch(this.groqApiUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.groqApiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    max_tokens: maxTokens,
+                    temperature: temperature,
+                    stream: false
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`Groq API error (${model}): ${response.status} - ${error}`);
+            }
+
+            const data = await response.json();
+            const responseTime = Date.now() - startTime;
+
+            console.log(`⚡ Groq (${model}) response in ${responseTime}ms`);
+
+            return {
+                message: data.choices[0].message.content,
+                model: model,
+                responseTime: responseTime
+            };
+        } catch (error) {
+            console.error(`❌ Groq API call failed (${model}):`, error);
             throw error;
         }
     }

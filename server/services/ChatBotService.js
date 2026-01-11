@@ -641,22 +641,26 @@ class ChatBotService {
         setTimeout(async () => {
             try {
                 console.log(`🗑️ Expiring temporary bot ${botId}`);
-                
+
                 // Stop the bot
                 await this.stopBot(botId);
-                
-                // Delete from temporary_bots table first
+
+                // Delete from related tables first (order matters due to foreign keys)
+                await database.runAsync(
+                    'DELETE FROM auto_summoned_bots WHERE chatbot_id = ?',
+                    [botId]
+                );
                 await database.runAsync(
                     'DELETE FROM temporary_bots WHERE chatbot_id = ?',
                     [botId]
                 );
-                
-                // Delete from database
+
+                // Delete from chatbots table
                 await database.runAsync(
                     'DELETE FROM chatbots WHERE id = ? AND is_temporary = 1',
                     [botId]
                 );
-                
+
                 console.log(`✅ Temporary bot ${botId} expired and removed`);
             } catch (error) {
                 console.error(`❌ Error expiring bot ${botId}:`, error);
@@ -667,8 +671,9 @@ class ChatBotService {
     async cleanupExpiredBots() {
         try {
             // Find all expired temporary bots
+            // Use datetime() on expires_at to handle ISO 8601 format (e.g. 2026-01-08T07:24:27.751Z)
             const expired = await database.allAsync(
-                'SELECT id, name FROM chatbots WHERE is_temporary = 1 AND expires_at < datetime("now")'
+                'SELECT id, name FROM chatbots WHERE is_temporary = 1 AND datetime(expires_at) < datetime("now")'
             );
             
             if (expired.length === 0) {
@@ -695,11 +700,13 @@ class ChatBotService {
                 }
                 
                 await this.stopBot(bot.id);
-                
-                // Delete from temporary_bots table first (in case foreign keys aren't working)
+
+                // Delete from related tables first (order matters due to foreign keys)
+                // auto_summoned_bots doesn't have ON DELETE CASCADE, so must delete manually
+                await database.runAsync('DELETE FROM auto_summoned_bots WHERE chatbot_id = ?', [bot.id]);
                 await database.runAsync('DELETE FROM temporary_bots WHERE chatbot_id = ?', [bot.id]);
-                
-                // Then delete from chatbots table
+
+                // Then delete from chatbots table (chatbot_sessions and chatbot_message_history cascade)
                 await database.runAsync('DELETE FROM chatbots WHERE id = ?', [bot.id]);
             }
             

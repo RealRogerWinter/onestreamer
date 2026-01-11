@@ -439,8 +439,10 @@ class ViewBotLiveKitService {
 
   /**
    * Create LiveKit ingress for RTMP streaming
+   * @param {object} bot - Bot object with id and optional name
+   * @param {object} encodingSettings - Optional adaptive encoding settings from StreamProbeService
    */
-  async createIngress(bot) {
+  async createIngress(bot, encodingSettings = null) {
     try {
       const { IngressClient, IngressInput } = require('livekit-server-sdk');
 
@@ -450,27 +452,38 @@ class ViewBotLiveKitService {
 
       const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
 
-      // BALANCED QUALITY: Single-layer 720p encoding at good bitrate
+      // Use adaptive settings if available, otherwise defaults
       const { TrackSource, IngressVideoOptions, IngressAudioOptions } = require('livekit-server-sdk');
+
+      // Determine video settings - prefer adaptive, fall back to defaults
+      const videoWidth = encodingSettings?.width || 1280;
+      const videoHeight = encodingSettings?.height || 720;
+      const videoFps = encodingSettings?.fps || 30;
+      const videoBitrate = encodingSettings?.videoBitrate ? encodingSettings.videoBitrate * 1000 : 4000000;
+      const audioBitrate = encodingSettings?.audioBitrate ? encodingSettings.audioBitrate * 1000 : 160000;
+      const audioChannels = encodingSettings?.audioChannels || 2;
+
+      console.log(`🎬 LIVEKIT INGRESS: Creating with ${videoWidth}x${videoHeight}@${videoFps}fps ${videoBitrate/1000}kbps`);
 
       const ingress = await ingressClient.createIngress(IngressInput.RTMP_INPUT, {
         name: `viewbot-${bot.id}`,
         roomName: this.config.roomName,
         participantIdentity: bot.id,
         participantName: `ViewBot ${bot.id}`,
-        // Balanced quality single layer configuration - 720p @ 4Mbps
+        // Note: RTMP requires transcoding for WebRTC conversion, can't bypass
+        // Adaptive quality configuration based on source stream
         video: {
           source: TrackSource.CAMERA,
           encodingOptions: {
             case: 'options',
             value: {
               videoCodec: 0, // H264
-              frameRate: 30,
+              frameRate: videoFps,
               layers: [{
                 quality: 2, // HIGH
-                width: 1280,
-                height: 720,
-                bitrate: 4000000  // 4Mbps for 720p
+                width: videoWidth,
+                height: videoHeight,
+                bitrate: videoBitrate
               }]
             }
           }
@@ -481,8 +494,8 @@ class ViewBotLiveKitService {
             case: 'options',
             value: {
               audioCodec: 1, // OPUS
-              bitrate: 160000,  // 160kbps
-              channels: 2,
+              bitrate: audioBitrate,
+              channels: audioChannels,
               disableDtx: false
             }
           }

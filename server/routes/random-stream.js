@@ -81,10 +81,18 @@ module.exports = function(rotationService) {
   /**
    * POST /api/random-stream/rotate
    * Force rotate to next stream immediately
+   * Body: { platform?: 'kick' | 'twitch' } - optional platform to force
    */
   router.post('/rotate', async (req, res) => {
     try {
-      const result = await rotationService.forceRotate();
+      const { platform } = req.body;
+
+      // Validate platform if provided
+      if (platform && !['kick', 'twitch'].includes(platform.toLowerCase())) {
+        return res.status(400).json({ error: 'Invalid platform. Use "kick" or "twitch".' });
+      }
+
+      const result = await rotationService.forceRotate({ platform: platform?.toLowerCase() });
 
       if (!result.success) {
         return res.status(400).json({ error: result.error });
@@ -92,13 +100,216 @@ module.exports = function(rotationService) {
 
       res.json({
         success: true,
-        message: 'Rotated to new stream',
+        message: `Rotated to new ${platform ? platform + ' ' : ''}stream`,
         stream: result.stream
       });
 
     } catch (error) {
       console.error('Error forcing rotation:', error);
       res.status(500).json({ error: 'Failed to rotate' });
+    }
+  });
+
+  /**
+   * POST /api/random-stream/extend
+   * Extend the current rotation time (add 3-5 minutes before next switch)
+   * Called by chat !extend vote system
+   */
+  router.post('/extend', async (req, res) => {
+    try {
+      const { minutes } = req.body;
+      const result = rotationService.extendRotation(minutes);
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: result.error,
+          cooldownRemaining: result.cooldownRemaining
+        });
+      }
+
+      res.json({
+        success: true,
+        message: result.message,
+        extendedByMinutes: result.extendedByMinutes,
+        newNextRotationAt: result.newNextRotationAt
+      });
+
+    } catch (error) {
+      console.error('Error extending rotation:', error);
+      res.status(500).json({ error: 'Failed to extend rotation' });
+    }
+  });
+
+  /**
+   * GET /api/random-stream/extend-cooldown
+   * Check the extend cooldown status
+   */
+  router.get('/extend-cooldown', (req, res) => {
+    try {
+      const status = rotationService.getExtendCooldownStatus();
+      res.json(status);
+    } catch (error) {
+      console.error('Error getting extend cooldown:', error);
+      res.status(500).json({ error: 'Failed to get cooldown status' });
+    }
+  });
+
+  /**
+   * POST /api/random-stream/admin-extend
+   * Admin command to extend rotation without vote (no cooldown)
+   */
+  router.post('/admin-extend', async (req, res) => {
+    try {
+      const { minutes } = req.body;
+      const result = rotationService.adminExtend(minutes || 5);
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: result.error
+        });
+      }
+
+      res.json({
+        success: true,
+        message: result.message,
+        extendedByMinutes: result.extendedByMinutes,
+        newNextRotationAt: result.newNextRotationAt
+      });
+
+    } catch (error) {
+      console.error('Error admin extending rotation:', error);
+      res.status(500).json({ error: 'Failed to extend rotation' });
+    }
+  });
+
+  /**
+   * POST /api/random-stream/reduce
+   * Reduce the rotation timer (vote-based, shares cooldown with extend)
+   * Called by chat !reduce vote system
+   */
+  router.post('/reduce', async (req, res) => {
+    try {
+      const { minutes } = req.body;
+      const result = rotationService.reduceRotation(minutes);
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: result.error,
+          cooldownRemaining: result.cooldownRemaining
+        });
+      }
+
+      res.json({
+        success: true,
+        message: result.message,
+        reducedByMinutes: result.reducedByMinutes,
+        newNextRotationAt: result.newNextRotationAt
+      });
+
+    } catch (error) {
+      console.error('Error reducing rotation:', error);
+      res.status(500).json({ error: 'Failed to reduce rotation' });
+    }
+  });
+
+  /**
+   * POST /api/random-stream/admin-reduce
+   * Admin command to reduce rotation without vote (no cooldown)
+   */
+  router.post('/admin-reduce', async (req, res) => {
+    try {
+      const { minutes } = req.body;
+      const result = rotationService.adminReduce(minutes || 5);
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: result.error
+        });
+      }
+
+      res.json({
+        success: true,
+        message: result.message,
+        reducedByMinutes: result.reducedByMinutes,
+        newNextRotationAt: result.newNextRotationAt
+      });
+
+    } catch (error) {
+      console.error('Error admin reducing rotation:', error);
+      res.status(500).json({ error: 'Failed to reduce rotation' });
+    }
+  });
+
+  /**
+   * POST /api/random-stream/lock
+   * Lock/freeze the rotation timer
+   */
+  router.post('/lock', async (req, res) => {
+    try {
+      const result = rotationService.lockRotation();
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: result.error
+        });
+      }
+
+      res.json({
+        success: true,
+        message: result.message,
+        remainingMs: result.remainingMs
+      });
+
+    } catch (error) {
+      console.error('Error locking rotation:', error);
+      res.status(500).json({ error: 'Failed to lock rotation' });
+    }
+  });
+
+  /**
+   * POST /api/random-stream/unlock
+   * Unlock/resume the rotation timer
+   */
+  router.post('/unlock', async (req, res) => {
+    try {
+      const result = rotationService.unlockRotation();
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: result.error
+        });
+      }
+
+      res.json({
+        success: true,
+        message: result.message,
+        remainingMs: result.remainingMs,
+        nextRotationAt: result.nextRotationAt
+      });
+
+    } catch (error) {
+      console.error('Error unlocking rotation:', error);
+      res.status(500).json({ error: 'Failed to unlock rotation' });
+    }
+  });
+
+  /**
+   * GET /api/random-stream/lock-status
+   * Get the current lock status
+   */
+  router.get('/lock-status', (req, res) => {
+    try {
+      const status = rotationService.getLockStatus();
+      res.json(status);
+    } catch (error) {
+      console.error('Error getting lock status:', error);
+      res.status(500).json({ error: 'Failed to get lock status' });
     }
   });
 

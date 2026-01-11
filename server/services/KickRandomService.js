@@ -20,9 +20,9 @@ class KickRandomService {
       'Pools, Hot Tubs, and Beaches',
     ]);
 
-    // Viewer range
+    // Viewer range - capped to avoid mega-streamers and increase variety
     this.minViewers = 1;
-    this.maxViewers = 999999;
+    this.maxViewers = 5000;
 
     // Path to Python helper
     this.helperPath = path.join(__dirname, 'kick-api-helper.py');

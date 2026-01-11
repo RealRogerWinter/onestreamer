@@ -61,6 +61,15 @@ interface StreamStatus {
   randomRotationPlatform?: string | null;
   randomRotationStreamerUrl?: string | null;
   randomRotationStreamerUsername?: string | null;
+  randomRotationGame?: string | null;
+  randomRotationViewers?: number | null;
+  randomRotationStartedAt?: number | null;
+  // Rotation timing (for countdown timer)
+  nextRotationAt?: number | null;
+  currentRotationDuration?: number | null;
+  // Rotation lock state
+  isRotationLocked?: boolean;
+  lockedRemainingMs?: number | null;
   // Game mode
   isGameMode?: boolean;
 }
@@ -227,15 +236,15 @@ function AppContent() {
   // Reliable mobile detection and orientation
   useEffect(() => {
     const checkMobileAndOrientation = () => {
-      const mobileCheck = window.innerWidth <= 768 || 
+      const mobileCheck = window.innerWidth <= 768 ||
         /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       setIsMobile(mobileCheck);
-      
+
       // Check if in landscape mode
       const landscapeCheck = window.innerWidth > window.innerHeight && mobileCheck;
       setIsLandscape(landscapeCheck);
     };
-    
+
     checkMobileAndOrientation();
     window.addEventListener('resize', checkMobileAndOrientation);
     window.addEventListener('orientationchange', checkMobileAndOrientation);
@@ -404,11 +413,24 @@ function AppContent() {
 
       if (isInTakeoverTransition && status.streamerId !== takeoverTargetRef.current) {
         console.log(`⚠️ CLIENT: Ignoring stale stream-status (got ${status.streamerId}, expected ${takeoverTargetRef.current})`);
-        // Update other fields but preserve the correct streamerId
+        // Update other fields but preserve the correct streamerId, display name, and rotation timer values
         setStreamStatus(prev => ({
           ...status,
           streamerId: takeoverTargetRef.current,
-          hasActiveStream: true
+          hasActiveStream: true,
+          streamerDisplayName: status.streamerDisplayName || prev.streamerDisplayName,
+          // Preserve rotation timer values (managed by rotation-timing event)
+          nextRotationAt: prev.nextRotationAt,
+          currentRotationDuration: prev.currentRotationDuration,
+          isRotationLocked: prev.isRotationLocked,
+          lockedRemainingMs: prev.lockedRemainingMs,
+          isRandomRotation: prev.isRandomRotation,
+          randomRotationPlatform: prev.randomRotationPlatform,
+          randomRotationStreamerUrl: prev.randomRotationStreamerUrl,
+          randomRotationStreamerUsername: prev.randomRotationStreamerUsername,
+          randomRotationGame: prev.randomRotationGame,
+          randomRotationViewers: prev.randomRotationViewers,
+          randomRotationStartedAt: prev.randomRotationStartedAt
         }));
       } else {
         // Normal update - also clear takeover lock if streamerId matches
@@ -416,7 +438,24 @@ function AppContent() {
           console.log(`✅ CLIENT: stream-status confirmed takeover target ${status.streamerId}, clearing lock`);
           takeoverTargetRef.current = null;
         }
-        setStreamStatus(status);
+        // CRITICAL: Preserve streamerDisplayName and rotation timer values if not provided in status
+        // This prevents the header name and countdown from disappearing during transitions
+        setStreamStatus(prev => ({
+          ...status,
+          streamerDisplayName: status.streamerDisplayName || prev.streamerDisplayName,
+          // Preserve rotation timer values (managed by rotation-timing event)
+          nextRotationAt: prev.nextRotationAt,
+          currentRotationDuration: prev.currentRotationDuration,
+          isRotationLocked: prev.isRotationLocked,
+          lockedRemainingMs: prev.lockedRemainingMs,
+          isRandomRotation: prev.isRandomRotation,
+          randomRotationPlatform: prev.randomRotationPlatform,
+          randomRotationStreamerUrl: prev.randomRotationStreamerUrl,
+          randomRotationStreamerUsername: prev.randomRotationStreamerUsername,
+          randomRotationGame: prev.randomRotationGame,
+          randomRotationViewers: prev.randomRotationViewers,
+          randomRotationStartedAt: prev.randomRotationStartedAt
+        }));
       }
 
       if (status.hasActiveStream && isStreaming && socket.id !== status.streamerId) {
@@ -462,7 +501,7 @@ function AppContent() {
         streamType: data.streamType || 'unknown',
         streamStartTime: data.streamStartTime || Date.now(),
         streamDuration: 0,
-        streamerDisplayName: data.streamerDisplayName || null
+        streamerDisplayName: data.streamerDisplayName || prev.streamerDisplayName
       }));
 
       if (data.streamerId !== socket.id && isStreaming) {
@@ -496,7 +535,7 @@ function AppContent() {
           ...prev,
           hasActiveStream: true,
           streamerId: data.newStreamer!,
-          streamerDisplayName: data.newStreamerDisplayName || null,
+          streamerDisplayName: data.newStreamerDisplayName || prev.streamerDisplayName,
           streamStartTime: Date.now(),
           streamDuration: 0
         }));
@@ -506,13 +545,15 @@ function AppContent() {
 
       // CRITICAL: During random rotation transitions, preserve the display name
       // The rotation service will send a new-streamer or random-rotation-status event with the new name
+      // webrtc_disconnect happens when switching between URL streams (stale streamer cleared)
       const isTransitionEvent = data?.reason === 'random_rotation_starting' ||
                                 data?.reason === 'random_rotation_stopped' ||
                                 data?.reason?.startsWith('url_stream_') ||
+                                data?.reason === 'webrtc_disconnect' ||
                                 data?.isRandomRotation === true;
 
       if (isTransitionEvent) {
-        console.log(`🔄 CLIENT: Stream transition event (${data?.reason}) - preserving display name`);
+        console.log(`🔄 CLIENT: Stream transition event (${data?.reason}) - preserving display name and timer`);
         setStreamStatus(prev => ({
           ...prev,
           hasActiveStream: false,
@@ -520,22 +561,36 @@ function AppContent() {
           streamType: null,
           streamStartTime: null,
           streamDuration: 0
-          // NOTE: Intentionally NOT clearing streamerDisplayName during transitions
-          // The next event will update it with the new value
+          // NOTE: Intentionally NOT clearing streamerDisplayName or timer values during transitions
+          // The next event will update them with new values
         }));
         return;
       }
 
-      // Normal stream end - clear everything
-      setStreamStatus({
+      // Normal stream end - clear stream info but preserve timer values
+      // Timer values are only cleared via random-rotation-status with enabled: false
+      console.log(`🛑 CLIENT: Normal stream end (${data?.reason}) - preserving timer values`);
+      setStreamStatus(prev => ({
         hasActiveStream: false,
         streamerId: null,
         streamType: null,
         viewerCount: 0,
         streamStartTime: null,
         streamDuration: 0,
-        streamerDisplayName: null
-      });
+        streamerDisplayName: null,
+        // Preserve rotation timer and state (managed by rotation events)
+        nextRotationAt: prev.nextRotationAt,
+        currentRotationDuration: prev.currentRotationDuration,
+        isRotationLocked: prev.isRotationLocked,
+        lockedRemainingMs: prev.lockedRemainingMs,
+        isRandomRotation: prev.isRandomRotation,
+        randomRotationPlatform: prev.randomRotationPlatform,
+        randomRotationStreamerUrl: prev.randomRotationStreamerUrl,
+        randomRotationStreamerUsername: prev.randomRotationStreamerUsername,
+        randomRotationGame: prev.randomRotationGame,
+        randomRotationViewers: prev.randomRotationViewers,
+        randomRotationStartedAt: prev.randomRotationStartedAt
+      }));
 
       const minSwitchInterval = 3000;
       const now = Date.now();
@@ -590,7 +645,8 @@ function AppContent() {
           hasActiveStream: true,
           streamerId: streamerId,
           streamerDisplayName: displayName || prev.streamerDisplayName, // Preserve if no new name
-          isRandomRotation: isRandomRotation,
+          // Only update isRandomRotation if explicitly set to true, otherwise preserve existing
+          isRandomRotation: isRandomRotation || prev.isRandomRotation,
           randomRotationPlatform: isRandomRotation ? platform : prev.randomRotationPlatform,
           streamStartTime: Date.now()
         }));
@@ -605,17 +661,40 @@ function AppContent() {
         platform: string;
         streamerUsername: string;
         url: string;
+        game?: string;
+        viewers?: number;
+        startedAt?: number;
+      };
+      rotationTiming?: {
+        nextRotationAt: number;
+        currentRotationDuration: number;
+        serverTime: number;
       };
     }) => {
       console.log('🎲 CLIENT: Random rotation status update:', data);
       if (data.enabled && data.currentStream) {
+        // Calculate time-adjusted next rotation
+        let nextRotationAt: number | null = null;
+        let currentRotationDuration: number | null = null;
+        if (data.rotationTiming) {
+          const timeDiff = Date.now() - data.rotationTiming.serverTime;
+          nextRotationAt = data.rotationTiming.nextRotationAt + timeDiff;
+          currentRotationDuration = data.rotationTiming.currentRotationDuration;
+        }
         setStreamStatus(prev => ({
           ...prev,
           isRandomRotation: true,
           randomRotationPlatform: data.currentStream!.platform,
           randomRotationStreamerUrl: data.currentStream!.url,
           randomRotationStreamerUsername: data.currentStream!.streamerUsername,
-          streamerDisplayName: data.currentStream!.displayName
+          randomRotationGame: data.currentStream!.game || null,
+          randomRotationViewers: data.currentStream!.viewers ?? null,
+          randomRotationStartedAt: data.currentStream!.startedAt || null,
+          streamerDisplayName: data.currentStream!.displayName,
+          // Preserve existing timing values if rotationTiming not provided
+          // (timing will arrive via separate 'rotation-timing' event)
+          nextRotationAt: nextRotationAt ?? prev.nextRotationAt,
+          currentRotationDuration: currentRotationDuration ?? prev.currentRotationDuration
         }));
       } else {
         // Clear random rotation info when disabled
@@ -624,9 +703,95 @@ function AppContent() {
           isRandomRotation: false,
           randomRotationPlatform: null,
           randomRotationStreamerUrl: null,
-          randomRotationStreamerUsername: null
+          randomRotationStreamerUsername: null,
+          randomRotationGame: null,
+          randomRotationViewers: null,
+          randomRotationStartedAt: null,
+          nextRotationAt: null,
+          currentRotationDuration: null
         }));
       }
+    });
+
+    // Listen for rotation timing updates (for countdown timer)
+    socket.on('rotation-timing', (data: {
+      nextRotationAt: number;
+      currentRotationDuration: number;
+      serverTime: number;
+    }) => {
+      console.log('⏱️ CLIENT: Rotation timing update:', data);
+      // Adjust for server/client time difference
+      const timeDiff = Date.now() - data.serverTime;
+      // Preserve lock state - don't assume timing update means unlocked
+      setStreamStatus(prev => ({
+        ...prev,
+        nextRotationAt: data.nextRotationAt + timeDiff,
+        currentRotationDuration: data.currentRotationDuration
+        // Note: isRotationLocked is managed by rotation-locked/rotation-unlocked events only
+      }));
+    });
+
+    // Listen for rotation extended events
+    socket.on('rotation-extended', (data: {
+      extendedBy: number;
+      extendedByMinutes: number;
+      newNextRotationAt: number;
+    }) => {
+      console.log('⏰ CLIENT: Rotation extended by', data.extendedByMinutes, 'minutes');
+      setStreamStatus(prev => ({
+        ...prev,
+        nextRotationAt: data.newNextRotationAt,
+        isRotationLocked: false,
+        lockedRemainingMs: null
+      }));
+    });
+
+    // Listen for rotation reduced events
+    socket.on('rotation-reduced', (data: {
+      reducedBy: number;
+      reducedByMinutes: number;
+      newNextRotationAt: number;
+      currentRotationDuration: number;
+      serverTime: number;
+    }) => {
+      console.log('⏰ CLIENT: Rotation reduced by', data.reducedByMinutes, 'minutes');
+      // Adjust for server/client time difference
+      const timeDiff = Date.now() - data.serverTime;
+      setStreamStatus(prev => ({
+        ...prev,
+        nextRotationAt: data.newNextRotationAt + timeDiff,
+        currentRotationDuration: data.currentRotationDuration,
+        isRotationLocked: false,
+        lockedRemainingMs: null
+      }));
+    });
+
+    // Listen for rotation locked events
+    socket.on('rotation-locked', (data: {
+      locked: boolean;
+      remainingMs: number;
+    }) => {
+      console.log('🔒 CLIENT: Rotation locked with', Math.round(data.remainingMs / 1000), 'seconds remaining');
+      setStreamStatus(prev => ({
+        ...prev,
+        isRotationLocked: true,
+        lockedRemainingMs: data.remainingMs
+      }));
+    });
+
+    // Listen for rotation unlocked events
+    socket.on('rotation-unlocked', (data: {
+      locked: boolean;
+      remainingMs: number;
+      nextRotationAt: number;
+    }) => {
+      console.log('🔓 CLIENT: Rotation unlocked, resuming with', Math.round(data.remainingMs / 1000), 'seconds');
+      setStreamStatus(prev => ({
+        ...prev,
+        isRotationLocked: false,
+        lockedRemainingMs: null,
+        nextRotationAt: data.nextRotationAt
+      }));
     });
 
     socket.on('global-cooldown', (data: { cooldownRemaining: number }) => {
@@ -833,7 +998,7 @@ function AppContent() {
           ...prev,
           hasActiveStream: true,
           streamerId: data.newStreamerId,
-          streamerDisplayName: data.newStreamerDisplayName || null,
+          streamerDisplayName: data.newStreamerDisplayName || prev.streamerDisplayName,
           streamStartTime: Date.now(),
           streamDuration: 0
         }));
@@ -877,6 +1042,11 @@ function AppContent() {
       socket.off('viewer-count-update');
       socket.off('new-streamer');
       socket.off('random-rotation-status');
+      socket.off('rotation-timing');
+      socket.off('rotation-extended');
+      socket.off('rotation-reduced');
+      socket.off('rotation-locked');
+      socket.off('rotation-unlocked');
       socket.off('global-cooldown');
       socket.off('cooldown-status-update');
       socket.off('streaming-approved');
@@ -1283,6 +1453,12 @@ function AppContent() {
             randomRotationPlatform={streamStatus.randomRotationPlatform}
             randomRotationStreamerUrl={streamStatus.randomRotationStreamerUrl}
             randomRotationStreamerUsername={streamStatus.randomRotationStreamerUsername}
+            randomRotationGame={streamStatus.randomRotationGame}
+            randomRotationViewers={streamStatus.randomRotationViewers}
+            nextRotationAt={streamStatus.nextRotationAt}
+            currentRotationDuration={streamStatus.currentRotationDuration}
+            isRotationLocked={streamStatus.isRotationLocked}
+            lockedRemainingMs={streamStatus.lockedRemainingMs}
             isAuthenticated={isAuthenticated}
             currentUser={currentUser}
             userPoints={userPoints}
@@ -1323,6 +1499,13 @@ function AppContent() {
             randomRotationPlatform={streamStatus.randomRotationPlatform}
             randomRotationStreamerUrl={streamStatus.randomRotationStreamerUrl}
             randomRotationStreamerUsername={streamStatus.randomRotationStreamerUsername}
+            randomRotationGame={streamStatus.randomRotationGame}
+            randomRotationViewers={streamStatus.randomRotationViewers}
+            randomRotationStartedAt={streamStatus.randomRotationStartedAt}
+            nextRotationAt={streamStatus.nextRotationAt}
+            currentRotationDuration={streamStatus.currentRotationDuration}
+            isRotationLocked={streamStatus.isRotationLocked}
+            lockedRemainingMs={streamStatus.lockedRemainingMs}
             isAuthenticated={isAuthenticated}
             currentUser={currentUser}
             userPoints={userPoints}
@@ -1920,6 +2103,10 @@ function AppContent() {
           randomRotationPlatform={streamStatus.randomRotationPlatform}
           randomRotationStreamerUrl={streamStatus.randomRotationStreamerUrl}
           randomRotationStreamerUsername={streamStatus.randomRotationStreamerUsername}
+          nextRotationAt={streamStatus.nextRotationAt}
+          currentRotationDuration={streamStatus.currentRotationDuration}
+          isRotationLocked={streamStatus.isRotationLocked}
+          lockedRemainingMs={streamStatus.lockedRemainingMs}
           isStreaming={isStreaming}
           cooldownRemaining={cooldownRemaining}
           isConnected={connected && !!socket}
@@ -1986,7 +2173,7 @@ function AppContent() {
           onOpenStreamerSettings={() => setShowMobileStreamerSettings(true)}
         />
       )}
-      
+
       {/* Mobile Bottom Navigation - Hide in landscape */}
       {isMobile && !isLandscape && (
         <MobileBottomNav

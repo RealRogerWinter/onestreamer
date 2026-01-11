@@ -6,6 +6,7 @@
 
 const express = require('express');
 const URLStreamDatabaseService = require('../services/URLStreamDatabaseService');
+const KickRandomService = require('../services/KickRandomService');
 
 /**
  * Create URL stream router
@@ -15,6 +16,7 @@ const URLStreamDatabaseService = require('../services/URLStreamDatabaseService')
 module.exports = function(viewBotURLService, healthService = null) {
   const router = express.Router();
   const dbService = new URLStreamDatabaseService();
+  const kickService = new KickRandomService();
 
   // Initialize database
   dbService.initialize().catch(err => {
@@ -29,17 +31,44 @@ module.exports = function(viewBotURLService, healthService = null) {
    */
   router.post('/', async (req, res) => {
     try {
-      const { url, quality, displayName, autoReconnect } = req.body;
+      let { url, quality, displayName, autoReconnect } = req.body;
 
       if (!url) {
         return res.status(400).json({ error: 'URL is required' });
+      }
+
+      // Check if this is a Kick URL - streamlink doesn't support Kick, so we need to get the HLS playback URL
+      let kickUsername = null;
+      const kickMatch = url.match(/kick\.com\/([^\/\?]+)/i);
+      if (kickMatch) {
+        kickUsername = kickMatch[1];
+        console.log(`🟢 URL STREAM: Detected Kick URL for channel: ${kickUsername}`);
+
+        // Fetch the authenticated HLS playback URL from Kick
+        try {
+          const playbackInfo = await kickService.getPlaybackUrl(kickUsername);
+          if (playbackInfo && playbackInfo.playback_url) {
+            console.log(`🟢 URL STREAM: Got Kick playback URL for ${kickUsername}`);
+            url = playbackInfo.playback_url;  // Use the HLS URL instead
+          } else {
+            return res.status(400).json({
+              error: `Could not get playback URL for Kick channel ${kickUsername}. The channel may be offline.`
+            });
+          }
+        } catch (kickErr) {
+          console.error(`❌ URL STREAM: Failed to get Kick playback URL:`, kickErr.message);
+          return res.status(400).json({
+            error: `Failed to connect to Kick channel ${kickUsername}: ${kickErr.message}`
+          });
+        }
       }
 
       // Start the stream
       const result = await viewBotURLService.startURLStream(url, {
         quality: quality || 'best',
         displayName,
-        autoReconnect: autoReconnect !== false
+        autoReconnect: autoReconnect !== false,
+        kickUsername  // Pass username for token refresh
       });
 
       if (!result.success) {

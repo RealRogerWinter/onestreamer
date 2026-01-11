@@ -182,3 +182,36 @@
     padding: 0 !important;
   }
 }
+
+/* Mobile Landscape Mode - Full screen video with chat sidebar */
+@media (max-width: 932px) and (orientation: landscape) {
+  .webrtc-viewer {
+    /* Fill entire available space in landscape */
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    aspect-ratio: unset !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: #000 !important;
+    overflow: hidden !important;
+    /* iOS fixes */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+
+  .webrtc-video {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    object-fit: contain !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    /* iOS video rendering fixes */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+}

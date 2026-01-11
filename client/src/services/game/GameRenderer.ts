@@ -8,7 +8,8 @@ import {
   WorldItem,
   Camera,
   CameraTransform,
-  VisibleBounds
+  VisibleBounds,
+  EnemyState
 } from '../../types/game';
 
 interface RenderConfig {
@@ -31,6 +32,10 @@ export class GameRenderer {
   // Sprite animation state
   private animationTime: number = 0;
   private readonly ANIMATION_FRAME_DURATION = 150; // ms per frame
+
+  // Attack animation state
+  private attackAnimationTime: number = 0;
+  private isAttacking: boolean = false;
 
   // Colors for tiles
   private readonly TILE_COLORS: Record<string, string> = {
@@ -124,11 +129,20 @@ export class GameRenderer {
     worldState: WorldState | null,
     players: Record<string, PlayerState>,
     items: WorldItem[],
+    enemies: EnemyState[],
     localPlayer: PlayerState | null,
     deltaTime: number
   ): void {
     // Update animation time
     this.animationTime += deltaTime * 1000;
+
+    // Update attack animation
+    if (this.attackAnimationTime > 0) {
+      this.attackAnimationTime -= deltaTime * 1000;
+      if (this.attackAnimationTime <= 0) {
+        this.isAttacking = false;
+      }
+    }
 
     // Update camera
     this.updateCamera(localPlayer, worldState?.bounds);
@@ -150,6 +164,7 @@ export class GameRenderer {
     }
 
     this.renderItems(items);
+    this.renderEnemies(enemies);
     this.renderPlayers(players, localPlayer?.id);
 
     // Restore context
@@ -329,6 +344,108 @@ export class GameRenderer {
   }
 
   /**
+   * Render all enemies
+   */
+  private renderEnemies(enemies: EnemyState[]): void {
+    // Debug: log enemy count occasionally
+    if (Math.random() < 0.01) {
+      console.log('[GameRenderer] Rendering enemies:', enemies.length, enemies);
+    }
+
+    if (!enemies || enemies.length === 0) return;
+
+    const bounds = this.getVisibleBounds();
+
+    // Sort by Y for depth sorting
+    const sortedEnemies = [...enemies].sort((a, b) => a.y - b.y);
+
+    sortedEnemies.forEach(enemy => {
+      // Skip if not in view
+      if (enemy.x < bounds.left - 50 || enemy.x > bounds.right + 50 ||
+          enemy.y < bounds.top - 50 || enemy.y > bounds.bottom + 50) {
+        return;
+      }
+
+      this.renderEnemy(enemy);
+    });
+  }
+
+  /**
+   * Render a single enemy
+   */
+  private renderEnemy(enemy: EnemyState): void {
+    const size = this.config.spriteSize;
+    const x = enemy.x;
+    const y = enemy.y;
+
+    // Enemy shadow
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    this.ctx.beginPath();
+    this.ctx.ellipse(x, y + size / 4, size / 3, size / 6, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Enemy body (red/orange slime)
+    const pulse = Math.sin(this.animationTime / 200) * 2;
+    this.ctx.fillStyle = '#e74c3c';
+    this.ctx.beginPath();
+    this.ctx.arc(x, y - size / 4 + pulse, size / 2.5, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Enemy outline
+    this.ctx.strokeStyle = '#c0392b';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y - size / 4 + pulse, size / 2.5, 0, Math.PI * 2);
+    this.ctx.stroke();
+
+    // Enemy eyes (angry look)
+    const eyeY = y - size / 4 + pulse - 2;
+    const eyeOffset = size / 8;
+
+    // White of eyes
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.beginPath();
+    this.ctx.arc(x - eyeOffset, eyeY, 4, 0, Math.PI * 2);
+    this.ctx.arc(x + eyeOffset, eyeY, 4, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Pupils
+    this.ctx.fillStyle = '#000000';
+    this.ctx.beginPath();
+    this.ctx.arc(x - eyeOffset, eyeY + 1, 2, 0, Math.PI * 2);
+    this.ctx.arc(x + eyeOffset, eyeY + 1, 2, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Health bar
+    this.renderHealthBar(x, y - size - 10, enemy.health, enemy.maxHealth, 30);
+  }
+
+  /**
+   * Render a health bar
+   */
+  private renderHealthBar(x: number, y: number, current: number, max: number, width: number): void {
+    // Safety check for undefined values
+    if (current === undefined || max === undefined || max === 0) return;
+
+    const height = 4;
+    const barX = x - width / 2;
+
+    // Background (red)
+    this.ctx.fillStyle = '#c0392b';
+    this.ctx.fillRect(barX, y, width, height);
+
+    // Health (green)
+    const healthWidth = Math.max(0, (current / max) * width);
+    this.ctx.fillStyle = '#27ae60';
+    this.ctx.fillRect(barX, y, healthWidth, height);
+
+    // Border
+    this.ctx.strokeStyle = '#000000';
+    this.ctx.lineWidth = 1;
+    this.ctx.strokeRect(barX, y, width, height);
+  }
+
+  /**
    * Render all players
    */
   private renderPlayers(players: Record<string, PlayerState>, localPlayerId?: string): void {
@@ -369,6 +486,11 @@ export class GameRenderer {
       this.ctx.beginPath();
       this.ctx.arc(x, y - size / 4, size / 2.5 + 2, 0, Math.PI * 2);
       this.ctx.stroke();
+
+      // Attack animation - show attack arc in front of player
+      if (this.isAttacking) {
+        this.renderAttackArc(x, y - size / 4, player.direction);
+      }
     }
 
     // Direction indicator (eyes)
@@ -378,13 +500,59 @@ export class GameRenderer {
     this.ctx.fillStyle = player.color || '#ffffff';
     this.ctx.font = 'bold 12px Arial';
     this.ctx.textAlign = 'center';
-    this.ctx.fillText(player.username, x, y - size - 5);
+    this.ctx.fillText(player.username, x, y - size - 15);
+
+    // Health bar
+    this.renderHealthBar(x, y - size - 8, player.health, player.maxHealth, 40);
 
     // Walking animation (bobbing)
     if (player.velocityX !== 0 || player.velocityY !== 0) {
       const bobOffset = Math.sin(this.animationTime / 100) * 2;
       // Already applied in position calculations above
     }
+  }
+
+  /**
+   * Render attack arc animation
+   */
+  private renderAttackArc(x: number, y: number, direction: string): void {
+    const attackRange = 40;
+    let startAngle = 0;
+    let endAngle = 0;
+
+    switch (direction) {
+      case 'right':
+        startAngle = -Math.PI / 4;
+        endAngle = Math.PI / 4;
+        break;
+      case 'left':
+        startAngle = Math.PI * 3 / 4;
+        endAngle = Math.PI * 5 / 4;
+        break;
+      case 'up':
+        startAngle = -Math.PI * 3 / 4;
+        endAngle = -Math.PI / 4;
+        break;
+      case 'down':
+        startAngle = Math.PI / 4;
+        endAngle = Math.PI * 3 / 4;
+        break;
+    }
+
+    // Draw attack arc
+    this.ctx.strokeStyle = 'rgba(255, 255, 0, 0.8)';
+    this.ctx.lineWidth = 4;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, attackRange, startAngle, endAngle);
+    this.ctx.stroke();
+
+    // Draw attack fill
+    this.ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+    this.ctx.beginPath();
+    this.ctx.moveTo(x, y);
+    this.ctx.arc(x, y, attackRange, startAngle, endAngle);
+    this.ctx.closePath();
+    this.ctx.fill();
   }
 
   /**
@@ -505,6 +673,14 @@ export class GameRenderer {
     // Simple brightness adjustment based on variant
     const adjustment = (variant % 3 - 1) * 10;
     return color; // TODO: Implement actual color adjustment
+  }
+
+  /**
+   * Trigger attack animation
+   */
+  triggerAttack(): void {
+    this.isAttacking = true;
+    this.attackAnimationTime = 200; // 200ms attack animation
   }
 
   /**

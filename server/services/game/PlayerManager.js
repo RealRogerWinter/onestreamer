@@ -15,7 +15,13 @@ class PlayerManager extends EventEmitter {
         // Physics constants
         this.PLAYER_SPEED = 150; // pixels per second
         this.PLAYER_SIZE = 32;
-        this.FRICTION = 0.9;
+
+        // Combat constants
+        this.MAX_HEALTH = 100;
+        this.DAMAGE_COOLDOWN = 500; // ms between taking damage
+        this.ATTACK_DAMAGE = 25;
+        this.ATTACK_RANGE = 40;
+        this.ATTACK_COOLDOWN = 300; // ms between attacks
     }
 
     /**
@@ -39,7 +45,11 @@ class PlayerManager extends EventEmitter {
             inventory: data.inventory || [],
             lastInputSequence: 0,
             lastProcessedInput: 0,
-            joinedAt: Date.now()
+            joinedAt: Date.now(),
+            health: this.MAX_HEALTH,
+            maxHealth: this.MAX_HEALTH,
+            lastDamageTime: 0,
+            lastAttackTime: 0
         };
 
         this.players.set(String(userId), player);
@@ -78,7 +88,7 @@ class PlayerManager extends EventEmitter {
      */
     getPlayerBySocket(socketId) {
         const odId = this.socketToUser.get(socketId);
-        return userId ? this.players.get(userId) : null;
+        return odId ? this.players.get(odId) : null;
     }
 
     /**
@@ -119,7 +129,9 @@ class PlayerManager extends EventEmitter {
             velocityY: Math.round(player.velocityY * 100) / 100,
             direction: player.direction,
             spriteId: player.spriteId,
-            color: player.color
+            color: player.color,
+            health: player.health,
+            maxHealth: player.maxHealth
         };
     }
 
@@ -175,18 +187,6 @@ class PlayerManager extends EventEmitter {
                 player.x += player.velocityX * deltaTime;
                 player.y += player.velocityY * deltaTime;
                 this.modifiedPlayers.add(userId);
-            }
-
-            // Apply friction when no input
-            if (player.targetVelocityX === 0 && player.targetVelocityY === 0) {
-                if (Math.abs(player.velocityX) > 0.1 || Math.abs(player.velocityY) > 0.1) {
-                    player.velocityX *= this.FRICTION;
-                    player.velocityY *= this.FRICTION;
-                    this.modifiedPlayers.add(userId);
-                } else {
-                    player.velocityX = 0;
-                    player.velocityY = 0;
-                }
             }
         });
     }
@@ -252,7 +252,7 @@ class PlayerManager extends EventEmitter {
 
         player.inventory.push(item);
         this.modifiedPlayers.add(String(userId));
-        this.emit('inventory-changed', { odId, item, action: 'add' });
+        this.emit('inventory-changed', { odId: userId, item, action: 'add' });
         return true;
     }
 
@@ -281,6 +281,87 @@ class PlayerManager extends EventEmitter {
 
         player.spriteId = spriteId;
         this.modifiedPlayers.add(String(userId));
+    }
+
+    /**
+     * Apply damage to player
+     * Returns true if player was killed
+     */
+    applyDamage(userId, amount) {
+        const player = this.players.get(String(userId));
+        if (!player) return false;
+
+        const now = Date.now();
+        // Check damage cooldown
+        if (now - player.lastDamageTime < this.DAMAGE_COOLDOWN) {
+            return false;
+        }
+
+        player.lastDamageTime = now;
+        player.health -= amount;
+        this.modifiedPlayers.add(String(userId));
+
+        if (player.health <= 0) {
+            player.health = 0;
+            this.emit('player-killed', player);
+            return true;
+        }
+
+        this.emit('player-damaged', { userId, damage: amount, health: player.health });
+        return false;
+    }
+
+    /**
+     * Heal player
+     */
+    heal(userId, amount) {
+        const player = this.players.get(String(userId));
+        if (!player) return;
+
+        player.health = Math.min(player.health + amount, player.maxHealth);
+        this.modifiedPlayers.add(String(userId));
+        this.emit('player-healed', { userId, amount, health: player.health });
+    }
+
+    /**
+     * Respawn player at spawn point
+     */
+    respawn(userId, spawnPoint) {
+        const player = this.players.get(String(userId));
+        if (!player) return;
+
+        player.x = spawnPoint.x;
+        player.y = spawnPoint.y;
+        player.health = player.maxHealth;
+        player.velocityX = 0;
+        player.velocityY = 0;
+        player.targetVelocityX = 0;
+        player.targetVelocityY = 0;
+        player.lastDamageTime = 0;
+
+        this.modifiedPlayers.add(String(userId));
+        this.emit('player-respawned', player);
+    }
+
+    /**
+     * Check if player can attack (cooldown expired)
+     */
+    canAttack(userId) {
+        const player = this.players.get(String(userId));
+        if (!player) return false;
+
+        const now = Date.now();
+        return now - player.lastAttackTime >= this.ATTACK_COOLDOWN;
+    }
+
+    /**
+     * Mark player as having attacked
+     */
+    markAttacked(userId) {
+        const player = this.players.get(String(userId));
+        if (player) {
+            player.lastAttackTime = Date.now();
+        }
     }
 
     /**
@@ -313,7 +394,9 @@ class PlayerManager extends EventEmitter {
                     velocityX: Math.round(player.velocityX * 100) / 100,
                     velocityY: Math.round(player.velocityY * 100) / 100,
                     direction: player.direction,
-                    lastInputSequence: player.lastInputSequence
+                    lastInputSequence: player.lastInputSequence,
+                    health: player.health,
+                    maxHealth: player.maxHealth
                 };
             }
         });

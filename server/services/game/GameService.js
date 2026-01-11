@@ -5,6 +5,7 @@
 const EventEmitter = require('events');
 const GameLoopManager = require('./GameLoopManager');
 const PlayerManager = require('./PlayerManager');
+const EnemyManager = require('./EnemyManager');
 const WorldManager = require('./WorldManager');
 const CollisionManager = require('./CollisionManager');
 const GameBroadcaster = require('./GameBroadcaster');
@@ -24,6 +25,7 @@ class GameService extends EventEmitter {
         // Initialize managers
         this.worldManager = new WorldManager(db);
         this.playerManager = new PlayerManager(db);
+        this.enemyManager = new EnemyManager();
         this.collisionManager = new CollisionManager();
         this.broadcaster = new GameBroadcaster(io);
         this.gameLoop = new GameLoopManager(this.tick.bind(this));
@@ -37,6 +39,14 @@ class GameService extends EventEmitter {
         };
         this.lastItemSpawn = 0;
         this.worldItems = new Map(); // id -> item
+
+        // Enemy spawning configuration
+        this.enemySpawnConfig = {
+            enabled: true,
+            interval: 15000, // 15 seconds
+            maxEnemies: 2
+        };
+        this.lastEnemySpawn = 0;
 
         console.log('[GameService] Initialized');
     }
@@ -124,8 +134,9 @@ class GameService extends EventEmitter {
                 this.handlePlayerLeave(player.id, player.socketId);
             }
 
-            // Clear items
+            // Clear items and enemies
             this.worldItems.clear();
+            this.enemyManager.clear();
 
             this.isActive = false;
             const sessionId = this.currentSessionId;
@@ -148,46 +159,80 @@ class GameService extends EventEmitter {
         if (!this.isActive) return;
 
         try {
+            const bounds = this.worldManager.getBounds();
+            const players = this.playerManager.getAllPlayers();
+            const enemies = this.enemyManager.getAllEnemies();
+
             // 1. Update physics for all players
             this.playerManager.updatePhysics(deltaTime);
 
-            // 2. Clamp players to world bounds
-            const bounds = this.worldManager.getBounds();
-            for (const player of this.playerManager.getAllPlayers()) {
+            // 2. Update enemy AI and physics
+            this.enemyManager.updateAI(players, deltaTime);
+            this.enemyManager.updatePhysics(deltaTime);
+
+            // 3. Clamp players to world bounds
+            for (const player of players) {
                 this.playerManager.clampToWorld(player.id, bounds);
             }
 
-            // 3. Check collisions
+            // 4. Check enemy-wall collisions and resolve them
+            const collidables = this.worldManager.getCollidables();
+            for (const enemy of enemies) {
+                const enemyWallCollision = this.collisionManager.checkEnemyWallCollisions(enemy, collidables);
+                if (enemyWallCollision) {
+                    this.enemyManager.resolveCollision(enemy.id, enemyWallCollision);
+                }
+            }
+
+            // 5. Clamp enemies to world bounds
+            for (const enemy of enemies) {
+                this.enemyManager.clampToWorld(enemy.id, bounds);
+            }
+
+            // 6. Check player collisions
             const collisions = this.collisionManager.checkAll(
-                this.playerManager.getAllPlayers(),
+                players,
                 this.worldManager.getCollidables(),
                 Array.from(this.worldItems.values())
             );
 
-            // 4. Handle collisions
+            // 6. Handle collisions
             this.handleCollisions(collisions);
 
-            // 5. Spawn items periodically
+            // 7. Check enemy-player collisions for damage
+            const enemyCollisions = this.collisionManager.checkEnemyCollisions(players, enemies);
+            this.handleEnemyCollisions(enemyCollisions);
+
+            // 8. Spawn items periodically
             this.updateItemSpawns(deltaTime);
 
-            // 6. Broadcast state delta (every tick)
+            // 9. Spawn enemies periodically
+            this.updateEnemySpawns(deltaTime);
+
+            // Debug: Log enemy count every 100 ticks (5 seconds)
+            if (tickCount % 100 === 0) {
+                console.log('[GameService] Tick', tickCount, '- Players:', this.playerManager.getPlayerCount(), 'Enemies:', this.enemyManager.getEnemyCount());
+            }
+
+            // 10. Broadcast state delta (every tick)
             const stateDelta = this.getStateDelta();
             if (stateDelta.hasChanges) {
                 this.broadcaster.broadcastDelta(stateDelta);
             }
 
-            // 7. Send individual player states for reconciliation (every 3 ticks)
+            // 11. Send individual player states for reconciliation (every 3 ticks)
             if (tickCount % 3 === 0) {
                 for (const player of this.playerManager.getModifiedPlayers()) {
                     this.broadcaster.sendPlayerState(player);
                 }
             }
 
-            // 8. Clear modification flags
+            // 12. Clear modification flags
             this.playerManager.clearModificationFlags();
+            this.enemyManager.clearModificationFlags();
             this.worldManager.clearChanges();
 
-            // 9. Update peak player count
+            // 13. Update peak player count
             const currentCount = this.playerManager.getPlayerCount();
             if (currentCount > this.peakPlayers) {
                 this.peakPlayers = currentCount;
@@ -303,7 +348,7 @@ class GameService extends EventEmitter {
     }
 
     /**
-     * Handle player action (interact, use item, etc.)
+     * Handle player action (interact, use item, attack, etc.)
      */
     handlePlayerAction(userId, action) {
         const player = this.playerManager.getPlayer(userId);
@@ -316,6 +361,45 @@ class GameService extends EventEmitter {
             case 'use-item':
                 this.handleItemUse(userId, action.itemId);
                 break;
+            case 'primary':
+                this.handlePlayerAttack(userId);
+                break;
+        }
+    }
+
+    /**
+     * Handle player attack
+     */
+    handlePlayerAttack(userId) {
+        console.log('[GameService] Player attack triggered by:', userId);
+        const player = this.playerManager.getPlayer(userId);
+        if (!player) {
+            console.log('[GameService] Player not found for attack');
+            return;
+        }
+
+        // Check attack cooldown
+        if (!this.playerManager.canAttack(userId)) {
+            console.log('[GameService] Attack on cooldown');
+            return;
+        }
+
+        // Mark as attacked
+        this.playerManager.markAttacked(userId);
+        console.log('[GameService] Attack executed, checking for enemies');
+
+        // Check for enemies in attack range
+        const enemies = this.enemyManager.getAllEnemies();
+        const hits = this.collisionManager.checkAttackHits(player, enemies);
+
+        // Apply damage to hit enemies
+        for (const enemyId of hits) {
+            const killed = this.enemyManager.applyDamage(enemyId, this.playerManager.ATTACK_DAMAGE);
+            if (killed) {
+                // Broadcast enemy killed
+                this.broadcaster.broadcastToRoom('game-players', 'game:enemy-killed', { enemyId });
+                this.emit('enemy-killed', { playerId: userId, enemyId });
+            }
         }
     }
 
@@ -376,6 +460,86 @@ class GameService extends EventEmitter {
                 this.emit('item-pickup', { playerId, item: pickedItem });
             }
         }
+    }
+
+    /**
+     * Handle enemy-player collisions (enemies damage players)
+     */
+    handleEnemyCollisions(collisions) {
+        for (const { playerId, enemyId, enemy } of collisions) {
+            // Check if enemy can attack
+            if (!this.enemyManager.canAttack(enemyId)) continue;
+
+            // Apply damage to player
+            const killed = this.playerManager.applyDamage(playerId, enemy.damage);
+            this.enemyManager.markAttacked(enemyId);
+
+            // Broadcast damage
+            this.broadcaster.broadcastToRoom('game-players', 'game:player-damaged', {
+                playerId,
+                damage: enemy.damage,
+                health: this.playerManager.getPlayer(playerId)?.health || 0
+            });
+
+            if (killed) {
+                // Respawn player
+                const spawnPoint = this.worldManager.getRandomSpawnPoint();
+                this.playerManager.respawn(playerId, spawnPoint);
+
+                this.broadcaster.broadcastToRoom('game-players', 'game:player-respawned', {
+                    playerId,
+                    x: spawnPoint.x,
+                    y: spawnPoint.y
+                });
+            }
+        }
+    }
+
+    /**
+     * Update enemy spawning
+     */
+    updateEnemySpawns(deltaTime) {
+        if (!this.enemySpawnConfig.enabled) return;
+
+        const now = Date.now();
+        if (now - this.lastEnemySpawn < this.enemySpawnConfig.interval) return;
+        if (this.enemyManager.getEnemyCount() >= this.enemySpawnConfig.maxEnemies) return;
+        if (this.playerManager.getPlayerCount() === 0) return; // No players, no enemies
+
+        console.log('[GameService] Spawning enemy...');
+        // Spawn a slime enemy
+        const enemy = this.spawnEnemy('slime');
+        if (enemy) {
+            console.log('[GameService] Enemy spawned:', enemy.id, 'at', enemy.x, enemy.y);
+            this.lastEnemySpawn = now;
+        }
+    }
+
+    /**
+     * Spawn an enemy in the world
+     */
+    spawnEnemy(type) {
+        const bounds = this.worldManager.getBounds();
+
+        // Find a walkable position away from players
+        let attempts = 0;
+        let x, y;
+        do {
+            x = Math.random() * (bounds.width - 100) + 50;
+            y = Math.random() * (bounds.height - 100) + 50;
+            attempts++;
+        } while (!this.worldManager.isWalkable(x, y) && attempts < 20);
+
+        if (attempts >= 20) return null;
+
+        const enemy = this.enemyManager.spawnEnemy(type, x, y);
+
+        // Broadcast enemy spawned
+        this.broadcaster.broadcastToRoom('game-players', 'game:enemy-spawned', {
+            enemy: this.enemyManager.getEnemyPublicState(enemy)
+        });
+
+        return enemy;
     }
 
     /**
@@ -445,10 +609,13 @@ class GameService extends EventEmitter {
      * Get full game state (for new players)
      */
     getFullState() {
+        const enemies = this.enemyManager.getAllEnemiesState();
+        console.log('[GameService] getFullState - enemies:', enemies.length, enemies);
         return {
             players: this.playerManager.getAllPlayersState(),
             world: this.worldManager.getFullState(),
             items: Array.from(this.worldItems.values()),
+            enemies: enemies,
             sessionId: this.currentSessionId,
             startedAt: this.startedAt
         };
@@ -460,12 +627,14 @@ class GameService extends EventEmitter {
     getStateDelta() {
         const playerDelta = this.playerManager.getDelta();
         const worldDelta = this.worldManager.getDelta();
+        const enemyDelta = this.enemyManager.getDelta();
 
         return {
-            hasChanges: Object.keys(playerDelta).length > 0 || worldDelta.length > 0,
+            hasChanges: Object.keys(playerDelta).length > 0 || worldDelta.length > 0 || enemyDelta.length > 0,
             playerUpdates: playerDelta,
             worldChanges: worldDelta,
-            itemUpdates: [] // Could add item updates here
+            itemUpdates: [],
+            enemyUpdates: enemyDelta
         };
     }
 

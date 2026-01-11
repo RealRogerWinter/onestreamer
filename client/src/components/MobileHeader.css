@@ -207,6 +207,27 @@
   color: rgba(255, 255, 255, 0.85);
 }
 
+/* Countdown Timer Section */
+.countdown-stat .stat-pill {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.countdown-stat .stat-value {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: 12px;
+  color: #c4b5fd;
+}
+
+.countdown-stat.countdown-locked .stat-pill {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.countdown-stat.countdown-locked .stat-value {
+  color: #fcd34d;
+}
+
 /* User Profile Section */
 .header-user-section {
   position: relative;
@@ -564,6 +585,119 @@
   .duration-stat {
     display: none; /* Hide duration on very small screens */
   }
+
+  .countdown-stat {
+    display: none; /* Hide countdown on very small screens */
+  }
+}
+
+/* Medium-small screens - compact countdown */
+@media (max-width: 380px) {
+  .countdown-stat .stat-pill {
+    padding: 5px 6px;
+  }
+
+  .countdown-stat .stat-value {
+    font-size: 11px;
+  }
+
+  .countdown-stat .stat-icon {
+    font-size: 12px;
+  }
+}
+
+/* Mobile Streamer Tooltip */
+.streamer-stat {
+  position: relative;
+  cursor: pointer;
+}
+
+.mobile-streamer-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 15, 20, 0.98);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 10px;
+  padding: 12px 16px;
+  min-width: 200px;
+  max-width: 280px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(139, 92, 246, 0.15);
+  z-index: 10000;
+  animation: mobileTooltipFadeIn 0.2s ease;
+  backdrop-filter: blur(10px);
+}
+
+.mobile-streamer-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 6px solid rgba(139, 92, 246, 0.3);
+}
+
+@keyframes mobileTooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.mobile-streamer-tooltip .tooltip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mobile-streamer-tooltip .tooltip-platform {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.mobile-streamer-tooltip .tooltip-external-link {
+  font-size: 0.75rem;
+  color: #8b5cf6;
+  text-decoration: none;
+  padding: 4px 8px;
+  background: rgba(139, 92, 246, 0.15);
+  border-radius: 4px;
+}
+
+.mobile-streamer-tooltip .tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  gap: 16px;
+}
+
+.mobile-streamer-tooltip .tooltip-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.mobile-streamer-tooltip .tooltip-value {
+  font-size: 0.8rem;
+  color: #fff;
+  font-weight: 500;
+  text-align: right;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Safe area padding for notched devices */

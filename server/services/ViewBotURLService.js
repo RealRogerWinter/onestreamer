@@ -13,6 +13,7 @@ const EventEmitter = require('events');
 const URLStreamExtractorService = require('./URLStreamExtractorService');
 const StreamProbeService = require('./StreamProbeService');
 const AdaptiveEncodingSettings = require('./AdaptiveEncodingSettings');
+const KickRandomService = require('./KickRandomService');
 const webrtcConfig = require('../config/webrtc.config');
 
 class ViewBotURLService extends EventEmitter {
@@ -25,6 +26,7 @@ class ViewBotURLService extends EventEmitter {
     this.streamService = null;
     this.livekitService = null;
     this.viewBotClientService = null; // For real streamer protection
+    this.kickService = new KickRandomService(); // For Kick token refresh
 
     // Adaptive encoding settings - configured per backend
     this.adaptiveSettings = null; // Initialized after backend detection
@@ -402,7 +404,8 @@ class ViewBotURLService extends EventEmitter {
     const {
       quality = 'best',
       displayName = null,
-      autoReconnect = true
+      autoReconnect = true,
+      kickUsername = null  // Kick username for token refresh
     } = options;
 
     // CRITICAL: Mutex to prevent concurrent stream starts
@@ -436,12 +439,12 @@ class ViewBotURLService extends EventEmitter {
 
       console.log(`🚀 Starting URL stream: ${urlId}`);
 
-      // CRITICAL: Clean up ALL existing URL stream ingresses and participants FIRST
-      // This ensures 100% that no orphaned URL streams are left running
-      console.log('🧹 URL STREAM: Running comprehensive cleanup before starting new stream...');
-      await this._cleanupAllURLStreamIngresses();
-      // Wait for LiveKit to process the cleanup
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Run cleanup in background - don't block new stream startup
+      // Pass the new urlId to exclude it from cleanup (prevent killing the new stream)
+      console.log('🧹 URL STREAM: Running cleanup in background...');
+      this._cleanupAllURLStreamIngresses(urlId).catch(err =>
+        console.error('⚠️ Background cleanup error:', err.message)
+      );
       console.log(`   URL: ${url}`);
       console.log(`   Quality: ${quality}`);
 
@@ -462,8 +465,7 @@ class ViewBotURLService extends EventEmitter {
       if (this.activeStreams.size > 0) {
         console.log(`🛑 URL STREAM: Stopping ${this.activeStreams.size} existing URL stream(s) before starting new one`);
         await this.stopAllURLStreams();
-        // Small delay to ensure cleanup is complete
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // No delay needed - processes are killed synchronously, ingress cleanup runs in background
       }
 
       // Get stream URL/pipe mode
@@ -500,7 +502,10 @@ class ViewBotURLService extends EventEmitter {
         processes: [],
         autoReconnect,
         reconnectAttempts: 0,
-        maxReconnectAttempts: 3
+        maxReconnectAttempts: 3,
+        kickUsername,         // Kick username for token refresh (null for non-Kick streams)
+        tokenRefreshAttempts: 0,
+        maxTokenRefreshAttempts: 5  // Allow multiple token refreshes per stream
       };
 
       this.activeStreams.set(urlId, streamEntry);
@@ -610,7 +615,7 @@ class ViewBotURLService extends EventEmitter {
     this._setupFFmpegHandlers(urlId, ffmpegProcess);
 
     // Wait for FFmpeg to start producing
-    await this._waitForStream(ffmpegProcess, 10000);
+    await this._waitForStream(ffmpegProcess, 15000);  // 15s timeout for analyzeduration
 
     console.log(`✅ MediaSoup pipeline started for ${urlId}`);
   }
@@ -624,11 +629,12 @@ class ViewBotURLService extends EventEmitter {
 
     console.log(`🎥 Starting LiveKit pipeline for ${urlId}`);
 
-    // Create ingress with bot-like object (createIngress expects bot.id)
-    const ingress = await this.livekitService.createIngress({
-      id: urlId,
-      name: streamEntry.displayName
-    });
+    // Create ingress with bot-like object and encoding settings for adaptive frame rate
+    // Note: RTMP input requires transcoding for WebRTC conversion (can't bypass)
+    const ingress = await this.livekitService.createIngress(
+      { id: urlId, name: streamEntry.displayName },
+      streamEntry.encodingSettings  // Pass adaptive settings for frame rate matching
+    );
 
     if (!ingress || !ingress.streamKey) {
       throw new Error('Failed to create LiveKit ingress - no stream key returned');
@@ -681,7 +687,7 @@ class ViewBotURLService extends EventEmitter {
     }
 
     this._setupFFmpegHandlers(urlId, ffmpegProcess);
-    await this._waitForStream(ffmpegProcess, 10000);
+    await this._waitForStream(ffmpegProcess, 15000);  // 15s timeout for analyzeduration
 
     console.log(`✅ LiveKit pipeline started for ${urlId}`);
   }
@@ -700,10 +706,30 @@ class ViewBotURLService extends EventEmitter {
       vfArg = settings.scale;
     }
 
-    const args = [
-      '-re', // Read input at native frame rate
-      '-i', input,
-    ];
+    const args = [];
+
+    // Input buffer settings for smoother streaming
+    args.push(
+      '-analyzeduration', '3000000',   // 3 seconds - balance between startup speed and stability
+      '-probesize', '10000000',        // 10MB - read more data for format detection
+      '-fflags', '+genpts+discardcorrupt+nobuffer',
+      '-flags', 'low_delay',
+      '-max_delay', '500000'           // 500ms max delay
+    );
+
+    // For direct URLs (not piped), add reconnect options
+    if (input !== '-') {
+      args.push(
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '5'
+      );
+    } else {
+      // For piped input, add thread queue size for better buffering
+      args.push('-thread_queue_size', '4096');
+    }
+
+    args.push('-re', '-i', input);
 
     // Add video filter if needed
     if (vfArg) {
@@ -759,13 +785,27 @@ class ViewBotURLService extends EventEmitter {
 
     const args = [];
 
-    // Input settings
-    args.push('-fflags', '+genpts+discardcorrupt');
+    // Input buffer settings for smoother streaming
+    args.push(
+      '-analyzeduration', '3000000',   // 3 seconds - balance between startup speed and stability
+      '-probesize', '10000000',        // 10MB - read more data for format detection
+      '-fflags', '+genpts+discardcorrupt+nobuffer',
+      '-flags', 'low_delay',
+      '-max_delay', '500000'           // 500ms max delay
+    );
 
-    // Add -re flag for direct HLS/URL inputs (not piped stdin)
+    // Add -re flag and reconnect options for direct HLS/URL inputs (not piped stdin)
     if (input !== '-') {
-      args.push('-re');
-      console.log(`📡 Using -re flag for direct URL input: ${input.substring(0, 60)}...`);
+      args.push(
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '5',
+        '-re'
+      );
+      console.log(`📡 Using -re flag with reconnect for direct URL input: ${input.substring(0, 60)}...`);
+    } else {
+      // For piped input, add thread queue size for better buffering
+      args.push('-thread_queue_size', '4096');
     }
 
     // Input
@@ -827,8 +867,12 @@ class ViewBotURLService extends EventEmitter {
       '-ac', useAdaptive ? String(settings.audioChannels || 2) : '2'
     );
 
-    // Output
-    args.push('-f', 'flv', rtmpUrl);
+    // Output with RTMP optimizations for smoother streaming
+    args.push(
+      '-f', 'flv',
+      '-flvflags', 'no_duration_filesize',  // Don't write duration/filesize (causes issues with live)
+      rtmpUrl
+    );
 
     const logSettings = useAdaptive
       ? `ADAPTIVE ${settings.width}x${settings.height}@${settings.fps}fps ${settings.videoBitrate}kbps`
@@ -891,6 +935,19 @@ class ViewBotURLService extends EventEmitter {
         console.log(`🏁 URL stream ${urlId}: Source stream ended`);
         this._handleStreamEnd(urlId, 'source_ended');
       }
+
+      // CRITICAL: Detect HTTP errors from source stream (403 Forbidden, 404 Not Found, etc.)
+      // These cause FFmpeg to exit with code 0 but the stream is dead
+      const httpErrorMatch = output.match(/HTTP error (\d{3})/);
+      if (httpErrorMatch) {
+        const errorCode = httpErrorMatch[1];
+        console.error(`🚫 URL stream ${urlId}: Source returned HTTP ${errorCode}`);
+        // Mark that we detected an HTTP error - will trigger reconnect on FFmpeg exit
+        const stream = this.activeStreams.get(urlId);
+        if (stream) {
+          stream._httpError = parseInt(errorCode);
+        }
+      }
     });
 
     ffmpegProcess.on('error', (err) => {
@@ -900,31 +957,73 @@ class ViewBotURLService extends EventEmitter {
 
     ffmpegProcess.on('exit', (code, signal) => {
       console.log(`📤 FFmpeg exited for ${urlId} with code ${code}, signal ${signal}`);
+
+      // CRITICAL FIX: Handle code 0 exits that are actually errors
+      // HTTP 403/404 errors cause FFmpeg to exit "successfully" with code 0
+      const stream = this.activeStreams.get(urlId);
+
       if (code !== 0 && code !== null) {
         this._handleStreamError(urlId, 'ffmpeg', new Error(`Exit code ${code}`));
+      } else if (code === 0 && stream && stream.status === 'streaming') {
+        // FFmpeg exited with code 0 but stream was supposed to be running
+        // This happens with HTTP 403, source going offline, etc.
+        const httpError = stream._httpError;
+        if (httpError) {
+          console.log(`🔄 URL stream ${urlId}: FFmpeg exited normally after HTTP ${httpError}, triggering recovery`);
+          this._handleStreamError(urlId, 'ffmpeg', new Error(`Source HTTP error ${httpError}`));
+        } else {
+          console.log(`🔄 URL stream ${urlId}: FFmpeg exited normally while streaming, triggering recovery`);
+          this._handleStreamError(urlId, 'ffmpeg', new Error('Unexpected stream end'));
+        }
       }
     });
   }
 
   /**
    * Wait for FFmpeg to start producing output
+   * Fails fast if FFmpeg exits early (e.g., HTTP 404, connection refused)
    */
   _waitForStream(ffmpegProcess, timeout) {
     return new Promise((resolve, reject) => {
+      let resolved = false;
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        ffmpegProcess.stderr.removeListener('data', checkOutput);
+        ffmpegProcess.removeListener('exit', onExit);
+      };
+
       const timer = setTimeout(() => {
-        reject(new Error('FFmpeg startup timeout'));
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          reject(new Error('FFmpeg startup timeout'));
+        }
       }, timeout);
 
       const checkOutput = (data) => {
         const output = data.toString();
         if (output.includes('frame=') || output.includes('Stream mapping')) {
-          clearTimeout(timer);
-          ffmpegProcess.stderr.removeListener('data', checkOutput);
-          resolve();
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            resolve();
+          }
+        }
+      };
+
+      // CRITICAL: Fail fast if FFmpeg exits before producing output
+      // This happens with HTTP 404/403, connection refused, invalid URLs, etc.
+      const onExit = (code) => {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          reject(new Error(`FFmpeg exited early with code ${code}`));
         }
       };
 
       ffmpegProcess.stderr.on('data', checkOutput);
+      ffmpegProcess.on('exit', onExit);
     });
   }
 
@@ -948,6 +1047,35 @@ class ViewBotURLService extends EventEmitter {
     // CRITICAL: Check if a new stream is starting (mutex check)
     if (this._startingStream) {
       console.log(`⏳ URL STREAM: Ignoring error for ${urlId} - new stream is starting`);
+      return;
+    }
+
+    // CRITICAL: For HTTP 4xx errors (403 Forbidden, 404 Not Found, etc.)
+    // For Kick streams with 403 (token expired), try to refresh the token
+    // For other platforms or non-refreshable errors, end stream immediately
+    const httpError = streamEntry._httpError;
+    if (httpError && httpError >= 400 && httpError < 500) {
+      streamEntry._httpError = null; // Clear the flag
+
+      // Special handling for Kick 403 errors - try token refresh
+      if (httpError === 403 && streamEntry.platform === 'kick' && streamEntry.kickUsername) {
+        if (streamEntry.tokenRefreshAttempts < streamEntry.maxTokenRefreshAttempts) {
+          console.log(`🔄 KICK TOKEN: HTTP 403 detected - attempting token refresh for ${streamEntry.kickUsername} (attempt ${streamEntry.tokenRefreshAttempts + 1}/${streamEntry.maxTokenRefreshAttempts})`);
+
+          // Try to refresh token and restart stream
+          const refreshed = await this._refreshKickTokenAndRestart(urlId, streamEntry);
+          if (refreshed) {
+            return; // Successfully refreshed, don't end stream
+          }
+          // If refresh failed, fall through to end stream
+          console.log(`❌ KICK TOKEN: Token refresh failed, ending stream`);
+        } else {
+          console.log(`🚫 KICK TOKEN: Max token refresh attempts (${streamEntry.maxTokenRefreshAttempts}) reached for ${urlId}`);
+        }
+      }
+
+      console.log(`🚫 URL STREAM: HTTP ${httpError} error - ending stream immediately`);
+      this._handleStreamEnd(urlId, 'http_error');
       return;
     }
 
@@ -1101,6 +1229,101 @@ class ViewBotURLService extends EventEmitter {
   }
 
   /**
+   * Refresh Kick token and restart stream with new playback URL
+   * Used when a Kick stream gets 403 Forbidden (token expired)
+   * @returns {boolean} true if refresh succeeded, false otherwise
+   */
+  async _refreshKickTokenAndRestart(urlId, streamEntry) {
+    try {
+      streamEntry.tokenRefreshAttempts++;
+      streamEntry.status = 'refreshing_token';
+
+      console.log(`🔑 KICK TOKEN: Getting fresh playback URL for ${streamEntry.kickUsername}...`);
+
+      // Get fresh playback URL from Kick
+      const playbackInfo = await this.kickService.getPlaybackUrl(streamEntry.kickUsername);
+
+      if (!playbackInfo || !playbackInfo.playback_url) {
+        console.error(`❌ KICK TOKEN: Failed to get fresh playback URL for ${streamEntry.kickUsername}`);
+        return false;
+      }
+
+      const newPlaybackUrl = playbackInfo.playback_url;
+      console.log(`✅ KICK TOKEN: Got fresh playback URL for ${streamEntry.kickUsername}`);
+
+      // Stop current FFmpeg/streamlink processes
+      console.log(`🛑 KICK TOKEN: Stopping current processes for ${urlId}...`);
+      await this._stopProcesses(streamEntry);
+
+      // Clean up LiveKit ingress before restart
+      if (streamEntry.ingressInfo && this.livekitService) {
+        try {
+          console.log(`🧹 KICK TOKEN: Cleaning up old LiveKit ingress ${streamEntry.ingressInfo.ingressId}`);
+          await this.livekitService.deleteIngress(streamEntry.ingressInfo.ingressId);
+          streamEntry.ingressInfo = null;
+        } catch (err) {
+          console.error(`⚠️ KICK TOKEN: Error cleaning up old ingress:`, err.message);
+        }
+      }
+
+      // Clear health data for fresh grace period
+      if (global.urlStreamHealthService) {
+        console.log(`🏥 KICK TOKEN: Clearing health data for ${urlId}`);
+        global.urlStreamHealthService.clearHealthData(urlId);
+      }
+
+      // Update stream entry with new URL
+      streamEntry.sourceUrl = newPlaybackUrl;
+
+      // Update streamInfo for direct HLS playback
+      streamEntry.streamInfo = {
+        mode: 'direct',
+        url: newPlaybackUrl
+      };
+
+      // Small delay to let cleanup complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Verify stream is still in activeStreams
+      if (!this.activeStreams.has(urlId)) {
+        console.log(`⚠️ KICK TOKEN: Stream ${urlId} was removed during token refresh, aborting`);
+        return false;
+      }
+
+      // Restart the stream with fresh URL
+      console.log(`🚀 KICK TOKEN: Restarting stream with fresh URL...`);
+
+      try {
+        if (this.backend === 'livekit' && this.livekitService) {
+          await this._startLiveKitStream(urlId, streamEntry);
+        } else {
+          await this._startMediaSoupStream(urlId, streamEntry);
+        }
+
+        streamEntry.status = 'streaming';
+        console.log(`✅ KICK TOKEN: Successfully refreshed and restarted stream ${urlId}`);
+
+        // Re-register as current streamer
+        if (this.streamService) {
+          console.log(`📢 KICK TOKEN: Re-registering ${urlId} as current streamer`);
+          this.streamService.setStreamer(urlId);
+        }
+        if (global.mediasoupService) {
+          global.mediasoupService.currentStreamer = urlId;
+        }
+
+        return true;
+      } catch (restartError) {
+        console.error(`❌ KICK TOKEN: Failed to restart stream: ${restartError.message}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`❌ KICK TOKEN: Error during token refresh: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
    * Stop all processes for a stream
    * Properly waits for process termination with fallback to SIGKILL
    */
@@ -1250,8 +1473,9 @@ class ViewBotURLService extends EventEmitter {
    * CRITICAL: Clean up ALL URL stream ingresses and participants from LiveKit
    * This handles orphaned streams that aren't tracked in activeStreams
    * (e.g., from server restarts or failed cleanup)
+   * @param {string} excludeUrlId - Optional URL ID to exclude from cleanup (for the new stream being started)
    */
-  async _cleanupAllURLStreamIngresses() {
+  async _cleanupAllURLStreamIngresses(excludeUrlId = null) {
     if (!this.livekitService) {
       console.log('⚠️ URL STREAM CLEANUP: No LiveKit service, skipping ingress cleanup');
       return;
@@ -1276,14 +1500,20 @@ class ViewBotURLService extends EventEmitter {
       );
 
       // 1. List and delete ALL url-stream AND viewbot ingresses
-      console.log('🧹 URL STREAM CLEANUP: Listing all ingresses...');
+      console.log(`🧹 URL STREAM CLEANUP: Listing all ingresses...${excludeUrlId ? ` (excluding ${excludeUrlId})` : ''}`);
       const allIngresses = await ingressClient.listIngress({ roomName });
 
-      // Find URL stream ingresses
-      const urlStreamIngresses = allIngresses.filter(ing =>
-        ing.participantIdentity?.startsWith('url-stream-') ||
-        ing.name?.includes('url-stream')
-      );
+      // Find URL stream ingresses (excluding the one we're starting)
+      const urlStreamIngresses = allIngresses.filter(ing => {
+        const isUrlStream = ing.participantIdentity?.startsWith('url-stream-') ||
+          ing.name?.includes('url-stream');
+        // If excludeUrlId is set, skip ingresses that match
+        if (excludeUrlId && (ing.participantIdentity === excludeUrlId || ing.name?.includes(excludeUrlId))) {
+          console.log(`🔒 URL STREAM CLEANUP: Preserving ingress for new stream: ${ing.participantIdentity}`);
+          return false;
+        }
+        return isUrlStream;
+      });
 
       // Find viewbot ingresses (they should be stopped when URL stream starts)
       const viewbotIngresses = allIngresses.filter(ing =>
@@ -1313,12 +1543,18 @@ class ViewBotURLService extends EventEmitter {
         }
       }
 
-      // 2. Remove ALL url-stream participants from the room
+      // 2. Remove ALL url-stream participants from the room (excluding the new stream)
       console.log('🧹 URL STREAM CLEANUP: Listing room participants...');
       const participants = await roomClient.listParticipants(roomName);
-      const urlStreamParticipants = participants.filter(p =>
-        p.identity?.startsWith('url-stream-')
-      );
+      const urlStreamParticipants = participants.filter(p => {
+        if (!p.identity?.startsWith('url-stream-')) return false;
+        // If excludeUrlId is set, skip the new stream's participant
+        if (excludeUrlId && p.identity === excludeUrlId) {
+          console.log(`🔒 URL STREAM CLEANUP: Preserving participant for new stream: ${p.identity}`);
+          return false;
+        }
+        return true;
+      });
 
       console.log(`🧹 URL STREAM CLEANUP: Found ${urlStreamParticipants.length} URL stream participants to remove`);
 
@@ -1347,9 +1583,14 @@ class ViewBotURLService extends EventEmitter {
         }
       }
 
-      // 4. CRITICAL: Stop all LOCAL processes (FFmpeg, streamlink) for tracked streams
+      // 4. CRITICAL: Stop all LOCAL processes (FFmpeg, streamlink) for tracked streams (excluding new stream)
       console.log('🧹 URL STREAM CLEANUP: Stopping local processes for tracked streams...');
       for (const [urlId, streamEntry] of this.activeStreams) {
+        // Skip the new stream we're starting
+        if (excludeUrlId && urlId === excludeUrlId) {
+          console.log(`🔒 URL STREAM CLEANUP: Preserving processes for new stream: ${urlId}`);
+          continue;
+        }
         if (streamEntry.processes && streamEntry.processes.length > 0) {
           console.log(`🛑 URL STREAM CLEANUP: Stopping ${streamEntry.processes.length} processes for ${urlId}`);
           await this._stopProcesses(streamEntry);
@@ -1358,28 +1599,42 @@ class ViewBotURLService extends EventEmitter {
 
       // 5. SAFETY NET: Kill any orphaned ffmpeg/streamlink processes by pattern
       // This catches processes that weren't properly tracked
-      console.log('🧹 URL STREAM CLEANUP: Killing any orphaned streaming processes...');
-      try {
-        const { exec } = require('child_process');
-        await new Promise((resolve) => {
-          exec('pkill -9 -f "ffmpeg.*rtmp://127.0.0.1:1935"', (err) => {
-            if (!err) console.log('🗑️ URL STREAM CLEANUP: Killed orphaned FFmpeg RTMP processes');
-            resolve();
+      // IMPORTANT: Skip pkill if we're preserving a stream - pkill would kill ALL processes including the new one
+      if (!excludeUrlId) {
+        console.log('🧹 URL STREAM CLEANUP: Killing any orphaned streaming processes...');
+        try {
+          const { exec } = require('child_process');
+          await new Promise((resolve) => {
+            exec('pkill -9 -f "ffmpeg.*rtmp://127.0.0.1:1935"', (err) => {
+              if (!err) console.log('🗑️ URL STREAM CLEANUP: Killed orphaned FFmpeg RTMP processes');
+              resolve();
+            });
           });
-        });
-        await new Promise((resolve) => {
-          exec('pkill -9 -f "streamlink.*twitch|streamlink.*kick"', (err) => {
-            if (!err) console.log('🗑️ URL STREAM CLEANUP: Killed orphaned streamlink processes');
-            resolve();
+          await new Promise((resolve) => {
+            exec('pkill -9 -f "streamlink.*twitch|streamlink.*kick"', (err) => {
+              if (!err) console.log('🗑️ URL STREAM CLEANUP: Killed orphaned streamlink processes');
+              resolve();
+            });
           });
-        });
-      } catch (err) {
-        console.error('⚠️ URL STREAM CLEANUP: Error killing orphaned processes:', err.message);
+        } catch (err) {
+          console.error('⚠️ URL STREAM CLEANUP: Error killing orphaned processes:', err.message);
+        }
+      } else {
+        console.log('🔒 URL STREAM CLEANUP: Skipping pkill to preserve new stream processes');
       }
 
-      // 6. Clear local tracking
-      this.activeStreams.clear();
-      console.log('✅ URL STREAM CLEANUP: Complete - all URL streams, processes, and viewbots cleaned up');
+      // 6. Clear local tracking (but preserve excluded stream entry)
+      if (excludeUrlId) {
+        const preservedEntry = this.activeStreams.get(excludeUrlId);
+        this.activeStreams.clear();
+        if (preservedEntry) {
+          this.activeStreams.set(excludeUrlId, preservedEntry);
+          console.log(`🔒 URL STREAM CLEANUP: Preserved activeStream entry for ${excludeUrlId}`);
+        }
+      } else {
+        this.activeStreams.clear();
+      }
+      console.log('✅ URL STREAM CLEANUP: Complete - old URL streams, processes, and viewbots cleaned up');
 
     } catch (error) {
       console.error('❌ URL STREAM CLEANUP: Error during cleanup:', error.message);

@@ -16,6 +16,14 @@ interface MobileHeaderProps {
   randomRotationPlatform?: string | null;
   randomRotationStreamerUrl?: string | null;
   randomRotationStreamerUsername?: string | null;
+  randomRotationGame?: string | null;
+  randomRotationViewers?: number | null;
+
+  // Rotation timing (for countdown)
+  nextRotationAt?: number | null;
+  currentRotationDuration?: number | null;
+  isRotationLocked?: boolean;
+  lockedRemainingMs?: number | null;
 
   // Auth & User
   isAuthenticated: boolean;
@@ -47,6 +55,12 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
   randomRotationPlatform,
   randomRotationStreamerUrl,
   randomRotationStreamerUsername,
+  randomRotationGame,
+  randomRotationViewers,
+  nextRotationAt,
+  currentRotationDuration,
+  isRotationLocked = false,
+  lockedRemainingMs,
   isAuthenticated,
   currentUser,
   userPoints = 0,
@@ -63,6 +77,8 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
 }) => {
   const [streamDuration, setStreamDuration] = useState(initialDuration);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showStreamerTooltip, setShowStreamerTooltip] = useState(false);
+  const [countdownRemaining, setCountdownRemaining] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const hamburgerRef = useRef<HTMLDivElement>(null);
   const menuHistoryRef = useRef<boolean>(false);
@@ -80,6 +96,35 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
       setStreamDuration(0);
     }
   }, [hasActiveStream, streamStartTime]);
+
+  // Update countdown timer for rotation
+  useEffect(() => {
+    if (!isRandomRotation) {
+      setCountdownRemaining(null);
+      return;
+    }
+
+    // If locked, show locked remaining time
+    if (isRotationLocked && lockedRemainingMs !== null && lockedRemainingMs !== undefined) {
+      setCountdownRemaining(lockedRemainingMs);
+      return;
+    }
+
+    if (!nextRotationAt) {
+      setCountdownRemaining(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = nextRotationAt - Date.now();
+      setCountdownRemaining(remaining > 0 ? remaining : 0);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 100);
+
+    return () => clearInterval(interval);
+  }, [isRandomRotation, nextRotationAt, isRotationLocked, lockedRemainingMs]);
 
   // Close user menu when clicking outside
   useEffect(() => {
@@ -143,6 +188,13 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
     return `${minutes}:${(seconds % 60).toString().padStart(2, '0')}`;
   };
 
+  const formatCountdown = (milliseconds: number): string => {
+    const totalSeconds = Math.ceil(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   const getUserInitial = () => {
     if (currentUser?.username) {
       return currentUser.username.charAt(0).toUpperCase();
@@ -188,8 +240,25 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
             </div>
           </div>
 
+          {/* Countdown Timer - Only show during random rotation */}
+          {isRandomRotation && (
+            <div className={`header-stat countdown-stat ${isRotationLocked ? 'countdown-locked' : ''}`}>
+              <div className="stat-pill countdown-pill">
+                <span className="stat-icon">{isRotationLocked ? '🔒' : '⏭'}</span>
+                <span className="stat-value countdown-value">
+                  {countdownRemaining !== null && countdownRemaining > 0
+                    ? formatCountdown(countdownRemaining)
+                    : '--:--'}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Streamer Section - Center */}
-          <div className="header-stat streamer-stat">
+          <div
+            className="header-stat streamer-stat"
+            onClick={() => hasActiveStream && setShowStreamerTooltip(!showStreamerTooltip)}
+          >
             {hasActiveStream ? (
               <div className="streamer-info">
                 <span className="live-badge">LIVE</span>
@@ -199,17 +268,11 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
                   </span>
                 )}
                 {isRandomRotation && randomRotationStreamerUrl && randomRotationStreamerUsername ? (
-                  <a
-                    href={randomRotationStreamerUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="streamer-name streamer-link-mobile"
-                    title={`Watch on ${randomRotationPlatform === 'kick' ? 'Kick' : 'Twitch'}`}
-                  >
+                  <span className="streamer-name streamer-link-mobile">
                     {randomRotationStreamerUsername.length > 10
                       ? randomRotationStreamerUsername.substring(0, 8) + '...'
                       : randomRotationStreamerUsername}
-                  </a>
+                  </span>
                 ) : (
                   <span className="streamer-name">{getDisplayName()}</span>
                 )}
@@ -217,6 +280,61 @@ const MobileHeader: React.FC<MobileHeaderProps> = ({
             ) : (
               <div className="offline-status">
                 <span className="offline-badge">OFFLINE</span>
+              </div>
+            )}
+            {/* Streamer Tooltip */}
+            {showStreamerTooltip && hasActiveStream && (
+              <div className="mobile-streamer-tooltip">
+                {isRandomRotation ? (
+                  <>
+                    <div className="tooltip-header">
+                      <span className="tooltip-platform">
+                        {randomRotationPlatform === 'kick' ? '🟢 Kick' : '🟣 Twitch'}
+                      </span>
+                      {randomRotationStreamerUrl && (
+                        <a
+                          href={randomRotationStreamerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="tooltip-external-link"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Open ↗
+                        </a>
+                      )}
+                    </div>
+                    <div className="tooltip-row">
+                      <span className="tooltip-label">Streamer:</span>
+                      <span className="tooltip-value">{randomRotationStreamerUsername}</span>
+                    </div>
+                    {randomRotationGame && (
+                      <div className="tooltip-row">
+                        <span className="tooltip-label">Playing:</span>
+                        <span className="tooltip-value">{randomRotationGame}</span>
+                      </div>
+                    )}
+                    {randomRotationViewers !== null && randomRotationViewers !== undefined && (
+                      <div className="tooltip-row">
+                        <span className="tooltip-label">Viewers:</span>
+                        <span className="tooltip-value">{randomRotationViewers.toLocaleString()}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="tooltip-header">
+                      <span className="tooltip-platform">🔴 Live on OneStreamer</span>
+                    </div>
+                    <div className="tooltip-row">
+                      <span className="tooltip-label">Streamer:</span>
+                      <span className="tooltip-value">{streamerDisplayName}</span>
+                    </div>
+                    <div className="tooltip-row">
+                      <span className="tooltip-label">Live for:</span>
+                      <span className="tooltip-value">{formatDuration(streamDuration)}</span>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

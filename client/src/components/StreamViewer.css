@@ -401,6 +401,58 @@
   }
 }
 
+/* Mobile Landscape Mode - Full screen video */
+@media (max-width: 932px) and (orientation: landscape) {
+  .stream-viewer {
+    /* Fill entire available space in landscape */
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    aspect-ratio: unset !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: #000 !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    /* iOS fixes */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+
+  .streaming-view,
+  .viewing-mode {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+  }
+
+  .local-video,
+  .remote-video,
+  .hls-remote-video,
+  .hls-video {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    object-fit: contain !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .no-stream {
+    min-height: 100% !important;
+    height: 100% !important;
+  }
+
+  /* Hide indicators in landscape - they're in the overlay */
+  .streaming-indicator,
+  .viewer-indicator {
+    display: none !important;
+  }
+}
+
 /* Custom video controls styling */
 .video-controls input[type="range"] {
   -webkit-appearance: none;

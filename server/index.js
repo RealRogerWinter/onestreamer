@@ -56,6 +56,9 @@ const ClipStorageService = require('./services/ClipStorageService');
 const ClipProcessorService = require('./services/ClipProcessorService');
 const ClipService = require('./services/ClipService');
 const ContinuousRecordingService = require('./services/ContinuousRecordingService');
+const SessionChatCaptureService = require('./services/SessionChatCaptureService');
+const RecordingUploadScheduler = require('./services/RecordingUploadScheduler');
+const RecordingCleanupScheduler = require('./services/RecordingCleanupScheduler');
 const TranscriptionService = require('./services/TranscriptionService');
 const IPBanService = require('./services/IPBanService');
 const { GameService, GameStreamService } = require('./services/game');
@@ -72,6 +75,7 @@ const streambotRoutes = require('./routes/streambot');
 let viewbotApiRoutes;
 const bugReportsRoutes = require('./routes/bug-reports');
 const clipsRoutes = require('./routes/clips');
+const adminRecordingsRoutes = require('./routes/admin-recordings');
 const database = require('./database/database');
 const { runAsync, getAsync, allAsync } = database;
 
@@ -367,6 +371,7 @@ app.use('/api/chatbots', chatbotRoutes);
 app.use('/api/streambot', streambotRoutes);
 app.use('/api/bug-reports', bugReportsRoutes);
 app.use('/api/clips', clipsRoutes);
+app.use('/admin/review', adminRecordingsRoutes);
 
 // Tutorial API endpoints
 app.get('/api/tutorial', (req, res) => {
@@ -764,6 +769,42 @@ const continuousRecordingService = new ContinuousRecordingService({
 });
 
 const clipService = new ClipService(database, clipStorageService, clipProcessorService, continuousRecordingService);
+
+// Initialize Admin Recording Review services
+const sessionChatCaptureService = new SessionChatCaptureService({
+  chatServiceUrl: process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444'
+});
+
+const recordingUploadScheduler = new RecordingUploadScheduler({
+  localBufferHours: 2
+});
+
+const recordingCleanupScheduler = new RecordingCleanupScheduler();
+
+// Wire up services
+adminRecordingsRoutes.setServices({
+  uploadScheduler: recordingUploadScheduler,
+  cleanupScheduler: recordingCleanupScheduler,
+  chatCaptureService: sessionChatCaptureService,
+  clipService: clipService
+});
+
+// Listen for recording events to trigger chat capture and upload scheduling
+continuousRecordingService.on('recording-started', (event) => {
+  console.log(`📝 ADMIN REVIEW: Recording started - ${event.sessionId}`);
+  sessionChatCaptureService.startCapturing(event.sessionId, event.startTime);
+});
+
+continuousRecordingService.on('recording-stopped', (event) => {
+  console.log(`📝 ADMIN REVIEW: Recording stopped - ${event.sessionId}`);
+  sessionChatCaptureService.stopCapturing(event.sessionId);
+  recordingUploadScheduler.scheduleUpload(event.sessionId, event.endTime);
+});
+
+// Start schedulers
+recordingUploadScheduler.start();
+recordingCleanupScheduler.start();
+console.log('📹 ADMIN REVIEW: Recording review services initialized');
 
 // Connect clip processor to clip service for status updates
 clipProcessorService.setProcessedCallback(async (clipId, result) => {
@@ -6307,8 +6348,23 @@ io.on('connection', async (socket) => {
       if (rotationStatus.enabled && rotationStatus.currentStream) {
         socket.emit('random-rotation-status', {
           enabled: true,
-          currentStream: rotationStatus.currentStream
+          currentStream: rotationStatus.currentStream,
+          rotationTiming: rotationStatus.rotationTiming ? {
+            nextRotationAt: rotationStatus.rotationTiming.nextRotationAt,
+            currentRotationDuration: rotationStatus.rotationTiming.currentRotationDuration,
+            serverTime: Date.now()
+          } : null
         });
+
+        // Send lock state if rotation is locked
+        const lockStatus = global.randomStreamRotationService.getLockStatus();
+        if (lockStatus.isLocked) {
+          socket.emit('rotation-locked', {
+            locked: true,
+            remainingMs: lockStatus.remainingTimeWhenLocked,
+            currentStream: rotationStatus.currentStream
+          });
+        }
       }
     }
 

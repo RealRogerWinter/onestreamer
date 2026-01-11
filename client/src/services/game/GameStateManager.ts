@@ -10,7 +10,8 @@ import {
   GameFullState,
   GameStateDelta,
   WorldChange,
-  InventoryItem
+  InventoryItem,
+  EnemyState
 } from '../../types/game';
 
 interface PendingInput {
@@ -24,6 +25,7 @@ export class GameStateManager {
   private players: Map<string, PlayerState> = new Map();
   private worldState: WorldState | null = null;
   private items: Map<string, WorldItem> = new Map();
+  private enemies: Map<string, EnemyState> = new Map();
   private pendingInputs: PendingInput[] = [];
 
   // Physics constants (should match server)
@@ -53,6 +55,14 @@ export class GameStateManager {
     if (state.items) {
       state.items.forEach(item => {
         this.items.set(item.id, item);
+      });
+    }
+
+    // Set enemies
+    this.enemies.clear();
+    if (state.enemies) {
+      state.enemies.forEach(enemy => {
+        this.enemies.set(enemy.id, enemy);
       });
     }
 
@@ -95,6 +105,33 @@ export class GameStateManager {
     if (delta.worldChanges) {
       delta.worldChanges.forEach(change => {
         this.applyWorldChange(change);
+      });
+    }
+
+    // Apply enemy updates
+    if (delta.enemyUpdates) {
+      delta.enemyUpdates.forEach(update => {
+        switch (update.type) {
+          case 'spawned':
+            if (update.enemy) {
+              this.enemies.set(update.enemyId, update.enemy);
+            }
+            break;
+          case 'removed':
+            this.enemies.delete(update.enemyId);
+            break;
+          case 'moved':
+          case 'damaged':
+            if (update.enemy) {
+              const existing = this.enemies.get(update.enemyId);
+              if (existing) {
+                Object.assign(existing, update.enemy);
+              } else {
+                this.enemies.set(update.enemyId, update.enemy);
+              }
+            }
+            break;
+        }
       });
     }
   }
@@ -200,6 +237,20 @@ export class GameStateManager {
   }
 
   /**
+   * Add an enemy to the game
+   */
+  addEnemy(enemy: EnemyState): void {
+    this.enemies.set(enemy.id, enemy);
+  }
+
+  /**
+   * Remove an enemy from the game
+   */
+  removeEnemy(enemyId: string): void {
+    this.enemies.delete(enemyId);
+  }
+
+  /**
    * Handle item pickup
    */
   handleItemPickup(data: { playerId: string; itemId: string; item: WorldItem }): void {
@@ -285,6 +336,13 @@ export class GameStateManager {
   }
 
   /**
+   * Get all enemies
+   */
+  getEnemies(): EnemyState[] {
+    return Array.from(this.enemies.values());
+  }
+
+  /**
    * Get player count
    */
   getPlayerCount(): number {
@@ -298,6 +356,7 @@ export class GameStateManager {
     this.players.clear();
     this.worldState = null;
     this.items.clear();
+    this.enemies.clear();
     this.pendingInputs = [];
   }
 }

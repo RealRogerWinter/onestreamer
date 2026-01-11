@@ -2,6 +2,7 @@ const { EgressClient, SegmentedFileOutput, SegmentedFileProtocol, RoomServiceCli
 const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
+const { runAsync, getAsync, allAsync } = require('../database/database');
 
 /**
  * ContinuousRecordingService - Manages continuous room composite recording using LiveKit Egress
@@ -42,6 +43,11 @@ class ContinuousRecordingService extends EventEmitter {
     this.autoRecordInterval = null;
     this.currentRecordingTarget = null; // 'room' or participant identity (for participant egress)
     this.lastRealStreamerCheck = null; // Track last detected real streamer
+
+    // Stream identity tracking
+    this.currentStreamIdentity = null;
+    this.currentStreamSegmentId = null;
+    this.lastStreamCheck = null;
 
     // Initialize
     this.initialize();
@@ -84,6 +90,212 @@ class ContinuousRecordingService extends EventEmitter {
   }
 
   /**
+   * Create a recording session record in the database
+   */
+  async createSessionRecord(sessionId, streamerIdentity, startTime, localPath) {
+    try {
+      // Try to get streamer user info if identity looks like a user ID
+      let streamerUserId = null;
+      let streamerUsername = null;
+
+      if (streamerIdentity && streamerIdentity !== 'room') {
+        // Identity might be username or user ID
+        try {
+          const user = await getAsync(
+            'SELECT id, username FROM users WHERE username = ? OR id = ?',
+            [streamerIdentity, parseInt(streamerIdentity) || 0]
+          );
+          if (user) {
+            streamerUserId = user.id;
+            streamerUsername = user.username;
+          } else {
+            streamerUsername = streamerIdentity;
+          }
+        } catch (e) {
+          streamerUsername = streamerIdentity;
+        }
+      }
+
+      // Use INSERT OR IGNORE to avoid creating duplicates for the same day's recording
+      await runAsync(`
+        INSERT OR IGNORE INTO recording_sessions
+        (session_id, streamer_identity, streamer_user_id, streamer_username, start_time, status, local_path, created_at)
+        VALUES (?, ?, ?, ?, ?, 'recording', ?, CURRENT_TIMESTAMP)
+      `, [sessionId, streamerIdentity, streamerUserId, streamerUsername, startTime, localPath]);
+
+      // Update the session to recording status (in case it was marked as ended)
+      await runAsync(`
+        UPDATE recording_sessions SET status = 'recording', updated_at = CURRENT_TIMESTAMP
+        WHERE session_id = ?
+      `, [sessionId]);
+
+      console.log(`📝 SESSION DB: Recording session ${sessionId} active for streamer ${streamerUsername || streamerIdentity || 'room'}`);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ SESSION DB: Failed to create session record:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Update a recording session record when recording ends
+   */
+  async updateSessionRecord(sessionId, endTime, segmentCount) {
+    try {
+      const startTime = await this.getSessionStartTime(sessionId);
+      const durationMs = startTime ? (endTime - startTime) : 0;
+
+      // Don't mark as completed - session represents the whole day's recording
+      // Just update the segment count and duration
+      await runAsync(`
+        UPDATE recording_sessions
+        SET end_time = ?, duration_ms = ?, segment_count = segment_count + ?, updated_at = CURRENT_TIMESTAMP
+        WHERE session_id = ?
+      `, [endTime, durationMs, segmentCount, sessionId]);
+
+      console.log(`📝 SESSION DB: Updated session ${sessionId} - duration: ${Math.floor(durationMs / 1000)}s, added ${segmentCount} segments`);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ SESSION DB: Failed to update session record:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get session start time from database
+   */
+  async getSessionStartTime(sessionId) {
+    try {
+      const session = await getAsync('SELECT start_time FROM recording_sessions WHERE session_id = ?', [sessionId]);
+      return session ? session.start_time : Date.now();
+    } catch (error) {
+      return Date.now();
+    }
+  }
+
+  /**
+   * Get recording session from database by session ID
+   */
+  async getSessionRecord(sessionId) {
+    try {
+      return await getAsync('SELECT * FROM recording_sessions WHERE session_id = ?', [sessionId]);
+    } catch (error) {
+      console.error('❌ SESSION DB: Failed to get session record:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Generate a master HLS playlist that combines all segment playlists for seamless playback
+   */
+  async generateMasterPlaylist(sessionId) {
+    try {
+      const sessionDir = path.join(this.outputDir, sessionId);
+      if (!fs.existsSync(sessionDir)) {
+        return null;
+      }
+
+      // Find all playlist files and sort by timestamp
+      const files = fs.readdirSync(sessionDir);
+      const playlists = files
+        .filter(f => f.startsWith('playlist_') && f.endsWith('.m3u8'))
+        .sort((a, b) => {
+          const tsA = parseInt(a.match(/playlist_(\d+)\.m3u8/)?.[1] || '0');
+          const tsB = parseInt(b.match(/playlist_(\d+)\.m3u8/)?.[1] || '0');
+          return tsA - tsB;
+        });
+
+      if (playlists.length === 0) {
+        return null;
+      }
+
+      // Combine all playlists into one master playlist
+      let masterContent = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n';
+
+      for (const playlist of playlists) {
+        const playlistPath = path.join(sessionDir, playlist);
+        const content = fs.readFileSync(playlistPath, 'utf8');
+        const lines = content.split('\n');
+
+        for (const line of lines) {
+          // Skip header lines
+          if (line.startsWith('#EXTM3U') || line.startsWith('#EXT-X-VERSION') ||
+              line.startsWith('#EXT-X-TARGETDURATION') || line.startsWith('#EXT-X-MEDIA-SEQUENCE') ||
+              line.startsWith('#EXT-X-ENDLIST') || line.trim() === '') {
+            continue;
+          }
+
+          // Convert segment filenames to query parameter format for the streaming endpoint
+          // e.g., seg_123_00001.ts becomes ?file=seg_123_00001.ts
+          if (line.endsWith('.ts') && !line.startsWith('#')) {
+            masterContent += `?file=${line}\n`;
+          } else {
+            masterContent += line + '\n';
+          }
+        }
+      }
+
+      masterContent += '#EXT-X-ENDLIST\n';
+
+      // Write master playlist
+      const masterPath = path.join(sessionDir, 'master.m3u8');
+      fs.writeFileSync(masterPath, masterContent);
+
+      return masterPath;
+    } catch (error) {
+      console.error('❌ Failed to generate master playlist:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get all recording sessions from database with optional filters
+   */
+  async getSessionRecords(options = {}) {
+    try {
+      let sql = 'SELECT * FROM recording_sessions WHERE 1=1';
+      const params = [];
+
+      if (options.status) {
+        sql += ' AND status = ?';
+        params.push(options.status);
+      }
+
+      if (options.streamerIdentity) {
+        sql += ' AND streamer_identity = ?';
+        params.push(options.streamerIdentity);
+      }
+
+      if (options.fromTime) {
+        sql += ' AND start_time >= ?';
+        params.push(options.fromTime);
+      }
+
+      if (options.toTime) {
+        sql += ' AND start_time <= ?';
+        params.push(options.toTime);
+      }
+
+      sql += ' ORDER BY start_time DESC';
+
+      if (options.limit) {
+        sql += ' LIMIT ?';
+        params.push(options.limit);
+      }
+
+      if (options.offset) {
+        sql += ' OFFSET ?';
+        params.push(options.offset);
+      }
+
+      return await allAsync(sql, params);
+    } catch (error) {
+      console.error('❌ SESSION DB: Failed to get session records:', error.message);
+      return [];
+    }
+  }
+
+  /**
    * Check if a participant is a viewbot (not a real streamer)
    */
   isViewbot(participant) {
@@ -111,17 +323,25 @@ class ContinuousRecordingService extends EventEmitter {
   }
 
   /**
-   * Find the real (non-viewbot) streamer with video tracks
+   * Check if a participant is a URL stream relay (not a real person streaming)
+   */
+  isUrlStreamRelay(participant) {
+    const identity = participant.identity || '';
+    return identity.startsWith('url-stream-');
+  }
+
+  /**
+   * Find the real (non-viewbot, non-URL-stream) streamer with video tracks
    * Returns the participant identity if found, null otherwise
    */
   async findRealStreamer() {
     try {
       const participants = await this.roomServiceClient.listParticipants(this.roomName);
 
-      // Find participants with video tracks who are NOT viewbots
+      // Find participants with video tracks who are NOT viewbots and NOT URL stream relays
       const realStreamers = participants.filter(p => {
         const hasVideo = p.tracks && p.tracks.some(t => t.type === 1 && !t.muted);
-        return hasVideo && !this.isViewbot(p);
+        return hasVideo && !this.isViewbot(p) && !this.isUrlStreamRelay(p);
       });
 
       if (realStreamers.length > 0) {
@@ -135,6 +355,322 @@ class ContinuousRecordingService extends EventEmitter {
     } catch (error) {
       console.error('❌ CONTINUOUS RECORDING: Error finding real streamer:', error.message);
       return null;
+    }
+  }
+
+  /**
+   * Find any URL stream relay that is publishing video
+   * Returns the participant identity if found, null otherwise
+   */
+  async findUrlStreamPublisher() {
+    try {
+      const participants = await this.roomServiceClient.listParticipants(this.roomName);
+
+      // Find URL stream relays with video tracks
+      const urlStreamers = participants.filter(p => {
+        const hasVideo = p.tracks && p.tracks.some(t => t.type === 1 && !t.muted);
+        return hasVideo && this.isUrlStreamRelay(p);
+      });
+
+      if (urlStreamers.length > 0) {
+        const streamer = urlStreamers[0];
+        console.log(`🎯 CONTINUOUS RECORDING: Found URL stream publisher: ${streamer.identity}`);
+        return streamer.identity;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ CONTINUOUS RECORDING: Error finding URL stream publisher:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Extract username from a streaming platform URL
+   * @param {string} sourceUrl - The source URL (e.g., https://twitch.tv/xqc)
+   * @param {string} platform - The platform type (twitch, kick, etc.)
+   * @returns {string|null} The extracted username or null if not found
+   */
+  extractUsernameFromUrl(sourceUrl, platform) {
+    if (!sourceUrl) return null;
+
+    try {
+      // Handle Twitch URLs
+      // Formats: https://twitch.tv/username, https://www.twitch.tv/username
+      const twitchMatch = sourceUrl.match(/(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)/i);
+      if (twitchMatch) {
+        return twitchMatch[1];
+      }
+
+      // Handle Kick URLs
+      // Formats: https://kick.com/username, https://www.kick.com/username
+      const kickMatch = sourceUrl.match(/(?:https?:\/\/)?(?:www\.)?kick\.com\/([a-zA-Z0-9_-]+)/i);
+      if (kickMatch) {
+        return kickMatch[1];
+      }
+
+      // Handle YouTube URLs
+      // Formats: youtube.com/@username, youtube.com/channel/xxx, youtube.com/c/username
+      const youtubeMatch = sourceUrl.match(/(?:https?:\/\/)?(?:www\.)?youtube\.com\/@([a-zA-Z0-9_-]+)/i);
+      if (youtubeMatch) {
+        return youtubeMatch[1];
+      }
+
+      // For AWS IVS URLs (Kick backend), try to extract channel name from query params or return platform name
+      if (sourceUrl.includes('live-video.net') || sourceUrl.includes('playback.')) {
+        // These are CDN URLs, we can't extract username from them
+        return null;
+      }
+
+      // Generic fallback: try to get the last path segment
+      try {
+        const url = new URL(sourceUrl);
+        const pathParts = url.pathname.split('/').filter(Boolean);
+        if (pathParts.length > 0) {
+          const lastPart = pathParts[pathParts.length - 1];
+          // Only return if it looks like a username (alphanumeric, not a file extension)
+          if (/^[a-zA-Z0-9_-]+$/.test(lastPart) && !lastPart.includes('.')) {
+            return lastPart;
+          }
+        }
+      } catch (e) {
+        // URL parsing failed
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error extracting username from URL:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get the current active stream info from the database
+   * This determines what's currently being shown (URL stream, real streamer, or viewbot)
+   */
+  async getCurrentStreamInfo() {
+    try {
+      // Check for real streamers via LiveKit participants first
+      let activePublisher = await this.findRealStreamer();
+
+      // If no real streamer, check for URL stream publishers
+      if (!activePublisher) {
+        activePublisher = await this.findUrlStreamPublisher();
+      }
+
+      if (activePublisher) {
+        // Check if this is a URL stream relay (identity starts with 'url-stream-')
+        if (activePublisher.startsWith('url-stream-')) {
+          // First check the active ViewBotURLService for live stream metadata
+          // This is more reliable since it has the current stream info in memory
+          if (global.viewBotURLService && global.viewBotURLService.activeStreams) {
+            const activeStream = global.viewBotURLService.activeStreams.get(activePublisher);
+            if (activeStream) {
+              // Extract the actual username from the source URL
+              const extractedUsername = this.extractUsernameFromUrl(activeStream.sourceUrl, activeStream.platform);
+              return {
+                identity: activePublisher,
+                type: 'url_stream',
+                displayName: extractedUsername || activeStream.platform || 'URL Stream',
+                platform: activeStream.platform || 'direct',
+                sourceUrl: activeStream.sourceUrl
+              };
+            }
+          }
+
+          // Fallback: Look up the URL stream by its ID in the database
+          const urlStream = await getAsync(`
+            SELECT url_id, source_url, platform, display_name
+            FROM url_streams
+            WHERE url_id = ?
+          `, [activePublisher]);
+
+          if (urlStream) {
+            // Extract the actual username from the source URL
+            const extractedUsername = this.extractUsernameFromUrl(urlStream.source_url, urlStream.platform);
+            return {
+              identity: urlStream.url_id,
+              type: 'url_stream',
+              displayName: extractedUsername || urlStream.platform || 'URL Stream',
+              platform: urlStream.platform || 'unknown',
+              sourceUrl: urlStream.source_url
+            };
+          } else {
+            // URL stream not found anywhere - use the identity
+            return {
+              identity: activePublisher,
+              type: 'url_stream',
+              displayName: 'URL Relay Stream',
+              platform: 'unknown',
+              sourceUrl: null
+            };
+          }
+        }
+
+        // This is a real user streamer - look up user info
+        let displayName = activePublisher;
+        try {
+          // First try streaming_logs which stores socket ID -> username mapping
+          const streamLog = await getAsync(
+            'SELECT streamer_name FROM streaming_logs WHERE streamer_id = ? ORDER BY id DESC LIMIT 1',
+            [activePublisher]
+          );
+          if (streamLog && streamLog.streamer_name) {
+            displayName = streamLog.streamer_name;
+          } else {
+            // Fall back to users table (in case the identity is a username or user ID)
+            const user = await getAsync(
+              'SELECT id, username FROM users WHERE username = ? OR id = ?',
+              [activePublisher, parseInt(activePublisher) || 0]
+            );
+            if (user) {
+              displayName = user.username;
+            }
+          }
+        } catch (e) {
+          // Use identity as display name
+        }
+
+        return {
+          identity: activePublisher,
+          type: 'real_streamer',
+          displayName: displayName,
+          platform: 'direct',
+          sourceUrl: null
+        };
+      }
+
+      // Check for viewbots as fallback
+      try {
+        const participants = await this.roomServiceClient.listParticipants(this.roomName);
+        const viewbot = participants.find(p => this.isViewbot(p) && p.tracks?.some(t => t.type === 1 && !t.muted));
+        if (viewbot) {
+          return {
+            identity: viewbot.identity,
+            type: 'viewbot',
+            displayName: viewbot.name || viewbot.identity,
+            platform: null,
+            sourceUrl: null
+          };
+        }
+      } catch (e) {
+        // Room might not exist
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ STREAM TRACKING: Error getting current stream info:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Log the start of a new stream segment during recording
+   */
+  async logStreamSegmentStart(sessionId, streamInfo) {
+    if (!sessionId || !streamInfo) return null;
+
+    try {
+      const now = Date.now();
+
+      const result = await runAsync(`
+        INSERT INTO recording_stream_segments
+        (session_id, stream_identity, stream_type, display_name, platform, source_url, started_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `, [
+        sessionId,
+        streamInfo.identity,
+        streamInfo.type,
+        streamInfo.displayName,
+        streamInfo.platform,
+        streamInfo.sourceUrl,
+        now
+      ]);
+
+      console.log(`📝 STREAM TRACKING: Started segment for ${streamInfo.type} "${streamInfo.displayName}" at ${new Date(now).toISOString()}`);
+
+      return result.lastID;
+    } catch (error) {
+      console.error('❌ STREAM TRACKING: Failed to log segment start:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Log the end of a stream segment
+   */
+  async logStreamSegmentEnd(segmentId) {
+    if (!segmentId) return;
+
+    try {
+      const now = Date.now();
+      await runAsync(`
+        UPDATE recording_stream_segments
+        SET ended_at = ?
+        WHERE id = ? AND ended_at IS NULL
+      `, [now, segmentId]);
+
+      console.log(`📝 STREAM TRACKING: Ended segment ID ${segmentId} at ${new Date(now).toISOString()}`);
+    } catch (error) {
+      console.error('❌ STREAM TRACKING: Failed to log segment end:', error.message);
+    }
+  }
+
+  /**
+   * End all open segments for a session
+   */
+  async endAllOpenSegments(sessionId) {
+    if (!sessionId) return;
+
+    try {
+      const now = Date.now();
+      await runAsync(`
+        UPDATE recording_stream_segments
+        SET ended_at = ?
+        WHERE session_id = ? AND ended_at IS NULL
+      `, [now, sessionId]);
+
+      console.log(`📝 STREAM TRACKING: Ended all open segments for session ${sessionId}`);
+    } catch (error) {
+      console.error('❌ STREAM TRACKING: Failed to end open segments:', error.message);
+    }
+  }
+
+  /**
+   * Check for stream identity changes and log them
+   */
+  async trackStreamIdentityChange() {
+    if (!this.isRecording || !this.currentSessionId) {
+      return;
+    }
+
+    try {
+      const streamInfo = await this.getCurrentStreamInfo();
+
+      // Build a comparable identity string
+      const currentIdentity = streamInfo ? `${streamInfo.type}:${streamInfo.identity}` : null;
+
+      // Check if stream identity changed
+      if (currentIdentity !== this.currentStreamIdentity) {
+        console.log(`🔄 STREAM TRACKING: Identity changed from "${this.currentStreamIdentity}" to "${currentIdentity}"`);
+
+        // End the previous segment if there was one
+        if (this.currentStreamSegmentId) {
+          await this.logStreamSegmentEnd(this.currentStreamSegmentId);
+          this.currentStreamSegmentId = null;
+        }
+
+        // Start a new segment if there's a new stream
+        if (streamInfo) {
+          this.currentStreamSegmentId = await this.logStreamSegmentStart(this.currentSessionId, streamInfo);
+        }
+
+        this.currentStreamIdentity = currentIdentity;
+      }
+
+      this.lastStreamCheck = Date.now();
+    } catch (error) {
+      console.error('❌ STREAM TRACKING: Error tracking identity change:', error.message);
     }
   }
 
@@ -154,10 +690,11 @@ class ContinuousRecordingService extends EventEmitter {
       // Find real streamer (non-viewbot)
       const realStreamer = await this.findRealStreamer();
 
-      // Check if recording target changed (room -> participant or vice versa)
+      // Check if recording target changed (room -> participant, participant -> room, or participant identity changed)
       const targetChanged = this.isRecording && (
         (realStreamer && this.currentRecordingTarget === 'room') ||
-        (!realStreamer && this.currentRecordingTarget !== 'room' && this.currentRecordingTarget !== null)
+        (!realStreamer && this.currentRecordingTarget !== 'room' && this.currentRecordingTarget !== null) ||
+        (realStreamer && this.currentRecordingTarget !== 'room' && this.currentRecordingTarget !== realStreamer)
       );
 
       if (targetChanged) {
@@ -178,6 +715,11 @@ class ContinuousRecordingService extends EventEmitter {
         // Keep recording for a bit after stream ends to capture final moments
         console.log('🎥 CONTINUOUS RECORDING: No publishers detected, will continue recording briefly...');
       }
+
+      // Track stream identity changes (check what's actually being shown)
+      if (this.isRecording) {
+        await this.trackStreamIdentityChange();
+      }
     } catch (error) {
       // Room might not exist yet, that's ok
       if (!error.message?.includes('room not found')) {
@@ -191,11 +733,18 @@ class ContinuousRecordingService extends EventEmitter {
    */
   startAutoRecordPolling() {
     // Check immediately
-    this.checkAndAutoRecord();
+    this.checkAndAutoRecord().catch(err => {
+      console.error('❌ CONTINUOUS RECORDING: Initial auto-record check failed:', err.message);
+    });
 
     // Then check every 5 seconds
-    this.autoRecordInterval = setInterval(() => {
-      this.checkAndAutoRecord();
+    this.autoRecordInterval = setInterval(async () => {
+      try {
+        await this.checkAndAutoRecord();
+      } catch (err) {
+        console.error('❌ CONTINUOUS RECORDING: Auto-record polling error:', err.message);
+        // Don't rethrow - keep polling running
+      }
     }, 5000);
 
     console.log('🔄 CONTINUOUS RECORDING: Auto-record polling started');
@@ -260,19 +809,21 @@ class ContinuousRecordingService extends EventEmitter {
       }
 
       // Create a unique session ID for this recording
-      this.currentSessionId = `session_${Date.now()}`;
+      // Use date-based session ID so all recordings for the same day go into one session
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      this.currentSessionId = `recording_${today}`;
       const sessionDir = `/out/${this.currentSessionId}`;
 
       // Create HLS segmented output
       // Egress runs in Docker with /out mapped to outputDir
+      // Use timestamp prefix to avoid overwriting segments when egress restarts
+      const egressTimestamp = Date.now();
       const segmentOutput = new SegmentedFileOutput({
         protocol: SegmentedFileProtocol.HLS_PROTOCOL,
-        filenamePrefix: `${sessionDir}/segment`,
-        playlistName: 'playlist.m3u8',
-        // Don't use live playlist - it causes segment deletion
-        // livePlaylistName: 'live.m3u8',
+        filenamePrefix: `${sessionDir}/seg_${egressTimestamp}`,
+        playlistName: `playlist_${egressTimestamp}.m3u8`,
         segmentDuration: this.segmentDuration,
-        filenameSuffix: 0, // INDEX suffix (segment_0.ts, segment_1.ts, etc.)
+        filenameSuffix: 0, // INDEX suffix (seg_TIMESTAMP_0.ts, seg_TIMESTAMP_1.ts, etc.)
         disableManifest: false
       });
 
@@ -334,12 +885,21 @@ class ContinuousRecordingService extends EventEmitter {
       console.log(`   Target: ${this.currentRecordingTarget}`);
       console.log(`   Segments: ${hostSessionDir}/`);
 
+      // Create database record for this session
+      await this.createSessionRecord(
+        this.currentSessionId,
+        this.currentRecordingTarget,
+        this.recordingStartTime,
+        hostSessionDir
+      );
+
       this.emit('recording-started', {
         egressId: this.currentEgressId,
         sessionId: this.currentSessionId,
         startTime: this.recordingStartTime,
         outputPath: hostSessionDir,
-        target: this.currentRecordingTarget
+        target: this.currentRecordingTarget,
+        streamerIdentity: this.currentRecordingTarget
       });
 
       return {
@@ -358,21 +918,33 @@ class ContinuousRecordingService extends EventEmitter {
 
   /**
    * Extract session ID from existing egress info
+   * Now uses date-based session IDs (recording_YYYY-MM-DD)
    */
   extractSessionIdFromEgress(egressInfo) {
     try {
       // Try to extract from the segmented output filepath
       if (egressInfo.segmentResults && egressInfo.segmentResults.length > 0) {
-        const filepath = egressInfo.segmentResults[0].playlistName;
-        const match = filepath.match(/session_(\d+)/);
-        if (match) {
-          return `session_${match[1]}`;
+        const filepath = egressInfo.segmentResults[0].playlistName || '';
+
+        // Check for new date-based format: recording_YYYY-MM-DD
+        const dateMatch = filepath.match(/recording_(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          return `recording_${dateMatch[1]}`;
+        }
+
+        // Legacy format: session_timestamp
+        const legacyMatch = filepath.match(/session_(\d+)/);
+        if (legacyMatch) {
+          return `session_${legacyMatch[1]}`;
         }
       }
     } catch (err) {
       // Ignore extraction errors
     }
-    return `session_${Date.now()}`;
+
+    // Default to today's date-based session ID
+    const today = new Date().toISOString().split('T')[0];
+    return `recording_${today}`;
   }
 
   /**
@@ -390,30 +962,66 @@ class ContinuousRecordingService extends EventEmitter {
       await this.egressClient.stopEgress(this.currentEgressId);
 
       const duration = Date.now() - this.recordingStartTime;
+      const endTime = Date.now();
 
       console.log(`✅ CONTINUOUS RECORDING: Stopped after ${Math.floor(duration / 1000)}s`);
+
+      // Get segment count for the session
+      let segmentCount = 0;
+      try {
+        const sessionDir = path.join(this.outputDir, this.currentSessionId);
+        if (fs.existsSync(sessionDir)) {
+          segmentCount = fs.readdirSync(sessionDir).filter(f => f.endsWith('.ts')).length;
+        }
+      } catch (e) {
+        console.warn('Could not count segments:', e.message);
+      }
+
+      // Update database record
+      await this.updateSessionRecord(this.currentSessionId, endTime, segmentCount);
+
+      // End any open stream segments
+      await this.endAllOpenSegments(this.currentSessionId);
 
       this.emit('recording-stopped', {
         egressId: this.currentEgressId,
         sessionId: this.currentSessionId,
         duration,
-        startTime: this.recordingStartTime
+        startTime: this.recordingStartTime,
+        endTime: endTime,
+        segmentCount: segmentCount
       });
 
+      const stoppedSessionId = this.currentSessionId;
       this.currentEgressId = null;
       this.isRecording = false;
       this.recordingStartTime = null;
       this.currentSessionId = null;
       this.currentRecordingTarget = null;
+      // Reset stream tracking state
+      this.currentStreamIdentity = null;
+      this.currentStreamSegmentId = null;
 
-      return { success: true, duration };
+      return { success: true, duration, sessionId: stoppedSessionId, segmentCount };
 
     } catch (error) {
       console.error('❌ CONTINUOUS RECORDING: Failed to stop:', error);
+
+      // Even if stop failed, end open stream segments to keep timeline accurate
+      if (this.currentSessionId) {
+        try {
+          await this.endAllOpenSegments(this.currentSessionId);
+        } catch (e) {
+          console.error('❌ CONTINUOUS RECORDING: Failed to end segments on error:', e.message);
+        }
+      }
+
       // Reset state anyway
       this.currentEgressId = null;
       this.isRecording = false;
       this.currentRecordingTarget = null;
+      this.currentStreamIdentity = null;
+      this.currentStreamSegmentId = null;
       return { success: false, error: error.message };
     }
   }
@@ -480,7 +1088,28 @@ class ContinuousRecordingService extends EventEmitter {
         this.recordingStartTime = Date.now();
         this.currentSessionId = this.extractSessionIdFromEgress(activeEgress);
 
+        // Determine the local path for this session
+        const hostSessionDir = path.join(this.outputDir, this.currentSessionId);
+
+        // Ensure the session record exists in the database
+        await this.createSessionRecord(
+          this.currentSessionId,
+          this.currentRecordingTarget || 'room',
+          this.recordingStartTime,
+          hostSessionDir
+        );
+
         console.log(`✅ CONTINUOUS RECORDING: Resumed recording - session: ${this.currentSessionId}`);
+
+        // Emit recording-started event so chat capture begins
+        this.emit('recording-started', {
+          egressId: this.currentEgressId,
+          sessionId: this.currentSessionId,
+          startTime: this.recordingStartTime,
+          outputPath: hostSessionDir,
+          target: this.currentRecordingTarget || 'room',
+          streamerIdentity: this.currentRecordingTarget || 'room'
+        });
 
         // If there are multiple active egresses (shouldn't happen), stop the extras
         for (let i = 1; i < activeEgresses.length; i++) {

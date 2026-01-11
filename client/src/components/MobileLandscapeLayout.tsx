@@ -1,8 +1,25 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import './MobileLandscapeLayout.css';
 import Chat from './Chat';
 import { ClipCreationModal } from './clips';
+
+// iOS Chrome viewport fix - calculates actual visible viewport height
+const getViewportHeight = (): number => {
+  // Prefer visualViewport API for accurate dimensions on iOS
+  if (window.visualViewport) {
+    return window.visualViewport.height;
+  }
+  // Fallback to innerHeight
+  return window.innerHeight;
+};
+
+const getViewportWidth = (): number => {
+  if (window.visualViewport) {
+    return window.visualViewport.width;
+  }
+  return window.innerWidth;
+};
 
 interface MobileLandscapeLayoutProps {
   // Stream Status
@@ -17,6 +34,12 @@ interface MobileLandscapeLayoutProps {
   randomRotationPlatform?: string | null;
   randomRotationStreamerUrl?: string | null;
   randomRotationStreamerUsername?: string | null;
+
+  // Rotation timing (for countdown)
+  nextRotationAt?: number | null;
+  currentRotationDuration?: number | null;
+  isRotationLocked?: boolean;
+  lockedRemainingMs?: number | null;
 
   // Streaming controls
   isStreaming: boolean;
@@ -50,6 +73,7 @@ interface MobileLandscapeLayoutProps {
   onTakeOver?: () => void;
   onStopStream?: () => void;
   onOpenStreamerSettings?: () => void;
+
 }
 
 const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
@@ -62,6 +86,10 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   randomRotationPlatform,
   randomRotationStreamerUrl,
   randomRotationStreamerUsername,
+  nextRotationAt,
+  currentRotationDuration,
+  isRotationLocked = false,
+  lockedRemainingMs,
   isStreaming,
   cooldownRemaining,
   isConnected,
@@ -91,10 +119,55 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
   const [showVideoControls, setShowVideoControls] = useState(false);
   const [showClipModal, setShowClipModal] = useState(false);
   const [clipStatus, setClipStatus] = useState<{ available: boolean; isRecording: boolean } | null>(null);
+  const [countdownRemaining, setCountdownRemaining] = useState<number | null>(null);
+  const [viewportHeight, setViewportHeight] = useState(getViewportHeight());
   const menuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const menuHistoryRef = useRef<boolean>(false);
+
+  // iOS Chrome viewport fix - update height on resize/orientation change
+  const updateViewportHeight = useCallback(() => {
+    const height = getViewportHeight();
+    setViewportHeight(height);
+    // Also set CSS custom property for elements that can't use inline styles
+    document.documentElement.style.setProperty('--vh-actual', `${height}px`);
+  }, []);
+
+  useEffect(() => {
+    // Set initial viewport height
+    updateViewportHeight();
+
+    // Handle resize events
+    window.addEventListener('resize', updateViewportHeight);
+
+    // Handle orientation change with delay (iOS needs time to recalculate)
+    const handleOrientationChange = () => {
+      // Immediate update
+      updateViewportHeight();
+      // Delayed updates to catch iOS Chrome's late dimension updates
+      setTimeout(updateViewportHeight, 100);
+      setTimeout(updateViewportHeight, 300);
+      setTimeout(updateViewportHeight, 500);
+    };
+    window.addEventListener('orientationchange', handleOrientationChange);
+
+    // Use visualViewport API resize event if available (more reliable on iOS)
+    const visualViewport = window.visualViewport;
+    if (visualViewport) {
+      visualViewport.addEventListener('resize', updateViewportHeight);
+      visualViewport.addEventListener('scroll', updateViewportHeight);
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateViewportHeight);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      if (visualViewport) {
+        visualViewport.removeEventListener('resize', updateViewportHeight);
+        visualViewport.removeEventListener('scroll', updateViewportHeight);
+      }
+    };
+  }, [updateViewportHeight]);
 
   // Update duration every second if stream is active
   useEffect(() => {
@@ -108,6 +181,35 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
       setStreamDuration(0);
     }
   }, [hasActiveStream, streamStartTime]);
+
+  // Update countdown timer for rotation
+  useEffect(() => {
+    if (!isRandomRotation) {
+      setCountdownRemaining(null);
+      return;
+    }
+
+    // If locked, show locked remaining time
+    if (isRotationLocked && lockedRemainingMs !== null && lockedRemainingMs !== undefined) {
+      setCountdownRemaining(lockedRemainingMs);
+      return;
+    }
+
+    if (!nextRotationAt) {
+      setCountdownRemaining(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = nextRotationAt - Date.now();
+      setCountdownRemaining(remaining > 0 ? remaining : 0);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 100);
+
+    return () => clearInterval(interval);
+  }, [isRandomRotation, nextRotationAt, isRotationLocked, lockedRemainingMs]);
 
   // Close menus when clicking/touching outside
   useEffect(() => {
@@ -226,6 +328,13 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
       return `${hours}:${(minutes % 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
     }
     return `${minutes}:${(seconds % 60).toString().padStart(2, '0')}`;
+  };
+
+  const formatCountdown = (milliseconds: number): string => {
+    const totalSeconds = Math.ceil(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
   const getUserInitial = () => {
@@ -382,6 +491,16 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
               <>
                 <span className="live-badge">LIVE</span>
                 <span className="viewer-count">{viewerCount}</span>
+                {isRandomRotation && (
+                  <span className={`countdown-badge ${isRotationLocked ? 'countdown-locked' : ''}`}>
+                    <span className="countdown-icon">{isRotationLocked ? '🔒' : '⏭'}</span>
+                    <span className="countdown-time">
+                      {countdownRemaining !== null && countdownRemaining > 0
+                        ? formatCountdown(countdownRemaining)
+                        : '--:--'}
+                    </span>
+                  </span>
+                )}
                 {isRandomRotation && randomRotationPlatform && (
                   <span className="platform-icon-landscape">
                     {randomRotationPlatform === 'kick' ? '🟢' : '🟣'}
@@ -411,7 +530,10 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
       </div>
 
       {/* Right: Chat Panel (always visible, full height) */}
-      <div className="landscape-chat-sidebar">
+      <div
+        className="landscape-chat-sidebar"
+        style={{ height: `${viewportHeight}px` }}
+      >
         {/* Chat header with actions */}
         <div className="chat-sidebar-header">
           <div className="chat-title">Chat</div>
@@ -481,7 +603,7 @@ const MobileLandscapeLayout: React.FC<MobileLandscapeLayoutProps> = ({
             onClick={() => setShowHamburgerMenu(false)}
             onTouchStart={() => setShowHamburgerMenu(false)}
           />
-          <nav className="landscape-hamburger-menu" ref={menuRef}>
+          <nav className="landscape-hamburger-menu" ref={menuRef} style={{ height: `${viewportHeight}px` }}>
             <div className="menu-header">
               <span className="menu-brand">OneStreamer</span>
               <button className="menu-close" onClick={() => setShowHamburgerMenu(false)}>×</button>

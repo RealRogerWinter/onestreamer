@@ -650,6 +650,79 @@ function initializeDatabase() {
         }, 1500);
 
         // ============================================
+        // Admin Recording Review System Tables
+        // ============================================
+
+        // Recording Sessions - tracks continuous recording sessions for admin review
+        db.run(`
+            CREATE TABLE IF NOT EXISTS recording_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT UNIQUE NOT NULL,
+                streamer_identity TEXT,
+                streamer_user_id INTEGER,
+                streamer_username TEXT,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER,
+                duration_ms INTEGER,
+                status TEXT DEFAULT 'recording',
+                local_path TEXT,
+                b2_file_id TEXT,
+                b2_file_name TEXT,
+                file_size_bytes INTEGER,
+                segment_count INTEGER DEFAULT 0,
+                chat_message_count INTEGER DEFAULT 0,
+                metadata_json TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (streamer_user_id) REFERENCES users (id)
+            )
+        `);
+
+        // Session Chat Messages - persistent chat storage for session playback
+        db.run(`
+            CREATE TABLE IF NOT EXISTS session_chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                username TEXT NOT NULL,
+                message TEXT NOT NULL,
+                color TEXT,
+                absolute_time_ms INTEGER NOT NULL,
+                relative_time_ms INTEGER NOT NULL,
+                is_system INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES recording_sessions (session_id) ON DELETE CASCADE
+            )
+        `);
+
+        // Admin Review Settings - configurable settings for the review system
+        db.run(`
+            CREATE TABLE IF NOT EXISTS admin_review_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                description TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Insert default admin review settings
+        db.run(`
+            INSERT OR IGNORE INTO admin_review_settings (key, value, description) VALUES
+            ('retention_days', '7', 'Days to keep recordings on B2 (1-7)'),
+            ('upload_enabled', 'true', 'Enable automatic upload to B2'),
+            ('local_buffer_hours', '2', 'Hours to keep local copies before upload')
+        `);
+
+        // Indexes for admin review tables
+        db.run(`CREATE INDEX IF NOT EXISTS idx_recording_sessions_start ON recording_sessions(start_time DESC)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_recording_sessions_status ON recording_sessions(status)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_recording_sessions_streamer ON recording_sessions(streamer_identity)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_session_chat_session_id ON session_chat_messages(session_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_session_chat_time ON session_chat_messages(session_id, relative_time_ms)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_session_chat_absolute ON session_chat_messages(session_id, absolute_time_ms)`);
+
+        console.log('Admin Recording Review tables initialized');
+
+        // ============================================
         // Game System Tables
         // ============================================
 

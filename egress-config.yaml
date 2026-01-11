@@ -24,3 +24,12 @@ cpu_cost:
   room_composite_cpu_cost: 3.0
   track_composite_cpu_cost: 2.0
   track_cpu_cost: 1.0
+
+# Latency tuning for smoother playback with variable source streams
+latency:
+  jitter_buffer_latency: 2s       # Buffer for network jitter (default 200ms is too low)
+  audio_mixer_latency: 2.75s      # Audio mixing delay
+  pipeline_latency: 3s            # Overall pipeline delay
+  rtpmaxallowedtsdiff: 5s         # Max RTP timestamp diff before reset
+  rtpmaxdriftadjustment: 5ms      # Max drift adjustment per cycle
+  old_packet_threshold: 500ms     # Threshold for dropping old packets

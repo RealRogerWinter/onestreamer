@@ -120,6 +120,44 @@ let swapVoteTimers = []; // Array of timer IDs for warnings
 let lastSwapVoteEndTime = 0; // Track when last swap vote ended for cooldown
 let lastSwapVotePassed = false; // Track if last vote passed (for cooldown duration)
 
+// Extend vote system (for !extend command)
+const EXTEND_VOTE_DURATION = 2 * 60 * 1000; // 2 minutes voting window
+const EXTEND_VOTE_THRESHOLD = 0.33; // 33% of viewers needed (lower threshold for extend)
+const EXTEND_VOTE_COOLDOWN = 5 * 60 * 1000; // 5 minute cooldown between extend votes
+let activeExtendVote = null; // { startTime, voters: Set, requiredVotes, totalViewers, initiator }
+let extendVoteTimers = []; // Array of timer IDs for warnings
+let lastExtendVoteEndTime = 0; // Track when last extend vote ended for cooldown
+
+// Reduce vote system (for !reduce command)
+const REDUCE_VOTE_DURATION = 2 * 60 * 1000; // 2 minutes voting window
+const REDUCE_VOTE_THRESHOLD = 0.33; // 33% of viewers needed (same as extend)
+const REDUCE_VOTE_COOLDOWN = 5 * 60 * 1000; // 5 minute cooldown between reduce votes
+let activeReduceVote = null; // { startTime, voters: Set, requiredVotes, totalViewers, initiator }
+let reduceVoteTimers = []; // Array of timer IDs for warnings
+let lastReduceVoteEndTime = 0; // Track when last reduce vote ended for cooldown
+
+// Lock vote system (for !lock command)
+const LOCK_VOTE_DURATION = 2 * 60 * 1000; // 2 minutes voting window
+const LOCK_VOTE_THRESHOLD = 1.0; // 100% of viewers needed for lock
+const LOCK_VOTE_COOLDOWN = 5 * 60 * 1000; // 5 minute cooldown between lock votes
+let activeLockVote = null; // { startTime, voters: Set, requiredVotes, totalViewers, initiator }
+let lockVoteTimers = []; // Array of timer IDs for warnings
+let lastLockVoteEndTime = 0; // Track when last lock vote ended for cooldown
+let lastLockVotePassed = false; // Track if last vote passed (for cooldown duration)
+
+// Unlock vote system (for !unlock command)
+const UNLOCK_VOTE_DURATION = 2 * 60 * 1000; // 2 minutes voting window
+const UNLOCK_VOTE_THRESHOLD = 0.5; // 50% of viewers needed for unlock
+const UNLOCK_VOTE_COOLDOWN = 5 * 60 * 1000; // 5 minute cooldown between unlock votes
+let activeUnlockVote = null; // { startTime, voters: Set, requiredVotes, totalViewers, initiator }
+let unlockVoteTimers = []; // Array of timer IDs for warnings
+let lastUnlockVoteEndTime = 0; // Track when last unlock vote ended for cooldown
+let lastUnlockVotePassed = false; // Track if last vote passed (for cooldown duration)
+
+// Single-viewer auto-action system (when only 1 viewer, skip voting and execute directly)
+const SINGLE_VIEWER_ACTION_COOLDOWN = 60 * 1000; // 60 second cooldown to prevent spam
+let lastSingleViewerActionTime = 0; // Track last single-viewer action for cooldown
+
 // Persistence paths
 const MODERATION_DATA_PATH = path.join(__dirname, 'moderation_data.json');
 
@@ -511,10 +549,15 @@ function scheduleNextClaimEvent() {
 // Skip Vote System (!next command)
 // ============================================
 
-// Get current unique viewer count
+// Get current unique viewer count (excluding bots)
 function getUniqueViewerCount() {
   const uniqueIps = new Set();
-  connectedUsers.forEach(user => uniqueIps.add(user.ip));
+  connectedUsers.forEach(user => {
+    // Don't count bots as viewers
+    if (!user.isBot) {
+      uniqueIps.add(user.ip);
+    }
+  });
   return uniqueIps.size;
 }
 
@@ -552,6 +595,7 @@ async function endSkipVote(io) {
   const voteCount = vote.voters.size;
   const requiredVotes = vote.requiredVotes;
   const passed = voteCount >= requiredVotes;
+  const platform = vote.platform;  // Get platform preference from vote
 
   // Clear timers and vote state
   clearSkipVoteTimers();
@@ -559,22 +603,31 @@ async function endSkipVote(io) {
   lastSkipVoteEndTime = Date.now();
   lastSkipVotePassed = passed; // Track for cooldown duration
 
-  if (passed) {
-    sendSkipVoteMessage(`🗳️ VOTE PASSED! ${voteCount}/${requiredVotes} votes (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). Skipping to the next stream...`, io);
-    console.log(`🗳️ SKIP VOTE: Vote passed with ${voteCount}/${requiredVotes} votes. Triggering stream rotation.`);
+  const platformText = platform ? ` ${platform.charAt(0).toUpperCase() + platform.slice(1)}` : '';
 
-    // Trigger the stream rotation via API
+  if (passed) {
+    sendSkipVoteMessage(`🗳️ VOTE PASSED! ${voteCount}/${requiredVotes} votes (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). Skipping to the next${platformText} stream...`, io);
+    console.log(`🗳️ SKIP VOTE: Vote passed with ${voteCount}/${requiredVotes} votes. Triggering stream rotation${platform ? ` (${platform})` : ''}.`);
+
+    // Trigger the stream rotation via API (with optional platform)
     try {
       const response = await axios.post(
         `${MAIN_SERVER_URL}/api/random-stream/rotate`,
-        {},
+        { platform },  // Pass platform preference to API
         getAxiosConfig({ timeout: 10000 })
       );
 
       if (response.data.success) {
-        console.log('🗳️ SKIP VOTE: Stream rotation triggered successfully');
+        console.log(`🗳️ SKIP VOTE: Stream rotation triggered successfully${platform ? ` (${platform})` : ''}`);
         // Emit event to update the streaming header
         io.emit('stream-info-update', { source: 'skip-vote', message: 'Stream skipped by chat vote' });
+        // Unlock rotation timer if it was locked
+        try {
+          await axios.post(`${MAIN_SERVER_URL}/api/random-stream/unlock`, {}, getAxiosConfig({ timeout: 5000 }));
+          console.log('🗳️ SKIP VOTE: Rotation timer unlocked after skip');
+        } catch (unlockErr) {
+          console.log('🗳️ SKIP VOTE: Timer was not locked or unlock failed:', unlockErr.message);
+        }
       } else {
         sendSkipVoteMessage('⚠️ Vote passed but failed to skip stream. Try again later.', io);
         console.error('🗳️ SKIP VOTE: Stream rotation failed:', response.data.error);
@@ -591,7 +644,7 @@ async function endSkipVote(io) {
 }
 
 // Start a new skip vote
-function startSkipVote(initiator, io) {
+function startSkipVote(initiator, io, platform = null) {
   const totalViewers = getUniqueViewerCount();
   const requiredVotes = Math.ceil(totalViewers * SKIP_VOTE_THRESHOLD);
 
@@ -601,16 +654,18 @@ function startSkipVote(initiator, io) {
     voterUsernames: new Set([initiator.username]), // Track usernames for display
     requiredVotes: Math.max(requiredVotes, 1), // At least 1 vote required
     totalViewers: totalViewers,
-    initiator: initiator.username
+    initiator: initiator.username,
+    platform: platform  // Optional platform preference (kick or twitch)
   };
 
   // Announce the vote
-  sendSkipVoteMessage(`🗳️ SKIP VOTE STARTED by ${initiator.username}! Type !next to vote to skip to the next stream.`, io);
+  const platformText = platform ? ` ${platform.charAt(0).toUpperCase() + platform.slice(1)}` : '';
+  sendSkipVoteMessage(`🗳️ SKIP VOTE STARTED by ${initiator.username}! Type !next to vote to skip to the next${platformText} stream.`, io);
   sendSkipVoteMessage(`📊 ${requiredVotes} votes needed (75% of ${totalViewers} viewers). Vote ends in 2 minutes!`, io);
-  sendSkipVoteMessage(`ℹ️ If the vote passes, we'll rotate to a random Twitch/Kick stream.`, io);
+  sendSkipVoteMessage(`ℹ️ If the vote passes, we'll rotate to a${platform ? ` ${platform.charAt(0).toUpperCase() + platform.slice(1)}` : ' random Twitch/Kick'} stream.`, io);
   sendSkipVoteMessage(`✅ ${initiator.username} voted to skip! (1/${requiredVotes})`, io);
 
-  console.log(`🗳️ SKIP VOTE: Started by ${initiator.username}. Need ${requiredVotes}/${totalViewers} votes (75%).`);
+  console.log(`🗳️ SKIP VOTE: Started by ${initiator.username}${platformText ? ` for${platformText}` : ''}. Need ${requiredVotes}/${totalViewers} votes (75%).`);
 
   // Schedule warning timers
   // Note: We're at 0 seconds, vote ends at 120 seconds (2 minutes)
@@ -776,6 +831,13 @@ async function endSwapVote(io) {
           platform: vote.platform,
           message: `Swapped to ${vote.channel} by chat vote`
         });
+        // Unlock rotation timer if it was locked
+        try {
+          await axios.post(`${MAIN_SERVER_URL}/api/random-stream/unlock`, {}, getAxiosConfig({ timeout: 5000 }));
+          console.log('🗳️ SWAP VOTE: Rotation timer unlocked after swap');
+        } catch (unlockErr) {
+          console.log('🗳️ SWAP VOTE: Timer was not locked or unlock failed:', unlockErr.message);
+        }
       } else {
         sendSwapVoteMessage(`⚠️ Vote passed but failed to swap: ${response.data.error || 'Unknown error'}. The stream may be offline.`, io);
         console.error('🗳️ SWAP VOTE: Stream swap failed:', response.data.error);
@@ -880,6 +942,615 @@ function registerSwapVote(user, io) {
   return true;
 }
 
+// ============================================
+// Extend Vote System (!extend command)
+// ============================================
+
+// Send StreamBot message for extend vote
+function sendExtendVoteMessage(message, io) {
+  const botMessage = {
+    id: `streambot_extend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    username: '🤖 StreamBot',
+    color: '#10B981', // Green color for extend votes
+    message: message,
+    timestamp: formatTime(),
+    fullTimestamp: new Date().toISOString(),
+    isSystem: true
+  };
+
+  chatMessages.push(botMessage);
+  if (chatMessages.length > MAX_CHAT_HISTORY) {
+    chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+  }
+
+  io.emit('new-message', botMessage);
+}
+
+// Clear all extend vote timers
+function clearExtendVoteTimers() {
+  extendVoteTimers.forEach(timerId => clearTimeout(timerId));
+  extendVoteTimers = [];
+}
+
+// End the extend vote and tally results
+async function endExtendVote(io) {
+  if (!activeExtendVote) return;
+
+  const vote = activeExtendVote;
+  const voteCount = vote.voters.size;
+  const requiredVotes = vote.requiredVotes;
+  const passed = voteCount >= requiredVotes;
+
+  // Clear timers and vote state
+  clearExtendVoteTimers();
+  activeExtendVote = null;
+  lastExtendVoteEndTime = Date.now();
+
+  if (passed) {
+    sendExtendVoteMessage(`🎉 EXTEND VOTE PASSED! ${voteCount}/${requiredVotes} votes (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). Extending the stream time...`, io);
+    console.log(`🗳️ EXTEND VOTE: Vote passed with ${voteCount}/${requiredVotes} votes. Extending rotation timer.`);
+
+    // Trigger the extend via API
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/extend`,
+        {},
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        sendExtendVoteMessage(`⏰ Stream extended by ${response.data.extendedByMinutes} minutes! Enjoy the extra time!`, io);
+        console.log('🗳️ EXTEND VOTE: Rotation extend triggered successfully');
+        // Emit event to update the countdown timer
+        io.emit('stream-info-update', { source: 'extend-vote', message: 'Stream extended by chat vote' });
+      } else {
+        sendExtendVoteMessage(`⚠️ Vote passed but failed to extend: ${response.data.error || 'Unknown error'}`, io);
+        console.error('🗳️ EXTEND VOTE: Rotation extend failed:', response.data.error);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message;
+      sendExtendVoteMessage(`⚠️ Vote passed but failed to extend: ${errorMsg}`, io);
+      console.error('🗳️ EXTEND VOTE: Error triggering extend:', error.message);
+    }
+  } else {
+    sendExtendVoteMessage(`🗳️ EXTEND VOTE FAILED. Only ${voteCount}/${requiredVotes} votes received (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). The timer continues as scheduled!`, io);
+    sendExtendVoteMessage(`⏳ Next !extend vote available in 5 minutes.`, io);
+    console.log(`🗳️ EXTEND VOTE: Vote failed with ${voteCount}/${requiredVotes} votes.`);
+  }
+}
+
+// Start a new extend vote
+function startExtendVote(initiator, io) {
+  const totalViewers = getUniqueViewerCount();
+  // Require at least 2 votes minimum, and 33% of viewers
+  const requiredVotes = Math.max(Math.ceil(totalViewers * EXTEND_VOTE_THRESHOLD), 2);
+
+  activeExtendVote = {
+    startTime: Date.now(),
+    voters: new Set([initiator.ip]), // Use IP to prevent duplicate votes
+    voterUsernames: new Set([initiator.username]), // Track usernames for display
+    requiredVotes: requiredVotes,
+    totalViewers: totalViewers,
+    initiator: initiator.username
+  };
+
+  // Announce the vote
+  sendExtendVoteMessage(`⏰ EXTEND VOTE STARTED by ${initiator.username}!`, io);
+  sendExtendVoteMessage(`📊 ${requiredVotes} votes needed (33% of ${totalViewers} viewers). Type !extend to vote! Vote ends in 2 minutes!`, io);
+  sendExtendVoteMessage(`ℹ️ If the vote passes, the stream will be extended by 3-5 extra minutes before switching.`, io);
+  sendExtendVoteMessage(`✅ ${initiator.username} voted to extend! (1/${requiredVotes})`, io);
+
+  console.log(`🗳️ EXTEND VOTE: Started by ${initiator.username}. Need ${requiredVotes}/${totalViewers} votes (33%).`);
+
+  // Schedule warning timers (same timing as other votes)
+
+  // 1 minute warning
+  extendVoteTimers.push(setTimeout(() => {
+    if (activeExtendVote) {
+      const currentVotes = activeExtendVote.voters.size;
+      sendExtendVoteMessage(`⏰ 1 MINUTE remaining! ${currentVotes}/${activeExtendVote.requiredVotes} votes to extend. Type !extend to vote!`, io);
+    }
+  }, 60 * 1000));
+
+  // 30 second warning
+  extendVoteTimers.push(setTimeout(() => {
+    if (activeExtendVote) {
+      const currentVotes = activeExtendVote.voters.size;
+      sendExtendVoteMessage(`⏰ 30 SECONDS remaining! ${currentVotes}/${activeExtendVote.requiredVotes} votes. Hurry!`, io);
+    }
+  }, 90 * 1000));
+
+  // 5 second warning
+  extendVoteTimers.push(setTimeout(() => {
+    if (activeExtendVote) {
+      const currentVotes = activeExtendVote.voters.size;
+      sendExtendVoteMessage(`⏰ 5 SECONDS! Final count: ${currentVotes}/${activeExtendVote.requiredVotes} votes!`, io);
+    }
+  }, 115 * 1000));
+
+  // End vote timer (2 minutes)
+  extendVoteTimers.push(setTimeout(() => {
+    endExtendVote(io);
+  }, EXTEND_VOTE_DURATION));
+}
+
+// Register a vote for extending
+function registerExtendVote(user, io) {
+  if (!activeExtendVote) return false;
+
+  // Check if user already voted (by IP)
+  if (activeExtendVote.voters.has(user.ip)) {
+    return false; // Already voted
+  }
+
+  // Add vote
+  activeExtendVote.voters.add(user.ip);
+  activeExtendVote.voterUsernames.add(user.username);
+
+  const currentVotes = activeExtendVote.voters.size;
+  const requiredVotes = activeExtendVote.requiredVotes;
+
+  sendExtendVoteMessage(`✅ ${user.username} voted to extend! (${currentVotes}/${requiredVotes})`, io);
+  console.log(`🗳️ EXTEND VOTE: ${user.username} voted. ${currentVotes}/${requiredVotes} votes.`);
+
+  // Check if threshold reached early
+  if (currentVotes >= requiredVotes) {
+    sendExtendVoteMessage(`🎉 Vote threshold reached early!`, io);
+    endExtendVote(io);
+  }
+
+  return true;
+}
+
+// ============================================
+// Reduce Vote System (!reduce command)
+// ============================================
+
+// Send StreamBot message for reduce vote
+function sendReduceVoteMessage(message, io) {
+  const botMessage = {
+    id: `streambot_reduce_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    username: '🤖 StreamBot',
+    color: '#F59E0B', // Amber/orange color for reduce votes
+    message: message,
+    timestamp: formatTime(),
+    fullTimestamp: new Date().toISOString(),
+    isSystem: true
+  };
+
+  chatMessages.push(botMessage);
+  if (chatMessages.length > MAX_CHAT_HISTORY) {
+    chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+  }
+
+  io.emit('new-message', botMessage);
+}
+
+// Clear all reduce vote timers
+function clearReduceVoteTimers() {
+  reduceVoteTimers.forEach(timerId => clearTimeout(timerId));
+  reduceVoteTimers = [];
+}
+
+// End the reduce vote and tally results
+async function endReduceVote(io) {
+  if (!activeReduceVote) return;
+
+  const vote = activeReduceVote;
+  const voteCount = vote.voters.size;
+  const requiredVotes = vote.requiredVotes;
+  const passed = voteCount >= requiredVotes;
+
+  // Clear timers and vote state
+  clearReduceVoteTimers();
+  activeReduceVote = null;
+  lastReduceVoteEndTime = Date.now();
+
+  if (passed) {
+    sendReduceVoteMessage(`🗳️ REDUCE VOTE PASSED! ${voteCount}/${requiredVotes} votes (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). Reducing stream time...`, io);
+    console.log(`🗳️ REDUCE VOTE: Vote passed with ${voteCount}/${requiredVotes} votes. Reducing rotation time.`);
+
+    // Trigger the reduce via API
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/reduce`,
+        {},
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        sendReduceVoteMessage(`⏰ Stream time reduced by ${response.data.reducedByMinutes} minutes!`, io);
+        console.log(`🗳️ REDUCE VOTE: Rotation reduced by ${response.data.reducedByMinutes} minutes`);
+      } else {
+        sendReduceVoteMessage('⚠️ Vote passed but failed to reduce time. Try again later.', io);
+        console.error('🗳️ REDUCE VOTE: Reduce failed:', response.data.error);
+      }
+    } catch (error) {
+      sendReduceVoteMessage('⚠️ Vote passed but failed to reduce time. Try again later.', io);
+      console.error('🗳️ REDUCE VOTE: Error reducing rotation:', error.message);
+    }
+  } else {
+    sendReduceVoteMessage(`🗳️ REDUCE VOTE FAILED. Only ${voteCount}/${requiredVotes} votes received (${Math.round(voteCount/vote.totalViewers*100)}% of viewers).`, io);
+    sendReduceVoteMessage(`⏳ Next !reduce vote available in 2 minutes.`, io);
+    console.log(`🗳️ REDUCE VOTE: Vote failed with ${voteCount}/${requiredVotes} votes.`);
+  }
+}
+
+// Start a new reduce vote
+function startReduceVote(initiator, io) {
+  const totalViewers = getUniqueViewerCount();
+  const requiredVotes = Math.max(Math.ceil(totalViewers * REDUCE_VOTE_THRESHOLD), 2); // At least 2 votes required
+
+  activeReduceVote = {
+    startTime: Date.now(),
+    voters: new Set([initiator.ip]),
+    voterUsernames: new Set([initiator.username]),
+    requiredVotes: requiredVotes,
+    totalViewers: totalViewers,
+    initiator: initiator.username
+  };
+
+  // Announce the vote
+  sendReduceVoteMessage(`⏰ REDUCE VOTE STARTED by ${initiator.username}! Type !reduce to vote to reduce stream time.`, io);
+  sendReduceVoteMessage(`📊 ${requiredVotes} votes needed (33% of ${totalViewers} viewers). Vote ends in 2 minutes!`, io);
+  sendReduceVoteMessage(`ℹ️ If the vote passes, stream time will be reduced by 3-5 minutes.`, io);
+  sendReduceVoteMessage(`✅ ${initiator.username} voted to reduce! (1/${requiredVotes})`, io);
+
+  console.log(`🗳️ REDUCE VOTE: Started by ${initiator.username}. Need ${requiredVotes}/${totalViewers} votes (33%).`);
+
+  // Schedule warning timers
+  reduceVoteTimers.push(setTimeout(() => {
+    if (activeReduceVote) {
+      const currentVotes = activeReduceVote.voters.size;
+      sendReduceVoteMessage(`⏰ 1 MINUTE remaining! ${currentVotes}/${activeReduceVote.requiredVotes} votes so far. Type !reduce to vote!`, io);
+    }
+  }, 60 * 1000));
+
+  reduceVoteTimers.push(setTimeout(() => {
+    if (activeReduceVote) {
+      const currentVotes = activeReduceVote.voters.size;
+      sendReduceVoteMessage(`⏰ 30 SECONDS remaining! ${currentVotes}/${activeReduceVote.requiredVotes} votes. Hurry!`, io);
+    }
+  }, 90 * 1000));
+
+  reduceVoteTimers.push(setTimeout(() => {
+    if (activeReduceVote) {
+      const currentVotes = activeReduceVote.voters.size;
+      sendReduceVoteMessage(`⏰ 5 SECONDS! Final count: ${currentVotes}/${activeReduceVote.requiredVotes} votes!`, io);
+    }
+  }, 115 * 1000));
+
+  // End vote timer
+  reduceVoteTimers.push(setTimeout(() => {
+    endReduceVote(io);
+  }, REDUCE_VOTE_DURATION));
+}
+
+// Register a vote for reducing
+function registerReduceVote(user, io) {
+  if (!activeReduceVote) return false;
+
+  if (activeReduceVote.voters.has(user.ip)) {
+    return false;
+  }
+
+  activeReduceVote.voters.add(user.ip);
+  activeReduceVote.voterUsernames.add(user.username);
+
+  const currentVotes = activeReduceVote.voters.size;
+  const requiredVotes = activeReduceVote.requiredVotes;
+
+  sendReduceVoteMessage(`✅ ${user.username} voted to reduce! (${currentVotes}/${requiredVotes})`, io);
+  console.log(`🗳️ REDUCE VOTE: ${user.username} voted. ${currentVotes}/${requiredVotes} votes.`);
+
+  if (currentVotes >= requiredVotes) {
+    sendReduceVoteMessage(`🎉 Vote threshold reached early!`, io);
+    endReduceVote(io);
+  }
+
+  return true;
+}
+
+// ============================================
+// Lock Vote System (!lock command)
+// ============================================
+
+// Send StreamBot message for lock vote
+function sendLockVoteMessage(message, io) {
+  const botMessage = {
+    id: `streambot_lock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    username: '🤖 StreamBot',
+    color: '#EF4444', // Red color for lock votes
+    message: message,
+    timestamp: formatTime(),
+    fullTimestamp: new Date().toISOString(),
+    isSystem: true
+  };
+
+  chatMessages.push(botMessage);
+  if (chatMessages.length > MAX_CHAT_HISTORY) {
+    chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+  }
+
+  io.emit('new-message', botMessage);
+}
+
+// Clear all lock vote timers
+function clearLockVoteTimers() {
+  lockVoteTimers.forEach(timerId => clearTimeout(timerId));
+  lockVoteTimers = [];
+}
+
+// End the lock vote and tally results
+async function endLockVote(io) {
+  if (!activeLockVote) return;
+
+  const vote = activeLockVote;
+  const voteCount = vote.voters.size;
+  const requiredVotes = vote.requiredVotes;
+  const passed = voteCount >= requiredVotes;
+
+  // Clear timers and vote state
+  clearLockVoteTimers();
+  activeLockVote = null;
+  lastLockVoteEndTime = Date.now();
+  lastLockVotePassed = passed;
+
+  if (passed) {
+    sendLockVoteMessage(`🗳️ LOCK VOTE PASSED! ${voteCount}/${requiredVotes} votes (100% of viewers). Locking rotation...`, io);
+    console.log(`🗳️ LOCK VOTE: Vote passed with ${voteCount}/${requiredVotes} votes. Locking rotation.`);
+
+    // Trigger the lock via API
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/lock`,
+        {},
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        sendLockVoteMessage(`🔒 Rotation LOCKED! Stream will not rotate until a successful !next vote.`, io);
+        console.log('🗳️ LOCK VOTE: Rotation locked successfully');
+      } else {
+        sendLockVoteMessage('⚠️ Vote passed but failed to lock rotation. Try again later.', io);
+        console.error('🗳️ LOCK VOTE: Lock failed:', response.data.error);
+      }
+    } catch (error) {
+      sendLockVoteMessage('⚠️ Vote passed but failed to lock rotation. Try again later.', io);
+      console.error('🗳️ LOCK VOTE: Error locking rotation:', error.message);
+    }
+  } else {
+    sendLockVoteMessage(`🗳️ LOCK VOTE FAILED. Only ${voteCount}/${requiredVotes} votes received. Need 100% of viewers!`, io);
+    sendLockVoteMessage(`⏳ Next !lock vote available in 2 minutes.`, io);
+    console.log(`🗳️ LOCK VOTE: Vote failed with ${voteCount}/${requiredVotes} votes.`);
+  }
+}
+
+// Start a new lock vote
+function startLockVote(initiator, io) {
+  const totalViewers = getUniqueViewerCount();
+  const requiredVotes = Math.ceil(totalViewers * LOCK_VOTE_THRESHOLD); // 100% needed
+
+  activeLockVote = {
+    startTime: Date.now(),
+    voters: new Set([initiator.ip]),
+    voterUsernames: new Set([initiator.username]),
+    requiredVotes: Math.max(requiredVotes, 2), // At least 2 votes required
+    totalViewers: totalViewers,
+    initiator: initiator.username
+  };
+
+  // Announce the vote
+  sendLockVoteMessage(`🔒 LOCK VOTE STARTED by ${initiator.username}! Type !lock to vote to lock the rotation.`, io);
+  sendLockVoteMessage(`📊 ${requiredVotes} votes needed (100% of ${totalViewers} viewers). Vote ends in 2 minutes!`, io);
+  sendLockVoteMessage(`ℹ️ If the vote passes, stream will NOT rotate until a successful !next vote.`, io);
+  sendLockVoteMessage(`✅ ${initiator.username} voted to lock! (1/${requiredVotes})`, io);
+
+  console.log(`🗳️ LOCK VOTE: Started by ${initiator.username}. Need ${requiredVotes}/${totalViewers} votes (100%).`);
+
+  // Schedule warning timers
+  lockVoteTimers.push(setTimeout(() => {
+    if (activeLockVote) {
+      const currentVotes = activeLockVote.voters.size;
+      sendLockVoteMessage(`⏰ 1 MINUTE remaining! ${currentVotes}/${activeLockVote.requiredVotes} votes so far. Type !lock to vote!`, io);
+    }
+  }, 60 * 1000));
+
+  lockVoteTimers.push(setTimeout(() => {
+    if (activeLockVote) {
+      const currentVotes = activeLockVote.voters.size;
+      sendLockVoteMessage(`⏰ 30 SECONDS remaining! ${currentVotes}/${activeLockVote.requiredVotes} votes. Hurry!`, io);
+    }
+  }, 90 * 1000));
+
+  lockVoteTimers.push(setTimeout(() => {
+    if (activeLockVote) {
+      const currentVotes = activeLockVote.voters.size;
+      sendLockVoteMessage(`⏰ 5 SECONDS! Final count: ${currentVotes}/${activeLockVote.requiredVotes} votes!`, io);
+    }
+  }, 115 * 1000));
+
+  // End vote timer
+  lockVoteTimers.push(setTimeout(() => {
+    endLockVote(io);
+  }, LOCK_VOTE_DURATION));
+}
+
+// Register a vote for locking
+function registerLockVote(user, io) {
+  if (!activeLockVote) return false;
+
+  if (activeLockVote.voters.has(user.ip)) {
+    return false;
+  }
+
+  activeLockVote.voters.add(user.ip);
+  activeLockVote.voterUsernames.add(user.username);
+
+  const currentVotes = activeLockVote.voters.size;
+  const requiredVotes = activeLockVote.requiredVotes;
+
+  sendLockVoteMessage(`✅ ${user.username} voted to lock! (${currentVotes}/${requiredVotes})`, io);
+  console.log(`🗳️ LOCK VOTE: ${user.username} voted. ${currentVotes}/${requiredVotes} votes.`);
+
+  if (currentVotes >= requiredVotes) {
+    sendLockVoteMessage(`🎉 Vote threshold reached early!`, io);
+    endLockVote(io);
+  }
+
+  return true;
+}
+
+// ============================================
+// Unlock Vote System (!unlock command)
+// ============================================
+
+// Send StreamBot message for unlock vote
+function sendUnlockVoteMessage(message, io) {
+  const botMessage = {
+    id: `streambot_unlock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    username: '🤖 StreamBot',
+    color: '#22C55E', // Green color for unlock votes
+    message: message,
+    timestamp: formatTime(),
+    fullTimestamp: new Date().toISOString(),
+    isSystem: true
+  };
+
+  chatMessages.push(botMessage);
+  if (chatMessages.length > MAX_CHAT_HISTORY) {
+    chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+  }
+
+  io.emit('new-message', botMessage);
+}
+
+// Clear all unlock vote timers
+function clearUnlockVoteTimers() {
+  unlockVoteTimers.forEach(timerId => clearTimeout(timerId));
+  unlockVoteTimers = [];
+}
+
+// End the unlock vote and tally results
+async function endUnlockVote(io) {
+  if (!activeUnlockVote) return;
+
+  const vote = activeUnlockVote;
+  const voteCount = vote.voters.size;
+  const requiredVotes = vote.requiredVotes;
+  const passed = voteCount >= requiredVotes;
+
+  // Clear timers and vote state
+  clearUnlockVoteTimers();
+  activeUnlockVote = null;
+  lastUnlockVoteEndTime = Date.now();
+  lastUnlockVotePassed = passed;
+
+  if (passed) {
+    sendUnlockVoteMessage(`🗳️ UNLOCK VOTE PASSED! ${voteCount}/${requiredVotes} votes (${Math.round(voteCount/vote.totalViewers*100)}% of viewers). Unlocking rotation...`, io);
+    console.log(`🗳️ UNLOCK VOTE: Vote passed with ${voteCount}/${requiredVotes} votes. Unlocking rotation.`);
+
+    // Trigger the unlock via API
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/unlock`,
+        {},
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        sendUnlockVoteMessage(`🔓 Rotation UNLOCKED! Stream will rotate at the next scheduled time.`, io);
+        console.log('🗳️ UNLOCK VOTE: Rotation unlocked successfully');
+      } else {
+        sendUnlockVoteMessage('⚠️ Vote passed but failed to unlock rotation. Try again later.', io);
+        console.error('🗳️ UNLOCK VOTE: Unlock failed:', response.data.error);
+      }
+    } catch (error) {
+      sendUnlockVoteMessage('⚠️ Vote passed but failed to unlock rotation. Try again later.', io);
+      console.error('🗳️ UNLOCK VOTE: Error unlocking rotation:', error.message);
+    }
+  } else {
+    sendUnlockVoteMessage(`🗳️ UNLOCK VOTE FAILED. Only ${voteCount}/${requiredVotes} votes received (${Math.round(voteCount/vote.totalViewers*100)}% of viewers).`, io);
+    sendUnlockVoteMessage(`⏳ Next !unlock vote available in 2 minutes.`, io);
+    console.log(`🗳️ UNLOCK VOTE: Vote failed with ${voteCount}/${requiredVotes} votes.`);
+  }
+}
+
+// Start a new unlock vote
+function startUnlockVote(initiator, io) {
+  const totalViewers = getUniqueViewerCount();
+  const requiredVotes = Math.ceil(totalViewers * UNLOCK_VOTE_THRESHOLD); // 50% needed
+
+  activeUnlockVote = {
+    startTime: Date.now(),
+    voters: new Set([initiator.ip]),
+    voterUsernames: new Set([initiator.username]),
+    requiredVotes: Math.max(requiredVotes, 2), // At least 2 votes required
+    totalViewers: totalViewers,
+    initiator: initiator.username
+  };
+
+  // Announce the vote
+  sendUnlockVoteMessage(`🔓 UNLOCK VOTE STARTED by ${initiator.username}! Type !unlock to vote to unlock the rotation.`, io);
+  sendUnlockVoteMessage(`📊 ${requiredVotes} votes needed (50% of ${totalViewers} viewers). Vote ends in 2 minutes!`, io);
+  sendUnlockVoteMessage(`ℹ️ If the vote passes, stream will resume normal rotation schedule.`, io);
+  sendUnlockVoteMessage(`✅ ${initiator.username} voted to unlock! (1/${requiredVotes})`, io);
+
+  console.log(`🗳️ UNLOCK VOTE: Started by ${initiator.username}. Need ${requiredVotes}/${totalViewers} votes (50%).`);
+
+  // Schedule warning timers
+  unlockVoteTimers.push(setTimeout(() => {
+    if (activeUnlockVote) {
+      const currentVotes = activeUnlockVote.voters.size;
+      sendUnlockVoteMessage(`⏰ 1 MINUTE remaining! ${currentVotes}/${activeUnlockVote.requiredVotes} votes so far. Type !unlock to vote!`, io);
+    }
+  }, 60 * 1000));
+
+  unlockVoteTimers.push(setTimeout(() => {
+    if (activeUnlockVote) {
+      const currentVotes = activeUnlockVote.voters.size;
+      sendUnlockVoteMessage(`⏰ 30 SECONDS remaining! ${currentVotes}/${activeUnlockVote.requiredVotes} votes. Hurry!`, io);
+    }
+  }, 90 * 1000));
+
+  unlockVoteTimers.push(setTimeout(() => {
+    if (activeUnlockVote) {
+      const currentVotes = activeUnlockVote.voters.size;
+      sendUnlockVoteMessage(`⏰ 5 SECONDS! Final count: ${currentVotes}/${activeUnlockVote.requiredVotes} votes!`, io);
+    }
+  }, 115 * 1000));
+
+  // End vote timer
+  unlockVoteTimers.push(setTimeout(() => {
+    endUnlockVote(io);
+  }, UNLOCK_VOTE_DURATION));
+}
+
+// Register a vote for unlocking
+function registerUnlockVote(user, io) {
+  if (!activeUnlockVote) return false;
+
+  if (activeUnlockVote.voters.has(user.ip)) {
+    return false;
+  }
+
+  activeUnlockVote.voters.add(user.ip);
+  activeUnlockVote.voterUsernames.add(user.username);
+
+  const currentVotes = activeUnlockVote.voters.size;
+  const requiredVotes = activeUnlockVote.requiredVotes;
+
+  sendUnlockVoteMessage(`✅ ${user.username} voted to unlock! (${currentVotes}/${requiredVotes})`, io);
+  console.log(`🗳️ UNLOCK VOTE: ${user.username} voted. ${currentVotes}/${requiredVotes} votes.`);
+
+  if (currentVotes >= requiredVotes) {
+    sendUnlockVoteMessage(`🎉 Vote threshold reached early!`, io);
+    endUnlockVote(io);
+  }
+
+  return true;
+}
+
 // Update user's message history for throttling
 function updateUserMessageHistory(username, message) {
   const currentTime = Date.now();
@@ -920,8 +1591,12 @@ const adminCommands = {
 /claim - Manually trigger a claim event
 /take [username] [amount] - Take points from a user (admin only)
 /announce [message] - Send a highlighted announcement
-/next - Skip to next stream (no vote required)
-/swap [url] - Swap to specific stream (no vote required)`;
+/next [kick|twitch] - Skip to next stream (no vote required)
+/swap [url] - Swap to specific stream (no vote required)
+/extend [minutes] - Extend rotation timer (default: 5 min)
+/reduce [minutes] - Reduce rotation timer (default: 5 min)
+/lock - Lock/toggle rotation timer (freeze countdown)
+/unlock - Unlock rotation timer (resume countdown)`;
     } else if (userInfo.isModerator) {
       // Moderator commands only
       helpMessage = `Available moderator commands:
@@ -932,7 +1607,7 @@ const adminCommands = {
 /clear - Clear all chat messages
 /tts [message] - Send a TTS message
 /announce [message] - Send a highlighted announcement
-/next - Skip to next stream (no vote required)
+/next [kick|twitch] - Skip to next stream (no vote required)
 /swap [url] - Swap to specific stream (no vote required)`;
     } else {
       helpMessage = 'You do not have permission to use admin commands.';
@@ -1304,14 +1979,23 @@ const adminCommands = {
   },
 
   next: async (socket, args, userInfo, io) => {
-    // Skip to next stream without voting
-    sendAdminResponse(socket, '⏳ Skipping to next stream...');
-    console.log(`🎬 ADMIN: ${userInfo.username} triggered stream skip via /next command`);
+    // Parse optional platform argument (kick or twitch)
+    const platform = args[0]?.toLowerCase();
+    const validPlatforms = ['kick', 'twitch'];
+
+    if (platform && !validPlatforms.includes(platform)) {
+      sendAdminResponse(socket, `❌ Invalid platform. Use: /next [kick|twitch]`);
+      return;
+    }
+
+    const platformText = platform ? ` (${platform})` : '';
+    sendAdminResponse(socket, `⏳ Skipping to next stream${platformText}...`);
+    console.log(`🎬 ADMIN: ${userInfo.username} triggered stream skip via /next command${platformText}`);
 
     try {
       const response = await axios.post(
         `${MAIN_SERVER_URL}/api/random-stream/rotate`,
-        {},
+        { platform },  // Pass platform to API
         getAxiosConfig({ timeout: 10000 })
       );
 
@@ -1321,7 +2005,9 @@ const adminCommands = {
           id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           username: '🤖 StreamBot',
           color: '#FF6B6B',
-          message: `⏭️ ${userInfo.username} skipped to the next stream.`,
+          message: platform
+            ? `⏭️ ${userInfo.username} skipped to the next ${platform.charAt(0).toUpperCase() + platform.slice(1)} stream.`
+            : `⏭️ ${userInfo.username} skipped to the next stream.`,
           timestamp: formatTime(),
           fullTimestamp: new Date().toISOString(),
           isSystem: true
@@ -1335,7 +2021,14 @@ const adminCommands = {
         io.emit('new-message', skipMessage);
         // Emit event to update the streaming header
         io.emit('stream-info-update', { source: 'admin-skip', message: 'Stream skipped by admin' });
-        sendAdminResponse(socket, '✅ Successfully skipped to next stream');
+        // Unlock rotation timer if it was locked
+        try {
+          await axios.post(`${MAIN_SERVER_URL}/api/random-stream/unlock`, {}, getAxiosConfig({ timeout: 5000 }));
+          console.log('🎬 ADMIN: Rotation timer unlocked after /next');
+        } catch (unlockErr) {
+          console.log('🎬 ADMIN: Timer was not locked or unlock failed:', unlockErr.message);
+        }
+        sendAdminResponse(socket, `✅ Successfully skipped to next ${platform ? platform + ' ' : ''}stream`);
       } else {
         sendAdminResponse(socket, `❌ Failed to skip: ${response.data.error || 'Unknown error'}`);
       }
@@ -1403,6 +2096,13 @@ const adminCommands = {
           platform: parsedUrl.platform,
           message: `Swapped to ${parsedUrl.channel} by admin`
         });
+        // Unlock rotation timer if it was locked
+        try {
+          await axios.post(`${MAIN_SERVER_URL}/api/random-stream/unlock`, {}, getAxiosConfig({ timeout: 5000 }));
+          console.log('🎬 ADMIN: Rotation timer unlocked after /swap');
+        } catch (unlockErr) {
+          console.log('🎬 ADMIN: Timer was not locked or unlock failed:', unlockErr.message);
+        }
         sendAdminResponse(socket, `✅ Successfully swapped to ${platformName} channel: ${parsedUrl.channel}`);
       } else {
         sendAdminResponse(socket, `❌ Failed to swap: ${response.data.error || 'Unknown error'}. The stream may be offline.`);
@@ -1411,6 +2111,211 @@ const adminCommands = {
       const errorMsg = error.response?.data?.error || error.message;
       console.error('❌ ADMIN: Failed to swap stream:', error.message);
       sendAdminResponse(socket, `❌ Failed to swap stream: ${errorMsg}. The stream may be offline.`);
+    }
+  },
+
+  extend: async (socket, args, userInfo, io) => {
+    // Admin only - extend rotation timer by 5 minutes (no vote required)
+    if (!userInfo.isAdmin) {
+      sendAdminResponse(socket, 'This command is only available to administrators.');
+      return;
+    }
+
+    const minutes = args.length > 0 ? parseInt(args[0]) : 5;
+    if (isNaN(minutes) || minutes <= 0 || minutes > 60) {
+      sendAdminResponse(socket, 'Invalid minutes. Please provide a number between 1 and 60.');
+      return;
+    }
+
+    console.log(`⏰ ADMIN: ${userInfo.username} extending rotation by ${minutes} minutes via /extend command`);
+
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/admin-extend`,
+        { minutes },
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        // Send public message
+        const extendMessage = {
+          id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          username: '🤖 StreamBot',
+          color: '#10B981',
+          message: `⏰ ${userInfo.username} extended the stream by ${minutes} minutes!`,
+          timestamp: formatTime(),
+          fullTimestamp: new Date().toISOString(),
+          isSystem: true
+        };
+
+        chatMessages.push(extendMessage);
+        if (chatMessages.length > MAX_CHAT_HISTORY) {
+          chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+        }
+
+        io.emit('new-message', extendMessage);
+        sendAdminResponse(socket, `✅ Extended rotation by ${minutes} minutes.`);
+      } else {
+        sendAdminResponse(socket, `❌ Failed to extend: ${response.data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message;
+      console.error('❌ ADMIN: Failed to extend rotation:', error.message);
+      sendAdminResponse(socket, `❌ Failed to extend: ${errorMsg}`);
+    }
+  },
+
+  reduce: async (socket, args, userInfo, io) => {
+    // Admin only - reduce rotation timer by 5 minutes (no vote required)
+    if (!userInfo.isAdmin) {
+      sendAdminResponse(socket, 'This command is only available to administrators.');
+      return;
+    }
+
+    const minutes = args.length > 0 ? parseInt(args[0]) : 5;
+    if (isNaN(minutes) || minutes <= 0 || minutes > 60) {
+      sendAdminResponse(socket, 'Invalid minutes. Please provide a number between 1 and 60.');
+      return;
+    }
+
+    console.log(`⏰ ADMIN: ${userInfo.username} reducing rotation by ${minutes} minutes via /reduce command`);
+
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/admin-reduce`,
+        { minutes },
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        // Send public message
+        const reduceMessage = {
+          id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          username: '🤖 StreamBot',
+          color: '#F59E0B',
+          message: `⏰ ${userInfo.username} reduced the stream time by ${response.data.reducedByMinutes} minutes!`,
+          timestamp: formatTime(),
+          fullTimestamp: new Date().toISOString(),
+          isSystem: true
+        };
+
+        chatMessages.push(reduceMessage);
+        if (chatMessages.length > MAX_CHAT_HISTORY) {
+          chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+        }
+
+        io.emit('new-message', reduceMessage);
+        sendAdminResponse(socket, `✅ Reduced rotation by ${response.data.reducedByMinutes} minutes.`);
+      } else {
+        sendAdminResponse(socket, `❌ Failed to reduce: ${response.data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message;
+      console.error('❌ ADMIN: Failed to reduce rotation:', error.message);
+      sendAdminResponse(socket, `❌ Failed to reduce: ${errorMsg}`);
+    }
+  },
+
+  lock: async (socket, args, userInfo, io) => {
+    // Admin only - lock/unlock rotation timer
+    if (!userInfo.isAdmin) {
+      sendAdminResponse(socket, 'This command is only available to administrators.');
+      return;
+    }
+
+    console.log(`🔒 ADMIN: ${userInfo.username} toggling rotation lock via /lock command`);
+
+    try {
+      // First check current lock status
+      const statusResponse = await axios.get(
+        `${MAIN_SERVER_URL}/api/random-stream/lock-status`,
+        getAxiosConfig({ timeout: 5000 })
+      );
+
+      const isCurrentlyLocked = statusResponse.data.isLocked;
+
+      // Toggle lock state
+      const endpoint = isCurrentlyLocked ? 'unlock' : 'lock';
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/${endpoint}`,
+        {},
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        const action = isCurrentlyLocked ? 'unlocked' : 'locked';
+        const icon = isCurrentlyLocked ? '🔓' : '🔒';
+
+        // Send public message
+        const lockMessage = {
+          id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          username: '🤖 StreamBot',
+          color: '#F59E0B',
+          message: `${icon} ${userInfo.username} ${action} the rotation timer!`,
+          timestamp: formatTime(),
+          fullTimestamp: new Date().toISOString(),
+          isSystem: true
+        };
+
+        chatMessages.push(lockMessage);
+        if (chatMessages.length > MAX_CHAT_HISTORY) {
+          chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+        }
+
+        io.emit('new-message', lockMessage);
+        sendAdminResponse(socket, `✅ Rotation timer ${action}.`);
+      } else {
+        sendAdminResponse(socket, `❌ Failed to toggle lock: ${response.data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message;
+      console.error('❌ ADMIN: Failed to toggle rotation lock:', error.message);
+      sendAdminResponse(socket, `❌ Failed to toggle lock: ${errorMsg}`);
+    }
+  },
+
+  unlock: async (socket, args, userInfo, io) => {
+    // Admin only - explicitly unlock rotation timer
+    if (!userInfo.isAdmin) {
+      sendAdminResponse(socket, 'This command is only available to administrators.');
+      return;
+    }
+
+    console.log(`🔓 ADMIN: ${userInfo.username} unlocking rotation via /unlock command`);
+
+    try {
+      const response = await axios.post(
+        `${MAIN_SERVER_URL}/api/random-stream/unlock`,
+        {},
+        getAxiosConfig({ timeout: 10000 })
+      );
+
+      if (response.data.success) {
+        // Send public message
+        const unlockMessage = {
+          id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          username: '🤖 StreamBot',
+          color: '#F59E0B',
+          message: `🔓 ${userInfo.username} unlocked the rotation timer!`,
+          timestamp: formatTime(),
+          fullTimestamp: new Date().toISOString(),
+          isSystem: true
+        };
+
+        chatMessages.push(unlockMessage);
+        if (chatMessages.length > MAX_CHAT_HISTORY) {
+          chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
+        }
+
+        io.emit('new-message', unlockMessage);
+        sendAdminResponse(socket, `✅ Rotation timer unlocked.`);
+      } else {
+        sendAdminResponse(socket, `❌ Failed to unlock: ${response.data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message;
+      console.error('❌ ADMIN: Failed to unlock rotation:', error.message);
+      sendAdminResponse(socket, `❌ Failed to unlock: ${errorMsg}`);
     }
   }
 };
@@ -1710,8 +2615,12 @@ async function handlePublicCommand(command, args, user, socket, io) {
 !top - Show points leaderboard
 !uptime - Show stream uptime
 !channel - Show current random channel info
-!next - Vote to skip to next stream (75% needed)
+!next [kick|twitch] - Vote to skip to next stream (75% needed)
 !swap [url] - Vote to swap to a specific stream (75% needed)
+!extend - Vote to extend current stream by 3-5 minutes (33% needed)
+!reduce - Vote to reduce current stream by 3-5 minutes (33% needed)
+!lock - Vote to lock rotation (100% needed, stops auto-rotate)
+!unlock - Vote to unlock rotation (50% needed, resumes auto-rotate)
 !roll - Roll a dice (1-6)
 !coinflip - Flip a coin
 !gamble [amount] - 50/50 chance to double or lose
@@ -2152,14 +3061,45 @@ async function handlePublicCommand(command, args, user, socket, io) {
 
     case 'next':
       // Skip vote command - allows viewers to vote to skip to the next stream
+      // Usage: !next [kick|twitch] - optional platform to force
+
+      // Parse optional platform argument
+      const skipPlatform = args[0]?.toLowerCase();
+      const validSkipPlatforms = ['kick', 'twitch'];
+      if (skipPlatform && !validSkipPlatforms.includes(skipPlatform)) {
+        sendAdminResponse(socket, '❌ Invalid platform. Use: !next [kick|twitch]');
+        return;
+      }
 
       // Check if there's already an active vote
       if (activeSkipVote) {
-        // Try to register a vote
+        // Try to register a vote (ignore platform arg when voting on existing vote)
         const voted = registerSkipVote(user, io);
         if (!voted) {
           sendAdminResponse(socket, '❌ You have already voted in this skip vote!');
         }
+        return;
+      }
+
+      // Check for other active votes
+      if (activeSwapVote) {
+        sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeExtendVote) {
+        sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeReduceVote) {
+        sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeLockVote) {
+        sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeUnlockVote) {
+        sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
         return;
       }
 
@@ -2173,15 +3113,60 @@ async function handlePublicCommand(command, args, user, socket, io) {
         return;
       }
 
-      // Check minimum viewers (at least 2 viewers needed for a meaningful vote)
+      // Check viewer count
       const currentViewerCount = getUniqueViewerCount();
+
+      // Single-viewer auto-execute: if only 1 viewer, skip voting and execute directly
+      if (currentViewerCount === 1) {
+        // Check single-viewer action cooldown
+        const timeSinceSingleAction = Date.now() - lastSingleViewerActionTime;
+        if (lastSingleViewerActionTime > 0 && timeSinceSingleAction < SINGLE_VIEWER_ACTION_COOLDOWN) {
+          const remainingCooldown = Math.ceil((SINGLE_VIEWER_ACTION_COOLDOWN - timeSinceSingleAction) / 1000);
+          sendAdminResponse(socket, `⏳ Please wait ${remainingCooldown} seconds before using another solo command.`);
+          return;
+        }
+
+        // Execute skip directly without voting
+        const platformText = skipPlatform ? ` ${skipPlatform.charAt(0).toUpperCase() + skipPlatform.slice(1)}` : '';
+        sendSkipVoteMessage(`⚡ Solo mode: ${user.username} is skipping to the next${platformText} stream...`, io);
+        console.log(`🗳️ SKIP: Single viewer (${user.username}) - executing skip directly${skipPlatform ? ` (${skipPlatform})` : ''}`);
+
+        lastSingleViewerActionTime = Date.now();
+        lastSkipVoteEndTime = Date.now();
+        lastSkipVotePassed = true;
+
+        try {
+          const response = await axios.post(
+            `${MAIN_SERVER_URL}/api/random-stream/rotate`,
+            { platform: skipPlatform },
+            getAxiosConfig({ timeout: 10000 })
+          );
+
+          if (response.data.success) {
+            sendSkipVoteMessage(`✅ Stream skipped successfully!`, io);
+            io.emit('stream-info-update', { source: 'skip-solo', message: 'Stream skipped by solo viewer' });
+            try {
+              await axios.post(`${MAIN_SERVER_URL}/api/random-stream/unlock`, {}, getAxiosConfig({ timeout: 5000 }));
+            } catch (unlockErr) {
+              // Timer may not have been locked
+            }
+          } else {
+            sendSkipVoteMessage('⚠️ Failed to skip stream. Try again later.', io);
+          }
+        } catch (error) {
+          sendSkipVoteMessage('⚠️ Failed to skip stream. Try again later.', io);
+          console.error('🗳️ SKIP: Error triggering stream rotation:', error.message);
+        }
+        return;
+      }
+
       if (currentViewerCount < 2) {
         sendAdminResponse(socket, '❌ At least 2 viewers are needed to start a skip vote.');
         return;
       }
 
-      // Start a new skip vote
-      startSkipVote(user, io);
+      // Start a new skip vote (with optional platform preference)
+      startSkipVote(user, io, skipPlatform);
       break;
 
     case 'swap':
@@ -2200,6 +3185,22 @@ async function handlePublicCommand(command, args, user, socket, io) {
       // Check if there's an active skip vote (can't have both at once)
       if (activeSkipVote) {
         sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeExtendVote) {
+        sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeReduceVote) {
+        sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeLockVote) {
+        sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeUnlockVote) {
+        sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
         return;
       }
 
@@ -2228,8 +3229,64 @@ async function handlePublicCommand(command, args, user, socket, io) {
         return;
       }
 
-      // Check minimum viewers (at least 2 viewers needed for a meaningful vote)
+      // Check viewer count
       const swapViewerCount = getUniqueViewerCount();
+
+      // Single-viewer auto-execute: if only 1 viewer, skip voting and execute directly
+      if (swapViewerCount === 1) {
+        // Check single-viewer action cooldown
+        const timeSinceSingleAction = Date.now() - lastSingleViewerActionTime;
+        if (lastSingleViewerActionTime > 0 && timeSinceSingleAction < SINGLE_VIEWER_ACTION_COOLDOWN) {
+          const remainingCooldown = Math.ceil((SINGLE_VIEWER_ACTION_COOLDOWN - timeSinceSingleAction) / 1000);
+          sendAdminResponse(socket, `⏳ Please wait ${remainingCooldown} seconds before using another solo command.`);
+          return;
+        }
+
+        // Execute swap directly without voting
+        const platformIcon = parsedSwapUrl.platform === 'twitch' ? '📺' : '🟢';
+        sendSwapVoteMessage(`⚡ Solo mode: ${user.username} is swapping to ${platformIcon} ${parsedSwapUrl.channel}...`, io);
+        console.log(`🗳️ SWAP: Single viewer (${user.username}) - executing swap to ${parsedSwapUrl.url}`);
+
+        lastSingleViewerActionTime = Date.now();
+        lastSwapVoteEndTime = Date.now();
+        lastSwapVotePassed = true;
+
+        try {
+          const response = await axios.post(
+            `${MAIN_SERVER_URL}/api/url-stream`,
+            {
+              url: parsedSwapUrl.url,
+              quality: 'best',
+              displayName: `${parsedSwapUrl.channel} (Solo)`,
+              autoReconnect: true
+            },
+            getAxiosConfig({ timeout: 15000 })
+          );
+
+          if (response.data.success) {
+            sendSwapVoteMessage(`✅ Successfully swapped to ${parsedSwapUrl.platform === 'twitch' ? 'Twitch' : 'Kick'} channel: ${parsedSwapUrl.channel}`, io);
+            io.emit('stream-info-update', {
+              source: 'swap-solo',
+              channel: parsedSwapUrl.channel,
+              platform: parsedSwapUrl.platform,
+              message: `Swapped to ${parsedSwapUrl.channel} by solo viewer`
+            });
+            try {
+              await axios.post(`${MAIN_SERVER_URL}/api/random-stream/unlock`, {}, getAxiosConfig({ timeout: 5000 }));
+            } catch (unlockErr) {
+              // Timer may not have been locked
+            }
+          } else {
+            sendSwapVoteMessage(`⚠️ Failed to swap: ${response.data.error || 'Unknown error'}. The stream may be offline.`, io);
+          }
+        } catch (error) {
+          const errorMsg = error.response?.data?.error || error.message;
+          sendSwapVoteMessage(`⚠️ Failed to swap: ${errorMsg}. The stream may be offline.`, io);
+          console.error('🗳️ SWAP: Error triggering stream swap:', error.message);
+        }
+        return;
+      }
+
       if (swapViewerCount < 2) {
         sendAdminResponse(socket, '❌ At least 2 viewers are needed to start a swap vote.');
         return;
@@ -2237,6 +3294,395 @@ async function handlePublicCommand(command, args, user, socket, io) {
 
       // Start a new swap vote
       startSwapVote(user, swapTargetUrl, parsedSwapUrl, io);
+      break;
+
+    case 'extend':
+      // Extend vote command - allows viewers to vote to extend the current stream time
+
+      // Check if there's already an active extend vote
+      if (activeExtendVote) {
+        // Try to register a vote
+        const extendVoted = registerExtendVote(user, io);
+        if (!extendVoted) {
+          sendAdminResponse(socket, '❌ You have already voted in this extend vote!');
+        }
+        return;
+      }
+
+      // Check if there's an active skip or swap vote (can't have multiple votes at once)
+      if (activeSkipVote) {
+        sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeSwapVote) {
+        sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeReduceVote) {
+        sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeLockVote) {
+        sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeUnlockVote) {
+        sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+
+      // Check cooldown (5 min between extend votes)
+      const timeSinceLastExtendVote = Date.now() - lastExtendVoteEndTime;
+      if (lastExtendVoteEndTime > 0 && timeSinceLastExtendVote < EXTEND_VOTE_COOLDOWN) {
+        const remainingExtendCooldown = Math.ceil((EXTEND_VOTE_COOLDOWN - timeSinceLastExtendVote) / 1000);
+        sendAdminResponse(socket, `⏳ Please wait ${remainingExtendCooldown} seconds before starting another extend vote.`);
+        return;
+      }
+
+      // Check viewer count
+      const extendViewerCount = getUniqueViewerCount();
+
+      // Single-viewer auto-execute: if only 1 viewer, skip voting and execute directly
+      if (extendViewerCount === 1) {
+        // Check single-viewer action cooldown
+        const timeSinceSingleAction = Date.now() - lastSingleViewerActionTime;
+        if (lastSingleViewerActionTime > 0 && timeSinceSingleAction < SINGLE_VIEWER_ACTION_COOLDOWN) {
+          const remainingCooldown = Math.ceil((SINGLE_VIEWER_ACTION_COOLDOWN - timeSinceSingleAction) / 1000);
+          sendAdminResponse(socket, `⏳ Please wait ${remainingCooldown} seconds before using another solo command.`);
+          return;
+        }
+
+        // Execute extend directly without voting
+        sendExtendVoteMessage(`⚡ Solo mode: ${user.username} is extending the stream time...`, io);
+        console.log(`🗳️ EXTEND: Single viewer (${user.username}) - executing extend directly`);
+
+        lastSingleViewerActionTime = Date.now();
+        lastExtendVoteEndTime = Date.now();
+
+        try {
+          const response = await axios.post(
+            `${MAIN_SERVER_URL}/api/random-stream/extend`,
+            {},
+            getAxiosConfig({ timeout: 10000 })
+          );
+
+          if (response.data.success) {
+            sendExtendVoteMessage(`⏰ Stream extended by ${response.data.extendedByMinutes} minutes! Enjoy the extra time!`, io);
+            io.emit('stream-info-update', { source: 'extend-solo', message: 'Stream extended by solo viewer' });
+          } else {
+            sendExtendVoteMessage(`⚠️ Failed to extend: ${response.data.error || 'Unknown error'}`, io);
+          }
+        } catch (error) {
+          const errorMsg = error.response?.data?.error || error.message;
+          sendExtendVoteMessage(`⚠️ Failed to extend: ${errorMsg}`, io);
+          console.error('🗳️ EXTEND: Error triggering extend:', error.message);
+        }
+        return;
+      }
+
+      if (extendViewerCount < 3) {
+        sendAdminResponse(socket, '❌ At least 3 viewers are needed to start an extend vote (requires 2 votes to pass).');
+        return;
+      }
+
+      // Start a new extend vote
+      startExtendVote(user, io);
+      break;
+
+    case 'reduce':
+      // Reduce vote command - allows viewers to vote to reduce the current stream time
+
+      // Check if there's already an active reduce vote
+      if (activeReduceVote) {
+        const reduceVoted = registerReduceVote(user, io);
+        if (!reduceVoted) {
+          sendAdminResponse(socket, '❌ You have already voted in this reduce vote!');
+        }
+        return;
+      }
+
+      // Check if there's an active vote of any kind
+      if (activeSkipVote) {
+        sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeSwapVote) {
+        sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeExtendVote) {
+        sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeLockVote) {
+        sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeUnlockVote) {
+        sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+
+      // Check cooldown (5 min between reduce votes)
+      const timeSinceLastReduceVote = Date.now() - lastReduceVoteEndTime;
+      if (lastReduceVoteEndTime > 0 && timeSinceLastReduceVote < REDUCE_VOTE_COOLDOWN) {
+        const remainingReduceCooldown = Math.ceil((REDUCE_VOTE_COOLDOWN - timeSinceLastReduceVote) / 1000);
+        sendAdminResponse(socket, `⏳ Please wait ${remainingReduceCooldown} seconds before starting another reduce vote.`);
+        return;
+      }
+
+      // Check viewer count
+      const reduceViewerCount = getUniqueViewerCount();
+
+      // Single-viewer auto-execute: if only 1 viewer, skip voting and execute directly
+      if (reduceViewerCount === 1) {
+        // Check single-viewer action cooldown
+        const timeSinceSingleAction = Date.now() - lastSingleViewerActionTime;
+        if (lastSingleViewerActionTime > 0 && timeSinceSingleAction < SINGLE_VIEWER_ACTION_COOLDOWN) {
+          const remainingCooldown = Math.ceil((SINGLE_VIEWER_ACTION_COOLDOWN - timeSinceSingleAction) / 1000);
+          sendAdminResponse(socket, `⏳ Please wait ${remainingCooldown} seconds before using another solo command.`);
+          return;
+        }
+
+        // Execute reduce directly without voting
+        sendReduceVoteMessage(`⚡ Solo mode: ${user.username} is reducing the stream time...`, io);
+        console.log(`🗳️ REDUCE: Single viewer (${user.username}) - executing reduce directly`);
+
+        lastSingleViewerActionTime = Date.now();
+        lastReduceVoteEndTime = Date.now();
+
+        try {
+          const response = await axios.post(
+            `${MAIN_SERVER_URL}/api/random-stream/reduce`,
+            {},
+            getAxiosConfig({ timeout: 10000 })
+          );
+
+          if (response.data.success) {
+            sendReduceVoteMessage(`⏰ Stream time reduced by ${response.data.reducedByMinutes} minutes!`, io);
+          } else {
+            sendReduceVoteMessage('⚠️ Failed to reduce time. Try again later.', io);
+          }
+        } catch (error) {
+          sendReduceVoteMessage('⚠️ Failed to reduce time. Try again later.', io);
+          console.error('🗳️ REDUCE: Error reducing rotation:', error.message);
+        }
+        return;
+      }
+
+      if (reduceViewerCount < 3) {
+        sendAdminResponse(socket, '❌ At least 3 viewers are needed to start a reduce vote (requires 2 votes to pass).');
+        return;
+      }
+
+      // Start a new reduce vote
+      startReduceVote(user, io);
+      break;
+
+    case 'lock':
+      // Lock vote command - allows viewers to vote to lock the rotation (100% required)
+
+      // Check if there's already an active lock vote
+      if (activeLockVote) {
+        const lockVoted = registerLockVote(user, io);
+        if (!lockVoted) {
+          sendAdminResponse(socket, '❌ You have already voted in this lock vote!');
+        }
+        return;
+      }
+
+      // Check if there's an active vote of any kind
+      if (activeSkipVote) {
+        sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeSwapVote) {
+        sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeExtendVote) {
+        sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeReduceVote) {
+        sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeUnlockVote) {
+        sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+
+      // Check cooldown
+      const lockCooldownDuration = lastLockVotePassed ? LOCK_VOTE_COOLDOWN : VOTE_COOLDOWN_FAILED;
+      const timeSinceLastLockVote = Date.now() - lastLockVoteEndTime;
+      if (lastLockVoteEndTime > 0 && timeSinceLastLockVote < lockCooldownDuration) {
+        const remainingLockCooldown = Math.ceil((lockCooldownDuration - timeSinceLastLockVote) / 1000);
+        sendAdminResponse(socket, `⏳ Please wait ${remainingLockCooldown} seconds before starting another lock vote.`);
+        return;
+      }
+
+      // Check if already locked
+      try {
+        const lockStatusResp = await axios.get(`${MAIN_SERVER_URL}/api/random-stream/lock-status`, getAxiosConfig({ timeout: 5000 }));
+        if (lockStatusResp.data.isLocked) {
+          sendAdminResponse(socket, '❌ Rotation is already locked. Use !unlock to start a vote to unlock it.');
+          return;
+        }
+      } catch (err) {
+        console.error('❌ LOCK VOTE: Failed to check lock status:', err.message);
+      }
+
+      // Check viewer count
+      const lockViewerCount = getUniqueViewerCount();
+
+      // Single-viewer auto-execute: if only 1 viewer, skip voting and execute directly
+      if (lockViewerCount === 1) {
+        // Check single-viewer action cooldown
+        const timeSinceSingleAction = Date.now() - lastSingleViewerActionTime;
+        if (lastSingleViewerActionTime > 0 && timeSinceSingleAction < SINGLE_VIEWER_ACTION_COOLDOWN) {
+          const remainingCooldown = Math.ceil((SINGLE_VIEWER_ACTION_COOLDOWN - timeSinceSingleAction) / 1000);
+          sendAdminResponse(socket, `⏳ Please wait ${remainingCooldown} seconds before using another solo command.`);
+          return;
+        }
+
+        // Execute lock directly without voting
+        sendLockVoteMessage(`⚡ Solo mode: ${user.username} is locking the rotation...`, io);
+        console.log(`🗳️ LOCK: Single viewer (${user.username}) - executing lock directly`);
+
+        lastSingleViewerActionTime = Date.now();
+        lastLockVoteEndTime = Date.now();
+        lastLockVotePassed = true;
+
+        try {
+          const response = await axios.post(
+            `${MAIN_SERVER_URL}/api/random-stream/lock`,
+            {},
+            getAxiosConfig({ timeout: 10000 })
+          );
+
+          if (response.data.success) {
+            sendLockVoteMessage(`🔒 Rotation LOCKED! Stream will not rotate until a successful !next vote.`, io);
+          } else {
+            sendLockVoteMessage('⚠️ Failed to lock rotation. Try again later.', io);
+          }
+        } catch (error) {
+          sendLockVoteMessage('⚠️ Failed to lock rotation. Try again later.', io);
+          console.error('🗳️ LOCK: Error locking rotation:', error.message);
+        }
+        return;
+      }
+
+      if (lockViewerCount < 2) {
+        sendAdminResponse(socket, '❌ At least 2 viewers are needed to start a lock vote.');
+        return;
+      }
+
+      // Start a new lock vote
+      startLockVote(user, io);
+      break;
+
+    case 'unlock':
+      // Unlock vote command - allows viewers to vote to unlock the rotation (50% required)
+
+      // Check if there's already an active unlock vote
+      if (activeUnlockVote) {
+        const unlockVoted = registerUnlockVote(user, io);
+        if (!unlockVoted) {
+          sendAdminResponse(socket, '❌ You have already voted in this unlock vote!');
+        }
+        return;
+      }
+
+      // Check if there's an active vote of any kind
+      if (activeSkipVote) {
+        sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeSwapVote) {
+        sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeExtendVote) {
+        sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeReduceVote) {
+        sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+      if (activeLockVote) {
+        sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
+        return;
+      }
+
+      // Check cooldown
+      const unlockCooldownDuration = lastUnlockVotePassed ? UNLOCK_VOTE_COOLDOWN : VOTE_COOLDOWN_FAILED;
+      const timeSinceLastUnlockVote = Date.now() - lastUnlockVoteEndTime;
+      if (lastUnlockVoteEndTime > 0 && timeSinceLastUnlockVote < unlockCooldownDuration) {
+        const remainingUnlockCooldown = Math.ceil((unlockCooldownDuration - timeSinceLastUnlockVote) / 1000);
+        sendAdminResponse(socket, `⏳ Please wait ${remainingUnlockCooldown} seconds before starting another unlock vote.`);
+        return;
+      }
+
+      // Check if actually locked
+      try {
+        const unlockStatusResp = await axios.get(`${MAIN_SERVER_URL}/api/random-stream/lock-status`, getAxiosConfig({ timeout: 5000 }));
+        if (!unlockStatusResp.data.isLocked) {
+          sendAdminResponse(socket, '❌ Rotation is not locked. Use !lock to start a vote to lock it.');
+          return;
+        }
+      } catch (err) {
+        console.error('❌ UNLOCK VOTE: Failed to check lock status:', err.message);
+      }
+
+      // Check viewer count
+      const unlockViewerCount = getUniqueViewerCount();
+
+      // Single-viewer auto-execute: if only 1 viewer, skip voting and execute directly
+      if (unlockViewerCount === 1) {
+        // Check single-viewer action cooldown
+        const timeSinceSingleAction = Date.now() - lastSingleViewerActionTime;
+        if (lastSingleViewerActionTime > 0 && timeSinceSingleAction < SINGLE_VIEWER_ACTION_COOLDOWN) {
+          const remainingCooldown = Math.ceil((SINGLE_VIEWER_ACTION_COOLDOWN - timeSinceSingleAction) / 1000);
+          sendAdminResponse(socket, `⏳ Please wait ${remainingCooldown} seconds before using another solo command.`);
+          return;
+        }
+
+        // Execute unlock directly without voting
+        sendUnlockVoteMessage(`⚡ Solo mode: ${user.username} is unlocking the rotation...`, io);
+        console.log(`🗳️ UNLOCK: Single viewer (${user.username}) - executing unlock directly`);
+
+        lastSingleViewerActionTime = Date.now();
+        lastUnlockVoteEndTime = Date.now();
+        lastUnlockVotePassed = true;
+
+        try {
+          const response = await axios.post(
+            `${MAIN_SERVER_URL}/api/random-stream/unlock`,
+            {},
+            getAxiosConfig({ timeout: 10000 })
+          );
+
+          if (response.data.success) {
+            sendUnlockVoteMessage(`🔓 Rotation UNLOCKED! Stream will rotate at the next scheduled time.`, io);
+          } else {
+            sendUnlockVoteMessage('⚠️ Failed to unlock rotation. Try again later.', io);
+          }
+        } catch (error) {
+          sendUnlockVoteMessage('⚠️ Failed to unlock rotation. Try again later.', io);
+          console.error('🗳️ UNLOCK: Error unlocking rotation:', error.message);
+        }
+        return;
+      }
+
+      if (unlockViewerCount < 2) {
+        sendAdminResponse(socket, '❌ At least 2 viewers are needed to start an unlock vote.');
+        return;
+      }
+
+      // Start a new unlock vote
+      startUnlockVote(user, io);
       break;
 
     default:

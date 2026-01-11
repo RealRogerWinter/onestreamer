@@ -3,6 +3,11 @@
    Video on left, Chat on right (full height)
    ============================================ */
 
+/* CSS custom property for actual viewport height (set by JS for iOS) */
+:root {
+  --vh-actual: 100vh;
+}
+
 /* Main theatre layout container - transparent to show video behind */
 .landscape-theatre-layout {
   position: fixed;
@@ -15,6 +20,9 @@
   pointer-events: none;
   z-index: 100;
   overflow: hidden;
+  /* iOS GPU acceleration to prevent layout recalculation issues */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
 /* ============================================
@@ -207,6 +215,37 @@
   font-weight: 500;
 }
 
+/* Countdown badge for random rotation */
+.countdown-badge {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: rgba(139, 92, 246, 0.3);
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  border-radius: 4px;
+}
+
+.countdown-badge.countdown-locked {
+  background: rgba(245, 158, 11, 0.3);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.countdown-icon {
+  font-size: 10px;
+}
+
+.countdown-time {
+  font-size: 11px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  color: #c4b5fd;
+  font-weight: 600;
+}
+
+.countdown-badge.countdown-locked .countdown-time {
+  color: #fcd34d;
+}
+
 .streamer-name {
   font-size: 12px;
   color: rgba(255,255,255,0.8);
@@ -255,8 +294,10 @@
   top: 0;
   right: 0;
   width: 280px;
+  /* Height is set by JS inline style for iOS, CSS fallbacks below */
   height: 100vh;
   height: 100dvh;
+  height: var(--vh-actual, 100dvh);
   background: #121212;
   display: flex;
   flex-direction: column;
@@ -264,6 +305,10 @@
   border-left: 1px solid rgba(255,255,255,0.1);
   pointer-events: auto;
   overflow: hidden;
+  /* iOS GPU acceleration */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Chat header */
@@ -391,37 +436,95 @@
   min-height: 0;
 }
 
-/* Override chat container for landscape sidebar */
-.chat-sidebar-content .chat-container {
+/* Override chat container for landscape sidebar - CRITICAL for iOS */
+/* Must override mobile media query that sets bottom: -100% */
+.chat-sidebar-content .chat-container,
+.landscape-chat-sidebar .chat-sidebar-content .chat-container {
   position: relative !important;
+  top: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  right: auto !important;
   height: 100% !important;
   width: 100% !important;
   max-height: none !important;
+  max-width: 100% !important;
   border-radius: 0 !important;
   background: transparent !important;
   display: flex !important;
   flex-direction: column !important;
+  transform: none !important;
+  transition: none !important;
+  z-index: auto !important;
+  border: none !important;
+  overflow: visible !important;
 }
 
-.chat-sidebar-content .chat-header {
+.chat-sidebar-content .chat-header,
+.landscape-chat-sidebar .chat-sidebar-content .chat-header {
   display: none !important;
 }
 
-.chat-sidebar-content .chat-messages {
+.chat-sidebar-content .chat-messages,
+.landscape-chat-sidebar .chat-sidebar-content .chat-messages {
   flex: 1 !important;
   max-height: none !important;
   height: auto !important;
   min-height: 0 !important;
   overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Ensure chat input is visible */
-.chat-sidebar-content .chat-input-container {
+.chat-sidebar-content .chat-input-container,
+.landscape-chat-sidebar .chat-sidebar-content .chat-input-container {
   flex-shrink: 0 !important;
   position: relative !important;
   background: #121212 !important;
   padding: 8px !important;
   border-top: 1px solid rgba(255,255,255,0.1) !important;
+}
+
+/* Chat message styling for landscape sidebar - consistent with desktop */
+.chat-sidebar-content .chat-message,
+.landscape-chat-sidebar .chat-sidebar-content .chat-message {
+  padding: 4px 12px !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  border-left: none !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+.chat-sidebar-content .message-username,
+.landscape-chat-sidebar .chat-sidebar-content .message-username {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+.chat-sidebar-content .message-text,
+.landscape-chat-sidebar .chat-sidebar-content .message-text {
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.chat-sidebar-content .message-timestamp,
+.landscape-chat-sidebar .chat-sidebar-content .message-timestamp {
+  font-size: 10px !important;
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Chat input styling for landscape */
+.chat-sidebar-content .chat-input,
+.landscape-chat-sidebar .chat-sidebar-content .chat-input {
+  font-size: 14px !important;
+  padding: 8px 12px !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 8px !important;
+  color: #fff !important;
 }
 
 /* ============================================
@@ -456,13 +559,19 @@
   top: 0;
   left: 0;
   width: 240px;
+  /* Height is set by JS inline style for iOS, CSS fallbacks below */
   height: 100%;
   height: 100dvh;
+  height: var(--vh-actual, 100dvh);
   background: #121212;
   overflow-y: auto;
   animation: slideIn 0.2s ease;
   pointer-events: auto !important;
   cursor: default;
+  /* iOS GPU acceleration */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-overflow-scrolling: touch;
 }
 
 @keyframes slideIn {
