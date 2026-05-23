@@ -2,13 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Socket } from 'socket.io-client';
 import { WebRTCClientAdapter } from '../../services/WebRTCClientAdapter';
 import PerformanceMonitorComponent from '../PerformanceMonitor';
-import { StreamSwitchManager, StreamSwitchState } from '../../services/StreamSwitchManager';
+import { StreamSwitchManager } from '../../services/StreamSwitchManager';
 import CanvasEffectOverlay from '../canvas/CanvasEffectOverlay';
 import { useVisualFxProcessor } from '../../hooks/useVisualFxProcessor';
 import CookieService, { COOKIE_NAMES } from '../../services/CookieService';
 import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../../utils/browserDetection';
 import VideoControls from '../video/VideoControls';
 import { useWebRTCConnection } from '../../hooks/useWebRTCConnection';
+import { useStreamSwitch } from '../../hooks/useStreamSwitch';
 import './WebRTCViewer.css';
 
 interface WebRTCViewerProps {
@@ -55,9 +56,21 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     isConnected,
   });
 
-  const [switchState, setSwitchState] = useState<StreamSwitchState>('idle');
-  const [isFallbackMode, setIsFallbackMode] = useState(false);
-  const streamSwitchManagerRef = useRef<StreamSwitchManager | null>(null);
+  // Stream-switch lifecycle state (extracted to useStreamSwitch).
+  // The big per-streamer-change orchestration effect (initializeViewer +
+  // cleanup + race handling) still lives in this file — see below —
+  // so we pull the setters/refs back out of the hook and drive them
+  // inline. The hook owns the long-lived refs and the state primitives.
+  const {
+    switchState,
+    isFallbackMode,
+    streamSwitchManagerRef,
+    previousStreamerIdRef,
+    userWasStreamerRef,
+    setSwitchState,
+    setIsFallbackMode,
+  } = useStreamSwitch({ streamerId: currentStreamerId ?? null });
+
   const [isPaused, setIsPaused] = useState(false);
   const lastStreamUpdateRef = useRef<number>(0);
   const streamUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -191,9 +204,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   // CRITICAL FIX: Detect streamer changes and handle appropriately
   // For LiveKit: Don't reconnect for viewbot rotations - let selectActiveParticipant handle it
   // Only reconnect for: no connection, takeover (viewbot→real), or broken connection
-  const previousStreamerIdRef = useRef<string | null | undefined>(undefined);
-  // Track if this user was EVER the streamer (persists through null transitions)
-  const userWasStreamerRef = useRef<boolean>(false);
+  // (previousStreamerIdRef and userWasStreamerRef now owned by useStreamSwitch.)
 
   useEffect(() => {
     const mySocketId = socket?.id;
