@@ -3,7 +3,6 @@ import authService from '../services/AuthService';
 import CookieService, { COOKIE_NAMES } from '../services/CookieService';
 import EmojiPicker from './EmojiPicker';
 import ChatSettings, { ChatUserSettings } from './ChatSettings';
-import DOMPurify from 'dompurify';
 import CloudflareTurnstile from './CloudflareTurnstile';
 import { TURNSTILE_SITE_KEY } from '../config/turnstile';
 import ExternalLinkModal from './ExternalLinkModal';
@@ -12,6 +11,7 @@ import { openPopoutChat } from './PopoutChat';
 import { useChatMessages, ChatMessage } from '../hooks/useChatMessages';
 import { useChatSocket, UserInfo } from '../hooks/useChatSocket';
 import { ChatInput, ChatInputHandle } from './chat/ChatInput';
+import { MessageList } from './chat/MessageList';
 import './Chat.css';
 import './PopoutChat.css';
 
@@ -771,99 +771,10 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     return true;
   };
 
-  // Format message text (safely handle HTML, emojis, URLs, and mentions)
-  const formatMessage = (text: string, isMentioned: boolean = false) => {
-    // STEP 1: First, escape ALL HTML to prevent XSS attacks
-    // This converts <script> to &lt;script&gt;, etc.
-    const escapeHtml = (unsafe: string): string => {
-      return unsafe
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    };
-    
-    let safeText = escapeHtml(text);
-    
-    // STEP 1.5: Process @ mentions - highlight them
-    const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
-    safeText = safeText.replace(mentionRegex, (match, username) => {
-      // Mark mentions with a special delimiter so we can preserve them
-      return `{{MENTION_START}}<span class="chat-mention">@${username}</span>{{MENTION_END}}`;
-    });
-    
-    // STEP 2: Process emoji codes - these are safe because we control the HTML
-    const emojiRegex = /:([a-zA-Z0-9_-]+):/g;
-    safeText = safeText.replace(emojiRegex, (match, code) => {
-      const emojiUrl = customEmojis.get(code);
-      if (emojiUrl) {
-        // Sanitize the URL to prevent javascript: or data: URLs
-        const safeUrl = DOMPurify.sanitize(emojiUrl);
-        // Mark emojis with a special delimiter so we can preserve them
-        return `{{EMOJI_START}}<img src="${safeUrl}" alt=":${code}:" class="chat-emoji" title=":${code}:" />{{EMOJI_END}}`;
-      }
-      return match; // Return original if no emoji found
-    });
-    
-    // STEP 3: Process URLs - convert them to clickable links
-    // Split by emoji and mention markers to avoid replacing URLs inside them
-    const parts = safeText.split(/({{(?:EMOJI|MENTION)_START}}.*?{{(?:EMOJI|MENTION)_END}})/);
-    safeText = parts.map((part) => {
-      // Skip parts that are emoji or mention markers
-      if (part.startsWith('{{EMOJI_START}}') || part.startsWith('{{MENTION_START}}')) {
-        return part;
-      }
-      // Replace URLs in non-emoji/non-mention parts
-      const urlRegex = /(https?:\/\/[^\s<>&]+)/g;
-      return part.replace(urlRegex, (match, url) => {
-        // Sanitize the URL to prevent XSS
-        const safeUrl = DOMPurify.sanitize(url);
-        // Add a data attribute with the URL for the click handler
-        return `{{LINK_START}}<a href="${safeUrl}" data-external-url="${safeUrl}" class="chat-link" target="_blank" rel="noopener noreferrer">${safeUrl}</a>{{LINK_END}}`;
-      });
-    }).join('');
-    
-    // STEP 4: Remove our special markers and prepare final HTML
-    safeText = safeText
-      .replace(/{{EMOJI_START}}/g, '')
-      .replace(/{{EMOJI_END}}/g, '')
-      .replace(/{{MENTION_START}}/g, '')
-      .replace(/{{MENTION_END}}/g, '')
-      .replace(/{{LINK_START}}/g, '')
-      .replace(/{{LINK_END}}/g, '');
-    
-    // STEP 5: Final sanitization with DOMPurify
-    // Configure DOMPurify to only allow specific tags and attributes
-    const config = {
-      ALLOWED_TAGS: ['img', 'a', 'span'],
-      ALLOWED_ATTR: ['src', 'alt', 'class', 'title', 'href', 'target', 'rel'],
-      ALLOWED_PROTOCOLS: ['http', 'https'],
-      KEEP_CONTENT: true,
-      // Don't allow any data: or javascript: URLs
-      ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?):\/\/)/
-    };
-    
-    const cleanHtml = DOMPurify.sanitize(safeText, config);
-    
-    return cleanHtml;
-  };
-
   // Handle emoji selection from picker
   const handleEmojiSelect = (emojiCode: string) => {
     chatInputRef.current?.insertAtCursor(emojiCode);
     setShowEmojiPicker(false);
-  };
-
-  // Check if the current user is mentioned in a message
-  const isUserMentioned = (message: ChatMessage): boolean => {
-    if (!userInfo || !message.mentions || message.mentions.length === 0) {
-      return false;
-    }
-    
-    // Check if current user's username (without emoji prefix) is in mentions
-    const currentUsername = userInfo.username.replace(/^🤖\s*/, '').toLowerCase();
-    return message.mentions.some(mention => mention.toLowerCase() === currentUsername);
   };
 
   // Handle settings changes
@@ -931,52 +842,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     });
   };
 
-  // Format timestamp based on settings
-  const formatTimestamp = (timestamp: string, fullTimestamp: string): string => {
-    if (!chatSettings.showTimestamps) {
-      return '';
-    }
-
-    switch (chatSettings.timestampFormat) {
-      case 'long': {
-        // Parse the full timestamp and format to HH:MM:SS
-        if (fullTimestamp) {
-          const date = new Date(fullTimestamp);
-          const hours = date.getHours().toString().padStart(2, '0');
-          const minutes = date.getMinutes().toString().padStart(2, '0');
-          const seconds = date.getSeconds().toString().padStart(2, '0');
-          return `${hours}:${minutes}:${seconds}`;
-        }
-        return timestamp;
-      }
-      case 'relative': {
-        // Parse the timestamp and calculate relative time
-        const messageTime = new Date(fullTimestamp || `${new Date().toDateString()} ${timestamp}`);
-        const now = new Date();
-        const diff = now.getTime() - messageTime.getTime();
-        const seconds = Math.floor(diff / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const hours = Math.floor(minutes / 60);
-        
-        if (hours > 0) return `${hours}h ago`;
-        if (minutes > 0) return `${minutes}m ago`;
-        if (seconds > 30) return `${seconds}s ago`;
-        return 'just now';
-      }
-      case 'short':
-      default: {
-        // For short format, also use local time but only show HH:MM
-        if (fullTimestamp) {
-          const date = new Date(fullTimestamp);
-          const hours = date.getHours().toString().padStart(2, '0');
-          const minutes = date.getMinutes().toString().padStart(2, '0');
-          return `${hours}:${minutes}`;
-        }
-        return timestamp;
-      }
-    }
-  };
-
   // If chat is popped out, show indicator instead
   if (isPoppedOut && !window.location.search.includes('popout=true')) {
     return (
@@ -1016,69 +881,19 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       </div>
       
       {/* Chat Messages */}
-      <div className="chat-messages" ref={chatContainerRef}>
-        {messages.length === 0 && connectionStatus === 'connected' && (
-          <div className="chat-empty">
-            <p>No messages yet. Start the conversation!</p>
-          </div>
-        )}
-        
-        {messages.map((msg) => {
-          const isMentioned = isUserMentioned(msg);
-          return (
-            <div key={msg.id} className={`chat-message ${msg.isAnnouncement ? 'announcement' : ''} ${isMentioned ? 'mentioned' : ''}`}>
-              {chatSettings.showTimestamps && (
-                <span className="message-timestamp">
-                  {formatTimestamp(msg.timestamp, msg.fullTimestamp)}
-                </span>
-              )}
-              <span 
-                className="message-username clickable-username" 
-                style={{ 
-                  color: msg.userId === userInfo?.userId && chatSettings.userColor ? chatSettings.userColor : msg.color,
-                  cursor: 'pointer'
-                }}
-                onClick={(e) => handleUsernameClick(msg.username, e)}
-                title="Click to view profile"
-              >
-                {msg.isAdmin && <span className="user-badge admin-badge" title="Admin">👑</span>}
-                {!msg.isAdmin && msg.isModerator && <span className="user-badge moderator-badge" title="Moderator">🛡️</span>}
-                {msg.username}:
-              </span>
-              <span 
-                className="message-text"
-                dangerouslySetInnerHTML={{ __html: formatMessage(msg.message, isMentioned) }}
-              />
-            </div>
-          );
-        })}
-        
-        {connectionStatus === 'connecting' && (
-          <div className="chat-status-message">
-            <p>Connecting to chat...</p>
-          </div>
-        )}
-        
-        {connectionStatus === 'error' && (
-          <div className="chat-status-message error">
-            <p>Failed to connect to chat service</p>
-          </div>
-        )}
-        
-        <div ref={messagesEndRef} />
-      </div>
-      
-      {/* New Messages Overlay */}
-      {isScrolledUp && newMessagesCount > 0 && (
-        <div className="new-messages-overlay">
-          <button 
-            className="new-messages-button"
-            onClick={jumpToBottom}
-          >
-            {newMessagesCount} new message{newMessagesCount !== 1 ? 's' : ''} ↓
-          </button>
-        </div>
-      )}
+      <MessageList
+        messages={messages}
+        userInfo={userInfo}
+        chatSettings={chatSettings}
+        customEmojis={customEmojis}
+        connectionStatus={connectionStatus}
+        isScrolledUp={isScrolledUp}
+        newMessagesCount={newMessagesCount}
+        onJumpToBottom={jumpToBottom}
+        onUsernameClick={handleUsernameClick}
+        containerRef={chatContainerRef}
+        endRef={messagesEndRef}
+      />
       
       {/* Chat Input */}
       <div className="chat-input-container">
