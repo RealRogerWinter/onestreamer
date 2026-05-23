@@ -10,6 +10,7 @@ const { v4: uuidv4 } = require('uuid');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const ProfanityFilterService = require('../server/services/ProfanityFilterService');
+const createClaimEventService = require('./claims/claimEventService');
 
 const app = express();
 
@@ -94,13 +95,8 @@ const userMessageHistory = new Map(); // Store recent messages: username -> [{ m
 const RATE_LIMIT_DELAY = 5000; // 5 seconds between messages
 const DUPLICATE_MESSAGE_WINDOW = 30000; // 30 seconds for duplicate detection
 
-// Claim event system
-let activeClaimEvent = null; // { code: string, reward: number, claimedBy: null|username, startedAt: timestamp }
-let claimEventTimer = null; // Timer for next random claim event
-let lastClaimEventTime = 0; // Track last claim event time to enforce minimum spacing
-const MIN_CLAIM_INTERVAL = 20 * 60 * 1000; // Minimum 20 minutes between events
-const MAX_CLAIM_INTERVAL = 60 * 60 * 1000; // Maximum 60 minutes between events
-const CLAIM_TIMEOUT = 60 * 1000; // Claim events expire after 60 seconds if not claimed
+// Claim event system — state, constants, and helpers live in ./claims/claimEventService.js
+// (instantiated below once dependencies like formatTime and chatMessages are in scope).
 
 // Vote system constants
 const SKIP_VOTE_DURATION = 2 * 60 * 1000; // 2 minutes voting window
@@ -463,94 +459,19 @@ function isDuplicateMessage(username, message) {
   return recentMessages.some(msg => msg.message === message);
 }
 
-// Claim event helper functions
-function generateClaimCode() {
-  // Generate a random 4-digit code
-  return Math.floor(1000 + Math.random() * 9000).toString();
-}
-
-function startClaimEvent(manuallyTriggered = false) {
-  // Don't start a new event if one is already active
-  if (activeClaimEvent) {
-    return false;
-  }
-  
-  const code = generateClaimCode();
-  const reward = 1000 + Math.floor(Math.random() * 1001); // 1000-2000 points
-  
-  activeClaimEvent = {
-    code: code,
-    reward: reward,
-    claimedBy: null,
-    startedAt: Date.now(),
-    manuallyTriggered: manuallyTriggered
-  };
-  
-  // Announce the claim event
-  const claimMessage = `🎉 CLAIM EVENT! Type !claim ${code} to win ${reward} points! ⏰ Expires in 60 seconds!`;
-  const streamerBotMessage = {
-    id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    username: '🤖 StreamBot',
-    color: '#FFD700',
-    message: claimMessage,
-    timestamp: formatTime(),
-    fullTimestamp: new Date().toISOString(),
-    isSystem: true,
-    isClaimEvent: true
-  };
-  
-  chatMessages.push(streamerBotMessage);
-  if (chatMessages.length > MAX_CHAT_HISTORY) {
-    chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
-  }
-  
-  io.emit('new-message', streamerBotMessage);
-  
-  // Set timeout to expire the claim event
-  setTimeout(() => {
-    if (activeClaimEvent && !activeClaimEvent.claimedBy) {
-      const expiredMessage = `⏰ Claim event expired! No one claimed the ${activeClaimEvent.reward} points.`;
-      const expiredBotMessage = {
-        id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        username: '🤖 StreamBot',
-        color: '#FF6B6B',
-        message: expiredMessage,
-        timestamp: formatTime(),
-        fullTimestamp: new Date().toISOString(),
-        isSystem: true
-      };
-      
-      chatMessages.push(expiredBotMessage);
-      if (chatMessages.length > MAX_CHAT_HISTORY) {
-        chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
-      }
-      
-      io.emit('new-message', expiredBotMessage);
-      activeClaimEvent = null;
-    }
-  }, CLAIM_TIMEOUT);
-  
-  lastClaimEventTime = Date.now();
-  return true;
-}
-
-function scheduleNextClaimEvent() {
-  // Clear existing timer if any
-  if (claimEventTimer) {
-    clearTimeout(claimEventTimer);
-  }
-  
-  // Schedule next event with random interval (20-60 minutes)
-  const nextEventDelay = MIN_CLAIM_INTERVAL + Math.random() * (MAX_CLAIM_INTERVAL - MIN_CLAIM_INTERVAL);
-  const nextEventMinutes = Math.floor(nextEventDelay / 60000);
-  
-  console.log(`📅 CLAIM: Next claim event scheduled in ${nextEventMinutes} minutes`);
-  
-  claimEventTimer = setTimeout(() => {
-    startClaimEvent(false);
-    scheduleNextClaimEvent(); // Schedule the next one
-  }, nextEventDelay);
-}
+// Claim event helpers + state live in ./claims/claimEventService.js.
+// Instantiated here so the service captures live refs to io, chatMessages,
+// MAX_CHAT_HISTORY, formatTime, and getUniqueViewerCount.
+const claimEventService = createClaimEventService({
+  io,
+  chatMessages,
+  MAX_CHAT_HISTORY,
+  formatTime,
+  // getUniqueViewerCount is declared just below; wrap in a thunk so the
+  // service can call it lazily without depending on hoisting order.
+  getUniqueViewerCount: () => getUniqueViewerCount()
+});
+const { startClaimEvent, scheduleNextClaimEvent, generateClaimCode } = claimEventService;
 
 // ============================================
 // Skip Vote System (!next command)
@@ -2814,35 +2735,41 @@ async function handlePublicCommand(command, args, user, socket, io) {
       }
       break;
       
-    case 'claim':
+    case 'claim': {
+      // Active-claim state lives in claimEventService. Capture the live
+      // object reference for this branch; property mutations on it
+      // (e.g. .claimedBy) are visible to the service, which is the contract
+      // the previous inline implementation also relied on.
+      const activeClaimEvent = claimEventService.getActiveClaim();
+
       // Check if a claim event is active
       if (!activeClaimEvent) {
         sendAdminResponse(socket, '❌ No active claim event right now. Wait for the next one!');
         return;
       }
-      
+
       // Check if already claimed
       if (activeClaimEvent.claimedBy) {
         sendAdminResponse(socket, `❌ Too late! This event was already claimed by ${activeClaimEvent.claimedBy}.`);
         return;
       }
-      
+
       // Check if user provided the correct code
       if (args.length === 0 || args[0] !== activeClaimEvent.code) {
         sendAdminResponse(socket, '❌ Invalid claim code. Check the announcement and try again!');
         return;
       }
-      
+
       // User must be authenticated to claim
       if (!user.isAuthenticated) {
         sendAdminResponse(socket, '❌ You must be logged in to claim rewards.');
         return;
       }
-      
+
       // Process the claim
       activeClaimEvent.claimedBy = user.username;
       const claimedReward = activeClaimEvent.reward;
-      
+
       // Award points to the user
       try {
         const response = await axios.post(`${MAIN_SERVER_URL}/api/internal/award-points`, {
@@ -2855,7 +2782,7 @@ async function handlePublicCommand(command, args, user, socket, io) {
           },
           timeout: 10000
         }));
-        
+
         if (response.data.success) {
           const winMessage = `🎊 ${user.username} claimed ${claimedReward} points! New balance: ${response.data.newBalance}`;
           const winBotMessage = {
@@ -2867,16 +2794,16 @@ async function handlePublicCommand(command, args, user, socket, io) {
             fullTimestamp: new Date().toISOString(),
             isSystem: true
           };
-          
+
           chatMessages.push(winBotMessage);
           if (chatMessages.length > MAX_CHAT_HISTORY) {
             chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
           }
-          
+
           io.emit('new-message', winBotMessage);
-          
+
           // Clear the active claim event
-          activeClaimEvent = null;
+          claimEventService.clearActiveClaim();
         } else {
           sendAdminResponse(socket, `❌ ${response.data.error}`);
           activeClaimEvent.claimedBy = null; // Reset if award failed
@@ -2887,6 +2814,7 @@ async function handlePublicCommand(command, args, user, socket, io) {
         activeClaimEvent.claimedBy = null; // Reset if award failed
       }
       break;
+    }
       
     case 'gift':
       if (!user.isAuthenticated) {
