@@ -7,6 +7,7 @@ import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
 import { useVisualFxProcessor } from '../hooks/useVisualFxProcessor';
 import CookieService, { COOKIE_NAMES } from '../services/CookieService';
 import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../utils/browserDetection';
+import VideoControls from './video/VideoControls';
 import './WebRTCViewer.css';
 
 interface WebRTCViewerProps {
@@ -63,8 +64,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   
   const [showControls, setShowControls] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  
+
+
   // Debug info for mobile 5G issues
   const [debugInfo, setDebugInfo] = useState<{
     iceState?: string;
@@ -492,31 +493,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     }
   }, [userInteracted, volume]);
 
-  // Track fullscreen changes
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isCurrentlyFullscreen = !!(
-        document.fullscreenElement ||
-        (document as any).webkitFullscreenElement ||
-        (document as any).mozFullScreenElement ||
-        (document as any).msFullscreenElement
-      );
-      setIsFullscreen(isCurrentlyFullscreen);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
-
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
-    };
-  }, []);
-  
   // iOS Safari video recovery - detect when video freezes with audio playing
   useEffect(() => {
     if (!isConnected || !videoRef.current || !isIOS()) return;
@@ -2246,39 +2222,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     showControlsTemporary();
   };
 
-  const toggleFullscreen = async () => {
-    const videoContainer = videoRef.current?.parentElement;
-    if (!videoContainer) return;
-
-    try {
-      if (!isFullscreen) {
-        // Enter fullscreen
-        if (videoContainer.requestFullscreen) {
-          await videoContainer.requestFullscreen();
-        } else if ((videoContainer as any).webkitRequestFullscreen) {
-          await (videoContainer as any).webkitRequestFullscreen();
-        } else if ((videoContainer as any).mozRequestFullScreen) {
-          await (videoContainer as any).mozRequestFullScreen();
-        } else if ((videoContainer as any).msRequestFullscreen) {
-          await (videoContainer as any).msRequestFullscreen();
-        }
-      } else {
-        // Exit fullscreen
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as any).webkitExitFullscreen) {
-          await (document as any).webkitExitFullscreen();
-        } else if ((document as any).mozCancelFullScreen) {
-          await (document as any).mozCancelFullScreen();
-        } else if ((document as any).msExitFullscreen) {
-          await (document as any).msExitFullscreen();
-        }
-      }
-    } catch (error) {
-      console.error('Fullscreen toggle failed:', error);
-    }
-  };
-
   const handleRetry = async () => {
     await cleanup();
     if (socket?.connected) { // Remove isActive requirement for retry
@@ -2614,123 +2557,16 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       />
 
       {/* Custom Video Controls */}
-      {isConnected && playbackState === 'playing' && showControls && (
-        <div 
-          className="video-controls"
-          style={{
-            position: 'absolute',
-            bottom: '20px',
-            left: '20px',
-            right: '20px',
-            background: 'rgba(0, 0, 0, 0.8)',
-            borderRadius: '8px',
-            padding: '12px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px',
-            zIndex: 30,
-            backdropFilter: 'blur(4px)'
-          }}
+      {isConnected && playbackState === 'playing' && (
+        <VideoControls
+          videoRef={videoRef}
+          showControls={showControls}
+          volume={volume}
+          isPaused={isPaused}
+          onTogglePause={togglePause}
+          onVolumeChange={handleVolumeChange}
           onMouseMove={handleMouseMove}
-        >
-          {/* Play/Pause Button */}
-          <button
-            onClick={togglePause}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'white',
-              fontSize: '24px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              transition: 'background 0.2s ease'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
-            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-          >
-            {isPaused ? '▶️' : '⏸️'}
-          </button>
-
-          {/* Volume Control */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              onClick={() => handleVolumeChange(volume === 0 ? 0.8 : 0)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'white',
-                fontSize: '20px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '4px'
-              }}
-            >
-              {volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={volume}
-              onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-              style={{
-                width: '80px',
-                height: '4px',
-                background: '#444',
-                borderRadius: '2px',
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            />
-          </div>
-
-          {/* Live Indicator */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div
-              style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: '#ff4444',
-                animation: 'pulse 2s infinite'
-              }}
-            />
-            <span style={{ color: 'white', fontSize: '14px', fontWeight: 'bold' }}>LIVE</span>
-          </div>
-
-          {/* Fullscreen Button */}
-          <button
-            onClick={toggleFullscreen}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'white',
-              fontSize: '20px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              transition: 'background 0.2s ease',
-              marginLeft: '8px'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
-            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-          >
-            {isFullscreen ? '⊡' : '⊞'}
-          </button>
-        </div>
+        />
       )}
       
       {!isLoading && !error && !isConnected && (
