@@ -8,6 +8,7 @@ import { useVisualFxProcessor } from '../../hooks/useVisualFxProcessor';
 import CookieService, { COOKIE_NAMES } from '../../services/CookieService';
 import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../../utils/browserDetection';
 import VideoControls from '../video/VideoControls';
+import { useWebRTCConnection } from '../../hooks/useWebRTCConnection';
 import './WebRTCViewer.css';
 
 interface WebRTCViewerProps {
@@ -38,14 +39,26 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   // Initialize Visual FX processor for viewer
   const visualFxProcessor = useVisualFxProcessor(videoRef, socket, false);
   const playRetryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [connectionState, setConnectionState] = useState<'connected' | 'disconnected' | 'reconnecting'>('disconnected');
-  const [reconnectionAttempts, setReconnectionAttempts] = useState(0);
-  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+
+  // WebRTC connection observability state (extracted to useWebRTCConnection).
+  // The heavy lifecycle (initializeViewer, retries, stream-switch cleanup)
+  // still lives in this file — deferred to a later PR — so we pull the
+  // setters back out of the hook and drive them inline below.
+  const {
+    connectionState,
+    reconnectionAttempts,
+    peerConnection,
+    setConnectionState,
+    setReconnectionAttempts,
+  } = useWebRTCConnection({
+    clientRef: mediasoupClientRef,
+    isConnected,
+  });
+
   const [switchState, setSwitchState] = useState<StreamSwitchState>('idle');
   const [isFallbackMode, setIsFallbackMode] = useState(false);
   const streamSwitchManagerRef = useRef<StreamSwitchManager | null>(null);
   const [isPaused, setIsPaused] = useState(false);
-  const webrtcReconnectAttempts = useRef(0);
   const lastStreamUpdateRef = useRef<number>(0);
   const streamUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const streamSwitchAbortController = useRef<AbortController | null>(null);
@@ -1303,26 +1316,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     }
   };
 
-  // Monitor connection state
-  useEffect(() => {
-    if (!mediasoupClientRef.current) return;
-
-    const updateConnectionInfo = () => {
-      const client = mediasoupClientRef.current;
-      if (client) {
-        const clientState = client.connectionState;
-        // Only update connectionState from client if we're not successfully connected
-        // This prevents polling from overriding a successful connection state
-        if (!isConnected || clientState === 'connected') {
-          setConnectionState(clientState);
-        }
-        setReconnectionAttempts(client.reconnectionInfo.attempts);
-      }
-    };
-
-    const interval = setInterval(updateConnectionInfo, 1000);
-    return () => clearInterval(interval);
-  }, [isConnected]);
+  // (Connection-state polling now lives inside useWebRTCConnection — it
+  // owns the interval and the isConnected guard.)
 
   // Socket event handlers for stream switching (always active to detect new streams)
   useEffect(() => {
