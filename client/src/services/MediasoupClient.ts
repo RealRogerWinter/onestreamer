@@ -1,7 +1,6 @@
 import * as mediasoupClient from 'mediasoup-client';
 import { Device, detectDevice } from 'mediasoup-client';
 import { Socket } from 'socket.io-client';
-import * as crypto from 'crypto-js';
 import { isIOSSafari, isIOS, isMobile } from '../utils/browserDetection';
 
 export interface MediasoupClientConfig {
@@ -69,11 +68,29 @@ export class MediasoupClient {
     this.setupConnectionMonitoring();
   }
 
-  private generateTurnCredential(username: string): string {
-    // Generate time-limited TURN credentials using HMAC-SHA1
-    const secret = '***REMOVED-TURN-SECRET***';
-    const hash = crypto.HmacSHA1(username, secret);
-    return crypto.enc.Base64.stringify(hash);
+  /**
+   * Fetch short-lived TURN credentials from the server. The HMAC secret used
+   * to sign these stays in process.env on the server — never shipped to the
+   * browser. Falls back to STUN-only if the endpoint is unreachable so the
+   * SDK can still attempt direct (non-relayed) connections.
+   */
+  private async fetchIceServers(): Promise<RTCIceServer[]> {
+    try {
+      const response = await fetch(`${this.serverUrl}/api/turn/credentials`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      return data.iceServers;
+    } catch (err) {
+      console.warn('⚠️ MEDIASOUP CLIENT: TURN cred fetch failed; falling back to STUN-only:', err);
+      return [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ];
+    }
   }
 
   private withTimeout<T>(promise: Promise<T>, ms: number = this.operationTimeout): Promise<T> {
@@ -551,34 +568,13 @@ export class MediasoupClient {
       });
       
       const transportOptions = await response.json();
-      
-      // Optimized ICE servers configuration with priority
-      // TURN username must be timestamp:username where timestamp is when it expires
-      const turnExpiry = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
-      const turnUsername = `${turnExpiry}:webrtc`;
-      const turnCredential = this.generateTurnCredential(turnUsername);
-      
-      // TURN Config set - Enhanced for iOS Safari
-      const iceServersConfig = [
-        // STUN servers for NAT discovery
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        // Our TURN server - using direct IP to bypass Cloudflare
-        {
-          urls: 'turn:<SERVER_IP>:3478',
-          username: turnUsername,
-          credential: turnCredential
-        },
-        {
-          urls: 'turn:<SERVER_IP>:3478?transport=tcp',
-          username: turnUsername,
-          credential: turnCredential
-        }
-      ];
-      
+
+      // Server-signed TURN credentials (HMAC stays out of the client bundle).
+      const iceServersConfig = await this.fetchIceServers();
+
       // iOS Safari needs explicit TURN relay in some cases
       const iceTransportPolicyValue = isIOS() ? 'all' : 'all'; // Keep 'all' but iOS may need 'relay' in some cases
-      
+
       const sendTransportOptions = {
         ...transportOptions,
         iceServers: iceServersConfig,
@@ -587,29 +583,14 @@ export class MediasoupClient {
         rtcpMuxPolicy: 'require', // Multiplex RTP and RTCP
         bundlePolicy: 'max-bundle' // Bundle media streams
       };
-      
+
       // Create send transport (MediaSoup ignores iceServers in options)
       this.sendTransport = this.device.createSendTransport(transportOptions);
-      
-      // Configure TURN servers on send transport too
-      // Configuring TURN servers on send transport
+
+      // Configure TURN servers on the send transport via updateIceServers,
+      // since createSendTransport's iceServers option is a no-op for MediaSoup.
       try {
-        const sendIceServers = [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          {
-            urls: 'turn:<SERVER_IP>:3478',
-            username: turnUsername,
-            credential: turnCredential
-          },
-          {
-            urls: 'turn:<SERVER_IP>:3478?transport=tcp',
-            username: turnUsername,
-            credential: turnCredential
-          }
-        ];
-        await this.sendTransport.updateIceServers({ iceServers: sendIceServers });
-        // TURN servers configured on send transport
+        await this.sendTransport.updateIceServers({ iceServers: iceServersConfig });
       } catch (error) {
         console.error('❌ MEDIASOUP CLIENT: Failed to configure TURN on send transport:', error);
       }
@@ -739,33 +720,13 @@ export class MediasoupClient {
       });
       
       const transportOptions = await response.json();
-      
-      // Add ICE servers to transport options for client-side WebRTC
-      // TURN username must be timestamp:username where timestamp is when it expires
-      const turnExpiry = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
-      const recvTurnUsername = `${turnExpiry}:webrtc`;
-      const recvTurnCredential = this.generateTurnCredential(recvTurnUsername);
-      
-      // Debug: Receive TURN Config
-      
+
+      // Server-signed TURN credentials (HMAC stays out of the client bundle).
+      const recvIceServers = await this.fetchIceServers();
+
       const recvTransportOptions = {
         ...transportOptions,
-        iceServers: [
-          // STUN servers for NAT discovery
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          // Our TURN server - using direct IP to bypass Cloudflare
-          {
-            urls: 'turn:<SERVER_IP>:3478',
-            username: recvTurnUsername,
-            credential: recvTurnCredential
-          },
-          {
-            urls: 'turn:<SERVER_IP>:3478?transport=tcp',
-            username: recvTurnUsername,
-            credential: recvTurnCredential
-          }
-        ],
+        iceServers: recvIceServers,
         // CRITICAL: Android Chrome needs relay when consuming from Plain RTP producers (viewbots)
         // Detect if we're likely consuming from a viewbot based on context
         iceTransportPolicy: 'all', // Will be overridden for viewbot consumption
@@ -787,7 +748,13 @@ export class MediasoupClient {
       const forceRelay = false;
       
       // CRITICAL MOBILE FIX: Aggressive ICE server configuration for cellular networks
-      // Adding more STUN servers increases chance of successful NAT traversal
+      // Adding more STUN servers increases chance of successful NAT traversal.
+      // TURN entries reuse the server-signed credentials fetched earlier
+      // (the HMAC secret is no longer in the client bundle).
+      const turnEntries = recvIceServers.filter((s) => {
+        const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+        return urls.some((u) => u.startsWith('turn:') || u.startsWith('turns:'));
+      });
       const iceServers = [
         // Multiple STUN servers for maximum redundancy and NAT discovery
         { urls: 'stun:stun.l.google.com:19302' },
@@ -797,15 +764,7 @@ export class MediasoupClient {
         { urls: 'stun:stun4.l.google.com:19302' },
         // Alternative STUN servers for better coverage
         { urls: 'stun:stun.services.mozilla.com:3478' },
-        // TURN server with both UDP and TCP for maximum compatibility
-        {
-          urls: [
-            'turn:<SERVER_IP>:3478?transport=udp',
-            'turn:<SERVER_IP>:3478?transport=tcp'
-          ],
-          username: recvTurnUsername,
-          credential: recvTurnCredential
-        }
+        ...turnEntries
       ];
 
       // CRITICAL: Aggressive ICE configuration for mobile cellular networks
