@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { SocketProvider, useMainSocket } from './contexts/SocketContext';
+import { useResponsiveLayout } from './hooks/useResponsiveLayout';
 import './App.css';
 import StreamViewer from './components/StreamViewer';
 import StreamControls from './components/StreamControls';
@@ -229,30 +230,8 @@ function AppContent() {
   // Mobile-specific states
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [showLandscapeChat, setShowLandscapeChat] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [isLandscape, setIsLandscape] = useState(false);
+  const { isMobile, isLandscape } = useResponsiveLayout();
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
-  
-  // Reliable mobile detection and orientation
-  useEffect(() => {
-    const checkMobileAndOrientation = () => {
-      const mobileCheck = window.innerWidth <= 768 ||
-        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      setIsMobile(mobileCheck);
-
-      // Check if in landscape mode
-      const landscapeCheck = window.innerWidth > window.innerHeight && mobileCheck;
-      setIsLandscape(landscapeCheck);
-    };
-
-    checkMobileAndOrientation();
-    window.addEventListener('resize', checkMobileAndOrientation);
-    window.addEventListener('orientationchange', checkMobileAndOrientation);
-    return () => {
-      window.removeEventListener('resize', checkMobileAndOrientation);
-      window.removeEventListener('orientationchange', checkMobileAndOrientation);
-    };
-  }, []);
 
   // Tutorial state
   const [showTutorial, setShowTutorial] = useState(false);
