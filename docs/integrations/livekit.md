@@ -44,12 +44,12 @@ The lesson captured in [ADR-0003](../architecture/adr/0003-livekit-dual-stack-ro
 
 ## What's wired today (dormant)
 
-These services exist and reference LiveKit but are not on the production hot path:
+These services exist and reference LiveKit but are not on the production hot path. The orphan helpers (`LiveKitIngressService.js`, `LiveKitAudioCapture.js`, and five of the six `ViewBotLiveKit*` variants) were deleted in #25; only the wired-but-never-executed services below remain:
 
 - [`server/services/LiveKitService.js`](../../server/services/LiveKitService.js) — core LiveKit `RoomServiceClient` wrapper
-- [`server/services/LiveKitIngressService.js`](../../server/services/LiveKitIngressService.js) — RTMP ingress
-- [`server/services/LiveKitAudioCapture.js`](../../server/services/LiveKitAudioCapture.js) — audio capture via the Node SDK
-- [`server/services/ViewBotLiveKitService.js`](../../server/services/ViewBotLiveKitService.js) and 5 sibling `ViewBotLiveKit*` variants — viewbot pipelines that *could* use LiveKit ingress, but the production viewbot path goes through `UnifiedViewBotRotation` + MediaSoup-or-WebRTC instead. See [`/docs/architecture/viewbot-fleet.md`](../architecture/viewbot-fleet.md).
+- [`server/services/ViewBotLiveKitService.js`](../../server/services/ViewBotLiveKitService.js) — the only remaining `ViewBotLiveKit*` variant; viewbot pipeline that *could* use LiveKit ingress, but production goes through `UnifiedViewBotRotation` + MediaSoup-or-WebRTC instead. See [`/docs/architecture/viewbot-fleet.md`](../architecture/viewbot-fleet.md).
+
+Both files are scheduled for removal in PR-S unless ADR-0002 is reversed first.
 
 ## nginx routing (active even when dormant)
 
@@ -85,8 +85,8 @@ If you ever flip `WEBRTC_BACKEND=livekit`:
 | Concern | File |
 |---------|------|
 | LiveKit room/token management | [`server/services/LiveKitService.js`](../../server/services/LiveKitService.js) |
-| RTMP ingress | [`server/services/LiveKitIngressService.js`](../../server/services/LiveKitIngressService.js) |
-| Audio capture | [`server/services/LiveKitAudioCapture.js`](../../server/services/LiveKitAudioCapture.js) |
+| RTMP ingress | _(was `LiveKitIngressService.js`; deleted in #25 as orphan)_ |
+| Audio capture | _(was `LiveKitAudioCapture.js`; deleted in #25 as orphan)_ |
 | Backend selection | [`server/config/webrtc.config.js`](../../server/config/webrtc.config.js) |
 | nginx routing | `/etc/nginx/sites-available/livekit.onestreamer.live`, `/etc/nginx/sites-available/onestreamer.live` |
 

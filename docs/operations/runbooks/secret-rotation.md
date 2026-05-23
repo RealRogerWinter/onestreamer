@@ -91,14 +91,19 @@ Procedure for rotating any of the project's credentials. Use when a secret has l
 2. **Restart**: `sudo systemctl restart coturn`.
 3. **Update OneStreamer's `.env`**: `TURN_SECRET=<new-value>`.
 4. **Restart OneStreamer**: `pm2 restart onestreamer-server --update-env`.
-5. **Remove the hardcoded fallback from code** (the same secret currently appears in `server/index.js`, `server/services/LiveKitService.js`, `server/services/ViewBotGStreamerWebRTC.js`, `server/services/ViewBotWebRTCService.js`, **`client/src/services/MediasoupClient.ts`**, **`client/src/services/MediasoupClientAdaptive.ts`** — and the client copies are shipped to every browser, which means the secret has effectively been public for as long as the React build has included it).
-6. **Rebuild the client** so the new bundle doesn't contain the old secret:
+5. **Confirm no hardcoded fallback remains in source.** PR #17 stripped the server-side fallbacks. PR #25 deleted the last leftover (`client/public/turn-test.html`). Verify:
+   ```bash
+   grep -rln "***REMOVED-TURN-SECRET***" \
+     --include='*.js' --include='*.ts' --include='*.tsx' --include='*.html' . | grep -v node_modules
+   ```
+   Should return empty. If the secret appears anywhere, fix that first.
+6. **Rebuild the client** so any old bundle on disk doesn't contain the previous secret:
    ```bash
    cd /root/onestreamer/client && npm run build && cd ..
-   sudo grep -lE "(87efe1ec|<new-secret>)" client/build/static/js/*.js
+   grep -lE "(<old-secret-prefix>|<new-secret>)" client/build/static/js/*.js
    ```
    Confirm the new bundle either has nothing or only the new (rotated) value.
-7. **Architectural fix worth doing at the same time**: stop shipping the HMAC secret to clients entirely. Add a `GET /api/turn/credentials` endpoint that server-signs short-lived (10-minute TTL) `username`/`credential` pairs and returns them to the client; client passes those into `RTCPeerConnection`'s `iceServers`. Standard time-limited TURN credential pattern — see [coturn wiki](https://github.com/coturn/coturn/wiki/turnserver) `use-auth-secret`. This is ~2 hours of work but removes a fundamental exposure.
+7. **Architectural fix landed in PR #18**: the server-signed `GET /api/turn/credentials` endpoint issues short-lived (10-minute TTL) `username`/`credential` pairs; the client passes those into `RTCPeerConnection`'s `iceServers`. The HMAC is no longer shipped to clients. No further work needed here.
 
 ### JWT_SECRET (auth tokens)
 

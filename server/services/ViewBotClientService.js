@@ -47,7 +47,7 @@ class ViewBotClientService {
     this.botIdCounter = 0;
     
     // ViewBot rotation system (will be loaded from database)
-    this.rotationEnabled = false; // DISABLED - Using SimpleViewBotMediaSoup instead
+    this.rotationEnabled = false; // SimpleViewBotRotation handles rotation centrally; this client doesn't drive its own loop
     this.currentLiveBot = null; // Currently streaming ViewBot
     this.rotationTimer = null; // Timer for automatic rotation
     this.realStreamerActive = false; // Protection flag for real streamers

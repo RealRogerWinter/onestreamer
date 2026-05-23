@@ -563,7 +563,7 @@ async function initializeRedis() {
 }
 
 const streamService = new StreamService();
-global.streamService = streamService;  // Make it globally accessible for SimpleViewBotMediaSoup
+global.streamService = streamService;
 const sessionService = new SessionService();
 const takeoverService = new TakeoverService(redisClient, sessionService);
 const testStreamService = new TestStreamService();
@@ -9308,7 +9308,7 @@ async function startServer() {
       viewBotClientService = null;
     }
     
-    // CRITICAL FIX: Set global objects so SimpleViewBotMediaSoup can emit events and manage streams
+    // Expose io + streamService on the global for legacy rotation paths
     global.io = io;
     global.streamService = streamService;
     global.streamManager = streamService;  // streamManager and streamService are same
@@ -9433,10 +9433,7 @@ async function startServer() {
       console.log('✅ VIEWBOT ROTATION: setTimeout scheduled');
       
       console.log('✅ VIEWBOT ROTATION: New Socket.IO-based rotation system initialized');
-      
-      // Keep SimpleViewBotMediaSoup disabled but available for fallback
-      global.simpleMediaSoupRotation = null;
-      
+
     } catch (error) {
       console.error('❌ VIEWBOT ROTATION: Failed to initialize:', error);
       console.error(error.stack);

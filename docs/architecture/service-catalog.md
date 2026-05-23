@@ -1,8 +1,8 @@
 # Service catalog
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-05-23. Sixteen orphan services (LiveKit-Audio/Ingress, Simple{TestBot,ViewBotMediaSoup}, ViewBot{FFmpeg,GStreamerWebRTC,LiveKit{FFmpeg,Node,Puppeteer,RTMP,SDK},Metrics,Monitor,MuxedStreamService,RotationIntegration}, InitializeSimpleRotation) deleted in #25._
 
-OneStreamer's backend has **~100 modules in [`server/services/`](../../server/services/)**. They have accumulated over time and there is real iteration debris — some files are dead code or superseded variants. This catalog groups every service thematically, with a one-line description and notes on which ones are dead-code candidates.
+OneStreamer's backend has **~85 modules in [`server/services/`](../../server/services/)**. This catalog groups every service thematically, with a one-line description and notes on which ones are dead-code candidates.
 
 **Conventions used below:**
 - **Bold** = actively wired in production
@@ -21,9 +21,7 @@ OneStreamer's backend has **~100 modules in [`server/services/`](../../server/se
 | **`MediasoupService.js`** | The WebRTC SFU. Manages routers, transports, producers, consumers. |
 | **`MediasoupPlainTransportService.js`** | Plain RTP transport creation for the secondary pipelines (recording, transcription, viewbots) that need raw RTP rather than DTLS-wrapped WebRTC. |
 | **`MediasoupSyncConfig.js`** | MediaSoup configuration helpers. |
-| `LiveKitService.js` | Alternative WebRTC backend (RoomServiceClient, ingress, egress). Currently dormant — see [ADR-0002](adr/0002-mediasoup-primary-livekit-dormant.md). |
-| `LiveKitIngressService.js` | RTMP ingress via LiveKit. Dormant. |
-| `LiveKitAudioCapture.js` | Audio capture via LiveKit SDK. Dormant. |
+| `LiveKitService.js` | Alternative WebRTC backend (RoomServiceClient, ingress, egress). Currently dormant — see [ADR-0002](adr/0002-mediasoup-primary-livekit-dormant.md). Scheduled for removal in PR-S. |
 | `WebRTCAdapter.js` | Abstraction layer for swapping MediaSoup ↔ LiveKit. |
 | `WebRTCAdapterV2.js` | Second-generation adapter (used by `UnifiedViewBotRotation`). |
 | **`TestStreamService.js`** | Synthetic test streams (SMPTE bars, color gradients, scrolling text, clock). |
@@ -44,14 +42,10 @@ See [`viewbot-fleet.md`](viewbot-fleet.md) for the live/dead breakdown.
 | **`ViewBotClientService.js`** | Per-bot lifecycle (start, stop, monitor). |
 | **`ViewBotManager.js`** | Plain RTP ↔ WebRTC mode toggle. |
 | **`ViewBotStateManager.js`** | Shared state across bot lifecycles. |
-| **`ViewBotMonitor.js`** | Health checks. |
-| **`ViewBotMetrics.js`** | Per-bot stats reporting. |
+| **`SimpleViewBotRotation.js`** | Simple in-memory rotation state (used by URL-stream rotation + by `UnifiedViewBotRotation` via `WebRTCAdapterV2`). |
+| **`SimpleViewBotSocket.js`** | Socket helper used by `SimpleViewBotRotation`. |
 | _`ViewBotRotationService.js`_ | Legacy rotation; replaced by Unified. |
-| _`ViewBotRotationIntegration.js`_ | Old integration wrapper. |
-| _`SimpleViewBotRotation.js`_ | Earlier rotation experiment. |
 | _`WebRTCViewBotRotation.js`_ | Earlier WebRTC-only rotation. |
-| _`InitializeSimpleRotation.js`_ | Bootstrap for an earlier rotation. |
-| _`SimpleViewBotSocket.js`_ | Socket-only experimental viewbot. |
 
 ### Ingest pipelines
 
@@ -59,23 +53,11 @@ See [`viewbot-fleet.md`](viewbot-fleet.md) for the live/dead breakdown.
 |---------|------|
 | **`ViewBotGStreamerService.js`** | GStreamer pipeline for Plain RTP mode. |
 | **`ViewBotWebRTCService.js`** | Puppeteer-driven Chrome for WebRTC mode. |
-| _`ViewBotGStreamerWebRTC.js`_ | GStreamer → WebRTC bridge variant. |
-| _`ViewBotFFmpegService.js`_ | FFmpeg-based viewbot (alternative to GStreamer). |
-| _`ViewBotMuxedStreamService.js`_ | Earlier muxed-stream variant. |
-| _`SimpleViewBotMediaSoup.js`_ | Simple MediaSoup viewbot. |
-| _`SimpleTestBot.js`_ | Test-only viewbot. |
 | _`WebRTCViewBot.js`_ | Earlier WebRTC viewbot. |
 
-### LiveKit-backed variants (all dormant — see [ADR-0003](adr/0003-livekit-dual-stack-rollback.md))
+### LiveKit-backed variants
 
-| Service |
-|---------|
-| _`ViewBotLiveKitService.js`_ |
-| _`ViewBotLiveKitFFmpeg.js`_ |
-| _`ViewBotLiveKitSDK.js`_ |
-| _`ViewBotLiveKitNode.js`_ |
-| _`ViewBotLiveKitPuppeteer.js`_ |
-| _`ViewBotLiveKitRTMP.js`_ |
+`ViewBotLiveKitService.js` is the only remaining LiveKit-backed variant. Dormant per [ADR-0003](adr/0003-livekit-dual-stack-rollback.md) and scheduled for removal alongside `LiveKitService.js` in PR-S. The other six LiveKit viewbot variants (FFmpeg, Node, Puppeteer, RTMP, SDK, and the GStreamer→WebRTC bridge) were deleted in #25.
 
 ### Helpers
 
@@ -223,28 +205,15 @@ Lives in [`server/services/game/`](../../server/services/) as a self-contained s
 
 ---
 
-## Backup / superseded / clearly dead
-
-These have `.backup-{timestamp}` suffixes or no callers in the current code path:
-
-- _`ItemService.js.backup-1756156123506`_ — old item service backup
-- _`StreamService.js.backup-1756156123508`_ — old stream service backup
-- _`ConestreamerserverservicesItemService.js`_ — empty file; likely a tooling artifact (rename gone wrong)
-- _`Conestreamertest-potato-item.js`_ — 1-byte file; same artifact pattern
-
-These should be deleted in a cleanup pass (out of scope for the docs overhaul — capture as a follow-up).
-
----
-
 ## Counting the fleet
 
 Approximate counts for orientation:
 
 | Group | Count |
 |-------|------:|
-| Streaming core | ~12 |
-| Viewbot fleet (active + legacy + LiveKit-dormant) | ~25 |
-| Recording + clips | ~14 |
+| Streaming core | ~11 |
+| Viewbot fleet (active + legacy + LiveKit-dormant) | ~12 |
+| Recording + clips | ~15 |
 | Transcription + AI | ~9 |
 | Audio + effects | ~4 |
 | Items + economy | ~4 |
@@ -253,22 +222,24 @@ Approximate counts for orientation:
 | Monitoring + admin | ~5 |
 | Stream interceptor | ~2 |
 | Game subsystem | ~9 |
-| Backups / dead code | ~4 |
-| **Total** | **~100** |
+| **Total** | **~85** |
 
 ---
 
-## Pruning candidates (follow-up work, out of scope for docs)
+## Pruning landed + remaining
 
-The biggest cleanup wins:
+**Landed in #25:** 16 orphan services deleted (4,257 LOC):
 
-1. **Delete all `*.backup-*` files** — old snapshots committed by accident.
-2. **Delete the typo-named files** — `ConestreamerserverservicesItemService.js`, `Conestreamertest-potato-item.js`.
-3. **Decide on dormant LiveKit infrastructure** — either revive it (resolve ADR-0003's open questions) or delete the 6 `ViewBotLiveKit*.js` + supporting files.
-4. **Delete the superseded rotation services** — `ViewBotRotationService.js`, `ViewBotRotationIntegration.js`, `SimpleViewBotRotation.js`, `WebRTCViewBotRotation.js`, `InitializeSimpleRotation.js`.
-5. **Delete the early viewbot experiments** — `WebRTCViewBot.js`, `ViewBotMuxedStreamService.js`, `SimpleViewBotSocket.js`, `SimpleTestBot.js`, `SimpleViewBotMediaSoup.js`.
+- `LiveKitAudioCapture.js`, `LiveKitIngressService.js`
+- 6 dormant LiveKit viewbot variants (`ViewBotLiveKit{FFmpeg,Node,Puppeteer,RTMP,SDK}.js`, `ViewBotGStreamerWebRTC.js`)
+- 6 superseded viewbot experiments (`SimpleTestBot.js`, `SimpleViewBotMediaSoup.js`, `ViewBotFFmpegService.js`, `ViewBotMetrics.js`, `ViewBotMonitor.js`, `ViewBotMuxedStreamService.js`)
+- 2 dead rotation files (`InitializeSimpleRotation.js`, `ViewBotRotationIntegration.js`)
 
-A focused cleanup PR could remove ~15 files and ~5,000 lines of dead code without changing any behavior. Capture as `<issue>` in the tracker rather than mixing into the docs overhaul.
+**Remaining cleanup (out of scope for #25):**
+
+1. **Dormant LiveKit core** — `LiveKitService.js`, `ViewBotLiveKitService.js`, `client/src/services/LiveKitClient.ts` are still wired but never executed in production. Scheduled for PR-S.
+2. **Superseded legacy rotation** — `ViewBotRotationService.js`, `WebRTCViewBotRotation.js`. These have non-trivial transitive ties; check before removal.
+3. **`WebRTCViewBot.js`** — earlier prototype, may be orphan; verify before deleting.
 
 ---
 

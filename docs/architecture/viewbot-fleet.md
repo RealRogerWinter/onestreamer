@@ -89,34 +89,28 @@ All in `server/services/`. **Bold = live in production.** Italic = dead-code or 
 - **`ViewBotClientService.js`** — current production per-bot lifecycle (start, stop, monitor)
 - **`ViewBotManager.js`** — mode toggle (Plain RTP ↔ WebRTC)
 - **`ViewBotStateManager.js`** — shared state tracking
-- **`ViewBotMonitor.js`** — health checks
-- **`ViewBotMetrics.js`** — per-bot stats reporting
+- **`SimpleViewBotRotation.js`** — simple in-memory rotation state, used by URL-stream rotation + `WebRTCAdapterV2`
+- **`SimpleViewBotSocket.js`** — socket helper for `SimpleViewBotRotation`
 - _`ViewBotRotationService.js`_ — legacy, replaced by `UnifiedViewBotRotation`
-- _`ViewBotRotationIntegration.js`_ — old integration wrapper
-- _`SimpleViewBotRotation.js`_, _`WebRTCViewBotRotation.js`_, _`InitializeSimpleRotation.js`_ — earlier rotation experiments
+- _`WebRTCViewBotRotation.js`_ — earlier WebRTC-only rotation
+- _Deleted in #25_: `ViewBotMonitor.js`, `ViewBotMetrics.js`, `ViewBotRotationIntegration.js`, `InitializeSimpleRotation.js`
 
 ### Plain RTP mode
 
 - **`MediasoupPlainTransportService.js`** — creates the plain-RTP transport for GStreamer to feed into
 - **`ViewBotGStreamerService.js`** — the GStreamer pipeline
-- _`ViewBotFFmpegService.js`_ — FFmpeg-based variant, not wired by default
+- _Deleted in #25_: `ViewBotFFmpegService.js` (FFmpeg-based variant; never wired)
 
 ### WebRTC (Puppeteer) mode
 
 - **`ViewBotWebRTCService.js`** — Puppeteer-driven Chrome that joins a viewbot HTML page and produces WebRTC
 - `viewbot-stream.html` (in `server/public/`) — the page Puppeteer loads
-- _`ViewBotMuxedStreamService.js`_, _`WebRTCViewBot.js`_, _`SimpleViewBotMediaSoup.js`_, _`SimpleViewBotSocket.js`_, _`SimpleTestBot.js`_ — earlier WebRTC experiments
+- _`WebRTCViewBot.js`_ — earlier WebRTC experiment, retained for reference
+- _Deleted in #25_: `ViewBotMuxedStreamService.js`, `SimpleViewBotMediaSoup.js`, `SimpleTestBot.js`
 
-### LiveKit-based variants (dormant)
+### LiveKit-based variants
 
-The Sept-2025 dual-stack attempt produced a family of LiveKit-backed viewbot variants. None are active in production; LiveKit infrastructure itself is dormant (see [ADR-0002](adr/0002-mediasoup-primary-livekit-dormant.md) and [ADR-0003](adr/0003-livekit-dual-stack-rollback.md)).
-
-- _`ViewBotLiveKitService.js`_
-- _`ViewBotLiveKitFFmpeg.js`_
-- _`ViewBotLiveKitSDK.js`_
-- _`ViewBotLiveKitNode.js`_
-- _`ViewBotLiveKitPuppeteer.js`_
-- _`ViewBotLiveKitRTMP.js`_
+`ViewBotLiveKitService.js` is the only remaining LiveKit-backed variant. Dormant per [ADR-0002](adr/0002-mediasoup-primary-livekit-dormant.md) / [ADR-0003](adr/0003-livekit-dual-stack-rollback.md) and scheduled for removal alongside `LiveKitService.js` in PR-S. The other six variants (`ViewBotLiveKit{FFmpeg,Node,Puppeteer,RTMP,SDK}.js`, `ViewBotGStreamerWebRTC.js`) were deleted in #25.
 
 ### URL ingest
 
@@ -180,16 +174,14 @@ MediasoupPlainTransport   MediaSoup ◄───────┘
 | Add support for a new external URL provider (e.g. YouTube live) | `URLStreamExtractorService.js` |
 | Resurrect LiveKit-backed viewbots | The dormant `ViewBotLiveKit*.js` files; see ADR-0003 for what failed last time |
 
-## Pruning candidates
+## Pruning history + remaining candidates
 
-These files appear to have no callers in the current code path. Spot-check before removing:
+**Landed in #25:** 16 orphan services removed after transitive-closure verification (`InitializeSimpleRotation.js`, `ViewBotRotationIntegration.js`, `SimpleTestBot.js`, `SimpleViewBotMediaSoup.js`, `ViewBotFFmpegService.js`, `ViewBotGStreamerWebRTC.js`, `ViewBotMuxedStreamService.js`, `ViewBotMetrics.js`, `ViewBotMonitor.js`, plus five of the six `ViewBotLiveKit*.js` variants and the two LiveKit-supporting services `LiveKitAudioCapture.js`, `LiveKitIngressService.js`). Plus `StreamInterceptorIntegration.js` (separate orphan flagged in review).
 
-- `ViewBotRotationService.js`, `ViewBotRotationIntegration.js` (replaced by Unified)
-- `SimpleViewBot*.js` and `SimpleTestBot.js` (early experiments)
-- `WebRTCViewBot.js`, `WebRTCViewBotRotation.js`, `ViewBotMuxedStreamService.js` (early WebRTC attempts)
-- All six `ViewBotLiveKit*.js` if the team commits to ADR-0003 staying
+**Still present, candidates for follow-up:**
 
-A real prune would be its own PR — out of scope for the docs overhaul. Capture as a TODO.
+- `ViewBotRotationService.js`, `WebRTCViewBotRotation.js`, `WebRTCViewBot.js` — verify-before-removal (a few non-obvious transitive references).
+- `ViewBotLiveKitService.js`, `LiveKitService.js`, `client/src/services/LiveKitClient.ts` — wired but never executed in production. Scheduled for PR-S.
 
 ## Operational symptoms and where to look
 
