@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import authService from '../services/AuthService';
-import CookieConsentService from '../services/CookieConsentService';
+import authService from '../../services/AuthService';
+import CookieConsentService from '../../services/CookieConsentService';
 import './ProfileSettings.css';
 
 interface ProfileSettingsProps {

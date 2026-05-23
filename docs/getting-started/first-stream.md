@@ -43,7 +43,7 @@ If nobody else is streaming locally (likely — you just started everything):
    - `mediasoup:get-rtp-capabilities` → `mediasoup:create-send-transport` → `mediasoup:connect-transport` → `mediasoup:produce` (twice — once for audio, once for video)
    - `stream-ready` then `stream-started` broadcast to all viewers
 4. Your camera preview should appear in the main video area.
-5. Above the preview: an audio-level meter ([`AudioLevelMeter.tsx`](../../client/src/components/AudioLevelMeter.tsx)). Speak — the bar should move.
+5. Above the preview: an audio-level meter ([`AudioLevelMeter.tsx`](../../client/src/components/audio/AudioLevelMeter.tsx)). Speak — the bar should move.
 
 If the preview stays black: open DevTools → Console. Look for `getUserMedia` errors or MediaSoup transport failures. The [`stream-stuck.md`](../operations/runbooks/stream-stuck.md) runbook covers most of the common causes.
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import Chat from './Chat';
+import Chat from '../Chat';
 import './MobileChat.css';
 
 interface MobileChatProps {

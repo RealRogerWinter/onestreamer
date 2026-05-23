@@ -4,7 +4,7 @@ import { WebRTCClientAdapter } from '../services/WebRTCClientAdapter';
 import { ScreenCaptureService } from '../services/ScreenCaptureService';
 import { AudioMixer } from '../services/AudioMixer';
 import { VideoCompositor } from '../services/VideoCompositor';
-import AudioLevelMeter from './AudioLevelMeter';
+import AudioLevelMeter from './audio/AudioLevelMeter';
 import { AudioSettingsConfig, VideoSettingsConfig, ScreenShareSettingsConfig } from './StreamerSettings';
 import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
 import { useStreamerViewManager } from '../hooks/useStreamerViewManager';

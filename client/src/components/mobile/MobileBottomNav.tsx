@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import './MobileBottomNav.css';
-import { ClipCreationModal } from './clips';
+import { ClipCreationModal } from '../clips';
 
 interface MobileBottomNavProps {
   isAuthenticated: boolean;

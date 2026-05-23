@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useMainSocket } from '../contexts/SocketContext';
+import { useMainSocket } from '../../contexts/SocketContext';
 import './BuffDisplay.css';
 
 interface BuffData {

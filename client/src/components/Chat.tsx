@@ -9,7 +9,7 @@ import DOMPurify from 'dompurify';
 import CloudflareTurnstile from './CloudflareTurnstile';
 import { TURNSTILE_SITE_KEY } from '../config/turnstile';
 import ExternalLinkModal from './ExternalLinkModal';
-import UserInfoPopup from './UserInfoPopup';
+import UserInfoPopup from './user/UserInfoPopup';
 import { openPopoutChat } from './PopoutChat';
 import { useChatMessages, ChatMessage } from '../hooks/useChatMessages';
 import './Chat.css';

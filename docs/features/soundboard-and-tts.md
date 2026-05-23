@@ -87,7 +87,7 @@ Both 101soundboards and TTS items push into the same server-side queue managed b
 ## Operational notes
 
 - **The audio plays in every viewer's browser**, not on the server. Each client downloads and plays the audio file independently.
-- **Volume** is controlled per-viewer via the volume control in the UI ([`SoundVolumeControl.tsx`](../../client/src/components/SoundVolumeControl.tsx)). The stored preference persists in `localStorage` (`soundfx_volume` key).
+- **Volume** is controlled per-viewer via the volume control in the UI ([`SoundVolumeControl.tsx`](../../client/src/components/audio/SoundVolumeControl.tsx)). The stored preference persists in `localStorage` (`soundfx_volume` key).
 - **CORS** matters for 101soundboards URLs — if 101soundboards tightens their CORS policy, playback breaks for all viewers. The server-side queue still works; only the client-side audio fetch fails.
 - **Length cap** is enforced both server-side (in the queue) and client-side (in `SoundFxPlayer`). Belt-and-suspenders.
 
@@ -104,7 +104,7 @@ iOS has stricter autoplay rules than desktop browsers. The first audio playback 
 | Client TTS input | [`client/src/components/soundfx/TTSInputModal.tsx`](../../client/src/components/soundfx/TTSInputModal.tsx) |
 | Client soundboard input | [`client/src/components/soundfx/SoundboardInputModal.tsx`](../../client/src/components/soundfx/SoundboardInputModal.tsx) |
 | Audio playback | [`client/src/components/soundfx/SoundFxPlayer.tsx`](../../client/src/components/soundfx/SoundFxPlayer.tsx) |
-| Volume control | [`client/src/components/SoundVolumeControl.tsx`](../../client/src/components/SoundVolumeControl.tsx) |
+| Volume control | [`client/src/components/audio/SoundVolumeControl.tsx`](../../client/src/components/audio/SoundVolumeControl.tsx) |
 
 ## See also
 

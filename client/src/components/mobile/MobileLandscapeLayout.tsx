@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import './MobileLandscapeLayout.css';
-import Chat from './Chat';
-import { ClipCreationModal } from './clips';
+import Chat from '../Chat';
+import { ClipCreationModal } from '../clips';
 
 // iOS Chrome viewport fix - calculates actual visible viewport height
 const getViewportHeight = (): number => {

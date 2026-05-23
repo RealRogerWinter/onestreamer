@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import './MobileHeader.css';
-import AnimatedNumber from './AnimatedNumber';
+import AnimatedNumber from '../AnimatedNumber';
 
 interface MobileHeaderProps {
   // Stream Status

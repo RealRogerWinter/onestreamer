@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import InventoryPanel from './inventory/InventoryPanel';
+import InventoryPanel from '../inventory/InventoryPanel';
 import { Socket } from 'socket.io-client';
 import './MobileInventory.css';
 

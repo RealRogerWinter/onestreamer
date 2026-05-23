@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import StreamerSettings, { StreamerSettingsConfig } from './StreamerSettings';
 import TheatreMuteIndicator from './TheatreMuteIndicator';
-import BuffDisplay from './BuffDisplay';
+import BuffDisplay from './buffs/BuffDisplay';
 import PermissionSetupModal from './PermissionSetupModal';
 import { ClipCreationModal } from './clips';
 import PermissionService, { MediaPermissions } from '../services/PermissionService';

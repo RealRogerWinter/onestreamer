@@ -76,7 +76,7 @@ Not anymore. The original MVP allowed anonymous streaming. The current productio
 
 ## Audio settings (streamer-side)
 
-Streamers can configure how the browser captures and encodes audio before it reaches MediaSoup. The control surface is the **🎵 Audio Settings** panel in the streaming UI ([`AudioSettings.tsx`](../../client/src/components/AudioSettings.tsx)).
+Streamers can configure how the browser captures and encodes audio before it reaches MediaSoup. The control surface is the **🎵 Audio Settings** panel in the streaming UI ([`AudioSettings.tsx`](../../client/src/components/audio/AudioSettings.tsx)).
 
 ### Presets
 
@@ -153,7 +153,7 @@ Viewers receive media via [`WebRTCViewer.tsx`](../../client/src/components/WebRT
 
 - Subscribes to MediaSoup consumers for each producer
 - Falls back to HLS playback via `hls.js` if WebRTC fails (slower; not currently the primary path)
-- Renders an audio-level meter ([`AudioLevelMeter.tsx`](../../client/src/components/AudioLevelMeter.tsx)) when locally enabled
+- Renders an audio-level meter ([`AudioLevelMeter.tsx`](../../client/src/components/audio/AudioLevelMeter.tsx)) when locally enabled
 - Surfaces the takeover button + cooldown countdown via [`StreamControls.tsx`](../../client/src/components/StreamControls.tsx)
 
 ## Stats and observability

@@ -136,7 +136,7 @@ No takeover cooldown is applied — admin disconnects are "clean."
 | Surface | File |
 |---------|------|
 | Chat client | [`client/src/components/Chat.tsx`](../../client/src/components/Chat.tsx) |
-| Mobile chat | [`client/src/components/MobileChat.tsx`](../../client/src/components/MobileChat.tsx) |
+| Mobile chat | [`client/src/components/mobile/MobileChat.tsx`](../../client/src/components/mobile/MobileChat.tsx) |
 | Popout chat (separate window) | [`client/src/components/PopoutChat.tsx`](../../client/src/components/PopoutChat.tsx) |
 | Chat moderation admin UI | [`client/src/components/ChatModeration.tsx`](../../client/src/components/ChatModeration.tsx) |
 | Stream moderation admin UI | [`client/src/components/ModerationPanel.tsx`](../../client/src/components/ModerationPanel.tsx) |

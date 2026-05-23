@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import './DesktopHeaderV2.css';
 import AnimatedNumber from './AnimatedNumber';
-import UserProfile from './UserProfile';
-import SoundVolumeControl from './SoundVolumeControl';
+import UserProfile from './user/UserProfile';
+import SoundVolumeControl from './audio/SoundVolumeControl';
 import { Socket } from 'socket.io-client';
 
 interface DesktopHeaderV2Props {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import authService from '../services/AuthService';
+import authService from '../../services/AuthService';
 import './UserInfoPopup.css';
 
 interface UserInfoPopupProps {
