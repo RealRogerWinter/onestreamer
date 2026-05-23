@@ -1,0 +1,9 @@
+# Netscape HTTP Cookie File — required only for YouTube URL ingestion
+# when the source video triggers bot-detection. yt-dlp / curl_cffi reads this
+# file directly. Export from a logged-in browser (e.g. the "Get cookies.txt
+# LOCALLY" extension) and copy the result to ./youtube-cookies.txt (gitignored).
+#
+# Format reference: https://curl.se/docs/http-cookies.html#netscape-http-cookie-file
+#
+# Example line (do not commit real session cookies):
+# .youtube.com	TRUE	/	TRUE	1893456000	VISITOR_INFO1_LIVE	ExampleValue

@@ -1,6 +1,0 @@
-{
-  "rotationProbability": 0.31,
-  "rotationCheckIntervalMin": 65000,
-  "rotationCheckIntervalMax": 65000,
-  "comment": "Rotation settings: 31% probability, 65-65 second intervals - approximately every 3.5 minutes"
-}

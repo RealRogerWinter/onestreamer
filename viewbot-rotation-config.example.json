@@ -1,0 +1,6 @@
+{
+  "rotationProbability": 0.31,
+  "rotationCheckIntervalMin": 65000,
+  "rotationCheckIntervalMax": 65000,
+  "comment": "Viewbot fleet rotation settings — tuned per-deploy. rotationProbability is the per-tick chance the orchestrator picks a new target. Interval values are ms. Copy this to viewbot-rotation-config.json (gitignored) and adjust."
+}

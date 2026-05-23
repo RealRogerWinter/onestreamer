@@ -50,7 +50,6 @@
     "multer": "^2.0.2",
     "nodemailer": "^7.0.5",
     "ollama": "^0.5.17",
-    "openai-whisper": "^1.0.2",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-local": "^1.0.0",

@@ -100,3 +100,15 @@ whisper/*.zip
 # HLS runtime segments written by the live streaming pipeline
 public/hls/*.ts
 public/hls/*.m3u8
+
+# Runtime state / per-deploy config — checked-in counterparts have .example.* siblings
+chat-service/moderation_data.json
+server/data/*-state.json
+viewbot-rotation-config.json
+youtube-cookies.txt
+
+# Recording artifacts (keep the .gitkeep scaffolding, ignore actual recordings)
+recordings/**
+!recordings/**/.gitkeep
+videos/**
+!videos/.gitkeep
