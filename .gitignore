@@ -89,9 +89,13 @@ whisper/Release/
 whisper/*.zip
 
 # Manual editing leftovers (timestamped backups, .old / .bak renames)
-**/*.backup-*
+**/*.backup*
 **/*.old
 **/*.bak
+**/*~
+
+# Claude Code session/tooling directories (top-level + any subtree)
+**/.claude/
 
 # HLS runtime segments written by the live streaming pipeline
 public/hls/*.ts
