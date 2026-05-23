@@ -12,6 +12,7 @@ const { createClient } = require('redis');
 const session = require('express-session');
 const passport = require('passport');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const requireEnv = require('./config/requireEnv');
 
 // Log environment variables on startup for debugging
 console.log('🔧 Environment Check on Server Start:');
@@ -104,7 +105,7 @@ if (USE_HTTPS || fs.existsSync(path.join(__dirname, '..', 'certificates', 'cert.
 
 // TURN credential generation for coturn with static-auth-secret
 // Coturn uses HMAC-SHA1 for time-limited credentials
-const TURN_SECRET = process.env.TURN_SECRET || '***REMOVED-TURN-SECRET***';
+const TURN_SECRET = requireEnv('TURN_SECRET');
 const TURN_TTL = 24 * 60 * 60; // 24 hours in seconds
 
 function generateTurnCredentials(username = 'viewer') {
@@ -306,7 +307,7 @@ app.get('/visualfx-debug-panel.html', (req, res) => {
 
 // Session configuration
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'REDACTED-SESSION-SECRET',
+  secret: requireEnv('SESSION_SECRET'),
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -746,8 +747,8 @@ const clipProcessorService = new ClipProcessorService(clipStorageService);
 // Initialize continuous recording service for LiveKit Egress
 const continuousRecordingService = new ContinuousRecordingService({
   livekitHost: process.env.LIVEKIT_HOST || 'http://127.0.0.1:7882',
-  apiKey: process.env.LIVEKIT_API_KEY || 'devkey',
-  apiSecret: process.env.LIVEKIT_API_SECRET || 'secret',
+  apiKey: process.env.LIVEKIT_API_KEY,
+  apiSecret: process.env.LIVEKIT_API_SECRET,
   roomName: process.env.LIVEKIT_ROOM_NAME || 'onestreamer-main',
   outputDir: '/root/onestreamer/egress-recordings',
   retentionMinutes: 10 // Keep last 10 minutes for clipping

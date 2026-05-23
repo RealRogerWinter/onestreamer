@@ -9,7 +9,9 @@ const { requireTurnstile } = require('../middleware/turnstile');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
+const requireEnv = require('../config/requireEnv');
 
+const JWT_SECRET = requireEnv('JWT_SECRET');
 const authService = new AuthService();
 
 // Configure multer for avatar uploads
@@ -722,7 +724,7 @@ router.get('/google/callback',
                     email: userData.email,
                     displayName: userData.displayName,
                     suggestedUsername: userData.suggestedUsername
-                }, process.env.JWT_SECRET || '***REMOVED-JWT-DEFAULT***', {
+                }, JWT_SECRET, {
                     expiresIn: '1h' // Short expiry for security
                 });
                 

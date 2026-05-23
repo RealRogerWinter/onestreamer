@@ -183,11 +183,11 @@ sudo grep -rnE "SG\.[A-Za-z0-9_-]{20,}" /root/onestreamer \
 sudo grep -rn "change-in-production" /root/onestreamer \
   --include='*.js' --include='*.ts'
 
-# TURN HMAC literal (replace with actual current value)
-sudo grep -rn "***REMOVED-TURN-SECRET***" /root/onestreamer
+# TURN HMAC literal (substitute the current/old value before running)
+sudo grep -rn "<OLD_TURN_SECRET>" /root/onestreamer
 
-# Turnstile secret literal (replace with actual current value)
-sudo grep -rn "***REMOVED-TURNSTILE-SECRET***" /root/onestreamer
+# Turnstile secret literal (substitute the current/old value before running)
+sudo grep -rn "<OLD_TURNSTILE_SECRET>" /root/onestreamer
 
 # Any long-hex blob (catches forgotten constants)
 sudo grep -rnE "[a-f0-9]{40,}" /root/onestreamer \

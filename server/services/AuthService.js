@@ -4,13 +4,16 @@ const LocalStrategy = require('passport-local').Strategy;
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const AccountService = require('./AccountService');
 const EmailService = require('./EmailService');
+const requireEnv = require('../config/requireEnv');
+
+const JWT_SECRET = requireEnv('JWT_SECRET');
 
 class AuthService {
     constructor() {
         console.log('🔐 AUTH: Initializing AuthService...');
         this.accountService = new AccountService();
         this._emailService = null; // Lazy load EmailService
-        this.jwtSecret = process.env.JWT_SECRET || '***REMOVED-JWT-DEFAULT***';
+        this.jwtSecret = JWT_SECRET;
         this.jwtExpiry = '24h';
         this.initializePassport();
         console.log('🔐 AUTH: AuthService initialized');

@@ -23,8 +23,8 @@ class ContinuousRecordingService extends EventEmitter {
 
     // LiveKit configuration
     this.livekitHost = config.livekitHost || process.env.LIVEKIT_HOST || 'http://127.0.0.1:7882';
-    this.apiKey = config.apiKey || process.env.LIVEKIT_API_KEY || 'devkey';
-    this.apiSecret = config.apiSecret || process.env.LIVEKIT_API_SECRET || 'secret';
+    this.apiKey = config.apiKey || process.env.LIVEKIT_API_KEY;
+    this.apiSecret = config.apiSecret || process.env.LIVEKIT_API_SECRET;
     this.roomName = config.roomName || process.env.LIVEKIT_ROOM_NAME || 'onestreamer-main';
 
     // Recording configuration

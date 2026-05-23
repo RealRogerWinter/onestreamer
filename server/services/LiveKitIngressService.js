@@ -16,8 +16,8 @@ class LiveKitIngressService {
     this.ffmpegProcesses = new Map();
     
     // Initialize ingress client
-    const apiKey = process.env.LIVEKIT_API_KEY || 'REDACTED-LIVEKIT-API-KEY';
-    const apiSecret = process.env.LIVEKIT_API_SECRET || 'REDACTED-LIVEKIT-API-SECRET';
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
     const host = process.env.LIVEKIT_HOST || 'https://onestreamer.live:7880';
     
     this.ingressClient = new IngressClient(host, apiKey, apiSecret);

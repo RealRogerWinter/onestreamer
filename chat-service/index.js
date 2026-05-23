@@ -234,8 +234,15 @@ function saveModerationData() {
   }
 }
 
-// JWT secret (should match the main server)
-const JWT_SECRET = process.env.JWT_SECRET || '***REMOVED-JWT-DEFAULT***';
+// JWT secret — must match the main server. No default fallback; chat-service
+// refuses to boot rather than silently using a known value.
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error(
+    'JWT_SECRET environment variable is required. ' +
+    'It must match the main server. Set it in your .env file.'
+  );
+}
 
 // Main server URL for API calls
 const MAIN_SERVER_URL = process.env.MAIN_SERVER_URL || 'https://onestreamer.live:8443';
