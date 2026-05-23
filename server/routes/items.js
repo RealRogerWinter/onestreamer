@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 const axios = require('axios');
+const DrawingService = require('../services/DrawingService');
+
+const drawingService = new DrawingService();
 
 // Chat service URL - Updated to use HTTPS and correct port
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
@@ -1084,106 +1087,50 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
 // Endpoint for consuming drawing/marker items when drawing starts
 router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
     try {
-        const userId = req.user.userId || req.user.id;
-        console.log(`✏️ DRAWING START: User ${req.user.username} starting drawing`, req.body);
-        const { item } = req.body;
-        
-        if (!item) {
-            return res.status(400).json({ error: 'Missing required parameter: item' });
-        }
-        
-        const inventoryService = req.app.get('inventoryService');
-        const canvasFxService = req.app.get('canvasFxService');
-        const itemService = req.app.get('itemService');
-        const streamService = req.app.get('streamService');
-        
-        const streamStatus = streamService.getStreamStatus();
-        const streamId = streamStatus.hasActiveStream ? streamStatus.streamerId : null;
-        
-        // Check if there's an active stream (required for drawing)
-        if (!streamStatus.hasActiveStream) {
-            console.log(`❌ DRAWING START: No active stream to draw on`);
-            return res.status(400).json({ 
-                error: 'No active stream', 
-                message: 'You can only draw when someone is streaming. Please wait for a streamer to start.',
-                requiresStream: true 
-            });
-        }
-        
-        console.log(`✏️ DRAWING START: Consuming marker item ${item.name} for user ${req.user.username}`);
-        
-        // Now consume the item from inventory
-        const result = await inventoryService.useItem(
-            userId, 
-            item.id,
-            streamId
-        );
-        
-        // Trigger the multi-phase visual effect for all clients
-        if (canvasFxService && result.item) {
-            try {
-                const effect = await canvasFxService.triggerItemEffect(
-                    userId,
-                    result.item.id,
-                    streamId,
-                    { username: req.user.username }
-                );
-                
-                console.log(`✏️ DRAWING START: triggerItemEffect returned:`, effect);
-                
-                if (effect) {
-                    console.log(`✏️ DRAWING START: Triggered multi-phase drawing effect for ${result.item.displayName}`);
-                } else {
-                    console.log(`❌ DRAWING START: Failed to trigger effect for ${result.item.displayName} - null effect returned`);
-                }
-            } catch (error) {
-                console.error(`❌ DRAWING START: Error triggering effect for ${result.item.displayName}:`, error);
-            }
-        }
-        
-        // Send system message about drawing starting
-        await sendSystemMessage(`${req.user.username} started drawing with ${item.displayName || item.display_name}!`);
-        
-        // Emit socket events for inventory update and item usage
-        const io = req.app.get('io');
-        const sessionService = req.app.get('sessionService');
-        if (io) {
-            // Global event for all users to see item usage
-            io.emit('item-used', {
-                userId: userId,
-                username: req.user.username,
-                item: result.item,
-                streamId,
-                drawingStarted: true
-            });
-            
-            // Specific inventory update for the user
-            if (sessionService) {
-                const userSocketIds = sessionService.getSocketsByUserId(userId);
-                userSocketIds.forEach(socketId => {
-                    io.to(socketId).emit('inventory-updated', {
-                        action: 'draw',
-                        itemId: item.id,
-                        quantity: 1,
-                        remainingQuantity: result.remainingQuantity
+        const result = await drawingService.startDrawing({
+            user: req.user,
+            item: req.body.item,
+            services: {
+                inventoryService: req.app.get('inventoryService'),
+                canvasFxService: req.app.get('canvasFxService'),
+                streamService: req.app.get('streamService')
+            },
+            io: req.app.get('io'),
+            sessionService: req.app.get('sessionService'),
+            sendSystemMessage
+        });
+
+        if (!result.ok) {
+            switch (result.kind) {
+                case 'missing-item':
+                    return res.status(400).json({ error: 'Missing required parameter: item' });
+                case 'no-active-stream':
+                    return res.status(400).json({
+                        error: 'No active stream',
+                        message: 'You can only draw when someone is streaming. Please wait for a streamer to start.',
+                        requiresStream: true
                     });
-                });
+                case 'cooldown':
+                    return res.status(429).json({ error: result.message });
+                case 'error':
+                default:
+                    return res.status(500).json({ error: result.message || 'Failed to start drawing' });
             }
         }
-        
-        res.json({ 
-            success: true, 
+
+        res.json({
+            success: true,
             item: result.item, // Include the full item with cooldown
-            message: `Drawing started with ${item.displayName || item.display_name}!`,
+            message: result.displayMessage,
             remainingQuantity: result.remainingQuantity
         });
     } catch (error) {
         console.error('Error starting drawing:', error);
-        
-        if (error.message.includes('cooldown')) {
+
+        if (error.message && error.message.includes('cooldown')) {
             return res.status(429).json({ error: error.message });
         }
-        
+
         res.status(500).json({ error: error.message || 'Failed to start drawing' });
     }
 });
