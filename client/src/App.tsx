@@ -4,6 +4,7 @@ import { useResponsiveLayout } from './hooks/useResponsiveLayout';
 import { useAuthState } from './hooks/useAuthState';
 import { useGameState } from './hooks/useGameState';
 import { useStreamerSettings } from './hooks/useStreamerSettings';
+import { useStreamState, StreamStatus } from './hooks/useStreamState';
 import './App.css';
 import StreamViewer from './components/stream/StreamViewer';
 import StreamControls from './components/stream/StreamControls';
@@ -49,32 +50,6 @@ declare global {
   interface Window {
     showFloatingPoints?: (amount: number, source?: string) => void;
   }
-}
-
-interface StreamStatus {
-  hasActiveStream: boolean;
-  streamerId: string | null;
-  streamType: string | null;
-  viewerCount: number;
-  streamStartTime: number | null;
-  streamDuration: number;
-  streamerDisplayName?: string | null;
-  // Random rotation info
-  isRandomRotation?: boolean;
-  randomRotationPlatform?: string | null;
-  randomRotationStreamerUrl?: string | null;
-  randomRotationStreamerUsername?: string | null;
-  randomRotationGame?: string | null;
-  randomRotationViewers?: number | null;
-  randomRotationStartedAt?: number | null;
-  // Rotation timing (for countdown timer)
-  nextRotationAt?: number | null;
-  currentRotationDuration?: number | null;
-  // Rotation lock state
-  isRotationLocked?: boolean;
-  lockedRemainingMs?: number | null;
-  // Game mode
-  isGameMode?: boolean;
 }
 
 let appContentInstanceCount = 0;
@@ -161,35 +136,43 @@ function AppContent() {
 
   const { socket, connected, error: socketError } = useMainSocket();
   const socketRef = useRef(socket);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamStatus, setStreamStatus] = useState<StreamStatus>({
-    hasActiveStream: false,
-    streamerId: null,
-    streamType: null,
-    viewerCount: 0,
-    streamStartTime: null,
-    streamDuration: 0
-  });
-  const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminPanelTab, setAdminPanelTab] = useState<string>('dashboard');
   const [isShopOpen, setIsShopOpen] = useState(false);
-  const streamSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastStreamSwitchRef = useRef<number>(0);
-  const [wasStreamingBeforeTakeover, setWasStreamingBeforeTakeover] = useState(false);
-  // Track the expected new streamer during takeover to prevent stale stream-status from overwriting
-  const takeoverTargetRef = useRef<string | null>(null);
-  const takeoverTimestampRef = useRef<number>(0);
-  // CRITICAL: Force viewer mode after takeover - bypasses isStreaming race conditions
-  const [forceViewerAfterTakeover, setForceViewerAfterTakeover] = useState(false);
-  const [disconnectionReason, setDisconnectionReason] = useState<string | null>(null);
   const { isGameActive, setIsGameActive } = useGameState();
-  const [isForceDisconnected, setIsForceDisconnected] = useState(false);
-  const [showTakeoverOverlay, setShowTakeoverOverlay] = useState(false);
-  const [takeoverMessage, setTakeoverMessage] = useState<string>('');
-  const [showTransitionOverlay, setShowTransitionOverlay] = useState(false);
-  const [transitionMessage, setTransitionMessage] = useState<string>('');
+
+  // Stream state — owns isStreaming, streamStatus, cooldown countdown,
+  // takeover/transition overlays, force-disconnect plumbing, streamer
+  // buffs, and ~20 of the related socket listeners. The
+  // `stream-status`, `game:*`, `*-notification`, banned/timeout,
+  // points-related listeners stay in App.tsx because they mutate
+  // cross-cutting state owned by other hooks or the inline `error`
+  // banner. The hook calls back into `setError` via `onError` /
+  // `onClearError` to keep those banners working.
+  const {
+    isStreaming,
+    setIsStreaming,
+    streamStatus,
+    setStreamStatus,
+    cooldownRemaining,
+    setWasStreamingBeforeTakeover,
+    forceViewerAfterTakeover,
+    showTakeoverOverlay,
+    takeoverMessage,
+    showTransitionOverlay,
+    transitionMessage,
+    disconnectionReason,
+    isForceDisconnected,
+    streamerBuffs,
+    takeoverTargetRef,
+    takeoverTimestampRef,
+  } = useStreamState({
+    socket,
+    connected,
+    onError: setError,
+    onClearError: () => setError(null),
+  });
 
   // Login/signup modal visibility (auth identity itself comes from useAuthState above)
   const [showLogin, setShowLogin] = useState(false);
@@ -211,9 +194,6 @@ function AppContent() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialDefaultTab, setTutorialDefaultTab] = useState<'about' | 'support' | 'tutorial' | 'terms' | 'privacy' | undefined>(undefined);
 
-  // Canvas effects
-  const [streamerBuffs, setStreamerBuffs] = useState<any[]>([]);
-  
   // Bug Report state
   const [showBugReportModal, setShowBugReportModal] = useState(false);
   
@@ -260,8 +240,6 @@ function AppContent() {
     localStorage.setItem('soundfx_volume', volume.toString());
   };
 
-  const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
-
   // Update socketRef when socket changes
   useEffect(() => {
     socketRef.current = socket;
@@ -274,54 +252,20 @@ function AppContent() {
     }
   }, [socketError]);
 
-  // Handle socket disconnection for active streamer
-  useEffect(() => {
-    if (!connected && isStreaming) {
-      // console.log('🔌 CLIENT: Socket disconnected while streaming');
-      setIsStreaming(false);
-      setIsForceDisconnected(true);
-      
-      // Show takeover overlay for connection loss
-      setShowTakeoverOverlay(true);
-      setTakeoverMessage('⚠️ Connection Lost!');
-      
-      // Hide overlay and show persistent message
-      setTimeout(() => {
-        setShowTakeoverOverlay(false);
-        setDisconnectionReason('Connection lost - Server unavailable');
-      }, 3000);
-      
-      // Clear disconnection state after 15 seconds
-      setTimeout(() => {
-        setDisconnectionReason(null);
-        setIsForceDisconnected(false);
-      }, 15000);
-    }
-    
-    // Reset force disconnect state when reconnected and request current stream status
-    if (connected && isForceDisconnected && socket) {
-      console.log('🔌 CLIENT: Reconnected after force disconnect - requesting stream status');
-      setIsForceDisconnected(false);
-      setDisconnectionReason(null);
-
-      // CRITICAL: Re-emit join-as-viewer to get current stream status
-      // This ensures we know about any active streams after reconnecting
-      socket.emit('join-as-viewer');
-    }
-  }, [connected, isStreaming, isForceDisconnected, socket]);
-
   // Setup socket event listeners
+  //
+  // PR-M4 note: the bulk of the stream-related listeners (stream-started,
+  // stream-ended, viewer-count-update, new-streamer, all rotation-* events,
+  // global-cooldown, cooldown-status-update, streaming-approved,
+  // takeover-approved/denied/blocked, streamer-buffs-update,
+  // force-disconnect, stream-takeover) now live inside `useStreamState`.
+  // The listeners that remain here either mutate cross-cutting state
+  // (useGameState, useAuthState, the local `error` banner) or interact
+  // with `socket.id` in ways that are tangled with those cross-cutting
+  // concerns. Splitting them further would require wiring more
+  // callbacks into `useStreamState`; PR-M5 may revisit.
   useEffect(() => {
     if (!socket) return;
-
-    socket.emit('join-as-viewer');
-
-    // Handle socket reconnection - always re-request stream status
-    const handleConnect = () => {
-      console.log('🔌 CLIENT: Socket (re)connected - requesting stream status');
-      socket.emit('join-as-viewer');
-    };
-    socket.on('connect', handleConnect);
 
     socket.on('stream-status', (status: StreamStatus) => {
       // CRITICAL: During takeover transition, don't let stale stream-status overwrite the correct streamer
@@ -397,353 +341,6 @@ function AppContent() {
       setIsGameActive(false);
     });
 
-    socket.on('stream-started', (data: any) => {
-
-      // Clear any pending stream switch timeout
-      if (streamSwitchTimeoutRef.current) {
-        clearTimeout(streamSwitchTimeoutRef.current);
-        streamSwitchTimeoutRef.current = null;
-      }
-
-      // Clear takeover lock if new streamer matches expected target
-      if (data.streamerId === takeoverTargetRef.current) {
-        console.log(`✅ CLIENT: stream-started confirmed takeover target ${data.streamerId}, clearing lock`);
-        takeoverTargetRef.current = null;
-      }
-
-      setStreamStatus(prev => ({
-        ...prev,
-        hasActiveStream: true,
-        streamerId: data.streamerId,
-        streamType: data.streamType || 'unknown',
-        streamStartTime: data.streamStartTime || Date.now(),
-        streamDuration: 0,
-        streamerDisplayName: data.streamerDisplayName || prev.streamerDisplayName
-      }));
-
-      if (data.streamerId !== socket.id && isStreaming) {
-        setIsStreaming(false);
-        setWasStreamingBeforeTakeover(true);
-        
-        // Show takeover overlay
-        setShowTakeoverOverlay(true);
-        setTakeoverMessage(`${data.streamerDisplayName || 'Another user'} has taken over your stream!`);
-        
-        // Hide overlay after 3 seconds
-        setTimeout(() => {
-          setShowTakeoverOverlay(false);
-        }, 3000);
-      } else {
-        setWasStreamingBeforeTakeover(false);
-      }
-    });
-
-    socket.on('stream-ended', (data?: { reason?: string; previousStreamer?: string; newStreamer?: string; newStreamerDisplayName?: string; isRandomRotation?: boolean; isUrlStream?: boolean }) => {
-      // CRITICAL: Handle takeover differently - there IS an active stream (the new one)
-      if (data?.reason === 'takeover' && data.newStreamer) {
-        console.log(`🛑 CLIENT: Stream ended due to takeover by ${data.newStreamer} (${data.newStreamerDisplayName}) - updating to new streamer`);
-
-        // CRITICAL: Lock in the takeover target to prevent stale stream-status from overwriting
-        takeoverTargetRef.current = data.newStreamer;
-        takeoverTimestampRef.current = Date.now();
-        console.log(`🔒 CLIENT: Locked takeover target: ${data.newStreamer}`);
-
-        setStreamStatus(prev => ({
-          ...prev,
-          hasActiveStream: true,
-          streamerId: data.newStreamer!,
-          streamerDisplayName: data.newStreamerDisplayName || prev.streamerDisplayName,
-          streamStartTime: Date.now(),
-          streamDuration: 0
-        }));
-        setWasStreamingBeforeTakeover(false);
-        return;
-      }
-
-      // CRITICAL: During random rotation transitions, preserve the display name
-      // The rotation service will send a new-streamer or random-rotation-status event with the new name
-      // webrtc_disconnect happens when switching between URL streams (stale streamer cleared)
-      const isTransitionEvent = data?.reason === 'random_rotation_starting' ||
-                                data?.reason === 'random_rotation_stopped' ||
-                                data?.reason?.startsWith('url_stream_') ||
-                                data?.reason === 'webrtc_disconnect' ||
-                                data?.isRandomRotation === true;
-
-      if (isTransitionEvent) {
-        console.log(`🔄 CLIENT: Stream transition event (${data?.reason}) - preserving display name and timer`);
-        setStreamStatus(prev => ({
-          ...prev,
-          hasActiveStream: false,
-          streamerId: null,
-          streamType: null,
-          streamStartTime: null,
-          streamDuration: 0
-          // NOTE: Intentionally NOT clearing streamerDisplayName or timer values during transitions
-          // The next event will update them with new values
-        }));
-        return;
-      }
-
-      // Normal stream end - clear stream info but preserve timer values
-      // Timer values are only cleared via random-rotation-status with enabled: false
-      console.log(`🛑 CLIENT: Normal stream end (${data?.reason}) - preserving timer values`);
-      setStreamStatus(prev => ({
-        hasActiveStream: false,
-        streamerId: null,
-        streamType: null,
-        viewerCount: 0,
-        streamStartTime: null,
-        streamDuration: 0,
-        streamerDisplayName: null,
-        // Preserve rotation timer and state (managed by rotation events)
-        nextRotationAt: prev.nextRotationAt,
-        currentRotationDuration: prev.currentRotationDuration,
-        isRotationLocked: prev.isRotationLocked,
-        lockedRemainingMs: prev.lockedRemainingMs,
-        isRandomRotation: prev.isRandomRotation,
-        randomRotationPlatform: prev.randomRotationPlatform,
-        randomRotationStreamerUrl: prev.randomRotationStreamerUrl,
-        randomRotationStreamerUsername: prev.randomRotationStreamerUsername,
-        randomRotationGame: prev.randomRotationGame,
-        randomRotationViewers: prev.randomRotationViewers,
-        randomRotationStartedAt: prev.randomRotationStartedAt
-      }));
-
-      const minSwitchInterval = 3000;
-      const now = Date.now();
-      const timeSinceLastSwitch = now - lastStreamSwitchRef.current;
-
-      if (wasStreamingBeforeTakeover && timeSinceLastSwitch > minSwitchInterval) {
-        lastStreamSwitchRef.current = now;
-
-        if (streamSwitchTimeoutRef.current) {
-          clearTimeout(streamSwitchTimeoutRef.current);
-        }
-
-        streamSwitchTimeoutRef.current = setTimeout(() => {
-          setWasStreamingBeforeTakeover(false);
-          setIsStreaming(true);
-        }, 2000);
-      }
-    });
-
-    socket.on('viewer-count-update', (count: number) => {
-      setStreamStatus(prev => ({ ...prev, viewerCount: count }));
-    });
-
-    // CRITICAL: Listen for new-streamer events to update streamer display name
-    // This is emitted by RandomStreamRotationService, ViewBotURLService, and others
-    socket.on('new-streamer', (data: {
-      streamer?: {
-        odyseeId?: string;
-        odysee_username?: string;
-        userId?: string;
-        isUrlStream?: boolean;
-        isRandomRotation?: boolean;
-        platform?: string;
-        game?: string;
-        originalStreamer?: string;
-      };
-      streamerId?: string;
-      isViewbot?: boolean;
-    }) => {
-      console.log('🆕 CLIENT: new-streamer event received:', data);
-
-      // Extract display name from either nested streamer object or direct properties
-      const displayName = data.streamer?.odysee_username || null;
-      const streamerId = data.streamer?.odyseeId || data.streamer?.userId || data.streamerId || null;
-      const isUrlStream = data.streamer?.isUrlStream || false;
-      const isRandomRotation = data.streamer?.isRandomRotation || false;
-      const platform = data.streamer?.platform || null;
-
-      if (streamerId) {
-        setStreamStatus(prev => ({
-          ...prev,
-          hasActiveStream: true,
-          streamerId: streamerId,
-          streamerDisplayName: displayName || prev.streamerDisplayName, // Preserve if no new name
-          // Only update isRandomRotation if explicitly set to true, otherwise preserve existing
-          isRandomRotation: isRandomRotation || prev.isRandomRotation,
-          randomRotationPlatform: isRandomRotation ? platform : prev.randomRotationPlatform,
-          streamStartTime: Date.now()
-        }));
-      }
-    });
-
-    // Listen for random rotation status updates
-    socket.on('random-rotation-status', (data: {
-      enabled: boolean;
-      currentStream?: {
-        displayName: string;
-        platform: string;
-        streamerUsername: string;
-        url: string;
-        game?: string;
-        viewers?: number;
-        startedAt?: number;
-      };
-      rotationTiming?: {
-        nextRotationAt: number;
-        currentRotationDuration: number;
-        serverTime: number;
-      };
-    }) => {
-      console.log('🎲 CLIENT: Random rotation status update:', data);
-      if (data.enabled && data.currentStream) {
-        // Calculate time-adjusted next rotation
-        let nextRotationAt: number | null = null;
-        let currentRotationDuration: number | null = null;
-        if (data.rotationTiming) {
-          const timeDiff = Date.now() - data.rotationTiming.serverTime;
-          nextRotationAt = data.rotationTiming.nextRotationAt + timeDiff;
-          currentRotationDuration = data.rotationTiming.currentRotationDuration;
-        }
-        setStreamStatus(prev => ({
-          ...prev,
-          isRandomRotation: true,
-          randomRotationPlatform: data.currentStream!.platform,
-          randomRotationStreamerUrl: data.currentStream!.url,
-          randomRotationStreamerUsername: data.currentStream!.streamerUsername,
-          randomRotationGame: data.currentStream!.game || null,
-          randomRotationViewers: data.currentStream!.viewers ?? null,
-          randomRotationStartedAt: data.currentStream!.startedAt || null,
-          streamerDisplayName: data.currentStream!.displayName,
-          // Preserve existing timing values if rotationTiming not provided
-          // (timing will arrive via separate 'rotation-timing' event)
-          nextRotationAt: nextRotationAt ?? prev.nextRotationAt,
-          currentRotationDuration: currentRotationDuration ?? prev.currentRotationDuration
-        }));
-      } else {
-        // Clear random rotation info when disabled
-        setStreamStatus(prev => ({
-          ...prev,
-          isRandomRotation: false,
-          randomRotationPlatform: null,
-          randomRotationStreamerUrl: null,
-          randomRotationStreamerUsername: null,
-          randomRotationGame: null,
-          randomRotationViewers: null,
-          randomRotationStartedAt: null,
-          nextRotationAt: null,
-          currentRotationDuration: null
-        }));
-      }
-    });
-
-    // Listen for rotation timing updates (for countdown timer)
-    socket.on('rotation-timing', (data: {
-      nextRotationAt: number;
-      currentRotationDuration: number;
-      serverTime: number;
-    }) => {
-      console.log('⏱️ CLIENT: Rotation timing update:', data);
-      // Adjust for server/client time difference
-      const timeDiff = Date.now() - data.serverTime;
-      // Preserve lock state - don't assume timing update means unlocked
-      setStreamStatus(prev => ({
-        ...prev,
-        nextRotationAt: data.nextRotationAt + timeDiff,
-        currentRotationDuration: data.currentRotationDuration
-        // Note: isRotationLocked is managed by rotation-locked/rotation-unlocked events only
-      }));
-    });
-
-    // Listen for rotation extended events
-    socket.on('rotation-extended', (data: {
-      extendedBy: number;
-      extendedByMinutes: number;
-      newNextRotationAt: number;
-    }) => {
-      console.log('⏰ CLIENT: Rotation extended by', data.extendedByMinutes, 'minutes');
-      setStreamStatus(prev => ({
-        ...prev,
-        nextRotationAt: data.newNextRotationAt,
-        isRotationLocked: false,
-        lockedRemainingMs: null
-      }));
-    });
-
-    // Listen for rotation reduced events
-    socket.on('rotation-reduced', (data: {
-      reducedBy: number;
-      reducedByMinutes: number;
-      newNextRotationAt: number;
-      currentRotationDuration: number;
-      serverTime: number;
-    }) => {
-      console.log('⏰ CLIENT: Rotation reduced by', data.reducedByMinutes, 'minutes');
-      // Adjust for server/client time difference
-      const timeDiff = Date.now() - data.serverTime;
-      setStreamStatus(prev => ({
-        ...prev,
-        nextRotationAt: data.newNextRotationAt + timeDiff,
-        currentRotationDuration: data.currentRotationDuration,
-        isRotationLocked: false,
-        lockedRemainingMs: null
-      }));
-    });
-
-    // Listen for rotation locked events
-    socket.on('rotation-locked', (data: {
-      locked: boolean;
-      remainingMs: number;
-    }) => {
-      console.log('🔒 CLIENT: Rotation locked with', Math.round(data.remainingMs / 1000), 'seconds remaining');
-      setStreamStatus(prev => ({
-        ...prev,
-        isRotationLocked: true,
-        lockedRemainingMs: data.remainingMs
-      }));
-    });
-
-    // Listen for rotation unlocked events
-    socket.on('rotation-unlocked', (data: {
-      locked: boolean;
-      remainingMs: number;
-      nextRotationAt: number;
-    }) => {
-      console.log('🔓 CLIENT: Rotation unlocked, resuming with', Math.round(data.remainingMs / 1000), 'seconds');
-      setStreamStatus(prev => ({
-        ...prev,
-        isRotationLocked: false,
-        lockedRemainingMs: null,
-        nextRotationAt: data.nextRotationAt
-      }));
-    });
-
-    socket.on('global-cooldown', (data: { cooldownRemaining: number }) => {
-      setCooldownRemaining(data.cooldownRemaining);
-      startCooldownTimer(data.cooldownRemaining);
-    });
-
-    socket.on('cooldown-status-update', (data: { globalCooldown: any, timestamp: number }) => {
-      // console.log('🛡️ CLIENT: Cooldown status update from item:', data);
-      if (data.globalCooldown) {
-        const remaining = data.globalCooldown.remainingSeconds || data.globalCooldown.remaining || 0;
-        // console.log('🛡️ CLIENT: Setting cooldown to', remaining, 'seconds');
-        setCooldownRemaining(Math.ceil(remaining));
-        startCooldownTimer(Math.ceil(remaining));
-      }
-    });
-
-    socket.on('streaming-approved', () => {
-      // console.log('✅ CLIENT: Streaming approved! Starting stream...');
-      setIsStreaming(true);
-      setError(null);
-      
-      // Show transition overlay for starting a new stream
-      setShowTransitionOverlay(true);
-      setTransitionMessage('Starting your stream...');
-      
-      // Hide overlay after 2 seconds
-      setTimeout(() => {
-        setShowTransitionOverlay(false);
-      }, 2000);
-      
-      // Log the state change
-      // console.log('✅ CLIENT: isStreaming set to true');
-    });
-    
     socket.on('stream-denied', (data: any) => {
       console.log('🚫 CLIENT: Stream denied:', data);
       setIsStreaming(false);
@@ -760,44 +357,10 @@ function AppContent() {
       }
     });
 
-    socket.on('takeover-approved', () => {
-      // console.log('✅ CLIENT: Takeover approved!');
-      setIsStreaming(true);
-      setError(null);
-      
-      // Show transition overlay for successful takeover
-      setShowTransitionOverlay(true);
-      setTransitionMessage('Taking over the stream...');
-      
-      // Hide overlay after 2.5 seconds
-      setTimeout(() => {
-        setShowTransitionOverlay(false);
-      }, 2500);
-    });
-
-    socket.on('takeover-denied', (data: { reason: string, cooldownRemaining: number }) => {
-      // console.log('🚫 CLIENT: Takeover denied:', data.reason);
-      setCooldownRemaining(data.cooldownRemaining);
-      startCooldownTimer(data.cooldownRemaining);
-      setError(data.reason);
-    });
-
-    // Keep backward compatibility with old event name
-    socket.on('takeover-blocked', (data: { message: string, cooldownRemaining: number }) => {
-      // console.log('🚫 CLIENT: Takeover blocked (legacy):', data.message);
-      setCooldownRemaining(data.cooldownRemaining);
-      startCooldownTimer(data.cooldownRemaining);
-      setError(data.message);
-    });
-
     socket.on('admin-notification', (data: { message: string; type: string }) => {
       // console.log('📢 ADMIN:', data.message);
       setError(data.message);
       setTimeout(() => setError(null), 5000);
-    });
-
-    socket.on('streamer-buffs-update', (data: { buffs: any[] }) => {
-      setStreamerBuffs(data.buffs || []);
     });
 
     socket.on('banned', (data: { reason: string }) => {
@@ -834,61 +397,6 @@ function AppContent() {
       setUserPoints(data.points);
     });
 
-    // Handle force disconnect from killswitch or admin
-    socket.on('force-disconnect', (data: { reason: string; activatedBy?: string; message: string }) => {
-      console.log('💥 CLIENT: Force disconnect received:', data);
-
-      // CRITICAL: If this is a stream_takeover, DON'T clear the stream status or show disconnect UI
-      // The stream-takeover handler already set up the transition to viewer mode
-      if (data.reason === 'stream_takeover') {
-        console.log('💥 CLIENT: Force disconnect is from takeover - skipping (stream-takeover handler handles this)');
-        // Just set the flag, don't mess with stream status or UI
-        setIsForceDisconnected(true);
-        setTimeout(() => {
-          setIsForceDisconnected(false);
-        }, 5000);
-        return;
-      }
-
-      if (isStreaming) {
-        setIsStreaming(false);
-        setIsForceDisconnected(true);
-        setDisconnectionReason(data.message || data.reason);
-
-        // Clear our stream from status if we were the streamer (but not during takeover)
-        if (streamStatus.streamerId === socket.id) {
-          setStreamStatus(prev => ({
-            ...prev,
-            hasActiveStream: false,
-            streamerId: null,
-            streamType: null,
-            streamerDisplayName: null
-          }));
-        }
-
-        // Show takeover overlay for the disconnection with custom message
-        setShowTakeoverOverlay(true);
-        if (data.reason.includes('Kill Switch')) {
-          setTakeoverMessage('💥 Kill Switch Activated!');
-        } else {
-          setTakeoverMessage(data.message || `Disconnected: ${data.reason}`);
-        }
-
-        // Hide overlay and show persistent message after animation
-        setTimeout(() => {
-          setShowTakeoverOverlay(false);
-          // Show a more integrated disconnection message
-          setDisconnectionReason(data.message || data.reason);
-        }, 3000);
-
-        // Clear disconnection state after 15 seconds
-        setTimeout(() => {
-          setDisconnectionReason(null);
-          setIsForceDisconnected(false);
-        }, 15000);
-      }
-    });
-
     // Handle kill switch activation notification
     socket.on('kill-switch-activated', (data: { activatedBy: string; targetStreamer: string; message: string }) => {
       // console.log('💥 CLIENT: Kill switch activated notification:', data);
@@ -899,111 +407,19 @@ function AppContent() {
       }
     });
 
-    // Handle stream takeover event (sent to the current streamer being taken over)
-    socket.on('stream-takeover', (data: { newStreamerId: string; newStreamerDisplayName?: string; cooldownRemaining: number }) => {
-      console.log('🔄 CLIENT: Stream takeover event received:', data);
-      if (isStreaming) {
-        console.log('🔄 CLIENT: I was streaming, transitioning to viewer mode');
-
-        // CRITICAL: Set these BEFORE changing isStreaming to prevent race conditions
-        // Lock in the takeover target
-        takeoverTargetRef.current = data.newStreamerId;
-        takeoverTimestampRef.current = Date.now();
-
-        // Update stream status to point to new streamer BEFORE we stop streaming
-        setStreamStatus(prev => ({
-          ...prev,
-          hasActiveStream: true,
-          streamerId: data.newStreamerId,
-          streamerDisplayName: data.newStreamerDisplayName || prev.streamerDisplayName,
-          streamStartTime: Date.now(),
-          streamDuration: 0
-        }));
-
-        // Force viewer mode to bypass any isStreaming race conditions
-        setForceViewerAfterTakeover(true);
-
-        // Now set isStreaming to false
-        setIsStreaming(false);
-        setWasStreamingBeforeTakeover(false); // Don't auto-restart after takeover
-
-        setCooldownRemaining(data.cooldownRemaining);
-        startCooldownTimer(data.cooldownRemaining);
-
-        console.log('🔄 CLIENT: Transitioning to view new streamer:', data.newStreamerId);
-
-        // Show takeover overlay
-        setShowTakeoverOverlay(true);
-        setTakeoverMessage('Your stream is being taken over!');
-
-        // Hide overlay and clear force viewer mode after transition completes
-        setTimeout(() => {
-          setShowTakeoverOverlay(false);
-          // Clear force viewer mode after successful transition
-          setTimeout(() => {
-            setForceViewerAfterTakeover(false);
-            takeoverTargetRef.current = null;
-            console.log('🔄 CLIENT: Takeover transition complete, cleared force viewer mode');
-          }, 2000);
-        }, 3000);
-      }
-    });
-
     return () => {
-      socket.off('connect', handleConnect);
       socket.off('stream-status');
       socket.off('game:started');
       socket.off('game:ended');
-      socket.off('stream-started');
-      socket.off('stream-ended');
-      socket.off('viewer-count-update');
-      socket.off('new-streamer');
-      socket.off('random-rotation-status');
-      socket.off('rotation-timing');
-      socket.off('rotation-extended');
-      socket.off('rotation-reduced');
-      socket.off('rotation-locked');
-      socket.off('rotation-unlocked');
-      socket.off('global-cooldown');
-      socket.off('cooldown-status-update');
-      socket.off('streaming-approved');
       socket.off('stream-denied');
-      socket.off('takeover-approved');
-      socket.off('takeover-denied');
-      socket.off('takeover-blocked');
       socket.off('admin-notification');
-      socket.off('streamer-buffs-update');
       socket.off('banned');
       socket.off('timeout');
       socket.off('time-stats-update');
       socket.off('points-updated');
-      socket.off('force-disconnect');
       socket.off('kill-switch-activated');
-      socket.off('stream-takeover');
     };
-  }, [socket, isStreaming, wasStreamingBeforeTakeover, currentUser, streamStatus.streamerId, isForceDisconnected]);
-
-  const startCooldownTimer = (seconds: number) => {
-    if (cooldownTimerRef.current) {
-      clearInterval(cooldownTimerRef.current);
-    }
-
-    let remaining = seconds;
-    setCooldownRemaining(remaining);
-
-    cooldownTimerRef.current = setInterval(() => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        setCooldownRemaining(0);
-        if (cooldownTimerRef.current) {
-          clearInterval(cooldownTimerRef.current);
-          cooldownTimerRef.current = null;
-        }
-      } else {
-        setCooldownRemaining(remaining);
-      }
-    }, 1000);
-  };
+  }, [socket, isStreaming, currentUser, isForceDisconnected, setStreamStatus, setIsStreaming, setWasStreamingBeforeTakeover, setIsGameActive, setUserPoints, setUserPointsFromUpdater, takeoverTargetRef, takeoverTimestampRef]);
 
   const handleLogin = async () => {
     // Pending-deletion short-circuit before activating auth state.
