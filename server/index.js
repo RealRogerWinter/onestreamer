@@ -20,9 +20,8 @@ console.log('  SMTP_HOST:', process.env.SMTP_HOST ? 'configured' : 'NOT SET');
 console.log('  SMTP_USER:', process.env.SMTP_USER ? 'configured' : 'NOT SET');
 console.log('  FROM_EMAIL:', process.env.FROM_EMAIL || 'NOT SET');
 
-const StreamService = require('./services/StreamService');
-const TakeoverService = require('./services/TakeoverService');
-const TestStreamService = require('./services/TestStreamService');
+// ViewBot stack stays inline (PR-I2 defers these — module-level globals,
+// async init wiring, and notifiedStreamers/createViewBotProducer closure).
 const ViewbotService = require('./services/ViewbotService');
 const ViewBotClientService = require('./services/ViewBotClientService');
 const ViewBotWebRTCService = require('./services/ViewBotWebRTCService');
@@ -31,38 +30,11 @@ const SimpleViewBotRotation = require('./services/SimpleViewBotRotation');
 const ViewBotURLService = require('./services/ViewBotURLService');
 const URLStreamHealthService = require('./services/URLStreamHealthService');
 const RandomStreamRotationService = require('./services/RandomStreamRotationService');
-const SimpleMediaStreamService = require('./services/SimpleMediaStreamService');
 const MediasoupService = require('./services/MediasoupService');
-const AudioOptimizationService = require('./services/AudioOptimizationService');
-const ResourceMonitor = require('./services/ResourceMonitor');
-const SessionService = require('./services/SessionService');
 const AuthService = require('./services/AuthService');
-const AccountService = require('./services/AccountService');
-const TimeTrackingService = require('./services/TimeTrackingService');
-const ItemService = require('./services/ItemService');
-const InventoryService = require('./services/InventoryService');
-const ShopService = require('./services/ShopService');
-const BuffDebuffService = require('./services/BuffDebuffService');
-const CanvasFxService = require('./services/CanvasFxService');
-const SoundFxService = require('./services/SoundFxService');
-const VisualFxService = require('./services/VisualFxService');
-const MediasoupPlainTransportService = require('./services/MediasoupPlainTransportService');
-const StreamInterceptorService = require('./services/StreamInterceptorService');
 const ChatBotService = require('./services/ChatBotService');
 const StreamBotService = require('./services/StreamBotService');
-const RecordingService = require('./services/RecordingService');
-const FileCompressionService = require('./services/FileCompressionService');
-const RecordingStorageService = require('./services/RecordingStorageService');
-const ClipStorageService = require('./services/ClipStorageService');
-const ClipProcessorService = require('./services/ClipProcessorService');
-const ClipService = require('./services/ClipService');
-const ContinuousRecordingService = require('./services/ContinuousRecordingService');
-const SessionChatCaptureService = require('./services/SessionChatCaptureService');
-const RecordingUploadScheduler = require('./services/RecordingUploadScheduler');
-const RecordingCleanupScheduler = require('./services/RecordingCleanupScheduler');
-const TranscriptionService = require('./services/TranscriptionService');
 const IPBanService = require('./services/IPBanService');
-const { GameService, GameStreamService } = require('./services/game');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const moderationRoutes = require('./routes/moderation');
@@ -487,6 +459,22 @@ const {
   canvasFxService,
   soundFxService,
   plainTransportService,
+  // PR-I2:
+  streamInterceptorService,
+  visualFxService,
+  recordingStorageService,
+  fileCompressionService,
+  recordingService,
+  clipStorageService,
+  clipProcessorService,
+  continuousRecordingService,
+  clipService,
+  sessionChatCaptureService,
+  recordingUploadScheduler,
+  recordingCleanupScheduler,
+  transcriptionService,
+  gameService,
+  gameStreamService,
 } = services;
 
 // Expose the whole bag for extracted routes/sockets (PR-G2 / PR-H2 onwards
@@ -613,8 +601,10 @@ buffDebuffService.on('buff-applied', async (buffData) => {
     console.error('❌ VISUAL FX: Error syncing buff-applied visual effect:', error);
   }
 });
-const streamInterceptorService = new StreamInterceptorService(mediasoupService, plainTransportService);
-const visualFxService = new VisualFxService(mediasoupService, buffDebuffService, streamInterceptorService);
+// streamInterceptorService + visualFxService now built by the services
+// factory (PR-I2). chatBotService and streamBotService remain inline — their
+// dep wiring (setIoInstance, setMovieBotService, setChatBotLLMService) runs
+// further down and PR-I2 deferred them.
 const chatBotService = new ChatBotService();
 const streamBotService = new StreamBotService(database);
 
@@ -648,37 +638,8 @@ streamInterceptorService.on('stream-restored', (data) => {
     });
 });
 
-// Initialize recording services
-const recordingStorageService = new RecordingStorageService(database);
-const fileCompressionService = new FileCompressionService(database);
-const recordingService = new RecordingService(database, mediasoupService, recordingStorageService);
-
-// Initialize clip services
-const clipStorageService = new ClipStorageService();
-const clipProcessorService = new ClipProcessorService(clipStorageService);
-
-// Initialize continuous recording service for LiveKit Egress
-const continuousRecordingService = new ContinuousRecordingService({
-  livekitHost: process.env.LIVEKIT_HOST || 'http://127.0.0.1:7882',
-  apiKey: process.env.LIVEKIT_API_KEY,
-  apiSecret: process.env.LIVEKIT_API_SECRET,
-  roomName: process.env.LIVEKIT_ROOM_NAME || 'onestreamer-main',
-  outputDir: '/root/onestreamer/egress-recordings',
-  retentionMinutes: 10 // Keep last 10 minutes for clipping
-});
-
-const clipService = new ClipService(database, clipStorageService, clipProcessorService, continuousRecordingService);
-
-// Initialize Admin Recording Review services
-const sessionChatCaptureService = new SessionChatCaptureService({
-  chatServiceUrl: process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444'
-});
-
-const recordingUploadScheduler = new RecordingUploadScheduler({
-  localBufferHours: 2
-});
-
-const recordingCleanupScheduler = new RecordingCleanupScheduler();
+// Recording + clip + admin-review services are all built by the services
+// factory (PR-I2). See server/bootstrap/services.js for the dep graph.
 
 // Wire up services
 adminRecordingsRoutes.setServices({
@@ -710,8 +671,7 @@ clipProcessorService.setProcessedCallback(async (clipId, result) => {
   await clipService.updateClipProcessingResult(clipId, result);
 });
 
-// Initialize transcription service with recording service dependency
-const transcriptionService = new TranscriptionService(database, mediasoupService, recordingService);
+// transcriptionService now built by the services factory (PR-I2).
 
 // Initialize MovieBot service
 const MovieBotService = require('./services/MovieBotService');
@@ -800,8 +760,7 @@ app.set('continuousRecordingService', continuousRecordingService);
 // ============================================
 // Game System Initialization
 // ============================================
-const gameService = new GameService(io, database);
-const gameStreamService = new GameStreamService(io, gameService, takeoverService);
+// gameService + gameStreamService built by the services factory (PR-I2).
 
 // Connect game stream service to takeover service for game mode blocking
 takeoverService.setGameStreamService(gameStreamService);

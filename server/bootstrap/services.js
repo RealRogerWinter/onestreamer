@@ -1,11 +1,10 @@
 // server/bootstrap/services.js
 //
-// Composition root for the "early-instantiation core" services that the bulk
-// of OneStreamer's routes and socket handlers reach into. Previously these
-// were instantiated inline in server/index.js (lines 439-478) interleaved
-// with other setup code; centralizing them here gives extracted route/socket
-// modules a single canonical bag to destructure from (via
-// `req.app.locals.services`).
+// Composition root for OneStreamer's core services that the bulk of routes
+// and socket handlers reach into. Previously these were instantiated inline
+// in server/index.js interleaved with other setup code; centralizing them
+// here gives extracted route/socket modules a single canonical bag to
+// destructure from (via `req.app.locals.services`).
 //
 // ── Dependency graph (instantiation order matters; each line consumes only
 //     things defined above it) ──────────────────────────────────────────────
@@ -29,13 +28,32 @@
 //   soundFxService             ──  no deps
 //   plainTransportService      ──  mediasoupService
 //
-// ── Scope of this PR (PR-I) ──────────────────────────────────────────────
-// Only the services above are migrated in this pilot. The later-instantiated
-// services in server/index.js (StreamInterceptorService, VisualFxService,
-// ChatBotService, RecordingService and friends, MovieBotService, GameService,
-// ViewBot* services) stay inline for now. PR-I2 will absorb those once this
-// factory pattern is proven against the existing extracted routers in
-// server/routes/ (audio.js, buffs.js, tutorial.js, etc.).
+//   ── PR-I2 additions (recording/transcription/game/effects clusters) ──
+//   streamInterceptorService   ──  mediasoupService, plainTransportService
+//   visualFxService            ──  mediasoupService, buffDebuffService,
+//                                  streamInterceptorService
+//   recordingStorageService    ──  database
+//   fileCompressionService     ──  database
+//   recordingService           ──  database, mediasoupService,
+//                                  recordingStorageService
+//   clipStorageService         ──  no deps
+//   clipProcessorService       ──  clipStorageService
+//   continuousRecordingService ──  config bag (env-derived)
+//   clipService                ──  database, clipStorageService,
+//                                  clipProcessorService, continuousRecordingService
+//   sessionChatCaptureService  ──  config bag (env-derived)
+//   recordingUploadScheduler   ──  config bag
+//   recordingCleanupScheduler  ──  no deps
+//   transcriptionService       ──  database, mediasoupService, recordingService
+//   gameService                ──  io, database
+//   gameStreamService          ──  io, gameService, takeoverService
+//
+// ── Intentionally deferred (still inline in server/index.js) ─────────────
+// ChatBotService, StreamBotService, MovieBotService, viewbotService and
+// the rest of the viewbot stack: their dep webs reach into module-level
+// globals, run async init wiring that the inline original was relying on,
+// or are interleaved with viewbot-specific setup code (notifiedStreamers
+// Set, createViewBotProducer closure, etc.). PR-I3 will address those.
 //
 // authService is also intentionally NOT here: it's instantiated early in
 // server/index.js (~line 324) so passport strategies can register against
@@ -59,17 +77,31 @@ const CanvasFxService = require('../services/CanvasFxService');
 const SoundFxService = require('../services/SoundFxService');
 const MediasoupPlainTransportService = require('../services/MediasoupPlainTransportService');
 
+// PR-I2 additions
+const StreamInterceptorService = require('../services/StreamInterceptorService');
+const VisualFxService = require('../services/VisualFxService');
+const RecordingStorageService = require('../services/RecordingStorageService');
+const FileCompressionService = require('../services/FileCompressionService');
+const RecordingService = require('../services/RecordingService');
+const ClipStorageService = require('../services/ClipStorageService');
+const ClipProcessorService = require('../services/ClipProcessorService');
+const ContinuousRecordingService = require('../services/ContinuousRecordingService');
+const ClipService = require('../services/ClipService');
+const SessionChatCaptureService = require('../services/SessionChatCaptureService');
+const RecordingUploadScheduler = require('../services/RecordingUploadScheduler');
+const RecordingCleanupScheduler = require('../services/RecordingCleanupScheduler');
+const TranscriptionService = require('../services/TranscriptionService');
+const { GameService, GameStreamService } = require('../services/game');
+
 /**
- * Build the early-core service bag.
+ * Build the core service bag.
  *
  * @param {object}  deps
  * @param {object}  deps.io            Socket.IO server instance
  * @param {object?} deps.redisClient   Connected redis client, or null if
  *                                     Redis isn't configured (TakeoverService
  *                                     handles the null case internally).
- * @param {object}  deps.database      SQLite database wrapper (not consumed
- *                                     by this batch but accepted for parity
- *                                     with PR-I2 services that will need it).
+ * @param {object}  deps.database      SQLite database wrapper.
  * @param {object}  deps.env           process.env (or a subset thereof).
  * @param {object}  deps.mediasoupService  Pre-built mediasoup service
  *                                     (adapter or direct — server/index.js
@@ -108,6 +140,56 @@ module.exports = function createServices({ io, redisClient, database, env, media
   // Plain RTP transport sits on top of the pre-built mediasoup service.
   const plainTransportService = new MediasoupPlainTransportService(mediasoupService);
 
+  // ── PR-I2: stream-interception + visual fx chain ────────────────────────
+  const streamInterceptorService = new StreamInterceptorService(mediasoupService, plainTransportService);
+  const visualFxService = new VisualFxService(mediasoupService, buffDebuffService, streamInterceptorService);
+
+  // ── PR-I2: recording cluster ────────────────────────────────────────────
+  const recordingStorageService = new RecordingStorageService(database);
+  const fileCompressionService = new FileCompressionService(database);
+  const recordingService = new RecordingService(database, mediasoupService, recordingStorageService);
+
+  // Clip cluster.
+  const clipStorageService = new ClipStorageService();
+  const clipProcessorService = new ClipProcessorService(clipStorageService);
+
+  // Continuous recording (LiveKit Egress). Constructor reads env-derived
+  // config and kicks off async init internally; behavior matches the
+  // previous inline instantiation.
+  const continuousRecordingService = new ContinuousRecordingService({
+    livekitHost: (env && env.LIVEKIT_HOST) || 'http://127.0.0.1:7882',
+    apiKey: env && env.LIVEKIT_API_KEY,
+    apiSecret: env && env.LIVEKIT_API_SECRET,
+    roomName: (env && env.LIVEKIT_ROOM_NAME) || 'onestreamer-main',
+    outputDir: '/root/onestreamer/egress-recordings',
+    retentionMinutes: 10, // keep last 10 minutes for clipping
+  });
+
+  const clipService = new ClipService(
+    database,
+    clipStorageService,
+    clipProcessorService,
+    continuousRecordingService
+  );
+
+  // Admin Recording Review services.
+  const sessionChatCaptureService = new SessionChatCaptureService({
+    chatServiceUrl: (env && env.CHAT_SERVICE_URL) || 'https://127.0.0.1:8444',
+  });
+
+  const recordingUploadScheduler = new RecordingUploadScheduler({
+    localBufferHours: 2,
+  });
+
+  const recordingCleanupScheduler = new RecordingCleanupScheduler();
+
+  // ── PR-I2: transcription (depends on recordingService) ──────────────────
+  const transcriptionService = new TranscriptionService(database, mediasoupService, recordingService);
+
+  // ── PR-I2: game cluster ─────────────────────────────────────────────────
+  const gameService = new GameService(io, database);
+  const gameStreamService = new GameStreamService(io, gameService, takeoverService);
+
   return {
     streamService,
     sessionService,
@@ -125,5 +207,21 @@ module.exports = function createServices({ io, redisClient, database, env, media
     canvasFxService,
     soundFxService,
     plainTransportService,
+    // PR-I2:
+    streamInterceptorService,
+    visualFxService,
+    recordingStorageService,
+    fileCompressionService,
+    recordingService,
+    clipStorageService,
+    clipProcessorService,
+    continuousRecordingService,
+    clipService,
+    sessionChatCaptureService,
+    recordingUploadScheduler,
+    recordingCleanupScheduler,
+    transcriptionService,
+    gameService,
+    gameStreamService,
   };
 };

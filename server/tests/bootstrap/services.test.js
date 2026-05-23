@@ -1,24 +1,24 @@
-// Tests for the early-core service composition root introduced in PR-I.
+// Tests for the service composition root introduced in PR-I and expanded
+// in PR-I2.
 //
 // We use jest.mock(..., factory) to replace each service module with a tiny
 // stub class that records the constructor args on the instance (as `_args`).
 // That gives us:
 //   - cheap isolation from the real services' database/io side effects
-//     (BuffDebuffService.initialize(), etc.)
+//     (BuffDebuffService.initialize(), ContinuousRecordingService.initialize(), etc.)
 //   - a way to assert exactly which deps got threaded into each `new X(...)`.
 //
 // Coverage:
-//   1. Factory returns all 16 expected keys (none missing, none extra).
+//   1. Factory returns all expected keys (none missing, none extra).
 //   2. Each returned value is an instance of the (mocked) class for that key.
-//   3. takeoverService receives (redisClient, sessionService).
-//   4. inventoryService receives itemService.
-//   5. shopService receives (itemService, inventoryService, accountService, io).
-//   6. buffDebuffService receives (io, streamService, timeTrackingService, sessionService).
-//   7. canvasFxService receives the *same* buffDebuffService instance the
-//      factory built (i.e. construction order: buffs before canvas).
-//   8. Factory does NOT throw when `io` is missing but produces a shopService
-//      whose `io` arg is undefined — documents current behavior so a future
-//      tightening (required-dep validation) gets a deliberate test update.
+//   3. Dep-graph identity checks for representative services:
+//        takeoverService, inventoryService, shopService, buffDebuffService,
+//        canvasFxService, plainTransportService,
+//        streamInterceptorService, visualFxService, clipService,
+//        transcriptionService, gameStreamService.
+//   4. Factory does NOT throw when `io` is missing but forwards undefined —
+//      documents current behavior so a future tightening (required-dep
+//      validation) gets a deliberate test update.
 
 // ── Mock every service module the factory loads ──────────────────────────
 // Each mock is a constructor that stashes its args on `this._args`. We
@@ -44,6 +44,25 @@ jest.mock('../../services/CanvasFxService', () => class { constructor(...args) {
 jest.mock('../../services/SoundFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'SoundFxService'; } });
 jest.mock('../../services/MediasoupPlainTransportService', () => class { constructor(...args) { this._args = args; this._stubName = 'MediasoupPlainTransportService'; } });
 
+// PR-I2 additions
+jest.mock('../../services/StreamInterceptorService', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamInterceptorService'; } });
+jest.mock('../../services/VisualFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'VisualFxService'; } });
+jest.mock('../../services/RecordingStorageService', () => class { constructor(...args) { this._args = args; this._stubName = 'RecordingStorageService'; } });
+jest.mock('../../services/FileCompressionService', () => class { constructor(...args) { this._args = args; this._stubName = 'FileCompressionService'; } });
+jest.mock('../../services/RecordingService', () => class { constructor(...args) { this._args = args; this._stubName = 'RecordingService'; } });
+jest.mock('../../services/ClipStorageService', () => class { constructor(...args) { this._args = args; this._stubName = 'ClipStorageService'; } });
+jest.mock('../../services/ClipProcessorService', () => class { constructor(...args) { this._args = args; this._stubName = 'ClipProcessorService'; } });
+jest.mock('../../services/ContinuousRecordingService', () => class { constructor(...args) { this._args = args; this._stubName = 'ContinuousRecordingService'; } });
+jest.mock('../../services/ClipService', () => class { constructor(...args) { this._args = args; this._stubName = 'ClipService'; } });
+jest.mock('../../services/SessionChatCaptureService', () => class { constructor(...args) { this._args = args; this._stubName = 'SessionChatCaptureService'; } });
+jest.mock('../../services/RecordingUploadScheduler', () => class { constructor(...args) { this._args = args; this._stubName = 'RecordingUploadScheduler'; } });
+jest.mock('../../services/RecordingCleanupScheduler', () => class { constructor(...args) { this._args = args; this._stubName = 'RecordingCleanupScheduler'; } });
+jest.mock('../../services/TranscriptionService', () => class { constructor(...args) { this._args = args; this._stubName = 'TranscriptionService'; } });
+jest.mock('../../services/game', () => ({
+  GameService: class { constructor(...args) { this._args = args; this._stubName = 'GameService'; } },
+  GameStreamService: class { constructor(...args) { this._args = args; this._stubName = 'GameStreamService'; } },
+}));
+
 // Pull in the mocked classes for instanceof checks.
 const StreamService = require('../../services/StreamService');
 const SessionService = require('../../services/SessionService');
@@ -62,6 +81,22 @@ const CanvasFxService = require('../../services/CanvasFxService');
 const SoundFxService = require('../../services/SoundFxService');
 const MediasoupPlainTransportService = require('../../services/MediasoupPlainTransportService');
 
+// PR-I2 additions
+const StreamInterceptorService = require('../../services/StreamInterceptorService');
+const VisualFxService = require('../../services/VisualFxService');
+const RecordingStorageService = require('../../services/RecordingStorageService');
+const FileCompressionService = require('../../services/FileCompressionService');
+const RecordingService = require('../../services/RecordingService');
+const ClipStorageService = require('../../services/ClipStorageService');
+const ClipProcessorService = require('../../services/ClipProcessorService');
+const ContinuousRecordingService = require('../../services/ContinuousRecordingService');
+const ClipService = require('../../services/ClipService');
+const SessionChatCaptureService = require('../../services/SessionChatCaptureService');
+const RecordingUploadScheduler = require('../../services/RecordingUploadScheduler');
+const RecordingCleanupScheduler = require('../../services/RecordingCleanupScheduler');
+const TranscriptionService = require('../../services/TranscriptionService');
+const { GameService, GameStreamService } = require('../../services/game');
+
 const createServices = require('../../bootstrap/services');
 
 function buildDeps(overrides = {}) {
@@ -76,10 +111,11 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 16 expected keys (no more, no less)', () => {
+  test('returns all 31 expected keys (no more, no less)', () => {
     const services = createServices(buildDeps());
 
     const expectedKeys = [
+      // PR-I core
       'streamService',
       'sessionService',
       'takeoverService',
@@ -96,10 +132,26 @@ describe('server/bootstrap/services factory', () => {
       'canvasFxService',
       'soundFxService',
       'plainTransportService',
+      // PR-I2 additions
+      'streamInterceptorService',
+      'visualFxService',
+      'recordingStorageService',
+      'fileCompressionService',
+      'recordingService',
+      'clipStorageService',
+      'clipProcessorService',
+      'continuousRecordingService',
+      'clipService',
+      'sessionChatCaptureService',
+      'recordingUploadScheduler',
+      'recordingCleanupScheduler',
+      'transcriptionService',
+      'gameService',
+      'gameStreamService',
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(16);
+    expect(expectedKeys).toHaveLength(31);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -121,6 +173,22 @@ describe('server/bootstrap/services factory', () => {
     expect(s.canvasFxService).toBeInstanceOf(CanvasFxService);
     expect(s.soundFxService).toBeInstanceOf(SoundFxService);
     expect(s.plainTransportService).toBeInstanceOf(MediasoupPlainTransportService);
+    // PR-I2
+    expect(s.streamInterceptorService).toBeInstanceOf(StreamInterceptorService);
+    expect(s.visualFxService).toBeInstanceOf(VisualFxService);
+    expect(s.recordingStorageService).toBeInstanceOf(RecordingStorageService);
+    expect(s.fileCompressionService).toBeInstanceOf(FileCompressionService);
+    expect(s.recordingService).toBeInstanceOf(RecordingService);
+    expect(s.clipStorageService).toBeInstanceOf(ClipStorageService);
+    expect(s.clipProcessorService).toBeInstanceOf(ClipProcessorService);
+    expect(s.continuousRecordingService).toBeInstanceOf(ContinuousRecordingService);
+    expect(s.clipService).toBeInstanceOf(ClipService);
+    expect(s.sessionChatCaptureService).toBeInstanceOf(SessionChatCaptureService);
+    expect(s.recordingUploadScheduler).toBeInstanceOf(RecordingUploadScheduler);
+    expect(s.recordingCleanupScheduler).toBeInstanceOf(RecordingCleanupScheduler);
+    expect(s.transcriptionService).toBeInstanceOf(TranscriptionService);
+    expect(s.gameService).toBeInstanceOf(GameService);
+    expect(s.gameStreamService).toBeInstanceOf(GameStreamService);
   });
 
   test('takeoverService is constructed with (redisClient, sessionService)', () => {
@@ -179,6 +247,73 @@ describe('server/bootstrap/services factory', () => {
 
     expect(s.plainTransportService._args).toHaveLength(1);
     expect(s.plainTransportService._args[0]).toBe(deps.mediasoupService);
+  });
+
+  // ── PR-I2 dep-graph identity checks ───────────────────────────────────
+
+  test('streamInterceptorService receives (mediasoupService, plainTransportService)', () => {
+    const deps = buildDeps();
+    const s = createServices(deps);
+
+    expect(s.streamInterceptorService._args).toHaveLength(2);
+    expect(s.streamInterceptorService._args[0]).toBe(deps.mediasoupService);
+    expect(s.streamInterceptorService._args[1]).toBe(s.plainTransportService);
+  });
+
+  test('visualFxService receives (mediasoupService, buffDebuffService, streamInterceptorService)', () => {
+    const deps = buildDeps();
+    const s = createServices(deps);
+
+    expect(s.visualFxService._args).toHaveLength(3);
+    expect(s.visualFxService._args[0]).toBe(deps.mediasoupService);
+    expect(s.visualFxService._args[1]).toBe(s.buffDebuffService);
+    expect(s.visualFxService._args[2]).toBe(s.streamInterceptorService);
+  });
+
+  test('recordingService receives (database, mediasoupService, recordingStorageService)', () => {
+    const deps = buildDeps();
+    const s = createServices(deps);
+
+    expect(s.recordingService._args).toHaveLength(3);
+    expect(s.recordingService._args[0]).toBe(deps.database);
+    expect(s.recordingService._args[1]).toBe(deps.mediasoupService);
+    expect(s.recordingService._args[2]).toBe(s.recordingStorageService);
+  });
+
+  test('clipProcessorService receives the factory-built clipStorageService', () => {
+    const s = createServices(buildDeps());
+    expect(s.clipProcessorService._args[0]).toBe(s.clipStorageService);
+  });
+
+  test('clipService receives (database, clipStorageService, clipProcessorService, continuousRecordingService)', () => {
+    const deps = buildDeps();
+    const s = createServices(deps);
+
+    expect(s.clipService._args).toHaveLength(4);
+    expect(s.clipService._args[0]).toBe(deps.database);
+    expect(s.clipService._args[1]).toBe(s.clipStorageService);
+    expect(s.clipService._args[2]).toBe(s.clipProcessorService);
+    expect(s.clipService._args[3]).toBe(s.continuousRecordingService);
+  });
+
+  test('transcriptionService receives (database, mediasoupService, recordingService)', () => {
+    const deps = buildDeps();
+    const s = createServices(deps);
+
+    expect(s.transcriptionService._args).toHaveLength(3);
+    expect(s.transcriptionService._args[0]).toBe(deps.database);
+    expect(s.transcriptionService._args[1]).toBe(deps.mediasoupService);
+    expect(s.transcriptionService._args[2]).toBe(s.recordingService);
+  });
+
+  test('gameStreamService receives (io, gameService, takeoverService)', () => {
+    const deps = buildDeps();
+    const s = createServices(deps);
+
+    expect(s.gameStreamService._args).toHaveLength(3);
+    expect(s.gameStreamService._args[0]).toBe(deps.io);
+    expect(s.gameStreamService._args[1]).toBe(s.gameService);
+    expect(s.gameStreamService._args[2]).toBe(s.takeoverService);
   });
 
   test('omitting required deps leaves the corresponding ctor arg undefined (no validation today)', () => {
