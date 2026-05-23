@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import WebRTCViewer from './WebRTCViewer';
-import { MediasoupClient } from '../services/MediasoupClient';
+import { MediasoupClient } from '../../services/MediasoupClient';
 import { Socket } from 'socket.io-client';
 
 // Mock MediaStream globally
@@ -16,7 +16,7 @@ global.MediaStream = jest.fn().mockImplementation(() => ({
 })) as any;
 
 // Mock MediasoupClient
-jest.mock('../services/MediasoupClient');
+jest.mock('../../services/MediasoupClient');
 const MockedMediasoupClient = MediasoupClient as jest.MockedClass<typeof MediasoupClient>;
 
 // Mock HTMLVideoElement

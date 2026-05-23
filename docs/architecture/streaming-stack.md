@@ -214,8 +214,8 @@ The TURN credential pattern is HMAC-based with a shared secret (`TURN_SECRET`). 
 | Transcription | [`server/services/TranscriptionService.js`](../../server/services/TranscriptionService.js) |
 | Audio codec config | [`server/services/AudioOptimizationService.js`](../../server/services/AudioOptimizationService.js) |
 | MediaSoup configuration | [`server/config/webrtc.config.js`](../../server/config/webrtc.config.js) |
-| Viewer client | [`client/src/components/WebRTCViewer.tsx`](../../client/src/components/WebRTCViewer.tsx) |
-| Streamer client | [`client/src/components/WebRTCStreamer.tsx`](../../client/src/components/WebRTCStreamer.tsx) |
+| Viewer client | [`client/src/components/stream/WebRTCViewer.tsx`](../../client/src/components/stream/WebRTCViewer.tsx) |
+| Streamer client | [`client/src/components/stream/WebRTCStreamer.tsx`](../../client/src/components/stream/WebRTCStreamer.tsx) |
 | Mediasoup client wrapper | [`client/src/services/MediasoupClient.ts`](../../client/src/services/MediasoupClient.ts) |
 
 ## See also

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { TestStreamGenerator } from '../services/TestStreamGenerator';
+import { TestStreamGenerator } from '../../services/TestStreamGenerator';
 
 interface TestStreamControlsProps {
   makeApiCall: (endpoint: string, options?: RequestInit) => Promise<any>;

@@ -145,16 +145,16 @@ Beyond audio, the streamer can configure:
 - **Screen share** — replace camera with `getDisplayMedia()` capture
 - **Mirror preview** — flips local preview only (viewers see normal-orientation)
 
-All in [`StreamerSettings.tsx`](../../client/src/components/StreamerSettings.tsx) (~1.4k LOC — the largest "settings" component in the app).
+All in [`StreamerSettings.tsx`](../../client/src/components/stream/StreamerSettings.tsx) (~1.4k LOC — the largest "settings" component in the app).
 
 ## Viewer-side rendering
 
-Viewers receive media via [`WebRTCViewer.tsx`](../../client/src/components/WebRTCViewer.tsx) (the largest single React component at ~2.7k LOC). It:
+Viewers receive media via [`WebRTCViewer.tsx`](../../client/src/components/stream/WebRTCViewer.tsx) (the largest single React component at ~2.7k LOC). It:
 
 - Subscribes to MediaSoup consumers for each producer
 - Falls back to HLS playback via `hls.js` if WebRTC fails (slower; not currently the primary path)
 - Renders an audio-level meter ([`AudioLevelMeter.tsx`](../../client/src/components/audio/AudioLevelMeter.tsx)) when locally enabled
-- Surfaces the takeover button + cooldown countdown via [`StreamControls.tsx`](../../client/src/components/StreamControls.tsx)
+- Surfaces the takeover button + cooldown countdown via [`StreamControls.tsx`](../../client/src/components/stream/StreamControls.tsx)
 
 ## Stats and observability
 

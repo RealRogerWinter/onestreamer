@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import CookieService, { COOKIE_NAMES } from '../services/CookieService';
+import CookieService, { COOKIE_NAMES } from '../../services/CookieService';
 import './StreamerSettings.css';
 
 export interface VideoSettingsConfig {

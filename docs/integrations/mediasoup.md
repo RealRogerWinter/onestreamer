@@ -63,8 +63,8 @@ mediasoup: {
 | Backend abstraction (MediaSoup ↔ LiveKit) | [`server/services/WebRTCAdapter.js`](../../server/services/WebRTCAdapter.js), [`WebRTCAdapterV2.js`](../../server/services/WebRTCAdapterV2.js) |
 | Configuration | [`server/config/webrtc.config.js`](../../server/config/webrtc.config.js) |
 | Client wrapper | [`client/src/services/MediasoupClient.ts`](../../client/src/services/MediasoupClient.ts), [`MediasoupClientAdaptive.ts`](../../client/src/services/MediasoupClientAdaptive.ts) |
-| Streamer producer setup | [`client/src/components/WebRTCStreamer.tsx`](../../client/src/components/WebRTCStreamer.tsx) |
-| Viewer consumer setup | [`client/src/components/WebRTCViewer.tsx`](../../client/src/components/WebRTCViewer.tsx) |
+| Streamer producer setup | [`client/src/components/stream/WebRTCStreamer.tsx`](../../client/src/components/stream/WebRTCStreamer.tsx) |
+| Viewer consumer setup | [`client/src/components/stream/WebRTCViewer.tsx`](../../client/src/components/stream/WebRTCViewer.tsx) |
 
 ## Operational notes
 

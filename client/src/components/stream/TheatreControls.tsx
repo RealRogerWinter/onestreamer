@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import StreamerSettings, { StreamerSettingsConfig } from './StreamerSettings';
 import TheatreMuteIndicator from './TheatreMuteIndicator';
-import BuffDisplay from './buffs/BuffDisplay';
-import PermissionSetupModal from './PermissionSetupModal';
-import { ClipCreationModal } from './clips';
-import PermissionService, { MediaPermissions } from '../services/PermissionService';
-import CookieService, { COOKIE_NAMES } from '../services/CookieService';
+import BuffDisplay from '../buffs/BuffDisplay';
+import PermissionSetupModal from '../PermissionSetupModal';
+import { ClipCreationModal } from '../clips';
+import PermissionService, { MediaPermissions } from '../../services/PermissionService';
+import CookieService, { COOKIE_NAMES } from '../../services/CookieService';
 import './TheatreControls.css';
 
 interface TheatreControlsProps {

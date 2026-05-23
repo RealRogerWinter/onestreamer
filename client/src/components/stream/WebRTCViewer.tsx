@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Socket } from 'socket.io-client';
-import { WebRTCClientAdapter } from '../services/WebRTCClientAdapter';
-import PerformanceMonitorComponent from './PerformanceMonitor';
-import { StreamSwitchManager, StreamSwitchState } from '../services/StreamSwitchManager';
-import CanvasEffectOverlay from './canvas/CanvasEffectOverlay';
-import { useVisualFxProcessor } from '../hooks/useVisualFxProcessor';
-import CookieService, { COOKIE_NAMES } from '../services/CookieService';
-import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../utils/browserDetection';
-import VideoControls from './video/VideoControls';
+import { WebRTCClientAdapter } from '../../services/WebRTCClientAdapter';
+import PerformanceMonitorComponent from '../PerformanceMonitor';
+import { StreamSwitchManager, StreamSwitchState } from '../../services/StreamSwitchManager';
+import CanvasEffectOverlay from '../canvas/CanvasEffectOverlay';
+import { useVisualFxProcessor } from '../../hooks/useVisualFxProcessor';
+import CookieService, { COOKIE_NAMES } from '../../services/CookieService';
+import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../../utils/browserDetection';
+import VideoControls from '../video/VideoControls';
 import './WebRTCViewer.css';
 
 interface WebRTCViewerProps {

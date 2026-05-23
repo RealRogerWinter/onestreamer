@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import PermissionSetupModal from './PermissionSetupModal';
-import PermissionService, { MediaPermissions } from '../services/PermissionService';
+import PermissionSetupModal from '../PermissionSetupModal';
+import PermissionService, { MediaPermissions } from '../../services/PermissionService';
 import './StreamControls.css';
 
 interface StreamControlsProps {
