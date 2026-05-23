@@ -1,0 +1,43 @@
+# OneStreamer LiveKit — sanitized SSL-only profile
+#
+# Alternative LiveKit configuration for environments where UDP is blocked and
+# TURN-over-TLS is the only viable path. Same dormancy caveat as
+# `livekit-config.example.yaml`: see ADR-0002 / ADR-0003 before enabling.
+#
+# Differences from `livekit-config.example.yaml`:
+# - Different port range (no UDP TURN, TLS-only on :5349).
+# - Larger room cap (1000 vs 100).
+# - Uses the public DNS name in the TURN domain (assumes the deployment is
+#   NOT behind a Cloudflare-style proxy that breaks TURN/UDP).
+
+port: 7881
+bind_addresses:
+  - "0.0.0.0"
+log_level: info
+
+rtc:
+  tcp_port: 7882
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+
+turn:
+  enabled: true
+  domain: YOUR_DOMAIN
+  tls_port: 5349
+  cert_file: /etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem
+  key_file: /etc/letsencrypt/live/YOUR_DOMAIN/privkey.pem
+
+# Generate strong API key + secret with `livekit-server generate-keys`.
+# Never commit real keys.
+keys:
+  YOUR_LIVEKIT_API_KEY: YOUR_LIVEKIT_API_SECRET
+
+room:
+  auto_create: true
+  empty_timeout: 300
+  max_participants: 1000
+  enable_remote_unmute: true
+
+webhook:
+  urls: []

@@ -112,6 +112,11 @@ nginx/*
 !nginx/.gitkeep
 !nginx/*.example.conf
 
+# LiveKit per-deploy configs — dormant infrastructure (ADR-0002, ADR-0007),
+# only the sanitized livekit-*.example.yaml references are tracked
+livekit-config.yaml
+livekit-ssl.yaml
+
 # Recording artifacts (keep the .gitkeep scaffolding, ignore actual recordings)
 recordings/**
 !recordings/**/.gitkeep

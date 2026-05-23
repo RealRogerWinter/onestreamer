@@ -18,6 +18,7 @@ _Last verified: 2026-05-23 against commit 4a1d325._
 - **Ports**: `:7880` (HTTP) and `:7882` (WebSocket/signaling).
 - **Public hostname**: `livekit.onestreamer.live` (separate nginx vhost — `/etc/nginx/sites-available/livekit.onestreamer.live`).
 - **Path routing**: nginx also exposes `/livekit/rtc`, `/livekit/twirp/`, and `/livekit/*` on `onestreamer.live` itself, proxying to the same backend.
+- **Server config**: per-deploy `livekit-config.yaml` at the repo root (gitignored). The tracked reference is **[`livekit-config.example.yaml`](../../livekit-config.example.yaml)** — copy, replace `YOUR_PUBLIC_IP` / `YOUR_DOMAIN` / `YOUR_LIVEKIT_API_KEY` / `YOUR_LIVEKIT_API_SECRET`, then start the LiveKit server pointed at it. An alternative TLS-only profile lives at [`livekit-ssl.example.yaml`](../../livekit-ssl.example.yaml). Both files were untracked as part of [ADR-0007](../architecture/adr/0007-livekit-cleanup-staging.md) — dormant infrastructure, but the *config shape* is preserved so a future revival doesn't have to rediscover it.
 
 ## Credentials
 
@@ -49,7 +50,7 @@ These services exist and reference LiveKit but are not on the production hot pat
 - [`server/services/LiveKitService.js`](../../server/services/LiveKitService.js) — core LiveKit `RoomServiceClient` wrapper
 - [`server/services/ViewBotLiveKitService.js`](../../server/services/ViewBotLiveKitService.js) — the only remaining `ViewBotLiveKit*` variant; viewbot pipeline that *could* use LiveKit ingress, but production goes through `UnifiedViewBotRotation` + MediaSoup-or-WebRTC instead. See [`/docs/architecture/viewbot-fleet.md`](../architecture/viewbot-fleet.md).
 
-Both files are scheduled for removal in PR-S unless ADR-0002 is reversed first.
+Both files are scheduled for removal in a follow-up cleanup (deferred from PR-S; see [ADR-0007](../architecture/adr/0007-livekit-cleanup-staging.md) for the staged removal plan) unless ADR-0002 is reversed first.
 
 ## nginx routing (active even when dormant)
 
