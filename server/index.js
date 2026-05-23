@@ -361,138 +361,10 @@ app.use('/api/clips', clipsRoutes);
 app.use('/api/turn', turnRoutes);
 app.use('/admin/review', adminRecordingsRoutes);
 
-// Tutorial API endpoints
-app.get('/api/tutorial', (req, res) => {
-  try {
-    const dataDir = path.join(__dirname, 'data');
-    
-    // Try to load new tabbed format first
-    const tabsPath = path.join(dataDir, 'tutorial-tabs.json');
-    if (fs.existsSync(tabsPath)) {
-      const tabsContent = fs.readFileSync(tabsPath, 'utf8');
-      const tabs = JSON.parse(tabsContent);
-      res.json({ tabs });
-    } else {
-      // Fallback to old single content format
-      const tutorialPath = path.join(dataDir, 'tutorial.txt');
-      if (fs.existsSync(tutorialPath)) {
-        const content = fs.readFileSync(tutorialPath, 'utf8');
-        res.json({ content });
-      } else {
-        res.json({ content: '' });
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load tutorial:', error);
-    res.status(500).json({ error: 'Failed to load tutorial content' });
-  }
-});
-
-app.post('/api/tutorial', async (req, res) => {
-  try {
-    // Check if user is admin
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const decoded = authService.verifyToken(token);
-    if (!decoded) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
-
-    // Fetch the actual user record to check admin status
-    const AccountService = require('./services/AccountService');
-    const accountService = new AccountService();
-    const user = await accountService.getUserById(decoded.id);
-    
-    if (!user || !user.is_admin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const { content, tabs } = req.body;
-    
-    // Ensure data directory exists
-    const dataDir = path.join(__dirname, 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-
-    if (tabs) {
-      // New tabbed format - privacy is optional for backward compatibility
-      if (typeof tabs !== 'object' || !tabs.about || !tabs.support || !tabs.tutorial || !tabs.terms) {
-        return res.status(400).json({ error: 'Tabs must contain about, support, tutorial, and terms sections' });
-      }
-      
-      // Save tabbed content
-      const tabsPath = path.join(dataDir, 'tutorial-tabs.json');
-      fs.writeFileSync(tabsPath, JSON.stringify(tabs, null, 2), 'utf8');
-      
-      // Also save the tutorial tab content to the old file for backward compatibility
-      const tutorialPath = path.join(dataDir, 'tutorial.txt');
-      fs.writeFileSync(tutorialPath, tabs.tutorial, 'utf8');
-    } else if (content) {
-      // Old single content format
-      if (typeof content !== 'string') {
-        return res.status(400).json({ error: 'Content must be a string' });
-      }
-      
-      // Save tutorial content
-      const tutorialPath = path.join(dataDir, 'tutorial.txt');
-      fs.writeFileSync(tutorialPath, content, 'utf8');
-    } else {
-      return res.status(400).json({ error: 'Either content or tabs must be provided' });
-    }
-
-    res.json({ success: true, message: 'Tutorial content saved successfully' });
-  } catch (error) {
-    console.error('Failed to save tutorial:', error);
-    res.status(500).json({ error: 'Failed to save tutorial content' });
-  }
-});
-
-// Audio Optimization API endpoints
-app.get('/api/audio/optimization-settings', (req, res) => {
-  res.json({
-    constraints: audioOptimizationService.getOptimizedConstraints('streaming'),
-    rtpParameters: audioOptimizationService.getOptimizedRtpParameters(),
-    config: audioOptimizationService.config
-  });
-});
-
-app.get('/api/audio/profile/:profile', (req, res) => {
-  const profile = req.params.profile;
-  const constraints = audioOptimizationService.getOptimizedConstraints(profile);
-  res.json({ profile, constraints });
-});
-
-app.post('/api/audio/monitor/:sessionId', (req, res) => {
-  const { sessionId } = req.params;
-  const { producerId } = req.body;
-  const session = audioOptimizationService.monitorSession(sessionId, producerId);
-  res.json({ success: true, session });
-});
-
-app.post('/api/audio/stats/:sessionId', (req, res) => {
-  const { sessionId } = req.params;
-  const stats = req.body;
-  audioOptimizationService.updateSessionStats(sessionId, stats);
-  res.json({ success: true });
-});
-
-app.get('/api/audio/report/:sessionId', (req, res) => {
-  const { sessionId } = req.params;
-  const report = audioOptimizationService.getSessionReport(sessionId);
-  if (report) {
-    res.json(report);
-  } else {
-    res.status(404).json({ error: 'Session not found' });
-  }
-});
-
-app.get('/api/audio/global-stats', (req, res) => {
-  res.json(audioOptimizationService.stats.globalStats);
-});
+// Extracted route modules (see also routes/* — these were inline blocks
+// before PR-G; they read services from app.locals where state-sharing matters).
+app.use('/api/tutorial', require('./routes/tutorial'));
+app.use('/api/audio', require('./routes/audio'));
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -588,6 +460,9 @@ if (process.env.USE_WEBRTC_ADAPTER === 'true') {
 // Store service type for debugging
 global.mediasoupServiceType = usingAdapter ? 'adapter' : 'direct';
 const audioOptimizationService = new AudioOptimizationService();
+// Expose audio service on app.locals so the extracted routes/audio.js
+// router operates on the same singleton (session state is per-process).
+app.locals.audioOptimizationService = audioOptimizationService;
 const resourceMonitor = new ResourceMonitor();
 const accountService = new AccountService();
 // authService already initialized earlier for passport strategies

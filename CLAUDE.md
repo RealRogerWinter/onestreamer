@@ -10,6 +10,20 @@ This file is for AI/agent collaborators. Humans should start at [`README.md`](RE
 4. [`docs/architecture/adr/`](docs/architecture/adr/) — design-decision history. **Read the ADR before proposing a structural change that contradicts one.**
 5. [`docs/contributing/coding-conventions.md`](docs/contributing/coding-conventions.md) — code style + patterns to match.
 
+## Sharing services across route modules
+
+Two patterns, in order of preference:
+
+1. **Stateful services** — instantiate once in `server/index.js`, then expose:
+   ```js
+   app.locals.<serviceName> = <serviceInstance>;
+   ```
+   Extracted route files read `req.app.locals.<serviceName>` and short-circuit with a JSON 500 if it's unset (see `server/routes/audio.js` for the pattern).
+
+2. **Stateless services** (e.g., `AuthService`, `AccountService`) — re-instantiate at module scope inside the route file. Same convention as `server/routes/auth.js`.
+
+Once PR-I lands `server/bootstrap/services.js`, the canonical reference becomes `const { x, y } = req.app.locals.services;`.
+
 ## Conventions you must follow
 
 - **Six markdown files belong at the repo root**: `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`, `LICENSE`, `CLAUDE.md`. Everything else goes in `docs/`. If you're tempted to add another root `.md`, you're wrong — put it under `docs/`.
