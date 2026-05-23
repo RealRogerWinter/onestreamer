@@ -3,8 +3,10 @@ const router = express.Router();
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 const axios = require('axios');
 const DrawingService = require('../services/DrawingService');
+const ThrowingService = require('../services/ThrowingService');
 
 const drawingService = new DrawingService();
+const throwingService = new ThrowingService();
 
 // Chat service URL - Updated to use HTTPS and correct port
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
@@ -1137,187 +1139,58 @@ router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
 
 router.post('/inventory/throw', authenticateToken, async (req, res) => {
     try {
-        const userId = req.user.userId || req.user.id;
-        console.log(`🎯 THROW ENDPOINT HIT: User ${req.user.username} throwing item`, req.body);
-        const { x, y, item, username } = req.body;
-        
-        if (x === undefined || x === null || y === undefined || y === null || !item || !username) {
-            return res.status(400).json({ error: 'Missing required parameters: x, y, item, username' });
-        }
-        
-        const inventoryService = req.app.get('inventoryService');
-        const canvasFxService = req.app.get('canvasFxService');
-        const itemService = req.app.get('itemService');
-        const streamService = req.app.get('streamService');
-        
-        const streamStatus = streamService.getStreamStatus();
-        const streamId = streamStatus.hasActiveStream ? streamStatus.streamerId : null;
-        
-        // Check if there's an active stream (required for throwing items)
-        if (!streamStatus.hasActiveStream) {
-            console.log(`❌ THROW: No active stream to throw item at`);
-            return res.status(400).json({ 
-                error: 'No active stream', 
-                message: 'You can only throw items when someone is streaming. Please wait for a streamer to start.',
-                requiresStream: true 
-            });
-        }
-        
-        console.log(`🎯 THROW DEBUG: Throwing item ${item.name} for user ${req.user.username}`);
-        
-        // First, consume the item from inventory
-        const result = await inventoryService.useItem(
-            userId, 
-            item.id,
-            streamId
-        );
-        
-        // Check if this is a buff/debuff item that needs special handling after throwing
-        const fullItem = await itemService.getItemById(item.id);
-        const isBuffDebuffItem = itemService.isBuffOrDebuffItem(fullItem);
-        
-        // For buff/debuff items like smoke_bomb, apply the buff first to get duration
-        let buffDuration = null;
-        if (isBuffDebuffItem) {
-            console.log(`🎯 THROW: Item ${fullItem.name} is a buff/debuff, applying after throw`);
-            
-            const buffDebuffService = req.app.get('buffDebuffService');
-            if (buffDebuffService) {
-                // Get the current streamer to determine target
-                // Try StreamService first (works for MediaSoup and synced LiveKit)
-                let currentStreamerSocketId = streamService.getCurrentStreamer();
+        const result = await throwingService.startThrow({
+            user: req.user,
+            body: req.body,
+            services: {
+                inventoryService: req.app.get('inventoryService'),
+                canvasFxService: req.app.get('canvasFxService'),
+                itemService: req.app.get('itemService'),
+                streamService: req.app.get('streamService'),
+                buffDebuffService: req.app.get('buffDebuffService'),
+                mediasoupService: req.app.get('mediasoupService')
+            },
+            io: req.app.get('io'),
+            sessionService: req.app.get('sessionService'),
+            sendSystemMessage
+        });
 
-                // LIVEKIT FIX: Fallback to mediasoupService/webrtcAdapter if StreamService has no streamer
-                // This handles LiveKit mode where LiveKitService tracks currentStreamer but StreamService might not be synced
-                const mediasoupServiceForThrow = req.app.get('mediasoupService');
-                if (!currentStreamerSocketId && mediasoupServiceForThrow) {
-                    currentStreamerSocketId = mediasoupServiceForThrow.getCurrentStreamer();
-                    if (currentStreamerSocketId) {
-                        console.log(`🎯 THROW: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
-                    }
-                }
-
-                let targetUserId = null;
-
-                if (currentStreamerSocketId && req.app.get('sessionService')) {
-                    const session = req.app.get('sessionService').getSessionBySocketId(currentStreamerSocketId);
-                    if (session && session.userId) {
-                        targetUserId = session.userId;
-                        console.log(`🎯 THROW: Found current streamer userId: ${targetUserId}`);
-                    }
-                }
-
-                if (targetUserId) {
-                    try {
-                        const buffResult = await itemService.applyBuffDebuffItem(
-                            targetUserId,
-                            item.id,
-                            userId,
-                            buffDebuffService,
-                            true, // Skip cooldown validation since we already consumed the item
-                            streamId
-                        );
-                        console.log(`🎯 THROW: Applied ${fullItem.display_name} buff/debuff to streamer after throw`);
-                        result.buffResult = buffResult;
-                        
-                        // Get the buff duration for the effect
-                        if (fullItem.duration_seconds) {
-                            buffDuration = fullItem.duration_seconds;
-                            console.log(`🎯 THROW: Buff duration is ${buffDuration} seconds`);
-                        }
-                    } catch (buffError) {
-                        console.error('Error applying buff/debuff after throw:', buffError);
-                    }
-                }
-            }
-        }
-        
-        // Trigger the visual effect at specific coordinates for ALL viewers
-        // For buff items, pass the buff duration to ensure proper effect duration
-        if (canvasFxService) {
-            const effectParams = { username: req.user.username };
-            if (buffDuration) {
-                effectParams.buffDuration = buffDuration;
-                effectParams.triggeredByThrow = true;
-                console.log(`🎯 THROW: Passing buff duration ${buffDuration}s to effect`);
-            }
-            
-            const effect = await canvasFxService.triggerItemEffectAtPosition(
-                userId,
-                item.id,
-                streamId,
-                { x: parseFloat(x), y: parseFloat(y) },
-                effectParams
-            );
-            
-            if (effect) {
-                console.log(`🎯 ITEMS: ${req.user.username} threw ${item.displayName} at (${x}, ${y})`);
-                
-                // Send configurable StreamBot chat message
-                const interactionConfig = canvasFxService.getInteractionConfig({ name: item.name });
-                const chatMessage = interactionConfig?.chatMessage?.replace('{username}', req.user.username) 
-                    || `${req.user.username} threw ${item.displayName}!`;
-                
-                await sendSystemMessage(chatMessage);
-                
-                // Check if this is an interactive item to suppress UI notifications
-                const isInteractiveItem = canvasFxService && canvasFxService.isInteractiveItem(item);
-                
-                // Emit socket events for inventory update and item usage
-                const io = req.app.get('io');
-                const sessionService = req.app.get('sessionService');
-                if (io) {
-                    // Always emit item-used for cooldown tracking, but flag interactive items
-                    io.emit('item-used', {
-                        userId: userId,
-                        username: req.user.username,
-                        item: result.item,
-                        streamId,
-                        thrown: true, // Flag to indicate this was thrown
-                        suppressNotification: isInteractiveItem // Flag to suppress notifications for interactive items
+        if (!result.ok) {
+            switch (result.kind) {
+                case 'missing-params':
+                    return res.status(400).json({ error: 'Missing required parameters: x, y, item, username' });
+                case 'no-active-stream':
+                    return res.status(400).json({
+                        error: 'No active stream',
+                        message: 'You can only throw items when someone is streaming. Please wait for a streamer to start.',
+                        requiresStream: true
                     });
-                    
-                    if (isInteractiveItem) {
-                        console.log(`🔇 THROW: Flagged interactive item for notification suppression: ${item.display_name}`);
-                    }
-                    
-                    // Specific inventory update for the user
-                    if (sessionService) {
-                        const userSocketIds = sessionService.getSocketsByUserId(userId);
-                        userSocketIds.forEach(socketId => {
-                            io.to(socketId).emit('inventory-updated', {
-                                action: 'throw',
-                                itemId: item.id,
-                                quantity: 1,
-                                remainingQuantity: result.remainingQuantity
-                            });
-                        });
-                    }
-                }
-                
-                res.json({ 
-                    success: true, 
-                    item: result.item, // Include the full item with cooldown
-                    effect: effect,
-                    message: `${item.displayName} thrown successfully!`,
-                    remainingQuantity: result.remainingQuantity
-                });
-            } else {
-                throw new Error('Failed to trigger effect');
+                case 'cooldown':
+                    return res.status(429).json({ error: result.message });
+                case 'no-canvas-fx':
+                    return res.status(500).json({ error: 'Canvas FX service not available' });
+                case 'effect-failed':
+                    return res.status(500).json({ error: 'Failed to trigger effect' });
+                case 'error':
+                default:
+                    return res.status(500).json({ error: result.message || 'Failed to throw item' });
             }
-        } else {
-            throw new Error('Canvas FX service not available');
         }
+
+        res.json({
+            success: true,
+            item: result.item, // Include the full item with cooldown
+            effect: result.effect,
+            message: result.displayMessage,
+            remainingQuantity: result.remainingQuantity
+        });
     } catch (error) {
         console.error('Error throwing item:', error);
-        
-        // If the error occurred after consuming the item, we might need to refund it
-        // For now, we'll just return the error - this should be rare
-        
-        if (error.message.includes('cooldown')) {
+
+        if (error.message && error.message.includes('cooldown')) {
             return res.status(429).json({ error: error.message });
         }
-        
+
         res.status(500).json({ error: error.message || 'Failed to throw item' });
     }
 });
