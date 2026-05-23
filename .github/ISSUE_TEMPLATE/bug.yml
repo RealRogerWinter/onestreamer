@@ -1,0 +1,96 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        Before submitting:
+        - Search [existing issues](https://github.com/onestreamer/onestreamer/issues) to avoid duplicates.
+        - **For security vulnerabilities, do not file a public issue.** See [SECURITY.md](https://github.com/onestreamer/onestreamer/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen?
+      placeholder: When I do X, Y happens instead of Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps to reproduce the issue
+      placeholder: |
+        1. Go to https://onestreamer.live
+        2. Click X
+        3. Observe Y
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error messages, screenshots, logs if possible.
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA / version
+      description: Run `git rev-parse HEAD` in the repo (or check the admin panel → Dashboard tab for the version)
+      placeholder: e.g. 4a1d325 or v0.2.0
+    validations:
+      required: false
+
+  - type: dropdown
+    id: env
+    attributes:
+      label: Environment
+      options:
+        - Production (onestreamer.live)
+        - Local development
+        - Self-hosted (other)
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser (if client-side)
+      placeholder: e.g. Chrome 120 on macOS, Safari iOS 17, Firefox 121 on Linux
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        For server-side issues: snippets from `pm2 logs onestreamer-server` or `pm2 logs onestreamer-chat`.
+        For client-side issues: browser DevTools Console output.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might help — workarounds tried, related PRs, etc.
+    validations:
+      required: false

@@ -1,0 +1,268 @@
+# Environment variables
+
+_Last verified: 2026-05-23 against commit 4a1d325._
+
+The single source of truth for every environment variable OneStreamer reads. Defaults shown are what the code falls back to if the var is unset — **production should explicitly set every variable that has a default like `change-in-production` or `localhost`**.
+
+There are three `.env` files in active use:
+
+| File | Read by | Purpose |
+|------|---------|---------|
+| `/.env` | Main server + (some) chat-service vars | Most application config |
+| `/server/.env` | Main server (overrides `/.env` for server-specific keys) | Auth secrets, third-party credentials |
+| `/client/.env` | React build (CRA) | `REACT_APP_*` vars baked into the bundle at build time |
+
+Plus the corresponding `.env.example` files in each location, which are tracked in git and serve as templates.
+
+> [!IMPORTANT]
+> **Generate every secret-shaped value at install time.** Do not use the literal defaults shown below — many of them appear in source code as fail-open fallbacks specifically so developers can boot a dev environment without a `.env`. Production should fail-fast if any required secret is unset. See [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md).
+
+---
+
+## Required for production
+
+These are not optional — without them, the corresponding feature is broken or insecure:
+
+| Variable | Used by | Required for | Notes |
+|----------|---------|--------------|-------|
+| `JWT_SECRET` | Main + Chat | Auth (all token-gated routes) | Generate with `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`. **Must match across main and chat services.** |
+| `SESSION_SECRET` | Main | Express session middleware | Same generation pattern. |
+| `TURNSTILE_SECRET_KEY` | Main | Signup, login, password reset, bug reports | From the Cloudflare Turnstile dashboard. |
+| `REACT_APP_TURNSTILE_SITE_KEY` | Client | Renders the Turnstile widget in forms | Public; embedded in the React build. |
+| `JSON ADMIN_KEY` | Main (legacy admin endpoints) | The `x-admin-key`-authed routes | Generate a random string; rotate if exposed. |
+
+---
+
+## Network + server
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PORT` | `8080` | Main server HTTP port |
+| `HTTPS_PORT` | `8443` | Main server HTTPS port |
+| `USE_HTTPS` | `false` | Toggle HTTPS on the main server |
+| `CHAT_PORT` | `8081` | Chat-service HTTP port |
+| `CHAT_HTTPS_PORT` | `8444` | Chat-service HTTPS port |
+| `SERVER_HOST` | (empty) | Hostname for certificate / external URL construction |
+| `CLIENT_URL` | `http://localhost:3000` | Where OAuth callbacks redirect to; the React app's public URL |
+| `CHAT_SERVICE_URL` | `https://127.0.0.1:8444` | Main server's URL for HTTP callbacks to chat |
+| `MAIN_SERVER_URL` | `https://127.0.0.1:8443` | Chat-service's URL for HTTP callbacks to main server |
+| `VIEWBOT_SERVER_URL` | (same as main) | Viewbots' internal connection URL |
+| `NODE_ENV` | (empty) | `production` or `development` |
+
+---
+
+## TLS certificates
+
+| Variable | Used by | Purpose |
+|----------|---------|---------|
+| `SSL_CRT_FILE` | React dev server | Path to TLS cert (CRA dev server) |
+| `SSL_KEY_FILE` | React dev server | Path to TLS key |
+| `DTLS_CERT_FILE` | Main (WebRTC) | DTLS certificate path for MediaSoup |
+| `DTLS_KEY_FILE` | Main (WebRTC) | DTLS key path |
+
+Production typically uses Let's Encrypt-issued certs in `/etc/letsencrypt/live/<domain>/`. See [`deployment.md`](../operations/deployment.md).
+
+---
+
+## MediaSoup (WebRTC SFU)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `WEBRTC_BACKEND` | `mediasoup` | `mediasoup` or `livekit`. **Production: leave at `mediasoup`.** See [ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md). |
+| `USE_WEBRTC_ADAPTER` | `false` | Use the abstraction layer over MediaSoup/LiveKit |
+| `MEDIASOUP_LISTEN_IP` | `0.0.0.0` | IP MediaSoup binds to |
+| `MEDIASOUP_ANNOUNCED_IP` | (uses `ANNOUNCED_IP`) | Public IP announced in ICE candidates |
+| `ANNOUNCED_IP` | `<SERVER_IP>` (prod) | The public IP browsers will try to reach for RTP |
+| `ANNOUNCED_IPV6` | (empty) | IPv6 equivalent |
+| `MEDIASOUP_MIN_PORT` | `50000` | Low end of UDP RTP range |
+| `MEDIASOUP_MAX_PORT` | `50199` | High end of UDP RTP range |
+
+---
+
+## TURN server (coturn)
+
+| Variable | Used by | Purpose |
+|----------|---------|---------|
+| `TURN_DOMAIN` | Main + Client | TURN server hostname (e.g. `turn.onestreamer.live`) |
+| `TURN_SECRET` | Main + Client | HMAC secret for time-limited TURN credentials |
+| `TURN_USERNAME` | Main | Static TURN username (only if not using HMAC) |
+| `TURN_CREDENTIAL` | Main | Static TURN credential (only if not using HMAC) |
+
+> [!IMPORTANT]
+> The TURN HMAC secret is currently hardcoded as a fallback in multiple source files (including client-side, where it ends up in the shipped React bundle visible to every browser visitor). This is a Tier-0 exposure — see [`secret-rotation.md`](../operations/runbooks/secret-rotation.md). The architecturally correct pattern is server-signed time-limited credentials per session.
+
+---
+
+## LiveKit (dormant in production)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LIVEKIT_HOST` | `http://127.0.0.1:7882` | LiveKit API URL |
+| `LIVEKIT_API_KEY` | `devkey` | API key |
+| `LIVEKIT_API_SECRET` | `secret` | API secret |
+| `LIVEKIT_WS_URL` | `ws://localhost:7882` | WebSocket URL for client SDK |
+| `LIVEKIT_ROOM_NAME` | `onestreamer-main` | Default room name |
+| `LIVEKIT_MAX_PARTICIPANTS` | `1000` | Room cap |
+| `LIVEKIT_EMPTY_TIMEOUT` | `300` | Room auto-close timeout (seconds) |
+| `LIVEKIT_TURN_ENABLED` | `false` | Enable TURN inside LiveKit |
+| `LIVEKIT_USE_FFMPEG_FALLBACK` | `false` | Fall back to ffmpeg if LiveKit ingress fails |
+
+The defaults `devkey` / `secret` are the well-known LiveKit dev defaults. Even though LiveKit is dormant in production, the server is reachable at `livekit.onestreamer.live`. Set real credentials in production.
+
+---
+
+## Backblaze B2 (recording + clip storage)
+
+| Variable | Purpose |
+|----------|---------|
+| `B2_APPLICATION_KEY_ID` | B2 account key ID |
+| `B2_APPLICATION_KEY` | B2 account secret |
+| `B2_BUCKET_ID` | B2 bucket UUID |
+| `B2_BUCKET_NAME` | B2 bucket name (also used in S3 endpoint construction) |
+| `B2_ENDPOINT` | B2 S3-compatible endpoint URL (e.g. `s3.us-east-005.backblazeb2.com`) |
+| `B2_STREAMING_ENABLED` | `true` to stream video directly from B2 signed URLs; `false` to serve from local disk only |
+
+All required for recording/clip features. See [`/docs/integrations/backblaze-b2.md`](../integrations/backblaze-b2.md).
+
+---
+
+## Email (SendGrid SMTP via nodemailer)
+
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| `SMTP_HOST` | `smtp.sendgrid.net` | SMTP server |
+| `SMTP_PORT` | `587` | SMTP port (usually 587 for STARTTLS, 465 for SMTPS) |
+| `SMTP_USER` | `apikey` (for SendGrid) | SMTP username |
+| `SMTP_PASS` | `SG.xxx...` | SMTP password / SendGrid API key |
+| `SMTP_SECURE` | `false` | `true` to use TLS from connect (port 465); `false` to STARTTLS (587) |
+| `FROM_EMAIL` | `noreply@onestreamer.live` | Sender address |
+
+If unset, [`EmailService`](../../server/services/EmailService.js) falls back to logging emails to stdout — useful in dev, useless in production.
+
+---
+
+## Authentication providers
+
+### Google OAuth
+
+| Variable | Purpose |
+|----------|---------|
+| `GOOGLE_CLIENT_ID` | OAuth client ID from console.cloud.google.com |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret |
+
+Callback URL is hardcoded to `${CLIENT_URL}/auth/google/callback`. Add that URL to your OAuth client's whitelist.
+
+### Twitch (for random stream rotation)
+
+| Variable | Purpose |
+|----------|---------|
+| `TWITCH_CLIENT_ID` | App ID from dev.twitch.tv |
+| `TWITCH_CLIENT_SECRET` | App secret |
+
+Uses OAuth 2.0 client credentials grant for the Helix API. See [`/docs/integrations/twitch.md`](../integrations/twitch.md).
+
+---
+
+## AI providers
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OLLAMA_HOST` | `http://localhost:11434` | Local Ollama server URL |
+| `OLLAMA_MODEL` | `mistral` | Default model name |
+| `GROQ_API_KEY` | (empty) | Groq cloud LLM API key. Optional fallback. |
+
+Both optional. If neither is reachable, [`ChatBotLLMService`](../../server/services/ChatBotLLMService.js) uses a canned response set.
+
+---
+
+## Cooldowns + rate limits
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GLOBAL_COOLDOWN_SECONDS` | `30` (prod), `1` (dev) | Cooldown after any stream change |
+| `INDIVIDUAL_COOLDOWN_SECONDS` | `60` (prod), `1` (dev) | Cooldown after a user is taken over |
+| `COOLDOWN_SECONDS` | `30` | (Legacy alias) |
+
+---
+
+## Viewbot configuration
+
+| Variable | Purpose |
+|----------|---------|
+| `VIEWBOT_COOLDOWN` | Per-bot action cooldown |
+| `VIEWBOT_MIN_INTERVAL` | Min rotation interval (ms) |
+| `VIEWBOT_MAX_INTERVAL` | Max rotation interval (ms) |
+| `VIEWBOT_ROTATION_ENABLED` | Master switch for rotation |
+
+---
+
+## Redis (optional cache)
+
+| Variable | Purpose |
+|----------|---------|
+| `REDIS_URL` | Connection string (preferred) |
+| `REDIS_HOST` | (Legacy) hostname |
+| `REDIS_PORT` | (Legacy) port |
+| `REDIS_PASSWORD` | (Legacy) password |
+
+If unset, the [`TakeoverService`](../../server/services/TakeoverService.js) (the main Redis consumer) falls back to an in-memory store. Redis becomes important only if you ever shard to multiple hosts (not currently a supported topology).
+
+---
+
+## Misc / observability
+
+| Variable | Purpose |
+|----------|---------|
+| `ENABLE_METRICS` | Enable detailed metrics collection |
+| `STATS_INTERVAL` | Metrics reporting interval (ms, default `5000`) |
+| `ENABLE_WEBRTC_LOGGING` | Verbose WebRTC debug logs |
+| `DISPLAY` | X11 display number for Puppeteer-Chrome viewbots (Unix only; `:0` typical) |
+
+---
+
+## React build-time variables (`REACT_APP_*`)
+
+Baked into the React production bundle at build time. **These are visible to every browser visitor** — never put a secret in a `REACT_APP_*` var.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `REACT_APP_API_URL` | `https://onestreamer.live` | Main server URL |
+| `REACT_APP_SERVER_URL` | `https://onestreamer.live` | Socket.IO server URL |
+| `REACT_APP_CHAT_SERVER_URL` | `https://onestreamer.live` | Chat-service URL |
+| `REACT_APP_TURNSTILE_SITE_KEY` | (hardcoded fallback) | Cloudflare Turnstile site key (public by design) |
+
+---
+
+## CRA quirks
+
+| Variable | Purpose |
+|----------|---------|
+| `HTTPS` | `true` to serve the React dev server over HTTPS |
+| `HOST` | `0.0.0.0` to bind dev server on all interfaces |
+| `WDS_SOCKET_HOST` | WebSocket Dev Server host (for hot reload) |
+| `WDS_SOCKET_PORT` | WDS port |
+| `DANGEROUSLY_DISABLE_HOST_CHECK` | `true` for dev convenience (do not use in prod) |
+
+---
+
+## Default secrets that are footguns in production
+
+These appear as **literal fallbacks** in source code. If production doesn't override them, you're using the default — which is in the repo. Check each one on deploy:
+
+| Variable | Footgun value | What breaks if not overridden |
+|----------|---------------|-------------------------------|
+| `JWT_SECRET` | `***REMOVED-JWT-DEFAULT***` | **Anyone who has read the source can forge tokens, including admin tokens.** |
+| `SESSION_SECRET` | `***REMOVED-SESSION-DEFAULT***` | Express session is trivially forgeable. |
+| `TURNSTILE_SECRET_KEY` | `***REMOVED-TURNSTILE-SECRET***` | The CAPTCHA can be bypassed by anyone with the secret. |
+| `ADMIN_KEY` | `REDACTED-ADMIN-KEY` | Legacy admin endpoints accept anyone with this string. |
+| `TURN_SECRET` | `***REMOVED-TURN-SECRET***` | TURN credentials are guessable. **And shipped to every browser.** |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | `devkey` / `secret` | Anyone can mint LiveKit tokens against your server. |
+
+The fix is **(a)** set real values in `.env`, and **(b)** remove the fallbacks in code so production fails-fast if the env is missing. See [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md) for the rotation procedure.
+
+## See also
+
+- [`local-dev.md`](local-dev.md) — initial dev setup with minimal env vars
+- [`/docs/operations/deployment.md`](../operations/deployment.md) — production env-var sourcing
+- [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md) — how to rotate any of these
+- [`/docs/integrations/`](../integrations/) — per-provider documentation including their env vars
