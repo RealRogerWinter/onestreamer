@@ -399,7 +399,7 @@ There is no migration framework. Schema is created programmatically in [`server/
 | `setup-clips-tables.js` | Create `clips`, `clip_views` |
 | `setup-viewbot-tables.js` | ViewBot tables |
 | `setup-recording-tables.js` | Recording tables |
-| `migrate-points-system.js` | The calculated → balance refactor (Q3 in [`_verification-notes.md`](../_verification-notes.md)) |
+| `migrate-points-system.js` | The calculated-on-read → authoritative-balance refactor for `user_stats.points`. |
 | `add-account-deletion-tables.js` | Account deletion lifecycle columns + audit log |
 | `add_ip_bans.js` | `ip_bans` table |
 | `add_streaming_logs.js` | `streaming_logs` |

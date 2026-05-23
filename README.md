@@ -241,9 +241,7 @@ OneStreamer is actively used in production but has accumulated some honest debt.
 - **A/V sync ~333 ms offset.** Audio and video are carried over separate RTP streams without RTCP sender-report synchronization. Architectural limitation; not currently prioritized for fix. See [`docs/architecture/streaming-stack.md`](docs/architecture/streaming-stack.md) and the archived investigation in [`docs/archive/av-sync/`](docs/archive/av-sync/).
 - **LiveKit infrastructure is dormant.** A September 2025 dual-stack attempt was rolled back the same day after networking issues; the LiveKit server still runs at `livekit.onestreamer.live` but no production path uses it. See [ADR-0002](docs/architecture/adr/0002-mediasoup-primary-livekit-dormant.md) and [ADR-0003](docs/architecture/adr/0003-livekit-dual-stack-rollback.md).
 - **Stream-reliability plan partially executed.** The most critical fix (`currentStreamer` dual-source-of-truth) shipped; transport-recreation race conditions and `stream-ready` event de-duplication remain TODO. See the archived [`STREAM_RELIABILITY_PLAN.md`](docs/archive/plans/STREAM_RELIABILITY_PLAN.md).
-- **`openai-whisper` is a phantom dependency.** Listed in `package.json` but unused; safe to remove. The live transcription path is `whisper.cpp`. See [ADR-0006](docs/architecture/adr/0006-whisper-cpp-over-cloud-stt.md).
-
-A fuller verification audit of ambiguous status items lives at [`docs/_verification-notes.md`](docs/_verification-notes.md) (working scratch file; will be deleted before the docs-overhaul PR merges).
+- **`openai-whisper` was a phantom dependency.** Listed in `package.json` but unused — removed in #21. The live transcription path is `whisper.cpp`. See [ADR-0006](docs/architecture/adr/0006-whisper-cpp-over-cloud-stt.md).
 
 ---
 

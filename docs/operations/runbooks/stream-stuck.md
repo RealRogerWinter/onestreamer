@@ -47,7 +47,7 @@ Ranked by frequency:
 ### 5. Duplicate-streamer state (race condition)
 - Two `stream-ready` events were emitted in quick succession; viewers latch onto a stale streamer ID.
 - Symptom: server log shows the same `stream-ready` event twice within ~1 second.
-- **Status**: partial mitigation deployed (see [`STREAM_RELIABILITY_PLAN.md`](../../archive/plans/STREAM_RELIABILITY_PLAN.md) and the [verification notes](../../_verification-notes.md) Q6). `currentStreamer` sync between `StreamService` and `MediasoupService` is in place; the dedup of `stream-ready` itself is not.
+- **Status**: partial mitigation deployed (see [`STREAM_RELIABILITY_PLAN.md`](../../archive/plans/STREAM_RELIABILITY_PLAN.md)). `currentStreamer` sync between `StreamService` and `MediasoupService` is in place; the dedup of `stream-ready` itself is not.
 - **Fix**: admin disconnects the stream (`POST /api/admin/stream/disconnect`); streamer starts a fresh broadcast.
 
 ### 6. Browser self-throttling

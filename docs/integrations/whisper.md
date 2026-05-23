@@ -82,7 +82,7 @@ The whole loop runs per chunk — there's no warm-process kept around. (`whisper
 
 ## Phantom dependency: `openai-whisper`
 
-`package.json` lists `openai-whisper` v1.0.2 as a dependency. **It's never `require`d anywhere.** It was likely a dead-end during the transcription iteration captured in [`/docs/archive/transcription/`](../archive/transcription/) (six `LIVEKIT_TRANSCRIPTION_*` variants from Oct 6 2025). Safe to remove from `package.json`. The verification notes ([`/docs/_verification-notes.md`](../_verification-notes.md) Q1) confirm only the `whisper.cpp` binary path is live.
+`package.json` used to list `openai-whisper` v1.0.2 as a dependency. **It was never `require`d anywhere** — likely a dead-end during the transcription iteration captured in [`/docs/archive/transcription/`](../archive/transcription/) (four `LIVEKIT_TRANSCRIPTION_*` variants from Oct 6 2025). Removed in #21. The only live transcription path is the `whisper.cpp` binary.
 
 ## Env vars
 

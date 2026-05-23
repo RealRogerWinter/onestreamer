@@ -35,7 +35,7 @@ No cloud STT API is integrated. No browser-side STT.
 - **No automatic language switching.** Whisper supports 99+ languages, but the model loads with one language at a time. Setting `language: 'auto'` works but is slower and less accurate than knowing the language up front.
 - **Model files aren't in git.** Operators must run `node setup-whisper.js` (or `download-ggml-model.sh`) per host to populate models.
 - **whisper.cpp updates are manual.** No package-manager update path — operators `git pull && make` in `whisper/whisper.cpp/` to update.
-- **The unused `openai-whisper` package** in `package.json` is a phantom dependency from earlier exploration. Safe to remove; flagged in [`/docs/_verification-notes.md`](../../_verification-notes.md) Q1.
+- **The unused `openai-whisper` package** was a phantom dependency from earlier exploration — removed in #21.
 
 ## Alternatives considered
 
@@ -50,6 +50,5 @@ No cloud STT API is integrated. No browser-side STT.
 
 - [`/docs/features/transcription.md`](../../features/transcription.md)
 - [`/docs/integrations/whisper.md`](../../integrations/whisper.md)
-- [`/docs/_verification-notes.md`](../../_verification-notes.md) — Q1 confirms `whisper.cpp` is the live path
 - [whisper.cpp on GitHub](https://github.com/ggerganov/whisper.cpp)
 - [OpenAI Whisper paper](https://cdn.openai.com/papers/whisper.pdf)

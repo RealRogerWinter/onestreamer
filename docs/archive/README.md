@@ -19,7 +19,7 @@ Many of these capture decisions, attempts, and rollbacks that happened during ra
 | [`audio/`](audio/) | Audio fix logs subsumed by the streaming feature doc. | [`features/streaming-and-takeover.md`](../features/streaming-and-takeover.md) |
 | [`points/`](points/) | Pre- and post-refactor notes. The refactor was executed. | [`features/points-and-economy.md`](../features/points-and-economy.md) |
 | [`soundboards/`](soundboards/) | 101soundboards deployment + fix notes. | [`integrations/101soundboards.md`](../integrations/101soundboards.md) |
-| [`plans/`](plans/) | Large planning documents (CLIPS_SYSTEM, STREAM_RELIABILITY, MEDIASOUP_ALTERNATIVES, STREAMER_CPU_OPTIMIZATION). | Execution status in `_verification-notes.md` and the relevant `features/` doc. |
+| [`plans/`](plans/) | Large planning documents (CLIPS_SYSTEM, STREAM_RELIABILITY, MEDIASOUP_ALTERNATIVES, STREAMER_CPU_OPTIMIZATION). | Execution status in the relevant `features/` doc; a few items remain TODO and are flagged in the README's "Known status" section. |
 | [`browser/`](browser/) | Browser-specific fix notes (Safari emoji rendering). | Folded into [`features/chat-and-moderation.md`](../features/chat-and-moderation.md). |
 | [`optimization/`](optimization/) | Socket connection optimization summary. | Folded into [`architecture/realtime-events.md`](../architecture/realtime-events.md). |
 | [`rollbacks/`](rollbacks/) | Notes from feature rollbacks. | Relevant ADRs in [`architecture/adr/`](../architecture/adr/). |

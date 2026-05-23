@@ -1,4 +1,4 @@
-> Archived 2026-05-23 — historical planning doc, not maintained. Plan not yet executed (see /docs/_verification-notes.md).
+> Archived 2026-05-23 — historical planning doc, not maintained. Plan not yet executed.
 
 # Streamer CPU Optimization Analysis & Improvement Plan
 

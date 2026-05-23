@@ -44,4 +44,3 @@ Today MediaSoup serves all production streams. LiveKit infrastructure remains: t
 - [`/docs/integrations/livekit.md`](../../integrations/livekit.md)
 - [`/docs/architecture/streaming-stack.md`](../streaming-stack.md)
 - [`/docs/architecture/viewbot-fleet.md`](../viewbot-fleet.md) — for the `ViewBotLiveKit*` variants
-- Verification ground-truth: [`/docs/_verification-notes.md`](../../_verification-notes.md) Q2
