@@ -11,22 +11,9 @@ import { TURNSTILE_SITE_KEY } from '../config/turnstile';
 import ExternalLinkModal from './ExternalLinkModal';
 import UserInfoPopup from './UserInfoPopup';
 import { openPopoutChat } from './PopoutChat';
+import { useChatMessages, ChatMessage } from '../hooks/useChatMessages';
 import './Chat.css';
 import './PopoutChat.css';
-
-interface ChatMessage {
-  id: string;
-  username: string;
-  color: string;
-  message: string;
-  timestamp: string;
-  fullTimestamp: string;
-  userId: string;
-  isAnnouncement?: boolean;
-  isAdmin?: boolean;
-  isModerator?: boolean;
-  mentions?: string[]; // Array of mentioned usernames
-}
 
 interface UserInfo {
   username: string;
@@ -48,11 +35,19 @@ declare global {
 
 const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   const { socket: chatSocket, connected: isConnected } = useChatSocket();
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    // Restore messages from session storage
-    const stored = sessionStorage.getItem('chatMessages');
-    return stored ? JSON.parse(stored) : [];
-  });
+  const {
+    messages,
+    replaceMessages,
+    addMessage,
+    clearMessages,
+    removeMessages,
+    messageHistory,
+    historyIndex,
+    pushHistory,
+    resetHistoryIndex,
+    historyPrev,
+    historyNext,
+  } = useChatMessages();
   const [userInfo, setUserInfo] = useState<UserInfo | null>(() => {
     // Restore user info from session storage
     const stored = sessionStorage.getItem('chatUserInfo');
@@ -70,8 +65,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   const [bonusIconActive, setBonusIconActive] = useState(false);
   const [bonusIconCooldown, setBonusIconCooldown] = useState(false);
   const [nextBonusTime, setNextBonusTime] = useState<number>(0);
-  const [messageHistory, setMessageHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [customEmojis, setCustomEmojis] = useState<Map<string, string>>(new Map());
   const [showSettings, setShowSettings] = useState(false);
@@ -432,11 +425,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     };
   }, [isPoppedOut]);
 
-  // Save messages to session storage whenever they change
-  useEffect(() => {
-    sessionStorage.setItem('chatMessages', JSON.stringify(messages));
-  }, [messages]);
-
   // Reset scroll state when returning from popout
   useEffect(() => {
     if (!isPoppedOut && chatContainerRef.current) {
@@ -573,7 +561,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     
     const handleChatHistory = (history: ChatMessage[]) => {
       // console.log('💬 CLIENT: Received chat history:', history.length, 'messages');
-      setMessages(history);
+      replaceMessages(history);
       // Force scroll to bottom after chat history loads
       // Use a slight delay to ensure DOM has updated
       setTimeout(() => {
@@ -587,38 +575,34 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
         }
       }, 50);
     };
-    
+
     const handleNewMessage = (message: ChatMessage) => {
       // console.log('💬 CLIENT: New message from', message.username + ':', message.message);
-      
+
       // Check if this is a clear command
       if (message.message === '**CLEAR_CHAT_UI**') {
         // console.log('💬 CLIENT: Received clear command, clearing chat UI');
-        setMessages([]);
+        clearMessages();
         return; // Don't add the clear command message to the chat
       }
-      
-      setMessages(prev => [...prev, message]);
+
+      addMessage(message);
     };
-    
+
     const handleUserCountUpdate = (data: { count: number }) => {
       setUserCount(data.count);
       // Save to session storage
       sessionStorage.setItem('chatUserCount', data.count.toString());
     };
-    
+
     const handleChatCleared = (data: any) => {
       // console.log('💬 CLIENT: Chat cleared by admin:', data.message);
-      setMessages([]);
-      // Clear from session storage
-      sessionStorage.setItem('chatMessages', JSON.stringify([]));
+      clearMessages();
     };
-    
+
     const handleChatClearUI = (data: any) => {
       // console.log('💬 CLIENT: Chat UI clear requested:', data.message);
-      setMessages([]);
-      // Clear from session storage
-      sessionStorage.setItem('chatMessages', JSON.stringify([]));
+      clearMessages();
     };
     
     const handleBanned = (data: any) => {
@@ -636,12 +620,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
 
     const handleDeleteMessages = (data: { messageIds: string[], reason: string }) => {
       // console.log('💬 CLIENT: Deleting messages:', data.messageIds.length, 'messages, reason:', data.reason);
-      setMessages(prevMessages => {
-        const filtered = prevMessages.filter(msg => !data.messageIds.includes(msg.id));
-        // Update session storage with filtered messages
-        sessionStorage.setItem('chatMessages', JSON.stringify(filtered));
-        return filtered;
-      });
+      removeMessages(data.messageIds);
     };
 
     // Register event handlers
@@ -848,16 +827,12 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
     
     const message = currentMessage.trim();
-    
+
     // Add to message history (avoid duplicates of the same message in a row)
-    setMessageHistory(prev => {
-      const newHistory = prev[0] === message ? prev : [message, ...prev];
-      // Keep only last 50 messages in history
-      return newHistory.slice(0, 50);
-    });
-    
+    pushHistory(message);
+
     // Reset history index when sending a new message
-    setHistoryIndex(-1);
+    resetHistoryIndex();
     
     const token = authService.getToken();
     const user = authService.getUser();
@@ -886,13 +861,12 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       // If we're at the beginning of input or input is empty, navigate history
       if (currentMessage === '' || historyIndex >= 0) {
         e.preventDefault();
-        
+
         // Navigate to older messages
-        const newIndex = Math.min(historyIndex + 1, messageHistory.length - 1);
-        if (newIndex >= 0 && newIndex < messageHistory.length) {
-          setHistoryIndex(newIndex);
-          setCurrentMessage(messageHistory[newIndex]);
-          
+        const result = historyPrev();
+        if (result) {
+          setCurrentMessage(result.message);
+
           // Move cursor to end of input
           setTimeout(() => {
             if (inputRef.current) {
@@ -905,18 +879,16 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       // Only navigate if we're in history mode
       if (historyIndex >= 0) {
         e.preventDefault();
-        
+
         // Navigate to newer messages
-        const newIndex = historyIndex - 1;
-        if (newIndex >= 0) {
-          setHistoryIndex(newIndex);
-          setCurrentMessage(messageHistory[newIndex]);
+        const result = historyNext();
+        if (result) {
+          setCurrentMessage(result.message);
         } else {
           // Reached the end, clear input
-          setHistoryIndex(-1);
           setCurrentMessage('');
         }
-        
+
         // Move cursor to end of input
         setTimeout(() => {
           if (inputRef.current) {
@@ -927,7 +899,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     } else {
       // Any other key press resets history navigation if we're typing new content
       if (historyIndex >= 0 && e.key !== 'Enter') {
-        setHistoryIndex(-1);
+        resetHistoryIndex();
       }
     }
   };
