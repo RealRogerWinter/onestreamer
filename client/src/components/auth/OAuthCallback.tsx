@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import authService from '../services/AuthService';
+import authService from '../../services/AuthService';
 
 const OAuthCallback: React.FC = () => {
   useEffect(() => {

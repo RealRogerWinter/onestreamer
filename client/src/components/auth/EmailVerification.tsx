@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import authService from '../services/AuthService';
+import authService from '../../services/AuthService';
 import './Auth.css';
 
 interface EmailVerificationProps {

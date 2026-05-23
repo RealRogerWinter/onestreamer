@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import authService from '../services/AuthService';
 import io, { Socket } from 'socket.io-client';
-import './Auth.css';
+import './auth/Auth.css';
 
 interface UserProfileProps {
   socket?: Socket | null;

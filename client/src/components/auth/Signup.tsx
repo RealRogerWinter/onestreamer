@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
-import authService from '../services/AuthService';
-import CloudflareTurnstile from './CloudflareTurnstile';
-import { TURNSTILE_SITE_KEY } from '../config/turnstile';
-import Tutorial from './Tutorial';
+import authService from '../../services/AuthService';
+import CloudflareTurnstile from '../CloudflareTurnstile';
+import { TURNSTILE_SITE_KEY } from '../../config/turnstile';
+import Tutorial from '../Tutorial';
 import './Auth.css';
 
 interface SignupProps {

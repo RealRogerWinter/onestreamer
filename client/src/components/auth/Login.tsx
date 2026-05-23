@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import authService from '../services/AuthService';
-import CloudflareTurnstile from './CloudflareTurnstile';
-import { TURNSTILE_SITE_KEY } from '../config/turnstile';
+import authService from '../../services/AuthService';
+import CloudflareTurnstile from '../CloudflareTurnstile';
+import { TURNSTILE_SITE_KEY } from '../../config/turnstile';
 import './Auth.css';
 
 interface LoginProps {

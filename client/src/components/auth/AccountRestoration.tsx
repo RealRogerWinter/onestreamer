@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import authService from '../services/AuthService';
+import authService from '../../services/AuthService';
 import './AccountRestoration.css';
 
 interface AccountRestorationProps {
