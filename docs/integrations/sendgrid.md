@@ -58,7 +58,7 @@ If `SMTP_HOST` is unset, [`EmailService`](../../server/services/EmailService.js)
 - **Sender authentication matters.** If `FROM_EMAIL`'s domain isn't verified in SendGrid, emails will either land in spam or be rejected outright.
 - **Free tier limits** — SendGrid's free tier is enough for OneStreamer's transactional volume in early days, but be aware of the cap (~100 emails/day on free tier as of writing).
 - **Bounces and complaints** matter for deliverability. Check the SendGrid dashboard periodically for users marking emails as spam — that hurts sender reputation.
-- **The committed `ecosystem.config.js` historically included the real SendGrid API key as an environment value.** That key should be rotated and removed from the committed file. See [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md).
+- **The committed `config/ecosystem.config.js` historically included the real SendGrid API key as an environment value.** That key should be rotated and removed from the committed file. See [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md).
 
 ## Alternatives
 

@@ -92,7 +92,7 @@ The host runs on a public IP (`<SERVER_IP>`) that's also the MediaSoup announced
 
 ## Process management — PM2
 
-All three Node applications are managed by [PM2](https://pm2.keymetrics.io/) via [`ecosystem.config.js`](../../ecosystem.config.js):
+All three Node applications are managed by [PM2](https://pm2.keymetrics.io/) via [`config/ecosystem.config.js`](../../config/ecosystem.config.js):
 
 ```js
 apps: [
@@ -111,7 +111,7 @@ apps: [
 Standard PM2 operations:
 
 ```bash
-pm2 start ecosystem.config.js     # start all
+pm2 start config/ecosystem.config.js     # start all
 pm2 restart all                   # restart all (preserves env)
 pm2 restart onestreamer-server    # restart just one
 pm2 logs                          # tail all
@@ -223,7 +223,7 @@ A cleanup PR would `npm run build` once, copy `client/build/*` to `/var/www/html
 
 ### Strapi CMS (`:1337`)
 
-Lives at `/root/strapi-blog/backend`. Managed as its own process (likely systemd; not in `ecosystem.config.js`). nginx routes `/strapi/*` to it for admin + API. The main server fetches article content for the `/blog/{slug}` SSR path. See [`/docs/integrations/strapi.md`](../integrations/strapi.md).
+Lives at `/root/strapi-blog/backend`. Managed as its own process (likely systemd; not in `config/ecosystem.config.js`). nginx routes `/strapi/*` to it for admin + API. The main server fetches article content for the `/blog/{slug}` SSR path. See [`/docs/integrations/strapi.md`](../integrations/strapi.md).
 
 ### LiveKit (`:7880`, `:7882`)
 
@@ -246,7 +246,7 @@ System service. Loaded models live in `~/.ollama/models/`. Default: `mistral`.
 ├── client/                         React app source
 │   └── build/                      static build (may or may not be live-served)
 ├── docs/                           this documentation tree
-├── ecosystem.config.js             PM2 config
+├── config/ecosystem.config.js      PM2 config
 ├── scripts/                        setup, ops, deploy, and migration helpers
 ├── recordings/                     local recording segments (gitignored)
 │   ├── active/   processing/   completed/   archived/
@@ -267,9 +267,9 @@ System service. Loaded models live in `~/.ollama/models/`. Default: `mistral`.
 
 ## Environment loading
 
-PM2 reads env vars from `ecosystem.config.js`'s per-app `env:` block. **`ecosystem.config.js` is tracked in git**, so put only non-secret config there; pull real secrets from `.env`.
+PM2 reads env vars from `config/ecosystem.config.js`'s per-app `env:` block. **`config/ecosystem.config.js` is tracked in git**, so put only non-secret config there; pull real secrets from `.env`.
 
-The processes also load `.env` via dotenv at the top of `server/index.js` and `chat-service/index.js`. Precedence (highest first): real shell env > `ecosystem.config.js` `env:` block > `.env`.
+The processes also load `.env` via dotenv at the top of `server/index.js` and `chat-service/index.js`. Precedence (highest first): real shell env > `config/ecosystem.config.js` `env:` block > `.env`.
 
 After editing `.env`, restart with `pm2 restart all --update-env` to pick up changes. Plain `pm2 restart all` keeps the previously loaded env.
 

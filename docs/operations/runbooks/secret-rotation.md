@@ -23,7 +23,7 @@ Procedure for rotating any of the project's credentials. Use when a secret has l
 1. **Revoke** the old key: SendGrid dashboard → Settings → API Keys → find the OneStreamer key → Delete.
 2. **Generate** a new one with `Mail Send` scope (or `Full Access` if you also use the API outside email).
 3. **Edit `.env`** (and `server/.env` if it mirrors): `SMTP_PASS=<new-value>`.
-4. **Remove `SMTP_PASS` from `ecosystem.config.js`** if it was hardcoded there. Source the value from `.env` instead.
+4. **Remove `SMTP_PASS` from `config/ecosystem.config.js`** if it was hardcoded there. Source the value from `.env` instead.
 5. **Restart**:
    ```bash
    pm2 restart onestreamer-server --update-env

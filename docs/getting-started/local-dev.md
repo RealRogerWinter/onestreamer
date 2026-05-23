@@ -120,7 +120,7 @@ npm run chat              # chat only
 For production-shaped local runs, use PM2 with the existing ecosystem config:
 
 ```bash
-pm2 start ecosystem.config.js
+pm2 start config/ecosystem.config.js
 pm2 logs            # tail all three
 pm2 stop all
 ```

@@ -14,7 +14,7 @@ _Last verified: 2026-05-23 against commit 4a1d325._
 
 ## Where it runs
 
-- **System service** on the OneStreamer host (likely systemd; not in `ecosystem.config.js`).
+- **System service** on the OneStreamer host (likely systemd; not in `config/ecosystem.config.js`).
 - **Ports**: `:7880` (HTTP) and `:7882` (WebSocket/signaling).
 - **Public hostname**: `livekit.onestreamer.live` (separate nginx vhost — `/etc/nginx/sites-available/livekit.onestreamer.live`).
 - **Path routing**: nginx also exposes `/livekit/rtc`, `/livekit/twirp/`, and `/livekit/*` on `onestreamer.live` itself, proxying to the same backend.

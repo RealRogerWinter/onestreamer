@@ -164,7 +164,7 @@ Already off-host. Restore only happens if you accidentally delete from B2 — an
 7. Restore or regenerate nginx config.
 8. `cd /root/onestreamer && npm run install-all`
 9. `node setup-whisper.js` to rebuild whisper.cpp and pull models.
-10. `pm2 start ecosystem.config.js && pm2 save && pm2 startup` (then run the systemd command it prints).
+10. `pm2 start config/ecosystem.config.js && pm2 save && pm2 startup` (then run the systemd command it prints).
 11. Smoke-test per [`/docs/getting-started/first-stream.md`](../getting-started/first-stream.md).
 
 Realistic recovery time: **2–4 hours** assuming backups are accessible and certs can be re-issued (no DNS surprises).

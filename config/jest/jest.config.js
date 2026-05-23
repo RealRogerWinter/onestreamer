@@ -1,4 +1,5 @@
 module.exports = {
+  rootDir: '../..',
   testEnvironment: 'node',
   testMatch: ['**/tests/**/*.test.js'],
   collectCoverage: true,
@@ -9,5 +10,5 @@ module.exports = {
     '!server/tests/**',
     '!node_modules/**'
   ],
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.js']
+  setupFilesAfterEnv: ['<rootDir>/config/jest/jest.setup.js']
 };

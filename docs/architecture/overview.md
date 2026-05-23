@@ -152,7 +152,7 @@ The blog (`/blog/<slug>`) is content from Strapi CMS on `:1337`. The React SPA h
 
 ## Process management
 
-All three Node services are PM2-managed via [`ecosystem.config.js`](../../ecosystem.config.js):
+All three Node services are PM2-managed via [`config/ecosystem.config.js`](../../config/ecosystem.config.js):
 
 | App | Script | Memory cap |
 |-----|--------|------------|
@@ -167,12 +167,12 @@ Plus the external companions:
 | Process | Where |
 |---------|-------|
 | nginx | system service |
-| Strapi CMS | separate process; not in `ecosystem.config.js` (typically systemd or its own PM2 entry) |
+| Strapi CMS | separate process; not in `config/ecosystem.config.js` (typically systemd or its own PM2 entry) |
 | LiveKit server | system service on `:7880` / `:7882` (dormant in production path) |
 | coturn | system service |
 | Ollama | system service on `:11434` |
 
-`pm2 start ecosystem.config.js` is the canonical way to bring the three Node apps up; `scripts/deploy/start-production.sh` wraps it with cert + nginx checks for deploys and recovery.
+`pm2 start config/ecosystem.config.js` is the canonical way to bring the three Node apps up; `scripts/deploy/start-production.sh` wraps it with cert + nginx checks for deploys and recovery.
 
 ## What's intentionally single-host
 

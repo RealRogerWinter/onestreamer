@@ -83,7 +83,7 @@ export NODE_ENV=production
 export USE_HTTPS=true
 
 # Start all services using the ecosystem file
-pm2 start ecosystem.config.js
+pm2 start config/ecosystem.config.js
 
 # Wait for services to start
 echo -e "\n${YELLOW}Waiting for services to start...${NC}"

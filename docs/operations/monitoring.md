@@ -57,7 +57,7 @@ Under an active stream with one viewer:
 - ~5–15% CPU on server (WebRTC + recording + transcription if enabled)
 - Add ~10–30% CPU per active transcription depending on Whisper model
 
-**Memory caps in `ecosystem.config.js`** (2G server, 1G chat, 2G client) — when hit, PM2 auto-restarts. Frequent restarts = real memory leak; investigate, don't just bump the cap.
+**Memory caps in `config/ecosystem.config.js`** (2G server, 1G chat, 2G client) — when hit, PM2 auto-restarts. Frequent restarts = real memory leak; investigate, don't just bump the cap.
 
 ### Disk usage
 
