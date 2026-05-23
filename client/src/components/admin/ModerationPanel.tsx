@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useMainSocket } from '../contexts/SocketContext';
-import authService from '../services/AuthService';
+import { useMainSocket } from '../../contexts/SocketContext';
+import authService from '../../services/AuthService';
 import './ModerationPanel.css';
 
 interface StreamDetails {

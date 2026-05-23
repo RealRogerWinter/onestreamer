@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Hls from 'hls.js';
-import authService from '../services/AuthService';
-import PlaybackTimeline from './recording-review/PlaybackTimeline';
-import SyncedChatReplay from './recording-review/SyncedChatReplay';
-import StreamerList from './recording-review/StreamerList';
-import ReviewSettings from './recording-review/ReviewSettings';
+import authService from '../../services/AuthService';
+import PlaybackTimeline from '../recording-review/PlaybackTimeline';
+import SyncedChatReplay from '../recording-review/SyncedChatReplay';
+import StreamerList from '../recording-review/StreamerList';
+import ReviewSettings from '../recording-review/ReviewSettings';
 import './AdminRecordingReview.css';
 
 interface AdminRecordingReviewProps {

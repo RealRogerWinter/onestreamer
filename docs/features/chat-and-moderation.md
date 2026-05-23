@@ -138,9 +138,9 @@ No takeover cooldown is applied — admin disconnects are "clean."
 | Chat client | [`client/src/components/Chat.tsx`](../../client/src/components/Chat.tsx) |
 | Mobile chat | [`client/src/components/mobile/MobileChat.tsx`](../../client/src/components/mobile/MobileChat.tsx) |
 | Popout chat (separate window) | [`client/src/components/PopoutChat.tsx`](../../client/src/components/PopoutChat.tsx) |
-| Chat moderation admin UI | [`client/src/components/ChatModeration.tsx`](../../client/src/components/ChatModeration.tsx) |
-| Stream moderation admin UI | [`client/src/components/ModerationPanel.tsx`](../../client/src/components/ModerationPanel.tsx) |
-| IP ban management | [`client/src/components/IPBanManagement.tsx`](../../client/src/components/IPBanManagement.tsx) |
+| Chat moderation admin UI | [`client/src/components/admin/ChatModeration.tsx`](../../client/src/components/admin/ChatModeration.tsx) |
+| Stream moderation admin UI | [`client/src/components/admin/ModerationPanel.tsx`](../../client/src/components/admin/ModerationPanel.tsx) |
+| IP ban management | [`client/src/components/admin/IPBanManagement.tsx`](../../client/src/components/admin/IPBanManagement.tsx) |
 
 ## Operational notes
 

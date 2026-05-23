@@ -2,7 +2,7 @@
 
 _Last verified: 2026-05-23 against commit 4a1d325._
 
-The admin panel is the centralized management UI for OneStreamer. The current implementation is **AdminPanelV3** ([`client/src/components/AdminPanelV3.tsx`](../../client/src/components/AdminPanelV3.tsx)) — a React overlay with 18 functional tabs. It supersedes a set of legacy HTML admin pages (`/admin-dashboard.html`, `/transcription-admin.html`, etc.) that were the original implementation; those pages may still exist in the server's public dir but the React panel is the canonical interface today.
+The admin panel is the centralized management UI for OneStreamer. The current implementation is **AdminPanelV3** ([`client/src/components/admin/AdminPanelV3.tsx`](../../client/src/components/admin/AdminPanelV3.tsx)) — a React overlay with 18 functional tabs. It supersedes a set of legacy HTML admin pages (`/admin-dashboard.html`, `/transcription-admin.html`, etc.) that were the original implementation; those pages may still exist in the server's public dir but the React panel is the canonical interface today.
 
 ## Access
 
@@ -75,7 +75,7 @@ CRUD on shop catalog and item definitions.
 - Set stock limits (or unlimited)
 - Bulk operations
 
-UI: [`ItemManagement.tsx`](../../client/src/components/ItemManagement.tsx) (~1k LOC)
+UI: [`ItemManagement.tsx`](../../client/src/components/admin/ItemManagement.tsx) (~1k LOC)
 
 ### 8. Chat Bots
 
@@ -88,7 +88,7 @@ Manage AI chat participants (see [`ai-chatbots.md`](ai-chatbots.md)).
 - View per-bot message history
 - Pick LLM model (Ollama / Groq) for the global system
 
-UI: [`ChatBotManagement.tsx`](../../client/src/components/ChatBotManagement.tsx) (~1.8k LOC — the largest admin tab)
+UI: [`ChatBotManagement.tsx`](../../client/src/components/admin/ChatBotManagement.tsx) (~1.8k LOC — the largest admin tab)
 
 ### 9. StreamBot
 
@@ -118,7 +118,7 @@ Playback past recordings and extract clips. See [`recording-and-clips.md`](recor
 - Extract clip from a selected time range
 - Edit clip metadata before publishing
 
-UI: [`AdminRecordingReview.tsx`](../../client/src/components/AdminRecordingReview.tsx) (~1.1k LOC)
+UI: [`AdminRecordingReview.tsx`](../../client/src/components/admin/AdminRecordingReview.tsx) (~1.1k LOC)
 
 ### 12. Transcriptions
 
@@ -132,7 +132,7 @@ Manage real-time transcription (see [`transcription.md`](transcription.md)).
 - View full transcripts; copy / download as text
 - Bulk-delete transcriptions older than N days
 
-UI: [`TranscriptionManagement.tsx`](../../client/src/components/TranscriptionManagement.tsx) (~750 LOC)
+UI: [`TranscriptionManagement.tsx`](../../client/src/components/admin/TranscriptionManagement.tsx) (~750 LOC)
 
 Live-control endpoints:
 
@@ -178,7 +178,7 @@ The audit trail of stream connect/disconnect events.
 
 ### 17. Tutorial Editor
 
-WYSIWYG (or markdown) editor for the help / about / tutorial / terms / privacy content shown in the Tutorial modal. Changes persist via `POST /api/tutorial`. UI: [`TutorialEditor.tsx`](../../client/src/components/TutorialEditor.tsx) (~870 LOC).
+WYSIWYG (or markdown) editor for the help / about / tutorial / terms / privacy content shown in the Tutorial modal. Changes persist via `POST /api/tutorial`. UI: [`TutorialEditor.tsx`](../../client/src/components/admin/TutorialEditor.tsx) (~870 LOC).
 
 ### 18. Bug Reports
 

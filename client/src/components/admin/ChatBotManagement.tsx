@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import authService from '../services/AuthService';
+import authService from '../../services/AuthService';
 import './ChatBotManagement.css';
 
 interface PersonalityTraits {

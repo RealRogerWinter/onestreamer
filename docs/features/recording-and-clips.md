@@ -82,7 +82,7 @@ Clips are user-extractable portions of any recording (or, if recording is active
 1. Open the clip gallery (`/clips` link) — see [`ClipsGallery.tsx`](../../client/src/components/clips/ClipsGallery.tsx). Search, sort by recent / most-viewed, paginated 20/page.
 2. Click a clip card → [`ClipPlayer.tsx`](../../client/src/components/clips/ClipPlayer.tsx) shows video + synced chat replay.
 3. During a live stream: click **Create Clip** in the player controls; pick the duration (last N seconds, min 30 s / max 120 s — see live status endpoint); enter title/description.
-4. Admin can extract clips from recorded sessions via the **Recording Review** tab — see [`AdminRecordingReview.tsx`](../../client/src/components/AdminRecordingReview.tsx).
+4. Admin can extract clips from recorded sessions via the **Recording Review** tab — see [`AdminRecordingReview.tsx`](../../client/src/components/admin/AdminRecordingReview.tsx).
 
 ### Live status (probe)
 
@@ -122,7 +122,7 @@ Clips live in `/root/onestreamer/clips/{videos,thumbnails,temp}/`.
 
 ## Admin recording review
 
-[`AdminRecordingReview.tsx`](../../client/src/components/AdminRecordingReview.tsx) is the largest single React component in the app (~1.1k LOC). It provides:
+[`AdminRecordingReview.tsx`](../../client/src/components/admin/AdminRecordingReview.tsx) is the largest single React component in the app (~1.1k LOC). It provides:
 
 - Browse sessions by streamer ([`StreamerList.tsx`](../../client/src/components/recording-review/StreamerList.tsx)) and session ([`SessionList.tsx`](../../client/src/components/recording-review/SessionList.tsx))
 - Play recording with seek + speed (0.5×–2×) — [`SessionPlayer` / `PlaybackTimeline.tsx`](../../client/src/components/recording-review/PlaybackTimeline.tsx)

@@ -151,7 +151,7 @@ transcription_settings (...)
 
 - **The chat client** subscribes to `transcription-update` to show live captions (optional UI).
 - **MovieBot** (see [`ai-chatbots.md`](ai-chatbots.md)) pulls the last N transcription chunks alongside the last 30 chat messages when generating its commentary prompts. This is what makes MovieBot feel context-aware — it knows what the streamer is *saying*, not just what chat is saying.
-- **The admin panel** has a Transcriptions tab ([`TranscriptionManagement.tsx`](../../client/src/components/TranscriptionManagement.tsx), ~750 LOC) for browsing and exporting past transcripts.
+- **The admin panel** has a Transcriptions tab ([`TranscriptionManagement.tsx`](../../client/src/components/admin/TranscriptionManagement.tsx), ~750 LOC) for browsing and exporting past transcripts.
 
 ## Troubleshooting
 
@@ -169,7 +169,7 @@ transcription_settings (...)
 | Service entrypoint | [`server/services/TranscriptionService.js`](../../server/services/TranscriptionService.js) (the `whisper.cpp/main` spawn is around line 481) |
 | Audio capture from MediaSoup | [`server/services/TranscriptionAudioAdapter.js`](../../server/services/TranscriptionAudioAdapter.js) |
 | Buffer mgmt | [`server/services/AudioBufferService.js`](../../server/services/AudioBufferService.js) |
-| Admin UI | [`client/src/components/TranscriptionManagement.tsx`](../../client/src/components/TranscriptionManagement.tsx) |
+| Admin UI | [`client/src/components/admin/TranscriptionManagement.tsx`](../../client/src/components/admin/TranscriptionManagement.tsx) |
 
 ## See also
 

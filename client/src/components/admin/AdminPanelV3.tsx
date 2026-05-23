@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import AdminDashboardV3 from './AdminDashboardV3';
 import UserManagement from './UserManagement';
-import ConnectionMonitor from './ConnectionMonitor';
+import ConnectionMonitor from '../ConnectionMonitor';
 import ViewBotTab from './ViewBotTab';
-import URLStreamManagement from './URLStreamManagement';
+import URLStreamManagement from '../URLStreamManagement';
 import ItemManagement from './ItemManagement';
 import ChatBotManagement from './ChatBotManagement';
 import RecordingManagement from './RecordingManagement';
@@ -15,9 +15,9 @@ import TutorialEditor from './TutorialEditor';
 import BugReportsManagement from './BugReportsManagement';
 import IPBanManagement from './IPBanManagement';
 import StreamingLogs from './StreamingLogs';
-import StreamBotManager from './StreamBotManager';
-import GameControlPanel from './GameControlPanel';
-import authService from '../services/AuthService';
+import StreamBotManager from '../StreamBotManager';
+import GameControlPanel from '../GameControlPanel';
+import authService from '../../services/AuthService';
 import './AdminPanelV3.css';
 
 interface AdminPanelProps {

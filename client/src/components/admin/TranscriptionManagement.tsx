@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useMainSocket } from '../contexts/SocketContext';
-import authService from '../services/AuthService';
+import { useMainSocket } from '../../contexts/SocketContext';
+import authService from '../../services/AuthService';
 import './TranscriptionManagement.css';
 
 interface TranscriptionManagementProps {

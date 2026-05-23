@@ -137,7 +137,7 @@ Models are forward-compatible across `whisper.cpp` versions (same `ggml-*.bin` f
 | Service entrypoint | [`server/services/TranscriptionService.js`](../../server/services/TranscriptionService.js) (line ~481 is the `whisper.cpp/main` spawn) |
 | Audio capture from MediaSoup | [`server/services/TranscriptionAudioAdapter.js`](../../server/services/TranscriptionAudioAdapter.js) |
 | Buffer management | [`server/services/AudioBufferService.js`](../../server/services/AudioBufferService.js) |
-| Admin UI | [`client/src/components/TranscriptionManagement.tsx`](../../client/src/components/TranscriptionManagement.tsx) |
+| Admin UI | [`client/src/components/admin/TranscriptionManagement.tsx`](../../client/src/components/admin/TranscriptionManagement.tsx) |
 | Setup script | [`/setup-whisper.js`](../../setup-whisper.js) |
 
 ## See also

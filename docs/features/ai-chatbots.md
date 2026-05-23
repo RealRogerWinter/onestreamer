@@ -122,7 +122,7 @@ Three tables, all in the main SQLite DB:
 | LLM abstraction | [`server/services/ChatBotLLMService.js`](../../server/services/ChatBotLLMService.js) |
 | MovieBot logic | [`server/services/MovieBotService.js`](../../server/services/MovieBotService.js) |
 | StreamBot (timed messages) | [`server/services/StreamBotService.js`](../../server/services/StreamBotService.js) |
-| Admin UI | [`client/src/components/ChatBotManagement.tsx`](../../client/src/components/ChatBotManagement.tsx) |
+| Admin UI | [`client/src/components/admin/ChatBotManagement.tsx`](../../client/src/components/admin/ChatBotManagement.tsx) |
 | Admin endpoints | [`server/routes/chatbots.js`](../../server/routes/chatbots.js) |
 
 ## See also

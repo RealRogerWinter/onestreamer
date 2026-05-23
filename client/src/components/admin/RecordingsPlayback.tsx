@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import '../styles/RecordingsPlayback.css';
+import '../../styles/RecordingsPlayback.css';
 
 interface Recording {
   filename: string;

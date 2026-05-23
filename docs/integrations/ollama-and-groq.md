@@ -138,7 +138,7 @@ This is a feature, not a bug — chatbots that suddenly stop responding when the
 | Bot orchestration | [`server/services/ChatBotService.js`](../../server/services/ChatBotService.js) |
 | MovieBot logic | [`server/services/MovieBotService.js`](../../server/services/MovieBotService.js) |
 | StreamBot logic | [`server/services/StreamBotService.js`](../../server/services/StreamBotService.js) |
-| Admin UI for provider/model selection | [`client/src/components/ChatBotManagement.tsx`](../../client/src/components/ChatBotManagement.tsx) |
+| Admin UI for provider/model selection | [`client/src/components/admin/ChatBotManagement.tsx`](../../client/src/components/admin/ChatBotManagement.tsx) |
 | Admin endpoints | [`server/routes/chatbots.js`](../../server/routes/chatbots.js) |
 
 ## See also

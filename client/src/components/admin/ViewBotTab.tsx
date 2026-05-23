@@ -12,7 +12,7 @@ import {
   Wifi,
   Monitor
 } from 'lucide-react';
-import '../styles/ViewBotVideoManager.css';
+import '../../styles/ViewBotVideoManager.css';
 
 interface VideoFile {
   filename: string;
