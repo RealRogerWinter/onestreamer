@@ -18,8 +18,8 @@ class ViewBotLiveKitRTMP {
     // Initialize LiveKit RoomServiceClient
     this.roomService = new RoomServiceClient(
       process.env.LIVEKIT_URL || 'https://onestreamer.live:7880',
-      process.env.LIVEKIT_API_KEY || 'REDACTED-LIVEKIT-API-KEY',
-      process.env.LIVEKIT_API_SECRET || 'REDACTED-LIVEKIT-API-SECRET'
+      process.env.LIVEKIT_API_KEY,
+      process.env.LIVEKIT_API_SECRET
     );
 
     console.log('🤖 LIVEKIT RTMP VIEWBOT: Service initialized');

@@ -21,13 +21,8 @@ module.exports = {
         VIEWBOT_SERVER_URL: 'https://127.0.0.1:8443',
         ANNOUNCED_IP: '<SERVER_IP>',
         TURN_DOMAIN: 'turn.onestreamer.live',
-        // Email configuration
-        SMTP_HOST: 'smtp.sendgrid.net',
-        SMTP_PORT: '587',
-        SMTP_SECURE: 'false',
-        SMTP_USER: 'apikey',
-        SMTP_PASS: '***REMOVED-SENDGRID-KEY***',
-        FROM_EMAIL: 'noreply@onestreamer.live'
+        // Email configuration — SMTP_PASS must be set in server/.env (never committed).
+        // SMTP_HOST/PORT/SECURE/USER/FROM_EMAIL are also expected from server/.env.
       },
       error_file: './logs/server-error.log',
       out_file: './logs/server-out.log',

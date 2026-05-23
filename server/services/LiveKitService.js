@@ -5,9 +5,10 @@
 
 const { Room, RoomServiceClient, AccessToken, WebhookReceiver } = require('livekit-server-sdk');
 const crypto = require('crypto');
+const requireEnv = require('../config/requireEnv');
 
 // TURN credential generation for coturn with static-auth-secret
-const TURN_SECRET = process.env.TURN_SECRET || '***REMOVED-TURN-SECRET***';
+const TURN_SECRET = requireEnv('TURN_SECRET');
 const TURN_TTL = 24 * 60 * 60; // 24 hours in seconds
 
 function generateTurnCredentials(username = 'viewer') {

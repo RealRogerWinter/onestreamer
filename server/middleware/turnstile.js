@@ -1,7 +1,7 @@
 const axios = require('axios');
+const requireEnv = require('../config/requireEnv');
 
-// Turnstile secret key (store in environment variable)
-const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '***REMOVED-TURNSTILE-SECRET***';
+const TURNSTILE_SECRET_KEY = requireEnv('TURNSTILE_SECRET_KEY');
 
 // Cloudflare Turnstile verification endpoint
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';

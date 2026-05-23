@@ -35,8 +35,8 @@ class ViewBotLiveKitPuppeteer {
       console.log(`🤖 LIVEKIT PUPPETEER VIEWBOT: Creating ViewBot: ${botId}`);
       
       // Create access token
-      const apiKey = process.env.LIVEKIT_API_KEY || 'REDACTED-LIVEKIT-API-KEY';
-      const apiSecret = process.env.LIVEKIT_API_SECRET || 'REDACTED-LIVEKIT-API-SECRET';
+      const apiKey = process.env.LIVEKIT_API_KEY;
+      const apiSecret = process.env.LIVEKIT_API_SECRET;
       
       const token = new AccessToken(apiKey, apiSecret, {
         identity: botId,

@@ -245,20 +245,22 @@ Baked into the React production bundle at build time. **These are visible to eve
 
 ---
 
-## Default secrets that are footguns in production
+## Required secrets — no source-tree fallbacks
 
-These appear as **literal fallbacks** in source code. If production doesn't override them, you're using the default — which is in the repo. Check each one on deploy:
+The server fails fast at startup (and chat-service refuses to boot) if any of these is missing. There are no hardcoded defaults in code; set real values in `.env` before running.
 
-| Variable | Footgun value | What breaks if not overridden |
-|----------|---------------|-------------------------------|
-| `JWT_SECRET` | `***REMOVED-JWT-DEFAULT***` | **Anyone who has read the source can forge tokens, including admin tokens.** |
-| `SESSION_SECRET` | `***REMOVED-SESSION-DEFAULT***` | Express session is trivially forgeable. |
-| `TURNSTILE_SECRET_KEY` | `***REMOVED-TURNSTILE-SECRET***` | The CAPTCHA can be bypassed by anyone with the secret. |
-| `ADMIN_KEY` | `REDACTED-ADMIN-KEY` | Legacy admin endpoints accept anyone with this string. |
-| `TURN_SECRET` | `***REMOVED-TURN-SECRET***` | TURN credentials are guessable. **And shipped to every browser.** |
-| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | `devkey` / `secret` | Anyone can mint LiveKit tokens against your server. |
+| Variable | What it gates | How to generate / source |
+|----------|---------------|--------------------------|
+| `JWT_SECRET` | Token signing for both main server and chat-service (must match between them). | `openssl rand -base64 48` |
+| `SESSION_SECRET` | Express session cookie signing. | `openssl rand -base64 48` |
+| `TURNSTILE_SECRET_KEY` | Server-side Cloudflare Turnstile verification. | Cloudflare dashboard → Turnstile → site → Secret Key. |
+| `TURN_SECRET` | coturn `static-auth-secret`; main server mints time-limited TURN credentials with it. | Must match `static-auth-secret` in `/etc/turnserver.conf`. |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Only required if `WEBRTC_BACKEND=livekit` or you use the LiveKit-based recording pipeline. Default deployment leaves these unset (LiveKit is dormant — see [ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md)). | LiveKit server config. |
+| `SMTP_PASS` | SendGrid API key (read as the SMTP password). Required for verification + reset emails. | SendGrid → Settings → API Keys. |
 
-The fix is **(a)** set real values in `.env`, and **(b)** remove the fallbacks in code so production fails-fast if the env is missing. See [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md) for the rotation procedure.
+Generate fresh values for every deploy. Rotate any time you suspect leakage. See [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md) for the full rotation procedure.
+
+> **Historical note.** Earlier versions of this repo shipped each of these with a hardcoded fallback in source. Those fallbacks have been removed in code, but they remain in git history through commit `b4cb5d2`. Treat any of those historical values as compromised — even after this commit, anyone who cloned the repo before the cleanup has them.
 
 ## See also
 

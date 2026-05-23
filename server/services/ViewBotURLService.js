@@ -1484,8 +1484,8 @@ class ViewBotURLService extends EventEmitter {
     try {
       const { IngressClient, RoomServiceClient } = require('livekit-server-sdk');
       const host = this.livekitService.config?.host || 'http://localhost:7882';
-      const apiKey = this.livekitService.config?.apiKey || 'devkey';
-      const apiSecret = this.livekitService.config?.apiSecret || 'secret';
+      const apiKey = this.livekitService.config?.apiKey;
+      const apiSecret = this.livekitService.config?.apiSecret;
       const roomName = this.livekitService.config?.roomName || 'onestreamer-main';
 
       const ingressClient = new IngressClient(

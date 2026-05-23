@@ -2,6 +2,7 @@ const wrtc = require('@roamhq/wrtc');
 const { createCanvas } = require('canvas');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+const requireEnv = require('../config/requireEnv');
 
 /**
  * ViewBot service using native WebRTC with server-side media generation
@@ -20,7 +21,7 @@ class ViewBotWebRTCService {
    * Generate TURN credentials matching coturn's use-auth-secret format
    */
   generateTurnCredential(username) {
-    const secret = '***REMOVED-TURN-SECRET***';
+    const secret = requireEnv('TURN_SECRET');
     const hmac = crypto.createHmac('sha1', secret);
     hmac.update(username);
     return hmac.digest('base64');
