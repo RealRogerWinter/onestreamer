@@ -8,9 +8,9 @@ CAPTCHA middleware that gates signup, login, password reset, bug-report submissi
 
 | Form | File |
 |------|------|
-| User registration | [`client/src/components/Signup.tsx`](../../client/src/components/Signup.tsx) |
-| User login | [`client/src/components/Login.tsx`](../../client/src/components/Login.tsx) |
-| Password reset | [`client/src/components/Login.tsx`](../../client/src/components/Login.tsx) (same modal) |
+| User registration | [`client/src/components/auth/Signup.tsx`](../../client/src/components/auth/Signup.tsx) |
+| User login | [`client/src/components/auth/Login.tsx`](../../client/src/components/auth/Login.tsx) |
+| Password reset | [`client/src/components/auth/Login.tsx`](../../client/src/components/auth/Login.tsx) (same modal) |
 | Bug-report submission | [`client/src/components/BugReportModal.tsx`](../../client/src/components/BugReportModal.tsx) |
 | First anonymous chat message | [`client/src/components/Chat.tsx`](../../client/src/components/Chat.tsx) |
 

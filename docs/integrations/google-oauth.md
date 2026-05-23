@@ -58,8 +58,8 @@ Sign-in via Google. Uses [`passport-google-oauth20`](https://www.passportjs.org/
 | Passport strategy registration | [`server/services/AuthService.js`](../../server/services/AuthService.js) |
 | OAuth routes | [`server/routes/auth.js`](../../server/routes/auth.js) — `GET /auth/google`, `GET /auth/google/callback` |
 | Token issuance after OAuth success | `AuthService.generateToken()` |
-| New-user username selection | [`client/src/components/OAuthUsernameSelection.tsx`](../../client/src/components/OAuthUsernameSelection.tsx) |
-| OAuth callback handler in React | [`client/src/components/OAuthCallback.tsx`](../../client/src/components/OAuthCallback.tsx) |
+| New-user username selection | [`client/src/components/auth/OAuthUsernameSelection.tsx`](../../client/src/components/auth/OAuthUsernameSelection.tsx) |
+| OAuth callback handler in React | [`client/src/components/auth/OAuthCallback.tsx`](../../client/src/components/auth/OAuthCallback.tsx) |
 
 ## Scopes
 
