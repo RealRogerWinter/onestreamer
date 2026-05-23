@@ -1,11 +1,20 @@
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { db, runAsync, getAsync, allAsync } = require('../database/database');
+const UserRepository = require('../database/repository/UserRepository');
 
 class AccountService {
-    constructor() {
+    /**
+     * @param {object} [deps]
+     * @param {UserRepository} [deps.userRepository] - inject a custom repo
+     *   (useful for tests). Defaults to a fresh `UserRepository()` so the
+     *   `new AccountService()` callsites scattered throughout the codebase
+     *   continue to work unchanged.
+     */
+    constructor({ userRepository } = {}) {
         this.saltRounds = 10;
         this.db = db; // Add database reference for raw queries
+        this.userRepository = userRepository || new UserRepository({ getAsync, runAsync, allAsync });
     }
 
     async createUser(email, username, password, oauthProvider = null, oauthId = null) {
@@ -17,11 +26,14 @@ class AccountService {
 
             const verificationToken = crypto.randomBytes(32).toString('hex');
 
-            const result = await runAsync(
-                `INSERT INTO users (email, username, password, oauth_provider, oauth_id, verification_token) 
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [email, username, hashedPassword, oauthProvider, oauthId, verificationToken]
-            );
+            const result = await this.userRepository.create({
+                email,
+                username,
+                password: hashedPassword,
+                oauthProvider,
+                oauthId,
+                verificationToken
+            });
 
             await this.createUserStats(result.id);
 
@@ -59,17 +71,11 @@ class AccountService {
     }
 
     async getUserByEmail(email) {
-        return await getAsync(
-            `SELECT * FROM users WHERE email = ?`,
-            [email]
-        );
+        return await this.userRepository.getByEmail(email);
     }
 
     async getUserByUsername(username) {
-        return await getAsync(
-            `SELECT id, email, username, password, created_at, updated_at, last_login, is_verified, is_admin, is_moderator, is_banned, oauth_provider, username_changed, avatar_url, description FROM users WHERE username = ?`,
-            [username]
-        );
+        return await this.userRepository.getByUsername(username);
     }
 
     async getUserByOAuth(provider, oauthId) {
@@ -404,31 +410,19 @@ class AccountService {
     }
 
     async promoteToAdmin(userId) {
-        await runAsync(
-            `UPDATE users SET is_admin = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            [userId]
-        );
+        await this.userRepository.update(userId, { is_admin: 1 });
     }
 
     async demoteFromAdmin(userId) {
-        await runAsync(
-            `UPDATE users SET is_admin = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            [userId]
-        );
+        await this.userRepository.update(userId, { is_admin: 0 });
     }
 
     async banUser(userId) {
-        await runAsync(
-            `UPDATE users SET is_banned = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            [userId]
-        );
+        await this.userRepository.update(userId, { is_banned: 1 });
     }
 
     async unbanUser(userId) {
-        await runAsync(
-            `UPDATE users SET is_banned = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            [userId]
-        );
+        await this.userRepository.update(userId, { is_banned: 0 });
     }
 
     async deleteUser(userId) {

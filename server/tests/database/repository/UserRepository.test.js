@@ -1,0 +1,215 @@
+const UserRepository = require('../../../database/repository/UserRepository');
+
+// Helper: build a repo with jest.fn() mocks for the three DB primitives.
+function makeRepo() {
+    const getAsync = jest.fn();
+    const runAsync = jest.fn();
+    const allAsync = jest.fn();
+    const repo = new UserRepository({ getAsync, runAsync, allAsync });
+    return { repo, getAsync, runAsync, allAsync };
+}
+
+// Collapse all internal whitespace so we can assert on the SQL "shape"
+// without being sensitive to formatting.
+const norm = (s) => s.replace(/\s+/g, ' ').trim();
+
+describe('UserRepository', () => {
+    describe('getById', () => {
+        it('passes id to getAsync with the correct SQL', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ id: 42, email: 'a@b.c' });
+
+            const result = await repo.getById(42);
+
+            expect(getAsync).toHaveBeenCalledTimes(1);
+            const [sql, params] = getAsync.mock.calls[0];
+            expect(norm(sql)).toBe('SELECT * FROM users WHERE id = ?');
+            expect(params).toEqual([42]);
+            expect(result).toEqual({ id: 42, email: 'a@b.c' });
+        });
+    });
+
+    describe('getByEmail', () => {
+        it('passes email to getAsync with the correct SQL', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ id: 1, email: 'foo@bar.com' });
+
+            await repo.getByEmail('foo@bar.com');
+
+            expect(getAsync).toHaveBeenCalledTimes(1);
+            const [sql, params] = getAsync.mock.calls[0];
+            expect(norm(sql)).toBe('SELECT * FROM users WHERE email = ?');
+            expect(params).toEqual(['foo@bar.com']);
+        });
+    });
+
+    describe('getByUsername', () => {
+        it('uses the explicit column projection (not SELECT *)', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ id: 1, username: 'alice' });
+
+            await repo.getByUsername('alice');
+
+            expect(getAsync).toHaveBeenCalledTimes(1);
+            const [sql, params] = getAsync.mock.calls[0];
+
+            // Must not be SELECT * — this is the byte-equivalent migration
+            // of the original AccountService.getUserByUsername projection.
+            expect(sql).not.toMatch(/SELECT\s+\*/i);
+
+            // Verify the exact column list (in order) matches the legacy SQL.
+            const expectedCols = [
+                'id', 'email', 'username', 'password', 'created_at',
+                'updated_at', 'last_login', 'is_verified', 'is_admin',
+                'is_moderator', 'is_banned', 'oauth_provider',
+                'username_changed', 'avatar_url', 'description'
+            ];
+            for (const col of expectedCols) {
+                expect(sql).toContain(col);
+            }
+            expect(norm(sql)).toBe(
+                `SELECT ${expectedCols.join(', ')} FROM users WHERE username = ?`
+            );
+            expect(params).toEqual(['alice']);
+        });
+    });
+
+    describe('create', () => {
+        it('generates the correct INSERT with all 7 columns and 6 placeholders', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 99, changes: 1 });
+
+            const result = await repo.create({
+                email: 'a@b.c',
+                username: 'alice',
+                password: 'hashed-pw',
+                oauthProvider: 'google',
+                oauthId: 'g-123',
+                verificationToken: 'tok-xyz'
+            });
+
+            expect(runAsync).toHaveBeenCalledTimes(1);
+            const [sql, params] = runAsync.mock.calls[0];
+
+            // Verify all 6 columns appear (the INSERT lists 6 cols; the 7th
+            // bit of context is that there are 6 placeholders matching them).
+            expect(sql).toMatch(
+                /INSERT\s+INTO\s+users\s*\(\s*email\s*,\s*username\s*,\s*password\s*,\s*oauth_provider\s*,\s*oauth_id\s*,\s*verification_token\s*\)/i
+            );
+            // 6 placeholders for 6 columns.
+            const placeholderCount = (sql.match(/\?/g) || []).length;
+            expect(placeholderCount).toBe(6);
+
+            expect(params).toEqual([
+                'a@b.c', 'alice', 'hashed-pw', 'google', 'g-123', 'tok-xyz'
+            ]);
+            expect(result).toEqual({ id: 99, changes: 1 });
+        });
+
+        it('defaults missing optional oauth fields to null', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 7, changes: 1 });
+
+            await repo.create({
+                email: 'a@b.c',
+                username: 'alice',
+                password: 'pw'
+            });
+
+            const [, params] = runAsync.mock.calls[0];
+            // email, username, password, oauthProvider=null, oauthId=null, verificationToken=null
+            expect(params).toEqual(['a@b.c', 'alice', 'pw', null, null, null]);
+        });
+    });
+
+    describe('update', () => {
+        it('with a single field generates UPDATE ... SET <col> = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            await repo.update(5, { is_admin: 1 });
+
+            expect(runAsync).toHaveBeenCalledTimes(1);
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'UPDATE users SET is_admin = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+            );
+            // Value first, then id (id is appended last).
+            expect(params).toEqual([1, 5]);
+        });
+
+        it('with multiple fields generates a single UPDATE with placeholders in key order', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            await repo.update(42, {
+                is_admin: 1,
+                is_banned: 0,
+                avatar_url: 'http://example.com/a.png'
+            });
+
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'UPDATE users SET is_admin = ?, is_banned = ?, avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+            );
+            // Object.keys() order is insertion order for string keys, so
+            // we can assert positional values + id last.
+            expect(params).toEqual([1, 0, 'http://example.com/a.png', 42]);
+        });
+
+        it('auto-stamps updated_at = CURRENT_TIMESTAMP (literal, not parameterized)', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            await repo.update(1, { password: 'newpw' });
+
+            const [sql, params] = runAsync.mock.calls[0];
+            // The CURRENT_TIMESTAMP must appear as a SQL literal, not as a
+            // ? placeholder bound to a JS value — otherwise the DB wouldn't
+            // evaluate it as "now".
+            expect(sql).toContain('updated_at = CURRENT_TIMESTAMP');
+            // Only one ? for password + one ? for id => 2 placeholders.
+            const placeholderCount = (sql.match(/\?/g) || []).length;
+            expect(placeholderCount).toBe(2);
+            expect(params).toHaveLength(2);
+            expect(params).toEqual(['newpw', 1]);
+        });
+
+        it('with an empty fields object short-circuits to { id: 0, changes: 0 } without calling runAsync', async () => {
+            const { repo, runAsync } = makeRepo();
+
+            const result = await repo.update(99, {});
+
+            expect(runAsync).not.toHaveBeenCalled();
+            expect(result).toEqual({ id: 0, changes: 0 });
+        });
+
+        it('parameterizes values (no value interpolation into the SQL string)', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            const maliciousValue = "'; DROP TABLE users; --";
+            await repo.update(1, { description: maliciousValue });
+
+            const [sql, params] = runAsync.mock.calls[0];
+            // The malicious string must show up in params, NOT in the SQL.
+            expect(sql).not.toContain(maliciousValue);
+            expect(sql).not.toContain('DROP');
+            expect(params).toEqual([maliciousValue, 1]);
+        });
+    });
+
+    describe('constructor defaults', () => {
+        it('a default-constructed instance exposes the 5 public methods', () => {
+            // We don't actually call any method here — that would touch the
+            // real DB primitives. We only verify the method surface exists,
+            // which is what backwards compatibility requires.
+            const repo = new UserRepository();
+            expect(typeof repo.getById).toBe('function');
+            expect(typeof repo.getByEmail).toBe('function');
+            expect(typeof repo.getByUsername).toBe('function');
+            expect(typeof repo.create).toBe('function');
+            expect(typeof repo.update).toBe('function');
+        });
+    });
+});
