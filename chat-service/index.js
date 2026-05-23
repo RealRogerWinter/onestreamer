@@ -155,7 +155,12 @@ const SINGLE_VIEWER_ACTION_COOLDOWN = 60 * 1000; // 60 second cooldown to preven
 let lastSingleViewerActionTime = 0; // Track last single-viewer action for cooldown
 
 // Persistence paths
-const MODERATION_DATA_PATH = path.join(__dirname, 'moderation_data.json');
+// MODERATION_STORE_PATH overrides the default. Useful for production
+// deploys that keep state outside the repo, and for tests that need an
+// isolated fixture path. Default is gitignored, see .gitignore.
+const MODERATION_DATA_PATH = process.env.MODERATION_STORE_PATH
+  ? path.resolve(process.env.MODERATION_STORE_PATH)
+  : path.join(__dirname, 'moderation_data.json');
 
 // Load moderation data from disk
 function loadModerationData() {
