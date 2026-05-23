@@ -63,11 +63,7 @@ class AccountService {
     }
 
     async getUserById(id) {
-        return await getAsync(
-            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_moderator, is_banned, oauth_provider, username_changed, avatar_url, description 
-             FROM users WHERE id = ?`,
-            [id]
-        );
+        return await this.userRepository.getSafeById(id);
     }
 
     async getUserByEmail(email) {
@@ -79,10 +75,7 @@ class AccountService {
     }
 
     async getUserByOAuth(provider, oauthId) {
-        return await getAsync(
-            `SELECT * FROM users WHERE oauth_provider = ? AND oauth_id = ?`,
-            [provider, oauthId]
-        );
+        return await this.userRepository.getByOAuth(provider, oauthId);
     }
 
     async verifyPassword(emailOrUsername, password) {
@@ -114,33 +107,21 @@ class AccountService {
     }
 
     async updateLastLogin(userId) {
-        await runAsync(
-            `UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?`,
-            [userId]
-        );
+        await this.userRepository.updateLastLogin(userId);
     }
 
     async linkOAuthToUser(userId, oauthProvider, oauthId) {
-        await runAsync(
-            `UPDATE users SET oauth_provider = ?, oauth_id = ? WHERE id = ?`,
-            [oauthProvider, oauthId, userId]
-        );
+        await this.userRepository.linkOAuth(userId, oauthProvider, oauthId);
     }
 
     async verifyUser(verificationToken) {
-        const user = await getAsync(
-            `SELECT id FROM users WHERE verification_token = ?`,
-            [verificationToken]
-        );
+        const user = await this.userRepository.findByVerificationToken(verificationToken);
 
         if (!user) {
             throw new Error('Invalid verification token');
         }
 
-        await runAsync(
-            `UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?`,
-            [user.id]
-        );
+        await this.userRepository.markVerified(user.id);
 
         return { success: true, userId: user.id };
     }
@@ -154,20 +135,13 @@ class AccountService {
         const resetToken = crypto.randomBytes(32).toString('hex');
         const expiresAt = new Date(Date.now() + 3600000);
 
-        await runAsync(
-            `UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?`,
-            [resetToken, expiresAt.toISOString(), user.id]
-        );
+        await this.userRepository.setResetToken(user.id, resetToken, expiresAt.toISOString());
 
         return resetToken;
     }
 
     async resetPassword(resetToken, newPassword) {
-        const user = await getAsync(
-            `SELECT id, reset_token_expires FROM users 
-             WHERE reset_token = ? AND reset_token_expires > datetime('now')`,
-            [resetToken]
-        );
+        const user = await this.userRepository.findByResetToken(resetToken);
 
         if (!user) {
             throw new Error('Invalid or expired reset token');
@@ -175,23 +149,16 @@ class AccountService {
 
         const hashedPassword = await bcrypt.hash(newPassword, this.saltRounds);
 
-        await runAsync(
-            `UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL 
-             WHERE id = ?`,
-            [hashedPassword, user.id]
-        );
+        await this.userRepository.setPasswordAndClearResetToken(user.id, hashedPassword);
 
         return true;
     }
 
     async regenerateVerificationToken(userId) {
         const newVerificationToken = crypto.randomBytes(32).toString('hex');
-        
-        await runAsync(
-            `UPDATE users SET verification_token = ? WHERE id = ?`,
-            [newVerificationToken, userId]
-        );
-        
+
+        await this.userRepository.setVerificationToken(userId, newVerificationToken);
+
         return newVerificationToken;
     }
 
@@ -428,34 +395,21 @@ class AccountService {
     async deleteUser(userId) {
         // First delete user stats
         await runAsync(`DELETE FROM user_stats WHERE user_id = ?`, [userId]);
-        
+
         // Then delete user sessions
         await runAsync(`DELETE FROM user_sessions WHERE user_id = ?`, [userId]);
-        
+
         // Finally delete the user
-        await runAsync(`DELETE FROM users WHERE id = ?`, [userId]);
+        await this.userRepository.deleteById(userId);
     }
 
     async searchUsers(searchTerm, limit = 50) {
         const searchPattern = `%${searchTerm}%`;
-        return await allAsync(
-            `SELECT id, email, username, created_at, last_login, is_verified, is_admin, is_banned
-             FROM users 
-             WHERE email LIKE ? OR username LIKE ?
-             ORDER BY created_at DESC
-             LIMIT ?`,
-            [searchPattern, searchPattern, limit]
-        );
+        return await this.userRepository.searchByEmailOrUsername(searchPattern, limit);
     }
 
     async getAllUsers(limit = 100) {
-        return await allAsync(
-            `SELECT id, email, username, created_at, last_login, is_verified, is_admin, is_banned
-             FROM users 
-             ORDER BY created_at DESC
-             LIMIT ?`,
-            [limit]
-        );
+        return await this.userRepository.listPublic(limit);
     }
 
     async changeUsername(userId, newUsername) {
@@ -490,13 +444,11 @@ class AccountService {
             throw new Error('Username already taken');
         }
 
-        // Update username and mark as changed
-        await runAsync(
-            `UPDATE users 
-             SET username = ?, username_changed = 1, updated_at = CURRENT_TIMESTAMP 
-             WHERE id = ?`,
-            [newUsername, userId]
-        );
+        // Update username and mark as changed (auto-stamps updated_at).
+        await this.userRepository.update(userId, {
+            username: newUsername,
+            username_changed: 1
+        });
 
         return {
             success: true,
@@ -518,95 +470,52 @@ class AccountService {
 
     // Account deletion methods
     async requestDeletion(userId, deletionToken, tokenExpires) {
-        return new Promise((resolve, reject) => {
-            const now = new Date().toISOString();
-            const scheduledFor = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(); // 15 days from now
-            
-            const query = `
-                UPDATE users 
-                SET deletion_requested_at = ?,
-                    deletion_token = ?,
-                    deletion_token_expires = ?,
-                    deletion_scheduled_for = ?,
-                    account_status = 'pending_deletion'
-                WHERE id = ?
-            `;
-            
-            this.db.run(query, [now, deletionToken, tokenExpires.toISOString(), scheduledFor, userId], async (err) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    // Log the deletion request
-                    await this.logDeletionAction(userId, 'deletion_requested');
-                    resolve(true);
-                }
-            });
+        const requestedAtIso = new Date().toISOString();
+        const scheduledForIso = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(); // 15 days from now
+
+        await this.userRepository.requestDeletion(userId, {
+            requestedAtIso,
+            token: deletionToken,
+            tokenExpiresIso: tokenExpires.toISOString(),
+            scheduledForIso
         });
+
+        // Log the deletion request
+        await this.logDeletionAction(userId, 'deletion_requested');
+        return true;
     }
 
     async confirmDeletion(token) {
-        return new Promise((resolve, reject) => {
-            // First, find the user with this token
-            const query = `
-                SELECT * FROM users 
-                WHERE deletion_token = ? 
-                AND deletion_token_expires > datetime('now')
-                AND account_status = 'pending_deletion'
-            `;
-            
-            this.db.get(query, [token], (err, user) => {
-                if (err) {
-                    resolve({ success: false, error: 'Database error' });
-                } else if (!user) {
-                    resolve({ success: false, error: 'Invalid or expired deletion token' });
-                } else {
-                    // Update the confirmation timestamp
-                    const updateQuery = `
-                        UPDATE users 
-                        SET deletion_confirmed_at = datetime('now')
-                        WHERE id = ?
-                    `;
-                    
-                    this.db.run(updateQuery, [user.id], async (updateErr) => {
-                        if (updateErr) {
-                            resolve({ success: false, error: 'Failed to confirm deletion' });
-                        } else {
-                            // Log the confirmation
-                            await this.logDeletionAction(user.id, 'deletion_confirmed');
-                            resolve({ success: true, userId: user.id });
-                        }
-                    });
-                }
-            });
-        });
+        let user;
+        try {
+            user = await this.userRepository.findByDeletionToken(token);
+        } catch (err) {
+            return { success: false, error: 'Database error' };
+        }
+
+        if (!user) {
+            return { success: false, error: 'Invalid or expired deletion token' };
+        }
+
+        try {
+            await this.userRepository.confirmDeletion(user.id);
+        } catch (err) {
+            return { success: false, error: 'Failed to confirm deletion' };
+        }
+
+        // Log the confirmation
+        await this.logDeletionAction(user.id, 'deletion_confirmed');
+        return { success: true, userId: user.id };
     }
 
     async restoreAccount(userId) {
-        return new Promise((resolve, reject) => {
-            const query = `
-                UPDATE users 
-                SET deletion_requested_at = NULL,
-                    deletion_confirmed_at = NULL,
-                    deletion_scheduled_for = NULL,
-                    deletion_token = NULL,
-                    deletion_token_expires = NULL,
-                    account_status = 'active'
-                WHERE id = ? AND account_status = 'pending_deletion'
-            `;
-            
-            const self = this; // Store reference to AccountService instance
-            this.db.run(query, [userId], async function(err) {
-                if (err) {
-                    reject(err);
-                } else if (this.changes === 0) {
-                    resolve(false); // No rows updated
-                } else {
-                    // Log the restoration
-                    await self.logDeletionAction(userId, 'account_restored');
-                    resolve(true);
-                }
-            });
-        });
+        const result = await this.userRepository.restoreFromDeletion(userId);
+        if (result.changes === 0) {
+            return false; // No rows updated
+        }
+        // Log the restoration
+        await this.logDeletionAction(userId, 'account_restored');
+        return true;
     }
 
     async logDeletionAction(userId, action, ipAddress = null, userAgent = null) {
@@ -637,90 +546,49 @@ class AccountService {
     }
 
     async getAccountsPendingDeletion() {
-        return new Promise((resolve, reject) => {
-            const query = `
-                SELECT * FROM users 
-                WHERE account_status = 'pending_deletion' 
-                AND deletion_confirmed_at IS NOT NULL
-                AND deletion_scheduled_for <= datetime('now')
-            `;
-            
-            this.db.all(query, [], (err, rows) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve(rows || []);
-                }
-            });
-        });
+        const rows = await this.userRepository.listPendingDeletion();
+        return rows || [];
     }
 
     async permanentlyDeleteAccount(userId) {
-        return new Promise(async (resolve, reject) => {
-            try {
-                // Log the permanent deletion
-                await this.logDeletionAction(userId, 'data_purged');
-                
-                // Delete user data from all related tables
-                const tables = [
-                    'user_sessions',
-                    'user_stats',
-                    'ip_to_user_transfers',
-                    'user_inventory',
-                    'item_usage_history',
-                    'user_points_log',
-                    'account_deletion_logs'
-                ];
-                
-                for (const table of tables) {
-                    await new Promise((res, rej) => {
-                        this.db.run(`DELETE FROM ${table} WHERE user_id = ?`, [userId], (err) => {
-                            if (err) rej(err);
-                            else res(true);
-                        });
-                    });
-                }
-                
-                // Finally, mark the user as deleted (keep record for audit)
-                const updateQuery = `
-                    UPDATE users 
-                    SET account_status = 'deleted',
-                        email = 'deleted_' || id || '@deleted.com',
-                        username = 'deleted_user_' || id,
-                        password = NULL,
-                        oauth_id = NULL,
-                        verification_token = NULL,
-                        reset_token = NULL,
-                        deletion_token = NULL
-                    WHERE id = ?
-                `;
-                
-                this.db.run(updateQuery, [userId], (err) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        resolve(true);
-                    }
+        // Log the permanent deletion
+        await this.logDeletionAction(userId, 'data_purged');
+
+        // Delete user data from all related tables
+        const tables = [
+            'user_sessions',
+            'user_stats',
+            'ip_to_user_transfers',
+            'user_inventory',
+            'item_usage_history',
+            'user_points_log',
+            'account_deletion_logs'
+        ];
+
+        for (const table of tables) {
+            await new Promise((res, rej) => {
+                this.db.run(`DELETE FROM ${table} WHERE user_id = ?`, [userId], (err) => {
+                    if (err) rej(err);
+                    else res(true);
                 });
-            } catch (error) {
-                reject(error);
-            }
-        });
+            });
+        }
+
+        // Finally, mark the user as deleted (keep record for audit)
+        await this.userRepository.purgeAccount(userId);
+        return true;
     }
 
     async verifyUserPassword(userId, password) {
         try {
             console.log('Verifying password for user:', userId);
-            const user = await getAsync(
-                `SELECT password FROM users WHERE id = ?`,
-                [userId]
-            );
-            
+            const user = await this.userRepository.getPasswordHash(userId);
+
             if (!user || !user.password) {
                 console.log('User not found or no password set for user:', userId);
                 return false;
             }
-            
+
             const isValid = await bcrypt.compare(password, user.password);
             console.log('Password comparison result for user', userId, ':', isValid);
             return isValid;
@@ -735,13 +603,12 @@ class AccountService {
             console.log('Changing password for user:', userId);
             const hashedPassword = await bcrypt.hash(newPassword, this.saltRounds);
             console.log('Password hashed successfully');
-            
-            const result = await runAsync(
-                `UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                [hashedPassword, userId]
-            );
+
+            // update() auto-stamps updated_at = CURRENT_TIMESTAMP, matching
+            // the legacy inline SQL behavior.
+            const result = await this.userRepository.update(userId, { password: hashedPassword });
             console.log('Database update result:', result);
-            
+
             return true;
         } catch (error) {
             console.error('Error changing password:', error);
@@ -752,56 +619,26 @@ class AccountService {
     async updateProfile(userId, profileData) {
         try {
             const { bio, website, location, displayName, avatar_url, description } = profileData;
-            
-            // Build update query dynamically based on provided fields
-            const updateFields = [];
-            const values = [];
-            
-            if (bio !== undefined) {
-                updateFields.push('bio = ?');
-                values.push(bio);
-            }
-            
-            if (website !== undefined) {
-                updateFields.push('website = ?');
-                values.push(website);
-            }
-            
-            if (location !== undefined) {
-                updateFields.push('location = ?');
-                values.push(location);
-            }
-            
-            if (displayName !== undefined) {
-                updateFields.push('display_name = ?');
-                values.push(displayName);
-            }
-            
-            if (avatar_url !== undefined) {
-                updateFields.push('avatar_url = ?');
-                values.push(avatar_url);
-            }
-            
-            if (description !== undefined) {
-                updateFields.push('description = ?');
-                values.push(description);
-            }
-            
-            if (updateFields.length === 0) {
+
+            // Build the column-map for UserRepository.update only with the
+            // fields the caller actually supplied. update() handles the
+            // empty-map case by short-circuiting, and auto-stamps
+            // updated_at = CURRENT_TIMESTAMP — matching the legacy SQL.
+            const fields = {};
+            if (bio !== undefined) fields.bio = bio;
+            if (website !== undefined) fields.website = website;
+            if (location !== undefined) fields.location = location;
+            if (displayName !== undefined) fields.display_name = displayName;
+            if (avatar_url !== undefined) fields.avatar_url = avatar_url;
+            if (description !== undefined) fields.description = description;
+
+            if (Object.keys(fields).length === 0) {
                 // No fields to update
                 return await this.getUserProfile(userId);
             }
-            
-            // Add updated_at field
-            updateFields.push('updated_at = CURRENT_TIMESTAMP');
-            
-            // Add userId for WHERE clause
-            values.push(userId);
-            
-            const updateQuery = `UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`;
-            
-            await runAsync(updateQuery, values);
-            
+
+            await this.userRepository.update(userId, fields);
+
             // Return the updated profile
             return await this.getUserProfile(userId);
         } catch (error) {
@@ -812,12 +649,7 @@ class AccountService {
 
     async getUserProfile(userId) {
         try {
-            const user = await getAsync(
-                `SELECT id, email, username, bio, website, location, display_name, 
-                        created_at, updated_at, is_verified, is_admin, is_moderator 
-                 FROM users WHERE id = ?`,
-                [userId]
-            );
+            const user = await this.userRepository.getProfileById(userId);
             
             if (!user) {
                 throw new Error('User not found');

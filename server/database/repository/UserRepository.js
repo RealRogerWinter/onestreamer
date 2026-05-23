@@ -126,6 +126,320 @@ class UserRepository {
         const sql = `UPDATE users SET ${setClauses.join(', ')} WHERE id = ?`;
         return await this.runAsync(sql, values);
     }
+
+    // ------------------------------------------------------------------
+    // PR-Q2 additions — see refactor plan. Each method below replaces a
+    // legacy inline SQL site in AccountService.js or server/routes/admin.js
+    // verbatim. Where the original statement did NOT set
+    // `updated_at = CURRENT_TIMESTAMP`, we preserve that behavior (i.e. we
+    // do NOT auto-stamp) so the migration is a pure refactor.
+    // ------------------------------------------------------------------
+
+    /**
+     * Fetch a user by OAuth (provider, oauth_id) pair.
+     */
+    async getByOAuth(provider, oauthId) {
+        return await this.getAsync(
+            `SELECT * FROM users WHERE oauth_provider = ? AND oauth_id = ?`,
+            [provider, oauthId]
+        );
+    }
+
+    /**
+     * Stamp last_login = CURRENT_TIMESTAMP. Does NOT touch updated_at —
+     * the legacy statement did not.
+     */
+    async updateLastLogin(id) {
+        return await this.runAsync(
+            `UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?`,
+            [id]
+        );
+    }
+
+    /**
+     * Link an OAuth provider/id to an existing user. Does NOT touch
+     * updated_at — the legacy statement did not.
+     */
+    async linkOAuth(id, provider, oauthId) {
+        return await this.runAsync(
+            `UPDATE users SET oauth_provider = ?, oauth_id = ? WHERE id = ?`,
+            [provider, oauthId, id]
+        );
+    }
+
+    /**
+     * Find a user by their email-verification token.
+     * Returns only { id } — matches the legacy projection.
+     */
+    async findByVerificationToken(token) {
+        return await this.getAsync(
+            `SELECT id FROM users WHERE verification_token = ?`,
+            [token]
+        );
+    }
+
+    /**
+     * Mark a user as verified and clear the verification token.
+     * Does NOT touch updated_at — the legacy statement did not.
+     */
+    async markVerified(id) {
+        return await this.runAsync(
+            `UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?`,
+            [id]
+        );
+    }
+
+    /**
+     * (Re)set the verification token. Does NOT touch updated_at — the
+     * legacy statement did not.
+     */
+    async setVerificationToken(id, token) {
+        return await this.runAsync(
+            `UPDATE users SET verification_token = ? WHERE id = ?`,
+            [token, id]
+        );
+    }
+
+    /**
+     * Set a password-reset token + expiry. Does NOT touch updated_at —
+     * the legacy statement did not.
+     */
+    async setResetToken(id, token, expiresAtIso) {
+        return await this.runAsync(
+            `UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?`,
+            [token, expiresAtIso, id]
+        );
+    }
+
+    /**
+     * Find a user by reset token, but only if the token has not yet
+     * expired. Mirrors the legacy projection `id, reset_token_expires`.
+     */
+    async findByResetToken(token) {
+        return await this.getAsync(
+            `SELECT id, reset_token_expires FROM users
+             WHERE reset_token = ? AND reset_token_expires > datetime('now')`,
+            [token]
+        );
+    }
+
+    /**
+     * Set a new password and clear the reset token + expiry.
+     * Does NOT touch updated_at — the legacy statement did not.
+     */
+    async setPasswordAndClearResetToken(id, hashedPassword) {
+        return await this.runAsync(
+            `UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL
+             WHERE id = ?`,
+            [hashedPassword, id]
+        );
+    }
+
+    /**
+     * Hard-delete a user row by primary key.
+     */
+    async deleteById(id) {
+        return await this.runAsync(
+            `DELETE FROM users WHERE id = ?`,
+            [id]
+        );
+    }
+
+    /**
+     * Public-safe list used by the admin search endpoint inside
+     * AccountService. Returns the legacy projection ordered by
+     * created_at DESC, optionally filtered by an email/username LIKE
+     * pattern (caller supplies the wildcards).
+     */
+    async searchByEmailOrUsername(searchPattern, limit) {
+        return await this.allAsync(
+            `SELECT id, email, username, created_at, last_login, is_verified, is_admin, is_banned
+             FROM users
+             WHERE email LIKE ? OR username LIKE ?
+             ORDER BY created_at DESC
+             LIMIT ?`,
+            [searchPattern, searchPattern, limit]
+        );
+    }
+
+    /**
+     * Public-safe list with no filter — legacy AccountService.getAllUsers.
+     */
+    async listPublic(limit) {
+        return await this.allAsync(
+            `SELECT id, email, username, created_at, last_login, is_verified, is_admin, is_banned
+             FROM users
+             ORDER BY created_at DESC
+             LIMIT ?`,
+            [limit]
+        );
+    }
+
+    /**
+     * Admin endpoint list (GET /api/admin/users). Same projection plus
+     * `is_moderator`, optional search, no LIMIT (matches the legacy
+     * inline SQL exactly).
+     */
+    async listForAdmin({ search } = {}) {
+        let query = `
+            SELECT
+                id, email, username, created_at, last_login,
+                is_verified, is_admin, is_moderator, is_banned
+            FROM users
+        `;
+        const params = [];
+        if (search) {
+            query += ' WHERE username LIKE ? OR email LIKE ?';
+            params.push(`%${search}%`, `%${search}%`);
+        }
+        query += ' ORDER BY created_at DESC';
+        return await this.allAsync(query, params);
+    }
+
+    /**
+     * Internal chat-service status check — returns only
+     * { is_admin, is_moderator, is_banned } or undefined.
+     */
+    async getStatusFlags(id) {
+        return await this.getAsync(
+            'SELECT is_admin, is_moderator, is_banned FROM users WHERE id = ?',
+            [id]
+        );
+    }
+
+    /**
+     * Account-deletion: stamp the request fields.
+     * Does NOT touch updated_at — the legacy statement did not.
+     */
+    async requestDeletion(id, { requestedAtIso, token, tokenExpiresIso, scheduledForIso }) {
+        return await this.runAsync(
+            `UPDATE users
+             SET deletion_requested_at = ?,
+                 deletion_token = ?,
+                 deletion_token_expires = ?,
+                 deletion_scheduled_for = ?,
+                 account_status = 'pending_deletion'
+             WHERE id = ?`,
+            [requestedAtIso, token, tokenExpiresIso, scheduledForIso, id]
+        );
+    }
+
+    /**
+     * Account-deletion: find the user with a live deletion token.
+     * Matches the legacy projection (SELECT *) and the legacy WHERE
+     * clause (token live + status = pending_deletion).
+     */
+    async findByDeletionToken(token) {
+        return await this.getAsync(
+            `SELECT * FROM users
+             WHERE deletion_token = ?
+             AND deletion_token_expires > datetime('now')
+             AND account_status = 'pending_deletion'`,
+            [token]
+        );
+    }
+
+    /**
+     * Account-deletion: stamp deletion_confirmed_at = datetime('now').
+     * Does NOT touch updated_at — the legacy statement did not.
+     */
+    async confirmDeletion(id) {
+        return await this.runAsync(
+            `UPDATE users
+             SET deletion_confirmed_at = datetime('now')
+             WHERE id = ?`,
+            [id]
+        );
+    }
+
+    /**
+     * Account-deletion: clear all deletion fields and restore active
+     * status, but only if the row is currently pending_deletion.
+     * Returns { id, changes } so the caller can detect "no rows updated"
+     * (which the legacy callback-style code did via this.changes === 0).
+     */
+    async restoreFromDeletion(id) {
+        return await this.runAsync(
+            `UPDATE users
+             SET deletion_requested_at = NULL,
+                 deletion_confirmed_at = NULL,
+                 deletion_scheduled_for = NULL,
+                 deletion_token = NULL,
+                 deletion_token_expires = NULL,
+                 account_status = 'active'
+             WHERE id = ? AND account_status = 'pending_deletion'`,
+            [id]
+        );
+    }
+
+    /**
+     * Account-deletion: list users whose grace period has elapsed and
+     * who are eligible for permanent purge.
+     */
+    async listPendingDeletion() {
+        return await this.allAsync(
+            `SELECT * FROM users
+             WHERE account_status = 'pending_deletion'
+             AND deletion_confirmed_at IS NOT NULL
+             AND deletion_scheduled_for <= datetime('now')`,
+            []
+        );
+    }
+
+    /**
+     * Account-deletion: tombstone the user row (keep id for audit, wipe
+     * PII). Does NOT touch updated_at — the legacy statement did not.
+     */
+    async purgeAccount(id) {
+        return await this.runAsync(
+            `UPDATE users
+             SET account_status = 'deleted',
+                 email = 'deleted_' || id || '@deleted.com',
+                 username = 'deleted_user_' || id,
+                 password = NULL,
+                 oauth_id = NULL,
+                 verification_token = NULL,
+                 reset_token = NULL,
+                 deletion_token = NULL
+             WHERE id = ?`,
+            [id]
+        );
+    }
+
+    /**
+     * Fetch only the password hash for a user (used by verifyUserPassword).
+     */
+    async getPasswordHash(id) {
+        return await this.getAsync(
+            `SELECT password FROM users WHERE id = ?`,
+            [id]
+        );
+    }
+
+    /**
+     * Public/safe projection for AccountService.getUserById — hides
+     * password, oauth_id, verification_token, reset_token, etc.
+     */
+    async getSafeById(id) {
+        return await this.getAsync(
+            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_moderator, is_banned, oauth_provider, username_changed, avatar_url, description
+             FROM users WHERE id = ?`,
+            [id]
+        );
+    }
+
+    /**
+     * Profile projection used by AccountService.getUserProfile — adds the
+     * bio/website/location/display_name fields.
+     */
+    async getProfileById(id) {
+        return await this.getAsync(
+            `SELECT id, email, username, bio, website, location, display_name,
+                    created_at, updated_at, is_verified, is_admin, is_moderator
+             FROM users WHERE id = ?`,
+            [id]
+        );
+    }
 }
 
 module.exports = UserRepository;

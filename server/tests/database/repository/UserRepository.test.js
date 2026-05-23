@@ -212,4 +212,141 @@ describe('UserRepository', () => {
             expect(typeof repo.update).toBe('function');
         });
     });
+
+    // ----------------------------------------------------------------------
+    // PR-Q2 additions
+    // ----------------------------------------------------------------------
+
+    describe('getByOAuth', () => {
+        it('passes (provider, oauthId) in order with the correct SQL', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ id: 1, oauth_provider: 'google' });
+
+            await repo.getByOAuth('google', 'g-123');
+
+            const [sql, params] = getAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT * FROM users WHERE oauth_provider = ? AND oauth_id = ?'
+            );
+            expect(params).toEqual(['google', 'g-123']);
+        });
+    });
+
+    describe('updateLastLogin', () => {
+        it('uses CURRENT_TIMESTAMP as a SQL literal and does NOT touch updated_at', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            await repo.updateLastLogin(7);
+
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?'
+            );
+            // The legacy SQL did NOT stamp updated_at — preserve that.
+            expect(sql).not.toContain('updated_at');
+            expect(params).toEqual([7]);
+        });
+    });
+
+    describe('markVerified', () => {
+        it('sets is_verified = 1 and clears verification_token without touching updated_at', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            await repo.markVerified(42);
+
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?'
+            );
+            expect(sql).not.toContain('updated_at');
+            expect(params).toEqual([42]);
+        });
+    });
+
+    describe('findByResetToken', () => {
+        it('filters with datetime(\'now\') and returns the legacy projection', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ id: 5, reset_token_expires: '2026-01-01' });
+
+            await repo.findByResetToken('tok-abc');
+
+            const [sql, params] = getAsync.mock.calls[0];
+            // Projection: id, reset_token_expires only.
+            expect(sql).toMatch(/SELECT\s+id\s*,\s*reset_token_expires\s+FROM\s+users/i);
+            // Live-token filter.
+            expect(sql).toContain("reset_token_expires > datetime('now')");
+            expect(params).toEqual(['tok-abc']);
+        });
+    });
+
+    describe('setPasswordAndClearResetToken', () => {
+        it('clears both reset_token and reset_token_expires and does NOT touch updated_at', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            await repo.setPasswordAndClearResetToken(3, 'newhash');
+
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(sql).toMatch(/UPDATE users SET password = \?, reset_token = NULL, reset_token_expires = NULL/);
+            expect(sql).not.toContain('updated_at');
+            expect(params).toEqual(['newhash', 3]);
+        });
+    });
+
+    describe('deleteById', () => {
+        it('issues a parameterized DELETE on id', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            await repo.deleteById(11);
+
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(norm(sql)).toBe('DELETE FROM users WHERE id = ?');
+            expect(params).toEqual([11]);
+        });
+    });
+
+    describe('listForAdmin', () => {
+        it('with no search produces the bare list (no WHERE, ORDER BY created_at DESC)', async () => {
+            const { repo, allAsync } = makeRepo();
+            allAsync.mockResolvedValue([]);
+
+            await repo.listForAdmin();
+
+            const [sql, params] = allAsync.mock.calls[0];
+            expect(sql).not.toMatch(/WHERE/i);
+            expect(sql).toMatch(/ORDER BY created_at DESC/);
+            expect(params).toEqual([]);
+        });
+
+        it('with a search adds a username/email LIKE filter wrapped in %', async () => {
+            const { repo, allAsync } = makeRepo();
+            allAsync.mockResolvedValue([]);
+
+            await repo.listForAdmin({ search: 'alice' });
+
+            const [sql, params] = allAsync.mock.calls[0];
+            expect(sql).toMatch(/WHERE username LIKE \? OR email LIKE \?/);
+            expect(params).toEqual(['%alice%', '%alice%']);
+        });
+    });
+
+    describe('restoreFromDeletion', () => {
+        it('only restores rows where account_status = pending_deletion and returns the run result', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 0 });
+
+            const result = await repo.restoreFromDeletion(9);
+
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(sql).toMatch(/WHERE id = \? AND account_status = 'pending_deletion'/);
+            expect(sql).toContain('account_status = \'active\'');
+            expect(params).toEqual([9]);
+            // Caller (AccountService.restoreAccount) inspects .changes to
+            // detect a no-op restore.
+            expect(result).toEqual({ id: 0, changes: 0 });
+        });
+    });
 });
