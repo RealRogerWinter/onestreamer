@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Before filing:
+        - Search [existing issues](https://github.com/onestreamer/onestreamer/issues) for similar requests.
+        - Consider whether this fits OneStreamer's scope (a self-hosted live-streaming platform; see [README](https://github.com/onestreamer/onestreamer/blob/main/README.md) "What it is / what it isn't").
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve? What's annoying or missing today?
+      placeholder: As a streamer/viewer/operator/contributor, I want to ... because ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you solve it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about — and why this one is preferred.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Who benefits?
+      multiple: true
+      options:
+        - Streamers
+        - Viewers
+        - Moderators
+        - Admins / operators
+        - Contributors / developers
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Mockups, related issues, similar features in other platforms, etc.
+    validations:
+      required: false

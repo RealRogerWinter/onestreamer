@@ -1,0 +1,159 @@
+# Testing
+
+_Last verified: 2026-05-23 against commit 4a1d325._
+
+OneStreamer ships with some test coverage — patchy but real. This page covers how to run what exists, what's gated by CI, and how to add new tests.
+
+## What exists today
+
+- **Server unit tests** — `jest` against [`server/tests/`](../../server/tests/) and ad-hoc test scripts at the repo root (`test-*.js`).
+- **Client component tests** — `react-scripts test` (Jest under the hood) against `*.test.tsx` files colocated with components, plus [`client/src/test-utils/`](../../client/src/test-utils/).
+- **Manual test notes** archived in [`/docs/archive/test-notes/`](../archive/test-notes/) — these are scratch procedures, not automated.
+
+> [!NOTE]
+> The README historically claimed "96.7% statement coverage across services." That figure is **no longer accurate** at the current code volume. Treat it as a goal, not a baseline.
+
+## Running tests
+
+### Server (jest)
+
+```bash
+cd /root/onestreamer
+npm test                  # run server tests
+npm run test:watch        # watch mode
+```
+
+The server's `package.json` defines `test: jest` against the project root.
+
+### Client (react-scripts test)
+
+```bash
+cd /root/onestreamer/client
+npm test                  # interactive watch mode
+npm test -- --watchAll=false   # single run (useful in CI)
+```
+
+### Both at once
+
+```bash
+cd /root/onestreamer
+npm run test:all          # runs server + client in sequence
+```
+
+### Smoke / integration
+
+```bash
+cd /root/onestreamer
+node test-server.js                 # custom smoke test
+node test-moviebot-config.js        # individual feature smoke
+# ... many test-*.js scripts at root
+```
+
+These ad-hoc scripts predate the docs overhaul. They're not run in CI; they're operator-invoked when needed.
+
+## What CI runs
+
+The CI workflow is [`/.github/workflows/ci.yml`](../../.github/workflows/ci.yml) (added in the docs-overhaul PR). At minimum:
+
+- **Lint / typecheck** (TypeScript `tsc --noEmit` on the client)
+- **Server unit tests** (`npm test` at project root)
+- **Client component tests** (`npm test -- --watchAll=false`)
+
+Failing CI blocks merges if branch protection is enabled (see [`branching-and-releases.md`](branching-and-releases.md)).
+
+## How tests are organized
+
+### Server
+
+```
+server/
+└── tests/
+    ├── unit/
+    │   ├── StreamService.test.js
+    │   ├── TakeoverService.test.js
+    │   └── ...
+    ├── integration/
+    │   └── ...
+    └── helpers/
+        └── ...
+```
+
+Convention: one test file per service / route, named `<ModuleName>.test.js`. Test files import the module directly. Mock the database and external services at the boundary.
+
+### Client
+
+```
+client/src/
+└── components/
+    ├── StreamerSettings.tsx
+    ├── StreamerSettings.test.tsx        ← colocated
+    └── ...
+```
+
+Convention: colocated `*.test.tsx` files use `@testing-library/react`. Shared test utilities in [`client/src/test-utils/`](../../client/src/test-utils/).
+
+## What to test
+
+**Always test:**
+
+- New service methods that handle money / points / privileges (auth, inventory mutations, admin actions). Subtle bugs here cause real user harm.
+- Migration scripts before running them against production.
+- Anything you debugged in a runbook — the test is the regression guard.
+
+**Test if convenient:**
+
+- New REST endpoints — happy path + one error path is usually enough.
+- New socket event handlers — at least the "wrong payload shape" rejection.
+- Pure utility functions — easy to test, high signal.
+
+**Don't bother testing:**
+
+- React component visual rendering. Snapshot tests in particular have low signal and rot fast.
+- Third-party library wrappers (the library has its own tests).
+- Throwaway scripts.
+
+## Coverage philosophy
+
+No coverage threshold is enforced. Adding coverage to a previously-untested area is a worthy PR on its own; adding tests alongside a feature is encouraged but not required.
+
+What matters more than coverage percentage:
+
+- **Critical-path tests exist** — auth, payments-shaped (point movements), admin actions, data migrations
+- **Bug-fix PRs add a regression test** when the bug was non-trivial
+- **CI catches obvious breakage** before merge
+
+## Testing tools available
+
+| Tool | Where | Use for |
+|------|-------|---------|
+| `jest` | server + client | Unit + integration tests |
+| `@testing-library/react` | client | Component behavior tests |
+| `@testing-library/user-event` | client | Simulating user input |
+| `supertest` | server (in `devDependencies`) | HTTP route testing |
+| Manual probes via `curl` | runbooks | Operational smoke-testing |
+
+No `cypress` / `playwright` for end-to-end browser tests today. Could be a follow-up — would catch a class of regression that unit tests miss.
+
+## Test the docs
+
+Documentation has its own form of testing:
+
+- **Verify Mermaid renders** on github.com (eye-check after a PR is open).
+- **Verify internal links resolve** — `grep -rE '\]\([^)]+\)' docs/` plus mental check, or a markdown link-checker.
+- **Re-run the [`first-stream.md`](../getting-started/first-stream.md) walkthrough quarterly** on a clean checkout — confirms `local-dev.md` is still accurate.
+
+These aren't automated yet. Adding a doc-link-check to CI would be a cheap, useful follow-up.
+
+## Pitfalls
+
+- **Tests that hit the real database** — use a sandbox SQLite per test run, or mock at the service boundary. Tests that read/write `server/data/onestreamer.db` corrupt your dev state.
+- **Tests that spawn real subprocesses** (ffmpeg, whisper.cpp, gst-launch) — slow and flaky in CI. Mock the spawn or skip in CI.
+- **Tests that depend on external services** (B2, SendGrid, Twitch) — mock the SDK boundary. Real network calls in tests are flaky.
+- **Tests that depend on time** — use Jest's fake timers, never `await sleep(...)` for synchronization.
+
+## See also
+
+- [`coding-conventions.md`](coding-conventions.md) — style + file layout
+- [`branching-and-releases.md`](branching-and-releases.md) — what CI blocks
+- [`/.github/workflows/ci.yml`](../../.github/workflows/ci.yml) — current CI workflow
+- [`/docs/getting-started/first-stream.md`](../getting-started/first-stream.md) — manual smoke test of the happy path

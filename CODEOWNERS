@@ -1,0 +1,26 @@
+# OneStreamer CODEOWNERS
+#
+# When a PR touches files matching a pattern below, the corresponding owner(s)
+# are automatically requested for review.
+#
+# Patterns are evaluated bottom-to-top; the last matching pattern wins.
+
+# Default owner for everything
+* @<your-github-handle>
+
+# Examples for when the team grows — uncomment and adjust:
+#
+# /server/                  @<backend-lead>
+# /client/                  @<frontend-lead>
+# /chat-service/            @<backend-lead>
+# /docs/                    @<docs-owner>
+# /docs/architecture/adr/   @<architecture-reviewer>
+# /docs/security/           @<security-reviewer>
+# /docs/operations/         @<operator>
+# *.yml                     @<devops-lead>
+# /.github/                 @<devops-lead>
+# /ecosystem.config.js      @<devops-lead>
+
+# TODO: replace `@<your-github-handle>` above with the actual GitHub handle
+# of the repository owner. Without this, GitHub will not auto-request
+# reviewers and the CODEOWNERS file silently has no effect.

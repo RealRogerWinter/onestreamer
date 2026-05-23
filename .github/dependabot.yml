@@ -1,0 +1,89 @@
+version: 2
+updates:
+  # Root npm package (main server)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    versioning-strategy: "increase-if-necessary"
+    labels:
+      - "dependencies"
+      - "scope/server"
+    groups:
+      # Group dev tooling updates so we don't get a dozen separate PRs
+      dev-dependencies:
+        dependency-type: "development"
+      # Group patch updates of production deps
+      production-patches:
+        dependency-type: "production"
+        update-types:
+          - "patch"
+    ignore:
+      # Native modules with ABI bindings — major bumps need coordinated worker rebuilds
+      - dependency-name: "mediasoup"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@roamhq/wrtc"
+        update-types: ["version-update:semver-major"]
+
+  # Client (React app)
+  - package-ecosystem: "npm"
+    directory: "/client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    versioning-strategy: "increase-if-necessary"
+    labels:
+      - "dependencies"
+      - "scope/client"
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+      production-patches:
+        dependency-type: "production"
+        update-types:
+          - "patch"
+    ignore:
+      # React major bumps are coordinated upgrades, not Dependabot fodder
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      # react-scripts (CRA) is effectively unmaintained; pin manually
+      - dependency-name: "react-scripts"
+      # mediasoup-client major must stay in lockstep with server mediasoup
+      - dependency-name: "mediasoup-client"
+        update-types: ["version-update:semver-major"]
+
+  # Chat service
+  - package-ecosystem: "npm"
+    directory: "/chat-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 3
+    versioning-strategy: "increase-if-necessary"
+    labels:
+      - "dependencies"
+      - "scope/chat"
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+      production-patches:
+        dependency-type: "production"
+        update-types:
+          - "patch"
+
+  # GitHub Actions workflow dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "scope/ci"
