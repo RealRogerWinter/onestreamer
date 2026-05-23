@@ -26,8 +26,14 @@ class URLStreamExtractorService extends EventEmitter {
     this.streamlinkPath = 'streamlink';
     this.ytdlpPath = '/usr/local/bin/yt-dlp'; // Use updated version for better YouTube support
 
-    // YouTube cookies file path (optional - for bypassing bot detection)
-    this.youtubeCookiesPath = '/root/onestreamer/youtube-cookies.txt';
+    // YouTube cookies file path (optional - for bypassing bot detection).
+    // YOUTUBE_COOKIES_PATH env overrides; defaults to the repo-relative
+    // youtube-cookies.txt next to where this service lives. The repo
+    // ships config/youtube-cookies.example.txt as the format reference.
+    const path = require('path');
+    this.youtubeCookiesPath = process.env.YOUTUBE_COOKIES_PATH
+      ? path.resolve(process.env.YOUTUBE_COOKIES_PATH)
+      : path.join(__dirname, '..', '..', 'youtube-cookies.txt');
 
     // Check if cookies file exists and has content
     try {
@@ -352,7 +358,7 @@ class URLStreamExtractorService extends EventEmitter {
         } else {
           // Check for specific YouTube errors
           if (stderr && stderr.includes('Sign in to confirm you\'re not a bot')) {
-            reject(new Error('YouTube bot detection: This video requires authentication. Please add YouTube cookies to /root/onestreamer/youtube-cookies.txt'));
+            reject(new Error(`YouTube bot detection: This video requires authentication. Please add YouTube cookies to ${this.youtubeCookiesPath} (or set YOUTUBE_COOKIES_PATH)`));
           } else if (stderr && stderr.includes('Video unavailable')) {
             reject(new Error('Video unavailable or private'));
           } else {
