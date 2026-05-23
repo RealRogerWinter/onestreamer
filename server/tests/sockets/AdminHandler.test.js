@@ -166,6 +166,26 @@ describe('sockets/AdminHandler', () => {
 
       await expect(noEvent).resolves.toBeUndefined();
     });
+
+    // Regression test for #31: when ADMIN_KEY env is unset, the original
+    // code did `undefined !== undefined` which evaluated to false and let
+    // {adminKey: undefined} payloads through. The fail-closed gate must
+    // reject the bypass.
+    test('regression #31: undefined ADMIN_KEY env rejects undefined adminKey payload', async () => {
+      const previousKey = process.env.ADMIN_KEY;
+      delete process.env.ADMIN_KEY;
+      try {
+        const noEvent = expectNoEvent(targetClient, 'admin-notification');
+        adminClient.emit('admin-message', {
+          targetSocketId: targetServerSocketId,
+          message: 'should not arrive',
+          // adminKey omitted entirely — same shape as the original bypass
+        });
+        await expect(noEvent).resolves.toBeUndefined();
+      } finally {
+        if (previousKey !== undefined) process.env.ADMIN_KEY = previousKey;
+      }
+    });
   });
 
   describe('admin-kick', () => {
@@ -210,6 +230,23 @@ describe('sockets/AdminHandler', () => {
       await expect(noEvent).resolves.toBeUndefined();
       expect(disconnected).toBe(false);
       expect(targetClient.connected).toBe(true);
+    });
+
+    // Regression test for #31 on the kick path.
+    test('regression #31: undefined ADMIN_KEY env rejects undefined adminKey kick', async () => {
+      const previousKey = process.env.ADMIN_KEY;
+      delete process.env.ADMIN_KEY;
+      try {
+        const noEvent = expectNoEvent(targetClient, 'admin-notification', 200);
+        let disconnected = false;
+        targetClient.on('disconnect', () => { disconnected = true; });
+        adminClient.emit('admin-kick', { targetSocketId: targetServerSocketId });
+        await expect(noEvent).resolves.toBeUndefined();
+        expect(disconnected).toBe(false);
+        expect(targetClient.connected).toBe(true);
+      } finally {
+        if (previousKey !== undefined) process.env.ADMIN_KEY = previousKey;
+      }
     });
   });
 

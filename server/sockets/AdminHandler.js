@@ -23,12 +23,20 @@
 module.exports = function registerAdminHandler(io, socket, deps) {
   const { gameStreamService } = deps;
 
+  // Fail-closed admin-key gate. If process.env.ADMIN_KEY is unset, the
+  // raw `!==` comparison would evaluate `undefined !== undefined` -> false
+  // and let an unauthenticated socket send {adminKey: undefined}; see #31.
+  function verifyAdminKey(adminKey) {
+    const expected = process.env.ADMIN_KEY;
+    return Boolean(expected) && adminKey === expected;
+  }
+
   // Admin connection management handlers
   socket.on('admin-message', async (data) => {
     const { targetSocketId, message, adminKey } = data;
 
     // Verify admin key
-    if (adminKey !== process.env.ADMIN_KEY) {
+    if (!verifyAdminKey(adminKey)) {
       console.log('❌ ADMIN: Invalid admin key for message');
       return;
     }
@@ -49,7 +57,7 @@ module.exports = function registerAdminHandler(io, socket, deps) {
     const { targetSocketId, adminKey } = data;
 
     // Verify admin key
-    if (adminKey !== process.env.ADMIN_KEY) {
+    if (!verifyAdminKey(adminKey)) {
       console.log('❌ ADMIN: Invalid admin key for kick');
       return;
     }
