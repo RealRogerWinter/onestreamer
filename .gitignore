@@ -79,3 +79,20 @@ whisper.cpp/
 audio-buffers/
 egress-recordings/
 /clips/
+
+# TLS certificates — per-deploy, never committed; keep the dir + .gitkeep so paths resolve
+certificates/*
+!certificates/.gitkeep
+
+# Whisper precompiled platform binaries — built/downloaded at install time
+whisper/Release/
+whisper/*.zip
+
+# Manual editing leftovers (timestamped backups, .old / .bak renames)
+**/*.backup-*
+**/*.old
+**/*.bak
+
+# HLS runtime segments written by the live streaming pipeline
+public/hls/*.ts
+public/hls/*.m3u8
