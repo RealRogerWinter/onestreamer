@@ -77,6 +77,7 @@ let viewbotApiRoutes;
 const bugReportsRoutes = require('./routes/bug-reports');
 const clipsRoutes = require('./routes/clips');
 const adminRecordingsRoutes = require('./routes/admin-recordings');
+const turnRoutes = require('./routes/turn');
 const database = require('./database/database');
 const { runAsync, getAsync, allAsync } = database;
 
@@ -357,6 +358,7 @@ app.use('/api/chatbots', chatbotRoutes);
 app.use('/api/streambot', streambotRoutes);
 app.use('/api/bug-reports', bugReportsRoutes);
 app.use('/api/clips', clipsRoutes);
+app.use('/api/turn', turnRoutes);
 app.use('/admin/review', adminRecordingsRoutes);
 
 // Tutorial API endpoints
