@@ -4,10 +4,10 @@
   "description": "A video streaming service with single streamer takeover functionality",
   "main": "index.js",
   "scripts": {
+    "start": "npm run dev",
     "dev": "concurrently \"npm run server\" \"npm run client\" \"npm run chat\"",
     "dev-with-chat": "concurrently \"npm run server\" \"npm run client\" \"npm run chat\"",
     "dev-no-chat": "concurrently \"npm run server\" \"npm run client\"",
-    "start": "node restart-all.js",
     "server": "nodemon server/index.js",
     "client": "cd client && npm start",
     "chat": "cd chat-service && npm run dev",
@@ -15,8 +15,7 @@
     "install-all": "npm install && cd client && npm install && cd ../chat-service && npm install",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:all": "npm test && cd client && npm test -- --watchAll=false",
-    "test:server": "node test-server.js"
+    "test:all": "npm test && cd client && npm test -- --watchAll=false"
   },
   "keywords": [
     "streaming",

@@ -279,11 +279,6 @@ app.get('/visualfx-debug.js', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/src/visualfx-debug.js'));
 });
 
-// Serve stream reducer debug page
-app.get('/debug-stream-reducer', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'debug-stream-reducer-real.html'));
-});
-
 app.get('/ClientVisualFxProcessor.js', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/src/ClientVisualFxProcessor.js'));
 });
@@ -307,16 +302,6 @@ app.get('/StreamerViewManager.js', (req, res) => {
 
 app.get('/visualfx-debug-panel.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/public/visualfx-debug-panel.html'));
-});
-
-// Serve VisualFX debug test page
-app.get('/visualfx-test', (req, res) => {
-  res.sendFile(path.join(__dirname, '../visualfx-debug-test.html'));
-});
-
-// Serve simple VisualFX debug panel
-app.get('/visualfx-debug-simple', (req, res) => {
-  res.sendFile(path.join(__dirname, '../visualfx-debug-simple.html'));
 });
 
 // Session configuration

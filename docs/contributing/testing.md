@@ -42,14 +42,9 @@ npm run test:all          # runs server + client in sequence
 
 ### Smoke / integration
 
-```bash
-cd /root/onestreamer
-node test-server.js                 # custom smoke test
-node test-moviebot-config.js        # individual feature smoke
-# ... many test-*.js scripts at root
-```
+Smoke tests live in `scripts/ops/` (run against a live instance) and `scripts/setup/` (verify a fresh setup works). The historical ad-hoc `test-*.js`/`fix-*.js`/`check-*.js` collection at the repo root has been removed — it was hundreds of one-off scripts that predated this docs tree and had no CI integration.
 
-These ad-hoc scripts predate the docs overhaul. They're not run in CI; they're operator-invoked when needed.
+If you write a new operator-invoked check, drop it under `scripts/ops/` and follow the conventions in [`scripts/README.md`](../../scripts/README.md).
 
 ## What CI runs
 

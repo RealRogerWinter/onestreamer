@@ -172,7 +172,7 @@ Plus the external companions:
 | coturn | system service |
 | Ollama | system service on `:11434` |
 
-A manual orchestrator [`restart-all.js`](../../restart-all.js) exists for bringing the whole stack up/down with sequenced waits — used during deployment + recovery.
+`pm2 start ecosystem.config.js` is the canonical way to bring the three Node apps up; `scripts/deploy/start-production.sh` wraps it with cert + nginx checks for deploys and recovery.
 
 ## What's intentionally single-host
 

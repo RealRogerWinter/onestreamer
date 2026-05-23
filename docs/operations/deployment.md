@@ -125,7 +125,7 @@ pm2 startup                       # generate the systemd unit that boots PM2 on 
 
 The companion services (Strapi, LiveKit, coturn, Ollama) are managed by **systemd** outside PM2.
 
-There is also a manual orchestrator at [`/root/onestreamer/restart-all.js`](../../restart-all.js) that kills existing processes, waits, and spawns the three apps with sequenced delays. Useful during deployment or recovery when PM2 itself needs to be reset.
+For deploys and recovery (kill stale processes, regenerate dev certs if missing, check nginx config, start PM2, sanity-check ports), use [`scripts/deploy/start-production.sh`](../../scripts/deploy/start-production.sh).
 
 ## nginx — TLS termination + reverse proxy
 
@@ -247,7 +247,7 @@ System service. Loaded models live in `~/.ollama/models/`. Default: `mistral`.
 │   └── build/                      static build (may or may not be live-served)
 ├── docs/                           this documentation tree
 ├── ecosystem.config.js             PM2 config
-├── restart-all.js                  manual orchestrator
+├── scripts/                        setup, ops, deploy, and migration helpers
 ├── recordings/                     local recording segments (gitignored)
 │   ├── active/   processing/   completed/   archived/
 │   ├── thumbnails/   metadata/   temp/   backups/
