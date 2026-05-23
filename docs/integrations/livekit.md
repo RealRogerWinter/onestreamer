@@ -18,7 +18,7 @@ _Last verified: 2026-05-23 against commit 4a1d325._
 - **Ports**: `:7880` (HTTP) and `:7882` (WebSocket/signaling).
 - **Public hostname**: `livekit.onestreamer.live` (separate nginx vhost — `/etc/nginx/sites-available/livekit.onestreamer.live`).
 - **Path routing**: nginx also exposes `/livekit/rtc`, `/livekit/twirp/`, and `/livekit/*` on `onestreamer.live` itself, proxying to the same backend.
-- **Server config**: per-deploy `livekit-config.yaml` at the repo root (gitignored). The tracked reference is **[`livekit-config.example.yaml`](../../livekit-config.example.yaml)** — copy, replace `YOUR_PUBLIC_IP` / `YOUR_DOMAIN` / `YOUR_LIVEKIT_API_KEY` / `YOUR_LIVEKIT_API_SECRET`, then start the LiveKit server pointed at it. An alternative TLS-only profile lives at [`livekit-ssl.example.yaml`](../../livekit-ssl.example.yaml). Both files were untracked as part of [ADR-0007](../architecture/adr/0007-livekit-cleanup-staging.md) — dormant infrastructure, but the *config shape* is preserved so a future revival doesn't have to rediscover it.
+- **Server config**: per-deploy `livekit-config.yaml` at the repo root (gitignored). The tracked reference is **[`config/livekit-config.example.yaml`](../../config/livekit-config.example.yaml)** — copy, replace `YOUR_PUBLIC_IP` / `YOUR_DOMAIN` / `YOUR_LIVEKIT_API_KEY` / `YOUR_LIVEKIT_API_SECRET`, then start the LiveKit server pointed at it. An alternative TLS-only profile lives at [`config/livekit-ssl.example.yaml`](../../config/livekit-ssl.example.yaml). Both files were untracked as part of [ADR-0007](../architecture/adr/0007-livekit-cleanup-staging.md) — dormant infrastructure, but the *config shape* is preserved so a future revival doesn't have to rediscover it.
 
 ## Credentials
 

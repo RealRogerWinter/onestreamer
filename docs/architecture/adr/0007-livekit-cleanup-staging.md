@@ -24,7 +24,7 @@ Removing **all** of the above in a single PR is tempting but risky: the JS/TS se
 
 **This PR (PR-S, `cleanup/dormant-livekit`):**
 1. `git rm` the tracked `livekit-config.yaml` and `livekit-ssl.yaml`.
-2. Add sanitized `livekit-config.example.yaml` and `livekit-ssl.example.yaml` references at the repo root (same convention as PR-C's `nginx/onestreamer.example.conf`).
+2. Add sanitized `livekit-config.example.yaml` and `livekit-ssl.example.yaml` references — initially at the repo root, later moved to `config/` by PR-T (same convention as PR-C's `nginx/onestreamer.example.conf`).
 3. Add both yaml paths to `.gitignore`.
 4. Update `docs/integrations/livekit.md` to point at the new `.example.yaml` reference and at this ADR.
 5. **Do not touch** `*.js` or `*.ts` files, npm dependencies, or PM2 / systemd unit configuration.
