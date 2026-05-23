@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL || 'https://onestreamer.live';
 
-interface User {
+export interface User {
   id: number;
   email: string;
   username: string;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { SocketProvider, useMainSocket } from './contexts/SocketContext';
 import { useResponsiveLayout } from './hooks/useResponsiveLayout';
+import { useAuthState } from './hooks/useAuthState';
 import './App.css';
 import StreamViewer from './components/stream/StreamViewer';
 import StreamControls from './components/stream/StreamControls';
@@ -132,54 +133,30 @@ function AppContent() {
     };
   }, []);
   
-  // Handle initial authentication on app load
-  useEffect(() => {
-    const initializeAuthentication = async () => {
-      const token = authService.getToken();
-      if (token) {
-        try {
-          // Fetch fresh profile data to ensure we have the latest user info
-          const profile = await authService.getProfile();
-          if (profile) {
-            // Check if account is pending deletion
-            if (profile.user.accountStatus === 'pending_deletion' || (profile.user as any).account_status === 'pending_deletion') {
-              setPendingDeletionUser(profile.user);
-              setShowAccountRestoration(true);
-              setIsAuthenticated(false);
-              authService.logout(); // Clear invalid session
-              return;
-            }
-            
-            // Update local state with fresh data
-            setCurrentUser(profile.user);
-            setUserPoints(profile.stats?.points || 0);
-            setIsAuthenticated(true);
-            
-            // Update socket authentication
-            SocketManager.updateAuth(token);
-            
-            console.log('✅ App: Restored authenticated session for user:', profile.user.username, 'Points:', profile.stats?.points || 0);
-          } else {
-            // If profile fetch fails, clear invalid session
-            console.log('❌ App: Failed to restore session, clearing invalid authentication');
-            authService.logout();
-            setIsAuthenticated(false);
-            setCurrentUser(null);
-            setUserPoints(0);
-          }
-        } catch (error) {
-          console.error('❌ App: Error restoring authentication:', error);
-          // Clear invalid session on error
-          authService.logout();
-          setIsAuthenticated(false);
-          setCurrentUser(null);
-          setUserPoints(0);
-        }
-      }
-    };
-    
-    initializeAuthentication();
-  }, []); // Only run once on mount
+  // Auth state — owns currentUser, roles, points, login/logout flow.
+  // The boot-time JWT verification and admin/points refresh live inside
+  // the hook; the pending-deletion modal flow stays here in App.tsx and
+  // is wired through the `onPendingDeletion` callback.
+  const {
+    isAuthenticated,
+    currentUser,
+    isAdmin,
+    isModerator,
+    userPoints,
+    login: authLogin,
+    logout: authLogout,
+    setUserPoints,
+    setUserPointsFromUpdater,
+    refreshCurrentUser,
+    setCurrentUser,
+    setIsAuthenticated,
+    fetchUserPoints,
+  } = useAuthState({
+    onPendingDeletion: (user) => {
+      setPendingDeletionUser(user);
+      setShowAccountRestoration(true);
+    },
+  });
 
   const { socket, connected, error: socketError } = useMainSocket();
   const socketRef = useRef(socket);
@@ -213,13 +190,9 @@ function AppContent() {
   const [showTransitionOverlay, setShowTransitionOverlay] = useState(false);
   const [transitionMessage, setTransitionMessage] = useState<string>('');
 
-  // Auth state
-  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
-  const [currentUser, setCurrentUser] = useState(authService.getUser());
+  // Login/signup modal visibility (auth identity itself comes from useAuthState above)
   const [showLogin, setShowLogin] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isModerator, setIsModerator] = useState(false);
 
   // Inventory state
   const [showInventory, setShowInventory] = useState(false);
@@ -236,9 +209,6 @@ function AppContent() {
   // Tutorial state
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialDefaultTab, setTutorialDefaultTab] = useState<'about' | 'support' | 'tutorial' | 'terms' | 'privacy' | undefined>(undefined);
-
-  // Points state
-  const [userPoints, setUserPoints] = useState(0);
 
   // Canvas effects
   const [streamerBuffs, setStreamerBuffs] = useState<any[]>([]);
@@ -878,7 +848,7 @@ function AppContent() {
       }
       
       if (data.points !== undefined) {
-        setUserPoints((prevPoints) => {
+        setUserPointsFromUpdater((prevPoints) => {
           // Trigger floating points animation if points increased
           if (data.points > prevPoints && window.showFloatingPoints) {
             const pointsGained = data.points - prevPoints;
@@ -1067,97 +1037,30 @@ function AppContent() {
     }, 1000);
   };
 
-  useEffect(() => {
-    const checkAdmin = async () => {
-      const adminStatus = await authService.isAdmin();
-      const moderatorStatus = await authService.isModerator();
-      setIsAdmin(adminStatus);
-      setIsModerator(moderatorStatus);
-    };
-    
-    if (isAuthenticated) {
-      checkAdmin();
-    }
-  }, [isAuthenticated]);
-
-  const fetchUserPoints = async () => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_SERVER_URL}/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${authService.getToken()}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const points = data.stats?.points || 0;
-        // console.log('📊 Fetched user points from /me endpoint:', points);
-        setUserPoints(points);
-      }
-    } catch (error) {
-      console.error('Failed to fetch user points:', error);
-    }
-  };
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchUserPoints();
-    } else {
-      setUserPoints(0);
-    }
-  }, [isAuthenticated]);
-
   const handleLogin = async () => {
-    // First check if the user is pending deletion
+    // Pending-deletion short-circuit before activating auth state.
     const user = authService.getUser();
-    
     if (user && (user.accountStatus === 'pending_deletion' || (user as any).account_status === 'pending_deletion')) {
-      // Show restoration modal instead of normal login flow
       setPendingDeletionUser(user);
       setShowAccountRestoration(true);
-      // Don't set authenticated or fetch data yet
       return;
     }
-    
-    setIsAuthenticated(true);
-    
-    // Fetch fresh profile data to ensure we have the latest verification status
-    try {
-      const profile = await authService.getProfile();
-      if (profile) {
-        // Check again after fetching profile
-        if (profile.user.accountStatus === 'pending_deletion' || (profile.user as any).account_status === 'pending_deletion') {
-          setPendingDeletionUser(profile.user);
-          setShowAccountRestoration(true);
-          setIsAuthenticated(false);
-          return;
-        }
-        setCurrentUser(profile.user);
-      } else {
-        setCurrentUser(authService.getUser());
-      }
-    } catch (error) {
-      console.error('Failed to fetch profile:', error);
-      setCurrentUser(authService.getUser());
+
+    // Activate auth via the hook (sets authenticated, fetches profile + points, updates socket auth).
+    await authLogin();
+
+    // Re-check pending deletion using the fresh profile, in case the cached
+    // user lagged the server. The hook may have populated currentUser by now.
+    const fresh = authService.getUser();
+    if (fresh && (fresh.accountStatus === 'pending_deletion' || (fresh as any).account_status === 'pending_deletion')) {
+      setPendingDeletionUser(fresh);
+      setShowAccountRestoration(true);
+      setIsAuthenticated(false);
     }
-    
-    fetchUserPoints();
-    
-    // Update socket connections with new auth token
-    const token = authService.getToken();
-    SocketManager.updateAuth(token);
   };
 
   const handleLogout = async () => {
-    // Call the AuthService logout method to properly clear tokens and make API call
-    await authService.logout();
-    
-    // Update local state
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-    setUserPoints(0);
-    
-    // Clear socket authentication
-    SocketManager.updateAuth(null);
+    await authLogout();
   };
 
   const handleOpenShop = () => {
@@ -1979,7 +1882,7 @@ function AppContent() {
           onClose={() => setShowProfileSettings(false)}
           onProfileUpdate={() => {
             // Refresh user data if needed
-            setCurrentUser(authService.getUser());
+            refreshCurrentUser();
           }}
         />
       )}
