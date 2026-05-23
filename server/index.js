@@ -436,13 +436,9 @@ async function initializeRedis() {
   }
 }
 
-const streamService = new StreamService();
-global.streamService = streamService;
-const sessionService = new SessionService();
-const takeoverService = new TakeoverService(redisClient, sessionService);
-const testStreamService = new TestStreamService();
-const mediaStreamService = new SimpleMediaStreamService();
-// WebRTC service initialization - with optional adapter support
+// WebRTC service initialization - with optional adapter support.
+// Built BEFORE the service factory because it branches on env + assigns to
+// globals, and the factory's plainTransportService consumes it as a dep.
 let mediasoupService;
 let usingAdapter = false;
 
@@ -461,21 +457,41 @@ if (process.env.USE_WEBRTC_ADAPTER === 'true') {
 
 // Store service type for debugging
 global.mediasoupServiceType = usingAdapter ? 'adapter' : 'direct';
-const audioOptimizationService = new AudioOptimizationService();
-// Expose audio service on app.locals so the extracted routes/audio.js
-// router operates on the same singleton (session state is per-process).
+
+// Composition root for the early-core services. See
+// server/bootstrap/services.js for the dependency graph and PR-I2 scope.
+const createServices = require('./bootstrap/services');
+const services = createServices({ io, redisClient, database, env: process.env, mediasoupService });
+const {
+  streamService,
+  sessionService,
+  takeoverService,
+  testStreamService,
+  mediaStreamService,
+  audioOptimizationService,
+  resourceMonitor,
+  accountService,
+  timeTrackingService,
+  itemService,
+  inventoryService,
+  shopService,
+  buffDebuffService,
+  canvasFxService,
+  soundFxService,
+  plainTransportService,
+} = services;
+
+// Expose the whole bag for extracted routes/sockets (PR-G2 / PR-H2 onwards
+// will read `req.app.locals.services.<name>` instead of individual locals).
+app.locals.services = services;
+
+// authService already initialized earlier for passport strategies.
+global.streamService = streamService;
+
+// Keep the per-service app.locals lines that PR-G's extracted routes
+// (server/routes/audio.js, etc.) currently depend on. Once PR-G2 migrates
+// those readers to `req.app.locals.services.X`, these can be dropped.
 app.locals.audioOptimizationService = audioOptimizationService;
-const resourceMonitor = new ResourceMonitor();
-const accountService = new AccountService();
-// authService already initialized earlier for passport strategies
-const timeTrackingService = new TimeTrackingService();
-const itemService = new ItemService();
-const inventoryService = new InventoryService(itemService);
-const shopService = new ShopService(itemService, inventoryService, accountService, io);
-const buffDebuffService = new BuffDebuffService(io, streamService, timeTrackingService, sessionService);
-const canvasFxService = new CanvasFxService(io, itemService, buffDebuffService);
-const soundFxService = new SoundFxService();
-const plainTransportService = new MediasoupPlainTransportService(mediasoupService);
 
 // Visual Effects Synchronization System
 // Get all active visual effects that should be applied to the stream
