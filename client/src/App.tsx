@@ -5,6 +5,7 @@ import { useAuthState } from './hooks/useAuthState';
 import { useGameState } from './hooks/useGameState';
 import { useStreamerSettings } from './hooks/useStreamerSettings';
 import { useStreamState, StreamStatus } from './hooks/useStreamState';
+import { useModals } from './hooks/useModals';
 import './App.css';
 import StreamViewer from './components/stream/StreamViewer';
 import StreamControls from './components/stream/StreamControls';
@@ -67,19 +68,42 @@ function AppContent() {
   // Check if we're on the email verification page
   const currentPath = window.location.pathname;
   const isEmailVerification = /^\/verify-email\/[a-fA-F0-9]+$/i.test(currentPath);
-  const [showEmailVerification, setShowEmailVerification] = useState(isEmailVerification);
-  
+
   // Check if we're on the password reset page
   const isPasswordReset = /^\/reset-password\/[a-fA-F0-9]+$/i.test(currentPath);
-  const [showPasswordReset, setShowPasswordReset] = useState(isPasswordReset);
-  
+
   // Check if we're on the deletion confirmation page
   const isDeletionConfirmation = /^\/confirm-deletion\/[a-fA-F0-9]+$/i.test(currentPath);
-  const [showDeletionConfirmation, setShowDeletionConfirmation] = useState(isDeletionConfirmation);
-  
-  // State for showing account restoration modal
-  const [showAccountRestoration, setShowAccountRestoration] = useState(false);
-  const [pendingDeletionUser, setPendingDeletionUser] = useState<any>(null);
+
+  // Modal visibility state — all ~15 show* / is*Open flags live in useModals.
+  // Initial values for the URL-driven verification modals are seeded here;
+  // the post-mount effect below also re-asserts them in case the URL is
+  // observed slightly differently after mount (preserved verbatim).
+  const {
+    showLogin, setShowLogin,
+    showSignup, setShowSignup,
+    showEmailVerification, setShowEmailVerification,
+    showPasswordReset, setShowPasswordReset,
+    showDeletionConfirmation, setShowDeletionConfirmation,
+    showAccountRestoration, setShowAccountRestoration,
+    pendingDeletionUser, setPendingDeletionUser,
+    showProfileSettings, setShowProfileSettings,
+    showInventory, setShowInventory,
+    showAdminPanel, setShowAdminPanel,
+    adminPanelTab, setAdminPanelTab,
+    isShopOpen, setIsShopOpen,
+    showMobileChat, setShowMobileChat,
+    showMobileStreamerSettings, setShowMobileStreamerSettings,
+    showTutorial, setShowTutorial,
+    showBugReportModal, setShowBugReportModal,
+    showAbout, setShowAbout,
+    showTerms, setShowTerms,
+    showPrivacy, setShowPrivacy,
+  } = useModals({
+    initialShowEmailVerification: isEmailVerification,
+    initialShowPasswordReset: isPasswordReset,
+    initialShowDeletionConfirmation: isDeletionConfirmation,
+  });
   
   useEffect(() => {
     // console.log(`🔴 AppContent Instance #${instanceId.current} created`);
@@ -137,9 +161,6 @@ function AppContent() {
   const { socket, connected, error: socketError } = useMainSocket();
   const socketRef = useRef(socket);
   const [error, setError] = useState<string | null>(null);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [adminPanelTab, setAdminPanelTab] = useState<string>('dashboard');
-  const [isShopOpen, setIsShopOpen] = useState(false);
   const { isGameActive, setIsGameActive } = useGameState();
 
   // Stream state — owns isStreaming, streamStatus, cooldown countdown,
@@ -174,29 +195,15 @@ function AppContent() {
     onClearError: () => setError(null),
   });
 
-  // Login/signup modal visibility (auth identity itself comes from useAuthState above)
-  const [showLogin, setShowLogin] = useState(false);
-  const [showSignup, setShowSignup] = useState(false);
-
-  // Inventory state
-  const [showInventory, setShowInventory] = useState(false);
-  
-  // Profile Settings state
-  const [showProfileSettings, setShowProfileSettings] = useState(false);
-  
-  // Mobile-specific states
-  const [showMobileChat, setShowMobileChat] = useState(false);
+  // (Login/signup, inventory, profile settings, mobile chat, tutorial,
+  // and bug-report modal visibility flags all live in useModals above.)
   const [showLandscapeChat, setShowLandscapeChat] = useState(false);
   const { isMobile, isLandscape } = useResponsiveLayout();
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
 
-  // Tutorial state
-  const [showTutorial, setShowTutorial] = useState(false);
+  // Tutorial-default-tab pairs with showTutorial but is a string, not a boolean.
   const [tutorialDefaultTab, setTutorialDefaultTab] = useState<'about' | 'support' | 'tutorial' | 'terms' | 'privacy' | undefined>(undefined);
 
-  // Bug Report state
-  const [showBugReportModal, setShowBugReportModal] = useState(false);
-  
   // Theatre Mode state - Default to true for desktop users
   const [theatreMode, setTheatreMode] = useState(() => {
     // Check if desktop (not mobile)
@@ -207,14 +214,9 @@ function AppContent() {
   const [theatreChatCollapsed, setTheatreChatCollapsed] = useState(false);
   const [theatreDropdownOpen, setTheatreDropdownOpen] = useState(false);
   const [theatreControlsVisible, setTheatreControlsVisible] = useState(false);
-  
-  // Modal states for About, Terms, Privacy
-  const [showAbout, setShowAbout] = useState(false);
-  const [showTerms, setShowTerms] = useState(false);
-  const [showPrivacy, setShowPrivacy] = useState(false);
 
-  // Mobile landscape streamer settings modal
-  const [showMobileStreamerSettings, setShowMobileStreamerSettings] = useState(false);
+  // (About / Terms / Privacy and mobile-landscape streamer-settings modal
+  // visibility flags all come from useModals above.)
 
   // Settings state - Initialize from cookies or use defaults
   const {
