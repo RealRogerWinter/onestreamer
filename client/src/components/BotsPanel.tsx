@@ -145,7 +145,7 @@ const BotsPanel: React.FC<BotsPanelProps> = () => {
       const movieBotResponse = await fetch('/admin/moviebot/status', {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'x-admin-key': '***REMOVED-ADMIN-KEY***'  // Add admin key header for moviebot endpoints
+          'x-admin-key': localStorage.getItem('adminKey') || ''  // Add admin key header for moviebot endpoints
         }
       });
       
@@ -251,7 +251,7 @@ const BotsPanel: React.FC<BotsPanelProps> = () => {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'x-admin-key': '***REMOVED-ADMIN-KEY***',  // Add admin key header for moviebot endpoints
+          'x-admin-key': localStorage.getItem('adminKey') || '',  // Add admin key header for moviebot endpoints
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)

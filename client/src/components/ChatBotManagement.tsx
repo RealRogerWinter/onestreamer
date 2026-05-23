@@ -244,7 +244,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
 
   const fetchMovieBotStatus = async () => {
     try {
-      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      const adminKey = localStorage.getItem('adminKey') || '';
       // console.log('Using admin key:', adminKey);
       const response = await fetch(`${serverUrl}/admin/moviebot/status`, {
         headers: {
@@ -267,7 +267,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
 
   const enableMovieBot = async () => {
     try {
-      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      const adminKey = localStorage.getItem('adminKey') || '';
       const response = await fetch(`${serverUrl}/admin/moviebot/enable`, {
         method: 'POST',
         headers: {
@@ -293,7 +293,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
 
   const disableMovieBot = async () => {
     try {
-      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      const adminKey = localStorage.getItem('adminKey') || '';
       const response = await fetch(`${serverUrl}/admin/moviebot/disable`, {
         method: 'POST',
         headers: {
@@ -318,7 +318,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
   // Global Groq API functions
   const fetchGroqStatus = async () => {
     try {
-      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      const adminKey = localStorage.getItem('adminKey') || '';
       const response = await fetch(`${serverUrl}/admin/groq/status`, {
         headers: {
           'Authorization': `Bearer ${authService.getToken()}`,
@@ -346,7 +346,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
   
   const updateGroqConfig = async (enabled: boolean, apiKey?: string, model?: string) => {
     try {
-      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      const adminKey = localStorage.getItem('adminKey') || '';
       const body: any = { enabled };
       
       if (apiKey !== undefined) {
@@ -392,7 +392,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
 
   const updateMovieBotConfig = async (key: string, value: number | boolean | string) => {
     try {
-      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      const adminKey = localStorage.getItem('adminKey') || '';
       
       // Add debugging
       // console.log('Updating MovieBot config:', { key, value });
@@ -456,7 +456,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
 
   const fetchMovieBotLogs = async () => {
     try {
-      const adminKey = localStorage.getItem('adminKey') || '***REMOVED-ADMIN-KEY***';
+      const adminKey = localStorage.getItem('adminKey') || '';
       const response = await fetch(`${serverUrl}/admin/moviebot/logs?limit=50`, {
         headers: {
           'Authorization': `Bearer ${authService.getToken()}`,

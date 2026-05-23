@@ -109,6 +109,7 @@ if (USE_HTTPS || fs.existsSync(path.join(__dirname, '..', 'certificates', 'cert.
 // TURN credential generation for coturn with static-auth-secret
 // Coturn uses HMAC-SHA1 for time-limited credentials
 const TURN_SECRET = requireEnv('TURN_SECRET');
+const ADMIN_KEY = requireEnv('ADMIN_KEY');
 const TURN_TTL = 24 * 60 * 60; // 24 hours in seconds
 
 function generateTurnCredentials(username = 'viewer') {
@@ -2683,7 +2684,7 @@ app.get('/api/webrtc/backend', (req, res) => {
 // Admin endpoint to check backend configuration
 app.get('/api/admin/webrtc/config', (req, res) => {
   const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
-  const correctKey = process.env.ADMIN_KEY || '***REMOVED-ADMIN-KEY***';
+  const correctKey = ADMIN_KEY;
   
   if (adminKey !== correctKey) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -2754,7 +2755,7 @@ const { authenticateAdmin, authenticateModerator } = require('./middleware/auth'
 // Simple admin auth middleware (kept for legacy endpoints that might need admin key)
 const adminKeyAuth = (req, res, next) => {
   const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
-  const correctKey = process.env.ADMIN_KEY || '***REMOVED-ADMIN-KEY***';
+  const correctKey = ADMIN_KEY;
   
   if (adminKey !== correctKey) {
     return res.status(401).json({ error: 'Unauthorized - Invalid admin key' });
@@ -3237,19 +3238,18 @@ app.get('/api/user/:userId/chat-color', async (req, res) => {
 const viewBotAuth = (req, res, next) => {
   console.log('🔐 ViewBot Auth - Request path:', req.path);
   console.log('🔐 ViewBot Auth - Headers:', {
-    'x-admin-key': req.headers['x-admin-key'],
-    'authorization': req.headers['authorization'],
-    'admin_key_query': req.query.admin_key
+    'x-admin-key': req.headers['x-admin-key'] ? '<redacted>' : undefined,
+    'authorization': req.headers['authorization'] ? '<bearer>' : undefined,
+    'admin_key_query': req.query.admin_key ? '<redacted>' : undefined,
   });
-  
+
   // Check for admin key first (simpler auth for ViewBot operations)
   const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
-  const correctKey = process.env.ADMIN_KEY || '***REMOVED-ADMIN-KEY***';
-  
-  console.log('🔐 ViewBot Auth - Admin key check:', { 
-    provided: adminKey, 
-    expected: correctKey,
-    matches: adminKey === correctKey 
+  const correctKey = ADMIN_KEY;
+
+  console.log('🔐 ViewBot Auth - Admin key check:', {
+    provided: !!adminKey,
+    matches: adminKey === correctKey,
   });
   
   if (adminKey === correctKey) {
@@ -3882,8 +3882,8 @@ app.get('/debug/rotation-status', (req, res) => {
 // Test endpoint with simple auth check
 app.get('/admin/test-rotation-auth', (req, res) => {
   const adminKey = req.headers['x-admin-key'];
-  console.log('🔍 Test rotation auth - admin key:', adminKey);
-  if (adminKey === '***REMOVED-ADMIN-KEY***') {
+  console.log('🔍 Test rotation auth - admin key present:', !!adminKey);
+  if (adminKey === ADMIN_KEY) {
     if (!viewBotClientService) {
       return res.status(503).json({ error: 'ViewBotClientService not initialized' });
     }
