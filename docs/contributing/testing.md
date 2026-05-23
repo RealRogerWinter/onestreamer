@@ -1,13 +1,23 @@
 # Testing
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-05-23 after the PR-A→PR-R refactor series._
 
-OneStreamer ships with some test coverage — patchy but real. This page covers how to run what exists, what's gated by CI, and how to add new tests.
+OneStreamer ships with growing test coverage — Phase 1-5 of the open-source refactor added Jest + Supertest tests alongside each new module. This page covers how to run what exists, what's gated by CI, and how to add new tests.
 
 ## What exists today
 
-- **Server unit tests** — `jest` against [`server/tests/`](../../server/tests/) and ad-hoc test scripts at the repo root (`test-*.js`).
-- **Client component tests** — `react-scripts test` (Jest under the hood) against `*.test.tsx` files colocated with components, plus [`client/src/test-utils/`](../../client/src/test-utils/).
+- **Server unit + integration tests** in [`server/tests/`](../../server/tests/), organized to mirror the source tree:
+  - [`routes/`](../../server/tests/routes/) — Supertest against extracted route modules (tutorial, audio, …)
+  - [`sockets/`](../../server/tests/sockets/) — socket-handler tests (AdminHandler, …)
+  - [`services/`](../../server/tests/services/) — service-class tests (DrawingService, …)
+  - [`bootstrap/`](../../server/tests/bootstrap/) — service-factory tests
+  - [`database/repository/`](../../server/tests/database/repository/) — repository-class tests (UserRepository, …)
+  - Top-level files (`StreamService.test.js`, etc.) for the pre-refactor services
+- **Chat-service tests** at [`chat-service/tests/`](../../chat-service/tests/) — added in PR-K (claims/claimEventService).
+- **Client component + hook tests** at:
+  - `client/src/hooks/__tests__/*.test.tsx` — extracted hooks (useResponsiveLayout, useChatMessages, …)
+  - `client/src/components/video/__tests__/*.test.tsx` — sub-components (VideoControls, …)
+  - `client/src/components/*.test.tsx` — legacy colocated tests
 - **Manual test notes** archived in [`/docs/archive/test-notes/`](../archive/test-notes/) — these are scratch procedures, not automated.
 
 > [!NOTE]
@@ -63,17 +73,26 @@ Failing CI blocks merges if branch protection is enabled (see [`branching-and-re
 ```
 server/
 └── tests/
-    ├── unit/
-    │   ├── StreamService.test.js
-    │   ├── TakeoverService.test.js
-    │   └── ...
-    ├── integration/
-    │   └── ...
-    └── helpers/
-        └── ...
+    ├── bootstrap/
+    │   └── services.test.js
+    ├── database/
+    │   └── repository/
+    │       └── UserRepository.test.js
+    ├── routes/
+    │   ├── audio.test.js
+    │   └── tutorial.test.js
+    ├── sockets/
+    │   └── AdminHandler.test.js
+    ├── services/
+    │   └── DrawingService.test.js
+    ├── StreamService.test.js
+    ├── TakeoverService.test.js
+    └── TestStreamService.test.js
 ```
 
-Convention: one test file per service / route, named `<ModuleName>.test.js`. Test files import the module directly. Mock the database and external services at the boundary.
+Convention: one test file per source module, mirroring the source path under `server/tests/`. Named `<ModuleName>.test.js`. Test files `require()` the source module directly and mock the database / external services at the boundary (see `UserRepository.test.js` for the `{ getAsync, runAsync, allAsync }` mock pattern established by PR-Q).
+
+The pre-refactor top-level tests will gradually migrate under the new mirroring convention as their modules are touched.
 
 ### Client
 
