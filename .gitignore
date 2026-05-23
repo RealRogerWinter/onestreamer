@@ -107,6 +107,11 @@ server/data/*-state.json
 viewbot-rotation-config.json
 youtube-cookies.txt
 
+# nginx server-block configs are per-deploy; only the .example.conf reference is tracked
+nginx/*
+!nginx/.gitkeep
+!nginx/*.example.conf
+
 # Recording artifacts (keep the .gitkeep scaffolding, ignore actual recordings)
 recordings/**
 !recordings/**/.gitkeep

@@ -129,7 +129,7 @@ For deploys and recovery (kill stale processes, regenerate dev certs if missing,
 
 ## nginx — TLS termination + reverse proxy
 
-Config file: `/etc/nginx/sites-available/onestreamer.live`. Also: `/etc/nginx/sites-available/livekit.onestreamer.live`.
+Production config path: `/etc/nginx/sites-available/onestreamer.live`. The repo ships a sanitized reference at **[`nginx/onestreamer.example.conf`](../../nginx/onestreamer.example.conf)** — replace `YOUR_DOMAIN` and drop into `/etc/nginx/sites-available/`. Per-deploy server-block files are gitignored (`nginx/*` with `!nginx/*.example.conf`).
 
 ### Upstream definitions
 
@@ -150,7 +150,7 @@ upstream chat_backend  { server 127.0.0.1:8444; keepalive 16; }
 | `/uploads/avatars/*` | Direct file serve from `/var/www/uploads/avatars/`, 30-day cache |
 | `/uploads/*` (else) | `main_backend` |
 | `/admin/*` | `main_backend` (with `x-admin-key` + `Authorization` headers passed through, 100 MB body limit) |
-| `/health`, `/visualfx-debug-simple` | `main_backend` |
+| `/health` | `main_backend` |
 | `*.{js,css,png,jpg,svg,woff,...}` (regex) | Static `/var/www/html`, no-cache headers (for SPA freshness) |
 | `/favicon.ico`, `/manifest.json` | Static `/var/www/html` |
 | `/livekit/rtc`, `/livekit/twirp/`, `/livekit` | `127.0.0.1:7882` (LiveKit WebSocket, 7-day timeouts) |
