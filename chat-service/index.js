@@ -11,6 +11,7 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const ProfanityFilterService = require('../server/services/ProfanityFilterService');
 const createClaimEventService = require('./claims/claimEventService');
+const createModerationService = require('./moderation/moderationService');
 
 const app = express();
 
@@ -84,10 +85,11 @@ const ipToUser = new Map(); // Store username assignments by IP
 const chatMessages = [];
 const MAX_CHAT_HISTORY = 3000; // Keep last 3000 messages (~1 hour of active chat)
 
-// Admin functionality
-const bannedUsers = new Set(); // Store banned usernames (either authenticated or anonymous)
-const timeoutUsers = new Map(); // Store timeout data: username -> { endTime, reason }
-const bannedUsersData = new Map(); // Store additional ban data: username -> { bannedAt, reason, bannedBy }
+// Admin functionality — moderation state + helpers live in
+// ./moderation/moderationService.js. The service is instantiated below
+// (after MODERATION_DATA_PATH is resolved). Local aliases bind to the
+// service's state so legacy call sites in the command parser and HTTP API
+// (PR-K3/K4/K5) keep mutating the same instances without code churn.
 
 // Chat throttling functionality
 const userLastMessage = new Map(); // Store last message timestamp: username -> timestamp
@@ -162,78 +164,20 @@ const MODERATION_DATA_PATH = process.env.MODERATION_STORE_PATH
   ? path.resolve(process.env.MODERATION_STORE_PATH)
   : path.join(__dirname, 'moderation_data.json');
 
-// Load moderation data from disk
-function loadModerationData() {
-  try {
-    if (fs.existsSync(MODERATION_DATA_PATH)) {
-      const data = JSON.parse(fs.readFileSync(MODERATION_DATA_PATH, 'utf8'));
-      
-      // Load banned users
-      if (data.bannedUsers && Array.isArray(data.bannedUsers)) {
-        bannedUsers.clear();
-        bannedUsersData.clear();
-        data.bannedUsers.forEach(user => {
-          bannedUsers.add(user.username);
-          bannedUsersData.set(user.username, {
-            bannedAt: user.bannedAt,
-            reason: user.reason || 'No reason recorded',
-            bannedBy: user.bannedBy
-          });
-        });
-        console.log(`📂 MODERATION: Loaded ${bannedUsers.size} banned users from disk`);
-      }
-      
-      // Load timeout users (only active ones)
-      if (data.timedOutUsers && Array.isArray(data.timedOutUsers)) {
-        const currentTime = Date.now();
-        timeoutUsers.clear();
-        data.timedOutUsers.forEach(user => {
-          if (user.endTime > currentTime) {
-            timeoutUsers.set(user.username, {
-              endTime: user.endTime,
-              reason: user.reason || 'No reason recorded',
-              startTime: user.startTime || currentTime
-            });
-          }
-        });
-        console.log(`📂 MODERATION: Loaded ${timeoutUsers.size} active timeouts from disk`);
-      }
-    }
-  } catch (error) {
-    console.error('❌ MODERATION: Failed to load moderation data:', error);
-  }
-}
-
-// Save moderation data to disk
-function saveModerationData() {
-  try {
-    const bannedUsersList = Array.from(bannedUsers).map(username => ({
-      username,
-      ...(bannedUsersData.get(username) || {
-        bannedAt: new Date().toISOString(),
-        reason: 'No reason recorded'
-      })
-    }));
-    
-    const timedOutUsersList = Array.from(timeoutUsers.entries()).map(([username, data]) => ({
-      username,
-      endTime: data.endTime,
-      reason: data.reason,
-      startTime: data.startTime
-    }));
-    
-    const data = {
-      bannedUsers: bannedUsersList,
-      timedOutUsers: timedOutUsersList,
-      lastUpdated: new Date().toISOString()
-    };
-    
-    fs.writeFileSync(MODERATION_DATA_PATH, JSON.stringify(data, null, 2));
-    console.log(`💾 MODERATION: Saved moderation data to disk (${bannedUsersList.length} bans, ${timedOutUsersList.length} timeouts)`);
-  } catch (error) {
-    console.error('❌ MODERATION: Failed to save moderation data:', error);
-  }
-}
+// Moderation service — owns bannedUsers/bannedUsersData/timeoutUsers state
+// plus load/save/isBanned/isTimedOut helpers. See moderation/moderationService.js.
+const moderationService = createModerationService({
+  moderationDataPath: MODERATION_DATA_PATH
+});
+const {
+  loadModerationData,
+  saveModerationData,
+  isUserBanned,
+  isUserTimedOut,
+  bannedUsers,
+  bannedUsersData,
+  timeoutUsers
+} = moderationService;
 
 // JWT secret — must match the main server. No default fallback; chat-service
 // refuses to boot rather than silently using a known value.
@@ -347,36 +291,7 @@ function isUserAdmin(userInfo) {
   return userInfo && userInfo.isAuthenticated && userInfo.isAdmin;
 }
 
-// Check if username is banned (case-insensitive)
-function isUserBanned(username) {
-  // Convert to lowercase for comparison
-  const lowerUsername = username.toLowerCase();
-  for (const bannedUser of bannedUsers) {
-    if (bannedUser.toLowerCase() === lowerUsername) {
-      console.log(`🔨 BAN CHECK: User "${username}" matches banned user "${bannedUser}"`);
-      return true;
-    }
-  }
-  return false;
-}
-
-// Check if username is timed out (case-insensitive)
-function isUserTimedOut(username) {
-  const lowerUsername = username.toLowerCase();
-  
-  for (const [timedOutUser, timeoutData] of timeoutUsers.entries()) {
-    if (timedOutUser.toLowerCase() === lowerUsername) {
-      if (Date.now() >= timeoutData.endTime) {
-        console.log(`⏱️ TIMEOUT: Expired timeout for "${timedOutUser}"`);
-        timeoutUsers.delete(timedOutUser);
-        return false;
-      }
-      console.log(`⏱️ TIMEOUT CHECK: User "${username}" matches timed out user "${timedOutUser}"`);
-      return true;
-    }
-  }
-  return false;
-}
+// isUserBanned + isUserTimedOut now provided by moderationService (above).
 
 // Send system message to chat
 function sendSystemMessage(message, io) {
