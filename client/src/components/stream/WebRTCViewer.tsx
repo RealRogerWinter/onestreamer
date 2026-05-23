@@ -92,21 +92,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
 
-  // Debug info for mobile 5G issues
-  const [debugInfo, setDebugInfo] = useState<{
-    iceState?: string;
-    candidates?: string[];
-    turnStatus?: string;
-    transportState?: string;
-    error?: string;
-    timestamp?: string;
-    browser?: string;
-    browserEngine?: string;
-    gatheringState?: string;
-    turnUrls?: any;
-    lastCandidate?: string;
-  }>({});
-
   useEffect(() => {
     // Clear any pending initialization
     if (initTimeoutRef.current) {
@@ -673,13 +658,11 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           // console.log('📡 WEBRTC: MediaSoup connection lost');
           setConnectionState('disconnected');
           setError('Connection lost - attempting recovery...');
-          setDebugInfo(prev => ({ ...prev, error: 'Connection lost', timestamp: new Date().toISOString() }));
         },
         onConnectionRecovered: async () => {
           // console.log('🎉 WEBRTC: MediaSoup connection recovered');
           setConnectionState('reconnecting');
           setError(null);
-          setDebugInfo(prev => ({ ...prev, error: 'Recovering...', timestamp: new Date().toISOString() }));
         },
         onStreamUpdate: async () => {
           // CRITICAL FIX: Skip if initializeViewer is handling the consume
@@ -811,13 +794,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             // Don't set error state here - the stream might still be playing fine
             // Just log for debugging
           }
-        },
-        onDebugInfo: (info: any) => {
-          setDebugInfo(prev => ({
-            ...prev,
-            ...info,
-            timestamp: new Date().toISOString()
-          }));
         }
       } as any);
 

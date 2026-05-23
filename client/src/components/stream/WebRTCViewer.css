@@ -85,7 +85,7 @@
   z-index: 10;
 }
 
-/* Video controls should be above everything except debug panel */
+/* Video controls should be above everything */
 .video-controls {
   z-index: 150;
 }
