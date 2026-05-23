@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { SocketProvider, useMainSocket } from './contexts/SocketContext';
 import { useResponsiveLayout } from './hooks/useResponsiveLayout';
 import { useAuthState } from './hooks/useAuthState';
+import { useGameState } from './hooks/useGameState';
+import { useStreamerSettings } from './hooks/useStreamerSettings';
 import './App.css';
 import StreamViewer from './components/stream/StreamViewer';
 import StreamControls from './components/stream/StreamControls';
-import StreamerSettings, { AudioSettingsConfig, VideoSettingsConfig, StreamerSettingsConfig } from './components/stream/StreamerSettings';
+import StreamerSettings from './components/stream/StreamerSettings';
 import TheatreControls from './components/stream/TheatreControls';
 import AdminPanelV3 from './components/admin/AdminPanelV3';
 import Chat from './components/Chat';
@@ -38,7 +40,6 @@ import { ClipsGallery, ClipPlayer } from './components/clips';
 import { GameOverlay } from './components/game';
 import authService from './services/AuthService';
 import SocketManager from './services/SocketManager';
-import CookieService, { COOKIE_NAMES } from './services/CookieService';
 import CookieConsentService from './services/CookieConsentService';
 import 'vanilla-cookieconsent/dist/cookieconsent.css';
 import './styles/cookieconsent.css';
@@ -183,7 +184,7 @@ function AppContent() {
   // CRITICAL: Force viewer mode after takeover - bypasses isStreaming race conditions
   const [forceViewerAfterTakeover, setForceViewerAfterTakeover] = useState(false);
   const [disconnectionReason, setDisconnectionReason] = useState<string | null>(null);
-  const [isGameActive, setIsGameActive] = useState(false);
+  const { isGameActive, setIsGameActive } = useGameState();
   const [isForceDisconnected, setIsForceDisconnected] = useState(false);
   const [showTakeoverOverlay, setShowTakeoverOverlay] = useState(false);
   const [takeoverMessage, setTakeoverMessage] = useState<string>('');
@@ -236,46 +237,13 @@ function AppContent() {
   const [showMobileStreamerSettings, setShowMobileStreamerSettings] = useState(false);
 
   // Settings state - Initialize from cookies or use defaults
-  const [audioSettings, setAudioSettings] = useState<AudioSettingsConfig>(() => {
-    const savedAudioSettings = CookieService.getCookie(COOKIE_NAMES.AUDIO_SETTINGS);
-    return savedAudioSettings || {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-      sampleRate: 48000,
-      channelCount: 2,
-      profile: 'raw'
-    };
-  });
-
-  const [videoSettings, setVideoSettings] = useState<VideoSettingsConfig>(() => {
-    const savedVideoSettings = CookieService.getCookie(COOKIE_NAMES.VIDEO_SETTINGS);
-    return savedVideoSettings || {
-      resolution: '720p',
-      frameRate: 30,
-      facingMode: 'user',
-      bitrate: 2000,
-      videoEnabled: true,
-      mirror: false
-    };
-  });
-
-  const [streamerSettings, setStreamerSettings] = useState<StreamerSettingsConfig>(() => {
-    const savedSettings = CookieService.getCookie(COOKIE_NAMES.STREAMER_SETTINGS);
-    const defaultScreenShare = {
-      cursor: 'always' as const,
-      audio: false,
-      displaySurface: 'monitor' as const
-    };
-    return savedSettings ? {
-      ...savedSettings,
-      screenShare: savedSettings.screenShare || defaultScreenShare
-    } : {
-      audio: audioSettings,
-      video: videoSettings,
-      screenShare: defaultScreenShare
-    };
-  });
+  const {
+    streamerSettings,
+    setStreamerSettings,
+    updateStreamerSettings,
+    updateAudioSettings,
+    updateVideoSettings,
+  } = useStreamerSettings();
 
   // Screen sharing state
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -1582,27 +1550,9 @@ function AppContent() {
                 forceViewerMode={forceViewerAfterTakeover}
                 landscapeMode={isMobile && isLandscape}
                 audioSettings={streamerSettings.audio}
-                onAudioSettingsChange={(newAudioSettings) => {
-                  const newSettings = {
-                    ...streamerSettings,
-                    audio: newAudioSettings
-                  };
-                  setStreamerSettings(newSettings);
-                  // Save to cookies
-                  CookieService.setCookie(COOKIE_NAMES.AUDIO_SETTINGS, newAudioSettings);
-                  CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
-                }}
+                onAudioSettingsChange={updateAudioSettings}
                 videoSettings={streamerSettings.video}
-                onVideoSettingsChange={(newVideoSettings) => {
-                  const newSettings = {
-                    ...streamerSettings,
-                    video: newVideoSettings
-                  };
-                  setStreamerSettings(newSettings);
-                  // Save to cookies
-                  CookieService.setCookie(COOKIE_NAMES.VIDEO_SETTINGS, newVideoSettings);
-                  CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
-                }}
+                onVideoSettingsChange={updateVideoSettings}
                 screenShareSettings={streamerSettings.screenShare}
                 isScreenSharing={isScreenSharing}
                 onScreenShareChange={setIsScreenSharing}
@@ -1631,10 +1581,7 @@ function AppContent() {
                   currentUserId={currentUser?.id?.toString()}
                   streamerBuffs={streamerBuffs}
                   onVisibilityChange={(visible) => setTheatreControlsVisible(visible)}
-                  onSettingsChange={(newSettings) => {
-                    setStreamerSettings(newSettings);
-                    CookieService.setCookie(COOKIE_NAMES.STREAMER_SETTINGS, newSettings);
-                  }}
+                  onSettingsChange={updateStreamerSettings}
                   isScreenSharing={isScreenSharing}
                   onStartScreenShare={() => screenShareMethodsRef.current?.startScreenShare()}
                   onStopScreenShare={() => screenShareMethodsRef.current?.stopScreenShare()}
