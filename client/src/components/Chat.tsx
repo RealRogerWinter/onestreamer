@@ -1,6 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Socket } from 'socket.io-client';
-import { useChatSocket } from '../contexts/SocketContext';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import authService from '../services/AuthService';
 import CookieService, { COOKIE_NAMES } from '../services/CookieService';
 import EmojiPicker from './EmojiPicker';
@@ -12,16 +10,9 @@ import ExternalLinkModal from './ExternalLinkModal';
 import UserInfoPopup from './user/UserInfoPopup';
 import { openPopoutChat } from './PopoutChat';
 import { useChatMessages, ChatMessage } from '../hooks/useChatMessages';
+import { useChatSocket, UserInfo } from '../hooks/useChatSocket';
 import './Chat.css';
 import './PopoutChat.css';
-
-interface UserInfo {
-  username: string;
-  color: string;
-  userId: string;
-  isAdmin?: boolean;
-  isModerator?: boolean;
-}
 
 interface ChatProps {
   className?: string;
@@ -34,7 +25,6 @@ declare global {
 }
 
 const Chat: React.FC<ChatProps> = ({ className = '' }) => {
-  const { socket: chatSocket, connected: isConnected } = useChatSocket();
   const {
     messages,
     replaceMessages,
@@ -59,7 +49,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     const stored = sessionStorage.getItem('chatUserCount');
     return stored ? parseInt(stored, 10) : 0;
   });
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [newMessagesCount, setNewMessagesCount] = useState(0);
   const [bonusIconActive, setBonusIconActive] = useState(false);
@@ -120,6 +109,63 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const autoScrollEnabledRef = useRef(true);
   const programmaticScrollRef = useRef(false);
+
+  // Chat socket subscription + send.
+  // The socket itself is owned by SocketContext; this hook wires the chat-
+  // specific listeners through callbacks that update parent-owned state.
+  const handleSocketUserAssigned = useCallback((data: UserInfo) => {
+    setUserInfo(data);
+    sessionStorage.setItem('chatUserInfo', JSON.stringify(data));
+    // Update settings with the assigned color if it's different
+    setChatSettings(prev => {
+      if (data.color === prev.userColor) return prev;
+      const next = { ...prev, userColor: data.color };
+      CookieService.setCookie(COOKIE_NAMES.CHAT_SETTINGS, next);
+      return next;
+    });
+  }, []);
+
+  const handleSocketMessagesReplace = useCallback((history: ChatMessage[]) => {
+    replaceMessages(history);
+    // Force scroll to bottom after chat history loads; small delay to let DOM update.
+    setTimeout(() => {
+      const chatContainer = chatContainerRef.current;
+      if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        setIsScrolledUp(false);
+        setNewMessagesCount(0);
+        autoScrollEnabledRef.current = true;
+      }
+    }, 50);
+  }, [replaceMessages]);
+
+  const handleSocketUserCountChange = useCallback((count: number) => {
+    setUserCount(count);
+    sessionStorage.setItem('chatUserCount', count.toString());
+  }, []);
+
+  const handleSocketBanned = useCallback((data: { reason: string }) => {
+    alert(`You have been banned from chat: ${data.reason}`);
+    setCurrentMessage('');
+  }, []);
+
+  const handleSocketTimeout = useCallback((data: { reason: string; endTime: number }) => {
+    const remainingTime = Math.ceil((data.endTime - Date.now()) / 1000);
+    alert(`You have been timed out for ${remainingTime} seconds: ${data.reason}`);
+    setCurrentMessage('');
+  }, []);
+
+  const { socket: chatSocket, connectionStatus, sendMessage: emitChatMessage } = useChatSocket({
+    onMessage: addMessage,
+    onMessagesReplace: handleSocketMessagesReplace,
+    onDeleteMessages: removeMessages,
+    onChatCleared: clearMessages,
+    onUserAssigned: handleSocketUserAssigned,
+    onUserCountChange: handleSocketUserCountChange,
+    onBanned: handleSocketBanned,
+    onTimeout: handleSocketTimeout,
+  });
+  const isConnected = connectionStatus === 'connected';
 
   // Improved scroll to bottom with direct scrollTop manipulation
   const scrollToBottom = (smooth: boolean = true) => {
@@ -391,15 +437,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
   };
 
-  // Update connection status based on socket connection
-  useEffect(() => {
-    if (isConnected) {
-      setConnectionStatus('connected');
-    } else {
-      setConnectionStatus('disconnected');
-    }
-  }, [isConnected]);
-
   // Listen for messages from popout window
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -534,120 +571,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       }
     };
   }, [userInfo]);
-
-  // Setup chat event handlers
-  useEffect(() => {
-    if (!chatSocket) return;
-
-    // console.log('💬 CLIENT: Setting up chat event handlers');
-    
-    // Request current user info and viewer count when component mounts
-    chatSocket.emit('request-user-info');
-    chatSocket.emit('request-viewer-count');
-    
-    // Chat event handlers
-    const handleUserAssigned = (data: UserInfo) => {
-      // console.log('💬 CLIENT: Assigned username:', data.username, 'color:', data.color);
-      setUserInfo(data);
-      // Save to session storage
-      sessionStorage.setItem('chatUserInfo', JSON.stringify(data));
-      // Update settings with the assigned color if it's different
-      if (data.color !== chatSettings.userColor) {
-        const newSettings = { ...chatSettings, userColor: data.color };
-        setChatSettings(newSettings);
-        CookieService.setCookie(COOKIE_NAMES.CHAT_SETTINGS, newSettings);
-      }
-    };
-    
-    const handleChatHistory = (history: ChatMessage[]) => {
-      // console.log('💬 CLIENT: Received chat history:', history.length, 'messages');
-      replaceMessages(history);
-      // Force scroll to bottom after chat history loads
-      // Use a slight delay to ensure DOM has updated
-      setTimeout(() => {
-        const chatContainer = chatContainerRef.current;
-        if (chatContainer) {
-          chatContainer.scrollTop = chatContainer.scrollHeight;
-          // Reset scroll state
-          setIsScrolledUp(false);
-          setNewMessagesCount(0);
-          autoScrollEnabledRef.current = true;
-        }
-      }, 50);
-    };
-
-    const handleNewMessage = (message: ChatMessage) => {
-      // console.log('💬 CLIENT: New message from', message.username + ':', message.message);
-
-      // Check if this is a clear command
-      if (message.message === '**CLEAR_CHAT_UI**') {
-        // console.log('💬 CLIENT: Received clear command, clearing chat UI');
-        clearMessages();
-        return; // Don't add the clear command message to the chat
-      }
-
-      addMessage(message);
-    };
-
-    const handleUserCountUpdate = (data: { count: number }) => {
-      setUserCount(data.count);
-      // Save to session storage
-      sessionStorage.setItem('chatUserCount', data.count.toString());
-    };
-
-    const handleChatCleared = (data: any) => {
-      // console.log('💬 CLIENT: Chat cleared by admin:', data.message);
-      clearMessages();
-    };
-
-    const handleChatClearUI = (data: any) => {
-      // console.log('💬 CLIENT: Chat UI clear requested:', data.message);
-      clearMessages();
-    };
-    
-    const handleBanned = (data: any) => {
-      // console.log('💬 CLIENT: User has been banned:', data.reason);
-      alert(`You have been banned from chat: ${data.reason}`);
-      setCurrentMessage('');
-    };
-    
-    const handleTimeout = (data: any) => {
-      const remainingTime = Math.ceil((data.endTime - Date.now()) / 1000);
-      // console.log('💬 CLIENT: User has been timed out for', remainingTime, 'seconds');
-      alert(`You have been timed out for ${remainingTime} seconds: ${data.reason}`);
-      setCurrentMessage('');
-    };
-
-    const handleDeleteMessages = (data: { messageIds: string[], reason: string }) => {
-      // console.log('💬 CLIENT: Deleting messages:', data.messageIds.length, 'messages, reason:', data.reason);
-      removeMessages(data.messageIds);
-    };
-
-    // Register event handlers
-    chatSocket.on('user-assigned', handleUserAssigned);
-    chatSocket.on('chat-history', handleChatHistory);
-    chatSocket.on('new-message', handleNewMessage);
-    chatSocket.on('user-count-update', handleUserCountUpdate);
-    chatSocket.on('chat-cleared', handleChatCleared);
-    chatSocket.on('chat-clear-ui', handleChatClearUI);
-    chatSocket.on('banned', handleBanned);
-    chatSocket.on('timeout', handleTimeout);
-    chatSocket.on('delete-messages', handleDeleteMessages);
-    
-    // Cleanup
-    return () => {
-      // console.log('💬 CLIENT: Cleaning up chat event handlers');
-      chatSocket.off('user-assigned', handleUserAssigned);
-      chatSocket.off('chat-history', handleChatHistory);
-      chatSocket.off('new-message', handleNewMessage);
-      chatSocket.off('user-count-update', handleUserCountUpdate);
-      chatSocket.off('chat-cleared', handleChatCleared);
-      chatSocket.off('chat-clear-ui', handleChatClearUI);
-      chatSocket.off('banned', handleBanned);
-      chatSocket.off('timeout', handleTimeout);
-      chatSocket.off('delete-messages', handleDeleteMessages);
-    };
-  }, [chatSocket]);
 
   // Setup MutationObserver for reliable message detection and auto-scroll
   useEffect(() => {
@@ -815,8 +738,8 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   // Handle sending messages
   const sendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!currentMessage.trim() || !chatSocket || !isConnected) {
+
+    if (!currentMessage.trim() || !isConnected) {
       return;
     }
 
@@ -825,7 +748,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
       setIsVerifying(true);
       return;
     }
-    
+
     const message = currentMessage.trim();
 
     // Add to message history (avoid duplicates of the same message in a row)
@@ -833,12 +756,10 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
 
     // Reset history index when sending a new message
     resetHistoryIndex();
-    
-    const token = authService.getToken();
-    const user = authService.getUser();
+
     // console.log('💬 CLIENT: Sending message:', message);
-    // console.log('💬 CLIENT: User authenticated:', !!token, !!user ? `as ${user.username} (ID: ${user.id})` : 'not logged in');
-    chatSocket.emit('send-message', { message });
+    const emitted = emitChatMessage(message);
+    if (!emitted) return;
     setCurrentMessage('');
     
     // Force scroll to bottom after sending a message
