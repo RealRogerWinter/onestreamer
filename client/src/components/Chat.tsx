@@ -11,6 +11,7 @@ import UserInfoPopup from './user/UserInfoPopup';
 import { openPopoutChat } from './PopoutChat';
 import { useChatMessages, ChatMessage } from '../hooks/useChatMessages';
 import { useChatSocket, UserInfo } from '../hooks/useChatSocket';
+import { ChatInput, ChatInputHandle } from './chat/ChatInput';
 import './Chat.css';
 import './PopoutChat.css';
 
@@ -31,8 +32,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     addMessage,
     clearMessages,
     removeMessages,
-    messageHistory,
-    historyIndex,
     pushHistory,
     resetHistoryIndex,
     historyPrev,
@@ -43,7 +42,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     const stored = sessionStorage.getItem('chatUserInfo');
     return stored ? JSON.parse(stored) : null;
   });
-  const [currentMessage, setCurrentMessage] = useState('');
   const [userCount, setUserCount] = useState(() => {
     // Restore user count from session storage
     const stored = sessionStorage.getItem('chatUserCount');
@@ -101,7 +99,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
   });
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const chatInputRef = useRef<ChatInputHandle>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const bonusTimerRef = useRef<NodeJS.Timeout | null>(null);
   const mutationObserverRef = useRef<MutationObserver | null>(null);
@@ -146,13 +144,13 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
 
   const handleSocketBanned = useCallback((data: { reason: string }) => {
     alert(`You have been banned from chat: ${data.reason}`);
-    setCurrentMessage('');
+    chatInputRef.current?.clear();
   }, []);
 
   const handleSocketTimeout = useCallback((data: { reason: string; endTime: number }) => {
     const remainingTime = Math.ceil((data.endTime - Date.now()) / 1000);
     alert(`You have been timed out for ${remainingTime} seconds: ${data.reason}`);
-    setCurrentMessage('');
+    chatInputRef.current?.clear();
   }, []);
 
   const { socket: chatSocket, connectionStatus, sendMessage: emitChatMessage } = useChatSocket({
@@ -735,21 +733,18 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
   }, []);
 
-  // Handle sending messages
-  const sendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!currentMessage.trim() || !isConnected) {
-      return;
+  // Handle sending messages. Returns true if the message was consumed and the
+  // input should clear; false if we deferred (e.g. waiting on Turnstile).
+  const handleSend = (message: string): boolean => {
+    if (!isConnected) {
+      return false;
     }
 
     // Check if we need Turnstile verification
     if (!turnstileToken) {
       setIsVerifying(true);
-      return;
+      return false;
     }
-
-    const message = currentMessage.trim();
 
     // Add to message history (avoid duplicates of the same message in a row)
     pushHistory(message);
@@ -759,78 +754,21 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
 
     // console.log('💬 CLIENT: Sending message:', message);
     const emitted = emitChatMessage(message);
-    if (!emitted) return;
-    setCurrentMessage('');
-    
+    if (!emitted) return false;
+
     // Force scroll to bottom after sending a message
     // Reset scroll state and enable auto-scroll
     setIsScrolledUp(false);
     setNewMessagesCount(0);
     autoScrollEnabledRef.current = true;
-    
+
     // Immediate scroll to bottom
     const chatContainer = chatContainerRef.current;
     if (chatContainer) {
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
-  };
 
-  // Handle keyboard navigation for message history
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Only handle arrow keys when input is empty or when navigating history
-    if (e.key === 'ArrowUp') {
-      // If we're at the beginning of input or input is empty, navigate history
-      if (currentMessage === '' || historyIndex >= 0) {
-        e.preventDefault();
-
-        // Navigate to older messages
-        const result = historyPrev();
-        if (result) {
-          setCurrentMessage(result.message);
-
-          // Move cursor to end of input
-          setTimeout(() => {
-            if (inputRef.current) {
-              inputRef.current.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
-            }
-          }, 0);
-        }
-      }
-    } else if (e.key === 'ArrowDown') {
-      // Only navigate if we're in history mode
-      if (historyIndex >= 0) {
-        e.preventDefault();
-
-        // Navigate to newer messages
-        const result = historyNext();
-        if (result) {
-          setCurrentMessage(result.message);
-        } else {
-          // Reached the end, clear input
-          setCurrentMessage('');
-        }
-
-        // Move cursor to end of input
-        setTimeout(() => {
-          if (inputRef.current) {
-            inputRef.current.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
-          }
-        }, 0);
-      }
-    } else {
-      // Any other key press resets history navigation if we're typing new content
-      if (historyIndex >= 0 && e.key !== 'Enter') {
-        resetHistoryIndex();
-      }
-    }
-  };
-
-  // Handle input key press
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(e as any);
-    }
+    return true;
   };
 
   // Format message text (safely handle HTML, emojis, URLs, and mentions)
@@ -913,23 +851,8 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
 
   // Handle emoji selection from picker
   const handleEmojiSelect = (emojiCode: string) => {
-    const cursorPosition = inputRef.current?.selectionStart || currentMessage.length;
-    const newMessage = 
-      currentMessage.slice(0, cursorPosition) + 
-      emojiCode + 
-      currentMessage.slice(cursorPosition);
-    
-    setCurrentMessage(newMessage);
+    chatInputRef.current?.insertAtCursor(emojiCode);
     setShowEmojiPicker(false);
-    
-    // Focus back on input and set cursor position after emoji
-    setTimeout(() => {
-      if (inputRef.current) {
-        inputRef.current.focus();
-        const newPosition = cursorPosition + emojiCode.length;
-        inputRef.current.setSelectionRange(newPosition, newPosition);
-      }
-    }, 0);
   };
 
   // Check if the current user is mentioned in a message
@@ -1213,27 +1136,14 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
           />
         )}
         
-        <form onSubmit={sendMessage} className="chat-input-form">
-          <input
-            ref={inputRef}
-            type="text"
-            value={currentMessage}
-            onChange={(e) => setCurrentMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onKeyPress={handleKeyPress}
-            placeholder={isConnected ? "Type a message..." : "Connecting..."}
-            disabled={!isConnected}
-            maxLength={2000}
-            className="chat-input"
-          />
-          <button
-            type="submit"
-            disabled={!isConnected || !currentMessage.trim()}
-            className="chat-send-button"
-          >
-            Send
-          </button>
-        </form>
+        <ChatInput
+          ref={chatInputRef}
+          onSend={handleSend}
+          historyPrev={historyPrev}
+          historyNext={historyNext}
+          resetHistoryIndex={resetHistoryIndex}
+          disabled={!isConnected}
+        />
       </div>
 
       {/* Invisible Turnstile verification modal */}
@@ -1249,10 +1159,7 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
                 setIsVerifying(false);
                 // Retry sending the message after verification
                 setTimeout(() => {
-                  const form = document.querySelector('.chat-input-form') as HTMLFormElement;
-                  if (form) {
-                    form.requestSubmit();
-                  }
+                  chatInputRef.current?.submit();
                 }, 100);
               }}
               onError={() => {
