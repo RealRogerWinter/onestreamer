@@ -52,6 +52,7 @@ const adminRecordingsRoutes = require('./routes/admin-recordings');
 const turnRoutes = require('./routes/turn');
 // Socket handler modules (PR-H pilot extraction — see server/sockets/).
 const registerAdminHandler = require('./sockets/AdminHandler');
+const registerBuffHandler = require('./sockets/BuffHandler');
 const registerEffectHandler = require('./sockets/EffectHandler');
 const registerGameHandler = require('./sockets/GameHandler');
 const registerMediaSoupHandler = require('./sockets/MediaSoupHandler');
@@ -4928,144 +4929,18 @@ io.on('connection', async (socket) => {
   // mediasoup:request-keyframe (plus ice-candidate). Handler is registered
   // near the top of the io.on('connection') block above.
 
-  // Buff/Debuff related socket events
-  socket.on('apply-buff-item', async (data) => {
-    try {
-      let { targetUserId, itemId } = data;
-      
-      // Get the authenticated user ID
-      const ip = sessionService.getIpAddress(socket);
-      const session = sessionService.getSessionByIp(ip);
-      if (!session || !session.userId) {
-        socket.emit('buff-error', { error: 'Authentication required' });
-        return;
-      }
-
-      const appliedByUserId = session.userId;
-
-      // Handle viewbot target - convert socket ID to synthetic user ID
-      if (viewbotService && viewbotService.isViewbotStream(targetUserId)) {
-        const syntheticUserId = sessionService.getUserIdBySocketId(targetUserId);
-        if (syntheticUserId) {
-          console.log(`🎭 BUFF SOCKET: Translating viewbot ${targetUserId} to synthetic user ${syntheticUserId}`);
-          targetUserId = syntheticUserId;
-        } else {
-          socket.emit('buff-error', { error: 'Viewbot target not properly initialized for buff system' });
-          return;
-        }
-      } else if (viewbotService && sessionService && streamService) {
-        // Additional check: If client sent current streamer's user ID and current streamer is a viewbot
-        const currentStreamer = streamService.getCurrentStreamer();
-        
-        if (currentStreamer && viewbotService.isViewbotStream(currentStreamer)) {
-          // Check if the targetUserId might be the current streamer's user ID
-          const currentStreamerUserId = sessionService.getUserIdBySocketId(currentStreamer);
-          
-          // Convert targetUserId to number for comparison if it's a string
-          const targetUserIdNum = typeof targetUserId === 'string' ? parseInt(targetUserId, 10) : targetUserId;
-          
-          if (currentStreamerUserId && (targetUserIdNum === Math.abs(currentStreamerUserId))) {
-            console.log(`🎯 BUFF SOCKET: Client sent current streamer user ID, translating to viewbot`);
-            console.log(`🎭 BUFF SOCKET: Converting user ID ${targetUserId} to viewbot synthetic user ${currentStreamerUserId}`);
-            targetUserId = currentStreamerUserId; // This should be the negative synthetic user ID
-          }
-        }
-      }
-
-      console.log(`🎯 BUFF SOCKET: Final targetUserId after all processing: ${targetUserId} (type: ${typeof targetUserId})`);
-
-      // Apply the buff/debuff
-      const result = await itemService.applyBuffDebuffItem(
-        targetUserId,
-        itemId,
-        appliedByUserId,
-        buffDebuffService
-      );
-
-      // Consume the item from inventory
-      await inventoryService.removeItemFromInventory(appliedByUserId, itemId, 1);
-
-      socket.emit('buff-applied-success', { buff: result });
-      
-      // Only broadcast if target is not a viewbot (viewbots have synthetic negative user IDs)
-      if (targetUserId >= 0) {
-        // Also broadcast to the target user if they're online (only for human users)
-        io.emit('user-buff-update', { 
-          userId: targetUserId, 
-          buffs: await buffDebuffService.getActiveBuffsForUser(targetUserId) 
-        });
-      } else {
-        console.log(`🎭 BUFF: Skipping broadcast for viewbot user ${targetUserId} - buffs applied silently`);
-      }
-
-    } catch (error) {
-      console.error('Socket buff application error:', error);
-      socket.emit('buff-error', { error: error.message });
-    }
-  });
-
-  socket.on('get-my-buffs', async () => {
-    try {
-      const ip = sessionService.getIpAddress(socket);
-      const session = sessionService.getSessionByIp(ip);
-      if (!session || !session.userId) {
-        socket.emit('buff-error', { error: 'Authentication required' });
-        return;
-      }
-
-      const buffs = await buffDebuffService.getActiveBuffsForUser(session.userId);
-      socket.emit('my-buffs-update', { buffs });
-
-    } catch (error) {
-      console.error('Socket get buffs error:', error);
-      socket.emit('buff-error', { error: error.message });
-    }
-  });
-
-  socket.on('get-streamer-buffs', async () => {
-    try {
-      const buffs = await buffDebuffService.getActiveBuffsForCurrentStreamer();
-      socket.emit('streamer-buffs-update', { buffs });
-
-    } catch (error) {
-      console.error('Socket get streamer buffs error:', error);
-      socket.emit('buff-error', { error: error.message });
-    }
-  });
-
-  socket.on('remove-my-buff', async (data) => {
-    try {
-      const { buffId } = data;
-      
-      const ip = sessionService.getIpAddress(socket);
-      const session = sessionService.getSessionByIp(ip);
-      if (!session || !session.userId) {
-        socket.emit('buff-error', { error: 'Authentication required' });
-        return;
-      }
-
-      // Get buff to verify ownership
-      const buff = await buffDebuffService.getBuffById(buffId);
-      if (!buff || buff.user_id != session.userId) {
-        socket.emit('buff-error', { error: 'Buff not found or not owned by you' });
-        return;
-      }
-
-      const success = await buffDebuffService.removeBuff(buffId, 'user_removed');
-      if (success) {
-        socket.emit('buff-removed-success', { buffId });
-        
-        // Update user's buff list
-        const updatedBuffs = await buffDebuffService.getActiveBuffsForUser(session.userId);
-        socket.emit('my-buffs-update', { buffs: updatedBuffs });
-      } else {
-        socket.emit('buff-error', { error: 'Failed to remove buff' });
-      }
-
-    } catch (error) {
-      console.error('Socket remove buff error:', error);
-      socket.emit('buff-error', { error: error.message });
-    }
+  // Buff/Debuff socket events - extracted to server/sockets/BuffHandler.js
+  // as part of PR-H6 (split out of the EffectHandler extraction in PR-H2
+  // because the buff system has its own 6-service dependency surface and
+  // viewbot-target translation logic). Covers apply-buff-item, get-my-buffs,
+  // get-streamer-buffs, and remove-my-buff.
+  registerBuffHandler(io, socket, {
+    itemService,
+    inventoryService,
+    buffDebuffService,
+    viewbotService,
+    streamService,
+    sessionService
   });
 
   // Canvas effects handlers
