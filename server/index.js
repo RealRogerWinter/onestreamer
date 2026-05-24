@@ -20,12 +20,14 @@ console.log('  SMTP_HOST:', process.env.SMTP_HOST ? 'configured' : 'NOT SET');
 console.log('  SMTP_USER:', process.env.SMTP_USER ? 'configured' : 'NOT SET');
 console.log('  FROM_EMAIL:', process.env.FROM_EMAIL || 'NOT SET');
 
-// ViewBot stack stays inline (PR-I2 defers these — module-level globals,
-// async init wiring, and notifiedStreamers/createViewBotProducer closure).
-const ViewbotService = require('./services/ViewbotService');
-const ViewBotClientService = require('./services/ViewBotClientService');
-const ViewBotWebRTCService = require('./services/ViewBotWebRTCService');
-const ViewBotLiveKitService = require('./services/ViewBotLiveKitService');
+// ViewBot stack: the four named services (ViewbotService,
+// ViewBotClientService, ViewBotWebRTCService, ViewBotLiveKitService) are
+// constructed by server/bootstrap/services.js::createViewBotServices (PR-I4)
+// inside startServer() once the mediasoup worker is ready. The auxiliary
+// orchestration pieces below (SimpleViewBotRotation singleton,
+// ViewBotURLService, URLStreamHealthService, RandomStreamRotationService)
+// stay required-at-module-scope: they're wired through setters, route
+// mounts, and setTimeouts that don't belong in a construction factory.
 const SimpleViewBotRotation = require('./services/SimpleViewBotRotation');
 const ViewBotURLService = require('./services/ViewBotURLService');
 const URLStreamHealthService = require('./services/URLStreamHealthService');
@@ -447,6 +449,7 @@ global.mediasoupServiceType = usingAdapter ? 'adapter' : 'direct';
 // Composition root for the early-core services. See
 // server/bootstrap/services.js for the dependency graph and PR-I2 scope.
 const createServices = require('./bootstrap/services');
+const { createViewBotServices } = createServices; // PR-I4 late-init helper.
 const services = createServices({ io, redisClient, database, env: process.env, mediasoupService });
 const {
   streamService,
@@ -5140,21 +5143,46 @@ async function startServer() {
     await mediasoupService.initialize();
     console.log('✅ MEDIASOUP: Initialization completed');
     
-    // Initialize ViewbotService after MediasoupService is ready
-    // Pass both services so ViewbotService can choose based on backend
+    // ── PR-I4: late ViewBot service construction ───────────────────────────
+    // The four named ViewBot services (Viewbot, ViewBotWebRTC,
+    // ViewBotLiveKit, ViewBotClient) are constructed by the
+    // bootstrap/services factory. Everything else in this block is
+    // orchestration (URL/Random services, SimpleViewBotRotation setters,
+    // route mounts, autostarts) that stays inline — see the deferred-list
+    // note in bootstrap/services.js for the rationale.
     let livekitService = null;
     if (usingAdapter && global.webrtcAdapter && global.webrtcAdapter.getBackendType() === 'livekit') {
       livekitService = global.webrtcAdapter._backend;
     }
-    viewbotService = new ViewbotService(mediasoupService, livekitService);
+
+    const viewBotBag = await createViewBotServices({
+      mediasoupService,
+      livekitService,
+      streamService,
+    });
+    viewbotService = viewBotBag.viewbotService;
+    viewBotWebRTCService = viewBotBag.viewBotWebRTCService;
+    viewBotClientService = viewBotBag.viewBotClientService;
+    const viewBotLiveKitService = viewBotBag.viewBotLiveKitService; // null on MediaSoup branch.
     console.log('✅ VIEWBOT: ViewbotService initialized');
-
-    // Initialize ViewBotWebRTCService for proper WebRTC connections (TURN support)
-    // Only initialize if we're using MediaSoup backend (not LiveKit)
-    if (!livekitService) {
-      viewBotWebRTCService = new ViewBotWebRTCService(mediasoupService);
+    if (viewBotWebRTCService) {
       console.log('✅ VIEWBOT: ViewBotWebRTCService initialized for mobile 5G/TURN support');
+    } else {
+      console.log('ℹ️ VIEWBOT: Skipping ViewBotWebRTCService (using LiveKit backend)');
+    }
+    if (viewBotLiveKitService) {
+      console.log('✅ VIEWBOT: ViewBotLiveKitService initialized for LiveKit RTMP ingress');
+    }
 
+    // Branch-shared orchestration: SimpleViewBotRotation always learns about
+    // streamService (real-streamer protection). On the MediaSoup branch this
+    // was previously inside the `if (!livekitService)` block; on the LiveKit
+    // branch it lived in the `else`. Hoisting is behavior-preserving because
+    // both branches called it unconditionally.
+    SimpleViewBotRotation.setStreamService(streamService);
+
+    if (!livekitService) {
+      // ── MediaSoup branch orchestration ────────────────────────────────
       // Initialize URL Stream ViewBot Service for MediaSoup backend
       const viewBotURLService = new ViewBotURLService();
       viewBotURLService.setStreamService(streamService);
@@ -5184,7 +5212,6 @@ async function startServer() {
 
       // Register URL ViewBot service with rotation for protection
       SimpleViewBotRotation.setURLViewBotService(viewBotURLService);
-      SimpleViewBotRotation.setStreamService(streamService);
       console.log('✅ URL STREAM: Registered with SimpleViewBotRotation for URL stream protection');
 
       // Store globally for API routes
@@ -5218,21 +5245,13 @@ async function startServer() {
         }
       }, 5000); // Wait 5 seconds for all services to be ready
     } else {
-      console.log('ℹ️ VIEWBOT: Skipping ViewBotWebRTCService (using LiveKit backend)');
-
-      // Initialize ViewBotLiveKitService for LiveKit RTMP ingress viewbots
-      const viewBotLiveKitService = new ViewBotLiveKitService(livekitService);
-      await viewBotLiveKitService.initialize();
-      // CRITICAL: Register StreamService for real streamer protection
-      viewBotLiveKitService.setStreamService(streamService);
-      console.log('✅ VIEWBOT: ViewBotLiveKitService initialized for LiveKit RTMP ingress');
+      // ── LiveKit branch orchestration ──────────────────────────────────
+      // viewBotLiveKitService was constructed + initialized + given
+      // streamService inside createViewBotServices.
 
       // Register with rotation systems so they can use RTMP viewbots
       SimpleViewBotRotation.setLiveKitService(viewBotLiveKitService);
       console.log('✅ VIEWBOT: Registered LiveKit service with SimpleViewBotRotation');
-
-      // CRITICAL: Register StreamService for real streamer protection
-      SimpleViewBotRotation.setStreamService(streamService);
       console.log('✅ VIEWBOT: Registered StreamService with SimpleViewBotRotation for real streamer protection');
 
       // Initialize URL Stream ViewBot Service
@@ -5310,7 +5329,7 @@ async function startServer() {
       livekitService.startStreamerHealthCheck(streamService, io, 10000); // Check every 10 seconds
       console.log('✅ LIVEKIT: Started streamer health check for stale connection detection');
     }
-    
+
     // Make viewbotService available to routes
     app.locals.viewbotService = viewbotService;
     
@@ -5341,14 +5360,13 @@ async function startServer() {
     // Inject viewbot socket checker function
     inventoryService.setViewbotSocketChecker((socketId) => viewbotSocketIds.has(socketId));
     
-    // Initialize ViewBotClientService with environment-aware URL
-    // Pass null as serverUrl to let ViewBotClientService use environment variables
-    console.log('🚀 VIEWBOT CLIENT: Creating ViewBotClientService...');
-    viewBotClientService = new ViewBotClientService(null, mediasoupService, streamService, viewbotService);
-    
-    // CRITICAL: Give ViewbotService a reference to ViewBotClientService for rotation handling
-    viewbotService.viewBotClientService = viewBotClientService;
-    
+    // ViewBotClientService construction + viewbotService.viewBotClientService
+    // cross-wire are now handled by createViewBotServices (PR-I4). The
+    // global, route hookup, and async initialize() that depend on it still
+    // happen here because their error handling nulls out the local on
+    // failure (and that pattern is too entangled to lift cleanly).
+    console.log('🚀 VIEWBOT CLIENT: ViewBotClientService constructed by factory');
+
     // Set global reference for ViewBotClientService (needed for GStreamer WebRTC)
     global.viewBotClientService = viewBotClientService;
 

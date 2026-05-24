@@ -94,6 +94,35 @@ jest.mock('../../services/MovieBotService', () => class {
   constructor(...args) { this._args = args; this._stubName = 'MovieBotService'; }
 });
 
+// PR-I4 additions — the ViewBot stack lives in a separate factory
+// (`createViewBotServices`) because it's late-init (post-mediasoup) and
+// branches on whether LiveKit is the active backend. Mocks here mirror the
+// real constructor signatures and record setter / init invocations so the
+// tests can assert the cross-wiring and the LiveKit-branch await flow.
+jest.mock('../../services/ViewbotService', () => class {
+  constructor(...args) {
+    this._args = args;
+    this._stubName = 'ViewbotService';
+    this.viewBotClientService = undefined; // factory assigns this post-construction
+  }
+});
+jest.mock('../../services/ViewBotWebRTCService', () => class {
+  constructor(...args) { this._args = args; this._stubName = 'ViewBotWebRTCService'; }
+});
+jest.mock('../../services/ViewBotClientService', () => class {
+  constructor(...args) { this._args = args; this._stubName = 'ViewBotClientService'; }
+});
+jest.mock('../../services/ViewBotLiveKitService', () => class {
+  constructor(...args) {
+    this._args = args;
+    this._stubName = 'ViewBotLiveKitService';
+    this._initialized = false;
+    this._streamServiceArg = undefined;
+  }
+  async initialize() { this._initialized = true; }
+  setStreamService(s) { this._streamServiceArg = s; }
+});
+
 // Pull in the mocked classes for instanceof checks.
 const StreamService = require('../../services/StreamService');
 const SessionService = require('../../services/SessionService');
@@ -133,7 +162,14 @@ const ChatBotService = require('../../services/ChatBotService');
 const StreamBotService = require('../../services/StreamBotService');
 const MovieBotService = require('../../services/MovieBotService');
 
+// PR-I4 additions
+const ViewbotService = require('../../services/ViewbotService');
+const ViewBotWebRTCService = require('../../services/ViewBotWebRTCService');
+const ViewBotClientService = require('../../services/ViewBotClientService');
+const ViewBotLiveKitService = require('../../services/ViewBotLiveKitService');
+
 const createServices = require('../../bootstrap/services');
+const { createViewBotServices } = createServices;
 
 function buildDeps(overrides = {}) {
   return {
@@ -423,5 +459,116 @@ describe('server/bootstrap/services factory', () => {
 
   test('throws when called with no deps object (destructure of undefined)', () => {
     expect(() => createServices()).toThrow(TypeError);
+  });
+});
+
+// ── PR-I4: createViewBotServices (late-init helper) ─────────────────────────
+//
+// Separate factory because it's only called inside startServer() after
+// mediasoupService.initialize() resolves, and it branches on whether a
+// LiveKit backend is in play. Tests assert:
+//   1. The factory is exposed on the main createServices export.
+//   2. Always-constructed services: viewbotService + viewBotClientService.
+//   3. MediaSoup branch (no livekitService): builds viewBotWebRTCService,
+//      leaves viewBotLiveKitService null.
+//   4. LiveKit branch (livekitService present): builds + initializes
+//      viewBotLiveKitService, wires streamService, leaves viewBotWebRTCService
+//      null.
+//   5. Cross-wire: viewbotService.viewBotClientService === viewBotClientService.
+//   6. Constructor arg identity for each service matches the inline original.
+
+describe('server/bootstrap/services :: createViewBotServices', () => {
+  function buildViewBotDeps(overrides = {}) {
+    return {
+      mediasoupService: { _kind: 'mediasoup' },
+      livekitService: null,
+      streamService: { _kind: 'streamService' },
+      ...overrides,
+    };
+  }
+
+  test('is exposed as a property of the main createServices export', () => {
+    expect(typeof createViewBotServices).toBe('function');
+  });
+
+  test('MediaSoup branch (livekitService null): builds Viewbot + WebRTC + Client; leaves LiveKit null', async () => {
+    const deps = buildViewBotDeps();
+    const bag = await createViewBotServices(deps);
+
+    expect(Object.keys(bag).sort()).toEqual(
+      ['viewBotClientService', 'viewBotLiveKitService', 'viewBotWebRTCService', 'viewbotService'].sort()
+    );
+
+    expect(bag.viewbotService).toBeInstanceOf(ViewbotService);
+    expect(bag.viewBotWebRTCService).toBeInstanceOf(ViewBotWebRTCService);
+    expect(bag.viewBotClientService).toBeInstanceOf(ViewBotClientService);
+    expect(bag.viewBotLiveKitService).toBeNull();
+  });
+
+  test('LiveKit branch (livekitService present): builds + initializes LiveKit + wires streamService; leaves WebRTC null', async () => {
+    const livekitService = { _kind: 'livekit' };
+    const deps = buildViewBotDeps({ livekitService });
+    const bag = await createViewBotServices(deps);
+
+    expect(bag.viewbotService).toBeInstanceOf(ViewbotService);
+    expect(bag.viewBotClientService).toBeInstanceOf(ViewBotClientService);
+    expect(bag.viewBotWebRTCService).toBeNull();
+    expect(bag.viewBotLiveKitService).toBeInstanceOf(ViewBotLiveKitService);
+
+    // LiveKit branch must await initialize() AND register streamService.
+    expect(bag.viewBotLiveKitService._initialized).toBe(true);
+    expect(bag.viewBotLiveKitService._streamServiceArg).toBe(deps.streamService);
+  });
+
+  test('viewbotService is constructed with (mediasoupService, livekitService)', async () => {
+    const livekitService = { _kind: 'livekit' };
+    const deps = buildViewBotDeps({ livekitService });
+    const bag = await createViewBotServices(deps);
+
+    expect(bag.viewbotService._args).toHaveLength(2);
+    expect(bag.viewbotService._args[0]).toBe(deps.mediasoupService);
+    expect(bag.viewbotService._args[1]).toBe(livekitService);
+  });
+
+  test('viewbotService receives null as livekitService on MediaSoup branch', async () => {
+    const deps = buildViewBotDeps();
+    const bag = await createViewBotServices(deps);
+
+    expect(bag.viewbotService._args[1]).toBeNull();
+  });
+
+  test('viewBotWebRTCService is constructed with (mediasoupService)', async () => {
+    const deps = buildViewBotDeps();
+    const bag = await createViewBotServices(deps);
+
+    expect(bag.viewBotWebRTCService._args).toHaveLength(1);
+    expect(bag.viewBotWebRTCService._args[0]).toBe(deps.mediasoupService);
+  });
+
+  test('viewBotLiveKitService is constructed with (livekitService)', async () => {
+    const livekitService = { _kind: 'livekit' };
+    const deps = buildViewBotDeps({ livekitService });
+    const bag = await createViewBotServices(deps);
+
+    expect(bag.viewBotLiveKitService._args).toHaveLength(1);
+    expect(bag.viewBotLiveKitService._args[0]).toBe(livekitService);
+  });
+
+  test('viewBotClientService is constructed with (null, mediasoupService, streamService, viewbotService)', async () => {
+    const deps = buildViewBotDeps();
+    const bag = await createViewBotServices(deps);
+
+    expect(bag.viewBotClientService._args).toHaveLength(4);
+    expect(bag.viewBotClientService._args[0]).toBeNull(); // serverUrl null -> env-var fallback
+    expect(bag.viewBotClientService._args[1]).toBe(deps.mediasoupService);
+    expect(bag.viewBotClientService._args[2]).toBe(deps.streamService);
+    expect(bag.viewBotClientService._args[3]).toBe(bag.viewbotService);
+  });
+
+  test('cross-wires viewbotService.viewBotClientService = viewBotClientService', async () => {
+    const deps = buildViewBotDeps();
+    const bag = await createViewBotServices(deps);
+
+    expect(bag.viewbotService.viewBotClientService).toBe(bag.viewBotClientService);
   });
 });

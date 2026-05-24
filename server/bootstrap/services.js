@@ -61,11 +61,31 @@
 //                                  database. chatServiceWrapper is a literal
 //                                  defined inline in the factory.
 //
-// ── Intentionally deferred (still inline in server/index.js) ─────────────
-// viewbotService and the rest of the viewbot stack: their dep webs reach
-// into module-level globals (notifiedStreamers Set, createViewBotProducer
-// closure, mediasoup transports/producers map mutation, etc.) and would
-// require a larger refactor to lift cleanly.
+// ── PR-I4: late ViewBot stack (separate export, not part of createServices) ──
+// The four named ViewBot services (ViewbotService, ViewBotWebRTCService,
+// ViewBotClientService, ViewBotLiveKitService) are constructed by the
+// dedicated `createViewBotServices` factory exported alongside the main
+// one. They live in their own function (rather than being folded into
+// createServices) because:
+//   (1) they depend on `mediasoupService.initialize()` having completed
+//       successfully — that only happens inside startServer()'s try block,
+//       well after the synchronous service bag is built;
+//   (2) they branch on `livekitService` which is derived from
+//       `global.webrtcAdapter._backend` at runtime (USE_WEBRTC_ADAPTER +
+//       WEBRTC_BACKEND=livekit), and isn't part of the main services bag;
+//   (3) ViewBotLiveKitService requires `await initialize()` before any of
+//       its setters fire.
+//
+// The auxiliary orchestration that surrounded those constructors — URL
+// stream services (ViewBotURLService + URLStreamHealthService + their
+// event handlers), RandomStreamRotationService, SimpleViewBotRotation
+// setter wiring, ViewBotManager / UnifiedViewBotRotation, PortMonitorService,
+// route mounting (/api/url-stream, /api/random-stream), and delayed
+// auto-start setTimeouts — STAYS INLINE in server/index.js. That code is
+// orchestration (event handlers, route mounting, scheduling) rather than
+// service construction, and lifting it would obscure the conditional shape
+// without simplifying anything. See ADR-0002 (LiveKit dormant) and the
+// PR-I3 deferral note for context.
 //
 // authService is also intentionally NOT here: it's instantiated early in
 // server/index.js (~line 324) so passport strategies can register against
@@ -110,6 +130,12 @@ const ChatBotService = require('../services/ChatBotService');
 const StreamBotService = require('../services/StreamBotService');
 const MovieBotService = require('../services/MovieBotService');
 
+// PR-I4: late ViewBot stack — see createViewBotServices below.
+const ViewbotService = require('../services/ViewbotService');
+const ViewBotClientService = require('../services/ViewBotClientService');
+const ViewBotWebRTCService = require('../services/ViewBotWebRTCService');
+const ViewBotLiveKitService = require('../services/ViewBotLiveKitService');
+
 /**
  * Build the core service bag.
  *
@@ -128,7 +154,7 @@ const MovieBotService = require('../services/MovieBotService');
  *                   substitute for the previous inline `new XService(...)`
  *                   block.
  */
-module.exports = function createServices({ io, redisClient, database, env, mediasoupService }) {
+function createServices({ io, redisClient, database, env, mediasoupService }) {
   // No-dep singletons first.
   const streamService = new StreamService();
   const sessionService = new SessionService();
@@ -294,4 +320,98 @@ module.exports = function createServices({ io, redisClient, database, env, media
     streamBotService,
     movieBotService,
   };
-};
+}
+
+/**
+ * Build the late ViewBot service stack (PR-I4).
+ *
+ * Called from server/index.js inside startServer() AFTER
+ * mediasoupService.initialize() has resolved, because every service in this
+ * stack reaches into the live mediasoup worker (transports/producers maps)
+ * or — on the LiveKit branch — depends on the adapter's resolved backend.
+ *
+ * Behavior preserved from the previous inline block (server/index.js lines
+ * ~5149-5350):
+ *   - viewbotService is ALWAYS constructed.
+ *   - viewBotWebRTCService is constructed ONLY when no livekitService is
+ *     present (i.e. MediaSoup-backed adapter or direct MediaSoup mode).
+ *     Inline original: gated by `if (!livekitService)`.
+ *   - viewBotLiveKitService is constructed ONLY when livekitService IS
+ *     present (LiveKit-backed adapter mode), then awaited via initialize(),
+ *     then handed a streamService reference for real-streamer protection.
+ *   - viewBotClientService is ALWAYS constructed, then back-references are
+ *     wired both ways: viewbotService.viewBotClientService = viewBotClientService.
+ *     Its async initialize() (state restore from DB) is NOT awaited here —
+ *     server/index.js still does that inside its own try/catch so a restore
+ *     failure can null out the local without bringing down the whole
+ *     ViewBot stack. That control flow is too entangled with the existing
+ *     error handling to pull into the factory cleanly.
+ *
+ * NOT handled here (kept inline in server/index.js because each item is
+ * orchestration rather than service construction — see the deferred-list
+ * note above): ViewBotURLService, URLStreamHealthService, the URL stream
+ * /random stream route mounts, SimpleViewBotRotation setter wiring,
+ * ViewBotManager / UnifiedViewBotRotation, PortMonitorService,
+ * ViewBotRotationService, and the various setTimeout-driven autostarts.
+ *
+ * @param {object}  deps
+ * @param {object}  deps.mediasoupService  Already-initialized mediasoup
+ *                                         service (or adapter forwarding to
+ *                                         one). Required.
+ * @param {object?} deps.livekitService    LiveKit backend instance, or null
+ *                                         when running MediaSoup. Selects
+ *                                         the WebRTC vs LiveKit branch.
+ * @param {object}  deps.streamService     For ViewBotLiveKitService's real-
+ *                                         streamer-protection wiring.
+ * @returns {Promise<object>} ViewBot service bag:
+ *                            {
+ *                              viewbotService,
+ *                              viewBotWebRTCService,  // null on LiveKit branch
+ *                              viewBotLiveKitService, // null on MediaSoup branch
+ *                              viewBotClientService,
+ *                            }
+ */
+async function createViewBotServices({ mediasoupService, livekitService, streamService }) {
+  // ViewbotService: takes both potential backends; chooses internally.
+  const viewbotService = new ViewbotService(mediasoupService, livekitService);
+
+  let viewBotWebRTCService = null;
+  let viewBotLiveKitService = null;
+
+  if (!livekitService) {
+    // MediaSoup branch — needs WebRTC viewbot for mobile 5G/TURN support.
+    viewBotWebRTCService = new ViewBotWebRTCService(mediasoupService);
+  } else {
+    // LiveKit branch — needs RTMP-ingress viewbot.
+    viewBotLiveKitService = new ViewBotLiveKitService(livekitService);
+    await viewBotLiveKitService.initialize();
+    // Real-streamer protection. The inline original also called this; the
+    // ordering (after initialize, before any setter from SimpleViewBotRotation)
+    // is preserved.
+    viewBotLiveKitService.setStreamService(streamService);
+  }
+
+  // ViewBotClientService: constructor takes (serverUrl, mediasoupService,
+  // streamService, viewbotService). serverUrl is null so the service falls
+  // back to env vars (matches inline original at server/index.js:5347).
+  const viewBotClientService = new ViewBotClientService(
+    null,
+    mediasoupService,
+    streamService,
+    viewbotService
+  );
+
+  // Cross-wire: ViewbotService needs a reference to ViewBotClientService for
+  // rotation handling (preserved from inline original).
+  viewbotService.viewBotClientService = viewBotClientService;
+
+  return {
+    viewbotService,
+    viewBotWebRTCService,
+    viewBotLiveKitService,
+    viewBotClientService,
+  };
+}
+
+module.exports = createServices;
+module.exports.createViewBotServices = createViewBotServices;
