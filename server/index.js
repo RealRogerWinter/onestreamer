@@ -60,6 +60,8 @@ const registerStreamHandler = require('./sockets/StreamHandler');
 const registerViewBotHandler = require('./sockets/ViewBotHandler');
 const database = require('./database/database');
 const { runAsync, getAsync, allAsync } = database;
+const UserRepository = require('./database/repository/UserRepository');
+const userRepository = new UserRepository({ getAsync, runAsync, allAsync });
 
 const app = express();
 
@@ -3657,8 +3659,7 @@ app.get('/admin/recordings/list', authenticateAdmin, async (req, res) => {
     for (const recording of recordings) {
       if (recording.streamer_id) {
         try {
-          const userQuery = 'SELECT username FROM users WHERE id = ?';
-          const user = await database.get(userQuery, [recording.streamer_id]);
+          const user = await userRepository.getUsernameById(recording.streamer_id);
           recording.username = user ? user.username : `User${recording.streamer_id}`;
         } catch (err) {
           recording.username = `User${recording.streamer_id}`;
@@ -3769,8 +3770,7 @@ app.get('/admin/recordings/all', authenticateAdmin, async (req, res) => {
           let username = 'Unknown';
           if (streamerId && streamerId !== 'unknown') {
             try {
-              const userQuery = 'SELECT username FROM users WHERE id = ?';
-              const user = await database.get(userQuery, [streamerId]);
+              const user = await userRepository.getUsernameById(streamerId);
               username = user ? user.username : `User${streamerId}`;
             } catch (err) {
               username = `User${streamerId}`;

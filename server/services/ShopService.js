@@ -1,4 +1,5 @@
 const { runAsync, getAsync, allAsync } = require('../database/database');
+const UserRepository = require('../database/repository/UserRepository');
 
 class ShopService {
     constructor(itemService, inventoryService, accountService, io = null) {
@@ -6,6 +7,7 @@ class ShopService {
         this.inventoryService = inventoryService;
         this.accountService = accountService;
         this.io = io;
+        this.userRepository = new UserRepository({ getAsync, runAsync, allAsync });
         this.initializeShop();
     }
 
@@ -180,10 +182,7 @@ class ShopService {
     }
 
     async purchaseItem(userId, itemId, quantity = 1) {
-        const user = await getAsync(
-            'SELECT * FROM users WHERE id = ?',
-            [userId]
-        );
+        const user = await this.userRepository.getById(userId);
 
         if (!user) {
             throw new Error('User not found');
@@ -271,10 +270,7 @@ class ShopService {
     }
 
     async sellItem(userId, itemId, quantity = 1) {
-        const user = await getAsync(
-            'SELECT * FROM users WHERE id = ?',
-            [userId]
-        );
+        const user = await this.userRepository.getById(userId);
 
         if (!user) {
             throw new Error('User not found');

@@ -349,4 +349,110 @@ describe('UserRepository', () => {
             expect(result).toEqual({ id: 0, changes: 0 });
         });
     });
+
+    // ----------------------------------------------------------------------
+    // PR-Q3 additions
+    // ----------------------------------------------------------------------
+
+    describe('getUsernameById', () => {
+        it('uses the minimal `username` projection by id', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ username: 'alice' });
+
+            const result = await repo.getUsernameById(7);
+
+            expect(getAsync).toHaveBeenCalledTimes(1);
+            const [sql, params] = getAsync.mock.calls[0];
+            expect(norm(sql)).toBe('SELECT username FROM users WHERE id = ?');
+            // Must not be SELECT * — this is the byte-equivalent migration
+            // of the legacy `SELECT username FROM users WHERE id = ?` site.
+            expect(sql).not.toMatch(/SELECT\s+\*/i);
+            expect(params).toEqual([7]);
+            expect(result).toEqual({ username: 'alice' });
+        });
+    });
+
+    describe('getByIdOrUsername', () => {
+        it('passes (usernameValue, idValue) in order with the correct SQL', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ id: 3, username: 'bob' });
+
+            const result = await repo.getByIdOrUsername('bob', 3);
+
+            expect(getAsync).toHaveBeenCalledTimes(1);
+            const [sql, params] = getAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT id, username FROM users WHERE username = ? OR id = ?'
+            );
+            expect(params).toEqual(['bob', 3]);
+            expect(result).toEqual({ id: 3, username: 'bob' });
+        });
+
+        it('accepts a zero id when the value is non-numeric (caller-coerced)', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue(undefined);
+
+            // Mirrors how callers like ContinuousRecordingService coerce
+            // non-numeric identities: `parseInt(value) || 0`.
+            await repo.getByIdOrUsername('not-a-number', 0);
+
+            const [, params] = getAsync.mock.calls[0];
+            expect(params).toEqual(['not-a-number', 0]);
+        });
+    });
+
+    describe('banFromChat', () => {
+        it('mirrors the legacy moderation SQL byte-for-byte and does NOT touch updated_at', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            await repo.banFromChat(42, 7);
+
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'UPDATE users SET chat_banned = 1, chat_banned_at = CURRENT_TIMESTAMP, chat_banned_by = ? WHERE id = ?'
+            );
+            // CURRENT_TIMESTAMP must be a SQL literal, not a parameter.
+            expect(sql).toContain('chat_banned_at = CURRENT_TIMESTAMP');
+            expect(sql).not.toContain('updated_at');
+            // (moderator id, target id) order.
+            expect(params).toEqual([7, 42]);
+        });
+    });
+
+    describe('setChatTimeout', () => {
+        it('parameterizes timeout_until and timeout_by and does NOT touch updated_at', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            const iso = '2026-06-01T00:00:00.000Z';
+            await repo.setChatTimeout(42, 7, iso);
+
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'UPDATE users SET chat_timeout_until = ?, chat_timeout_by = ? WHERE id = ?'
+            );
+            expect(sql).not.toContain('updated_at');
+            expect(sql).not.toContain('CURRENT_TIMESTAMP');
+            // (iso, moderator id, target id) order.
+            expect(params).toEqual([iso, 7, 42]);
+        });
+    });
+
+    describe('banFromStreaming', () => {
+        it('mirrors the legacy admin moderation SQL byte-for-byte and does NOT touch updated_at', async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+
+            await repo.banFromStreaming(42, 7);
+
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'UPDATE users SET streaming_banned = 1, streaming_banned_at = CURRENT_TIMESTAMP, streaming_banned_by = ? WHERE id = ?'
+            );
+            expect(sql).toContain('streaming_banned_at = CURRENT_TIMESTAMP');
+            expect(sql).not.toContain('updated_at');
+            expect(params).toEqual([7, 42]);
+        });
+    });
 });

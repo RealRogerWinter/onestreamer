@@ -4,9 +4,39 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const { requireTurnstile } = require('../middleware/turnstile');
+const UserRepository = require('../database/repository/UserRepository');
 
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
 const db = new sqlite3.Database(dbPath);
+
+// Module-scoped repository — uses the shared async DB primitives layered
+// over this module's own sqlite3 handle so we don't introduce a second
+// connection just for the users-table reads.
+function getAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.get(sql, params, (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+}
+function runAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.run(sql, params, function(err) {
+            if (err) reject(err);
+            else resolve({ id: this.lastID, changes: this.changes });
+        });
+    });
+}
+function allAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.all(sql, params, (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
+}
+const userRepository = new UserRepository({ getAsync, runAsync, allAsync });
 
 // Submit a bug report (authentication optional, Turnstile required)
 router.post('/', requireTurnstile, optionalAuth, async (req, res) => {
@@ -80,78 +110,82 @@ router.post('/', requireTurnstile, optionalAuth, async (req, res) => {
 router.get('/', authenticateToken, async (req, res) => {
     try {
         // Check if user is admin
-        db.get('SELECT is_admin FROM users WHERE id = ?', [req.user.id], (err, user) => {
-            if (err || !user || !user.is_admin) {
-                return res.status(403).json({ error: 'Admin access required' });
+        let user;
+        try {
+            user = await userRepository.getStatusFlags(req.user.id);
+        } catch (err) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        if (!user || !user.is_admin) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const { status, priority, page = 1, limit = 20 } = req.query;
+        const offset = (page - 1) * limit;
+
+        let query = `
+            SELECT
+                br.*,
+                u.username as reporter_username,
+                ru.username as resolver_username
+            FROM bug_reports br
+            LEFT JOIN users u ON br.user_id = u.id
+            LEFT JOIN users ru ON br.resolved_by = ru.id
+            WHERE 1=1
+        `;
+
+        const params = [];
+
+        if (status) {
+            query += ' AND br.status = ?';
+            params.push(status);
+        }
+
+        if (priority) {
+            query += ' AND br.priority = ?';
+            params.push(priority);
+        }
+
+        query += ' ORDER BY br.created_at DESC LIMIT ? OFFSET ?';
+        params.push(parseInt(limit), offset);
+
+        db.all(query, params, (err, reports) => {
+            if (err) {
+                console.error('Error fetching bug reports:', err);
+                return res.status(500).json({ error: 'Failed to fetch bug reports' });
             }
 
-            const { status, priority, page = 1, limit = 20 } = req.query;
-            const offset = (page - 1) * limit;
-            
-            let query = `
-                SELECT 
-                    br.*,
-                    u.username as reporter_username,
-                    ru.username as resolver_username
-                FROM bug_reports br
-                LEFT JOIN users u ON br.user_id = u.id
-                LEFT JOIN users ru ON br.resolved_by = ru.id
-                WHERE 1=1
-            `;
-            
-            const params = [];
-            
+            // Get total count for pagination
+            let countQuery = 'SELECT COUNT(*) as total FROM bug_reports WHERE 1=1';
+            const countParams = [];
+
             if (status) {
-                query += ' AND br.status = ?';
-                params.push(status);
+                countQuery += ' AND status = ?';
+                countParams.push(status);
             }
-            
+
             if (priority) {
-                query += ' AND br.priority = ?';
-                params.push(priority);
+                countQuery += ' AND priority = ?';
+                countParams.push(priority);
             }
-            
-            query += ' ORDER BY br.created_at DESC LIMIT ? OFFSET ?';
-            params.push(parseInt(limit), offset);
-            
-            db.all(query, params, (err, reports) => {
+
+            db.get(countQuery, countParams, (err, count) => {
                 if (err) {
-                    console.error('Error fetching bug reports:', err);
-                    return res.status(500).json({ error: 'Failed to fetch bug reports' });
+                    console.error('Error counting bug reports:', err);
+                    return res.status(500).json({ error: 'Failed to count bug reports' });
                 }
-                
-                // Get total count for pagination
-                let countQuery = 'SELECT COUNT(*) as total FROM bug_reports WHERE 1=1';
-                const countParams = [];
-                
-                if (status) {
-                    countQuery += ' AND status = ?';
-                    countParams.push(status);
-                }
-                
-                if (priority) {
-                    countQuery += ' AND priority = ?';
-                    countParams.push(priority);
-                }
-                
-                db.get(countQuery, countParams, (err, count) => {
-                    if (err) {
-                        console.error('Error counting bug reports:', err);
-                        return res.status(500).json({ error: 'Failed to count bug reports' });
+
+                res.json({
+                    reports: reports.map(report => ({
+                        ...report,
+                        session_data: report.session_data ? JSON.parse(report.session_data) : null
+                    })),
+                    pagination: {
+                        total: count.total,
+                        page: parseInt(page),
+                        limit: parseInt(limit),
+                        pages: Math.ceil(count.total / limit)
                     }
-                    
-                    res.json({
-                        reports: reports.map(report => ({
-                            ...report,
-                            session_data: report.session_data ? JSON.parse(report.session_data) : null
-                        })),
-                        pagination: {
-                            total: count.total,
-                            page: parseInt(page),
-                            limit: parseInt(limit),
-                            pages: Math.ceil(count.total / limit)
-                        }
-                    });
                 });
             });
         });
@@ -165,58 +199,62 @@ router.get('/', authenticateToken, async (req, res) => {
 router.patch('/:id', authenticateToken, async (req, res) => {
     try {
         // Check if user is admin
-        db.get('SELECT is_admin FROM users WHERE id = ?', [req.user.id], (err, user) => {
-            if (err || !user || !user.is_admin) {
-                return res.status(403).json({ error: 'Admin access required' });
+        let user;
+        try {
+            user = await userRepository.getStatusFlags(req.user.id);
+        } catch (err) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        if (!user || !user.is_admin) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const { id } = req.params;
+        const { status, priority, admin_notes } = req.body;
+
+        const updates = [];
+        const params = [];
+
+        if (status) {
+            updates.push('status = ?');
+            params.push(status);
+
+            if (status === 'resolved') {
+                updates.push('resolved_at = CURRENT_TIMESTAMP');
+                updates.push('resolved_by = ?');
+                params.push(req.user.id);
+            }
+        }
+
+        if (priority) {
+            updates.push('priority = ?');
+            params.push(priority);
+        }
+
+        if (admin_notes !== undefined) {
+            updates.push('admin_notes = ?');
+            params.push(admin_notes);
+        }
+
+        updates.push('updated_at = CURRENT_TIMESTAMP');
+
+        params.push(id);
+
+        const query = `UPDATE bug_reports SET ${updates.join(', ')} WHERE id = ?`;
+
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Error updating bug report:', err);
+                return res.status(500).json({ error: 'Failed to update bug report' });
             }
 
-            const { id } = req.params;
-            const { status, priority, admin_notes } = req.body;
-            
-            const updates = [];
-            const params = [];
-            
-            if (status) {
-                updates.push('status = ?');
-                params.push(status);
-                
-                if (status === 'resolved') {
-                    updates.push('resolved_at = CURRENT_TIMESTAMP');
-                    updates.push('resolved_by = ?');
-                    params.push(req.user.id);
-                }
+            if (this.changes === 0) {
+                return res.status(404).json({ error: 'Bug report not found' });
             }
-            
-            if (priority) {
-                updates.push('priority = ?');
-                params.push(priority);
-            }
-            
-            if (admin_notes !== undefined) {
-                updates.push('admin_notes = ?');
-                params.push(admin_notes);
-            }
-            
-            updates.push('updated_at = CURRENT_TIMESTAMP');
-            
-            params.push(id);
-            
-            const query = `UPDATE bug_reports SET ${updates.join(', ')} WHERE id = ?`;
-            
-            db.run(query, params, function(err) {
-                if (err) {
-                    console.error('Error updating bug report:', err);
-                    return res.status(500).json({ error: 'Failed to update bug report' });
-                }
-                
-                if (this.changes === 0) {
-                    return res.status(404).json({ error: 'Bug report not found' });
-                }
-                
-                res.json({
-                    success: true,
-                    message: 'Bug report updated successfully'
-                });
+
+            res.json({
+                success: true,
+                message: 'Bug report updated successfully'
             });
         });
     } catch (error) {
@@ -229,27 +267,31 @@ router.patch('/:id', authenticateToken, async (req, res) => {
 router.delete('/:id', authenticateToken, async (req, res) => {
     try {
         // Check if user is admin
-        db.get('SELECT is_admin FROM users WHERE id = ?', [req.user.id], (err, user) => {
-            if (err || !user || !user.is_admin) {
-                return res.status(403).json({ error: 'Admin access required' });
+        let user;
+        try {
+            user = await userRepository.getStatusFlags(req.user.id);
+        } catch (err) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        if (!user || !user.is_admin) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const { id } = req.params;
+
+        db.run('DELETE FROM bug_reports WHERE id = ?', [id], function(err) {
+            if (err) {
+                console.error('Error deleting bug report:', err);
+                return res.status(500).json({ error: 'Failed to delete bug report' });
             }
 
-            const { id } = req.params;
-            
-            db.run('DELETE FROM bug_reports WHERE id = ?', [id], function(err) {
-                if (err) {
-                    console.error('Error deleting bug report:', err);
-                    return res.status(500).json({ error: 'Failed to delete bug report' });
-                }
-                
-                if (this.changes === 0) {
-                    return res.status(404).json({ error: 'Bug report not found' });
-                }
-                
-                res.json({
-                    success: true,
-                    message: 'Bug report deleted successfully'
-                });
+            if (this.changes === 0) {
+                return res.status(404).json({ error: 'Bug report not found' });
+            }
+
+            res.json({
+                success: true,
+                message: 'Bug report deleted successfully'
             });
         });
     } catch (error) {

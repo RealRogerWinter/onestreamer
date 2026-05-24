@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
 const { runAsync, getAsync, allAsync } = require('../database/database');
+const UserRepository = require('../database/repository/UserRepository');
 
 /**
  * ContinuousRecordingService - Manages continuous room composite recording using LiveKit Egress
@@ -48,6 +49,9 @@ class ContinuousRecordingService extends EventEmitter {
     this.currentStreamIdentity = null;
     this.currentStreamSegmentId = null;
     this.lastStreamCheck = null;
+
+    // Repository for users-table reads
+    this.userRepository = new UserRepository({ getAsync, runAsync, allAsync });
 
     // Initialize
     this.initialize();
@@ -101,9 +105,9 @@ class ContinuousRecordingService extends EventEmitter {
       if (streamerIdentity && streamerIdentity !== 'room') {
         // Identity might be username or user ID
         try {
-          const user = await getAsync(
-            'SELECT id, username FROM users WHERE username = ? OR id = ?',
-            [streamerIdentity, parseInt(streamerIdentity) || 0]
+          const user = await this.userRepository.getByIdOrUsername(
+            streamerIdentity,
+            parseInt(streamerIdentity) || 0
           );
           if (user) {
             streamerUserId = user.id;
@@ -519,9 +523,9 @@ class ContinuousRecordingService extends EventEmitter {
             displayName = streamLog.streamer_name;
           } else {
             // Fall back to users table (in case the identity is a username or user ID)
-            const user = await getAsync(
-              'SELECT id, username FROM users WHERE username = ? OR id = ?',
-              [activePublisher, parseInt(activePublisher) || 0]
+            const user = await this.userRepository.getByIdOrUsername(
+              activePublisher,
+              parseInt(activePublisher) || 0
             );
             if (user) {
               displayName = user.username;

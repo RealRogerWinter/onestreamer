@@ -2,7 +2,13 @@ const express = require('express');
 const router = express.Router();
 const AuthService = require('../services/AuthService');
 const authService = new AuthService();
-const db = require('../database/database').db;
+const { db, getAsync, runAsync, allAsync } = require('../database/database');
+const UserRepository = require('../database/repository/UserRepository');
+
+// Module-scoped repository — matches the PR-Q pattern used inside
+// AccountService / admin.js (stateless services re-instantiated at module
+// scope per CLAUDE.md).
+const userRepository = new UserRepository({ getAsync, runAsync, allAsync });
 
 // Middleware to check if user is authenticated
 const authenticate = (req, res, next) => {
@@ -122,16 +128,7 @@ router.post('/ban-chat', authenticateModerator, async (req, res) => {
             });
         } else {
             // Update user's chat_banned status for registered users
-            await new Promise((resolve, reject) => {
-                db.run(
-                    'UPDATE users SET chat_banned = 1, chat_banned_at = CURRENT_TIMESTAMP, chat_banned_by = ? WHERE id = ?',
-                    [req.currentUser.id, user.id],
-                    (err) => {
-                        if (err) reject(err);
-                        else resolve();
-                    }
-                );
-            });
+            await userRepository.banFromChat(user.id, req.currentUser.id);
         }
         
         // Log the moderation action
@@ -201,16 +198,7 @@ router.post('/timeout', authenticateModerator, async (req, res) => {
         const timeoutUntil = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
         
         // Update user's timeout status
-        await new Promise((resolve, reject) => {
-            db.run(
-                'UPDATE users SET chat_timeout_until = ?, chat_timeout_by = ? WHERE id = ?',
-                [timeoutUntil, req.currentUser.id, user.id],
-                (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                }
-            );
-        });
+        await userRepository.setChatTimeout(user.id, req.currentUser.id, timeoutUntil);
         
         // Log the moderation action
         await new Promise((resolve, reject) => {
@@ -253,16 +241,7 @@ router.post('/ban-streamer', authenticateAdmin, async (req, res) => {
         }
         
         // Update user's streaming_banned status
-        await new Promise((resolve, reject) => {
-            db.run(
-                'UPDATE users SET streaming_banned = 1, streaming_banned_at = CURRENT_TIMESTAMP, streaming_banned_by = ? WHERE id = ?',
-                [req.currentUser.id, user.id],
-                (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                }
-            );
-        });
+        await userRepository.banFromStreaming(user.id, req.currentUser.id);
         
         // Log the moderation action
         await new Promise((resolve, reject) => {

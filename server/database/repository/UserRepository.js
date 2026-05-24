@@ -440,6 +440,78 @@ class UserRepository {
             [id]
         );
     }
+
+    // ------------------------------------------------------------------
+    // PR-Q3 additions — see refactor plan. These finish the inline-users-
+    // table SQL migration for moderation.js, bug-reports.js, ShopService,
+    // ContinuousRecordingService, and the server/index.js stragglers. As
+    // with the PR-Q2 additions, where the legacy SQL did NOT stamp
+    // `updated_at`, we preserve that behavior (i.e. we do NOT auto-stamp).
+    // ------------------------------------------------------------------
+
+    /**
+     * Minimal `{ username }` projection by id — used by the server/index.js
+     * recording listing routes that only need the username string.
+     */
+    async getUsernameById(id) {
+        return await this.getAsync(
+            `SELECT username FROM users WHERE id = ?`,
+            [id]
+        );
+    }
+
+    /**
+     * Lookup helper for callers that have an opaque identifier which may be
+     * either a username or a numeric user id. Returns `{ id, username }` or
+     * undefined. Mirrors the legacy ContinuousRecordingService projection
+     * `SELECT id, username FROM users WHERE username = ? OR id = ?`.
+     *
+     * The caller is responsible for casting non-numeric values to 0 (or any
+     * id that will never match) so the second `id = ?` branch is harmless.
+     * We accept that coercion as a parameter to keep this method honest
+     * about what it does — the SQL itself is unchanged.
+     */
+    async getByIdOrUsername(usernameValue, idValue) {
+        return await this.getAsync(
+            `SELECT id, username FROM users WHERE username = ? OR id = ?`,
+            [usernameValue, idValue]
+        );
+    }
+
+    /**
+     * Moderation: ban a user from chat. Mirrors the legacy SQL byte-for-
+     * byte — `chat_banned_at = CURRENT_TIMESTAMP` is a SQL literal (DB
+     * clock, not JS clock), and `updated_at` is NOT touched.
+     */
+    async banFromChat(targetUserId, moderatorId) {
+        return await this.runAsync(
+            `UPDATE users SET chat_banned = 1, chat_banned_at = CURRENT_TIMESTAMP, chat_banned_by = ? WHERE id = ?`,
+            [moderatorId, targetUserId]
+        );
+    }
+
+    /**
+     * Moderation: timeout a user from chat. `chat_timeout_until` is an ISO
+     * string supplied by the caller (legacy SQL parameterized it). Does
+     * NOT touch `updated_at`.
+     */
+    async setChatTimeout(targetUserId, moderatorId, timeoutUntilIso) {
+        return await this.runAsync(
+            `UPDATE users SET chat_timeout_until = ?, chat_timeout_by = ? WHERE id = ?`,
+            [timeoutUntilIso, moderatorId, targetUserId]
+        );
+    }
+
+    /**
+     * Moderation: ban a user from streaming. `streaming_banned_at =
+     * CURRENT_TIMESTAMP` is a SQL literal. Does NOT touch `updated_at`.
+     */
+    async banFromStreaming(targetUserId, moderatorId) {
+        return await this.runAsync(
+            `UPDATE users SET streaming_banned = 1, streaming_banned_at = CURRENT_TIMESTAMP, streaming_banned_by = ? WHERE id = ?`,
+            [moderatorId, targetUserId]
+        );
+    }
 }
 
 module.exports = UserRepository;
