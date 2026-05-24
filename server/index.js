@@ -32,8 +32,8 @@ const URLStreamHealthService = require('./services/URLStreamHealthService');
 const RandomStreamRotationService = require('./services/RandomStreamRotationService');
 const MediasoupService = require('./services/MediasoupService');
 const AuthService = require('./services/AuthService');
-const ChatBotService = require('./services/ChatBotService');
-const StreamBotService = require('./services/StreamBotService');
+// ChatBotService / StreamBotService / MovieBotService are constructed by the
+// services factory (PR-I3). See server/bootstrap/services.js for wiring.
 const IPBanService = require('./services/IPBanService');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
@@ -479,6 +479,10 @@ const {
   transcriptionService,
   gameService,
   gameStreamService,
+  // PR-I3:
+  chatBotService,
+  streamBotService,
+  movieBotService,
 } = services;
 
 // Expose the whole bag for extracted routes/sockets (PR-G2 / PR-H2 onwards
@@ -605,12 +609,10 @@ buffDebuffService.on('buff-applied', async (buffData) => {
     console.error('❌ VISUAL FX: Error syncing buff-applied visual effect:', error);
   }
 });
-// streamInterceptorService + visualFxService now built by the services
-// factory (PR-I2). chatBotService and streamBotService remain inline — their
-// dep wiring (setIoInstance, setMovieBotService, setChatBotLLMService) runs
-// further down and PR-I2 deferred them.
-const chatBotService = new ChatBotService();
-const streamBotService = new StreamBotService(database);
+// streamInterceptorService + visualFxService built by the services factory
+// (PR-I2). chatBotService / streamBotService / movieBotService also built
+// there, with post-construction setters (setIoInstance, setMovieBotService,
+// setChatBotService, setChatBotLLMService) wired inside the factory (PR-I3).
 
 // Set up stream interceptor event handlers
 streamInterceptorService.on('stream-intercepted', async (data) => {
@@ -675,34 +677,9 @@ clipProcessorService.setProcessedCallback(async (clipId, result) => {
   await clipService.updateClipProcessingResult(clipId, result);
 });
 
-// transcriptionService now built by the services factory (PR-I2).
-
-// Initialize MovieBot service
-const MovieBotService = require('./services/MovieBotService');
-// Create a simple chat service wrapper for getting recent messages
-const chatServiceWrapper = {
-    getRecentMessages: async (limit) => {
-        try {
-            const messages = await database.allAsync(
-                `SELECT username, message, created_at 
-                 FROM messages 
-                 ORDER BY created_at DESC 
-                 LIMIT ?`,
-                [limit]
-            );
-            return messages.reverse(); // Return in chronological order
-        } catch (error) {
-            console.error('Error getting recent messages:', error);
-            return [];
-        }
-    }
-};
-const movieBotService = new MovieBotService(
-    transcriptionService,
-    chatBotService,
-    chatServiceWrapper,
-    database
-);
+// transcriptionService + movieBotService built by the services factory
+// (PR-I2 / PR-I3). The chatServiceWrapper closure that MovieBot consumes
+// lives inside the factory body alongside its consumer.
 
 // Recording service is initialized, no need to load state separately
 console.log('📼 RECORDING: Recording service initialized');
@@ -712,11 +689,8 @@ console.log('🎬 MOVIEBOT: MovieBot service initialized');
 // Set Socket.IO for sound effects broadcasting
 soundFxService.setSocketIO(io);
 
-// Set Socket.IO instance for ChatBot service to manage connections
-chatBotService.setIoInstance(io);
-
-// Connect MovieBotService to ChatBotService for chat history
-chatBotService.setMovieBotService(movieBotService);
+// chatBotService.setIoInstance(io) and chatBotService.setMovieBotService(...)
+// now happen inside the services factory (PR-I3).
 
 // Set the buff-debuff service dependency on inventory service after creation
 inventoryService.setBuffDebuffService(buffDebuffService);
@@ -729,9 +703,8 @@ canvasFxService.setDependencies(io, itemService, buffDebuffService, streamServic
 // Set dependencies for visual fx service
 visualFxService.setDependencies(mediasoupService, buffDebuffService, streamService, io, sessionService, streamInterceptorService);
 
-// Set dependencies for StreamBot auto-summon feature
-streamBotService.setChatBotService(chatBotService);
-streamBotService.setChatBotLLMService(chatBotService.llmService);
+// streamBotService.setChatBotService / setChatBotLLMService now happen inside
+// the services factory (PR-I3).
 
 // Make services available to routes
 app.set('sessionService', sessionService);

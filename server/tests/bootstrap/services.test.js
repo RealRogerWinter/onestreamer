@@ -63,6 +63,37 @@ jest.mock('../../services/game', () => ({
   GameStreamService: class { constructor(...args) { this._args = args; this._stubName = 'GameStreamService'; } },
 }));
 
+// PR-I3 additions — bots use post-construction setters wired by the factory,
+// so the mocks need recording stubs for those setters too (so we can assert
+// they were called in the expected order with the expected arguments).
+jest.mock('../../services/ChatBotService', () => class {
+  constructor(...args) {
+    this._args = args;
+    this._stubName = 'ChatBotService';
+    // Real ChatBotService exposes an llmService; surface a stub so the
+    // factory's `streamBotService.setChatBotLLMService(chatBotService.llmService)`
+    // line has something concrete to forward.
+    this.llmService = { _stubName: 'ChatBotLLMService' };
+    this._ioInstance = undefined;
+    this._movieBotService = undefined;
+  }
+  setIoInstance(io) { this._ioInstance = io; }
+  setMovieBotService(mbs) { this._movieBotService = mbs; }
+});
+jest.mock('../../services/StreamBotService', () => class {
+  constructor(...args) {
+    this._args = args;
+    this._stubName = 'StreamBotService';
+    this._chatBotService = undefined;
+    this._chatBotLLMService = undefined;
+  }
+  setChatBotService(cbs) { this._chatBotService = cbs; }
+  setChatBotLLMService(llm) { this._chatBotLLMService = llm; }
+});
+jest.mock('../../services/MovieBotService', () => class {
+  constructor(...args) { this._args = args; this._stubName = 'MovieBotService'; }
+});
+
 // Pull in the mocked classes for instanceof checks.
 const StreamService = require('../../services/StreamService');
 const SessionService = require('../../services/SessionService');
@@ -97,6 +128,11 @@ const RecordingCleanupScheduler = require('../../services/RecordingCleanupSchedu
 const TranscriptionService = require('../../services/TranscriptionService');
 const { GameService, GameStreamService } = require('../../services/game');
 
+// PR-I3 additions
+const ChatBotService = require('../../services/ChatBotService');
+const StreamBotService = require('../../services/StreamBotService');
+const MovieBotService = require('../../services/MovieBotService');
+
 const createServices = require('../../bootstrap/services');
 
 function buildDeps(overrides = {}) {
@@ -111,7 +147,7 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 31 expected keys (no more, no less)', () => {
+  test('returns all 34 expected keys (no more, no less)', () => {
     const services = createServices(buildDeps());
 
     const expectedKeys = [
@@ -148,10 +184,14 @@ describe('server/bootstrap/services factory', () => {
       'transcriptionService',
       'gameService',
       'gameStreamService',
+      // PR-I3 additions
+      'chatBotService',
+      'streamBotService',
+      'movieBotService',
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(31);
+    expect(expectedKeys).toHaveLength(34);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -189,6 +229,10 @@ describe('server/bootstrap/services factory', () => {
     expect(s.transcriptionService).toBeInstanceOf(TranscriptionService);
     expect(s.gameService).toBeInstanceOf(GameService);
     expect(s.gameStreamService).toBeInstanceOf(GameStreamService);
+    // PR-I3
+    expect(s.chatBotService).toBeInstanceOf(ChatBotService);
+    expect(s.streamBotService).toBeInstanceOf(StreamBotService);
+    expect(s.movieBotService).toBeInstanceOf(MovieBotService);
   });
 
   test('takeoverService is constructed with (redisClient, sessionService)', () => {
@@ -314,6 +358,55 @@ describe('server/bootstrap/services factory', () => {
     expect(s.gameStreamService._args[0]).toBe(deps.io);
     expect(s.gameStreamService._args[1]).toBe(s.gameService);
     expect(s.gameStreamService._args[2]).toBe(s.takeoverService);
+  });
+
+  // ── PR-I3 dep-graph + post-construction wiring identity checks ────────
+
+  test('chatBotService is constructed with no args', () => {
+    const s = createServices(buildDeps());
+    expect(s.chatBotService._args).toHaveLength(0);
+  });
+
+  test('streamBotService is constructed with (database)', () => {
+    const deps = buildDeps();
+    const s = createServices(deps);
+
+    expect(s.streamBotService._args).toHaveLength(1);
+    expect(s.streamBotService._args[0]).toBe(deps.database);
+  });
+
+  test('movieBotService receives (transcriptionService, chatBotService, chatServiceWrapper, database)', () => {
+    const deps = buildDeps();
+    const s = createServices(deps);
+
+    expect(s.movieBotService._args).toHaveLength(4);
+    expect(s.movieBotService._args[0]).toBe(s.transcriptionService);
+    expect(s.movieBotService._args[1]).toBe(s.chatBotService);
+    // The 3rd arg is the factory's literal chatServiceWrapper closure —
+    // it's a fresh object, but we can confirm its shape.
+    expect(typeof s.movieBotService._args[2]).toBe('object');
+    expect(typeof s.movieBotService._args[2].getRecentMessages).toBe('function');
+    expect(s.movieBotService._args[3]).toBe(deps.database);
+  });
+
+  test('chatBotService gets the io instance via setIoInstance', () => {
+    const deps = buildDeps();
+    const s = createServices(deps);
+
+    expect(s.chatBotService._ioInstance).toBe(deps.io);
+  });
+
+  test('chatBotService gets the factory-built movieBotService via setMovieBotService', () => {
+    const s = createServices(buildDeps());
+
+    expect(s.chatBotService._movieBotService).toBe(s.movieBotService);
+  });
+
+  test('streamBotService gets chatBotService + chatBotService.llmService via setters', () => {
+    const s = createServices(buildDeps());
+
+    expect(s.streamBotService._chatBotService).toBe(s.chatBotService);
+    expect(s.streamBotService._chatBotLLMService).toBe(s.chatBotService.llmService);
   });
 
   test('omitting required deps leaves the corresponding ctor arg undefined (no validation today)', () => {

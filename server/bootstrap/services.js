@@ -48,12 +48,24 @@
 //   gameService                ──  io, database
 //   gameStreamService          ──  io, gameService, takeoverService
 //
+//   ── PR-I3 additions (bot cluster — uses post-construction setters) ──
+//   chatBotService             ──  no constructor deps; setIoInstance(io) +
+//                                  setMovieBotService(movieBotService) wired
+//                                  in factory body after movieBotService is
+//                                  constructed.
+//   streamBotService           ──  database (ctor); setChatBotService and
+//                                  setChatBotLLMService wired in factory
+//                                  body once chatBotService exists.
+//   movieBotService            ──  transcriptionService, chatBotService,
+//                                  chatServiceWrapper (closure over database),
+//                                  database. chatServiceWrapper is a literal
+//                                  defined inline in the factory.
+//
 // ── Intentionally deferred (still inline in server/index.js) ─────────────
-// ChatBotService, StreamBotService, MovieBotService, viewbotService and
-// the rest of the viewbot stack: their dep webs reach into module-level
-// globals, run async init wiring that the inline original was relying on,
-// or are interleaved with viewbot-specific setup code (notifiedStreamers
-// Set, createViewBotProducer closure, etc.). PR-I3 will address those.
+// viewbotService and the rest of the viewbot stack: their dep webs reach
+// into module-level globals (notifiedStreamers Set, createViewBotProducer
+// closure, mediasoup transports/producers map mutation, etc.) and would
+// require a larger refactor to lift cleanly.
 //
 // authService is also intentionally NOT here: it's instantiated early in
 // server/index.js (~line 324) so passport strategies can register against
@@ -92,6 +104,11 @@ const RecordingUploadScheduler = require('../services/RecordingUploadScheduler')
 const RecordingCleanupScheduler = require('../services/RecordingCleanupScheduler');
 const TranscriptionService = require('../services/TranscriptionService');
 const { GameService, GameStreamService } = require('../services/game');
+
+// PR-I3 additions
+const ChatBotService = require('../services/ChatBotService');
+const StreamBotService = require('../services/StreamBotService');
+const MovieBotService = require('../services/MovieBotService');
 
 /**
  * Build the core service bag.
@@ -190,6 +207,55 @@ module.exports = function createServices({ io, redisClient, database, env, media
   const gameService = new GameService(io, database);
   const gameStreamService = new GameStreamService(io, gameService, takeoverService);
 
+  // ── PR-I3: bot cluster ──────────────────────────────────────────────────
+  // ChatBotService and StreamBotService use post-construction setters that
+  // wire in sibling services (and in the case of ChatBot, the io instance).
+  // The inline-original sequence in server/index.js was:
+  //   1. construct chatBotService + streamBotService
+  //   2. construct movieBotService (consumes chatBotService + a chatService
+  //      wrapper closure over database.allAsync)
+  //   3. chatBotService.setIoInstance(io)
+  //   4. chatBotService.setMovieBotService(movieBotService)
+  //   5. streamBotService.setChatBotService(chatBotService)
+  //   6. streamBotService.setChatBotLLMService(chatBotService.llmService)
+  // We preserve that exact order here.
+  const chatBotService = new ChatBotService();
+  const streamBotService = new StreamBotService(database);
+
+  // chatServiceWrapper: minimal adapter exposing getRecentMessages(limit)
+  // backed by the SQLite `messages` table. Defined as a literal so the
+  // closure is bound to `database` from this factory's scope.
+  const chatServiceWrapper = {
+    getRecentMessages: async (limit) => {
+      try {
+        const messages = await database.allAsync(
+          `SELECT username, message, created_at
+             FROM messages
+            ORDER BY created_at DESC
+            LIMIT ?`,
+          [limit]
+        );
+        return messages.reverse(); // chronological order
+      } catch (error) {
+        console.error('Error getting recent messages:', error);
+        return [];
+      }
+    },
+  };
+
+  const movieBotService = new MovieBotService(
+    transcriptionService,
+    chatBotService,
+    chatServiceWrapper,
+    database
+  );
+
+  // Post-construction wiring. Order matches the inline original.
+  chatBotService.setIoInstance(io);
+  chatBotService.setMovieBotService(movieBotService);
+  streamBotService.setChatBotService(chatBotService);
+  streamBotService.setChatBotLLMService(chatBotService.llmService);
+
   return {
     streamService,
     sessionService,
@@ -223,5 +289,9 @@ module.exports = function createServices({ io, redisClient, database, env, media
     transcriptionService,
     gameService,
     gameStreamService,
+    // PR-I3:
+    chatBotService,
+    streamBotService,
+    movieBotService,
   };
 };
