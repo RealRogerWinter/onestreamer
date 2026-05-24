@@ -1,13 +1,15 @@
 const { runAsync, getAsync, allAsync } = require('../database/database');
 const EventEmitter = require('events');
+const ItemRepository = require('../database/repository/ItemRepository');
 
 class BuffDebuffService extends EventEmitter {
-    constructor(io = null, streamService = null, timeTrackingService = null, sessionService = null) {
+    constructor(io = null, streamService = null, timeTrackingService = null, sessionService = null, { itemRepository } = {}) {
         super();
         this.io = io;
         this.streamService = streamService;
         this.timeTrackingService = timeTrackingService;
         this.sessionService = sessionService;
+        this.itemRepository = itemRepository || new ItemRepository({ getAsync, runAsync, allAsync });
         
         // In-memory cache for active buffs with TTL (performance optimization + memory management)
         this.activeBuffsCache = new Map();
@@ -109,7 +111,7 @@ class BuffDebuffService extends EventEmitter {
         console.log(`🎭 BUFF: applyBuff called - userId: ${userId}, itemId: ${itemId}, duration: ${duration}`);
         try {
             // Get item details
-            const item = await getAsync('SELECT * FROM items WHERE id = ? AND is_active = 1', [itemId]);
+            const item = await this.itemRepository.getById(itemId);
             if (!item) {
                 throw new Error('Item not found or inactive');
             }
@@ -366,7 +368,7 @@ class BuffDebuffService extends EventEmitter {
                 const buff = buffs.find(b => b.id === buffId);
                 if (buff) {
                     // Get item details to enrich the buff data
-                    const item = await getAsync('SELECT * FROM items WHERE id = ?', [buff.item_id]);
+                    const item = await this.itemRepository.getByIdIncludingInactive(buff.item_id);
                     if (item) {
                         buff.item_name = item.name;
                         buff.display_name = item.display_name;
@@ -397,7 +399,7 @@ class BuffDebuffService extends EventEmitter {
             const enrichedBuffs = await Promise.all(anonymousBuffs
                 .filter(buff => buff.is_active && buff.remaining_seconds > 0)
                 .map(async (buff) => {
-                    const item = await getAsync('SELECT * FROM items WHERE id = ?', [buff.item_id]);
+                    const item = await this.itemRepository.getByIdIncludingInactive(buff.item_id);
                     if (item) {
                         buff.item_name = item.name;
                         buff.display_name = item.display_name;

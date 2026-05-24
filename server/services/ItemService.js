@@ -1,7 +1,16 @@
 const { runAsync, getAsync, allAsync } = require('../database/database');
+const ItemRepository = require('../database/repository/ItemRepository');
 
 class ItemService {
-    constructor() {
+    /**
+     * @param {object} [deps]
+     * @param {ItemRepository} [deps.itemRepository] - inject a custom repo
+     *   (useful for tests). Defaults to a fresh `ItemRepository()` so the
+     *   `new ItemService()` callsites scattered throughout the codebase
+     *   continue to work unchanged.
+     */
+    constructor({ itemRepository } = {}) {
+        this.itemRepository = itemRepository || new ItemRepository({ getAsync, runAsync, allAsync });
         this.initializeDefaultItems();
     }
 
@@ -637,18 +646,11 @@ class ItemService {
         } = itemData;
 
         try {
-            const result = await runAsync(
-                `INSERT INTO items (
-                    name, display_name, emoji, description, item_type, category,
-                    rarity, base_price, is_purchasable, is_active, 
-                    cooldown_seconds, max_stack, duration_seconds, effect_data, stack_behavior
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    name, display_name, emoji, description, item_type, category,
-                    rarity, base_price, is_purchasable, is_active,
-                    cooldown_seconds, max_stack, duration_seconds, effect_data, stack_behavior
-                ]
-            );
+            const result = await this.itemRepository.create({
+                name, display_name, emoji, description, item_type, category,
+                rarity, base_price, is_purchasable, is_active,
+                cooldown_seconds, max_stack, duration_seconds, effect_data, stack_behavior
+            });
 
             return {
                 id: result.id,
@@ -664,70 +666,48 @@ class ItemService {
     }
 
     async getItemById(itemId) {
-        return await getAsync(
-            'SELECT * FROM items WHERE id = ? AND is_active = 1',
-            [itemId]
-        );
+        return await this.itemRepository.getById(itemId);
     }
 
     async getItemByName(name) {
-        return await getAsync(
-            'SELECT * FROM items WHERE name = ? AND is_active = 1',
-            [name]
-        );
+        return await this.itemRepository.getByName(name);
     }
 
     async getAllItems() {
-        return await allAsync(
-            'SELECT * FROM items WHERE is_active = 1 ORDER BY rarity, name'
-        );
+        return await this.itemRepository.listAllActive();
     }
 
     async getItemsByType(itemType) {
-        return await allAsync(
-            'SELECT * FROM items WHERE item_type = ? AND is_active = 1',
-            [itemType]
-        );
+        return await this.itemRepository.listByType(itemType);
     }
 
     async getItemsByCategory(category) {
-        return await allAsync(
-            'SELECT * FROM items WHERE category = ? AND is_active = 1 ORDER BY display_name',
-            [category]
-        );
+        return await this.itemRepository.listByCategory(category);
     }
 
     async getAllCategories() {
-        const result = await allAsync(
-            'SELECT DISTINCT category FROM items WHERE is_active = 1 AND category IS NOT NULL ORDER BY category'
-        );
-        
+        const result = await this.itemRepository.listDistinctCategories();
+
         // Transform to a more useful format
         const categories = result.map(row => ({
             value: row.category,
-            label: row.category.split('_').map(word => 
+            label: row.category.split('_').map(word =>
                 word.charAt(0).toUpperCase() + word.slice(1)
             ).join(' '),
             count: 0
         }));
-        
+
         // Get counts for each category
         for (const cat of categories) {
-            const countResult = await getAsync(
-                'SELECT COUNT(*) as count FROM items WHERE category = ? AND is_active = 1',
-                [cat.value]
-            );
+            const countResult = await this.itemRepository.countByCategory(cat.value);
             cat.count = countResult.count;
         }
-        
+
         return categories;
     }
 
     async getItemsByRarity(rarity) {
-        return await allAsync(
-            'SELECT * FROM items WHERE rarity = ? AND is_active = 1',
-            [rarity]
-        );
+        return await this.itemRepository.listByRarity(rarity);
     }
 
     async updateItem(itemId, updates) {
@@ -737,28 +717,19 @@ class ItemService {
             'duration_seconds', 'item_type', 'rarity', 'name', 'category'
         ];
 
-        const fields = Object.keys(updates).filter(field => allowedFields.includes(field));
-        if (fields.length === 0) {
+        const filteredEntries = Object.entries(updates).filter(([field]) => allowedFields.includes(field));
+        if (filteredEntries.length === 0) {
             throw new Error('No valid fields to update');
         }
 
-        const setClause = fields.map(field => `${field} = ?`).join(', ');
-        const values = fields.map(field => updates[field]);
-        values.push(itemId);
-
-        await runAsync(
-            `UPDATE items SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            values
-        );
+        const filteredUpdates = Object.fromEntries(filteredEntries);
+        await this.itemRepository.update(itemId, filteredUpdates);
 
         return await this.getItemById(itemId);
     }
 
     async deleteItem(itemId) {
-        await runAsync(
-            'UPDATE items SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            [itemId]
-        );
+        await this.itemRepository.softDelete(itemId);
     }
 
     async validateItemUsage(userId, itemId) {
