@@ -28,11 +28,27 @@ class TwitchRandomService {
     this.minViewers = 1;
     this.maxViewers = 5000;
 
+    // PR-W3: WhitelistService is injected when ADR-0010's gate is active.
+    // When set, candidate filtering goes through it; when null, the legacy
+    // local blockedCategories Set above is the only filter (defense-in-depth
+    // for hosts that haven't deployed PR-W1).
+    this.whitelistService = null;
+
     console.log('🎮 TwitchRandomService initialized');
 
     if (!this.clientId || !this.clientSecret) {
       console.warn('⚠️ TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET not set - random Twitch discovery will not work');
     }
+  }
+
+  /**
+   * Inject the WhitelistService (ADR-0010, PR-W3). When set, candidate
+   * filtering consults it instead of the local blockedCategories Set. The
+   * rotation service fans this out from its own setter.
+   */
+  setWhitelistService(whitelistService) {
+    this.whitelistService = whitelistService;
+    console.log('✅ WhitelistService registered with TwitchRandomService');
   }
 
   /**
@@ -242,30 +258,56 @@ class TwitchRandomService {
         streams = await this.getLiveStreams({ language, first: 100 });
       }
 
-      // Filter streams
-      const filtered = streams.filter(stream => {
-        // Check viewer count
+      // Step 1: cheap local filters (viewer count, exclusions, recent cache).
+      // These run before the whitelist filter so we don't waste Helix API
+      // budget on candidates that wouldn't be picked anyway.
+      let candidates = streams.filter(stream => {
         if (stream.viewer_count < minViewers || stream.viewer_count > maxViewers) {
           return false;
         }
-
-        // Check blocked categories
-        if (this.blockedCategories.has(stream.game_name)) {
-          return false;
-        }
-
-        // Check excluded usernames
         if (excludeUsernames.includes(stream.user_login.toLowerCase())) {
           return false;
         }
-
-        // Check recent cache (avoid repeats)
         if (this.recentStreamers.includes(stream.user_login)) {
           return false;
         }
-
+        // Legacy fallback: when WhitelistService isn't wired (PR-W1 not
+        // deployed yet on this host), the local blockedCategories Set is
+        // still the only line of defense. When the whitelist IS wired,
+        // this is redundant (the seed migrates these entries into the DB
+        // blacklist) and the whitelist check below is authoritative.
+        if (!this.whitelistService && this.blockedCategories.has(stream.game_name)) {
+          return false;
+        }
         return true;
       });
+
+      // Step 2: whitelist gate (ADR-0010, PR-W3). Skipped entirely when no
+      // service is wired. When wired, we first attach CCL data (one batched
+      // /helix/channels call), then call filterCandidates which evaluates
+      // mode + per-platform allow/block lists + mature/CCL gates.
+      if (this.whitelistService && candidates.length > 0) {
+        try {
+          candidates = await this._attachCclData(candidates);
+        } catch (cclErr) {
+          // CCL fetch failure shouldn't tank the rotation — fall through
+          // with empty CCL data so the mature_flag / ccl_gate checks are
+          // effectively no-ops. The streamer/category lists still apply.
+          console.warn(`⚠️ TwitchRandomService: CCL fetch failed (${cclErr.message}); proceeding without CCL data`);
+        }
+        const shaped = candidates.map(stream => ({
+          raw: stream,
+          login: stream.user_login,
+          currentGameName: stream.game_name,
+          isMature: stream.is_mature === true,
+          ccls: stream._ccls || [],
+        }));
+        candidates = this.whitelistService
+          .filterCandidates('twitch', shaped)
+          .map(s => s.raw);
+      }
+
+      const filtered = candidates;
 
       if (filtered.length === 0) {
         console.warn('⚠️ No suitable streams found');
@@ -370,6 +412,40 @@ class TwitchRandomService {
     this.minViewers = min;
     this.maxViewers = max;
     console.log(`👁️ Viewer range set: ${min} - ${max}`);
+  }
+
+  /**
+   * PR-W3: attach `content_classification_labels` to each candidate by
+   * calling /helix/channels in batches of 100. Mutates input objects in
+   * place (adds `_ccls`) and returns the same array. Used by the whitelist
+   * filter so the CCL gate can reject mature-labeled streams even when
+   * the streamer is on the allowlist.
+   *
+   * Failure is the caller's problem — they can either propagate or fall
+   * through with empty CCL data; we don't swallow here.
+   */
+  async _attachCclData(candidates) {
+    if (!Array.isArray(candidates) || candidates.length === 0) return candidates;
+
+    const idsToFetch = Array.from(new Set(
+      candidates.map(c => c.user_id).filter(Boolean)
+    ));
+    if (idsToFetch.length === 0) return candidates;
+
+    const cclByUserId = new Map();
+    for (let i = 0; i < idsToFetch.length; i += 100) {
+      const batch = idsToFetch.slice(i, i + 100);
+      const query = batch.map(id => `broadcaster_id=${encodeURIComponent(id)}`).join('&');
+      const resp = await this.twitchRequest(`/helix/channels?${query}`);
+      for (const row of (resp && resp.data) || []) {
+        cclByUserId.set(row.broadcaster_id, row.content_classification_labels || []);
+      }
+    }
+
+    for (const c of candidates) {
+      c._ccls = cclByUserId.get(c.user_id) || [];
+    }
+    return candidates;
   }
 }
 

@@ -27,7 +27,22 @@ class KickRandomService {
     // Path to Python helper
     this.helperPath = path.join(__dirname, 'kick-api-helper.py');
 
+    // PR-W3: WhitelistService is injected when ADR-0010's gate is active.
+    // When set, candidate filtering goes through it; when null, the legacy
+    // local blockedCategories Set above is the only filter.
+    this.whitelistService = null;
+
     console.log('🟢 KickRandomService initialized (using curl_cffi helper)');
+  }
+
+  /**
+   * Inject the WhitelistService (ADR-0010, PR-W3). When set, candidate
+   * filtering consults it instead of the local blockedCategories Set. The
+   * rotation service fans this out from its own setter.
+   */
+  setWhitelistService(whitelistService) {
+    this.whitelistService = whitelistService;
+    console.log('✅ WhitelistService registered with KickRandomService');
   }
 
   /**
@@ -156,35 +171,42 @@ class KickRandomService {
         return null;
       }
 
-      // Filter streams
-      const filtered = streams.filter(stream => {
+      // Step 1: cheap local filters first.
+      let candidates = streams.filter(stream => {
         if (!stream.is_live) return false;
-
         const viewers = stream.viewer_count || stream.viewers || 0;
-
-        if (viewers < minViewers || viewers > maxViewers) {
-          return false;
-        }
-
-        // Check blocked categories
-        const categoryName = stream.categories?.[0]?.name;
-        if (categoryName && this.blockedCategories.has(categoryName)) {
-          return false;
-        }
-
-        // Check excluded usernames
+        if (viewers < minViewers || viewers > maxViewers) return false;
         const username = stream.channel?.slug;
-        if (username && excludeUsernames.includes(username.toLowerCase())) {
-          return false;
+        if (username && excludeUsernames.includes(username.toLowerCase())) return false;
+        if (username && this.recentStreamers.includes(username)) return false;
+        // Legacy fallback: when WhitelistService isn't wired, the local
+        // blockedCategories Set is the only line of defense. When the
+        // whitelist IS wired, the seed migrates these entries into the DB
+        // blacklist and the whitelist check below is authoritative.
+        if (!this.whitelistService) {
+          const categoryName = stream.categories?.[0]?.name;
+          if (categoryName && this.blockedCategories.has(categoryName)) return false;
         }
-
-        // Check recent cache (avoid repeats)
-        if (username && this.recentStreamers.includes(username)) {
-          return false;
-        }
-
         return true;
       });
+
+      // Step 2: whitelist gate (ADR-0010, PR-W3). Skipped when no service
+      // is wired. Kick's category surface is more permissive than Twitch's
+      // — the whitelist's seeded Kick block list (Slots & Casino, Sports
+      // Betting, Just Chatting, etc.) does the heavy lifting here.
+      if (this.whitelistService && candidates.length > 0) {
+        const shaped = candidates.map(stream => ({
+          raw: stream,
+          login: stream.channel?.slug,
+          currentGameName: stream.categories?.[0]?.name || null,
+          hasMatureContent: stream.is_mature === true || stream.has_mature_content === true,
+        }));
+        candidates = this.whitelistService
+          .filterCandidates('kick', shaped)
+          .map(s => s.raw);
+      }
+
+      const filtered = candidates;
 
       if (filtered.length === 0) {
         console.warn('⚠️ No suitable Kick streams found after filtering');

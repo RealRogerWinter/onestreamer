@@ -380,6 +380,22 @@ class RandomStreamRotationService extends EventEmitter {
     console.log('✅ ViewBotRotation registered with RandomStreamRotation');
   }
 
+  /**
+   * Inject the WhitelistService (ADR-0010, PR-W3) and fan it out to the
+   * inner Twitch + Kick random services so their candidate filters consult
+   * the same per-platform allow/block lists + CCL gate.
+   */
+  setWhitelistService(whitelistService) {
+    this.whitelistService = whitelistService;
+    if (this.twitchService && typeof this.twitchService.setWhitelistService === 'function') {
+      this.twitchService.setWhitelistService(whitelistService);
+    }
+    if (this.kickService && typeof this.kickService.setWhitelistService === 'function') {
+      this.kickService.setWhitelistService(whitelistService);
+    }
+    console.log('✅ WhitelistService registered with RandomStreamRotation');
+  }
+
   setSocketIO(io) {
     this.io = io;
     console.log('✅ Socket.IO registered with RandomStreamRotation');

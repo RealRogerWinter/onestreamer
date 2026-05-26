@@ -5310,6 +5310,7 @@ async function startServer() {
       randomStreamRotationService.setViewBotRotation(SimpleViewBotRotation);
       randomStreamRotationService.setSocketIO(io);
       randomStreamRotationService.setStreamNotifier(streamNotifier);
+      if (whitelistService) randomStreamRotationService.setWhitelistService(whitelistService);
       global.randomStreamRotationService = randomStreamRotationService;
       console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized (MediaSoup backend)');
 
@@ -5390,6 +5391,7 @@ async function startServer() {
       randomStreamRotationService.setViewBotRotation(SimpleViewBotRotation);
       randomStreamRotationService.setSocketIO(io);
       randomStreamRotationService.setStreamNotifier(streamNotifier);
+      if (whitelistService) randomStreamRotationService.setWhitelistService(whitelistService);
       global.randomStreamRotationService = randomStreamRotationService;
       console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized');
 
