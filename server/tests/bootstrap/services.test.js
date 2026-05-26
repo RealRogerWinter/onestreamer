@@ -70,15 +70,34 @@ jest.mock('../../services/ChatBotService', () => class {
   constructor(...args) {
     this._args = args;
     this._stubName = 'ChatBotService';
+    // PR 1.3: constructor signature is ({ botEventBus = null } = {}).
+    // Capture the bus on the stub so the bus-wiring test can assert
+    // it's the same instance handed to MovieBotService.
+    this.botEventBus = args[0] && args[0].botEventBus;
     // Real ChatBotService exposes an llmService; surface a stub so the
     // factory's `streamBotService.setChatBotLLMService(chatBotService.llmService)`
     // line has something concrete to forward.
     this.llmService = { _stubName: 'ChatBotLLMService' };
     this._ioInstance = undefined;
-    this._movieBotService = undefined;
   }
   setIoInstance(io) { this._ioInstance = io; }
-  setMovieBotService(mbs) { this._movieBotService = mbs; }
+});
+
+// PR 1.3: BotEventBus is a thin EventEmitter wrapper. The stub mimics the
+// minimal shape (on/emit) so the wiring test can issue an emit + verify a
+// listener fires, without pulling in the real EventEmitter chain.
+jest.mock('../../services/BotEventBus', () => class {
+  constructor() {
+    this._listeners = new Map();
+    this._stubName = 'BotEventBus';
+  }
+  on(event, cb) {
+    if (!this._listeners.has(event)) this._listeners.set(event, []);
+    this._listeners.get(event).push(cb);
+  }
+  emit(event, payload) {
+    (this._listeners.get(event) || []).forEach((cb) => cb(payload));
+  }
 });
 jest.mock('../../services/StreamBotService', () => class {
   constructor(...args) {
@@ -183,8 +202,8 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 34 expected keys (no more, no less)', () => {
-    const services = createServices(buildDeps());
+  test('returns all 35 expected keys (no more, no less)', () => {
+    const { services } = createServices(buildDeps());
 
     const expectedKeys = [
       // PR-I core
@@ -224,14 +243,16 @@ describe('server/bootstrap/services factory', () => {
       'chatBotService',
       'streamBotService',
       'movieBotService',
+      // PR 1.3
+      'botEventBus',
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(34);
+    expect(expectedKeys).toHaveLength(35);
   });
 
   test('each returned value is an instance of the matching service class', () => {
-    const s = createServices(buildDeps());
+    const { services: s } = createServices(buildDeps());
 
     expect(s.streamService).toBeInstanceOf(StreamService);
     expect(s.sessionService).toBeInstanceOf(SessionService);
@@ -273,7 +294,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('takeoverService is constructed with (redisClient, sessionService)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.takeoverService._args).toHaveLength(2);
     expect(s.takeoverService._args[0]).toBe(deps.redisClient);
@@ -281,7 +302,7 @@ describe('server/bootstrap/services factory', () => {
   });
 
   test('inventoryService is constructed with itemService', () => {
-    const s = createServices(buildDeps());
+    const { services: s } = createServices(buildDeps());
 
     expect(s.inventoryService._args).toHaveLength(1);
     expect(s.inventoryService._args[0]).toBe(s.itemService);
@@ -289,7 +310,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('shopService is constructed with (itemService, inventoryService, accountService, io)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.shopService._args).toHaveLength(4);
     expect(s.shopService._args[0]).toBe(s.itemService);
@@ -300,7 +321,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('buffDebuffService is constructed with (io, streamService, timeTrackingService, sessionService)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.buffDebuffService._args).toHaveLength(4);
     expect(s.buffDebuffService._args[0]).toBe(deps.io);
@@ -311,7 +332,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('canvasFxService receives the buffDebuffService built by the factory (order)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     // Per the dependency graph, buffDebuffService must exist before
     // canvasFxService can be built — check via identity.
@@ -323,7 +344,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('plainTransportService is constructed with the passed-in mediasoupService', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.plainTransportService._args).toHaveLength(1);
     expect(s.plainTransportService._args[0]).toBe(deps.mediasoupService);
@@ -333,7 +354,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('streamInterceptorService receives (mediasoupService, plainTransportService)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.streamInterceptorService._args).toHaveLength(2);
     expect(s.streamInterceptorService._args[0]).toBe(deps.mediasoupService);
@@ -342,7 +363,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('visualFxService receives (mediasoupService, buffDebuffService, streamInterceptorService)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.visualFxService._args).toHaveLength(3);
     expect(s.visualFxService._args[0]).toBe(deps.mediasoupService);
@@ -352,7 +373,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('recordingService receives (database, mediasoupService, recordingStorageService)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.recordingService._args).toHaveLength(3);
     expect(s.recordingService._args[0]).toBe(deps.database);
@@ -361,13 +382,13 @@ describe('server/bootstrap/services factory', () => {
   });
 
   test('clipProcessorService receives the factory-built clipStorageService', () => {
-    const s = createServices(buildDeps());
+    const { services: s } = createServices(buildDeps());
     expect(s.clipProcessorService._args[0]).toBe(s.clipStorageService);
   });
 
   test('clipService receives (database, clipStorageService, clipProcessorService, continuousRecordingService)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.clipService._args).toHaveLength(4);
     expect(s.clipService._args[0]).toBe(deps.database);
@@ -378,7 +399,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('transcriptionService receives (database, mediasoupService, recordingService)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.transcriptionService._args).toHaveLength(3);
     expect(s.transcriptionService._args[0]).toBe(deps.database);
@@ -388,7 +409,7 @@ describe('server/bootstrap/services factory', () => {
 
   test('gameStreamService receives (io, gameService, takeoverService)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.gameStreamService._args).toHaveLength(3);
     expect(s.gameStreamService._args[0]).toBe(deps.io);
@@ -398,24 +419,31 @@ describe('server/bootstrap/services factory', () => {
 
   // ── PR-I3 dep-graph + post-construction wiring identity checks ────────
 
-  test('chatBotService is constructed with no args', () => {
-    const s = createServices(buildDeps());
-    expect(s.chatBotService._args).toHaveLength(0);
+  test('chatBotService is constructed with ({ botEventBus, getMoviePromptTemplate }) — PR 1.3', () => {
+    const { services: s } = createServices(buildDeps());
+    expect(s.chatBotService._args).toHaveLength(1);
+    const ctorArg = s.chatBotService._args[0];
+    expect(ctorArg.botEventBus).toBe(s.botEventBus);
+    expect(typeof ctorArg.getMoviePromptTemplate).toBe('function');
+    // The closure should resolve to MovieBot's config.moviePromptTemplate
+    // at call time. In the test stub, MovieBotService has no .config so
+    // the closure returns undefined; verify it doesn't throw.
+    expect(() => ctorArg.getMoviePromptTemplate()).not.toThrow();
   });
 
   test('streamBotService is constructed with (database)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.streamBotService._args).toHaveLength(1);
     expect(s.streamBotService._args[0]).toBe(deps.database);
   });
 
-  test('movieBotService receives (transcriptionService, chatBotService, chatServiceWrapper, database)', () => {
+  test('movieBotService receives (transcriptionService, chatBotService, chatServiceWrapper, database, botEventBus)', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
-    expect(s.movieBotService._args).toHaveLength(4);
+    expect(s.movieBotService._args).toHaveLength(5);
     expect(s.movieBotService._args[0]).toBe(s.transcriptionService);
     expect(s.movieBotService._args[1]).toBe(s.chatBotService);
     // The 3rd arg is the factory's literal chatServiceWrapper closure —
@@ -423,23 +451,38 @@ describe('server/bootstrap/services factory', () => {
     expect(typeof s.movieBotService._args[2]).toBe('object');
     expect(typeof s.movieBotService._args[2].getRecentMessages).toBe('function');
     expect(s.movieBotService._args[3]).toBe(deps.database);
+    // PR 1.3: 5th arg is the BotEventBus shared with chatBotService.
+    expect(s.movieBotService._args[4]).toBe(s.botEventBus);
   });
 
   test('chatBotService gets the io instance via setIoInstance', () => {
     const deps = buildDeps();
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.chatBotService._ioInstance).toBe(deps.io);
   });
 
-  test('chatBotService gets the factory-built movieBotService via setMovieBotService', () => {
-    const s = createServices(buildDeps());
+  test('PR 1.3: ChatBot and MovieBot share the same BotEventBus instance', () => {
+    const { services: s } = createServices(buildDeps());
 
-    expect(s.chatBotService._movieBotService).toBe(s.movieBotService);
+    // Both services should hold the SAME bus instance (the one in s.botEventBus).
+    expect(s.chatBotService.botEventBus).toBe(s.botEventBus);
+    // MovieBotService stores constructor args on _args; the 5th arg is the bus.
+    expect(s.movieBotService._args[4]).toBe(s.botEventBus);
+  });
+
+  test('PR 1.3: emit on the bus reaches subscribers (no direct service-to-service ref)', () => {
+    const { services: s } = createServices(buildDeps());
+    let received = null;
+    s.botEventBus.on('chat-message', (payload) => { received = payload; });
+
+    s.botEventBus.emit('chat-message', { username: 'TestCat', message: 'hello' });
+
+    expect(received).toEqual({ username: 'TestCat', message: 'hello' });
   });
 
   test('streamBotService gets chatBotService + chatBotService.llmService via setters', () => {
-    const s = createServices(buildDeps());
+    const { services: s } = createServices(buildDeps());
 
     expect(s.streamBotService._chatBotService).toBe(s.chatBotService);
     expect(s.streamBotService._chatBotLLMService).toBe(s.chatBotService.llmService);
@@ -450,7 +493,7 @@ describe('server/bootstrap/services factory', () => {
     // whatever is destructured. This test pins that behavior so a future
     // PR that adds required-dep checks deliberately updates this case.
     const deps = buildDeps({ io: undefined });
-    const s = createServices(deps);
+    const { services: s } = createServices(deps);
 
     expect(s.shopService._args[3]).toBeUndefined();
     expect(s.buffDebuffService._args[0]).toBeUndefined();
@@ -493,7 +536,7 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
 
   test('MediaSoup branch (livekitService null): builds Viewbot + WebRTC + Client; leaves LiveKit null', async () => {
     const deps = buildViewBotDeps();
-    const bag = await createViewBotServices(deps);
+    const { services: bag } = await createViewBotServices(deps);
 
     expect(Object.keys(bag).sort()).toEqual(
       ['viewBotClientService', 'viewBotLiveKitService', 'viewBotWebRTCService', 'viewbotService'].sort()
@@ -508,7 +551,7 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
   test('LiveKit branch (livekitService present): builds + initializes LiveKit + wires streamService; leaves WebRTC null', async () => {
     const livekitService = { _kind: 'livekit' };
     const deps = buildViewBotDeps({ livekitService });
-    const bag = await createViewBotServices(deps);
+    const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewbotService).toBeInstanceOf(ViewbotService);
     expect(bag.viewBotClientService).toBeInstanceOf(ViewBotClientService);
@@ -523,7 +566,7 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
   test('viewbotService is constructed with (mediasoupService, livekitService)', async () => {
     const livekitService = { _kind: 'livekit' };
     const deps = buildViewBotDeps({ livekitService });
-    const bag = await createViewBotServices(deps);
+    const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewbotService._args).toHaveLength(2);
     expect(bag.viewbotService._args[0]).toBe(deps.mediasoupService);
@@ -532,14 +575,14 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
 
   test('viewbotService receives null as livekitService on MediaSoup branch', async () => {
     const deps = buildViewBotDeps();
-    const bag = await createViewBotServices(deps);
+    const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewbotService._args[1]).toBeNull();
   });
 
   test('viewBotWebRTCService is constructed with (mediasoupService)', async () => {
     const deps = buildViewBotDeps();
-    const bag = await createViewBotServices(deps);
+    const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewBotWebRTCService._args).toHaveLength(1);
     expect(bag.viewBotWebRTCService._args[0]).toBe(deps.mediasoupService);
@@ -548,7 +591,7 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
   test('viewBotLiveKitService is constructed with (livekitService)', async () => {
     const livekitService = { _kind: 'livekit' };
     const deps = buildViewBotDeps({ livekitService });
-    const bag = await createViewBotServices(deps);
+    const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewBotLiveKitService._args).toHaveLength(1);
     expect(bag.viewBotLiveKitService._args[0]).toBe(livekitService);
@@ -556,7 +599,7 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
 
   test('viewBotClientService is constructed with (null, mediasoupService, streamService, viewbotService)', async () => {
     const deps = buildViewBotDeps();
-    const bag = await createViewBotServices(deps);
+    const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewBotClientService._args).toHaveLength(4);
     expect(bag.viewBotClientService._args[0]).toBeNull(); // serverUrl null -> env-var fallback
@@ -567,7 +610,7 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
 
   test('cross-wires viewbotService.viewBotClientService = viewBotClientService', async () => {
     const deps = buildViewBotDeps();
-    const bag = await createViewBotServices(deps);
+    const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewbotService.viewBotClientService).toBe(bag.viewBotClientService);
   });

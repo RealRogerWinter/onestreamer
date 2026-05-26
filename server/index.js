@@ -627,8 +627,9 @@ buffDebuffService.on('buff-applied', async (buffData) => {
 });
 // streamInterceptorService + visualFxService built by the services factory
 // (PR-I2). chatBotService / streamBotService / movieBotService also built
-// there, with post-construction setters (setIoInstance, setMovieBotService,
-// setChatBotService, setChatBotLLMService) wired inside the factory (PR-I3).
+// there. setMovieBotService was eliminated in PR 1.3 by the BotEventBus;
+// remaining post-construction setters (setIoInstance, setChatBotService,
+// setChatBotLLMService) are still factory-internal.
 
 // Set up stream interceptor event handlers
 streamInterceptorService.on('stream-intercepted', async (data) => {
@@ -705,8 +706,10 @@ console.log('🎬 MOVIEBOT: MovieBot service initialized');
 // Set Socket.IO for sound effects broadcasting
 soundFxService.setSocketIO(io);
 
-// chatBotService.setIoInstance(io) and chatBotService.setMovieBotService(...)
-// now happen inside the services factory (PR-I3).
+// chatBotService.setIoInstance(io) happens inside the services factory
+// (PR-I3). PR 1.3 deleted setMovieBotService — ChatBot ↔ MovieBot
+// communicate via BotEventBus, and the moviePromptTemplate read uses a
+// factory-built closure (services.getMoviePromptTemplate).
 
 // Set the buff-debuff service dependency on inventory service after creation
 inventoryService.setBuffDebuffService(buffDebuffService);

@@ -3,13 +3,23 @@ const database = require('../database/database');
 const ChatBotLLMService = require('./ChatBotLLMService');
 
 class ChatBotService {
-    constructor() {
+    constructor({ botEventBus = null, getMoviePromptTemplate = null } = {}) {
         this.bots = new Map(); // botId -> BotInstance
         this.llmService = new ChatBotLLMService();
         this.chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
         this.isInitialized = false;
         this.io = null; // Reference to Socket.IO server instance for managing connections
-        this.movieBotService = null; // Reference to MovieBotService for chat history
+        // BotEventBus is the post-PR-1.3 path for ChatBot → MovieBot signaling.
+        // Falls back to null when not injected (the test mocks don't pass one);
+        // emit() guards on truthiness so the no-bus case is a silent no-op.
+        this.botEventBus = botEventBus;
+        // getMoviePromptTemplate is a closure provided by the factory that
+        // lazily reads movieBotService.config.moviePromptTemplate at call
+        // time (movieBotService is constructed AFTER chatBotService, so the
+        // closure captures it by reference and resolves it on use). Keeps
+        // the temporary-bot prompt aligned with MovieBot's admin-editable
+        // config without re-introducing a construction-time dependency.
+        this.getMoviePromptTemplate = getMoviePromptTemplate;
         
         // Auto-initialize after a short delay to ensure server is ready
         setTimeout(() => {
@@ -70,11 +80,6 @@ class ChatBotService {
     setIoInstance(io) {
         this.io = io;
         console.log('🤖 ChatBot Service: Socket.IO instance set for managing connections');
-    }
-    
-    setMovieBotService(movieBotService) {
-        this.movieBotService = movieBotService;
-        console.log('🤖 ChatBot Service: MovieBotService reference set for chat history');
     }
 
     generateUsername(customName = null) {
@@ -382,9 +387,14 @@ class ChatBotService {
                 botInstance.messageHistory.shift();
             }
             
-            // Also feed to MovieBotService for context
-            if (this.movieBotService && message.username && message.message) {
-                this.movieBotService.addChatMessage(message.username, message.message);
+            // Feed to MovieBotService via the BotEventBus. Decoupled in PR 1.3
+            // so this service no longer holds a direct MovieBotService ref;
+            // the factory wires the same bus into both subscribers.
+            if (this.botEventBus && message.username && message.message) {
+                this.botEventBus.emit('chat-message', {
+                    username: message.username,
+                    message: message.message,
+                });
             }
         });
 
@@ -571,8 +581,16 @@ class ChatBotService {
             // Calculate expiration time
             const expiresAt = new Date(Date.now() + (data.duration || 3600) * 1000);
             
-            // Build the combined prompt
-            const movieBotPrompt = this.movieBotService?.config?.moviePromptTemplate || 
+            // Read the active MovieBot prompt template via the factory-wired
+            // closure (PR 1.3). MovieBotService.loadConfigFromDatabase always
+            // populates config.moviePromptTemplate to either the DB-stored
+            // value (admin-editable) or its built-in `defaultPromptTemplate`,
+            // so under normal startup the closure returns a real value.
+            // Fallback only fires during the brief window between server
+            // start and MovieBot's async config load; the short string is a
+            // deliberately minimal stand-in for that race.
+            const movieBotPrompt =
+                this.getMoviePromptTemplate?.() ||
                 `You are watching a stream. Your core identity is that you are currently a viewer of this stream watching the content.`;
             
             const combinedPrompt = `${movieBotPrompt}\n\nYour specific personality: ${data.personalityPrompt}\nYour name is ${data.name}.`;

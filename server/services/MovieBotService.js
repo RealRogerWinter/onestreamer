@@ -3,13 +3,16 @@ const fs = require('fs');
 const path = require('path');
 
 class MovieBotService extends EventEmitter {
-    constructor(transcriptionService, chatBotService, chatService, database) {
+    constructor(transcriptionService, chatBotService, chatService, database, botEventBus = null) {
         super();
         this.transcriptionService = transcriptionService;
         this.chatBotService = chatBotService;
         this.chatService = chatService;
         this.database = database;
         this.db = database.db;
+        // PR 1.3: ChatBotService no longer calls addChatMessage directly.
+        // Subscribe to 'chat-message' events from the shared BotEventBus.
+        this.botEventBus = botEventBus;
         
         // Store recent chat messages for movie context
         this.recentChatMessages = [];
@@ -763,16 +766,38 @@ class MovieBotService extends EventEmitter {
     }
     
     setupChatListener() {
-        // Set up a listener for chat service if available
+        // PR 1.3 path: subscribe to the BotEventBus for chat messages.
+        // ChatBotService emits 'chat-message' whenever its bot socket
+        // receives a new chat line; this replaces the direct
+        // chatBot.movieBotService.addChatMessage(...) call from the
+        // pre-1.3 wiring. Handler is stored on this so a future stop()
+        // can removeListener it cleanly. addChatMessage itself filters
+        // bot usernames (line ~798), so no prefilter here.
+        if (this.botEventBus) {
+            console.log('🎬 MovieBotService: Subscribing to BotEventBus chat-message events');
+            this._onBusChatMessage = ({ username, message }) => {
+                if (username && message) {
+                    this.addChatMessage(username, message);
+                }
+            };
+            this.botEventBus.on('chat-message', this._onBusChatMessage);
+        }
+
+        // Legacy path: some test/dev setups pass a chatService with .on().
+        // The production chatServiceWrapper from bootstrap/services.js does
+        // NOT have .on() (it only exposes getRecentMessages), so the
+        // production path never entered this branch — but the warning log
+        // is preserved for setups that genuinely use an emitter-shaped
+        // chat service.
         if (this.chatService && this.chatService.on) {
-            console.log('🎬 MovieBotService: Setting up chat listener');
+            console.log('🎬 MovieBotService: Setting up legacy chatService listener');
             this.chatService.on('message', (data) => {
                 if (data.username && data.message && !data.username.includes('🤖')) {
                     this.addChatMessage(data.username, data.message);
                 }
             });
-        } else {
-            console.log('⚠️ MovieBotService: Chat service not available for listener setup');
+        } else if (!this.botEventBus) {
+            console.log('⚠️ MovieBotService: No chat source available (no BotEventBus, no chatService.on)');
         }
     }
     

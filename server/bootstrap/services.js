@@ -129,6 +129,8 @@ const { GameService, GameStreamService } = require('../services/game');
 const ChatBotService = require('../services/ChatBotService');
 const StreamBotService = require('../services/StreamBotService');
 const MovieBotService = require('../services/MovieBotService');
+// PR 1.3: shared event bus that decouples ChatBot from MovieBot.
+const BotEventBus = require('../services/BotEventBus');
 
 // PR-I4: late ViewBot stack — see createViewBotServices below.
 const ViewbotService = require('../services/ViewbotService');
@@ -233,19 +235,36 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   const gameService = new GameService(io, database);
   const gameStreamService = new GameStreamService(io, gameService, takeoverService);
 
-  // ── PR-I3: bot cluster ──────────────────────────────────────────────────
-  // ChatBotService and StreamBotService use post-construction setters that
-  // wire in sibling services (and in the case of ChatBot, the io instance).
-  // The inline-original sequence in server/index.js was:
-  //   1. construct chatBotService + streamBotService
-  //   2. construct movieBotService (consumes chatBotService + a chatService
-  //      wrapper closure over database.allAsync)
-  //   3. chatBotService.setIoInstance(io)
-  //   4. chatBotService.setMovieBotService(movieBotService)
+  // ── PR-I3 / PR-1.3: bot cluster ─────────────────────────────────────────
+  // PR 1.3 introduced BotEventBus to break the circular ChatBot ↔ MovieBot
+  // dependency. Previously chatBotService.setMovieBotService(movieBotService)
+  // wired a direct reference *after* MovieBotService was constructed; now
+  // both services receive the same shared bus at construction and the only
+  // cross-service call (chat-message broadcast) goes through it.
+  //
+  // The remaining ChatBotService and StreamBotService setters (setIoInstance,
+  // setChatBotService, setChatBotLLMService) are still post-construction
+  // because they wire in things constructed in this factory body, not
+  // because of a circular dep. Sequence:
+  //   1. construct botEventBus (no deps)
+  //   2. construct chatBotService ({ botEventBus }) + streamBotService(database)
+  //   3. construct movieBotService(..., botEventBus); subscribes to bus in ctor
+  //   4. chatBotService.setIoInstance(io)
   //   5. streamBotService.setChatBotService(chatBotService)
   //   6. streamBotService.setChatBotLLMService(chatBotService.llmService)
-  // We preserve that exact order here.
-  const chatBotService = new ChatBotService();
+  const botEventBus = new BotEventBus();
+
+  // movieBotService is forward-declared (let, not const) so the closure below
+  // can capture it by reference. ChatBotService calls
+  // getMoviePromptTemplate() at request time (createTemporaryBot) — by then
+  // movieBotService is constructed and has loaded config from DB. This
+  // preserves the admin-editable prompt template feature without
+  // re-introducing a construction-time circular dep.
+  let movieBotService;
+  const chatBotService = new ChatBotService({
+    botEventBus,
+    getMoviePromptTemplate: () => movieBotService?.config?.moviePromptTemplate,
+  });
   const streamBotService = new StreamBotService(database);
 
   // chatServiceWrapper: minimal adapter exposing getRecentMessages(limit)
@@ -269,16 +288,18 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     },
   };
 
-  const movieBotService = new MovieBotService(
+  movieBotService = new MovieBotService(
     transcriptionService,
     chatBotService,
     chatServiceWrapper,
-    database
+    database,
+    botEventBus
   );
 
-  // Post-construction wiring. Order matches the inline original.
+  // Post-construction wiring. setMovieBotService was removed in PR 1.3
+  // (replaced by the bus); the rest remain because they pass forward-
+  // declared instances, not because of a cycle.
   chatBotService.setIoInstance(io);
-  chatBotService.setMovieBotService(movieBotService);
   streamBotService.setChatBotService(chatBotService);
   streamBotService.setChatBotLLMService(chatBotService.llmService);
 
@@ -319,6 +340,8 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     chatBotService,
     streamBotService,
     movieBotService,
+    // PR 1.3:
+    botEventBus,
   };
 
   // PR 1.2: stoppables in construction order. server/index.js's SIGINT
