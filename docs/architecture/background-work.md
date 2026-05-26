@@ -52,8 +52,6 @@ These are the **hard** half. Each is created without storing the handle on a sta
 | Site | Severity | Notes |
 |------|----------|-------|
 | `server/index.js:556` | **High** | `visualEffectSyncInterval` — module-scope `let`, started by `startVisualEffectSync()`. The function does check-and-clear, but on hot-reload the previous interval orphans. |
-| `server/index.js:867` | **High** | Per-streamer `setInterval` stuffed into `global.viewBotIntervals` Map. Created in socket handler, not consistently cleared. |
-| `server/index.js:879` | **High** | Sibling audio interval to :867, same pattern. |
 | `server/index.js:5561` | Medium | Streaming time sync — module-scope, never stopped. |
 | `server/index.js:5978` | Medium | Stress-test generator (dev only?), module-scope. |
 | `services/VisualFxService.js:1537` | Medium | Anonymous `setInterval` inside a method, no handle saved. |
@@ -77,9 +75,11 @@ This is Phase 2 PR 2.6's target (see refactor plan); the fix is to gate cleanup 
 
 `server/index.js:5242, 5319, 5401, 5505, 5514, 5913, 5952, 6140` schedule autostarts and graceful-shutdown work with no per-handle reference. If service init fails partway, the deferred work still fires against torn-down state. Phase 4 (`startServer()` decomposition into a phased `LifecycleManager.start()`) cleans this up.
 
-### `global.viewBotIntervals` Map
+### ~~`global.viewBotIntervals` Map~~ (resolved by deletion in PR 3.4)
 
-`server/index.js:859–883` stores per-streamer video and audio intervals in a `Map<streamerId, interval>` keyed on `${streamerId}-video` and `${streamerId}-audio`. The Map is module-scope under `global.viewBotIntervals`, lazily initialized on first use. Cleanup on streamer disconnect is **partial** — some paths clear, others don't. Phase 3 (state unification) moves this into the ViewBot service instance state.
+This section originally flagged a `Map<streamerId, interval>` at `server/index.js:859–883` as a partial-cleanup hazard. Phase 3 PR 3.4 mapped the callsites and found the Map had zero producers in practice: the three module-scope helpers that wrote to it (`createViewBotProducer`, `startSyntheticMediaGeneration`, `generateViewBotRtpParameters`) had **no callers anywhere in the codebase since the initial commit** — confirmed by `grep` across `server/`, `client/`, `chat-service/`, and `git log --all -S "createViewBotProducer("` showing no commit ever added a call site. The "leak on incomplete cleanup" was structurally impossible because nothing ever populated the Map.
+
+PR 3.4 deleted the three helpers and the Map reference. The previous wording here ("some paths clear, others don't") was based on reading the file rather than tracing callers — corrected for the record.
 
 ## Child processes
 
