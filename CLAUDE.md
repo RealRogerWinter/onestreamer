@@ -50,7 +50,7 @@ Smoke-test path (after any change to streaming/takeover/chat/admin): walk throug
 - **Chat microservice**: [`chat-service/`](chat-service/) — separate process, separate port (8444), HTTP callbacks to the main server.
 - **Client**: [`client/src/`](client/src/) — React 19 + TypeScript. Components in `components/`, services in `services/`, hooks in `hooks/`, contexts in `contexts/`.
 - **DB**: SQLite at `server/data/onestreamer.db`. Schema in [`server/database/`](server/database/). ~30 tables.
-- **Real-time media**: MediaSoup SFU (primary), coturn (TURN/STUN), LiveKit (dormant — [ADR-0002](docs/architecture/adr/0002-mediasoup-primary-livekit-dormant.md)).
+- **Real-time media**: MediaSoup SFU (primary), coturn (TURN/STUN — see note), LiveKit (active — URL-stream relay, recording, MovieBot transcription; see [ADR-0008](docs/architecture/adr/0008-revive-livekit-for-url-streams-and-recording.md) which supersedes ADR-0002).
 
 ## What to avoid
 

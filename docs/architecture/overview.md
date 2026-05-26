@@ -91,7 +91,7 @@ nginx terminates TLS for application traffic on ports 80/443 and proxies to:
 - Main server on `127.0.0.1:8443`
 - Chat-service on `127.0.0.1:8444`
 - Strapi on `127.0.0.1:1337`
-- LiveKit on `127.0.0.1:7882` (dormant; see [ADR-0002](adr/0002-mediasoup-primary-livekit-dormant.md))
+- LiveKit on `127.0.0.1:7882` (active — URL-stream relay via `livekit-ingress`, recording via `livekit-egress`, MovieBot transcription; see [ADR-0008](adr/0008-revive-livekit-for-url-streams-and-recording.md) which supersedes ADR-0002)
 
 **Media flows direct browser ↔ MediaSoup over UDP** in the 50000–50199 range, announced on the public IP. nginx doesn't touch RTP packets. This is essential for low-latency streaming and is the reason `coturn` exists as a TURN server for clients behind strict NATs.
 
@@ -168,7 +168,7 @@ Plus the external companions:
 |---------|-------|
 | nginx | system service |
 | Strapi CMS | separate process; not in `config/ecosystem.config.js` (typically systemd or its own PM2 entry) |
-| LiveKit server | system service on `:7880` / `:7882` (dormant in production path) |
+| LiveKit server | system service on `:7880` / `:7882` (active — URL-stream relay, recording, transcription; see ADR-0008) |
 | coturn | system service |
 | Ollama | system service on `:11434` |
 

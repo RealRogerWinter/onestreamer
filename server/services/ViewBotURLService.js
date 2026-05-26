@@ -61,7 +61,7 @@ class ViewBotURLService extends EventEmitter {
     // Adaptive encoding configuration
     this.adaptiveConfig = {
       enabled: true,           // Enable adaptive encoding by default
-      mode: 'balanced',        // 'performance', 'balanced', or 'quality'
+      mode: 'performance',     // 'performance', 'balanced', or 'quality' — perf uses ultrafast + 0.7x bitrate
       maxWidth: 1920,          // Max output resolution
       maxHeight: 1080,
       maxVideoBitrate: 6000,   // kbps
@@ -811,6 +811,19 @@ class ViewBotURLService extends EventEmitter {
     // Input
     args.push('-i', input);
 
+    // Experimental: VIEWBOT_STREAM_COPY=true bypasses re-encoding entirely.
+    // Only works when the source is already H.264 + AAC (most IVS/Kick/Twitch HLS).
+    // Risk: GOP/keyframe mismatch can cause WebRTC subscriber freeze-on-join,
+    // and a silent platform-side codec change breaks copy with no error.
+    const streamCopy = process.env.VIEWBOT_STREAM_COPY === 'true' && input !== '-';
+    if (streamCopy) {
+      args.push('-c:v', 'copy', '-c:a', 'copy', '-bsf:v', 'h264_mp4toannexb');
+      args.push('-f', 'flv', '-flvflags', 'no_duration_filesize', rtmpUrl);
+      console.log(`🎬 FFmpeg RTMP [STREAM-COPY]: ${this.ffmpegPath} -i ${input.substring(0, 60)}... -> ${rtmpUrl}`);
+      const process = spawn(this.ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      return process;
+    }
+
     // Video filter - use adaptive scale or default 720p
     if (useAdaptive && settings.scale) {
       args.push('-vf', settings.scale);
@@ -842,15 +855,17 @@ class ViewBotURLService extends EventEmitter {
         '-sc_threshold', String(settings.scThreshold)
       );
     } else {
-      // Default fixed settings (720p @ 4Mbps)
+      // Default fixed settings (720p @ 2Mbps). Used only when the source probe fails;
+      // the adaptive path is the hot path. Values mirror viewbot-config.json's 2 Mbps
+      // target and the LiveKit ingress's 2125 kbps tier.
       args.push(
         '-c:v', 'libx264',
-        '-preset', 'superfast',
+        '-preset', 'ultrafast',
         '-profile:v', 'main',
         '-level', '3.1',
-        '-b:v', '4000k',
-        '-maxrate', '4500k',
-        '-bufsize', '6000k',
+        '-b:v', '2000k',
+        '-maxrate', '2500k',
+        '-bufsize', '4000k',
         '-pix_fmt', 'yuv420p',
         '-r', '30',
         '-g', '60',

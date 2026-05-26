@@ -463,16 +463,26 @@ class ViewBotLiveKitService {
       const audioBitrate = encodingSettings?.audioBitrate ? encodingSettings.audioBitrate * 1000 : 160000;
       const audioChannels = encodingSettings?.audioChannels || 2;
 
-      console.log(`🎬 LIVEKIT INGRESS: Creating with ${videoWidth}x${videoHeight}@${videoFps}fps ${videoBitrate/1000}kbps`);
+      // Experimental: set LIVEKIT_INGRESS_BYPASS_TRANSCODING=true to attempt passthrough
+      // (skips ingress re-transcoding when the upstream ffmpeg already produces a
+      // LiveKit-compatible H.264/Opus profile). Requires device-QA — mismatched SDP
+      // can cause subscriber-side black streams. Prior team comment said "can't bypass";
+      // this flag lets us re-validate that on the current livekit-server-sdk version.
+      const bypassTranscoding = process.env.LIVEKIT_INGRESS_BYPASS_TRANSCODING === 'true';
 
-      const ingress = await ingressClient.createIngress(IngressInput.RTMP_INPUT, {
+      console.log(`🎬 LIVEKIT INGRESS: Creating with ${videoWidth}x${videoHeight}@${videoFps}fps ${videoBitrate/1000}kbps${bypassTranscoding ? ' [BYPASS TRANSCODING]' : ''}`);
+
+      const ingressRequest = {
         name: `viewbot-${bot.id}`,
         roomName: this.config.roomName,
         participantIdentity: bot.id,
-        participantName: `ViewBot ${bot.id}`,
-        // Note: RTMP requires transcoding for WebRTC conversion, can't bypass
-        // Adaptive quality configuration based on source stream
-        video: {
+        participantName: `ViewBot ${bot.id}`
+      };
+
+      if (!bypassTranscoding) {
+        // Default path: explicit encoding options force LiveKit ingress to transcode
+        // to the specified layer (60% CPU per active ingress on this box).
+        ingressRequest.video = {
           source: TrackSource.CAMERA,
           encodingOptions: {
             case: 'options',
@@ -487,8 +497,8 @@ class ViewBotLiveKitService {
               }]
             }
           }
-        },
-        audio: {
+        };
+        ingressRequest.audio = {
           source: TrackSource.MICROPHONE,
           encodingOptions: {
             case: 'options',
@@ -499,8 +509,14 @@ class ViewBotLiveKitService {
               disableDtx: false
             }
           }
-        }
-      });
+        };
+      } else {
+        // Bypass path: pass through the source codecs as-is. The upstream ffmpeg
+        // (ViewBotURLService._createFFmpegRTMPProcess) must emit H.264 + AAC/Opus.
+        ingressRequest.bypassTranscoding = true;
+      }
+
+      const ingress = await ingressClient.createIngress(IngressInput.RTMP_INPUT, ingressRequest);
 
       console.log(`✅ LIVEKIT VIEWBOT ${bot.id}: Created ingress with stream key: ${ingress.streamKey}`);
 
