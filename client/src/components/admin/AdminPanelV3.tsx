@@ -4,6 +4,7 @@ import UserManagement from './UserManagement';
 import ConnectionMonitor from '../ConnectionMonitor';
 import ViewBotTab from './ViewBotTab';
 import URLStreamManagement from '../URLStreamManagement';
+import WhitelistManagement from './WhitelistManagement';
 import ItemManagement from './ItemManagement';
 import ChatBotManagement from './ChatBotManagement';
 import RecordingManagement from './RecordingManagement';
@@ -51,6 +52,7 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
     { id: 'connections', label: 'Connections', icon: '🔗', category: 'Monitoring' },
     { id: 'viewbot', label: 'ViewBot Control', icon: '🤖', category: 'Services' },
     { id: 'urlstream', label: 'URL Stream Relay', icon: '📡', category: 'Services' },
+    { id: 'whitelist', label: 'Relay Whitelist', icon: '🛡️', category: 'Services' },
     { id: 'items', label: 'Items & Shop', icon: '🛍️', category: 'Content' },
     { id: 'chatbots', label: 'Chat Bots', icon: '💬', category: 'Services' },
     { id: 'streambot', label: 'StreamBot', icon: '📢', category: 'Services' },
@@ -214,6 +216,8 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
         return <ViewBotTab makeApiCall={makeApiCall} addLog={addLog} />;
       case 'urlstream':
         return <URLStreamManagement makeApiCall={makeApiCall} addLog={addLog} />;
+      case 'whitelist':
+        return <WhitelistManagement makeApiCall={makeApiCall} addLog={addLog} />;
       case 'items':
         return <ItemManagement addLog={addLog} />;
       case 'chatbots':

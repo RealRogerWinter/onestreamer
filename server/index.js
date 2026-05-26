@@ -5068,6 +5068,13 @@ async function startServer() {
       whitelistService = null;
     }
 
+    // PR-W5: mount admin routes for the whitelist (no-op when service unset).
+    // Mounted unconditionally — the route handlers themselves return 503 when
+    // app.locals.whitelistService is missing.
+    const whitelistRoutes = require('./routes/whitelist');
+    app.use('/api/whitelist', whitelistRoutes());
+    console.log('✅ WHITELIST: API routes mounted at /api/whitelist');
+
     if (!livekitService) {
       // ── MediaSoup branch orchestration ────────────────────────────────
       // Initialize URL Stream ViewBot Service for MediaSoup backend
