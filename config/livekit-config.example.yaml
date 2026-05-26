@@ -1,17 +1,24 @@
 # OneStreamer LiveKit — sanitized reference configuration
 #
-# LiveKit is DORMANT infrastructure (see ADR-0002 and ADR-0003). Production
-# streaming goes through MediaSoup; this config exists only so a deployment
-# could revive LiveKit intentionally rather than rediscovering its shape from
-# scratch. If you flip `WEBRTC_BACKEND=livekit`, copy this file to
-# `livekit-config.yaml`, replace the placeholders below, and start the LiveKit
-# server. The actual file is gitignored (see .gitignore).
+# Per ADR-0008 LiveKit is the active WebRTC backend; URL-stream relay,
+# room-composite recording, and transcription all depend on it. Copy this file
+# to `livekit-config.yaml` (gitignored), substitute the placeholders, and run
+# `livekit-server --config /root/onestreamer/livekit-config.yaml`.
 #
-# Reviving LiveKit is non-trivial — read ADR-0003 first.
+# Two non-obvious requirements bit us when reviving this in May 2026:
+#   1. The `redis:` section below is MANDATORY. livekit-server, livekit-ingress
+#      and livekit-egress share state through Redis. Without it the server
+#      runs single-node and `createIngress` returns "twirp error unknown:
+#      ingress not connected (redis required)". See
+#      docs/operations/runbooks/livekit-ingress-not-connected.md.
+#   2. If nginx fronts LiveKit via `/livekit/*` and proxies to [::1]:7882
+#      (the shipped vhost does), `bind_addresses` MUST include both 127.0.0.1
+#      and ::1. The upstream-default 0.0.0.0 is IPv4-only and yields 502s.
 
 port: 7882
 bind_addresses:
-  - "0.0.0.0"
+  - "127.0.0.1"
+  - "::1"
 
 rtc:
   tcp_port: 7883

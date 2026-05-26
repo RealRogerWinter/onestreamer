@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Admin Connections tab no longer hangs.** The `/admin/connections` handler in `server/index.js` tried to instantiate `new AccountService()`, but that class is never imported in the file — only the bootstrap-built `accountService` instance (destructured at module scope). The synchronous `ReferenceError` was thrown inside an async handler, which Express 4 leaves un-responded; clients hung until their own timeout. Removed the shadow; the outer-scope `accountService` is reused.
+- **Admin Recording Review tab no longer hangs.** The `/admin/review/timeline` handler ran `SELECT * FROM recording_stream_segments` with no time filter (28,931 rows) and then did **one or two follow-up DB queries per segment** for display-name lookups. Response could exceed 20 MB and many seconds. Added a `?days=N` window filter (defaults to 30) and batched the per-segment lookups into a single `WHERE source_url IN (…)` + a single channel-ID `LIKE` per IVS channel + a single `streaming_logs` `WHERE streamer_id IN (…)`. Same data shape returned; timeline at `days=30` now responds in ~0.9 s with 3.3 MB.
+- **URL-stream relay (Twitch/Kick) produces video again.** Operational fix; see ADR-0008 below. Verified end-to-end: FFmpeg → RTMP → `livekit-ingress` → LiveKit room → transcription / recording / MovieBot replies.
+
+### Changed
+- **LiveKit revived as the active WebRTC backend.** See [ADR-0008](docs/architecture/adr/0008-revive-livekit-for-url-streams-and-recording.md). Supersedes ADR-0002 (LiveKit dormant) and pauses ADR-0007's staged cleanup. URL-stream relay (Twitch/Kick), continuous recording (LiveKit Egress), and MovieBot transcription all depend on LiveKit being live; ADR-0002's "dormant" framing did not match the running system. The shipped LiveKit triad (livekit-server systemd unit + livekit-ingress + livekit-egress containers) is now load-bearing; rollback procedure documented in the ADR.
+- **`config/livekit-config.example.yaml`** updated with: mandatory `redis:` section (without which `createIngress` fails), and `bind_addresses` containing both `127.0.0.1` and `::1` (the shipped nginx vhost proxies `/livekit/*` to `[::1]:7882`, so IPv4-only binds return 502). Documentation comment block rewritten to match ADR-0008 instead of ADR-0002.
+
+### Added
+- New runbook [`docs/operations/runbooks/livekit-ingress-not-connected.md`](docs/operations/runbooks/livekit-ingress-not-connected.md) covering the most distinctive failure modes encountered during the May 2026 LiveKit revival: missing `redis:` section, IPv4-only bind, stopped ingress/egress containers, stale Redis registry, and downed Redis itself.
+- New [ADR-0008](docs/architecture/adr/0008-revive-livekit-for-url-streams-and-recording.md) documenting the LiveKit revival, supersession of ADR-0002/0007, and rollback procedure.
+
+### Removed
+- **All references to a phantom "~333 ms A/V sync offset"** across `README.md`, `docs/architecture/streaming-stack.md` (warning banner and limits-table row), `docs/features/streaming-and-takeover.md` (warning banner), `docs/getting-started/first-stream.md` (test step), and `CHANGELOG.md` (Verified entry). The ~333 ms claim was not borne out in practice — viewers don't observe a perceptible offset; the original `AV_SYNC_IMPLEMENTATION_COMPLETE.md` (now in `/docs/archive/av-sync/`) was inherited as documentation without re-verification. The archive directory itself is preserved for forensic value.
+
+## [Documentation overhaul 2026-05-23]
+
 ### Added
 - **Documentation overhaul.** Comprehensive `/docs/` tree organized by audience (getting-started, operations, features, architecture, integrations, api, contributing, security, archive). 70 markdown files covering the full system: feature flows, architecture, ADRs, runbooks, integration references, API endpoints, socket events, contributing conventions, and security policies.
 - New root README — feature tour, quick-start, Mermaid system diagram, documentation map, tech stack, honest status notes.
@@ -29,10 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Verified (not changed, but ground-truthed)
 - Transcription pipeline: `whisper.cpp` native binary is live. `openai-whisper` is a phantom dependency.
-- Primary streaming backend: MediaSoup. LiveKit is dormant infrastructure.
+- ~~Primary streaming backend: MediaSoup. LiveKit is dormant infrastructure.~~ (Superseded by ADR-0008 — see Unreleased / Changed.)
 - Points balance: `user_stats.points_balance` is authoritative (refactor was executed).
 - Clips system: substantially implemented; live endpoint returns valid status.
-- A/V sync: still has the ~333 ms architectural offset documented as a `> [!WARNING]`.
 - Account deletion: end-to-end wired with 24h confirm token + 15-day grace + 8-table hard purge.
 - Strapi blog: server-side OG-meta injection only; React app oblivious.
 

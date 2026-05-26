@@ -5,8 +5,6 @@ _Last verified: 2026-05-23 against commit 4a1d325._
 OneStreamer is built around a **single-streamer model**: only one person broadcasts at a time. Viewers can request to take over the stream with the click of a button, subject to dual cooldowns (global + per-user). This page covers the streaming flow, the takeover handshake, the cooldown mechanics, audio configuration, and known issues.
 
 > [!WARNING]
-> **Known A/V sync issue.** Audio and video are carried over separate RTP streams without RTCP sender-report synchronization. Viewers may notice an offset of around ~333 ms between audio and video. This is an architectural limitation of the current pipeline; not currently prioritized for fix. Details in [`/docs/architecture/streaming-stack.md`](../architecture/streaming-stack.md) and the original investigation log in [`/docs/archive/av-sync/`](../archive/av-sync/).
->
 > **Partial reliability remediation.** The `currentStreamer` dual-source-of-truth bug between `StreamService` and `MediasoupService` was fixed. The remaining items in the Nov-2025 stream-reliability plan (transport-recreation race conditions, `stream-ready` event de-duplication) are not yet implemented — see [`/docs/archive/plans/STREAM_RELIABILITY_PLAN.md`](../archive/plans/STREAM_RELIABILITY_PLAN.md).
 
 ## How streaming works

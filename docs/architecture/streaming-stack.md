@@ -4,9 +4,6 @@ _Last verified: 2026-05-23 against commit 4a1d325._
 
 How real-time A/V actually moves through OneStreamer: from a streamer's webcam, through MediaSoup, through optional secondary pipelines (recording, transcription, viewbots), to viewer browsers — and the limits of that architecture.
 
-> [!WARNING]
-> **Known A/V sync issue.** Audio and video travel over separate RTP streams (different UDP ports) and there is no RTCP sender-report synchronization between them. The result is a measured offset of roughly **333 ms** in production. The original `AV_SYNC_IMPLEMENTATION_COMPLETE.md` is misleading — the body admits the issue persists. See [`/docs/archive/av-sync/`](../archive/av-sync/). Fixing this would require either RTCP sender-report synchronization or muxed audio+video into a single transport — neither is implemented and neither is planned.
-
 ## The primary path (streamer → viewer)
 
 ```mermaid
@@ -192,7 +189,6 @@ The TURN credential pattern is HMAC-based with a shared secret (`TURN_SECRET`). 
 
 | Item | Status | Workaround |
 |------|--------|------------|
-| A/V sync ~333 ms offset | Architectural; no fix planned | None — accept the offset |
 | Single MediaSoup worker per router | By design (single-host) | Scale vertically; sharding would require new infra |
 | LiveKit dual-stack | Rolled back ([ADR-0003](adr/0003-livekit-dual-stack-rollback.md)) | LiveKit infra remains for future revival |
 | HLS fallback path | Implemented but not the primary | Default is WebRTC; HLS is only when WebRTC fails to negotiate |

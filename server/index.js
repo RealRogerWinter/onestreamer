@@ -2803,9 +2803,11 @@ app.get('/admin/connections', authenticateAdmin, async (req, res) => {
   const uniqueViewerCount = sessionService.getUniqueViewerCount();
   const activeSessions = sessionService.getActiveSessions();
   
-  // Create AccountService instance for fetching user details
-  const accountService = new AccountService();
-  
+  // accountService is the bootstrap-built instance from line ~462 (createServices).
+  // A prior inline `new AccountService()` here was a leftover from before the
+  // services factory; the class isn't imported in this file, which silently
+  // hung the request via an un-caught async ReferenceError.
+
   // Enhance session data with additional information
   const enhancedSessions = await Promise.all(sessions.map(async (session) => {
     // Get chat username if available

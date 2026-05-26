@@ -563,6 +563,13 @@ router.get('/status', authenticateAdmin, async (req, res) => {
  */
 router.get('/timeline', authenticateAdmin, async (req, res) => {
     try {
+        // ?days=N caps how far back the timeline reaches. With 28k+ segments
+        // accumulated and per-row display-name lookups, the unbounded query
+        // returned ~23 MB and timed out the UI. Default 30 covers recent
+        // activity; pass days=9999 for the full historical view.
+        const days = Math.max(1, Math.min(parseInt(req.query.days, 10) || 30, 9999));
+        const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+
         // First, get the recording session boundaries
         const recordingSessions = await allAsync(`
             SELECT session_id, start_time, end_time, local_path, status
@@ -618,8 +625,80 @@ router.get('/timeline', authenticateAdmin, async (req, res) => {
                 started_at,
                 ended_at
             FROM recording_stream_segments
+            WHERE started_at >= ?
             ORDER BY started_at ASC
-        `);
+        `, [sinceMs]);
+
+        // Batch-prefetch display names for all url_streams referenced by these
+        // segments. The previous inline N+1 (one or two SELECTs per segment)
+        // dominated request time for large windows.
+        const urlSet = new Set();
+        const channelSet = new Set();
+        const channelToUrls = new Map();
+        const streamIdentitiesNeedingName = new Set();
+        for (const seg of streamSegments) {
+            if (seg.source_url) {
+                urlSet.add(seg.source_url);
+                if (seg.source_url.includes('live-video.net')) {
+                    const m = seg.source_url.match(/channel\.([A-Za-z0-9]+)\.m3u8/);
+                    if (m) {
+                        channelSet.add(m[1]);
+                        if (!channelToUrls.has(m[1])) channelToUrls.set(m[1], []);
+                        channelToUrls.get(m[1]).push(seg.source_url);
+                    }
+                }
+            }
+            if (seg.stream_type === 'real_streamer'
+                && seg.display_name && seg.display_name.length > 15
+                && /^[a-zA-Z0-9_-]+$/.test(seg.display_name)) {
+                streamIdentitiesNeedingName.add(seg.stream_identity);
+            }
+        }
+
+        const displayByUrl = new Map();
+        if (urlSet.size > 0) {
+            const placeholders = Array.from(urlSet, () => '?').join(',');
+            const rows = await allAsync(
+                `SELECT source_url, display_name FROM url_streams WHERE source_url IN (${placeholders})`,
+                Array.from(urlSet)
+            );
+            for (const r of rows) {
+                if (r.display_name && r.display_name !== 'Unknown') {
+                    displayByUrl.set(r.source_url, r.display_name.replace(/\s*\([^)]+\)\s*$/, '').trim());
+                }
+            }
+        }
+
+        // For IVS channel-id matches, do a single LIKE-per-channel batched lookup
+        if (channelSet.size > 0) {
+            for (const channelId of channelSet) {
+                if (channelToUrls.get(channelId).some(u => displayByUrl.has(u))) continue;
+                const row = await getAsync(
+                    `SELECT display_name FROM url_streams WHERE source_url LIKE ? ORDER BY id DESC LIMIT 1`,
+                    [`%channel.${channelId}%`]
+                );
+                if (row && row.display_name && row.display_name !== 'Unknown') {
+                    const clean = row.display_name.replace(/\s*\([^)]+\)\s*$/, '').trim();
+                    for (const u of channelToUrls.get(channelId)) {
+                        if (!displayByUrl.has(u)) displayByUrl.set(u, clean);
+                    }
+                }
+            }
+        }
+
+        const streamerNameById = new Map();
+        if (streamIdentitiesNeedingName.size > 0) {
+            const placeholders = Array.from(streamIdentitiesNeedingName, () => '?').join(',');
+            const rows = await allAsync(
+                `SELECT streamer_id, streamer_name FROM streaming_logs
+                 WHERE streamer_id IN (${placeholders})
+                 GROUP BY streamer_id`,
+                Array.from(streamIdentitiesNeedingName)
+            );
+            for (const r of rows) {
+                if (r.streamer_name) streamerNameById.set(r.streamer_id, r.streamer_name);
+            }
+        }
 
         // Build events from stream segments
         const events = [];
@@ -639,75 +718,23 @@ router.get('/timeline', authenticateAdmin, async (req, res) => {
 
             if (seg.stream_type === 'url_stream' && seg.source_url) {
                 // For URL streams, try to extract the actual username from the source URL
-                // This overrides random display names like "Arctic Flamingo" with actual usernames
                 const extractedUsername = extractUsernameFromUrl(seg.source_url);
                 if (extractedUsername) {
                     displayName = extractedUsername;
-                } else if (seg.source_url.includes('live-video.net')) {
-                    // AWS IVS URLs are Kick streams - try to look up the display name from url_streams table
-                    try {
-                        // Try exact match first
-                        let urlStream = await getAsync(
-                            'SELECT display_name FROM url_streams WHERE source_url = ? LIMIT 1',
-                            [seg.source_url]
-                        );
-
-                        // If no exact match, try matching by channel ID pattern
-                        // IVS URLs have format: .../channel.{channelId}.m3u8?token=...
-                        if (!urlStream || !urlStream.display_name || urlStream.display_name === 'Unknown') {
-                            const channelMatch = seg.source_url.match(/channel\.([A-Za-z0-9]+)\.m3u8/);
-                            if (channelMatch) {
-                                urlStream = await getAsync(
-                                    `SELECT display_name FROM url_streams WHERE source_url LIKE '%channel.${channelMatch[1]}%' ORDER BY id DESC LIMIT 1`
-                                );
-                            }
-                        }
-
-                        if (urlStream && urlStream.display_name && urlStream.display_name !== 'Unknown') {
-                            // Clean up display name (remove "(Admin)", "(Chat Vote)" suffixes)
-                            displayName = urlStream.display_name.replace(/\s*\([^)]+\)\s*$/, '').trim();
-                        } else {
-                            displayName = 'Kick';
-                        }
-                    } catch (e) {
-                        displayName = 'Kick';
-                    }
                 } else {
-                    // For other URL streams, try to look up the display name from url_streams table
-                    try {
-                        const urlStream = await getAsync(
-                            'SELECT display_name FROM url_streams WHERE source_url = ? LIMIT 1',
-                            [seg.source_url]
-                        );
-                        if (urlStream && urlStream.display_name && urlStream.display_name !== 'Unknown') {
-                            // Clean up display name (remove "(Admin)", "(Chat Vote)" suffixes)
-                            displayName = urlStream.display_name.replace(/\s*\([^)]+\)\s*$/, '').trim();
-                        } else if (seg.platform && seg.platform !== 'unknown' && seg.platform !== 'direct') {
-                            // Fall back to platform name if we can't extract username
-                            displayName = seg.platform;
-                        }
-                    } catch (e) {
-                        // Keep existing display name
-                        if (seg.platform && seg.platform !== 'unknown' && seg.platform !== 'direct') {
-                            displayName = seg.platform;
-                        }
+                    const looked = displayByUrl.get(seg.source_url);
+                    if (looked) {
+                        displayName = looked;
+                    } else if (seg.source_url.includes('live-video.net')) {
+                        displayName = 'Kick';
+                    } else if (seg.platform && seg.platform !== 'unknown' && seg.platform !== 'direct') {
+                        displayName = seg.platform;
                     }
                 }
             } else if (seg.stream_type === 'real_streamer') {
-                // For real streamers, if display_name looks like a socket ID, look up the real name
                 if (displayName && displayName.length > 15 && /^[a-zA-Z0-9_-]+$/.test(displayName)) {
-                    // This looks like a socket ID - try to look up the real username
-                    try {
-                        const streamLog = await getAsync(
-                            'SELECT streamer_name FROM streaming_logs WHERE streamer_id = ? ORDER BY id DESC LIMIT 1',
-                            [seg.stream_identity]
-                        );
-                        if (streamLog && streamLog.streamer_name) {
-                            displayName = streamLog.streamer_name;
-                        }
-                    } catch (e) {
-                        // Keep the existing display name
-                    }
+                    const looked = streamerNameById.get(seg.stream_identity);
+                    if (looked) displayName = looked;
                 }
             }
 

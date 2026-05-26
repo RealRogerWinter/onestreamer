@@ -32,7 +32,8 @@ What would have prevented this. Could be code, monitoring, runbook update, etc.
 | File | Covers |
 |------|--------|
 | [`stream-stuck.md`](stream-stuck.md) | Stream appears live in UI but no video reaches viewers. |
-| [`livekit-disconnect.md`](livekit-disconnect.md) | LiveKit clients failing to connect or dropping. |
+| [`livekit-disconnect.md`](livekit-disconnect.md) | LiveKit clients failing to connect or dropping (signal path). |
+| [`livekit-ingress-not-connected.md`](livekit-ingress-not-connected.md) | URL-stream relay fails with `ingress not connected (redis required)`; or `/livekit/*` returns 502 from nginx. |
 | [`recording-upload-failed.md`](recording-upload-failed.md) | Recording segments not appearing in B2. |
 | [`viewbot-fleet-misbehaving.md`](viewbot-fleet-misbehaving.md) | Viewbot rotation hung, leaking processes, or stuck on one channel. |
 | [`secret-rotation.md`](secret-rotation.md) | Procedure for rotating any of the project's credentials. |

@@ -25,7 +25,7 @@ OneStreamer is a one-streamer-at-a-time live broadcast platform where viewers ca
 - **A SaaS to sign up for.** [onestreamer.live](https://onestreamer.live) is one community's live instance, not a free hosting service.
 - **A streaming SDK or library.** It's an application — you run it, you don't import from it.
 - **Production-tested at scale.** Single Node.js process per service, single SQLite DB, single host. Wouldn't recommend running it for a million concurrent viewers without doing serious capacity work first.
-- **Polished and bug-free.** A few known issues (A/V sync ~333 ms offset, dormant LiveKit infrastructure) are documented honestly — see [Known status](#known-status) below.
+- **Polished and bug-free.** A handful of subsystems still have honest debt — see [Known status](#known-status) below.
 
 ---
 
@@ -238,8 +238,7 @@ Full per-dependency notes in [`docs/integrations/`](docs/integrations/).
 
 OneStreamer is actively used in production but has accumulated some honest debt. Where status matters, individual docs carry `> [!WARNING]` banners. The highlights:
 
-- **A/V sync ~333 ms offset.** Audio and video are carried over separate RTP streams without RTCP sender-report synchronization. Architectural limitation; not currently prioritized for fix. See [`docs/architecture/streaming-stack.md`](docs/architecture/streaming-stack.md) and the archived investigation in [`docs/archive/av-sync/`](docs/archive/av-sync/).
-- **LiveKit infrastructure is dormant.** A September 2025 dual-stack attempt was rolled back the same day after networking issues; the LiveKit server still runs at `livekit.onestreamer.live` but no production path uses it. See [ADR-0002](docs/architecture/adr/0002-mediasoup-primary-livekit-dormant.md) and [ADR-0003](docs/architecture/adr/0003-livekit-dual-stack-rollback.md).
+- **LiveKit was revived in May 2026.** [ADR-0008](docs/architecture/adr/0008-revive-livekit-for-url-streams-and-recording.md) supersedes ADR-0002/0007 and re-enables the LiveKit adapter because URL-stream relay, room-composite recording, and transcription all silently depended on it. The Sept-2025 WebSocket failure that triggered the original rollback (ADR-0003) is not root-caused; rollback procedure documented in the new ADR.
 - **Stream-reliability plan partially executed.** The most critical fix (`currentStreamer` dual-source-of-truth) shipped; transport-recreation race conditions and `stream-ready` event de-duplication remain TODO. See the archived [`STREAM_RELIABILITY_PLAN.md`](docs/archive/plans/STREAM_RELIABILITY_PLAN.md).
 - **`openai-whisper` was a phantom dependency.** Listed in `package.json` but unused — removed in #21. The live transcription path is `whisper.cpp`. See [ADR-0006](docs/architecture/adr/0006-whisper-cpp-over-cloud-stt.md).
 

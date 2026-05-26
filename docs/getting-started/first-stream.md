@@ -53,9 +53,9 @@ The whole point of the platform is "another user can see what I'm broadcasting."
 
 1. Open a **second browser** (different profile, or use an incognito window — *not* a second tab in the same profile, because Socket.IO will use the same socket).
 2. Navigate to `https://localhost:3443`. Accept the cert.
-3. You should see your own stream in the second browser. Audio-video sync will feel slightly off (~300 ms) — that's the known A/V sync issue, see the warning banner in [`/docs/architecture/streaming-stack.md`](../architecture/streaming-stack.md).
+3. You should see your own stream in the second browser.
 4. The viewer count in the streamer browser should now read **1**.
-5. Wave your hand in front of the camera — both browsers should see it move (~300–500 ms apart due to encoding + network buffer).
+5. Wave your hand in front of the camera — both browsers should see it move within ~300–500 ms (normal WebRTC encoding + network buffer latency).
 
 ## 4. Send a chat message
 

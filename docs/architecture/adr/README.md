@@ -42,9 +42,10 @@ What else we looked at and why we did not pick it.
 | # | Title | Status |
 |---|-------|--------|
 | 0001 | [Record architecture decisions](0001-record-architecture-decisions.md) | accepted |
-| 0002 | [MediaSoup is primary, LiveKit is dormant](0002-mediasoup-primary-livekit-dormant.md) | accepted |
+| 0002 | [MediaSoup is primary, LiveKit is dormant](0002-mediasoup-primary-livekit-dormant.md) | superseded by 0008 |
 | 0003 | [LiveKit dual-stack rollback (Sept 2025)](0003-livekit-dual-stack-rollback.md) | accepted |
 | 0004 | [Chat as a separate microservice](0004-chat-service-as-separate-microservice.md) | accepted |
 | 0005 | [Backblaze B2 over direct AWS S3](0005-b2-over-direct-s3.md) | accepted |
 | 0006 | [whisper.cpp over cloud STT](0006-whisper-cpp-over-cloud-stt.md) | accepted |
-| 0007 | [Staged removal of dormant LiveKit infrastructure](0007-livekit-cleanup-staging.md) | accepted |
+| 0007 | [Staged removal of dormant LiveKit infrastructure](0007-livekit-cleanup-staging.md) | superseded by 0008 |
+| 0008 | [Revive LiveKit for URL streams, recording, and transcription](0008-revive-livekit-for-url-streams-and-recording.md) | accepted |
