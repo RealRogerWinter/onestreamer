@@ -279,6 +279,34 @@ class KickRandomService {
   }
 
   /**
+   * PR-W4: snapshot of the current Kick stream state for drift checks.
+   * Returns null when offline. Shape matches what WhitelistService.checkAllowed
+   * expects for Kick — login + currentGameName + hasMatureContent.
+   */
+  async getCurrentStreamSnapshot(username) {
+    try {
+      const channel = await this.getChannelInfo(username);
+      if (!channel || !channel.livestream) return null;
+      const livestream = channel.livestream;
+      const categoryName =
+        (livestream.categories && livestream.categories[0] && livestream.categories[0].name) ||
+        (channel.recent_categories && channel.recent_categories[0] && channel.recent_categories[0].name) ||
+        null;
+      return {
+        platform: 'kick',
+        login: (channel.slug || username || '').toLowerCase(),
+        currentGameName: categoryName,
+        hasMatureContent:
+          livestream.is_mature === true ||
+          livestream.has_mature_content === true,
+      };
+    } catch (error) {
+      console.error(`❌ Kick drift check failed for ${username}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Clear recent streamers cache
    */
   clearRecentCache() {

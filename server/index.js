@@ -36,6 +36,7 @@ const SimpleViewBotRotation = require('./services/SimpleViewBotRotation');
 const ViewBotURLService = require('./services/ViewBotURLService');
 const URLStreamHealthService = require('./services/URLStreamHealthService');
 const WhitelistService = require('./services/WhitelistService');
+const WhitelistEnforcer = require('./services/WhitelistEnforcer');
 const RandomStreamRotationService = require('./services/RandomStreamRotationService');
 const MediasoupService = require('./services/MediasoupService');
 const AuthService = require('./services/AuthService');
@@ -5314,6 +5315,25 @@ async function startServer() {
       global.randomStreamRotationService = randomStreamRotationService;
       console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized (MediaSoup backend)');
 
+      // PR-W4: drift enforcer. Polls the active relay every drift_check_seconds
+      // and stops it if the streamer drifted out of policy mid-broadcast.
+      if (whitelistService) {
+        const whitelistEnforcer = new WhitelistEnforcer({
+          viewBotURLService,
+          whitelistService,
+          twitchService: randomStreamRotationService.twitchService,
+          kickService: randomStreamRotationService.kickService,
+          io,
+        });
+        whitelistEnforcer.start();
+        app.locals.whitelistEnforcer = whitelistEnforcer;
+        global.whitelistEnforcer = whitelistEnforcer;
+        // Register with shutdown loop so SIGTERM stops the interval before
+        // viewBotURLService is drained — without this an in-flight tick can
+        // call stopURLStream against a service that's already mid-teardown.
+        stoppables.push(whitelistEnforcer);
+      }
+
       // Initialize Random Stream API routes
       const randomStreamRoutes = require('./routes/random-stream');
       app.use('/api/random-stream', randomStreamRoutes(randomStreamRotationService));
@@ -5394,6 +5414,24 @@ async function startServer() {
       if (whitelistService) randomStreamRotationService.setWhitelistService(whitelistService);
       global.randomStreamRotationService = randomStreamRotationService;
       console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized');
+
+      // PR-W4: drift enforcer (LiveKit branch).
+      if (whitelistService) {
+        const whitelistEnforcer = new WhitelistEnforcer({
+          viewBotURLService,
+          whitelistService,
+          twitchService: randomStreamRotationService.twitchService,
+          kickService: randomStreamRotationService.kickService,
+          io,
+        });
+        whitelistEnforcer.start();
+        app.locals.whitelistEnforcer = whitelistEnforcer;
+        global.whitelistEnforcer = whitelistEnforcer;
+        // Register with shutdown loop so SIGTERM stops the interval before
+        // viewBotURLService is drained — without this an in-flight tick can
+        // call stopURLStream against a service that's already mid-teardown.
+        stoppables.push(whitelistEnforcer);
+      }
 
       // Initialize Random Stream API routes
       const randomStreamRoutes = require('./routes/random-stream');

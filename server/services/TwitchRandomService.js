@@ -359,6 +359,45 @@ class TwitchRandomService {
   }
 
   /**
+   * PR-W4: snapshot of the current stream state for drift checks. Returns
+   * the fields `WhitelistService.checkAllowed` needs to decide whether a
+   * currently-live whitelisted streamer is still in policy. Returns null
+   * when the streamer is offline.
+   *
+   * Two API calls: /helix/streams for game + is_mature, then
+   * /helix/channels for content_classification_labels. The CCL call is
+   * batched/parallel-safe but for a single user the cost is negligible.
+   */
+  async getCurrentStreamSnapshot(username) {
+    try {
+      const streamsResp = await this.twitchRequest(`/helix/streams?user_login=${encodeURIComponent(username)}`);
+      const stream = streamsResp.data && streamsResp.data[0];
+      if (!stream) return null;
+
+      let ccls = [];
+      try {
+        const channelsResp = await this.twitchRequest(`/helix/channels?broadcaster_id=${encodeURIComponent(stream.user_id)}`);
+        const channel = channelsResp.data && channelsResp.data[0];
+        if (channel) ccls = channel.content_classification_labels || [];
+      } catch (e) {
+        // Non-fatal — proceed without CCL data, the drift check still
+        // applies streamer/category gates.
+      }
+
+      return {
+        platform: 'twitch',
+        login: stream.user_login,
+        currentGameName: stream.game_name,
+        isMature: stream.is_mature === true,
+        ccls,
+      };
+    } catch (error) {
+      console.error(`❌ Twitch drift check failed for ${username}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Get streamer info by username
    */
   async getStreamerInfo(username) {
