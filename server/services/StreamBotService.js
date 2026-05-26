@@ -307,6 +307,14 @@ class StreamBotService extends EventEmitter {
         }, settings.interval_minutes * 60 * 1000);
     }
 
+    // Lifecycle entry point — uniform name across services for the
+    // bootstrap shutdown loop (PR 1.2). Stops both periodic-message and
+    // auto-summon loops.
+    async stop() {
+        await this.stopPeriodicMessages();
+        await this.stopAutoSummon();
+    }
+
     async stopPeriodicMessages() {
         if (this.intervalId) {
             clearInterval(this.intervalId);

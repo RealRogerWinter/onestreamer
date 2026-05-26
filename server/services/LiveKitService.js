@@ -578,6 +578,12 @@ class LiveKitService {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  // Lifecycle entry point — uniform name across services for the bootstrap
+  // shutdown loop (PR 1.2). Delegates to the existing teardown.
+  async stop() {
+    this.stopStreamerHealthCheck();
+  }
+
   /**
    * Start periodic health check for streamer tracks
    * Clears stale streamers whose WebRTC connection dropped but socket remains

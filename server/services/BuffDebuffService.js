@@ -44,7 +44,7 @@ class BuffDebuffService extends EventEmitter {
     
     // Periodic cache cleanup to prevent memory leaks
     startCacheCleanup() {
-        setInterval(() => {
+        this.cacheCleanupInterval = setInterval(() => {
             const now = Date.now();
             const entriesToDelete = [];
             
@@ -797,13 +797,23 @@ class BuffDebuffService extends EventEmitter {
         }
     }
 
+    // Lifecycle entry point — uniform name across services for the
+    // bootstrap shutdown loop (PR 1.2). Delegates to the existing teardown.
+    async stop() {
+        this.shutdown();
+    }
+
     // Shutdown cleanup
     shutdown() {
         if (this.updateInterval) {
             clearInterval(this.updateInterval);
             this.updateInterval = null;
         }
-        
+        if (this.cacheCleanupInterval) {
+            clearInterval(this.cacheCleanupInterval);
+            this.cacheCleanupInterval = null;
+        }
+
         this.activeBuffsCache.clear();
         console.log('🎭 BUFF: BuffDebuffService shutdown complete');
     }

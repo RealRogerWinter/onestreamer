@@ -433,6 +433,12 @@ class AudioOptimizationService extends EventEmitter {
         }, 5000); // Every 5 seconds
     }
     
+    // Lifecycle entry point — uniform name across services for the
+    // bootstrap shutdown loop (PR 1.2). Delegates to the existing teardown.
+    async stop() {
+        this.stopMonitoring();
+    }
+
     /**
      * Stop monitoring service
      */

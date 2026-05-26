@@ -31,6 +31,12 @@ class PortMonitorService {
     }, this.checkIntervalMs);
   }
 
+  // Lifecycle entry point — uniform name across services for the
+  // bootstrap shutdown loop (PR 1.2). Delegates to the existing teardown.
+  async stop() {
+    this.stopMonitoring();
+  }
+
   /**
    * Stop monitoring
    */

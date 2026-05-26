@@ -1880,6 +1880,12 @@ class CanvasFxService extends EventEmitter {
         console.log(`🔌 CANVASFX: Client connected, sent ${activeEffects.length} active effects`);
     }
     
+    // Lifecycle entry point — uniform name across services for the
+    // bootstrap shutdown loop (PR 1.2). Delegates to the existing teardown.
+    async stop() {
+        this.shutdown();
+    }
+
     // Shutdown cleanup
     shutdown() {
         if (this.streamerCheckInterval) {

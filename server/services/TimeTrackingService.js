@@ -117,6 +117,12 @@ class TimeTrackingService {
         }, 5 * 60 * 1000); // 5 minutes
     }
 
+    // Lifecycle entry point — uniform name across services for the
+    // bootstrap shutdown loop (PR 1.2). Delegates to the existing teardown.
+    async stop() {
+        this.stopPeriodicCleanup();
+    }
+
     // Stop periodic cleanup (for server shutdown)
     stopPeriodicCleanup() {
         if (this.cleanupIntervalId) {
@@ -124,10 +130,10 @@ class TimeTrackingService {
             this.cleanupIntervalId = null;
         }
         // Also stop all real-time updates
-        for (const [userId, intervalId] of this.realTimeUpdateIntervals.entries()) {
+        for (const [userId, intervalId] of this.updateIntervals.entries()) {
             clearInterval(intervalId);
         }
-        this.realTimeUpdateIntervals.clear();
+        this.updateIntervals.clear();
         console.log('⏱️ TIME: Stopped all periodic tasks');
     }
 
