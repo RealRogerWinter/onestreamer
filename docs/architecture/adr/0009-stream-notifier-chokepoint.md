@@ -66,9 +66,13 @@ Introduce a single service, [`StreamNotifier`](../../../server/services/StreamNo
 
 **MediaSoup-branch suppression (post-review fix).** During code review the reviewer flagged a subtle behaviour change in an earlier draft: the original MediaSoup branch in `server/index.js` (pre-PR) did NOT call `viewBotURLService.setSocketIO(io)` — only the LiveKit branch did. With `this.io` undefined, the two URL-stream emits at `ViewBotURLService.js:1236, 1448` were suppressed by the `if (this.io)` guard in MediaSoup-mode production. An earlier draft of this PR called `setStreamNotifier(streamNotifier)` on the MediaSoup branch, which would have silently activated those two previously-dormant emits. The fix is to deliberately omit the setter on the MediaSoup branch (commented inline at `server/index.js:5227`); the new `if (this.streamNotifier)` guard mirrors the original `if (this.io)` suppression. Wire behaviour is preserved.
 
+## Subsequent applications
+
+- **PR 3.2 — `ViewerCountNotifier` for `viewer-count-update` (13 sites).** Applied this ADR's chokepoint pattern to the next-most-fragmented event. The shape is slightly different — every callsite was already passing the *same* derived integer (`sessionService.getUniqueViewerCount()`), no per-site reason discrimination — so the notifier owns the derivation in addition to the emit, and `broadcast()` takes no arguments. The constructor takes `(io, sessionService)` because the count derivation needs both.
+
 ## Follow-ups (NOT in this PR)
 
-1. **PR 3.2** — same pattern for `viewer-count-update` (13 sites).
+1. **PR 3.2** — same pattern for `viewer-count-update` (13 sites). _Done in `viewer-count-notifier` branch; see "Subsequent applications" above._
 2. **PR 3.3** — same pattern for the buff/inventory cluster (`streamer-buffs-update` 9 sites, `inventory-updated` 9 sites, `buff-error` 10 sites — the buff and inventory ones live partly in `BuffDebuffService` and partly in inline route handlers at `server/routes/items.js` and `server/routes/buffs.js`, and that mix is the structural issue).
 3. **Counter on `stream-ended`** — once `stream-ended` is chokepointed, threading `streamService.streamGeneration` into the payload is a one-line addition inside `StreamNotifier.streamEnded()`. Pair with client-side drop-by-counter on the matching `useStreamState.ts:318` listener.
 4. **Collapse `setStreamNotifier` setters into constructor args** for the four services that still use the post-construction pattern. Once the surrounding orchestration in `server/index.js` is moved into the bootstrap factory (Phase 4 work), the construction order can be reorganized so the notifier is available at ctor time.

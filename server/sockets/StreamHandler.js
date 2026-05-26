@@ -92,6 +92,8 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     // PR 3.1: single `stream-ended` chokepoint. Used for both the takeover
     // broadcast (with excludeSocket) and the stop-streaming io-wide emit.
     streamNotifier,
+    // PR 3.2: single `viewer-count-update` chokepoint.
+    viewerCountNotifier,
   } = deps;
 
   socket.on('join-as-viewer', async () => {
@@ -157,8 +159,8 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     //   console.error(`❌ VISUAL FX: Error sending effects to viewer ${socket.id}:`, error);
     // }
 
-    // Emit unique viewer count based on IPs
-    io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+    // Emit unique viewer count based on IPs (PR 3.2 chokepoint).
+    viewerCountNotifier.broadcast();
 
     // Start time tracking for viewing session if user is authenticated
     const ip = sessionService.getIpAddress(socket);
@@ -704,7 +706,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
         console.log(`📢 TAKEOVER: ${socket.id} approved to stream, waiting for producers to be created`);
       }
 
-      io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+      viewerCountNotifier.broadcast();
 
       // Only broadcast global cooldown for real users, not viewbots
       if (!isViewBot) {
@@ -798,7 +800,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       streamNotifier.streamEnded({ reason: 'user_stopped_streaming', previousStreamer: socket.id });
       notifyViewersStreamEnded();
       notifyViewersStreamEnded();
-      io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+      viewerCountNotifier.broadcast();
 
       console.log(`Stream ended by: ${socket.id}`);
 

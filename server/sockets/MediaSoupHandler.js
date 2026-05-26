@@ -80,6 +80,8 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
     broadcastGlobalCooldown,
     getRecordingService,
     getTranscriptionService,
+    // PR 3.2: viewer-count-update chokepoint.
+    viewerCountNotifier,
   } = deps;
 
   // Handle ICE candidates between peers
@@ -350,7 +352,7 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
                 });
               }
 
-              io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+              viewerCountNotifier.broadcast();
 
               // Start view time tracking for existing viewers
               notifyViewersStreamStarted();
@@ -380,7 +382,7 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
               hasAudio: currentHasAudio,
               streamStartTime: streamService.streamStartTime
             });
-            io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+            viewerCountNotifier.broadcast();
 
             // Start view time tracking for existing viewers
             notifyViewersStreamStarted();

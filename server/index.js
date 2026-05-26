@@ -501,6 +501,8 @@ const {
   movieBotService,
   // PR 3.1: single `stream-ended` emit chokepoint.
   streamNotifier,
+  // PR 3.2: single `viewer-count-update` emit chokepoint.
+  viewerCountNotifier,
 } = services;
 
 // Expose the whole bag for extracted routes/sockets (PR-G2 / PR-H2 onwards
@@ -1940,7 +1942,7 @@ app.post('/admin/viewbot/start', adminKeyAuth, async (req, res) => {
       hasRealStream: result.hasRealStream,
       streamType: 'viewbot' 
     });
-    io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+    viewerCountNotifier.broadcast();
     
     // Broadcast global cooldown to all users
     await broadcastGlobalCooldown(result.streamId);
@@ -1974,7 +1976,7 @@ app.post('/admin/test-stream/start', adminKeyAuth, async (req, res) => {
         frameRate: req.body.frameRate || 30
       }
     });
-    io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+    viewerCountNotifier.broadcast();
     
     // Broadcast global cooldown to all users
     await broadcastGlobalCooldown(result.streamId);
@@ -2018,7 +2020,7 @@ app.post('/admin/viewbot/stop', adminKeyAuth, async (req, res) => {
       streamNotifier.streamEnded({ reason: 'viewbot_stopped' });
       notifyViewersStreamEnded();
       notifyViewersStreamEnded();
-      io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+      viewerCountNotifier.broadcast();
     }
   }
 
@@ -2054,7 +2056,7 @@ app.post('/admin/test-stream/stop', adminKeyAuth, async (req, res) => {
           
           streamNotifier.streamEnded({ reason: 'viewbot_legacy_stopped' });
       notifyViewersStreamEnded();
-          io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+          viewerCountNotifier.broadcast();
         }
       }
 
@@ -2082,7 +2084,7 @@ app.post('/admin/test-stream/stop', adminKeyAuth, async (req, res) => {
       streamNotifier.streamEnded({ reason: 'test_stream_stopped' });
       notifyViewersStreamEnded();
       notifyViewersStreamEnded();
-      io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+      viewerCountNotifier.broadcast();
     }
   }
   
@@ -2788,7 +2790,7 @@ app.post('/admin/clear-stream', authenticateAdmin, (req, res) => {
   console.log(`🧹 ADMIN CLEAR: Cleared ${clearedStreamer} from both services`);
 
   streamNotifier.streamEnded({ reason: 'admin_clear', previousStreamer: clearedStreamer });
-  io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+  viewerCountNotifier.broadcast();
 
   res.json({
     success: true,
@@ -4767,6 +4769,7 @@ io.on('connection', async (socket) => {
     axios,
     https,
     streamNotifier,
+    viewerCountNotifier,
   });
   // ============================================
   // End Streaming Socket Handlers
@@ -4791,6 +4794,7 @@ io.on('connection', async (socket) => {
     broadcastGlobalCooldown,
     getRecordingService: () => recordingService,
     getTranscriptionService: () => transcriptionService,
+    viewerCountNotifier,
   });
   // ============================================
   // End MediaSoup Socket Handlers
@@ -4901,7 +4905,7 @@ io.on('connection', async (socket) => {
           hasRealStream: true,
           streamType: 'viewbot' 
         });
-        io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+        viewerCountNotifier.broadcast();
       }
     } else {
       // Viewbot already active, just notify
@@ -5120,7 +5124,7 @@ io.on('connection', async (socket) => {
     }
     
     // Emit unique viewer count based on IPs
-    io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
+    viewerCountNotifier.broadcast();
   });
 
   // VisualFX Event Handlers - extracted to server/sockets/EffectHandler.js

@@ -44,6 +44,7 @@ jest.mock('../../services/CanvasFxService', () => class { constructor(...args) {
 jest.mock('../../services/SoundFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'SoundFxService'; } });
 jest.mock('../../services/MediasoupPlainTransportService', () => class { constructor(...args) { this._args = args; this._stubName = 'MediasoupPlainTransportService'; } });
 jest.mock('../../services/StreamNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamNotifier'; } });
+jest.mock('../../services/ViewerCountNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'ViewerCountNotifier'; } });
 
 // PR-I2 additions
 jest.mock('../../services/StreamInterceptorService', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamInterceptorService'; } });
@@ -161,6 +162,7 @@ const CanvasFxService = require('../../services/CanvasFxService');
 const SoundFxService = require('../../services/SoundFxService');
 const MediasoupPlainTransportService = require('../../services/MediasoupPlainTransportService');
 const StreamNotifier = require('../../services/StreamNotifier');
+const ViewerCountNotifier = require('../../services/ViewerCountNotifier');
 
 // PR-I2 additions
 const StreamInterceptorService = require('../../services/StreamInterceptorService');
@@ -204,7 +206,7 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 36 expected keys (no more, no less)', () => {
+  test('returns all 37 expected keys (no more, no less)', () => {
     const { services } = createServices(buildDeps());
 
     const expectedKeys = [
@@ -213,6 +215,8 @@ describe('server/bootstrap/services factory', () => {
       'sessionService',
       // PR 3.1
       'streamNotifier',
+      // PR 3.2
+      'viewerCountNotifier',
       'takeoverService',
       'testStreamService',
       'mediaStreamService',
@@ -252,7 +256,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(36);
+    expect(expectedKeys).toHaveLength(37);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -275,6 +279,7 @@ describe('server/bootstrap/services factory', () => {
     expect(s.soundFxService).toBeInstanceOf(SoundFxService);
     expect(s.plainTransportService).toBeInstanceOf(MediasoupPlainTransportService);
     expect(s.streamNotifier).toBeInstanceOf(StreamNotifier);
+    expect(s.viewerCountNotifier).toBeInstanceOf(ViewerCountNotifier);
     // PR-I2
     expect(s.streamInterceptorService).toBeInstanceOf(StreamInterceptorService);
     expect(s.visualFxService).toBeInstanceOf(VisualFxService);
@@ -365,6 +370,19 @@ describe('server/bootstrap/services factory', () => {
 
     expect(s.streamNotifier._args).toHaveLength(1);
     expect(s.streamNotifier._args[0]).toBe(deps.io);
+  });
+
+  // PR 3.2: viewerCountNotifier is the `viewer-count-update` chokepoint.
+  // Takes (io, sessionService) so its broadcast() method can derive the
+  // count internally instead of trusting every callsite to pass the right
+  // helper output.
+  test('viewerCountNotifier is constructed with (io, sessionService)', () => {
+    const deps = buildDeps();
+    const { services: s } = createServices(deps);
+
+    expect(s.viewerCountNotifier._args).toHaveLength(2);
+    expect(s.viewerCountNotifier._args[0]).toBe(deps.io);
+    expect(s.viewerCountNotifier._args[1]).toBe(s.sessionService);
   });
 
   // ── PR-I2 dep-graph identity checks ───────────────────────────────────

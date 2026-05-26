@@ -109,6 +109,7 @@ const CanvasFxService = require('../services/CanvasFxService');
 const SoundFxService = require('../services/SoundFxService');
 const MediasoupPlainTransportService = require('../services/MediasoupPlainTransportService');
 const StreamNotifier = require('../services/StreamNotifier');
+const ViewerCountNotifier = require('../services/ViewerCountNotifier');
 
 // PR-I2 additions
 const StreamInterceptorService = require('../services/StreamInterceptorService');
@@ -166,6 +167,14 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   // every downstream service that previously called io.emit('stream-ended', …)
   // directly can be threaded with this notifier instead.
   const streamNotifier = new StreamNotifier(io);
+
+  // PR 3.2: single emit chokepoint for `viewer-count-update`. Owns both the
+  // emit and the count derivation (from sessionService.getUniqueViewerCount).
+  // The 13 callsites this replaces all literally called the same helper +
+  // emitted the same payload; the chokepoint removes the duplication and
+  // closes off the historical foot-gun of using streamService.getViewerCount()
+  // (raw socket count, multi-tab counts twice) by accident.
+  const viewerCountNotifier = new ViewerCountNotifier(io, sessionService);
 
   // Depends on redisClient + sessionService.
   const takeoverService = new TakeoverService(redisClient, sessionService);
@@ -317,6 +326,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     streamService,
     sessionService,
     streamNotifier,
+    viewerCountNotifier,
     takeoverService,
     testStreamService,
     mediaStreamService,
