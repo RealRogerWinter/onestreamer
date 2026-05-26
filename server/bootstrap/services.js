@@ -282,7 +282,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   streamBotService.setChatBotService(chatBotService);
   streamBotService.setChatBotLLMService(chatBotService.llmService);
 
-  return {
+  const services = {
     streamService,
     sessionService,
     takeoverService,
@@ -320,6 +320,30 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     streamBotService,
     movieBotService,
   };
+
+  // PR 1.2: stoppables in construction order. server/index.js's SIGINT
+  // handler iterates this in reverse with a per-stop timeout. Only includes
+  // services that actually expose stop() today — pure-data services
+  // (StreamService, SessionService, etc.) don't need one, and services
+  // with leaked anonymous intervals (visualFxService, chatBotService,
+  // movieBotService, transcriptionService) are deferred to later PRs
+  // that store their handles before adding stop(). PR 1.3 covers
+  // ChatBot/MovieBot via the BotEventBus; Phase 2 covers VisualFx /
+  // Transcription. Including them with svc.stop?.() no-op fallback would
+  // log inflated "Stopping N services" counts and mask the gap.
+  const stoppables = [
+    audioOptimizationService,
+    resourceMonitor,
+    timeTrackingService,
+    buffDebuffService,
+    canvasFxService,
+    recordingUploadScheduler,
+    recordingCleanupScheduler,
+    continuousRecordingService,
+    streamBotService,
+  ];
+
+  return { services, stoppables };
 }
 
 /**
@@ -405,12 +429,21 @@ async function createViewBotServices({ mediasoupService, livekitService, streamS
   // rotation handling (preserved from inline original).
   viewbotService.viewBotClientService = viewBotClientService;
 
-  return {
+  const services = {
     viewbotService,
     viewBotWebRTCService,
     viewBotLiveKitService,
     viewBotClientService,
   };
+
+  // PR 1.2: viewbot stoppables in construction order. viewBotWebRTCService
+  // doesn't own background work (teardown happens per-bot via callers).
+  // viewBotLiveKitService is omitted until PR 1.3-or-later adds a real
+  // stop() — its current shape only exposes initialize() with no graceful
+  // shutdown path for the LiveKit ingress connection.
+  const stoppables = [viewbotService, viewBotClientService].filter(Boolean);
+
+  return { services, stoppables };
 }
 
 module.exports = createServices;

@@ -454,7 +454,14 @@ global.mediasoupServiceType = usingAdapter ? 'adapter' : 'direct';
 // server/bootstrap/services.js for the dependency graph and PR-I2 scope.
 const createServices = require('./bootstrap/services');
 const { createViewBotServices } = createServices; // PR-I4 late-init helper.
-const services = createServices({ io, redisClient, database, env: process.env, mediasoupService });
+const { services, stoppables: coreStoppables } = createServices({ io, redisClient, database, env: process.env, mediasoupService });
+
+// PR 1.2: accumulator for graceful-shutdown iteration. Construction order;
+// the SIGINT handler reverses at shutdown time so newer services stop first.
+// createViewBotServices and inline-constructed services (ViewBotManager,
+// PortMonitorService, LiveKitService) append below.
+const stoppables = [...coreStoppables];
+
 const {
   streamService,
   sessionService,
@@ -5161,7 +5168,7 @@ async function startServer() {
       livekitService = global.webrtcAdapter._backend;
     }
 
-    const viewBotBag = await createViewBotServices({
+    const { services: viewBotBag, stoppables: viewBotStoppables } = await createViewBotServices({
       mediasoupService,
       livekitService,
       streamService,
@@ -5170,6 +5177,15 @@ async function startServer() {
     viewBotWebRTCService = viewBotBag.viewBotWebRTCService;
     viewBotClientService = viewBotBag.viewBotClientService;
     const viewBotLiveKitService = viewBotBag.viewBotLiveKitService; // null on MediaSoup branch.
+
+    // Push livekit BEFORE viewbot stoppables so reverse-iteration stops the
+    // viewbot services (which consume livekit) before the livekit client
+    // itself is torn down — avoids noisy "call against shut-down client"
+    // errors on the way out.
+    if (livekitService && typeof livekitService.stop === 'function') {
+      stoppables.push(livekitService);
+    }
+    stoppables.push(...viewBotStoppables);
     console.log('✅ VIEWBOT: ViewbotService initialized');
     if (viewBotWebRTCService) {
       console.log('✅ VIEWBOT: ViewBotWebRTCService initialized for mobile 5G/TURN support');
@@ -5461,6 +5477,7 @@ async function startServer() {
         const viewBotManager = new ViewBotManager(viewBotConfig.viewbots);
         await viewBotManager.initialize();
         global.viewBotManager = viewBotManager;
+        stoppables.push(viewBotManager);
         
         // Create Unified Rotation controller
         const unifiedRotation = new UnifiedViewBotRotation(io, streamService, mediasoupService, livekitService);
@@ -5498,6 +5515,7 @@ async function startServer() {
       const portMonitor = new PortMonitorService(mediasoupService);
       global.portMonitor = portMonitor;
       portMonitor.startMonitoring();
+      stoppables.push(portMonitor);
       console.log('✅ PORT MONITOR: Service started');
       
       // Enable rotation
@@ -5982,18 +6000,46 @@ async function startServer() {
 
 startServer().catch(console.error);
 
-process.on('SIGINT', async () => {
-  console.log('🛑 Shutting down server gracefully...');
-  
+async function shutdown(signal) {
+  console.log(`🛑 Received ${signal}, shutting down server gracefully...`);
+
   try {
+    // PR 1.2: iterate the stoppables registry in reverse-construction
+    // order. Each service.stop() races against a 5 s timeout so a single
+    // wedged teardown can't hold up the whole shutdown. The timer is
+    // cleared on each iteration to avoid leaking a pending rejection that
+    // would surface as an unhandled rejection after Promise.race resolves.
+    // svc.stop?.() is wrapped in an async IIFE so a synchronous throw
+    // inside stop() lands in the per-iteration catch rather than escaping.
+    console.log(`🛑 Stopping ${stoppables.length} registered service(s)...`);
+    for (const svc of [...stoppables].reverse()) {
+      const name = svc?.constructor?.name || 'anonymous';
+      let timer;
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('stop() timed out after 5s')), 5000);
+      });
+      try {
+        await Promise.race([(async () => svc.stop?.())(), timeout]);
+      } catch (e) {
+        console.error(`   ⚠️  ${name}.stop() failed: ${e.message}`);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     // 1. Disconnect all socket connections
     console.log('🔌 Disconnecting all socket connections...');
     const sockets = await io.fetchSockets();
     for (const socket of sockets) {
       socket.disconnect(true);
     }
-    
+
     // 2. Stop all media streams (GStreamer and FFmpeg)
+    // NOTE: services with stop() are already drained above via stoppables —
+    // this block intentionally remains as belt-and-braces for processes
+    // not yet wrapped (viewBotGStreamerService, ffmpeg children on
+    // RecordingService.activeRecordings, etc.). A follow-up PR can prune
+    // entries that overlap with stoppables once the iterator is proven.
     console.log('🎬 Stopping all media streams...');
     
     // Stop ViewBot GStreamer streams (check if service exists first)
@@ -6192,13 +6238,13 @@ process.on('SIGINT', async () => {
     console.error('❌ Error during shutdown:', error);
     process.exit(1);
   }
-});
+}
 
-// Also handle SIGTERM
-process.on('SIGTERM', async () => {
-  console.log('🛑 Received SIGTERM, shutting down gracefully...');
-  process.emit('SIGINT');
-});
+// PR 1.2: both signals route through the same shutdown function so SIGTERM
+// (the systemd / Docker production path) actually awaits the work instead of
+// fire-and-forgetting via process.emit('SIGINT').
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // Handle uncaught exceptions and unhandled rejections
 process.on('uncaughtException', (error) => {
