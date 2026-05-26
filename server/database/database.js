@@ -1,29 +1,31 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcrypt');
+const applyPragmas = require('./applyPragmas');
 
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
 
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('Error opening database:', err);
-    } else {
-        console.log('Connected to SQLite database');
-        initializeDatabase();
+        return;
     }
+    console.log('Connected to SQLite database');
+    applyPragmas(db, { tuneForLargeReads: true })
+        .then(({ walActive }) => {
+            console.log(`SQLite PRAGMAs applied (journal_mode=${walActive ? 'wal' : 'fallback'})`);
+            initializeDatabase();
+        })
+        .catch((e) => {
+            console.error('Failed to apply SQLite PRAGMAs:', e);
+            // Continue with schema setup; the connection is still usable,
+            // it's just running with default (less optimal but correct) settings.
+            initializeDatabase();
+        });
 });
 
 function initializeDatabase() {
     db.serialize(() => {
-        // Enable foreign key constraints
-        db.run('PRAGMA foreign_keys = ON', (err) => {
-            if (err) {
-                console.error('Error enabling foreign keys:', err);
-            } else {
-                console.log('Foreign key constraints enabled');
-            }
-        });
-        
         db.run(`
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

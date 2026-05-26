@@ -7,6 +7,7 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
+const applyPragmas = require('../database/applyPragmas');
 
 class URLStreamDatabaseService {
   constructor() {
@@ -34,8 +35,9 @@ class URLStreamDatabaseService {
 
         console.log('✅ URLStreamDatabaseService connected to database');
 
-        // Initialize schema
-        this._initializeSchema()
+        // Per-connection PRAGMAs don't propagate from the main handle.
+        applyPragmas(this.db)
+          .then(() => this._initializeSchema())
           .then(() => {
             this.initialized = true;
             resolve();

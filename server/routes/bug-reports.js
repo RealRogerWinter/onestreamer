@@ -5,9 +5,21 @@ const path = require('path');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const { requireTurnstile } = require('../middleware/turnstile');
 const UserRepository = require('../database/repository/UserRepository');
+const applyPragmas = require('../database/applyPragmas');
 
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
-const db = new sqlite3.Database(dbPath);
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('bug-reports: error opening database:', err);
+        return;
+    }
+    // Per-connection PRAGMAs (foreign_keys, busy_timeout) do NOT propagate
+    // from the main handle — they have to be set on every handle to
+    // onestreamer.db or this handle silently writes with FKs OFF.
+    applyPragmas(db).catch((e) => {
+        console.error('bug-reports: applyPragmas failed:', e);
+    });
+});
 
 // Module-scoped repository — uses the shared async DB primitives layered
 // over this module's own sqlite3 handle so we don't introduce a second
