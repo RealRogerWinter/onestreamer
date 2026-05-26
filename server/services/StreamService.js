@@ -4,12 +4,25 @@ class StreamService {
     this.streamType = null;
     this.viewers = new Set();
     this.streamStartTime = null;
+    // Strictly-monotonic sequence number bumped on every setStreamer /
+    // clearStreamer call. Threaded through every stream-status emit via
+    // getStreamStatus() so the client can drop out-of-order arrivals by
+    // counter — the same problem the takeoverTargetRef 10-second lock
+    // currently papers over (PR 2.5b deletes the lock and adopts the
+    // counter on the client). The invariant the drop-by-counter check
+    // needs is *strictly monotonic*, not "increments by exactly 1 per
+    // semantic identity change" — compound transitions can bump by more
+    // than 1 (e.g. MediaSoupHandler.js's viewbot-override path calls
+    // clearStreamer() then setStreamer() with no emit between, going
+    // N → N+2). Gaps are fine; backwards is not.
+    this.streamGeneration = 0;
   }
 
   setStreamer(socketId, streamType = 'webcam') {
     this.currentStreamer = socketId;
     this.streamType = streamType;
     this.streamStartTime = Date.now();
+    this.streamGeneration += 1;
     this.viewers.delete(socketId);
 
     // SYNC: Keep MediasoupService in sync to prevent dual-source-of-truth issues
@@ -31,6 +44,7 @@ class StreamService {
     this.currentStreamer = null;
     this.streamType = null;
     this.streamStartTime = null;
+    this.streamGeneration += 1;
 
     // SYNC: Keep MediasoupService in sync to prevent dual-source-of-truth issues
     if (global.mediasoupService) {
@@ -42,6 +56,10 @@ class StreamService {
     }
 
     return previousStreamer;
+  }
+
+  getStreamGeneration() {
+    return this.streamGeneration;
   }
 
   addViewer(socketId) {
@@ -78,7 +96,8 @@ class StreamService {
       streamType: this.streamType,
       viewerCount: this.viewers.size,
       streamStartTime: this.streamStartTime,
-      streamDuration: this.streamStartTime ? Date.now() - this.streamStartTime : 0
+      streamDuration: this.streamStartTime ? Date.now() - this.streamStartTime : 0,
+      streamGeneration: this.streamGeneration
     };
   }
 
