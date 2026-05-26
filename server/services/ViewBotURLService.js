@@ -815,13 +815,16 @@ class ViewBotURLService extends EventEmitter {
     // Only works when the source is already H.264 + AAC (most IVS/Kick/Twitch HLS).
     // Risk: GOP/keyframe mismatch can cause WebRTC subscriber freeze-on-join,
     // and a silent platform-side codec change breaks copy with no error.
-    const streamCopy = process.env.VIEWBOT_STREAM_COPY === 'true' && input !== '-';
+    // NB: this function has a later `const process = spawn(...)` that shadows the
+    // global `process` for the entire function scope — so we read env via globalThis
+    // to avoid the TDZ.
+    const streamCopy = globalThis.process.env.VIEWBOT_STREAM_COPY === 'true' && input !== '-';
     if (streamCopy) {
       args.push('-c:v', 'copy', '-c:a', 'copy', '-bsf:v', 'h264_mp4toannexb');
       args.push('-f', 'flv', '-flvflags', 'no_duration_filesize', rtmpUrl);
       console.log(`🎬 FFmpeg RTMP [STREAM-COPY]: ${this.ffmpegPath} -i ${input.substring(0, 60)}... -> ${rtmpUrl}`);
-      const process = spawn(this.ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-      return process;
+      const ffmpegProc = spawn(this.ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      return ffmpegProc;
     }
 
     // Video filter - use adaptive scale or default 720p

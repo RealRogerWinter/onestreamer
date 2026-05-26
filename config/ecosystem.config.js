@@ -21,6 +21,10 @@ module.exports = {
         VIEWBOT_SERVER_URL: 'https://127.0.0.1:8443',
         ANNOUNCED_IP: '<SERVER_IP>',
         TURN_DOMAIN: 'turn.onestreamer.live',
+        // Skip ffmpeg re-encode for direct HLS sources (already H.264/AAC). Drops the
+        // viewbot ffmpeg from ~40% to ~5% of one core. Roll back by setting to 'false'
+        // if a platform changes its encoder or subscriber freeze-on-join becomes an issue.
+        VIEWBOT_STREAM_COPY: 'true',
         // Email configuration — SMTP_PASS must be set in server/.env (never committed).
         // SMTP_HOST/PORT/SECURE/USER/FROM_EMAIL are also expected from server/.env.
       },
