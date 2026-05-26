@@ -108,6 +108,16 @@ class ViewBotURLService extends EventEmitter {
   }
 
   /**
+   * Set the StreamNotifier (PR 3.1) used to emit `stream-ended` events.
+   * Parallel to setSocketIO — the notifier is preferred but the raw io ref
+   * is still kept because URL-stream code paths also emit other events.
+   */
+  setStreamNotifier(streamNotifier) {
+    this.streamNotifier = streamNotifier;
+    console.log('✅ StreamNotifier registered with ViewBotURLService');
+  }
+
+  /**
    * Set ViewBotClientService for real streamer protection
    */
   setViewBotClientService(viewBotClientService) {
@@ -1231,12 +1241,15 @@ class ViewBotURLService extends EventEmitter {
     });
 
     // Notify viewers that URL stream has ended
-    if (this.io) {
+    // PR 3.1: routed through StreamNotifier (single chokepoint). Same null-
+    // guard preserves the MediaSoup-branch behavior where setStreamNotifier
+    // is not called and the emit is suppressed.
+    if (this.streamNotifier) {
       console.log('📢 URL STREAM: Broadcasting stream-ended event (natural end)');
-      this.io.emit('stream-ended', {
+      this.streamNotifier.streamEnded({
         reason: `url_stream_${reason}`,
         streamerId: urlId,
-        isUrlStream: true
+        isUrlStream: true,
       });
     }
 
@@ -1442,13 +1455,13 @@ class ViewBotURLService extends EventEmitter {
     // Emit event
     this.emit('url-stream-stopped', { urlId });
 
-    // Notify viewers that URL stream has ended
-    if (this.io) {
+    // Notify viewers that URL stream has ended (PR 3.1 chokepoint)
+    if (this.streamNotifier) {
       console.log('📢 URL STREAM: Broadcasting stream-ended event to all viewers');
-      this.io.emit('stream-ended', {
+      this.streamNotifier.streamEnded({
         reason: 'url_stream_stopped',
         streamerId: urlId,
-        isUrlStream: true
+        isUrlStream: true,
       });
     }
 

@@ -499,6 +499,8 @@ const {
   chatBotService,
   streamBotService,
   movieBotService,
+  // PR 3.1: single `stream-ended` emit chokepoint.
+  streamNotifier,
 } = services;
 
 // Expose the whole bag for extracted routes/sockets (PR-G2 / PR-H2 onwards
@@ -2013,7 +2015,7 @@ app.post('/admin/viewbot/stop', adminKeyAuth, async (req, res) => {
       console.log(`🎭 BUFF: Clearing streamer buffs display (viewbot ended)`);
       io.emit('streamer-buffs-update', { buffs: [] });
       
-      io.emit('stream-ended', { reason: 'viewbot_stopped' });
+      streamNotifier.streamEnded({ reason: 'viewbot_stopped' });
       notifyViewersStreamEnded();
       notifyViewersStreamEnded();
       io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
@@ -2050,7 +2052,7 @@ app.post('/admin/test-stream/stop', adminKeyAuth, async (req, res) => {
           console.log(`🎭 BUFF: Clearing streamer buffs display (viewbot legacy ended)`);
           io.emit('streamer-buffs-update', { buffs: [] });
           
-          io.emit('stream-ended', { reason: 'viewbot_legacy_stopped' });
+          streamNotifier.streamEnded({ reason: 'viewbot_legacy_stopped' });
       notifyViewersStreamEnded();
           io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
         }
@@ -2077,7 +2079,7 @@ app.post('/admin/test-stream/stop', adminKeyAuth, async (req, res) => {
       // Also stop media ingestion
       mediaStreamService.stopIngestion();
 
-      io.emit('stream-ended', { reason: 'test_stream_stopped' });
+      streamNotifier.streamEnded({ reason: 'test_stream_stopped' });
       notifyViewersStreamEnded();
       notifyViewersStreamEnded();
       io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
@@ -2785,7 +2787,7 @@ app.post('/admin/clear-stream', authenticateAdmin, (req, res) => {
   mediasoupService.currentStreamer = null;
   console.log(`🧹 ADMIN CLEAR: Cleared ${clearedStreamer} from both services`);
 
-  io.emit('stream-ended', { reason: 'admin_clear', previousStreamer: clearedStreamer });
+  streamNotifier.streamEnded({ reason: 'admin_clear', previousStreamer: clearedStreamer });
   io.emit('viewer-count-update', sessionService.getUniqueViewerCount());
 
   res.json({
@@ -3151,7 +3153,7 @@ app.post('/api/admin/stream/disconnect', authenticateModerator, async (req, res)
       socket.disconnect(true);
       
       // Notify all viewers
-      io.emit('stream-ended', { reason: 'admin_disconnect' });
+      streamNotifier.streamEnded({ reason: 'admin_disconnect' });
       
       // After disconnecting a regular user, ensure viewbot rotation is enabled
       if (global.viewBotRotation) {
@@ -3222,7 +3224,7 @@ app.post('/api/admin/stream/ban-ip', authenticateModerator, async (req, res) => 
         socket.disconnect(true);
       }
       
-      io.emit('stream-ended', { reason: 'streamer_banned' });
+      streamNotifier.streamEnded({ reason: 'streamer_banned' });
     }
     
     // Disconnect any other sockets from this IP
@@ -4764,6 +4766,7 @@ io.on('connection', async (socket) => {
     database,
     axios,
     https,
+    streamNotifier,
   });
   // ============================================
   // End Streaming Socket Handlers
@@ -4811,6 +4814,7 @@ io.on('connection', async (socket) => {
     notifyViewersStreamEnded,
     getViewBotClientService: () => viewBotClientService,
     getViewbotService: () => viewbotService,
+    streamNotifier,
   });
   // ============================================
   // End ViewBot Socket Handlers
@@ -5109,7 +5113,7 @@ io.on('connection', async (socket) => {
         }, 1000); // Small delay to ensure all services are updated
       }
 
-      io.emit('stream-ended', { reason: 'streamer_disconnected', previousStreamer: socket.id });
+      streamNotifier.streamEnded({ reason: 'streamer_disconnected', previousStreamer: socket.id });
       notifyViewersStreamEnded();
     } else {
       streamService.removeViewer(socket.id);
@@ -5206,12 +5210,29 @@ async function startServer() {
     // both branches called it unconditionally.
     SimpleViewBotRotation.setStreamService(streamService);
 
+    // PR 3.1: LiveKitService is constructed inside WebRTCAdapter before the
+    // bootstrap factory runs, so it can't take streamNotifier in its ctor.
+    // Wire it post-construction here, before the LiveKit branch starts using
+    // clearStaleStreamer.
+    if (livekitService && typeof livekitService.setStreamNotifier === 'function') {
+      livekitService.setStreamNotifier(streamNotifier);
+    }
+
     if (!livekitService) {
       // ── MediaSoup branch orchestration ────────────────────────────────
       // Initialize URL Stream ViewBot Service for MediaSoup backend
       const viewBotURLService = new ViewBotURLService();
       viewBotURLService.setStreamService(streamService);
       viewBotURLService.setViewBotRotation(SimpleViewBotRotation); // For stopping/resuming viewbots
+      // PR 3.1 (post-review fix): deliberately NOT calling
+      // viewBotURLService.setStreamNotifier on this branch. The original
+      // MediaSoup branch did not call setSocketIO(io) either, so the two
+      // emits inside ViewBotURLService._handleStreamEnd / stopURLStream were
+      // suppressed in MediaSoup mode by the `if (this.io)` guard. The new
+      // `if (this.streamNotifier)` guard preserves that suppression iff the
+      // setter is not called — wiring the notifier here would silently
+      // activate two previously-dormant emit paths in MediaSoup-mode
+      // production. Keep them dormant.
       // No LiveKit service for MediaSoup backend
       const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
       urlStreamHealthService.start();
@@ -5253,6 +5274,7 @@ async function startServer() {
       randomStreamRotationService.setViewBotURLService(viewBotURLService);
       randomStreamRotationService.setViewBotRotation(SimpleViewBotRotation);
       randomStreamRotationService.setSocketIO(io);
+      randomStreamRotationService.setStreamNotifier(streamNotifier);
       global.randomStreamRotationService = randomStreamRotationService;
       console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized (MediaSoup backend)');
 
@@ -5285,6 +5307,7 @@ async function startServer() {
       viewBotURLService.setLiveKitService(viewBotLiveKitService);
       viewBotURLService.setViewBotRotation(SimpleViewBotRotation); // For stopping/resuming viewbots
       viewBotURLService.setSocketIO(io); // For notifying viewers when URL stream starts
+      viewBotURLService.setStreamNotifier(streamNotifier);
       const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
       urlStreamHealthService.start();
 
@@ -5330,6 +5353,7 @@ async function startServer() {
       randomStreamRotationService.setViewBotURLService(viewBotURLService);
       randomStreamRotationService.setViewBotRotation(SimpleViewBotRotation);
       randomStreamRotationService.setSocketIO(io);
+      randomStreamRotationService.setStreamNotifier(streamNotifier);
       global.randomStreamRotationService = randomStreamRotationService;
       console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized');
 
@@ -5451,6 +5475,9 @@ async function startServer() {
       const viewBotRotation = new ViewBotRotationService('https://127.0.0.1:8443');
       console.log('✅ VIEWBOT ROTATION: Service instance created');
 
+      // PR 3.1: stop-bot's `stream-ended` emit now goes through the chokepoint.
+      viewBotRotation.setStreamNotifier(streamNotifier);
+
       // Register LiveKit service if available
       if (global.viewBotLiveKitService) {
         viewBotRotation.setLiveKitService(global.viewBotLiveKitService);
@@ -5483,7 +5510,7 @@ async function startServer() {
         stoppables.push(viewBotManager);
         
         // Create Unified Rotation controller
-        const unifiedRotation = new UnifiedViewBotRotation(io, streamService, mediasoupService, livekitService);
+        const unifiedRotation = new UnifiedViewBotRotation(io, streamService, mediasoupService, livekitService, streamNotifier);
         const videoFiles = await getVideoFiles();
         await unifiedRotation.initialize(videoFiles);
         global.unifiedViewBotRotation = unifiedRotation;

@@ -89,6 +89,9 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     database,
     axios,
     https,
+    // PR 3.1: single `stream-ended` chokepoint. Used for both the takeover
+    // broadcast (with excludeSocket) and the stop-streaming io-wide emit.
+    streamNotifier,
   } = deps;
 
   socket.on('join-as-viewer', async () => {
@@ -411,11 +414,14 @@ module.exports = function registerStreamHandler(io, socket, deps) {
         // Include new streamer's display name so UI can update immediately
         const newStreamerDisplayName = await getStreamerDisplayName(socket.id);
         console.log(`📢 TAKEOVER: Notifying viewers of stream end before cleanup (excluding new streamer ${socket.id}, display: ${newStreamerDisplayName})`);
-        socket.broadcast.emit('stream-ended', {
+        // PR 3.1: chokepoint. `excludeSocket: socket` preserves the
+        // socket.broadcast.emit semantic (everyone except the new streamer).
+        streamNotifier.streamEnded({
           reason: 'takeover',
+          excludeSocket: socket,
           previousStreamer: currentStreamer,
           newStreamer: socket.id,
-          newStreamerDisplayName: newStreamerDisplayName
+          newStreamerDisplayName,
         });
 
         // Give viewers time to cleanup their consumers before we close producers
@@ -789,7 +795,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       socket.leave('streamer');
       socket.join('viewers');
 
-      io.emit('stream-ended', { reason: 'user_stopped_streaming', previousStreamer: socket.id });
+      streamNotifier.streamEnded({ reason: 'user_stopped_streaming', previousStreamer: socket.id });
       notifyViewersStreamEnded();
       notifyViewersStreamEnded();
       io.emit('viewer-count-update', sessionService.getUniqueViewerCount());

@@ -31,6 +31,18 @@ class LiveKitService {
     this.consumers = new Map(); // socketId -> Set of subscriptions
     this.currentStreamer = null;
     this.initialized = false;
+    // PR 3.1: optional StreamNotifier for the single `stream-ended` emit
+    // inside clearStaleStreamer. Set post-construction because LiveKitService
+    // is built by WebRTCAdapter before the bootstrap services factory runs.
+    this.streamNotifier = null;
+  }
+
+  /**
+   * Set the StreamNotifier (PR 3.1) used by clearStaleStreamer for the
+   * `stream-ended` emit.
+   */
+  setStreamNotifier(streamNotifier) {
+    this.streamNotifier = streamNotifier;
   }
 
   async initialize() {
@@ -655,11 +667,20 @@ class LiveKitService {
     streamService.clearStreamer();
     this.currentStreamer = null;
 
-    // Emit stream-ended to all clients
-    io.emit('stream-ended', {
-      reason: 'webrtc_disconnect',
-      message: 'Streamer WebRTC connection lost'
-    });
+    // Emit stream-ended to all clients (PR 3.1 chokepoint when wired; falls
+    // back to direct io.emit if the notifier hasn't been set — preserves
+    // behaviour during startup ordering edge cases).
+    if (this.streamNotifier) {
+      this.streamNotifier.streamEnded({
+        reason: 'webrtc_disconnect',
+        message: 'Streamer WebRTC connection lost',
+      });
+    } else {
+      io.emit('stream-ended', {
+        reason: 'webrtc_disconnect',
+        message: 'Streamer WebRTC connection lost',
+      });
+    }
 
     // Emit stream-update so clients know to look for new stream
     io.emit('stream-update', {

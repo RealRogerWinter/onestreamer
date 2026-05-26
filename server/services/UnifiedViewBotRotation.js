@@ -10,11 +10,14 @@ const simpleViewBotRotationInstance = require('./SimpleViewBotRotation');
 const WebRTCViewBotRotation = require('./WebRTCViewBotRotation');
 
 class UnifiedViewBotRotation {
-  constructor(io, streamService, mediasoupService, livekitService) {
+  constructor(io, streamService, mediasoupService, livekitService, streamNotifier = null) {
     this.io = io;
     this.streamService = streamService;
     this.mediasoupService = mediasoupService;
     this.livekitService = livekitService;
+    // PR 3.1: thread the StreamNotifier into WebRTCViewBotRotation so its
+    // `stream-ended` emit goes through the chokepoint.
+    this.streamNotifier = streamNotifier;
     
     // Detect which backend to use
     const useAdapter = process.env.USE_WEBRTC_ADAPTER === 'true';
@@ -56,7 +59,7 @@ class UnifiedViewBotRotation {
     // Initialize WebRTC rotation (new system)
     // CRITICAL: Disable auto-start before initialization to prevent unwanted rotation
     if (!this.webRtcRotation) {
-      this.webRtcRotation = new WebRTCViewBotRotation(this.io, this.streamService);
+      this.webRtcRotation = new WebRTCViewBotRotation(this.io, this.streamService, this.streamNotifier);
       // Disable auto-start before initialization
       this.webRtcRotation.settings.enabled = false;
       await this.webRtcRotation.initialize(videoFiles);

@@ -43,6 +43,7 @@ jest.mock('../../services/BuffDebuffService', () => class { constructor(...args)
 jest.mock('../../services/CanvasFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'CanvasFxService'; } });
 jest.mock('../../services/SoundFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'SoundFxService'; } });
 jest.mock('../../services/MediasoupPlainTransportService', () => class { constructor(...args) { this._args = args; this._stubName = 'MediasoupPlainTransportService'; } });
+jest.mock('../../services/StreamNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamNotifier'; } });
 
 // PR-I2 additions
 jest.mock('../../services/StreamInterceptorService', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamInterceptorService'; } });
@@ -159,6 +160,7 @@ const BuffDebuffService = require('../../services/BuffDebuffService');
 const CanvasFxService = require('../../services/CanvasFxService');
 const SoundFxService = require('../../services/SoundFxService');
 const MediasoupPlainTransportService = require('../../services/MediasoupPlainTransportService');
+const StreamNotifier = require('../../services/StreamNotifier');
 
 // PR-I2 additions
 const StreamInterceptorService = require('../../services/StreamInterceptorService');
@@ -202,13 +204,15 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 35 expected keys (no more, no less)', () => {
+  test('returns all 36 expected keys (no more, no less)', () => {
     const { services } = createServices(buildDeps());
 
     const expectedKeys = [
       // PR-I core
       'streamService',
       'sessionService',
+      // PR 3.1
+      'streamNotifier',
       'takeoverService',
       'testStreamService',
       'mediaStreamService',
@@ -248,7 +252,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(35);
+    expect(expectedKeys).toHaveLength(36);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -270,6 +274,7 @@ describe('server/bootstrap/services factory', () => {
     expect(s.canvasFxService).toBeInstanceOf(CanvasFxService);
     expect(s.soundFxService).toBeInstanceOf(SoundFxService);
     expect(s.plainTransportService).toBeInstanceOf(MediasoupPlainTransportService);
+    expect(s.streamNotifier).toBeInstanceOf(StreamNotifier);
     // PR-I2
     expect(s.streamInterceptorService).toBeInstanceOf(StreamInterceptorService);
     expect(s.visualFxService).toBeInstanceOf(VisualFxService);
@@ -348,6 +353,18 @@ describe('server/bootstrap/services factory', () => {
 
     expect(s.plainTransportService._args).toHaveLength(1);
     expect(s.plainTransportService._args[0]).toBe(deps.mediasoupService);
+  });
+
+  // PR 3.1: streamNotifier is the single `stream-ended` emit chokepoint.
+  // Constructor takes (io) — pinning the identity here means a future PR that
+  // changes the dep shape (e.g. adding a streamService for counter bumps) gets
+  // a deliberate test update.
+  test('streamNotifier is constructed with (io)', () => {
+    const deps = buildDeps();
+    const { services: s } = createServices(deps);
+
+    expect(s.streamNotifier._args).toHaveLength(1);
+    expect(s.streamNotifier._args[0]).toBe(deps.io);
   });
 
   // ── PR-I2 dep-graph identity checks ───────────────────────────────────

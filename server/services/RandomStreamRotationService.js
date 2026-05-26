@@ -392,6 +392,14 @@ class RandomStreamRotationService extends EventEmitter {
   }
 
   /**
+   * Set the StreamNotifier (PR 3.1) for `stream-ended` emits.
+   */
+  setStreamNotifier(streamNotifier) {
+    this.streamNotifier = streamNotifier;
+    console.log('✅ StreamNotifier registered with RandomStreamRotation');
+  }
+
+  /**
    * Setup listener for stream-ended events to auto-restart rotation
    */
   _setupStreamEndedListener() {
@@ -868,11 +876,12 @@ class RandomStreamRotationService extends EventEmitter {
     }
 
     // 6. Emit stream-ended to notify viewers the current content is ending
-    if (this.io) {
+    // PR 3.1: routed through StreamNotifier (single chokepoint).
+    if (this.streamNotifier) {
       console.log('📢 Broadcasting stream-ended to prepare for rotation...');
-      this.io.emit('stream-ended', {
+      this.streamNotifier.streamEnded({
         reason: 'random_rotation_starting',
-        isRandomRotation: true
+        isRandomRotation: true,
       });
     }
 
@@ -957,12 +966,15 @@ class RandomStreamRotationService extends EventEmitter {
         enabled: false,
         currentStream: null
       });
+    }
 
-      // Emit stream-ended event
-      this.io.emit('stream-ended', {
+    // Emit stream-ended event (PR 3.1 chokepoint — independent of this.io
+    // because the notifier holds its own io ref).
+    if (this.streamNotifier) {
+      this.streamNotifier.streamEnded({
         reason: 'random_rotation_stopped',
         streamerId: stoppingStream?.urlId,
-        isRandomRotation: true
+        isRandomRotation: true,
       });
     }
 

@@ -40,6 +40,16 @@ class ViewBotRotationService {
     this.livekitViewBotService = livekitViewBotService;
     console.log('✅ LiveKit ViewBot service registered with ViewBotRotationService');
   }
+
+  /**
+   * Set the StreamNotifier (PR 3.1) used to emit `stream-ended` events.
+   * Replaces direct use of `global.io.emit('stream-ended', …)` from
+   * stopCurrentBot().
+   */
+  setStreamNotifier(streamNotifier) {
+    this.streamNotifier = streamNotifier;
+    console.log('✅ StreamNotifier registered with ViewBotRotationService');
+  }
   
   /**
    * Initialize with media files
@@ -280,13 +290,25 @@ class ViewBotRotationService {
     const bot = this.currentBot;
     console.log(`⏹️ ViewBotRotationService: Stopping ${bot.id} (backend: ${this.backend})...`);
 
-    // Emit stream-ended event BEFORE stopping the bot
-    if (global.io) {
+    // Emit stream-ended event BEFORE stopping the bot.
+    // PR 3.1: routed through StreamNotifier (chokepoint). The `global.io`
+    // fallback matches the LiveKitService / WebRTCViewBotRotation pattern
+    // for startup-ordering edge cases — if a future construction path
+    // misses the setStreamNotifier setter, the emit still goes out
+    // through the legacy access path rather than silently dropping.
+    if (this.streamNotifier) {
       console.log(`📢 ViewBotRotationService: Emitting stream-ended for ${bot.id}`);
+      this.streamNotifier.streamEnded({
+        reason: 'rotation',
+        previousStreamer: bot.id,
+        timestamp: Date.now(),
+      });
+    } else if (global.io) {
+      console.log(`📢 ViewBotRotationService: Emitting stream-ended for ${bot.id} (fallback via global.io)`);
       global.io.emit('stream-ended', {
         reason: 'rotation',
         previousStreamer: bot.id,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
     }
 

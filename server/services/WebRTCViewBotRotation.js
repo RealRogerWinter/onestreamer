@@ -9,9 +9,13 @@ const WebRTCViewBot = require('./WebRTCViewBot');
 const ViewBotManager = require('./ViewBotManager');
 
 class WebRTCViewBotRotation {
-  constructor(io, streamService) {
+  constructor(io, streamService, streamNotifier = null) {
     this.io = io;
     this.streamService = streamService;
+    // PR 3.1: optional StreamNotifier. Caller (UnifiedViewBotRotation) threads
+    // this through when available; null is tolerated for back-compat with any
+    // older inline construction the refactor hasn't reached.
+    this.streamNotifier = streamNotifier;
     this.viewBotManager = null;
     this.currentBot = null;
     this.rotationTimer = null;
@@ -201,11 +205,21 @@ class WebRTCViewBotRotation {
     const botId = this.currentBot.id;
     console.log(`⏹️ Stopping WebRTC viewbot: ${botId}`);
     
-    // Emit stream-ended event
-    if (this.io) {
-      this.io.emit('stream-ended', {
+    // Emit stream-ended event (PR 3.1 chokepoint when wired).
+    // The original emit had no `reason` field — the chokepoint enforces one,
+    // and 'webrtc_viewbot_stopped' is now the canonical reason for this site
+    // (added to StreamNotifier.REASONS).
+    if (this.streamNotifier) {
+      this.streamNotifier.streamEnded({
+        reason: 'webrtc_viewbot_stopped',
         streamerId: botId,
-        streamType: 'webrtc-viewbot'
+        streamType: 'webrtc-viewbot',
+      });
+    } else if (this.io) {
+      this.io.emit('stream-ended', {
+        reason: 'webrtc_viewbot_stopped',
+        streamerId: botId,
+        streamType: 'webrtc-viewbot',
       });
     }
     

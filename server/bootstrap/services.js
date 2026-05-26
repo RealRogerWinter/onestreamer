@@ -108,6 +108,7 @@ const BuffDebuffService = require('../services/BuffDebuffService');
 const CanvasFxService = require('../services/CanvasFxService');
 const SoundFxService = require('../services/SoundFxService');
 const MediasoupPlainTransportService = require('../services/MediasoupPlainTransportService');
+const StreamNotifier = require('../services/StreamNotifier');
 
 // PR-I2 additions
 const StreamInterceptorService = require('../services/StreamInterceptorService');
@@ -160,6 +161,11 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   // No-dep singletons first.
   const streamService = new StreamService();
   const sessionService = new SessionService();
+
+  // PR 3.1: single emit chokepoint for `stream-ended`. Constructed early so
+  // every downstream service that previously called io.emit('stream-ended', …)
+  // directly can be threaded with this notifier instead.
+  const streamNotifier = new StreamNotifier(io);
 
   // Depends on redisClient + sessionService.
   const takeoverService = new TakeoverService(redisClient, sessionService);
@@ -310,6 +316,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   const services = {
     streamService,
     sessionService,
+    streamNotifier,
     takeoverService,
     testStreamService,
     mediaStreamService,

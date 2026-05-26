@@ -85,6 +85,8 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
     notifyViewersStreamEnded,
     getViewBotClientService,
     getViewbotService, // eslint-disable-line no-unused-vars
+    // PR 3.1: stop-stream's `stream-ended` emit goes through the chokepoint.
+    streamNotifier,
   } = deps;
 
   // Handle ViewBot Plain RTP bridge creation (for FFmpeg/GStreamer to WebRTC producer)
@@ -382,7 +384,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
 
       // Only emit stream-ended if it's not a ViewBot rotation
       if (!data?.isViewBot) {
-        io.emit('stream-ended', { reason: 'stop_stream_request', previousStreamer: socket.id });
+        streamNotifier.streamEnded({ reason: 'stop_stream_request', previousStreamer: socket.id });
         notifyViewersStreamEnded();
       }
 
