@@ -399,8 +399,32 @@ class URLStreamExtractorService extends EventEmitter {
       };
     }
 
-    // Live streaming platforms MUST use pipe mode - direct URLs have expiring tokens
-    const liveStreamingPlatforms = ['twitch', 'youtube', 'kick', 'facebook'];
+    // Twitch: resolve the HLS m3u8 URL up front via yt-dlp and let FFmpeg read
+    // it directly. We can't use streamlink here because its Twitch plugin
+    // launches a non-headless Chromium to acquire a client-integrity token
+    // (twitch.py hardcodes headless=False), and this host has no DISPLAY.
+    // The resolved playlist token is valid for the rotation window (5–15 min).
+    if (platform === 'twitch') {
+      try {
+        const m3u8 = await this._getYtdlpURL(url, quality);
+        console.log(`📡 Twitch m3u8 resolved via yt-dlp (direct HLS to FFmpeg)`);
+        return {
+          success: true,
+          streamUrl: m3u8,
+          platform,
+          tool: 'yt-dlp',
+          quality,
+          pipeMode: false,
+          isHLS: true
+        };
+      } catch (err) {
+        console.warn(`⚠️ Twitch yt-dlp m3u8 resolution failed: ${err.message}`);
+        throw new Error(`Failed to resolve Twitch stream URL: ${err.message}`);
+      }
+    }
+
+    // Other live streaming platforms MUST use pipe mode - direct URLs have expiring tokens
+    const liveStreamingPlatforms = ['youtube', 'kick', 'facebook'];
     if (liveStreamingPlatforms.includes(platform)) {
       console.log(`📡 Using pipe mode for ${platform} (auth tokens expire quickly)`);
       return {
