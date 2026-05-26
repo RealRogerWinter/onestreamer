@@ -1,0 +1,190 @@
+{
+  "$schema": "../../database/url-relay-whitelist-schema.sql",
+  "_meta": {
+    "version": 1,
+    "compiled_at": "2026-05-26",
+    "bar": "PG / family-friendly — suitable for unattended 24h rotation visible to general audience including minors",
+    "review_cadence_days": 90,
+    "notes": [
+      "This is a SEED. Operators are expected to tune.",
+      "Each streamer row has a 'risk' field that flags borderline cases — review those first.",
+      "'is_evergreen: true' marks 24/7 channels usable as fallback when no whitelisted streamer is live.",
+      "All logins are lowercase Twitch/Kick URL slugs.",
+      "Sources cited in the ADR; see docs/architecture/adr/0010-url-relay-whitelist-mode.md references."
+    ]
+  },
+
+  "config": [
+    {
+      "platform": "twitch",
+      "mode": "blacklist",
+      "fallback_category": "Minecraft",
+      "fallback_evergreen": "bobross",
+      "drift_check_seconds": 60,
+      "rationale": "Twitch's surface is broad enough that an evolving blocklist + CCL gates is the lighter-touch default. Operators can switch to 'whitelist' from the admin UI."
+    },
+    {
+      "platform": "kick",
+      "mode": "whitelist",
+      "fallback_category": "Minecraft",
+      "fallback_evergreen": "hotradio",
+      "drift_check_seconds": 60,
+      "rationale": "Kick's top channels skew gambling/IRL/drama. Whitelist-only is the safer default; expect frequent fallback engagement."
+    }
+  ],
+
+  "twitch": {
+    "allow_streamers": [
+      { "login": "geminitay",        "risk": "low",        "notes": "Hermitcraft Minecraft; deliberately wholesome." },
+      { "login": "grian",            "risk": "low",        "notes": "Hermitcraft/Empires SMP builder." },
+      { "login": "stampylonghead",   "risk": "very-low",   "notes": "Re-edited old VODs to remove swearing; gold standard." },
+      { "login": "cdawgva",          "risk": "borderline", "notes": "Top Stardew streamer; PG-13 floor, occasional innuendo." },
+      { "login": "pointcrow",        "risk": "low",        "notes": "Zelda/Nintendo challenge runs." },
+      { "login": "smallant",         "risk": "low",        "notes": "Mario Odyssey/Pokemon challenges; occasional mild language." },
+      { "login": "alanamisako",      "risk": "low",        "notes": "Cozy variety: ACNH, Stardew, Pokemon." },
+      { "login": "ardenrose",        "risk": "low",        "notes": "Long-running ACNH, low-key tone." },
+      { "login": "knimbley",         "risk": "low",        "notes": "Cozy/relaxing gaming." },
+
+      { "login": "gamesdonequick",   "risk": "very-low",   "notes": "Charity speedrun org. Strict no-profanity event rules." },
+      { "login": "halfcoordinated",  "risk": "very-low",   "notes": "One-handed speedrunner; accessibility-focused community." },
+      { "login": "lilaggy",          "risk": "low",        "notes": "Souls/Elden Ring speedruns." },
+      { "login": "ryukahr",          "risk": "low",        "notes": "Mario Maker speedruns." },
+      { "login": "gamej06",          "risk": "very-low",   "notes": "Explicitly markets family-friendly speedruns." },
+      { "login": "zeldaspeedruns",   "risk": "very-low",   "notes": "Org channel; strong clean-content norms." },
+      { "login": "speedgaming",      "risk": "low",        "notes": "Race/tournament hub for Zelda/Mario randomizers." },
+
+      { "login": "drawfee",          "risk": "borderline", "notes": "Adult cartoonist humor surfaces occasionally; not strictly PG." },
+      { "login": "drawfeeshow",      "risk": "borderline", "notes": "Same as drawfee; this is the live channel." },
+      { "login": "misscoookiez",     "risk": "low",        "notes": "Painter; calm stream." },
+      { "login": "texashula",        "risk": "low",        "notes": "Woodworker on the lathe." },
+      { "login": "lasergeekcreations","risk": "low",       "notes": "Scottish woodworker." },
+      { "login": "tlkknitting",      "risk": "very-low",   "notes": "Certified knitting instructor." },
+      { "login": "happycheftv",      "risk": "low",        "notes": "Cooking; chef background." },
+      { "login": "tabetai_cooking",  "risk": "low",        "notes": "Multi-cam Japanese cooking, family-friendly framing." },
+
+      { "login": "theprimeagen",     "risk": "borderline", "notes": "Live coding; PG-13 floor, occasional mild language." },
+      { "login": "tsoding",          "risk": "low",        "notes": "Recreational programming; calm educational tone." },
+      { "login": "gothamchess",      "risk": "very-low",   "notes": "Chess teaching; warm, jokey." },
+      { "login": "gmhikaru",         "risk": "low",        "notes": "Hikaru Nakamura; intense focus, clean by streamer standards." },
+      { "login": "theknowledgefellowship", "risk": "very-low", "notes": "60+ STEM/liberal-arts educator hub." },
+      { "login": "hakumai",          "risk": "very-low",   "notes": "Classical/jazz/VGM piano." },
+      { "login": "jonathan_ong",     "risk": "very-low",   "notes": "Classical-jazz piano; AU timezone." },
+
+      { "login": "cohhcarnage",      "risk": "very-low",   "notes": "Explicit no-swear policy; the gold standard variety streamer." },
+      { "login": "dougdoug",         "risk": "low",        "notes": "AI-mod gaming; absurd humor, generally clean." },
+      { "login": "thetruevanguard",  "risk": "low",        "notes": "FPS; explicit 'keep it clean' chat rule." },
+      { "login": "gaminghistorian",  "risk": "very-low",   "notes": "Retro/games-history; respectful tone." }
+    ],
+
+    "allow_categories": [
+      { "name": "Minecraft",                                          "risk": "low" },
+      { "name": "Stardew Valley",                                     "risk": "low" },
+      { "name": "Animal Crossing: New Horizons",                      "risk": "low" },
+      { "name": "The Legend of Zelda: Tears of the Kingdom",          "risk": "low" },
+      { "name": "The Legend of Zelda: Breath of the Wild",            "risk": "low" },
+      { "name": "Super Mario Odyssey",                                "risk": "low" },
+      { "name": "Super Mario Bros. Wonder",                           "risk": "low" },
+      { "name": "Pokémon Scarlet/Violet",                             "risk": "low" },
+      { "name": "Pokémon Legends: Arceus",                            "risk": "low" },
+      { "name": "Splatoon 3",                                         "risk": "low" },
+      { "name": "Kirby and the Forgotten Land",                       "risk": "low" },
+      { "name": "Mario Kart 8 Deluxe",                                "risk": "low" },
+      { "name": "Art",                                                "risk": "low" },
+      { "name": "Makers & Crafting",                                  "risk": "low" },
+      { "name": "Software and Game Development",                      "risk": "low" },
+      { "name": "Science & Technology",                               "risk": "low" },
+      { "name": "Chess",                                              "risk": "low" },
+      { "name": "Food & Drink",                                       "risk": "low" },
+      { "name": "Music",                                              "risk": "low" },
+      { "name": "Retro",                                              "risk": "low" }
+    ],
+
+    "block_streamers": [
+      { "login": "dreamwastaken", "notes": "Listed in research as community-controversial; default-block until manually re-reviewed." }
+    ],
+
+    "block_categories": [
+      { "name": "Just Chatting",                  "notes": "Umbrella category; cannot be classified safely without per-streamer override." },
+      { "name": "Talk Shows & Podcasts",          "notes": "Wide content range; allowlist creators, not the category." },
+      { "name": "ASMR",                           "notes": "Twitch's June 2023 ruling: mic-licking/kissing = Sexual Themes." },
+      { "name": "Pools, Hot Tubs, and Beaches",   "notes": "Hot-tub-meta containment category. Permanent block." },
+      { "name": "Slots",                          "notes": "Gambling. Permanent block." },
+      { "name": "Virtual Casino",                 "notes": "Gambling. Permanent block." },
+      { "name": "Poker",                          "notes": "Gambling. Permanent block." },
+      { "name": "Politics",                       "notes": "Inflammatory by default for this use case." }
+    ],
+
+    "evergreen": [
+      { "login": "bobross",        "is_evergreen": true, "notes": "Joy of Painting 24/7. Lowest risk on the platform." },
+      { "login": "monstercat",     "is_evergreen": true, "notes": "Monstercat FM — 24/7 label-cleared electronic music." },
+      { "login": "chillhopmusic",  "is_evergreen": true, "notes": "24/7 chillhop/lofi; DMCA-safe." }
+    ],
+
+    "ccl_block": ["SexualThemes", "ViolentGraphic", "DrugsIntoxication"],
+    "ccl_warn":  ["ProfanityVulgarity", "DebatedSocialIssuesAndPolitics", "Gambling", "MatureGame"]
+  },
+
+  "kick": {
+    "allow_streamers": [
+      { "login": "mustafa_go",        "risk": "low",        "notes": "Family-Minecraft-focused on Kick per influencer trade press." },
+      { "login": "gmhikaru",          "risk": "borderline", "notes": "Chess; occasional language. Confirm Kick presence." },
+      { "login": "chessbrah",         "risk": "borderline", "notes": "Chess entertainment; casual profanity noted." },
+      { "login": "spreen",            "risk": "borderline", "notes": "Minecraft + collaborative server events; Spanish-language." },
+      { "login": "artwithmelody",     "risk": "low",        "notes": "Live painting; cited as chill/creative." },
+      { "login": "hotradio",          "risk": "very-low",   "notes": "24/7 music station loop." },
+      { "login": "lofijazzworld24hs", "risk": "very-low",   "notes": "24/7 lofi/jazz/hip-hop; verify still active." },
+      { "login": "jonlimusic",        "risk": "low",        "notes": "Piano + chess; cozy reputation." }
+    ],
+
+    "allow_categories": [
+      { "name": "Minecraft",            "risk": "low" },
+      { "name": "Roblox",               "risk": "low" },
+      { "name": "Fortnite",             "risk": "low" },
+      { "name": "Chess",                "risk": "low" },
+      { "name": "Art",                  "risk": "low" },
+      { "name": "Digital Art",          "risk": "low" },
+      { "name": "Makers & Crafting",    "risk": "low" },
+      { "name": "Music",                "risk": "low" },
+      { "name": "Music Stations",       "risk": "very-low" },
+      { "name": "Live Music",           "risk": "low" },
+      { "name": "Software Development", "risk": "low" },
+      { "name": "EA Sports FC 26",      "risk": "low" },
+      { "name": "Cities: Skylines II",  "risk": "low" }
+    ],
+
+    "block_streamers": [],
+
+    "block_categories": [
+      { "name": "Slots & Casino",   "notes": "Gambling — auto-block category." },
+      { "name": "Sports Betting",   "notes": "Gambling — auto-block category." },
+      { "name": "Poker",            "notes": "Gambling — auto-block category." },
+      { "name": "Table Games",      "notes": "Gambling — auto-block category." },
+      { "name": "Dice Games",       "notes": "Gambling — auto-block category." },
+      { "name": "Crypto & Trading", "notes": "Gambling-adjacent on Kick." },
+      { "name": "Gambling",         "notes": "Parent category." },
+      { "name": "IRL",              "notes": "Too unpredictable; per-streamer override required." },
+      { "name": "Just Chatting",    "notes": "Per-creator allowlist override only." },
+      { "name": "Just Sleeping",    "notes": "Privacy/exploit concerns." },
+      { "name": "Movierooms",       "notes": "DMCA + uncontrolled chat." },
+      { "name": "Watch Party",      "notes": "Same as Movierooms." },
+      { "name": "Body Art",         "notes": "Kick category; NSFW boundary risk." },
+      { "name": "GTA V",            "notes": "RP servers often contain adult themes." },
+      { "name": "GTA VI",           "notes": "RP servers often contain adult themes." },
+      { "name": "DayZ",             "notes": "Survival community profanity-heavy." },
+      { "name": "Rust",             "notes": "Survival community profanity-heavy." }
+    ],
+
+    "evergreen": [
+      { "login": "hotradio",          "is_evergreen": true, "notes": "Always-on music station — best Kick-side fallback." },
+      { "login": "lofijazzworld24hs", "is_evergreen": true, "notes": "Always-on lofi; verify channel still live before relying on it." }
+    ],
+
+    "platform_mature_flag_field": "has_mature_content",
+    "platform_mature_block_default": true,
+    "_platform_notes": [
+      "Kick has an official Public API (docs.kick.com) launched 2024-2025; OAuth 2.1 client-credentials supported.",
+      "Rate limits not officially published; community wrappers report ~60 req/min comfortable.",
+      "Cultural lean is permissive; assume any category not explicitly allowlisted is unsafe by default."
+    ]
+  }
+}

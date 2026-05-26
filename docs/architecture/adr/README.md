@@ -49,3 +49,5 @@ What else we looked at and why we did not pick it.
 | 0006 | [whisper.cpp over cloud STT](0006-whisper-cpp-over-cloud-stt.md) | accepted |
 | 0007 | [Staged removal of dormant LiveKit infrastructure](0007-livekit-cleanup-staging.md) | superseded by 0008 |
 | 0008 | [Revive LiveKit for URL streams, recording, and transcription](0008-revive-livekit-for-url-streams-and-recording.md) | accepted |
+| 0009 | [Single `stream-ended` emission chokepoint (`StreamNotifier`)](0009-stream-notifier-chokepoint.md) | accepted |
+| 0010 | [URL-relay whitelist mode for family-friendly content](0010-url-relay-whitelist-mode.md) | accepted |

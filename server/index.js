@@ -35,6 +35,7 @@ logger.info({
 const SimpleViewBotRotation = require('./services/SimpleViewBotRotation');
 const ViewBotURLService = require('./services/ViewBotURLService');
 const URLStreamHealthService = require('./services/URLStreamHealthService');
+const WhitelistService = require('./services/WhitelistService');
 const RandomStreamRotationService = require('./services/RandomStreamRotationService');
 const MediasoupService = require('./services/MediasoupService');
 const AuthService = require('./services/AuthService');
@@ -5220,6 +5221,23 @@ async function startServer() {
     // clearStaleStreamer.
     if (livekitService && typeof livekitService.setStreamNotifier === 'function') {
       livekitService.setStreamNotifier(streamNotifier);
+    }
+
+    // URL-relay whitelist (ADR-0010). Initialized eagerly so the policy data
+    // is in memory before the first relay attempt. Phase 0 only exposes it on
+    // app.locals; callers in ViewBotURLService / random services come in
+    // Phases 1–3.
+    const whitelistService = new WhitelistService();
+    try {
+      await whitelistService.initialize();
+      app.locals.whitelistService = whitelistService;
+      global.whitelistService = whitelistService;
+    } catch (e) {
+      console.error('❌ WhitelistService failed to initialize:', e.message);
+      if (process.env.URL_RELAY_REQUIRE_WHITELIST_SERVICE === 'true') {
+        throw e;
+      }
+      // Phase 0: continue without it; Phase 5 sets the env flag in production.
     }
 
     if (!livekitService) {
