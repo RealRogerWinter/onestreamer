@@ -15,6 +15,8 @@
  * traffic — today that's only the main handle in database.js.
  */
 
+const logger = require('../bootstrap/logger');
+
 function run(db, sql) {
     return new Promise((resolve, reject) => {
         db.run(sql, (err) => (err ? reject(err) : resolve()));
@@ -35,10 +37,9 @@ async function applyPragmas(db, { tuneForLargeReads = false } = {}) {
     const walActive = modeRow && modeRow.journal_mode === 'wal';
 
     if (!walActive) {
-        console.error(
-            `applyPragmas: SQLite did not enter WAL mode ` +
-            `(got "${modeRow && modeRow.journal_mode}"); ` +
-            `keeping synchronous=FULL to avoid corruption risk on power loss.`
+        logger.error(
+            { actualMode: modeRow && modeRow.journal_mode },
+            'SQLite did not enter WAL mode; keeping synchronous=FULL to avoid corruption risk on power loss'
         );
     } else {
         await run(db, 'PRAGMA synchronous = NORMAL');

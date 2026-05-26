@@ -15,13 +15,14 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 // Fail-fast: surface every missing/malformed required env var in one error
 // rather than letting requireEnv() trip on whichever happens to import first.
 require('./bootstrap/env').validateEnv();
+const logger = require('./bootstrap/logger');
 const requireEnv = require('./config/requireEnv');
 
-// Log environment variables on startup for debugging
-console.log('🔧 Environment Check on Server Start:');
-console.log('  SMTP_HOST:', process.env.SMTP_HOST ? 'configured' : 'NOT SET');
-console.log('  SMTP_USER:', process.env.SMTP_USER ? 'configured' : 'NOT SET');
-console.log('  FROM_EMAIL:', process.env.FROM_EMAIL || 'NOT SET');
+logger.info({
+    smtpHost: process.env.SMTP_HOST ? 'configured' : 'NOT SET',
+    smtpUser: process.env.SMTP_USER ? 'configured' : 'NOT SET',
+    fromEmail: process.env.FROM_EMAIL || 'NOT SET',
+}, 'Environment check on server start');
 
 // ViewBot stack: the four named services (ViewbotService,
 // ViewBotClientService, ViewBotWebRTCService, ViewBotLiveKitService) are

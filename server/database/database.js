@@ -2,22 +2,23 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcrypt');
 const applyPragmas = require('./applyPragmas');
+const logger = require('../bootstrap/logger');
 
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
 
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
-        console.error('Error opening database:', err);
+        logger.error(err, 'Error opening database');
         return;
     }
-    console.log('Connected to SQLite database');
+    logger.info({ dbPath }, 'Connected to SQLite database');
     applyPragmas(db, { tuneForLargeReads: true })
         .then(({ walActive }) => {
-            console.log(`SQLite PRAGMAs applied (journal_mode=${walActive ? 'wal' : 'fallback'})`);
+            logger.info({ journalMode: walActive ? 'wal' : 'fallback' }, 'SQLite PRAGMAs applied');
             initializeDatabase();
         })
         .catch((e) => {
-            console.error('Failed to apply SQLite PRAGMAs:', e);
+            logger.error(e, 'Failed to apply SQLite PRAGMAs');
             // Continue with schema setup; the connection is still usable,
             // it's just running with default (less optimal but correct) settings.
             initializeDatabase();
