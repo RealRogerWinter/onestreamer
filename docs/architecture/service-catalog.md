@@ -163,6 +163,8 @@ See [`viewbot-fleet.md`](viewbot-fleet.md) for the live/dead breakdown.
 | **`KickRandomService.js`** | Kick public scrape via Python helper (`curl_cffi`). |
 | **`kick-api-helper.py`** | Python helper script for Kick (not a Node module; subprocess-spawned). |
 | **`SimpleViewBotRotation.js`** | Simple in-memory rotation state (used by URL-stream rotation). |
+| **`WhitelistService.js`** | URL-relay content filter (ADR-0010). Per-platform `off` / `blacklist` / `whitelist` mode + CCL/mature gates. Pure policy + DB + in-memory cache. |
+| **`WhitelistEnforcer.js`** | Mid-stream drift checker (ADR-0010, PR-W4). 60s polling loop that re-checks the active URL relay against `WhitelistService` and stops it if the streamer drifted out of policy. |
 
 ---
 

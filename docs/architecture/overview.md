@@ -193,3 +193,5 @@ None of this is on the roadmap.
 - [`data-model.md`](data-model.md) — SQLite schemas and relationships
 - [`service-catalog.md`](service-catalog.md) — every file in `server/services/`
 - [`adr/`](adr/) — the *why* behind these architectural choices
+- [`adr/0010-url-relay-whitelist-mode.md`](adr/0010-url-relay-whitelist-mode.md) — URL-relay content filter (active)
+- [`plans/url-relay-whitelist-mode.md`](plans/url-relay-whitelist-mode.md) — the 6-phase rollout plan, all phases shipped
