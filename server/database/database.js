@@ -68,7 +68,6 @@ function initializeDatabase() {
                 stream_count INTEGER DEFAULT 0,
                 last_stream_at DATETIME,
                 chat_message_count INTEGER DEFAULT 0,
-                points INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id)
@@ -121,10 +120,14 @@ function initializeDatabase() {
             }
         });
 
-        // Add points column to user_stats if it doesn't exist (migration)
-        db.run(`ALTER TABLE user_stats ADD COLUMN points INTEGER DEFAULT 0`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                console.error('Error adding points column:', err);
+        // Drop the legacy `points` column. `user_stats.points_balance` is the
+        // authoritative source per the migrate-points-system migration; the
+        // `points` column was its calculated-on-read predecessor and has been
+        // unread for some time. Idempotent: second run errors with "no such
+        // column" which we ignore.
+        db.run(`ALTER TABLE user_stats DROP COLUMN points`, (err) => {
+            if (err && !err.message.includes('no such column')) {
+                console.error('Error dropping legacy points column:', err);
             }
         });
 

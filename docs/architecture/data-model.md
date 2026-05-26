@@ -86,13 +86,12 @@ total_stream_time    INTEGER DEFAULT 0    -- seconds streaming
 total_view_time      INTEGER DEFAULT 0    -- seconds viewing
 chat_message_count   INTEGER DEFAULT 0
 points_balance       INTEGER DEFAULT 0    -- ← authoritative since the points refactor
-points               INTEGER              -- legacy, no longer used; safe to drop
 last_streamed_at     DATETIME
 last_viewed_at       DATETIME
 ```
 
 > [!NOTE]
-> The legacy `points` column is a remnant of the pre-refactor "calculate-on-read" system. The authoritative column is `points_balance`. See [`/docs/features/points-and-economy.md`](../features/points-and-economy.md) and the historical context in [`/docs/archive/points/`](../archive/points/).
+> The authoritative points column is `points_balance`. The legacy `points` column (a remnant of the pre-refactor "calculate-on-read" system) was dropped in May 2026 once the calculated-on-read code paths were verified gone. See [`/docs/features/points-and-economy.md`](../features/points-and-economy.md) and the historical context in [`/docs/archive/points/`](../archive/points/).
 
 ### `account_deletion_logs`
 

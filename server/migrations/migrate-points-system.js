@@ -23,11 +23,22 @@ async function allAsync(db, sql, params = []) {
 
 async function migratePointsSystem() {
     const db = new sqlite3.Database(dbPath);
-    
+
     console.log('🚀 Starting Points System Migration...\n');
     console.log('=' .repeat(50));
-    
+
     try {
+        // Guard: this script's Step 4 reads the legacy `points` column. That
+        // column was dropped after the migration completed, so if it's gone
+        // the migration has already run and there is nothing to do.
+        const cols = await allAsync(db, `PRAGMA table_info(user_stats)`);
+        const hasLegacyPoints = cols.some((c) => c.name === 'points');
+        if (!hasLegacyPoints) {
+            console.log('ℹ️  Legacy `user_stats.points` column already removed — migration is complete.');
+            console.log('   Nothing to do. (This script is preserved for forensic value only.)');
+            return;
+        }
+
         // Step 1: Add points_balance column to user_stats
         console.log('\n📊 Step 1: Adding points_balance column...');
         try {
