@@ -72,7 +72,12 @@ module.exports = function(viewBotURLService, healthService = null) {
       });
 
       if (!result.success) {
-        return res.status(400).json({ error: result.error });
+        const body = { error: result.error };
+        // PR-W2: surface which whitelist gate (mature_flag / ccl_gate /
+        // blacklist_streamer / blacklist_category / whitelist_miss) rejected
+        // the submission so the admin UI in PR-W5 can render a useful reason.
+        if (result.gateThatBlocked) body.gateThatBlocked = result.gateThatBlocked;
+        return res.status(400).json(body);
       }
 
       // Save to database

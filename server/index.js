@@ -5227,7 +5227,7 @@ async function startServer() {
     // is in memory before the first relay attempt. Phase 0 only exposes it on
     // app.locals; callers in ViewBotURLService / random services come in
     // Phases 1–3.
-    const whitelistService = new WhitelistService();
+    let whitelistService = new WhitelistService();
     try {
       await whitelistService.initialize();
       app.locals.whitelistService = whitelistService;
@@ -5238,6 +5238,11 @@ async function startServer() {
         throw e;
       }
       // Phase 0: continue without it; Phase 5 sets the env flag in production.
+      // Null the local so the `if (whitelistService)` wire-up guards below
+      // skip cleanly — without this, the constructed-but-uninitialized
+      // object would still be truthy and the first checkAllowed call would
+      // throw "cache not initialized" from inside ViewBotURLService.
+      whitelistService = null;
     }
 
     if (!livekitService) {
@@ -5246,6 +5251,7 @@ async function startServer() {
       const viewBotURLService = new ViewBotURLService();
       viewBotURLService.setStreamService(streamService);
       viewBotURLService.setViewBotRotation(SimpleViewBotRotation); // For stopping/resuming viewbots
+      if (whitelistService) viewBotURLService.setWhitelistService(whitelistService);
       // PR 3.1 (post-review fix): deliberately NOT calling
       // viewBotURLService.setStreamNotifier on this branch. The original
       // MediaSoup branch did not call setSocketIO(io) either, so the two
@@ -5330,6 +5336,7 @@ async function startServer() {
       viewBotURLService.setViewBotRotation(SimpleViewBotRotation); // For stopping/resuming viewbots
       viewBotURLService.setSocketIO(io); // For notifying viewers when URL stream starts
       viewBotURLService.setStreamNotifier(streamNotifier);
+      if (whitelistService) viewBotURLService.setWhitelistService(whitelistService);
       const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
       urlStreamHealthService.start();
 

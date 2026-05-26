@@ -126,6 +126,18 @@ class ViewBotURLService extends EventEmitter {
   }
 
   /**
+   * Set the WhitelistService (ADR-0010, PR-W2) used to gate URL submissions
+   * against the per-platform allow/block lists + CCL/mature filters. When the
+   * service is set, startURLStream consults it after URL validation and before
+   * extracting the playback URL. When unset, the gate is a pass-through —
+   * Phase 0 ships without the gate active, the setter wires it on.
+   */
+  setWhitelistService(whitelistService) {
+    this.whitelistService = whitelistService;
+    console.log('✅ WhitelistService registered with ViewBotURLService');
+  }
+
+  /**
    * Initialize adaptive encoding settings
    */
   _initAdaptiveSettings() {
@@ -469,6 +481,19 @@ class ViewBotURLService extends EventEmitter {
       }
 
       console.log(`✅ URL validated: ${validation.title} (${validation.platform})`);
+
+      // Whitelist gate (ADR-0010, PR-W2). Returns { allowed: true } when no
+      // service is injected, so this is a pass-through in Phase 0.
+      const gate = this._checkWhitelistGate(url, validation);
+      if (!gate.allowed) {
+        console.log(`⛔ URL STREAM: whitelist gate rejected ${urlId}: ${gate.reason}`);
+        return {
+          success: false,
+          error: `Content policy: ${gate.reason}`,
+          urlId,
+          gateThatBlocked: gate.gateThatBlocked,
+        };
+      }
 
       // CRITICAL: Stop ALL existing URL streams before starting a new one
       // This ensures only ONE stream is ever active at a time
@@ -1712,6 +1737,49 @@ class ViewBotURLService extends EventEmitter {
    */
   async testTools() {
     return await this.extractorService.testTools();
+  }
+
+  /**
+   * Extract the channel login from a platform URL.
+   * Returns null for unknown platforms or URLs we can't parse.
+   * Logins are lowercased to match WhitelistService's canonical form.
+   */
+  _extractLoginFromUrl(url, platform) {
+    if (!url || !platform) return null;
+    const ident = this.extractorService.extractIdentifier(url);
+    if (!ident || !ident.identifier) return null;
+    if (ident.platform !== platform) return null;
+    return String(ident.identifier).toLowerCase();
+  }
+
+  /**
+   * Apply the whitelist policy gate (ADR-0010) to a pending URL submission.
+   * Phase 1 only knows the platform + login at this point; the current
+   * category isn't resolved yet, so callers in `whitelist` mode will fall
+   * through to the streamer allowlist alone here. A post-extraction re-check
+   * is deferred to PR-W3 once TwitchRandomService surfaces the category.
+   *
+   * Returns { allowed: true } when no whitelistService is wired (Phase 0
+   * behavior preserved) OR when the service grants the request. Returns
+   * { allowed: false, reason, gateThatBlocked } otherwise.
+   *
+   * Non-Twitch / non-Kick platforms (YouTube, Facebook, etc.) are not gated
+   * by this service — they're not on the whitelist's per-platform tables.
+   */
+  _checkWhitelistGate(url, validation) {
+    if (!this.whitelistService) return { allowed: true, reason: 'service_unset' };
+    if (!validation || !['twitch', 'kick'].includes(validation.platform)) {
+      return { allowed: true, reason: 'platform_not_gated' };
+    }
+    const login = this._extractLoginFromUrl(url, validation.platform);
+    return this.whitelistService.checkAllowed({
+      platform: validation.platform,
+      login,
+      currentGameName: null,
+      isMature: null,
+      ccls: null,
+      hasMatureContent: null,
+    });
   }
 
   /**
