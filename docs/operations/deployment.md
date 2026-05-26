@@ -225,6 +225,14 @@ A cleanup PR would `npm run build` once, copy `client/build/*` to `/var/www/html
 
 Lives at `/root/strapi-blog/backend`. Managed as its own process (likely systemd; not in `config/ecosystem.config.js`). nginx routes `/strapi/*` to it for admin + API. The main server fetches article content for the `/blog/{slug}` SSR path. See [`/docs/integrations/strapi.md`](../integrations/strapi.md).
 
+The blog frontend's built assets are committed to this repo at [`/blog/`](../../blog/). nginx serves them from `/var/www/html/blog/`, which is expected to be a symlink to the in-repo build. **First-time host setup** (one-time, survives `git pull` and reboots):
+
+```bash
+sudo ln -sfn /root/onestreamer/blog /var/www/html/blog
+```
+
+If `https://onestreamer.live/blog/` returns 404 on a freshly provisioned host, this symlink is the first thing to check.
+
 ### LiveKit (`:7880`, `:7882`)
 
 Running but dormant — see [ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md). nginx exposes it via the `livekit.onestreamer.live` subdomain and the `/livekit/*` paths.

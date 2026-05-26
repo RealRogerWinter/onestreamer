@@ -70,7 +70,7 @@ If you tighten Strapi permissions, you'd add a Strapi API token to OneStreamer's
 | SSR blog handler (the OneStreamer side) | [`server/index.js`](../../server/index.js) around line 9427 — fetches from `http://127.0.0.1:1337/api/articles`, builds HTML with OG tags |
 | nginx routing | `/etc/nginx/sites-available/onestreamer.live` (`/blog/{slug}`, `/blog/assets/`, `/strapi/*` blocks) |
 | Strapi codebase | `/root/strapi-blog/backend/` |
-| Static blog assets | `/var/www/html/blog/` |
+| Static blog assets | `/var/www/html/blog/` (symlink → in-repo [`/blog/`](../../blog/); see [`deployment.md`](../operations/deployment.md#strapi-cms-1337) for first-time setup) |
 
 ## Operational notes
 
@@ -87,6 +87,7 @@ Back up Strapi alongside the main server. See [`/docs/operations/backup-restore.
 
 | Symptom | Check |
 |---------|-------|
+| `/blog/` (index) returns 404 | `/var/www/html/blog` symlink missing — see [`deployment.md`](../operations/deployment.md#strapi-cms-1337) for the one-time setup command |
 | `/blog/<slug>` returns 404 | Strapi has no article with that slug, or `publishedAt` is null (drafts aren't served) |
 | OG meta missing in Discord preview | Strapi article missing `cover` or `description`; or the SSR code isn't reading those fields |
 | Blog images broken | Cover image not in `/var/www/html/blog/assets/`, or asset URL points to Strapi's internal `/uploads/` path (rewrite needed) |
