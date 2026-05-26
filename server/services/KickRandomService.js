@@ -162,12 +162,7 @@ class KickRandomService {
 
         const viewers = stream.viewer_count || stream.viewers || 0;
 
-        // Check viewer count - be lenient with 0 viewers as Kick API often reports 0
-        // Only filter if minViewers > 1 or if viewers exceed maxViewers
-        if (minViewers > 1 && viewers < minViewers) {
-          return false;
-        }
-        if (viewers > maxViewers) {
+        if (viewers < minViewers || viewers > maxViewers) {
           return false;
         }
 

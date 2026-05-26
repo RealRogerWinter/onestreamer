@@ -9,11 +9,17 @@ import json
 from curl_cffi import requests
 
 def get_live_streams(page=1, limit=50, language='en'):
-    """Get live streams from Kick"""
+    """Get live streams from Kick.
+
+    Without ``sort=desc`` this endpoint returns every entry with
+    ``viewer_count: 0`` (server-side counts are only populated when a
+    sort order is requested). With ``sort=desc`` the response is ordered
+    by viewer count descending, so page N covers a contiguous band
+    (e.g. page 1: 6k–46k viewers, page 20: ~330–400).
+    """
     try:
-        # Use the working livestreams endpoint
         response = requests.get(
-            f'https://kick.com/stream/livestreams/{language}?page={page}&limit={limit}',
+            f'https://kick.com/stream/livestreams/{language}?page={page}&limit={limit}&sort=desc',
             impersonate='chrome',
             timeout=15
         )
