@@ -503,6 +503,35 @@ describe('server/bootstrap/services factory', () => {
   test('throws when called with no deps object (destructure of undefined)', () => {
     expect(() => createServices()).toThrow(TypeError);
   });
+
+  // ── PR 2.3: single fail-fast guard for the dep DAG ──────────────────────
+  //
+  // The existing 30+ tests in this block each pin one service's ctor args
+  // by identity — that catches *wrong* wiring. This test catches *missing*
+  // wiring: with the full standard deps bag, no positional ctor arg should
+  // be `undefined`. If a future PR adds a new service that takes a dep the
+  // factory doesn't thread (e.g., `new X(deps.zservice)` with no `zservice`
+  // in the destructure), this fires with a list of offenders rather than
+  // each affected route blowing up at runtime when the undefined gets
+  // dereferenced. Note: `null` is distinguished from `undefined` —
+  // viewBotClientService passes `null` as serverUrl intentionally for the
+  // env-var fallback, and the LiveKit-vs-MediaSoup branches leave their
+  // unused side null on the bag. Only `undefined` indicates a wiring gap.
+  test('no service ctor arg is undefined when called with full deps (PR 2.3 fail-fast guard)', () => {
+    const { services } = createServices(buildDeps());
+
+    const offenders = [];
+    for (const [name, svc] of Object.entries(services)) {
+      if (!svc || !svc._args || svc._args.length === 0) continue;
+      svc._args.forEach((arg, idx) => {
+        if (arg === undefined) {
+          offenders.push(`${name}#${idx}`);
+        }
+      });
+    }
+
+    expect(offenders).toEqual([]);
+  });
 });
 
 // ── PR-I4: createViewBotServices (late-init helper) ─────────────────────────
@@ -613,5 +642,52 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewbotService.viewBotClientService).toBe(bag.viewBotClientService);
+  });
+
+  // ── PR 2.3: fail-fast guard for the ViewBot factory ─────────────────────
+  //
+  // Same intent as the main-factory guard above, but the ViewBot bag is
+  // branched: the inactive backend leaves either viewBotWebRTCService or
+  // viewBotLiveKitService as `null` on the bag. We skip nulls (intentional)
+  // and `viewBotClientService._args[0]` is intentionally `null` for the
+  // env-var fallback path, which the `!== undefined` check tolerates.
+  // Two test cases — one per branch — because each branch constructs a
+  // different service via a different `new` site.
+
+  test('MediaSoup branch: no ViewBot ctor arg is undefined (PR 2.3 fail-fast guard)', async () => {
+    const deps = buildViewBotDeps();
+    const { services: bag } = await createViewBotServices(deps);
+
+    const offenders = [];
+    for (const [name, svc] of Object.entries(bag)) {
+      if (svc === null) continue;
+      if (!svc._args || svc._args.length === 0) continue;
+      svc._args.forEach((arg, idx) => {
+        if (arg === undefined) {
+          offenders.push(`${name}#${idx}`);
+        }
+      });
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  test('LiveKit branch: no ViewBot ctor arg is undefined (PR 2.3 fail-fast guard)', async () => {
+    const livekitService = { _kind: 'livekit' };
+    const deps = buildViewBotDeps({ livekitService });
+    const { services: bag } = await createViewBotServices(deps);
+
+    const offenders = [];
+    for (const [name, svc] of Object.entries(bag)) {
+      if (svc === null) continue;
+      if (!svc._args || svc._args.length === 0) continue;
+      svc._args.forEach((arg, idx) => {
+        if (arg === undefined) {
+          offenders.push(`${name}#${idx}`);
+        }
+      });
+    }
+
+    expect(offenders).toEqual([]);
   });
 });
