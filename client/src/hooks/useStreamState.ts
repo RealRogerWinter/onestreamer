@@ -55,9 +55,15 @@ import { Socket } from 'socket.io-client';
  *     successful start clears any pending error.
  *
  * Behaviour is preserved verbatim from the original inline listeners in
- * App.tsx: same setTimeout durations, same takeover-lock window (10s),
- * same min-switch interval (3s), same display-name and rotation-timer
- * preservation rules, same console.log strings.
+ * App.tsx with one exception (PR 2.5b): the 10-second
+ * `takeoverTargetRef` lock that papered over out-of-order
+ * `stream-status` arrivals during a takeover is gone. The replacement
+ * is the server-bumped `streamGeneration` counter on every
+ * stream-status payload (see `useStreamGenerationGuard` and
+ * `server/services/StreamService.js`). Same setTimeout durations, same
+ * min-switch interval (3s), same display-name and rotation-timer
+ * preservation rules, same console.log strings — everything else is
+ * preserved.
  */
 
 export interface StreamStatus {
@@ -84,6 +90,17 @@ export interface StreamStatus {
   lockedRemainingMs?: number | null;
   // Game mode
   isGameMode?: boolean;
+  /**
+   * Monotonic stream-identity counter set by `StreamService.streamGeneration`
+   * on the server (bumped on every `setStreamer` / `clearStreamer`,
+   * included in every `getStreamStatus()` payload). The client uses
+   * this — via `useStreamGenerationGuard` — to discard out-of-order
+   * `stream-status` arrivals. Optional because (a) older servers
+   * predate the field, (b) the `stream-takeover` /
+   * `stream-started` / `stream-ended` payloads on this hook don't
+   * carry the counter and instead build a partial status.
+   */
+  streamGeneration?: number;
 }
 
 const INITIAL_STREAM_STATUS: StreamStatus = {
@@ -130,13 +147,6 @@ export interface StreamStateResult {
   isForceDisconnected: boolean;
   // Active streamer's buffs.
   streamerBuffs: any[];
-  /**
-   * Lock the takeover target so a stale `stream-status` event doesn't
-   * blow away the new streamer id. App.tsx's `stream-status` listener
-   * uses these to detect / clear the lock.
-   */
-  takeoverTargetRef: React.MutableRefObject<string | null>;
-  takeoverTimestampRef: React.MutableRefObject<number>;
 }
 
 export function useStreamState(options: UseStreamStateOptions): StreamStateResult {
@@ -158,8 +168,6 @@ export function useStreamState(options: UseStreamStateOptions): StreamStateResul
   // Refs preserved verbatim from App.tsx.
   const streamSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastStreamSwitchRef = useRef<number>(0);
-  const takeoverTargetRef = useRef<string | null>(null);
-  const takeoverTimestampRef = useRef<number>(0);
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keep refs to the latest values for listeners that close over them
@@ -277,11 +285,10 @@ export function useStreamState(options: UseStreamStateOptions): StreamStateResul
         streamSwitchTimeoutRef.current = null;
       }
 
-      // Clear takeover lock if new streamer matches expected target
-      if (data.streamerId === takeoverTargetRef.current) {
-        console.log(`✅ CLIENT: stream-started confirmed takeover target ${data.streamerId}, clearing lock`);
-        takeoverTargetRef.current = null;
-      }
+      // PR 2.5b: the takeoverTargetRef "lock" used to clear here on
+      // confirmation. That lock is gone — drop-by-streamGeneration on
+      // the stream-status handler in App.tsx now handles the ordering
+      // problem the lock used to paper over.
 
       setStreamStatus(prev => ({
         ...prev,
@@ -313,9 +320,10 @@ export function useStreamState(options: UseStreamStateOptions): StreamStateResul
       if (data?.reason === 'takeover' && data.newStreamer) {
         console.log(`🛑 CLIENT: Stream ended due to takeover by ${data.newStreamer} (${data.newStreamerDisplayName}) - updating to new streamer`);
 
-        takeoverTargetRef.current = data.newStreamer;
-        takeoverTimestampRef.current = Date.now();
-        console.log(`🔒 CLIENT: Locked takeover target: ${data.newStreamer}`);
+        // PR 2.5b: the 10s `takeoverTargetRef` lock set here is gone.
+        // Out-of-order `stream-status` arrivals are now discarded by
+        // `streamGeneration` in `useStreamGenerationGuard` (used by the
+        // App.tsx stream-status handler).
 
         setStreamStatus(prev => ({
           ...prev,
@@ -665,9 +673,8 @@ export function useStreamState(options: UseStreamStateOptions): StreamStateResul
       if (isStreamingRef.current) {
         console.log('🔄 CLIENT: I was streaming, transitioning to viewer mode');
 
-        // CRITICAL: Set these BEFORE changing isStreaming to prevent race conditions
-        takeoverTargetRef.current = data.newStreamerId;
-        takeoverTimestampRef.current = Date.now();
+        // PR 2.5b: the takeover-target lock previously set here is
+        // gone — drop-by-streamGeneration replaces it.
 
         setStreamStatus(prev => ({
           ...prev,
@@ -695,7 +702,6 @@ export function useStreamState(options: UseStreamStateOptions): StreamStateResul
           setShowTakeoverOverlay(false);
           setTimeout(() => {
             setForceViewerAfterTakeover(false);
-            takeoverTargetRef.current = null;
             console.log('🔄 CLIENT: Takeover transition complete, cleared force viewer mode');
           }, 2000);
         }, 3000);
@@ -742,8 +748,6 @@ export function useStreamState(options: UseStreamStateOptions): StreamStateResul
     disconnectionReason,
     isForceDisconnected,
     streamerBuffs,
-    takeoverTargetRef,
-    takeoverTimestampRef,
   };
 }
 

@@ -5,6 +5,7 @@ import { useAuthState } from './hooks/useAuthState';
 import { useGameState } from './hooks/useGameState';
 import { useStreamerSettings } from './hooks/useStreamerSettings';
 import { useStreamState, StreamStatus } from './hooks/useStreamState';
+import { useStreamGenerationGuard } from './hooks/useStreamGenerationGuard';
 import { useModals } from './hooks/useModals';
 import './App.css';
 import StreamViewer from './components/stream/StreamViewer';
@@ -186,14 +187,21 @@ function AppContent() {
     disconnectionReason,
     isForceDisconnected,
     streamerBuffs,
-    takeoverTargetRef,
-    takeoverTimestampRef,
   } = useStreamState({
     socket,
     connected,
     onError: setError,
     onClearError: () => setError(null),
   });
+
+  // PR 2.5b: drop-by-streamGeneration replaces the 10-second
+  // takeoverTargetRef lock that used to live in the stream-status
+  // handler below. Server bumps the counter on every setStreamer /
+  // clearStreamer (StreamService.streamGeneration), and the guard
+  // discards any stream-status payload with a counter older than the
+  // last one we applied. Also resets on socket reconnect so a
+  // server-restart-with-rewound-counter doesn't lock us out.
+  const acceptStreamStatus = useStreamGenerationGuard(socket);
 
   // (Login/signup, inventory, profile settings, mobile chat, tutorial,
   // and bug-report modal visibility flags all live in useModals above.)
@@ -270,56 +278,37 @@ function AppContent() {
     if (!socket) return;
 
     socket.on('stream-status', (status: StreamStatus) => {
-      // CRITICAL: During takeover transition, don't let stale stream-status overwrite the correct streamer
-      const takeoverAge = Date.now() - takeoverTimestampRef.current;
-      const isInTakeoverTransition = takeoverTargetRef.current && takeoverAge < 10000; // 10 second window
-
-      if (isInTakeoverTransition && status.streamerId !== takeoverTargetRef.current) {
-        console.log(`⚠️ CLIENT: Ignoring stale stream-status (got ${status.streamerId}, expected ${takeoverTargetRef.current})`);
-        // Update other fields but preserve the correct streamerId, display name, and rotation timer values
-        setStreamStatus(prev => ({
-          ...status,
-          streamerId: takeoverTargetRef.current,
-          hasActiveStream: true,
-          streamerDisplayName: status.streamerDisplayName || prev.streamerDisplayName,
-          // Preserve rotation timer values (managed by rotation-timing event)
-          nextRotationAt: prev.nextRotationAt,
-          currentRotationDuration: prev.currentRotationDuration,
-          isRotationLocked: prev.isRotationLocked,
-          lockedRemainingMs: prev.lockedRemainingMs,
-          isRandomRotation: prev.isRandomRotation,
-          randomRotationPlatform: prev.randomRotationPlatform,
-          randomRotationStreamerUrl: prev.randomRotationStreamerUrl,
-          randomRotationStreamerUsername: prev.randomRotationStreamerUsername,
-          randomRotationGame: prev.randomRotationGame,
-          randomRotationViewers: prev.randomRotationViewers,
-          randomRotationStartedAt: prev.randomRotationStartedAt
-        }));
-      } else {
-        // Normal update - also clear takeover lock if streamerId matches
-        if (status.streamerId === takeoverTargetRef.current) {
-          console.log(`✅ CLIENT: stream-status confirmed takeover target ${status.streamerId}, clearing lock`);
-          takeoverTargetRef.current = null;
-        }
-        // CRITICAL: Preserve streamerDisplayName and rotation timer values if not provided in status
-        // This prevents the header name and countdown from disappearing during transitions
-        setStreamStatus(prev => ({
-          ...status,
-          streamerDisplayName: status.streamerDisplayName || prev.streamerDisplayName,
-          // Preserve rotation timer values (managed by rotation-timing event)
-          nextRotationAt: prev.nextRotationAt,
-          currentRotationDuration: prev.currentRotationDuration,
-          isRotationLocked: prev.isRotationLocked,
-          lockedRemainingMs: prev.lockedRemainingMs,
-          isRandomRotation: prev.isRandomRotation,
-          randomRotationPlatform: prev.randomRotationPlatform,
-          randomRotationStreamerUrl: prev.randomRotationStreamerUrl,
-          randomRotationStreamerUsername: prev.randomRotationStreamerUsername,
-          randomRotationGame: prev.randomRotationGame,
-          randomRotationViewers: prev.randomRotationViewers,
-          randomRotationStartedAt: prev.randomRotationStartedAt
-        }));
+      // PR 2.5b: drop stale stream-status arrivals by monotonic
+      // streamGeneration counter. Replaces the 10-second
+      // `takeoverTargetRef` lock that used to live here. Server bumps
+      // the counter on every setStreamer / clearStreamer (see
+      // `StreamService.streamGeneration`), so an older counter means
+      // this payload was already superseded — discard it. Payloads
+      // without `streamGeneration` (older server, partial emit) are
+      // accepted (back-compat).
+      if (!acceptStreamStatus(status.streamGeneration)) {
+        console.log(`⚠️ CLIENT: Dropping stale stream-status (gen ${status.streamGeneration}, streamerId=${status.streamerId})`);
+        return;
       }
+
+      // CRITICAL: Preserve streamerDisplayName and rotation timer values if not provided in status
+      // This prevents the header name and countdown from disappearing during transitions
+      setStreamStatus(prev => ({
+        ...status,
+        streamerDisplayName: status.streamerDisplayName || prev.streamerDisplayName,
+        // Preserve rotation timer values (managed by rotation-timing event)
+        nextRotationAt: prev.nextRotationAt,
+        currentRotationDuration: prev.currentRotationDuration,
+        isRotationLocked: prev.isRotationLocked,
+        lockedRemainingMs: prev.lockedRemainingMs,
+        isRandomRotation: prev.isRandomRotation,
+        randomRotationPlatform: prev.randomRotationPlatform,
+        randomRotationStreamerUrl: prev.randomRotationStreamerUrl,
+        randomRotationStreamerUsername: prev.randomRotationStreamerUsername,
+        randomRotationGame: prev.randomRotationGame,
+        randomRotationViewers: prev.randomRotationViewers,
+        randomRotationStartedAt: prev.randomRotationStartedAt
+      }));
 
       if (status.hasActiveStream && isStreaming && socket.id !== status.streamerId) {
         setIsStreaming(false);
@@ -421,7 +410,7 @@ function AppContent() {
       socket.off('points-updated');
       socket.off('kill-switch-activated');
     };
-  }, [socket, isStreaming, currentUser, isForceDisconnected, setStreamStatus, setIsStreaming, setWasStreamingBeforeTakeover, setIsGameActive, setUserPoints, setUserPointsFromUpdater, takeoverTargetRef, takeoverTimestampRef]);
+  }, [socket, isStreaming, currentUser, isForceDisconnected, setStreamStatus, setIsStreaming, setWasStreamingBeforeTakeover, setIsGameActive, setUserPoints, setUserPointsFromUpdater, acceptStreamStatus]);
 
   const handleLogin = async () => {
     // Pending-deletion short-circuit before activating auth state.

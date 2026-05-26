@@ -233,7 +233,11 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
 
   // ── PR-I2: game cluster ─────────────────────────────────────────────────
   const gameService = new GameService(io, database);
-  const gameStreamService = new GameStreamService(io, gameService, takeoverService);
+  // PR 2.5b: streamService threaded as 4th arg so GameStreamService can
+  // bump streamGeneration on its custom-payload emits (the start/stop
+  // emits don't go through streamService.getStreamStatus, so they need
+  // an explicit bump to stay monotonic with the rest of the system).
+  const gameStreamService = new GameStreamService(io, gameService, takeoverService, streamService);
 
   // ── PR-I3 / PR-1.3: bot cluster ─────────────────────────────────────────
   // PR 1.3 introduced BotEventBus to break the circular ChatBot ↔ MovieBot

@@ -407,14 +407,20 @@ describe('server/bootstrap/services factory', () => {
     expect(s.transcriptionService._args[2]).toBe(s.recordingService);
   });
 
-  test('gameStreamService receives (io, gameService, takeoverService)', () => {
+  test('gameStreamService receives (io, gameService, takeoverService, streamService)', () => {
+    // PR 2.5b: streamService threaded as 4th arg so the game-mode
+    // stream-status emits at GameStreamService.js can bump
+    // streamGeneration via streamService.bumpStreamGeneration() — they
+    // build their own payload (not via streamService.getStreamStatus())
+    // and so don't pick up the counter automatically.
     const deps = buildDeps();
     const { services: s } = createServices(deps);
 
-    expect(s.gameStreamService._args).toHaveLength(3);
+    expect(s.gameStreamService._args).toHaveLength(4);
     expect(s.gameStreamService._args[0]).toBe(deps.io);
     expect(s.gameStreamService._args[1]).toBe(s.gameService);
     expect(s.gameStreamService._args[2]).toBe(s.takeoverService);
+    expect(s.gameStreamService._args[3]).toBe(s.streamService);
   });
 
   // ── PR-I3 dep-graph + post-construction wiring identity checks ────────

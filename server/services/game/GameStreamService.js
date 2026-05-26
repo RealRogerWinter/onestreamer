@@ -6,11 +6,16 @@
 const EventEmitter = require('events');
 
 class GameStreamService extends EventEmitter {
-    constructor(io, gameService, takeoverService = null) {
+    constructor(io, gameService, takeoverService = null, streamService = null) {
         super();
         this.io = io;
         this.gameService = gameService;
         this.takeoverService = takeoverService;
+        // PR 2.5b: streamService is optional so we don't have to thread it
+        // into every test harness that constructs a bare GameStreamService.
+        // If absent, the emits below omit the streamGeneration field —
+        // the client treats a missing counter as "accept" (back-compat).
+        this.streamService = streamService;
         this.isGameActive = false;
 
         // Special stream ID for game mode
@@ -49,12 +54,22 @@ class GameStreamService extends EventEmitter {
 
             // Broadcast that we're entering game mode
             if (this.io) {
+                // PR 2.5b: bump the monotonic counter so the client's
+                // drop-by-counter check accepts this payload. Bare game
+                // emits don't go through StreamService.setStreamer, so
+                // without an explicit bump they'd ride at whatever
+                // counter the previous real-stream emit established —
+                // potentially stale relative to a subsequent stream-status.
+                const streamGeneration = this.streamService
+                  ? this.streamService.bumpStreamGeneration()
+                  : undefined;
                 this.io.emit('stream-status', {
                     hasActiveStream: true,
                     streamerId: this.GAME_STREAM_ID,
                     streamType: 'game',
                     isGameMode: true,
-                    startedBy: adminUserId
+                    startedBy: adminUserId,
+                    ...(streamGeneration !== undefined && { streamGeneration })
                 });
             }
 
@@ -90,11 +105,15 @@ class GameStreamService extends EventEmitter {
 
                 // Broadcast that we're exiting game mode
                 if (this.io) {
+                    const streamGeneration = this.streamService
+                      ? this.streamService.bumpStreamGeneration()
+                      : undefined;
                     this.io.emit('stream-status', {
                         hasActiveStream: false,
                         streamerId: null,
                         streamType: null,
-                        isGameMode: false
+                        isGameMode: false,
+                        ...(streamGeneration !== undefined && { streamGeneration })
                     });
                 }
 

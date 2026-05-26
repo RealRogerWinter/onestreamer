@@ -178,6 +178,22 @@ describe('StreamService', () => {
 
       expect(streamService.getStreamGeneration()).toBe(before);
     });
+
+    test('bumpStreamGeneration() returns the new counter (PR 2.5b)', () => {
+      // Explicit bump for callers that emit a stream-status payload
+      // without going through setStreamer/clearStreamer (specifically
+      // GameStreamService's start/stop emits — they use the
+      // SYSTEM_GAME_STREAM sentinel as streamerId and build their own
+      // payload, not via streamService.getStreamStatus()).
+      expect(streamService.getStreamGeneration()).toBe(0);
+
+      expect(streamService.bumpStreamGeneration()).toBe(1);
+      expect(streamService.getStreamGeneration()).toBe(1);
+
+      expect(streamService.bumpStreamGeneration()).toBe(2);
+      expect(streamService.bumpStreamGeneration()).toBe(3);
+      expect(streamService.getStreamStatus().streamGeneration).toBe(3);
+    });
   });
 
   describe('isStreaming', () => {

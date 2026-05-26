@@ -62,6 +62,20 @@ class StreamService {
     return this.streamGeneration;
   }
 
+  /**
+   * Explicit bump for callers that emit a stream-status payload without
+   * going through setStreamer/clearStreamer. Used by GameStreamService:
+   * its start/stop emits build their own payload (the streamer is the
+   * SYSTEM_GAME_STREAM sentinel, not a real socket), so it needs to bump
+   * the generation itself so the client's drop-by-counter check fires.
+   * Plain setStreamer/clearStreamer callers should NOT call this — they
+   * already bump.
+   */
+  bumpStreamGeneration() {
+    this.streamGeneration += 1;
+    return this.streamGeneration;
+  }
+
   addViewer(socketId) {
     this.viewers.add(socketId);
   }
