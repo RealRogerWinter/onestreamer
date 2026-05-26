@@ -110,6 +110,7 @@ const SoundFxService = require('../services/SoundFxService');
 const MediasoupPlainTransportService = require('../services/MediasoupPlainTransportService');
 const StreamNotifier = require('../services/StreamNotifier');
 const ViewerCountNotifier = require('../services/ViewerCountNotifier');
+const BuffNotifier = require('../services/BuffNotifier');
 
 // PR-I2 additions
 const StreamInterceptorService = require('../services/StreamInterceptorService');
@@ -176,6 +177,14 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   // (raw socket count, multi-tab counts twice) by accident.
   const viewerCountNotifier = new ViewerCountNotifier(io, sessionService);
 
+  // PR 3.3: single emit chokepoint for the buff/inventory event cluster —
+  // `streamer-buffs-update`, `inventory-updated`, `buff-error`. Three methods
+  // because the cluster has three target scopes: broadcast (or per-socket
+  // response for the query variant), per-socketId targeted (inventory),
+  // per-calling-socket (errors). Constructed BEFORE buffDebuffService so
+  // the latter can take it via its options bag.
+  const buffNotifier = new BuffNotifier(io);
+
   // Depends on redisClient + sessionService.
   const takeoverService = new TakeoverService(redisClient, sessionService);
 
@@ -193,7 +202,11 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   const shopService = new ShopService(itemService, inventoryService, accountService, io);
 
   // Buff/visual/audio fx — buffDebuffService is a fan-in point.
-  const buffDebuffService = new BuffDebuffService(io, streamService, timeTrackingService, sessionService);
+  // PR 3.3: buffNotifier threaded via the options bag (5th positional arg)
+  // so the 4 internal `this.io.emit('streamer-buffs-update', …)` callsites
+  // can be routed through the chokepoint. The 5th-arg shape is preserved
+  // (existing slot for `{ itemRepository }`); this PR just adds another key.
+  const buffDebuffService = new BuffDebuffService(io, streamService, timeTrackingService, sessionService, { buffNotifier });
   const canvasFxService = new CanvasFxService(io, itemService, buffDebuffService);
   const soundFxService = new SoundFxService();
 
@@ -327,6 +340,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     sessionService,
     streamNotifier,
     viewerCountNotifier,
+    buffNotifier,
     takeoverService,
     testStreamService,
     mediaStreamService,

@@ -3,13 +3,18 @@ const EventEmitter = require('events');
 const ItemRepository = require('../database/repository/ItemRepository');
 
 class BuffDebuffService extends EventEmitter {
-    constructor(io = null, streamService = null, timeTrackingService = null, sessionService = null, { itemRepository } = {}) {
+    constructor(io = null, streamService = null, timeTrackingService = null, sessionService = null, { itemRepository, buffNotifier = null } = {}) {
         super();
         this.io = io;
         this.streamService = streamService;
         this.timeTrackingService = timeTrackingService;
         this.sessionService = sessionService;
         this.itemRepository = itemRepository || new ItemRepository({ getAsync, runAsync, allAsync });
+        // PR 3.3: optional BuffNotifier — routes the 4 internal
+        // `streamer-buffs-update` emit sites through the chokepoint. Null
+        // fallback preserves behaviour for any construction path that
+        // doesn't yet thread the notifier (test fixtures, etc.).
+        this.buffNotifier = buffNotifier;
         
         // In-memory cache for active buffs with TTL (performance optimization + memory management)
         this.activeBuffsCache = new Map();
@@ -221,7 +226,11 @@ class BuffDebuffService extends EventEmitter {
                         if (session && session.userId && session.userId.toString() === userId.toString()) {
                             console.log(`🎭 BUFF: ✅ Target IS the current streamer! Broadcasting streamer-buffs-update to ALL connected sockets`);
                             console.log(`🎭 BUFF: Buff data being sent:`, userActiveBuffs.map(b => ({ id: b.id, displayName: b.displayName, remaining: b.remainingSeconds })));
-                            this.io.emit('streamer-buffs-update', { buffs: userActiveBuffs });
+                            if (this.buffNotifier) {
+                                this.buffNotifier.streamerBuffsUpdate({ buffs: userActiveBuffs });
+                            } else {
+                                this.io.emit('streamer-buffs-update', { buffs: userActiveBuffs });
+                            }
                             console.log(`🎭 BUFF: ✅ Successfully broadcasted streamer buffs for user ${userId} (${userActiveBuffs.length} buffs)`);
                             if (isViewbot) {
                                 console.log(`🎭 BUFF: (User is a viewbot)`);
@@ -574,7 +583,11 @@ class BuffDebuffService extends EventEmitter {
                     if (this.sessionService) {
                         const session = this.sessionService.getSessionBySocketId(currentStreamer);
                         if (session && session.userId && session.userId.toString() === buff.user_id.toString()) {
-                            this.io.emit('streamer-buffs-update', { buffs: userActiveBuffs });
+                            if (this.buffNotifier) {
+                                this.buffNotifier.streamerBuffsUpdate({ buffs: userActiveBuffs });
+                            } else {
+                                this.io.emit('streamer-buffs-update', { buffs: userActiveBuffs });
+                            }
                         }
                     }
                 }
@@ -698,7 +711,11 @@ class BuffDebuffService extends EventEmitter {
                             if (this.sessionService) {
                                 const session = this.sessionService.getSessionBySocketId(currentStreamer);
                                 if (session && session.userId && session.userId.toString() === userId.toString()) {
-                                    this.io.emit('streamer-buffs-update', { buffs: activeBuffs });
+                                    if (this.buffNotifier) {
+                                        this.buffNotifier.streamerBuffsUpdate({ buffs: activeBuffs });
+                                    } else {
+                                        this.io.emit('streamer-buffs-update', { buffs: activeBuffs });
+                                    }
                                 }
                             }
                         }
@@ -716,7 +733,11 @@ class BuffDebuffService extends EventEmitter {
                         if (currentStreamer && this.sessionService) {
                             const session = this.sessionService.getSessionBySocketId(currentStreamer);
                             if (session && session.userId && session.userId.toString() === userId.toString()) {
-                                this.io.emit('streamer-buffs-update', { buffs: activeBuffs });
+                                if (this.buffNotifier) {
+                                    this.buffNotifier.streamerBuffsUpdate({ buffs: activeBuffs });
+                                } else {
+                                    this.io.emit('streamer-buffs-update', { buffs: activeBuffs });
+                                }
                                 console.log(`🎭 BUFF: Broadcasted duration update for viewbot streamer ${userId} (${activeBuffs.length} buffs)`);
                             }
                         }

@@ -67,7 +67,7 @@ class ItemUseService {
      * @param {object} [opts.sessionService]
      * @param {Function} opts.sendSystemMessage  async (message, username?) -> void
      */
-    async useItem({ user, itemId, body: _body, services, io, sessionService, sendSystemMessage }) {
+    async useItem({ user, itemId, body: _body, services, io, sessionService, sendSystemMessage, buffNotifier }) {
         const userId = user.userId || user.id;
         const { inventoryService, itemService, streamService, canvasFxService } = services;
 
@@ -452,12 +452,22 @@ class ItemUseService {
             if (sessionService) {
                 const userSocketIds = sessionService.getSocketsByUserId(userId);
                 userSocketIds.forEach(socketId => {
-                    io.to(socketId).emit('inventory-updated', {
-                        action: 'use',
-                        itemId,
-                        quantity: 1,
-                        remainingQuantity: result.remainingQuantity
-                    });
+                    if (buffNotifier) {
+                        buffNotifier.inventoryUpdated({
+                            toSocketId: socketId,
+                            action: 'use',
+                            itemId,
+                            quantity: 1,
+                            remainingQuantity: result.remainingQuantity,
+                        });
+                    } else {
+                        io.to(socketId).emit('inventory-updated', {
+                            action: 'use',
+                            itemId,
+                            quantity: 1,
+                            remainingQuantity: result.remainingQuantity
+                        });
+                    }
                 });
             }
         }
@@ -544,12 +554,22 @@ class ItemUseService {
             if (sessionService) {
                 const userSocketIds = sessionService.getSocketsByUserId(userId);
                 userSocketIds.forEach(socketId => {
-                    io.to(socketId).emit('inventory-updated', {
-                        action: 'use',
-                        itemId,
-                        quantity: 1,
-                        remainingQuantity: result.remainingQuantity
-                    });
+                    if (buffNotifier) {
+                        buffNotifier.inventoryUpdated({
+                            toSocketId: socketId,
+                            action: 'use',
+                            itemId,
+                            quantity: 1,
+                            remainingQuantity: result.remainingQuantity,
+                        });
+                    } else {
+                        io.to(socketId).emit('inventory-updated', {
+                            action: 'use',
+                            itemId,
+                            quantity: 1,
+                            remainingQuantity: result.remainingQuantity
+                        });
+                    }
                 });
             }
         }
@@ -739,12 +759,22 @@ class ItemUseService {
             // Update inventory for the user (item already consumed)
             const userSocketIds = sessionService.getSocketsByUserId(userId);
             userSocketIds.forEach(socketId => {
-                io.to(socketId).emit('inventory-updated', {
-                    action: 'use',
-                    itemId,
-                    quantity: 1,
-                    remainingQuantity: result.remainingQuantity
-                });
+                if (buffNotifier) {
+                    buffNotifier.inventoryUpdated({
+                        toSocketId: socketId,
+                        action: 'use',
+                        itemId,
+                        quantity: 1,
+                        remainingQuantity: result.remainingQuantity,
+                    });
+                } else {
+                    io.to(socketId).emit('inventory-updated', {
+                        action: 'use',
+                        itemId,
+                        quantity: 1,
+                        remainingQuantity: result.remainingQuantity
+                    });
+                }
             });
 
             return {
@@ -786,12 +816,22 @@ class ItemUseService {
             if (sessionService) {
                 const userSocketIds = sessionService.getSocketsByUserId(userId);
                 userSocketIds.forEach(socketId => {
-                    io.to(socketId).emit('inventory-updated', {
-                        action: 'use',
-                        itemId,
-                        quantity: 1,
-                        remainingQuantity: result.remainingQuantity
-                    });
+                    if (buffNotifier) {
+                        buffNotifier.inventoryUpdated({
+                            toSocketId: socketId,
+                            action: 'use',
+                            itemId,
+                            quantity: 1,
+                            remainingQuantity: result.remainingQuantity,
+                        });
+                    } else {
+                        io.to(socketId).emit('inventory-updated', {
+                            action: 'use',
+                            itemId,
+                            quantity: 1,
+                            remainingQuantity: result.remainingQuantity
+                        });
+                    }
                 });
             }
         }

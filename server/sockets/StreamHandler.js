@@ -94,6 +94,8 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     streamNotifier,
     // PR 3.2: single `viewer-count-update` chokepoint.
     viewerCountNotifier,
+    // PR 3.3: buff/inventory event-cluster chokepoint.
+    buffNotifier,
   } = deps;
 
   socket.on('join-as-viewer', async () => {
@@ -512,7 +514,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       try {
         const streamerBuffs = await buffDebuffService.getActiveBuffsForCurrentStreamer();
         console.log(`🎭 BUFF: Emitting streamer buffs for new streamer ${socket.id}: ${streamerBuffs.length} buffs`);
-        io.emit('streamer-buffs-update', { buffs: streamerBuffs });
+        buffNotifier.streamerBuffsUpdate({ buffs: streamerBuffs });
 
         // NOTE: Visual effects re-application moved to stream-ready event for better timing
       } catch (error) {
@@ -791,7 +793,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
 
       // Clear streamer buff display when streaming ends
       console.log(`🎭 BUFF: Clearing streamer buffs display (streaming ended)`);
-      io.emit('streamer-buffs-update', { buffs: [] });
+      buffNotifier.streamerBuffsUpdate({ buffs: [] });
       console.log(`🧹 VOLUNTARY STOP: Cleared ${socket.id} from both services`);
 
       socket.leave('streamer');

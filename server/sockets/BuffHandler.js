@@ -39,6 +39,8 @@ module.exports = function registerBuffHandler(io, socket, deps) {
     viewbotService,
     streamService,
     sessionService,
+    // PR 3.3: chokepoint for buff-error + per-socket streamer-buffs-update.
+    buffNotifier,
   } = deps;
 
   // Buff/Debuff related socket events
@@ -50,7 +52,7 @@ module.exports = function registerBuffHandler(io, socket, deps) {
       const ip = sessionService.getIpAddress(socket);
       const session = sessionService.getSessionByIp(ip);
       if (!session || !session.userId) {
-        socket.emit('buff-error', { error: 'Authentication required' });
+        buffNotifier.buffError({ toSocket: socket, error: 'Authentication required' });
         return;
       }
 
@@ -63,7 +65,7 @@ module.exports = function registerBuffHandler(io, socket, deps) {
           console.log(`🎭 BUFF SOCKET: Translating viewbot ${targetUserId} to synthetic user ${syntheticUserId}`);
           targetUserId = syntheticUserId;
         } else {
-          socket.emit('buff-error', { error: 'Viewbot target not properly initialized for buff system' });
+          buffNotifier.buffError({ toSocket: socket, error: 'Viewbot target not properly initialized for buff system' });
           return;
         }
       } else if (viewbotService && sessionService && streamService) {
@@ -113,7 +115,7 @@ module.exports = function registerBuffHandler(io, socket, deps) {
 
     } catch (error) {
       console.error('Socket buff application error:', error);
-      socket.emit('buff-error', { error: error.message });
+      buffNotifier.buffError({ toSocket: socket, error: error.message });
     }
   });
 
@@ -122,7 +124,7 @@ module.exports = function registerBuffHandler(io, socket, deps) {
       const ip = sessionService.getIpAddress(socket);
       const session = sessionService.getSessionByIp(ip);
       if (!session || !session.userId) {
-        socket.emit('buff-error', { error: 'Authentication required' });
+        buffNotifier.buffError({ toSocket: socket, error: 'Authentication required' });
         return;
       }
 
@@ -131,18 +133,20 @@ module.exports = function registerBuffHandler(io, socket, deps) {
 
     } catch (error) {
       console.error('Socket get buffs error:', error);
-      socket.emit('buff-error', { error: error.message });
+      buffNotifier.buffError({ toSocket: socket, error: error.message });
     }
   });
 
   socket.on('get-streamer-buffs', async () => {
     try {
       const buffs = await buffDebuffService.getActiveBuffsForCurrentStreamer();
-      socket.emit('streamer-buffs-update', { buffs });
+      // PR 3.3: per-socket variant of streamer-buffs-update (query response,
+      // not a state-change broadcast).
+      buffNotifier.streamerBuffsUpdate({ buffs, toSocket: socket });
 
     } catch (error) {
       console.error('Socket get streamer buffs error:', error);
-      socket.emit('buff-error', { error: error.message });
+      buffNotifier.buffError({ toSocket: socket, error: error.message });
     }
   });
 
@@ -153,14 +157,14 @@ module.exports = function registerBuffHandler(io, socket, deps) {
       const ip = sessionService.getIpAddress(socket);
       const session = sessionService.getSessionByIp(ip);
       if (!session || !session.userId) {
-        socket.emit('buff-error', { error: 'Authentication required' });
+        buffNotifier.buffError({ toSocket: socket, error: 'Authentication required' });
         return;
       }
 
       // Get buff to verify ownership
       const buff = await buffDebuffService.getBuffById(buffId);
       if (!buff || buff.user_id != session.userId) {
-        socket.emit('buff-error', { error: 'Buff not found or not owned by you' });
+        buffNotifier.buffError({ toSocket: socket, error: 'Buff not found or not owned by you' });
         return;
       }
 
@@ -172,12 +176,12 @@ module.exports = function registerBuffHandler(io, socket, deps) {
         const updatedBuffs = await buffDebuffService.getActiveBuffsForUser(session.userId);
         socket.emit('my-buffs-update', { buffs: updatedBuffs });
       } else {
-        socket.emit('buff-error', { error: 'Failed to remove buff' });
+        buffNotifier.buffError({ toSocket: socket, error: 'Failed to remove buff' });
       }
 
     } catch (error) {
       console.error('Socket remove buff error:', error);
-      socket.emit('buff-error', { error: error.message });
+      buffNotifier.buffError({ toSocket: socket, error: error.message });
     }
   });
 };

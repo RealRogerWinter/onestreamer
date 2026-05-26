@@ -43,7 +43,7 @@ class ThrowingService {
      *                                           fan inventory-updated out to the thrower's sockets
      * @param {Function} opts.sendSystemMessage  async (message, username?) -> void
      */
-    async startThrow({ user, body, services, io, sessionService, sendSystemMessage }) {
+    async startThrow({ user, body, services, io, sessionService, sendSystemMessage, buffNotifier }) {
         const userId = user.userId || user.id;
         console.log(`🎯 THROW ENDPOINT HIT: User ${user.username} throwing item`, body);
 
@@ -205,12 +205,22 @@ class ThrowingService {
                 if (sessionService) {
                     const userSocketIds = sessionService.getSocketsByUserId(userId);
                     userSocketIds.forEach(socketId => {
-                        io.to(socketId).emit('inventory-updated', {
-                            action: 'throw',
-                            itemId: item.id,
-                            quantity: 1,
-                            remainingQuantity: result.remainingQuantity
-                        });
+                        if (buffNotifier) {
+                            buffNotifier.inventoryUpdated({
+                                toSocketId: socketId,
+                                action: 'throw',
+                                itemId: item.id,
+                                quantity: 1,
+                                remainingQuantity: result.remainingQuantity,
+                            });
+                        } else {
+                            io.to(socketId).emit('inventory-updated', {
+                                action: 'throw',
+                                itemId: item.id,
+                                quantity: 1,
+                                remainingQuantity: result.remainingQuantity
+                            });
+                        }
                     });
                 }
             }

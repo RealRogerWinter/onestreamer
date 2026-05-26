@@ -36,7 +36,7 @@ class DrawingService {
      * @param {object} [opts.sessionService]     used to fan inventory-updated out to the user's sockets
      * @param {Function} opts.sendSystemMessage  async (message, username?) -> void
      */
-    async startDrawing({ user, item, services, io, sessionService, sendSystemMessage }) {
+    async startDrawing({ user, item, services, io, sessionService, sendSystemMessage, buffNotifier }) {
         const userId = user.userId || user.id;
         console.log(`✏️ DRAWING START: User ${user.username} starting drawing`, { item });
 
@@ -106,12 +106,22 @@ class DrawingService {
             if (sessionService) {
                 const userSocketIds = sessionService.getSocketsByUserId(userId);
                 userSocketIds.forEach(socketId => {
-                    io.to(socketId).emit('inventory-updated', {
-                        action: 'draw',
-                        itemId: item.id,
-                        quantity: 1,
-                        remainingQuantity: result.remainingQuantity
-                    });
+                    if (buffNotifier) {
+                        buffNotifier.inventoryUpdated({
+                            toSocketId: socketId,
+                            action: 'draw',
+                            itemId: item.id,
+                            quantity: 1,
+                            remainingQuantity: result.remainingQuantity,
+                        });
+                    } else {
+                        io.to(socketId).emit('inventory-updated', {
+                            action: 'draw',
+                            itemId: item.id,
+                            quantity: 1,
+                            remainingQuantity: result.remainingQuantity
+                        });
+                    }
                 });
             }
         }

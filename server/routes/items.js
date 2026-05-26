@@ -143,6 +143,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
             },
             io: req.app.get('io'),
             sessionService: req.app.get('sessionService'),
+            buffNotifier: req.app.get('buffNotifier'),
             sendSystemMessage
         });
 
@@ -213,6 +214,7 @@ router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
             },
             io: req.app.get('io'),
             sessionService: req.app.get('sessionService'),
+            buffNotifier: req.app.get('buffNotifier'),
             sendSystemMessage
         });
 
@@ -266,6 +268,7 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
             },
             io: req.app.get('io'),
             sessionService: req.app.get('sessionService'),
+            buffNotifier: req.app.get('buffNotifier'),
             sendSystemMessage
         });
 
@@ -407,15 +410,15 @@ router.post('/shop/purchase', authenticateToken, async (req, res) => {
         // Emit socket event for purchase
         const io = req.app.get('io');
         const sessionService = req.app.get('sessionService');
-        if (io && sessionService) {
+        const buffNotifier = req.app.get('buffNotifier');
+        if (io && sessionService && buffNotifier) {
             const userSocketIds = sessionService.getSocketsByUserId(userId);
-            // console.log(`📦 INVENTORY: Emitting inventory-updated to user ${userId}, found ${userSocketIds.length} sockets: [${userSocketIds.join(', ')}]`);
             userSocketIds.forEach(socketId => {
-                // console.log(`📦 INVENTORY: Emitting to socket ${socketId}`);
-                io.to(socketId).emit('inventory-updated', {
+                buffNotifier.inventoryUpdated({
+                    toSocketId: socketId,
                     action: 'purchase',
                     itemId,
-                    quantity
+                    quantity,
                 });
             });
         }
@@ -447,13 +450,15 @@ router.post('/shop/sell', authenticateToken, async (req, res) => {
         // Emit socket event for sale
         const io = req.app.get('io');
         const sessionService = req.app.get('sessionService');
-        if (io && sessionService) {
+        const buffNotifier = req.app.get('buffNotifier');
+        if (io && sessionService && buffNotifier) {
             const userSocketIds = sessionService.getSocketsByUserId(userId);
             userSocketIds.forEach(socketId => {
-                io.to(socketId).emit('inventory-updated', {
+                buffNotifier.inventoryUpdated({
+                    toSocketId: socketId,
                     action: 'sell',
                     itemId,
-                    quantity
+                    quantity,
                 });
             });
         }
@@ -502,13 +507,15 @@ router.post('/admin/items/grant', authenticateAdmin, async (req, res) => {
         // Emit socket event for item grant
         const io = req.app.get('io');
         const sessionService = req.app.get('sessionService');
-        if (io && sessionService) {
+        const buffNotifier = req.app.get('buffNotifier');
+        if (io && sessionService && buffNotifier) {
             const userSocketIds = sessionService.getSocketsByUserId(userId);
             userSocketIds.forEach(socketId => {
-                io.to(socketId).emit('inventory-updated', {
+                buffNotifier.inventoryUpdated({
+                    toSocketId: socketId,
                     action: 'grant',
                     itemId,
-                    quantity
+                    quantity,
                 });
             });
         }

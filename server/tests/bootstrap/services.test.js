@@ -45,6 +45,7 @@ jest.mock('../../services/SoundFxService', () => class { constructor(...args) { 
 jest.mock('../../services/MediasoupPlainTransportService', () => class { constructor(...args) { this._args = args; this._stubName = 'MediasoupPlainTransportService'; } });
 jest.mock('../../services/StreamNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamNotifier'; } });
 jest.mock('../../services/ViewerCountNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'ViewerCountNotifier'; } });
+jest.mock('../../services/BuffNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'BuffNotifier'; } });
 
 // PR-I2 additions
 jest.mock('../../services/StreamInterceptorService', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamInterceptorService'; } });
@@ -163,6 +164,7 @@ const SoundFxService = require('../../services/SoundFxService');
 const MediasoupPlainTransportService = require('../../services/MediasoupPlainTransportService');
 const StreamNotifier = require('../../services/StreamNotifier');
 const ViewerCountNotifier = require('../../services/ViewerCountNotifier');
+const BuffNotifier = require('../../services/BuffNotifier');
 
 // PR-I2 additions
 const StreamInterceptorService = require('../../services/StreamInterceptorService');
@@ -206,7 +208,7 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 37 expected keys (no more, no less)', () => {
+  test('returns all 38 expected keys (no more, no less)', () => {
     const { services } = createServices(buildDeps());
 
     const expectedKeys = [
@@ -217,6 +219,8 @@ describe('server/bootstrap/services factory', () => {
       'streamNotifier',
       // PR 3.2
       'viewerCountNotifier',
+      // PR 3.3
+      'buffNotifier',
       'takeoverService',
       'testStreamService',
       'mediaStreamService',
@@ -256,7 +260,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(37);
+    expect(expectedKeys).toHaveLength(38);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -280,6 +284,7 @@ describe('server/bootstrap/services factory', () => {
     expect(s.plainTransportService).toBeInstanceOf(MediasoupPlainTransportService);
     expect(s.streamNotifier).toBeInstanceOf(StreamNotifier);
     expect(s.viewerCountNotifier).toBeInstanceOf(ViewerCountNotifier);
+    expect(s.buffNotifier).toBeInstanceOf(BuffNotifier);
     // PR-I2
     expect(s.streamInterceptorService).toBeInstanceOf(StreamInterceptorService);
     expect(s.visualFxService).toBeInstanceOf(VisualFxService);
@@ -329,15 +334,22 @@ describe('server/bootstrap/services factory', () => {
     expect(s.shopService._args[3]).toBe(deps.io);
   });
 
-  test('buffDebuffService is constructed with (io, streamService, timeTrackingService, sessionService)', () => {
+  test('buffDebuffService is constructed with (io, streamService, timeTrackingService, sessionService, options)', () => {
+    // PR 3.3: the 5th arg is the options bag — previously implicit (an
+    // optional `{ itemRepository }`), now also carrying `buffNotifier` so
+    // BuffDebuffService can route its 4 internal `streamer-buffs-update`
+    // emits through the chokepoint. Identity-pinning the buffNotifier
+    // entry keeps future PRs honest if anyone repurposes the slot.
     const deps = buildDeps();
     const { services: s } = createServices(deps);
 
-    expect(s.buffDebuffService._args).toHaveLength(4);
+    expect(s.buffDebuffService._args).toHaveLength(5);
     expect(s.buffDebuffService._args[0]).toBe(deps.io);
     expect(s.buffDebuffService._args[1]).toBe(s.streamService);
     expect(s.buffDebuffService._args[2]).toBe(s.timeTrackingService);
     expect(s.buffDebuffService._args[3]).toBe(s.sessionService);
+    expect(s.buffDebuffService._args[4]).toBeDefined();
+    expect(s.buffDebuffService._args[4].buffNotifier).toBe(s.buffNotifier);
   });
 
   test('canvasFxService receives the buffDebuffService built by the factory (order)', () => {
@@ -383,6 +395,29 @@ describe('server/bootstrap/services factory', () => {
     expect(s.viewerCountNotifier._args).toHaveLength(2);
     expect(s.viewerCountNotifier._args[0]).toBe(deps.io);
     expect(s.viewerCountNotifier._args[1]).toBe(s.sessionService);
+  });
+
+  // PR 3.3: buffNotifier is the chokepoint for the buff/inventory event
+  // cluster (`streamer-buffs-update`, `inventory-updated`, `buff-error`).
+  // Takes (io) only — payload comes from callers.
+  test('buffNotifier is constructed with (io)', () => {
+    const deps = buildDeps();
+    const { services: s } = createServices(deps);
+
+    expect(s.buffNotifier._args).toHaveLength(1);
+    expect(s.buffNotifier._args[0]).toBe(deps.io);
+  });
+
+  // PR 3.3: buffDebuffService's 5th arg (options bag) now carries
+  // buffNotifier. The 4 internal `this.io.emit('streamer-buffs-update', …)`
+  // sites read from `this.buffNotifier` when set.
+  test('buffDebuffService receives buffNotifier via its options bag (5th arg)', () => {
+    const { services: s } = createServices(buildDeps());
+
+    expect(s.buffDebuffService._args).toHaveLength(5);
+    expect(s.buffDebuffService._args[4]).toEqual(expect.objectContaining({
+      buffNotifier: s.buffNotifier,
+    }));
   });
 
   // ── PR-I2 dep-graph identity checks ───────────────────────────────────

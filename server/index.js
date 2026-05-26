@@ -504,6 +504,8 @@ const {
   streamNotifier,
   // PR 3.2: single `viewer-count-update` emit chokepoint.
   viewerCountNotifier,
+  // PR 3.3: buff/inventory event-cluster chokepoint.
+  buffNotifier,
 } = services;
 
 // Expose the whole bag for extracted routes/sockets (PR-G2 / PR-H2 onwards
@@ -739,6 +741,9 @@ app.set('itemService', itemService);
 app.set('inventoryService', inventoryService);
 app.set('shopService', shopService);
 app.set('buffDebuffService', buffDebuffService);
+// PR 3.3: routes/items.js reads buffNotifier via req.app.get to route the
+// 3 inline inventory-updated emits through the chokepoint.
+app.set('buffNotifier', buffNotifier);
 app.set('chatBotService', chatBotService);
 app.set('streamBotService', streamBotService);
 
@@ -2016,7 +2021,7 @@ app.post('/admin/viewbot/stop', adminKeyAuth, async (req, res) => {
       
       // Clear streamer buff display when viewbot streaming ends
       console.log(`🎭 BUFF: Clearing streamer buffs display (viewbot ended)`);
-      io.emit('streamer-buffs-update', { buffs: [] });
+      buffNotifier.streamerBuffsUpdate({ buffs: [] });
       
       streamNotifier.streamEnded({ reason: 'viewbot_stopped' });
       notifyViewersStreamEnded();
@@ -2053,7 +2058,7 @@ app.post('/admin/test-stream/stop', adminKeyAuth, async (req, res) => {
           
           // Clear streamer buff display when viewbot streaming ends
           console.log(`🎭 BUFF: Clearing streamer buffs display (viewbot legacy ended)`);
-          io.emit('streamer-buffs-update', { buffs: [] });
+          buffNotifier.streamerBuffsUpdate({ buffs: [] });
           
           streamNotifier.streamEnded({ reason: 'viewbot_legacy_stopped' });
       notifyViewersStreamEnded();
@@ -4771,6 +4776,7 @@ io.on('connection', async (socket) => {
     https,
     streamNotifier,
     viewerCountNotifier,
+    buffNotifier,
   });
   // ============================================
   // End Streaming Socket Handlers
@@ -4941,7 +4947,8 @@ io.on('connection', async (socket) => {
     buffDebuffService,
     viewbotService,
     streamService,
-    sessionService
+    sessionService,
+    buffNotifier,
   });
 
   // Canvas effects handlers
