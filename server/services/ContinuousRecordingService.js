@@ -1374,13 +1374,58 @@ class ContinuousRecordingService extends EventEmitter {
   }
 
   /**
-   * Clean up recordings older than retention period
+   * Clean up recordings older than retention period.
+   *
+   * PR 2.6: gated on `recording_sessions.b2_file_id IS NOT NULL`. The
+   * production default retention is 10 minutes (bootstrap/services.js)
+   * but `RecordingUploadScheduler.localBufferHours` is 2 hours — so
+   * without a gate, this cleanup *always* deletes local files before
+   * the upload scheduler ever fires. Recording is then permanently
+   * lost: the upload retries every 30 minutes against a missing
+   * `local_path`, status stays at `'completed'`, b2_file_id stays
+   * NULL forever.
+   *
+   * Fix: preload the set of session_ids that have NOT yet been
+   * uploaded (b2_file_id IS NULL) and skip those directories. Both
+   * "pending upload" (status = 'completed') and "currently uploading"
+   * (status = 'processing') match the same predicate, so the gate
+   * covers both. Once the upload pipeline either succeeds (sets
+   * b2_file_id) or is admin-acknowledged as failed (a future cleanup
+   * path can NULL-out the row or hard-fail it), the session falls out
+   * of the pending set and the next cleanup tick is free to delete.
+   *
+   * The single-file `.mp4` / `.json` branch (legacy `room_<ts>.*`
+   * format, no longer produced — grep confirms no caller writes
+   * matching filenames) is left untouched: those aren't tracked in
+   * `recording_sessions`, so there's no gate to apply, and the dead
+   * code is harmless on a production filesystem that doesn't contain
+   * such files.
    */
-  cleanupOldRecordings() {
+  async cleanupOldRecordings() {
     try {
       const cutoffTime = Date.now() - (this.retentionMinutes * 60 * 1000);
+
+      // Build the pending-upload set BEFORE the readdir/stat loop so a
+      // mid-iteration race (an upload completing while we iterate)
+      // can only ever *expand* the deletion window we'd take on the
+      // next tick, never shrink it within this tick.
+      let pendingSessionIds = new Set();
+      try {
+        const pendingRows = await allAsync(
+          `SELECT session_id FROM recording_sessions WHERE b2_file_id IS NULL`
+        );
+        pendingSessionIds = new Set(pendingRows.map((r) => r.session_id));
+      } catch (dbError) {
+        // Fail-closed: if the DB lookup fails, do NOT delete anything
+        // this tick. Better to delay cleanup than to nuke an
+        // unconfirmed upload's source file. Next tick retries.
+        console.error('❌ CONTINUOUS RECORDING: Cleanup aborted — failed to load pending uploads:', dbError);
+        return;
+      }
+
       const items = fs.readdirSync(this.outputDir);
       let deletedCount = 0;
+      let skippedPendingUpload = 0;
 
       for (const item of items) {
         const itemPath = path.join(this.outputDir, item);
@@ -1397,13 +1442,22 @@ class ContinuousRecordingService extends EventEmitter {
           if (match) {
             const timestamp = parseInt(match[1]);
             if (timestamp < cutoffTime) {
+              // PR 2.6: skip directories whose recording_sessions row
+              // still has b2_file_id = NULL (upload pending or in
+              // flight). Without this gate, we race the uploader.
+              if (pendingSessionIds.has(item)) {
+                skippedPendingUpload++;
+                continue;
+              }
               // Delete the entire session directory
               fs.rmSync(itemPath, { recursive: true, force: true });
               deletedCount++;
             }
           }
         } else if (item.endsWith('.mp4') || item.endsWith('.json')) {
-          // Clean up old single-file recordings too
+          // Clean up old single-file recordings too (legacy format —
+          // not produced by current pipeline; left in place for any
+          // historical files that may still exist on disk).
           const match = item.match(/room_(\d+)\./);
           if (match) {
             const timestamp = parseInt(match[1]);
@@ -1415,8 +1469,11 @@ class ContinuousRecordingService extends EventEmitter {
         }
       }
 
-      if (deletedCount > 0) {
-        console.log(`🧹 CONTINUOUS RECORDING: Cleaned up ${deletedCount} old recording(s)`);
+      if (deletedCount > 0 || skippedPendingUpload > 0) {
+        const suffix = skippedPendingUpload > 0
+          ? ` (skipped ${skippedPendingUpload} pending B2 upload)`
+          : '';
+        console.log(`🧹 CONTINUOUS RECORDING: Cleaned up ${deletedCount} old recording(s)${suffix}`);
       }
 
     } catch (error) {
