@@ -12,6 +12,9 @@ const { createClient } = require('redis');
 const session = require('express-session');
 const passport = require('passport');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+// Fail-fast: surface every missing/malformed required env var in one error
+// rather than letting requireEnv() trip on whichever happens to import first.
+require('./bootstrap/env').validateEnv();
 const requireEnv = require('./config/requireEnv');
 
 // Log environment variables on startup for debugging
