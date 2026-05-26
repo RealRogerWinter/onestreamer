@@ -1974,6 +1974,7 @@ class RandomStreamRotationService extends EventEmitter {
     }
 
     console.log('⚙️ Settings updated:', this.settings);
+    this._saveState();
     return this.settings;
   }
 
