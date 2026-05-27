@@ -267,4 +267,152 @@ describe('UnifiedViewBotRotation watchdog (PR 8.2 — ADR-0016)', () => {
         const instance = new WebRTCViewBotRotation(null, null, null);
         expect(instance.lastTickAt).toBeNull();
     });
+
+    // ============================================================
+    // PR 13.2 (Phase 13) — additional edge cases.
+    // ============================================================
+
+    it('fires on EVERY consecutive watchdog check while stalled (not one-shot)', async () => {
+        const logger = makeLogger();
+        const orch = buildOrchestrator({ now: () => clock.ms, watchdogCheckMs: 50, logger });
+        orch.activeRotation = makeFakeActiveRotation({
+            lastTickAt: clock.ms,
+            maxRotationInterval: 1000, // threshold = 2000 ms
+        });
+
+        await orch.startRotation();
+
+        // Stall the loop.
+        clock.ms += 2500;
+        // Trip the watchdog three times in a row at the 50 ms cadence.
+        jest.advanceTimersByTime(150);
+
+        // Operationally this matters because alerting pipelines deduplicate
+        // by event identity, not by single-fire — and the runbook says
+        // "rate of 'viewbot-rotation-stalled' events tells you the loop
+        // is wedged vs intermittently slow." Single-firing would mask that.
+        expect(logger.error.mock.calls.length).toBeGreaterThanOrEqual(3);
+        for (const call of logger.error.mock.calls) {
+            const [, ctx] = call;
+            expect(ctx.event).toBe('viewbot-rotation-stalled');
+        }
+
+        await orch.stopRotation();
+    });
+
+    it('log context includes realStreamerActive=false when no real streamer is on', async () => {
+        const logger = makeLogger();
+        const orch = buildOrchestrator({ now: () => clock.ms, watchdogCheckMs: 50, logger });
+        orch.plainRtpRotation = {
+            isRealStreamerActive: jest.fn(() => false),
+        };
+        orch.activeRotation = makeFakeActiveRotation({
+            lastTickAt: clock.ms,
+            maxRotationInterval: 1000,
+        });
+
+        await orch.startRotation();
+        advanceClock(3000);
+
+        expect(logger.error).toHaveBeenCalled();
+        const ctx = logger.error.mock.calls[0][1];
+        expect(ctx.realStreamerActive).toBe(false);
+        expect(orch.plainRtpRotation.isRealStreamerActive).toHaveBeenCalled();
+
+        await orch.stopRotation();
+    });
+
+    it('log context includes realStreamerActive=true when a real streamer (or URL stream) is on', async () => {
+        const logger = makeLogger();
+        const orch = buildOrchestrator({ now: () => clock.ms, watchdogCheckMs: 50, logger });
+        orch.plainRtpRotation = {
+            isRealStreamerActive: jest.fn(() => true),
+        };
+        orch.activeRotation = makeFakeActiveRotation({
+            lastTickAt: clock.ms,
+            maxRotationInterval: 1000,
+        });
+
+        await orch.startRotation();
+        advanceClock(3000);
+
+        expect(logger.error).toHaveBeenCalled();
+        const ctx = logger.error.mock.calls[0][1];
+        // This is the "blocked by design" hint from the runbook — separates
+        // "code bug wedged the loop" from "real streamer is on, loop is
+        // correctly idle waiting for them to leave."
+        expect(ctx.realStreamerActive).toBe(true);
+
+        await orch.stopRotation();
+    });
+
+    it('tolerates plainRtpRotation.isRealStreamerActive throwing (defensive try/catch keeps the watchdog alive)', async () => {
+        const logger = makeLogger();
+        const orch = buildOrchestrator({ now: () => clock.ms, watchdogCheckMs: 50, logger });
+        orch.plainRtpRotation = {
+            isRealStreamerActive: jest.fn(() => { throw new Error('boom'); }),
+        };
+        orch.activeRotation = makeFakeActiveRotation({
+            lastTickAt: clock.ms,
+            maxRotationInterval: 1000,
+        });
+
+        await orch.startRotation();
+        advanceClock(3000);
+
+        // Watchdog still fires (the throw is swallowed); realStreamerActive
+        // defaults to false when the helper failed. Without the try/catch
+        // the watchdog itself would error and stop logging — strictly worse.
+        expect(logger.error).toHaveBeenCalled();
+        const ctx = logger.error.mock.calls[0][1];
+        expect(ctx.realStreamerActive).toBe(false);
+
+        await orch.stopRotation();
+    });
+
+    it('does NOT fire when activeRotation is null mid-flight (e.g., raced reassignment)', async () => {
+        const logger = makeLogger();
+        const orch = buildOrchestrator({ now: () => clock.ms, watchdogCheckMs: 50, logger });
+        orch.activeRotation = makeFakeActiveRotation({
+            lastTickAt: clock.ms,
+            maxRotationInterval: 1000,
+        });
+
+        await orch.startRotation();
+
+        // Simulate the swap: orchestrator clears activeRotation mid-flight
+        // (e.g., a mode toggle is in progress). The watchdog's `if
+        // (!this.isRotating || !this.activeRotation) return;` guard must
+        // catch this — otherwise the next tick would NPE on
+        // `this.activeRotation.lastTickAt`.
+        orch.activeRotation = null;
+        advanceClock(5000);
+
+        expect(logger.error).not.toHaveBeenCalled();
+
+        await orch.stopRotation();
+    });
+
+    it('uses default maxRotationInterval=180000 when activeRotation.settings is absent', async () => {
+        const logger = makeLogger();
+        const orch = buildOrchestrator({ now: () => clock.ms, watchdogCheckMs: 50, logger });
+        // Mimic an old/incomplete sub-rotation shape with no `settings`.
+        orch.activeRotation = {
+            lastTickAt: clock.ms,
+            // no settings property
+            async startRotation() {}, async stopRotation() {}, async shutdown() {},
+            getStatus() { return {}; }, updateSettings() {},
+        };
+
+        await orch.startRotation();
+        // Default threshold is 180_000 * 2 = 360_000 ms. Advance just past it.
+        advanceClock(365_000);
+
+        expect(logger.error).toHaveBeenCalled();
+        const ctx = logger.error.mock.calls[0][1];
+        expect(ctx.maxRotationIntervalMs).toBe(180000);
+        expect(ctx.thresholdMs).toBe(360000);
+
+        await orch.stopRotation();
+    });
 });
