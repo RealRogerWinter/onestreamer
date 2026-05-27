@@ -13,12 +13,12 @@
 // back-import phase). Closure-over-lazy-service hazard documented in the
 // 15B.1 PR description.
 //
-//   432–446     initializeRedis              → bootstrap/redis.js     (15B.2.b)
+//   [extracted] initializeRedis              → bootstrap/redis.js     (15B.2.b — landed)
 //   557–582     getActiveVisualEffects       → services/VisualFxService.js (15B.2.b)
 //   587–623     startVisualEffectSync        → services/VisualFxService.js (15B.2.b)
 //   [extracted] broadcastGlobalCooldown      → services/StreamOrchestration.js (15B.2.a — landed)
-//   882–893     cleanupViewbotUsername       → services/viewbot/UsernameCache.js (15B.2.b)
-//   896–916     generateViewbotUsername      → services/viewbot/UsernameCache.js (15B.2.b)
+//   [extracted] cleanupViewbotUsername       → services/viewbot/UsernameCache.js (15B.2.b — landed)
+//   [extracted] generateViewbotUsername      → services/viewbot/UsernameCache.js (15B.2.b — landed)
 //   919–1014    getStreamerDisplayName       → services/UserService.js OR keep in index.js
 //                                              with header (lazy-service closure — see audit)
 //   [extracted] enrichStreamStatus           → services/StreamOrchestration.js (15B.2.a — landed)
@@ -501,23 +501,14 @@ app.use('/hls', express.static('public/hls', {
 // Commented out during development to prevent Socket.IO interference
 // app.use(express.static(path.join(__dirname, '..', 'client', 'build')));
 
+// Phase 15B.2.b — initializeRedis moved to bootstrap/redis.js. The
+// `let redisClient` stays here because (a) shutdown() at the bottom of
+// this file calls `redisClient.quit()` on it, and (b) the in-flight
+// `createServices({ ..., redisClient, ... })` call below is intentional —
+// services receive `undefined` at module-load and consult it lazily via
+// the module-scope binding after startServer() runs the assignment.
 let redisClient;
-
-async function initializeRedis() {
-  if (process.env.REDIS_URL) {
-    redisClient = createClient({ url: process.env.REDIS_URL });
-    try {
-      await redisClient.connect();
-      logger.info('Connected to Redis');
-    } catch (error) {
-      logger.warn({ err: error }, 'Redis connection failed, using in-memory storage');
-      redisClient = null;
-    }
-  } else {
-    logger.info('No Redis URL provided, using in-memory storage');
-    redisClient = null;
-  }
-}
+const { initializeRedis: bootInitializeRedis } = require('./bootstrap/redis');
 
 // WebRTC service initialization - with optional adapter support.
 // Built BEFORE the service factory because it branches on env + assigns to
@@ -917,61 +908,22 @@ const notifiedStreamers = new Set();
 // (since that helper is a constructor dep — see the StreamOrchestration
 // module docstring for the closure-audit reasoning).
 
-// Animal names for random viewbot usernames (same as chat service)
-const VIEWBOT_ANIMALS = [
-  'Lion', 'Tiger', 'Bear', 'Wolf', 'Fox', 'Rabbit', 'Deer', 'Eagle', 'Hawk', 'Owl',
-  'Cat', 'Dog', 'Mouse', 'Rat', 'Hamster', 'Squirrel', 'Beaver', 'Otter', 'Seal', 'Whale',
-  'Shark', 'Fish', 'Crab', 'Lobster', 'Shrimp', 'Octopus', 'Jellyfish', 'Starfish', 'Turtle', 'Snake',
-  'Lizard', 'Frog', 'Toad', 'Salamander', 'Newt', 'Butterfly', 'Bee', 'Ant', 'Spider', 'Scorpion',
-  'Penguin', 'Flamingo', 'Swan', 'Duck', 'Goose', 'Chicken', 'Turkey', 'Peacock', 'Parrot', 'Canary'
-];
-
-// Cache for viewbot usernames (so they persist during stream)
-const viewbotUsernameCache = new Map();
-// Track which socket IDs belong to ViewBots
-const viewbotSocketIds = new Set();
+// Phase 15B.2.b — viewbot username cache + generator moved to
+// server/services/viewbot/UsernameCache.js. The cache and socketIds sets
+// stay accessible as module-scope bindings here because they are
+// referenced from getStreamerDisplayName (below), from socket-handler
+// deps bags, and exposed on app.locals for server/routes/internal.js.
+const { createUsernameCache } = require('./services/viewbot/UsernameCache');
+const _usernameCache = createUsernameCache();
+const viewbotUsernameCache = _usernameCache.cache;
+const viewbotSocketIds = _usernameCache.socketIds;
+const cleanupViewbotUsername = _usernameCache.cleanup;
+const generateViewbotUsername = _usernameCache.generate;
 
 // Expose viewbot caches on app.locals so server/routes/internal.js can read
 // them (extracted in PR-G2 — used by /api/internal/test-viewbot-username).
 app.locals.viewbotUsernameCache = viewbotUsernameCache;
 app.locals.viewbotSocketIds = viewbotSocketIds;
-
-// Clean up viewbot username from cache
-const cleanupViewbotUsername = (streamerId) => {
-  if (viewbotUsernameCache.has(streamerId)) {
-    const username = viewbotUsernameCache.get(streamerId);
-    viewbotUsernameCache.delete(streamerId);
-    logger.info(`🧹 VIEWBOT: Cleaned up username "${username}" for viewbot stream ${streamerId}`);
-  }
-  // Also clean up socket ID tracking
-  if (viewbotSocketIds.has(streamerId)) {
-    viewbotSocketIds.delete(streamerId);
-    logger.info(`🧹 VIEWBOT: Removed socket ID ${streamerId} from ViewBot tracking`);
-  }
-};
-
-// Generate random username for viewbot streams
-const generateViewbotUsername = (streamerId) => {
-  // Check if we already have a cached username for this exact streamer ID
-  if (viewbotUsernameCache.has(streamerId)) {
-    const cachedUsername = viewbotUsernameCache.get(streamerId);
-    logger.info(`🤖 VIEWBOT: Using cached username "${cachedUsername}" for viewbot stream ${streamerId}`);
-    return cachedUsername;
-  }
-  
-  // Generate a new random username
-  const animal = VIEWBOT_ANIMALS[Math.floor(Math.random() * VIEWBOT_ANIMALS.length)];
-  const number = Math.floor(Math.random() * 9999) + 1;
-  const username = `${animal}${number}`;
-  
-  // Cache the username for this specific streamer ID
-  viewbotUsernameCache.set(streamerId, username);
-  
-  const isSocketTracked = viewbotSocketIds.has(streamerId);
-  logger.info(`🤖 VIEWBOT: Generated fresh username "${username}" for ${isSocketTracked ? 'ViewBot socket' : 'viewbot stream'} ${streamerId}`);
-  
-  return username;
-};
 
 // Helper function to get streamer display name
 const getStreamerDisplayName = async (streamerId) => {
@@ -4921,7 +4873,7 @@ io.on('connection', async (socket) => {
 });
 
 async function startServer() {
-  await initializeRedis();
+  redisClient = await bootInitializeRedis();
   
   // Initialize resource monitoring
   resourceMonitor.setCallbacks({
