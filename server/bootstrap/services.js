@@ -122,6 +122,7 @@ const RecordingService = require('../services/RecordingService');
 const ClipStorageService = require('../services/ClipStorageService');
 const ClipProcessorService = require('../services/ClipProcessorService');
 const ContinuousRecordingService = require('../services/ContinuousRecordingService');
+const EgressFrameCaptureService = require('../services/EgressFrameCaptureService');
 const ClipService = require('../services/ClipService');
 const SessionChatCaptureService = require('../services/SessionChatCaptureService');
 const RecordingUploadScheduler = require('../services/RecordingUploadScheduler');
@@ -278,6 +279,15 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     continuousRecordingService
   );
 
+  // VisionBot frame source. Reads HLS segments produced by the egress
+  // recorder and extracts a single JPEG aligned to a transcription window.
+  // No-op when egress isn't running. Construction order: after
+  // continuousRecordingService (its dep), before visionBotService (lands
+  // in a follow-up PR).
+  const egressFrameCaptureService = new EgressFrameCaptureService({
+    continuousRecordingService,
+  });
+
   // Admin Recording Review services.
   const sessionChatCaptureService = new SessionChatCaptureService({
     chatServiceUrl: (env && env.CHAT_SERVICE_URL) || 'https://127.0.0.1:8444',
@@ -398,6 +408,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     clipStorageService,
     clipProcessorService,
     continuousRecordingService,
+    egressFrameCaptureService,
     clipService,
     sessionChatCaptureService,
     recordingUploadScheduler,
@@ -434,6 +445,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     recordingUploadScheduler,
     recordingCleanupScheduler,
     continuousRecordingService,
+    egressFrameCaptureService,
     streamBotService,
     // PR 8.3 (Phase 8): ProcessManager runs LATE in the shutdown order
     // (early in the array → late in reverse-iteration) so the per-bot
