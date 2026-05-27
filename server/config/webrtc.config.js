@@ -3,6 +3,8 @@
  * Controls which WebRTC implementation to use (MediaSoup or LiveKit)
  */
 
+const logger = require('../bootstrap/logger').child({ svc: 'webrtc.config' });
+
 const config = {
   // Backend selection: 'mediasoup' or 'livekit'
   backend: process.env.WEBRTC_BACKEND || 'mediasoup',
@@ -52,11 +54,11 @@ const config = {
 function validateConfig() {
   const validBackends = ['mediasoup', 'livekit'];
   if (!validBackends.includes(config.backend)) {
-    console.error(`Invalid WEBRTC_BACKEND: ${config.backend}. Must be 'mediasoup' or 'livekit'`);
+    logger.error({ backend: config.backend }, `Invalid WEBRTC_BACKEND. Must be 'mediasoup' or 'livekit'`);
     config.backend = 'mediasoup'; // Default fallback
   }
   
-  console.log(`📡 WebRTC Backend Configuration: ${config.backend.toUpperCase()}`);
+  logger.info(`📡 WebRTC Backend Configuration: ${config.backend.toUpperCase()}`);
   return config;
 }
 

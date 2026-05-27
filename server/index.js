@@ -15,7 +15,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 // Fail-fast: surface every missing/malformed required env var in one error
 // rather than letting requireEnv() trip on whichever happens to import first.
 require('./bootstrap/env').validateEnv();
-const logger = require('./bootstrap/logger');
+const logger = require('./bootstrap/logger').child({ svc: 'index' });
 const requireEnv = require('./config/requireEnv');
 
 logger.info({
@@ -92,9 +92,9 @@ if (USE_HTTPS || fs.existsSync(path.join(__dirname, '..', 'certificates', 'cert.
       cert: fs.readFileSync(path.join(__dirname, '..', 'certificates', 'cert.pem'))
     };
     httpsServer = https.createServer(httpsOptions, app);
-    console.log('🔒 HTTPS: SSL certificates loaded successfully');
+    logger.info('🔒 HTTPS: SSL certificates loaded successfully');
   } catch (err) {
-    console.error('⚠️ HTTPS: Failed to load SSL certificates:', err.message);
+    logger.error({ err }, '⚠️ HTTPS: Failed to load SSL certificates');
   }
 }
 
@@ -339,7 +339,7 @@ app.use('/api/moderation', moderationRoutes);
 
 // Debug middleware to log all requests
 app.use('/api', (req, res, next) => {
-  console.log(`🌐 HTTP: ${req.method} ${req.url} from ${req.get('origin') || 'unknown'}`);
+  logger.info(`🌐 HTTP: ${req.method} ${req.url} from ${req.get('origin') || 'unknown'}`);
   next();
 });
 
@@ -434,13 +434,13 @@ async function initializeRedis() {
     redisClient = createClient({ url: process.env.REDIS_URL });
     try {
       await redisClient.connect();
-      console.log('Connected to Redis');
+      logger.info('Connected to Redis');
     } catch (error) {
-      console.warn('Redis connection failed, using in-memory storage:', error.message);
+      logger.warn({ err: error }, 'Redis connection failed, using in-memory storage');
       redisClient = null;
     }
   } else {
-    console.log('No Redis URL provided, using in-memory storage');
+    logger.info('No Redis URL provided, using in-memory storage');
     redisClient = null;
   }
 }
@@ -453,14 +453,14 @@ let usingAdapter = false;
 
 if (process.env.USE_WEBRTC_ADAPTER === 'true') {
   // Use adapter for backend switching capability
-  console.log('🔄 WebRTC Adapter enabled - backend switching available');
+  logger.info('🔄 WebRTC Adapter enabled - backend switching available');
   const WebRTCAdapterV2 = require('./services/WebRTCAdapterV2');
   mediasoupService = new WebRTCAdapterV2();
   usingAdapter = true;
   global.webrtcAdapter = mediasoupService; // Make adapter available globally
 } else {
   // Use standard MediaSoup (default for compatibility)
-  console.log('📡 Using standard MediaSoup service');
+  logger.info('📡 Using standard MediaSoup service');
   mediasoupService = new MediasoupService();
 }
 
@@ -576,7 +576,7 @@ async function getActiveVisualEffects() {
     
     return visualEffectBuffs || [];
   } catch (error) {
-    console.error('❌ Error getting active visual effects:', error);
+    logger.error({ err: error }, '❌ Error getting active visual effects');
     return [];
   }
 }
@@ -598,7 +598,7 @@ function startVisualEffectSync() {
       if (activeVisualEffects.length > 0) {
         // Only log periodically to avoid spam
         if (Math.random() < 0.1) { // 10% chance to log
-          console.log(`🔄 VISUAL FX SYNC: ${activeVisualEffects.length} active effects in sync`);
+          logger.info(`🔄 VISUAL FX SYNC: ${activeVisualEffects.length} active effects in sync`);
         }
         
         // Broadcast current visual effects state
@@ -615,11 +615,11 @@ function startVisualEffectSync() {
         });
       }
     } catch (error) {
-      console.error('❌ VISUAL FX SYNC: Error in periodic sync:', error);
+      logger.error({ err: error }, '❌ VISUAL FX SYNC: Error in periodic sync');
     }
   }, 5000); // Sync every 5 seconds
   
-  console.log('🔄 VISUAL FX SYNC: Started periodic synchronization');
+  logger.info('🔄 VISUAL FX SYNC: Started periodic synchronization');
 }
 
 // Sync will be started after server initialization
@@ -637,7 +637,7 @@ buffDebuffService.on('buff-applied', async (buffData) => {
     ];
     
     if (buffData.item_name && visualEffectItems.includes(buffData.item_name)) {
-      console.log(`🎨 VISUAL FX: Buff ${buffData.item_name} applied, ensuring visual sync`);
+      logger.info(`🎨 VISUAL FX: Buff ${buffData.item_name} applied, ensuring visual sync`);
       
       // Broadcast to all viewers to apply this effect
       io.emit('visual-effect-apply-sync', {
@@ -651,7 +651,7 @@ buffDebuffService.on('buff-applied', async (buffData) => {
       });
     }
   } catch (error) {
-    console.error('❌ VISUAL FX: Error syncing buff-applied visual effect:', error);
+    logger.error({ err: error }, '❌ VISUAL FX: Error syncing buff-applied visual effect');
   }
 });
 // streamInterceptorService + visualFxService built by the services factory
@@ -663,7 +663,7 @@ buffDebuffService.on('buff-applied', async (buffData) => {
 // Set up stream interceptor event handlers
 streamInterceptorService.on('stream-intercepted', async (data) => {
     const { streamId, processedProducerId } = data;
-    console.log(`🎬 SERVER: Stream intercepted for ${streamId}, switching viewers...`);
+    logger.info(`🎬 SERVER: Stream intercepted for ${streamId}, switching viewers...`);
     
     // DON'T notify the streamer - they should keep producing to the original transport
     // Only notify viewers so they can switch to the processed stream
@@ -676,12 +676,12 @@ streamInterceptorService.on('stream-intercepted', async (data) => {
     // 2. Having them create new consumers for the processed producers
     // 3. Switching their video/audio to the new consumers
     
-    console.log(`🎬 SERVER: Stream interception complete - GStreamer is processing the stream`);
+    logger.info(`🎬 SERVER: Stream interception complete - GStreamer is processing the stream`);
 });
 
 streamInterceptorService.on('stream-restored', (data) => {
     const { streamId } = data;
-    console.log(`🎬 SERVER: Stream restored for ${streamId}`);
+    logger.info(`🎬 SERVER: Stream restored for ${streamId}`);
     
     // Notify all clients about restoration
     io.emit('stream-restored', {
@@ -703,12 +703,12 @@ adminRecordingsRoutes.setServices({
 
 // Listen for recording events to trigger chat capture and upload scheduling
 continuousRecordingService.on('recording-started', (event) => {
-  console.log(`📝 ADMIN REVIEW: Recording started - ${event.sessionId}`);
+  logger.info(`📝 ADMIN REVIEW: Recording started - ${event.sessionId}`);
   sessionChatCaptureService.startCapturing(event.sessionId, event.startTime);
 });
 
 continuousRecordingService.on('recording-stopped', (event) => {
-  console.log(`📝 ADMIN REVIEW: Recording stopped - ${event.sessionId}`);
+  logger.info(`📝 ADMIN REVIEW: Recording stopped - ${event.sessionId}`);
   sessionChatCaptureService.stopCapturing(event.sessionId);
   recordingUploadScheduler.scheduleUpload(event.sessionId, event.endTime);
 });
@@ -716,7 +716,7 @@ continuousRecordingService.on('recording-stopped', (event) => {
 // Start schedulers
 recordingUploadScheduler.start();
 recordingCleanupScheduler.start();
-console.log('📹 ADMIN REVIEW: Recording review services initialized');
+logger.info('📹 ADMIN REVIEW: Recording review services initialized');
 
 // Connect clip processor to clip service for status updates
 clipProcessorService.setProcessedCallback(async (clipId, result) => {
@@ -728,9 +728,9 @@ clipProcessorService.setProcessedCallback(async (clipId, result) => {
 // lives inside the factory body alongside its consumer.
 
 // Recording service is initialized, no need to load state separately
-console.log('📼 RECORDING: Recording service initialized');
-console.log('🎙️ TRANSCRIPTION: Transcription service initialized');
-console.log('🎬 MOVIEBOT: MovieBot service initialized');
+logger.info('📼 RECORDING: Recording service initialized');
+logger.info('🎙️ TRANSCRIPTION: Transcription service initialized');
+logger.info('🎬 MOVIEBOT: MovieBot service initialized');
 
 // Set Socket.IO for sound effects broadcasting
 soundFxService.setSocketIO(io);
@@ -795,7 +795,7 @@ takeoverService.setGameStreamService(gameStreamService);
 
 // Initialize game service (loads world data)
 gameService.initialize().catch(err => {
-  console.error('Failed to initialize game service:', err);
+  logger.error({ err }, 'Failed to initialize game service');
 });
 
 // Make game services available to routes
@@ -804,7 +804,7 @@ app.set('gameStreamService', gameStreamService);
 app.locals.gameService = gameService;
 app.locals.gameStreamService = gameStreamService;
 
-console.log('🎮 Game system initialized');
+logger.info('🎮 Game system initialized');
 // ============================================
 
 // Give clip processor access to Socket.IO for real-time updates
@@ -843,7 +843,7 @@ const broadcastGlobalCooldown = async (currentStreamerId) => {
     // Calculate remaining global cooldown for all users
     const globalCooldownSeconds = takeoverService.globalCooldownSeconds;
     
-    console.log(`📡 COOLDOWN: Broadcasting global cooldown of ${globalCooldownSeconds}s to all users except ${currentStreamerId}`);
+    logger.info(`📡 COOLDOWN: Broadcasting global cooldown of ${globalCooldownSeconds}s to all users except ${currentStreamerId}`);
     
     // Broadcast to ALL connected sockets except the current streamer
     io.sockets.sockets.forEach((socket) => {
@@ -855,7 +855,7 @@ const broadcastGlobalCooldown = async (currentStreamerId) => {
       }
     });
   } catch (error) {
-    console.error('❌ Failed to broadcast global cooldown:', error);
+    logger.error({ err: error }, '❌ Failed to broadcast global cooldown');
   }
 };
 
@@ -883,12 +883,12 @@ const cleanupViewbotUsername = (streamerId) => {
   if (viewbotUsernameCache.has(streamerId)) {
     const username = viewbotUsernameCache.get(streamerId);
     viewbotUsernameCache.delete(streamerId);
-    console.log(`🧹 VIEWBOT: Cleaned up username "${username}" for viewbot stream ${streamerId}`);
+    logger.info(`🧹 VIEWBOT: Cleaned up username "${username}" for viewbot stream ${streamerId}`);
   }
   // Also clean up socket ID tracking
   if (viewbotSocketIds.has(streamerId)) {
     viewbotSocketIds.delete(streamerId);
-    console.log(`🧹 VIEWBOT: Removed socket ID ${streamerId} from ViewBot tracking`);
+    logger.info(`🧹 VIEWBOT: Removed socket ID ${streamerId} from ViewBot tracking`);
   }
 };
 
@@ -897,7 +897,7 @@ const generateViewbotUsername = (streamerId) => {
   // Check if we already have a cached username for this exact streamer ID
   if (viewbotUsernameCache.has(streamerId)) {
     const cachedUsername = viewbotUsernameCache.get(streamerId);
-    console.log(`🤖 VIEWBOT: Using cached username "${cachedUsername}" for viewbot stream ${streamerId}`);
+    logger.info(`🤖 VIEWBOT: Using cached username "${cachedUsername}" for viewbot stream ${streamerId}`);
     return cachedUsername;
   }
   
@@ -910,7 +910,7 @@ const generateViewbotUsername = (streamerId) => {
   viewbotUsernameCache.set(streamerId, username);
   
   const isSocketTracked = viewbotSocketIds.has(streamerId);
-  console.log(`🤖 VIEWBOT: Generated fresh username "${username}" for ${isSocketTracked ? 'ViewBot socket' : 'viewbot stream'} ${streamerId}`);
+  logger.info(`🤖 VIEWBOT: Generated fresh username "${username}" for ${isSocketTracked ? 'ViewBot socket' : 'viewbot stream'} ${streamerId}`);
   
   return username;
 };
@@ -927,7 +927,7 @@ const getStreamerDisplayName = async (streamerId) => {
       if (global.randomStreamRotationService && global.randomStreamRotationService.currentStream) {
         const currentStream = global.randomStreamRotationService.currentStream;
         if (currentStream.urlId === streamerId) {
-          console.log(`🎲 STREAMER: Using random rotation display name "${currentStream.displayName}" for ${streamerId}`);
+          logger.info(`🎲 STREAMER: Using random rotation display name "${currentStream.displayName}" for ${streamerId}`);
           return currentStream.displayName;
         }
       }
@@ -936,13 +936,13 @@ const getStreamerDisplayName = async (streamerId) => {
       if (global.viewBotURLService && global.viewBotURLService.activeStreams) {
         const streamEntry = global.viewBotURLService.activeStreams.get(streamerId);
         if (streamEntry && streamEntry.displayName) {
-          console.log(`📺 STREAMER: Using URL stream display name "${streamEntry.displayName}" for ${streamerId}`);
+          logger.info(`📺 STREAMER: Using URL stream display name "${streamEntry.displayName}" for ${streamerId}`);
           return streamEntry.displayName;
         }
       }
 
       // No display name found, use a generic fallback
-      console.log(`⚠️ STREAMER: No display name found for URL stream ${streamerId}, using generic`);
+      logger.info(`⚠️ STREAMER: No display name found for URL stream ${streamerId}, using generic`);
       return 'Random Stream';
     }
 
@@ -951,7 +951,7 @@ const getStreamerDisplayName = async (streamerId) => {
     const isViewbotBySocketId = viewbotSocketIds.has(streamerId);
 
     if (isViewbotByService || isViewbotBySocketId) {
-      console.log(`🤖 VIEWBOT: Detected viewbot stream ${streamerId} (service: ${isViewbotByService}, socketId: ${isViewbotBySocketId}), generating random username`);
+      logger.info(`🤖 VIEWBOT: Detected viewbot stream ${streamerId} (service: ${isViewbotByService}, socketId: ${isViewbotBySocketId}), generating random username`);
       return generateViewbotUsername(streamerId);
     }
 
@@ -960,55 +960,55 @@ const getStreamerDisplayName = async (streamerId) => {
       if (session.userId) {
         // For authenticated users, try to get their username from the database
         try {
-          console.log(`🔍 STREAMER: Looking up user ${session.userId} in database for streamer ${streamerId}`);
-          console.log(`🔍 STREAMER: authService available:`, !!authService);
-          console.log(`🔍 STREAMER: authService.accountService available:`, !!authService?.accountService);
+          logger.info(`🔍 STREAMER: Looking up user ${session.userId} in database for streamer ${streamerId}`);
+          logger.info({ authService: !!authService }, `🔍 STREAMER: authService available`);
+          logger.info({ accountService: !!authService?.accountService }, `🔍 STREAMER: authService.accountService available`);
           
           if (authService && authService.accountService) {
             const user = await authService.accountService.getUserById(session.userId);
             if (user && user.username) {
-              console.log(`✅ STREAMER: Using authenticated username "${user.username}" for streamer ${streamerId}`);
+              logger.info(`✅ STREAMER: Using authenticated username "${user.username}" for streamer ${streamerId}`);
               return user.username;
             } else {
-              console.log(`❌ STREAMER: No user or username found in database for user ID ${session.userId}`);
+              logger.info(`❌ STREAMER: No user or username found in database for user ID ${session.userId}`);
             }
           } else {
-            console.log(`❌ STREAMER: authService or accountService not available`);
+            logger.info(`❌ STREAMER: authService or accountService not available`);
           }
         } catch (dbError) {
-          console.log('❌ STREAMER: Could not fetch user from database:', dbError.message);
+          logger.info({ err: dbError }, '❌ STREAMER: Could not fetch user from database');
         }
         // Fallback to chat username if available
-        console.log(`📝 STREAMER: Using fallback for user ${session.userId}: ${session.chatUsername || `User-${streamerId.substring(0, 8)}`}`);
+        logger.info(`📝 STREAMER: Using fallback for user ${session.userId}: ${session.chatUsername || `User-${streamerId.substring(0, 8)}`}`);
         return session.chatUsername || `User-${streamerId.substring(0, 8)}`;
       } else {
         // For anonymous users, check for chat username by IP
         const ip = session.ip;
-        console.log(`🔍 STREAMER: Checking for chat username for anonymous streamer ${streamerId} (IP: ${ip})`);
+        logger.info(`🔍 STREAMER: Checking for chat username for anonymous streamer ${streamerId} (IP: ${ip})`);
         
         const chatInfo = sessionService.getChatUsername(ip);
-        console.log(`🔍 STREAMER: Chat info from sessionService:`, chatInfo);
+        logger.info({ chatInfo }, `🔍 STREAMER: Chat info from sessionService`);
         
         if (chatInfo && chatInfo.username) {
-          console.log(`👤 STREAMER: Using chat username "${chatInfo.username}" for anonymous streamer ${streamerId} (IP: ${ip})`);
+          logger.info(`👤 STREAMER: Using chat username "${chatInfo.username}" for anonymous streamer ${streamerId} (IP: ${ip})`);
           return chatInfo.username;
         }
         
         // Also check the session's chatUsername as fallback
         if (session.chatUsername) {
-          console.log(`👤 STREAMER: Using session chat username "${session.chatUsername}" for anonymous streamer ${streamerId}`);
+          logger.info(`👤 STREAMER: Using session chat username "${session.chatUsername}" for anonymous streamer ${streamerId}`);
           return session.chatUsername;
         }
         
-        console.log(`⚠️ STREAMER: No chat username found for anonymous streamer ${streamerId} (IP: ${ip})`);
+        logger.info(`⚠️ STREAMER: No chat username found for anonymous streamer ${streamerId} (IP: ${ip})`);
       }
     }
     
     // Fallback to abbreviated socket ID
-    console.log(`🔤 STREAMER: Using socket ID fallback for streamer ${streamerId}`);
+    logger.info(`🔤 STREAMER: Using socket ID fallback for streamer ${streamerId}`);
     return `User-${streamerId.substring(0, 8)}`;
   } catch (error) {
-    console.error('❌ STREAMER: Failed to get streamer display name:', error);
+    logger.error({ err: error }, '❌ STREAMER: Failed to get streamer display name');
     return `User-${streamerId.substring(0, 8)}`;
   }
 };
@@ -1020,11 +1020,11 @@ app.locals.getStreamerDisplayName = getStreamerDisplayName;
 // Helper function to enrich stream status with streamer info
 const enrichStreamStatus = async (status) => {
   const enriched = { ...status };
-  console.log('🔍 ENRICH: Enriching stream status with streamerId:', status.streamerId);
+  logger.info({ streamerId: status.streamerId }, '🔍 ENRICH: Enriching stream status with streamerId');
   if (status.streamerId) {
-    console.log('🔍 ENRICH: Getting streamer display name for:', status.streamerId);
+    logger.info({ streamerId: status.streamerId }, '🔍 ENRICH: Getting streamer display name for');
     enriched.streamerDisplayName = await getStreamerDisplayName(status.streamerId);
-    console.log('🔍 ENRICH: Got streamer display name:', enriched.streamerDisplayName);
+    logger.info({ streamerDisplayName: enriched.streamerDisplayName }, '🔍 ENRICH: Got streamer display name');
   }
   return enriched;
 };
@@ -1044,10 +1044,10 @@ const verifyAndEmitStreamReady = async (streamerId, streamData = {}) => {
   const now = Date.now();
   if (lastEmittedStreamReady.streamerId === streamerId &&
       (now - lastEmittedStreamReady.timestamp) < 2000) {
-    console.log(`⏭️ STREAM-READY: Skipping duplicate emission for ${streamerId} (${now - lastEmittedStreamReady.timestamp}ms since last)`);
+    logger.info(`⏭️ STREAM-READY: Skipping duplicate emission for ${streamerId} (${now - lastEmittedStreamReady.timestamp}ms since last)`);
     return true; // Return true as if successful since we already emitted for this stream
   }
-  console.log(`🔍 STREAM-READY: Verifying tracks for ${streamerId} before emitting...`);
+  logger.info(`🔍 STREAM-READY: Verifying tracks for ${streamerId} before emitting...`);
 
   // Check if we're using LiveKit backend
   const isLiveKit = mediasoupService.isLiveKit && mediasoupService.isLiveKit();
@@ -1063,12 +1063,12 @@ const verifyAndEmitStreamReady = async (streamerId, streamData = {}) => {
       });
 
       if (!verification.verified) {
-        console.error(`❌ STREAM-READY: Track verification failed for ${streamerId} after ${verification.attempt} attempts`);
+        logger.error(`❌ STREAM-READY: Track verification failed for ${streamerId} after ${verification.attempt} attempts`);
         // Don't emit stream-ready - tracks aren't ready
         return false;
       }
 
-      console.log(`✅ STREAM-READY: Tracks verified for ${streamerId} (video: ${verification.hasVideo}, audio: ${verification.hasAudio}) after ${verification.attempt} attempts`);
+      logger.info(`✅ STREAM-READY: Tracks verified for ${streamerId} (video: ${verification.hasVideo}, audio: ${verification.hasAudio}) after ${verification.attempt} attempts`);
 
       // Emit stream-ready with verified track info
       const streamerDisplayName = await getStreamerDisplayName(streamerId);
@@ -1089,11 +1089,11 @@ const verifyAndEmitStreamReady = async (streamerId, streamData = {}) => {
       // DEDUP: Track this emission
       lastEmittedStreamReady.streamerId = streamerId;
       lastEmittedStreamReady.timestamp = emitTimestamp;
-      console.log(`📡 STREAM-READY: Emitted verified stream-ready for ${streamerId}`);
+      logger.info(`📡 STREAM-READY: Emitted verified stream-ready for ${streamerId}`);
       return true;
 
     } catch (error) {
-      console.error(`❌ STREAM-READY: Error verifying tracks for ${streamerId}:`, error);
+      logger.error({ err: error }, `❌ STREAM-READY: Error verifying tracks for ${streamerId}`);
       // Don't emit stream-ready on error
       return false;
     }
@@ -1115,7 +1115,7 @@ const verifyAndEmitStreamReady = async (streamerId, streamData = {}) => {
     // DEDUP: Track this emission
     lastEmittedStreamReady.streamerId = streamerId;
     lastEmittedStreamReady.timestamp = emitTimestamp;
-    console.log(`📡 STREAM-READY: Emitted stream-ready for ${streamerId} (MediaSoup/no verification needed)`);
+    logger.info(`📡 STREAM-READY: Emitted stream-ready for ${streamerId} (MediaSoup/no verification needed)`);
     return true;
   }
 };
@@ -1226,7 +1226,7 @@ app.get('/api/emojis', async (req, res) => {
         
         res.json(emojisWithFormats);
     } catch (error) {
-        console.error('Error fetching emojis:', error);
+        logger.error({ err: error }, 'Error fetching emojis');
         res.status(500).json({ error: 'Failed to fetch emojis' });
     }
 });
@@ -1236,15 +1236,15 @@ app.get('/api/admin/moderation', authenticateModerator, async (req, res) => {
     try {
         // Send a request to the chat service to get moderation data
         const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/moderation`;
-        console.log(`📊 MAIN SERVER: Fetching moderation data from ${chatServiceUrl}`);
+        logger.info(`📊 MAIN SERVER: Fetching moderation data from ${chatServiceUrl}`);
         
         const response = await axios.get(chatServiceUrl, { timeout: 5000 });
         
-        console.log(`📊 MAIN SERVER: Received moderation data:`, response.data);
+        logger.info({ data: response.data }, `📊 MAIN SERVER: Received moderation data`);
         res.json(response.data);
     } catch (error) {
-        console.error('Error fetching moderation data:', error.message);
-        console.error('Full error:', error);
+        logger.error({ err: error }, 'Error fetching moderation data');
+        logger.error({ err: error }, 'Full error');
         res.status(500).json({ 
             error: 'Failed to fetch moderation data',
             bannedUsers: [],
@@ -1268,7 +1268,7 @@ app.post('/api/admin/ban', authenticateModerator, express.json(), async (req, re
         
         res.json(response.data);
     } catch (error) {
-        console.error('Error banning user:', error);
+        logger.error({ err: error }, 'Error banning user');
         res.status(500).json({ error: 'Failed to ban user' });
     }
 });
@@ -1283,7 +1283,7 @@ app.post('/api/admin/unban', authenticateModerator, express.json(), async (req, 
         
         res.json(response.data);
     } catch (error) {
-        console.error('Error unbanning user:', error);
+        logger.error({ err: error }, 'Error unbanning user');
         res.status(500).json({ error: 'Failed to unban user' });
     }
 });
@@ -1304,7 +1304,7 @@ app.post('/api/admin/timeout', authenticateModerator, express.json(), async (req
         
         res.json(response.data);
     } catch (error) {
-        console.error('Error timing out user:', error);
+        logger.error({ err: error }, 'Error timing out user');
         res.status(500).json({ error: 'Failed to timeout user' });
     }
 });
@@ -1319,7 +1319,7 @@ app.post('/api/admin/remove-timeout', authenticateModerator, express.json(), asy
         
         res.json(response.data);
     } catch (error) {
-        console.error('Error removing timeout:', error);
+        logger.error({ err: error }, 'Error removing timeout');
         res.status(500).json({ error: 'Failed to remove timeout' });
     }
 });
@@ -1335,7 +1335,7 @@ app.get('/api/admin/emojis', authenticateAdmin, async (req, res) => {
         `);
         res.json(emojis);
     } catch (error) {
-        console.error('Error fetching admin emojis:', error);
+        logger.error({ err: error }, 'Error fetching admin emojis');
         res.status(500).json({ error: 'Failed to fetch emojis' });
     }
 });
@@ -1402,7 +1402,7 @@ app.post('/api/admin/emojis', authenticateAdmin, emojiUpload.single('emoji'), as
         try {
             if (fileExt === '.avif') {
                 // Re-encode existing AVIF with Safari-compatible settings
-                console.log('Re-encoding AVIF file for Safari compatibility:', req.file.filename);
+                logger.info({ filename: req.file.filename }, 'Re-encoding AVIF file for Safari compatibility');
                 
                 // First decode to PNG
                 const tempPng = req.file.path.replace('.avif', '_temp.png');
@@ -1416,7 +1416,7 @@ app.post('/api/admin/emojis', authenticateAdmin, emojiUpload.single('emoji'), as
                 if (fs.existsSync(tempAvif) && fs.statSync(tempAvif).size > 0) {
                     fs.unlinkSync(req.file.path);
                     fs.renameSync(tempAvif, req.file.path);
-                    console.log('Successfully re-encoded AVIF for Safari compatibility');
+                    logger.info('Successfully re-encoded AVIF for Safari compatibility');
                 }
                 
                 // Clean up temp files
@@ -1424,7 +1424,7 @@ app.post('/api/admin/emojis', authenticateAdmin, emojiUpload.single('emoji'), as
                 if (fs.existsSync(tempAvif)) fs.unlinkSync(tempAvif);
             } else {
                 // Convert PNG/JPG/GIF/WebP to Safari-compatible AVIF
-                console.log('Converting', fileExt, 'to Safari-compatible AVIF:', req.file.filename);
+                logger.info({ fileExt, filename: req.file.filename }, 'Converting to Safari-compatible AVIF');
                 
                 const avifPath = req.file.path.replace(fileExt, '.avif');
                 const avifFilename = req.file.filename.replace(fileExt, '.avif');
@@ -1454,17 +1454,17 @@ app.post('/api/admin/emojis', authenticateAdmin, emojiUpload.single('emoji'), as
                     
                     finalFilePath = avifPath;
                     finalFilename = avifFilename;
-                    console.log('Successfully converted to Safari-compatible AVIF');
+                    logger.info('Successfully converted to Safari-compatible AVIF');
                 } else {
                     // Clean up temp PNG if it was created for GIF
                     if (fileExt === '.gif' && sourceFile !== req.file.path) {
                         fs.unlinkSync(sourceFile);
                     }
-                    console.log('Warning: AVIF conversion failed, using original file');
+                    logger.info('Warning: AVIF conversion failed, using original file');
                 }
             }
         } catch (conversionError) {
-            console.error('Warning: Image conversion failed, using original file:', conversionError.message);
+            logger.error({ err: conversionError }, 'Warning: Image conversion failed, using original file');
             // Continue with original file if conversion fails
         }
         
@@ -1484,7 +1484,7 @@ app.post('/api/admin/emojis', authenticateAdmin, emojiUpload.single('emoji'), as
             message: 'Emoji uploaded successfully' 
         });
     } catch (error) {
-        console.error('Error uploading emoji:', error);
+        logger.error({ err: error }, 'Error uploading emoji');
         if (req.file) {
             fs.unlinkSync(req.file.path);
         }
@@ -1536,7 +1536,7 @@ app.put('/api/admin/emojis/:id', authenticateAdmin, express.json(), async (req, 
         
         res.json({ message: 'Emoji updated successfully' });
     } catch (error) {
-        console.error('Error updating emoji:', error);
+        logger.error({ err: error }, 'Error updating emoji');
         res.status(500).json({ error: 'Failed to update emoji' });
     }
 });
@@ -1563,7 +1563,7 @@ app.delete('/api/admin/emojis/:id', authenticateAdmin, async (req, res) => {
         
         res.json({ message: 'Emoji deleted successfully' });
     } catch (error) {
-        console.error('Error deleting emoji:', error);
+        logger.error({ err: error }, 'Error deleting emoji');
         res.status(500).json({ error: 'Failed to delete emoji' });
     }
 });
@@ -1581,7 +1581,7 @@ app.post('/api/emojis/:code/use', express.json(), async (req, res) => {
         
         res.json({ success: true });
     } catch (error) {
-        console.error('Error tracking emoji usage:', error);
+        logger.error({ err: error }, 'Error tracking emoji usage');
         res.status(500).json({ error: 'Failed to track emoji usage' });
     }
 });
@@ -1620,10 +1620,10 @@ app.post('/api/user/chat-color', express.json(), async (req, res) => {
             );
         }
         
-        console.log(`🎨 Saved chat color ${color} for user ${userId}`);
+        logger.info(`🎨 Saved chat color ${color} for user ${userId}`);
         res.json({ success: true, color });
     } catch (error) {
-        console.error('Error saving chat color:', error);
+        logger.error({ err: error }, 'Error saving chat color');
         res.status(500).json({ error: 'Failed to save chat color' });
     }
 });
@@ -1642,31 +1642,31 @@ app.get('/api/user/:userId/chat-color', async (req, res) => {
             color: result?.chat_color || null 
         });
     } catch (error) {
-        console.error('Error fetching chat color:', error);
+        logger.error({ err: error }, 'Error fetching chat color');
         res.status(500).json({ error: 'Failed to fetch chat color' });
     }
 });
 
 // Fallback auth middleware for ViewBot endpoints - try JWT first, then admin key
 const viewBotAuth = (req, res, next) => {
-  console.log('🔐 ViewBot Auth - Request path:', req.path);
-  console.log('🔐 ViewBot Auth - Headers:', {
+  logger.info({ path: req.path }, '🔐 ViewBot Auth - Request path');
+  logger.info({
     'x-admin-key': req.headers['x-admin-key'] ? '<redacted>' : undefined,
     'authorization': req.headers['authorization'] ? '<bearer>' : undefined,
     'admin_key_query': req.query.admin_key ? '<redacted>' : undefined,
-  });
+  }, '🔐 ViewBot Auth - Headers');
 
   // Check for admin key first (simpler auth for ViewBot operations)
   const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
   const correctKey = ADMIN_KEY;
 
-  console.log('🔐 ViewBot Auth - Admin key check:', {
+  logger.info({
     provided: !!adminKey,
     matches: adminKey === correctKey,
-  });
+  }, '🔐 ViewBot Auth - Admin key check');
   
   if (adminKey === correctKey) {
-    console.log('✅ ViewBot: Using admin key authentication');
+    logger.info('✅ ViewBot: Using admin key authentication');
     // Create a mock user object for compatibility
     req.user = { id: 'admin-key-user' };
     req.userRecord = { username: 'admin-key', is_admin: true };
@@ -1681,13 +1681,13 @@ const viewBotAuth = (req, res, next) => {
     // Try JWT authentication synchronously
     const decoded = authService.verifyToken(token);
     if (decoded) {
-      console.log('✅ ViewBot: Using JWT authentication');
+      logger.info('✅ ViewBot: Using JWT authentication');
       req.user = decoded;
       return next();
     }
   }
   
-  console.log('❌ ViewBot: Authentication failed - no valid JWT or admin key');
+  logger.info('❌ ViewBot: Authentication failed - no valid JWT or admin key');
   return res.status(401).json({ 
     error: 'Authentication required for ViewBot operations',
     details: 'Provide either x-admin-key header or valid JWT token'
@@ -1697,8 +1697,8 @@ const viewBotAuth = (req, res, next) => {
 // Admin API Routes
 app.get('/admin/dashboard', authenticateAdmin, async (req, res) => {
   try {
-    console.log('🔍 Dashboard request received');
-    console.log('🔍 viewBotClientService exists:', !!viewBotClientService);
+    logger.info('🔍 Dashboard request received');
+    logger.info({ viewBotClientService: !!viewBotClientService }, '🔍 viewBotClientService exists');
     
     // Get ViewBot system data with error handling
     let viewBotData = null;
@@ -1706,15 +1706,15 @@ app.get('/admin/dashboard', authenticateAdmin, async (req, res) => {
     
     try {
       if (viewBotClientService) {
-        console.log('🔍 Getting ViewBot data...');
+        logger.info('🔍 Getting ViewBot data...');
         viewBotData = await viewBotClientService.getAllBotsStatus();
         viewBotHealth = viewBotClientService.getHealthStatus();
-        console.log('🔍 ViewBot data retrieved:', { totalBots: viewBotData?.totalBots, rotationEnabled: viewBotHealth?.rotationEnabled });
+        logger.info({ totalBots: viewBotData?.totalBots, rotationEnabled: viewBotHealth?.rotationEnabled }, '🔍 ViewBot data retrieved');
       } else {
-        console.log('⚠️ ViewBotClientService not initialized');
+        logger.info('⚠️ ViewBotClientService not initialized');
       }
     } catch (error) {
-      console.error('❌ ViewBot service error:', error);
+      logger.error({ err: error }, '❌ ViewBot service error');
     }
     
     const services = {
@@ -1754,7 +1754,7 @@ app.get('/admin/dashboard', authenticateAdmin, async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('❌ ADMIN: Dashboard error:', error);
+    logger.error({ err: error }, '❌ ADMIN: Dashboard error');
     res.status(500).json({ error: 'Failed to load dashboard data' });
   }
 });
@@ -1772,11 +1772,11 @@ app.post('/admin/viewbot/start', adminKeyAuth, async (req, res) => {
     
     // Create synthetic user ID for viewbot to enable buff/debuff support
     const syntheticUserId = -Math.abs(result.streamId.hashCode ? result.streamId.hashCode() : result.streamId.split('-')[1].slice(0, 8).split('').reduce((a, b) => (a * 31 + b.charCodeAt(0)) & 0x7fffffff, 0));
-    console.log(`🎭 BUFF: Created synthetic user ID ${syntheticUserId} for viewbot ${result.streamId}`);
+    logger.info(`🎭 BUFF: Created synthetic user ID ${syntheticUserId} for viewbot ${result.streamId}`);
     
     // Link synthetic user ID to viewbot socket ID for buff system compatibility
     sessionService.linkUserToSocket(result.streamId, syntheticUserId);
-    console.log(`🎭 BUFF: Linked viewbot ${result.streamId} to synthetic user ${syntheticUserId} for buff system`);
+    logger.info(`🎭 BUFF: Linked viewbot ${result.streamId} to synthetic user ${syntheticUserId} for buff system`);
     
     io.emit('new-streamer', { 
       streamerId: result.streamId, 
@@ -1796,7 +1796,7 @@ app.post('/admin/viewbot/start', adminKeyAuth, async (req, res) => {
 
 // Test stream endpoint - client-side pattern generation approach
 app.post('/admin/test-stream/start', adminKeyAuth, async (req, res) => {
-  console.log('🧪 TEST: Starting client-side test pattern stream');
+  logger.info('🧪 TEST: Starting client-side test pattern stream');
   
   const result = testStreamService.startTestStream(req.body);
   
@@ -1804,7 +1804,7 @@ app.post('/admin/test-stream/start', adminKeyAuth, async (req, res) => {
     // Set test stream as the active streamer
     streamService.setStreamer(result.streamId, 'test');
     
-    console.log('🧪 TEST: Test stream started, notifying viewers to generate client-side pattern');
+    logger.info('🧪 TEST: Test stream started, notifying viewers to generate client-side pattern');
     
     // Instead of creating fake MediaSoup producers, signal viewers to generate test pattern
     io.emit('test-pattern-stream', { 
@@ -1848,16 +1848,16 @@ app.post('/admin/viewbot/stop', adminKeyAuth, async (req, res) => {
     
     // Clean up synthetic user mapping for viewbot
     sessionService.linkUserToSocket(result.streamId, null);
-    console.log(`🎭 BUFF: Cleaned up synthetic user mapping for stopped viewbot ${result.streamId}`);
+    logger.info(`🎭 BUFF: Cleaned up synthetic user mapping for stopped viewbot ${result.streamId}`);
     
     // Clear the viewbot from active streamer
     if (streamService.getCurrentStreamer() === result.streamId) {
       streamService.clearStreamer();
       mediasoupService.currentStreamer = null;
-      console.log(`🧹 VIEWBOT STOP: Cleared ${result.streamId} from both services`);
+      logger.info(`🧹 VIEWBOT STOP: Cleared ${result.streamId} from both services`);
       
       // Clear streamer buff display when viewbot streaming ends
-      console.log(`🎭 BUFF: Clearing streamer buffs display (viewbot ended)`);
+      logger.info(`🎭 BUFF: Clearing streamer buffs display (viewbot ended)`);
       buffNotifier.streamerBuffsUpdate({ buffs: [] });
       
       streamNotifier.streamEnded({ reason: 'viewbot_stopped' });
@@ -1871,13 +1871,13 @@ app.post('/admin/viewbot/stop', adminKeyAuth, async (req, res) => {
 });
 
 app.post('/admin/test-stream/stop', adminKeyAuth, async (req, res) => {
-  console.log('🧪 LEGACY TEST: Stopping test stream');
+  logger.info('🧪 LEGACY TEST: Stopping test stream');
   
   // Try to stop ViewbotService first (if it was used for the test stream)
   if (viewbotService) {
     const currentStreamer = streamService.getCurrentStreamer();
     if (currentStreamer && viewbotService.isViewbotStream(currentStreamer)) {
-      console.log('🧪 LEGACY TEST: Stopping ViewbotService test stream');
+      logger.info('🧪 LEGACY TEST: Stopping ViewbotService test stream');
       const viewbotResult = await viewbotService.stopViewbot();
       
       if (viewbotResult.success) {
@@ -1886,15 +1886,15 @@ app.post('/admin/test-stream/stop', adminKeyAuth, async (req, res) => {
         
         // Clean up synthetic user mapping for viewbot
         sessionService.linkUserToSocket(viewbotResult.streamId, null);
-        console.log(`🎭 BUFF: Cleaned up synthetic user mapping for legacy stopped viewbot ${viewbotResult.streamId}`);
+        logger.info(`🎭 BUFF: Cleaned up synthetic user mapping for legacy stopped viewbot ${viewbotResult.streamId}`);
         
         if (streamService.getCurrentStreamer() === viewbotResult.streamId) {
           streamService.clearStreamer();
           mediasoupService.currentStreamer = null;
-          console.log(`🧹 VIEWBOT LEGACY STOP: Cleared ${viewbotResult.streamId} from both services`);
+          logger.info(`🧹 VIEWBOT LEGACY STOP: Cleared ${viewbotResult.streamId} from both services`);
           
           // Clear streamer buff display when viewbot streaming ends
-          console.log(`🎭 BUFF: Clearing streamer buffs display (viewbot legacy ended)`);
+          logger.info(`🎭 BUFF: Clearing streamer buffs display (viewbot legacy ended)`);
           buffNotifier.streamerBuffsUpdate({ buffs: [] });
           
           streamNotifier.streamEnded({ reason: 'viewbot_legacy_stopped' });
@@ -1919,7 +1919,7 @@ app.post('/admin/test-stream/stop', adminKeyAuth, async (req, res) => {
     if (streamService.getCurrentStreamer() === result.streamId) {
       streamService.clearStreamer();
       mediasoupService.currentStreamer = null;
-      console.log(`🧹 TEST STREAM STOP: Cleared ${result.streamId} from both services`);
+      logger.info(`🧹 TEST STREAM STOP: Cleared ${result.streamId} from both services`);
 
       // Also stop media ingestion
       mediaStreamService.stopIngestion();
@@ -2006,7 +2006,7 @@ app.post('/admin/viewbot-manager/toggle-mode', viewBotAuth, async (req, res) => 
     const result = await global.viewBotManager.toggleMode(useWebRTC);
     res.json(result);
   } catch (error) {
-    console.error('Error toggling viewbot mode:', error);
+    logger.error({ err: error }, 'Error toggling viewbot mode');
     res.status(500).json({ error: 'Failed to toggle mode' });
   }
 });
@@ -2077,7 +2077,7 @@ app.post('/admin/viewbot-client/create-streamer', viewBotAuth, async (req, res) 
   // 2. { contentType: 'videoFile', autoStart: true, ... } - flat format from UI
   const config = req.body.config || req.body;
   
-  console.log('📋 SERVER: Creating ViewBot with config:', JSON.stringify(config, null, 2));
+  logger.info({ config }, '📋 SERVER: Creating ViewBot with config');
   
   const result = await viewBotClientService.createStreamerBot(config);
   res.json(result);
@@ -2089,9 +2089,9 @@ app.post('/admin/viewbot-client/:botId/start', viewBotAuth, async (req, res) => 
   }
   
   const { botId } = req.params;
-  console.log(`📡 API: Starting ViewBot ${botId} via HTTP endpoint`);
+  logger.info(`📡 API: Starting ViewBot ${botId} via HTTP endpoint`);
   const result = await viewBotClientService.startBotStreaming(botId);
-  console.log(`📡 API: ViewBot ${botId} start result:`, result);
+  logger.info({ result }, `📡 API: ViewBot ${botId} start result`);
   res.json(result);
 });
 
@@ -2135,7 +2135,7 @@ app.get('/admin/viewbot-client/status', viewBotAuth, async (req, res) => {
     const status = await viewBotClientService.getAllBotsStatus();
     res.json(status);
   } catch (error) {
-    console.error('Failed to get ViewBot status:', error);
+    logger.error({ err: error }, 'Failed to get ViewBot status');
     res.status(500).json({ error: 'Failed to get ViewBot status' });
   }
 });
@@ -2176,7 +2176,7 @@ app.put('/admin/viewbot-client/:botId/name', viewBotAuth, async (req, res) => {
     const result = await viewBotClientService.updateBotName(botId, name.trim());
     res.json(result);
   } catch (error) {
-    console.error(`Failed to update ViewBot name for ${botId}:`, error);
+    logger.error({ err: error }, `Failed to update ViewBot name for ${botId}`);
     res.status(500).json({ error: 'Failed to update ViewBot name' });
   }
 });
@@ -2191,13 +2191,13 @@ app.post('/admin/viewbot-client/upload-video', viewBotAuth, upload.single('video
     // Return the absolute file path where the file is actually stored
     const filePath = path.join(uploadsDir, req.file.filename);
     
-    console.log('ViewBot video uploaded:', {
+    logger.info({
       originalName: req.file.originalname,
       filename: req.file.filename,
       size: req.file.size,
       path: filePath,
       absolutePath: filePath
-    });
+    }, 'ViewBot video uploaded');
 
     res.json({ 
       success: true, 
@@ -2207,7 +2207,7 @@ app.post('/admin/viewbot-client/upload-video', viewBotAuth, upload.single('video
       size: req.file.size
     });
   } catch (error) {
-    console.error('Error uploading ViewBot video:', error);
+    logger.error({ err: error }, 'Error uploading ViewBot video');
     res.status(500).json({ error: 'Failed to upload video file' });
   }
 });
@@ -2243,7 +2243,7 @@ app.post('/admin/viewbot-client/rotation/toggle', viewBotAuth, async (req, res) 
     const result = await viewBotClientService.toggleRotation(enabled);
     res.json(result);
   } catch (error) {
-    console.error('Error toggling ViewBot rotation:', error);
+    logger.error({ err: error }, 'Error toggling ViewBot rotation');
     res.status(500).json({ error: 'Failed to toggle rotation system' });
   }
 });
@@ -2295,7 +2295,7 @@ app.get('/debug/rotation-status', (req, res) => {
 // Test endpoint with simple auth check
 app.get('/admin/test-rotation-auth', (req, res) => {
   const adminKey = req.headers['x-admin-key'];
-  console.log('🔍 Test rotation auth - admin key present:', !!adminKey);
+  logger.info({ adminKey: !!adminKey }, '🔍 Test rotation auth - admin key present');
   if (adminKey === ADMIN_KEY) {
     if (!viewBotClientService) {
       return res.status(503).json({ error: 'ViewBotClientService not initialized' });
@@ -2307,15 +2307,15 @@ app.get('/admin/test-rotation-auth', (req, res) => {
 });
 
 app.get('/admin/viewbot-client/rotation/status', viewBotAuth, (req, res) => {
-  console.log('📊 Rotation status endpoint hit');
+  logger.info('📊 Rotation status endpoint hit');
   
   if (!viewBotClientService) {
-    console.log('❌ ViewBotClientService not initialized');
+    logger.info('❌ ViewBotClientService not initialized');
     return res.status(503).json({ error: 'ViewBotClientService not initialized' });
   }
   
   const status = viewBotClientService.getRotationStatus();
-  console.log('📊 Rotation status:', JSON.stringify(status));
+  logger.info({ status }, '📊 Rotation status');
   
   // Add debug info to help diagnose the issue
   if (status.currentLiveBot && viewBotClientService.activeBots) {
@@ -2474,11 +2474,11 @@ app.post('/admin/viewbot-client/debug/simulate-streamer', viewBotAuth, (req, res
   const { action } = req.body; // 'connect' or 'disconnect'
   
   if (action === 'connect') {
-    console.log('🔧 DEBUG: Simulating real streamer connect');
+    logger.info('🔧 DEBUG: Simulating real streamer connect');
     viewBotClientService.setRealStreamerStatus(true);
     res.json({ success: true, message: 'Simulated real streamer connect', realStreamerActive: true });
   } else if (action === 'disconnect') {
-    console.log('🔧 DEBUG: Simulating real streamer disconnect');
+    logger.info('🔧 DEBUG: Simulating real streamer disconnect');
     viewBotClientService.setRealStreamerStatus(false);
     res.json({ success: true, message: 'Simulated real streamer disconnect', realStreamerActive: false });
   } else {
@@ -2492,7 +2492,7 @@ app.post('/admin/viewbot-client/debug/check-presence', viewBotAuth, async (req, 
     return res.status(503).json({ error: 'ViewBotClientService not initialized' });
   }
   
-  console.log('🔧 DEBUG: Manually triggering presence check');
+  logger.info('🔧 DEBUG: Manually triggering presence check');
   await viewBotClientService.maintainViewBotPresence();
   
   const status = viewBotClientService.getRotationStatus();
@@ -2511,12 +2511,12 @@ app.post('/admin/viewbot-client/debug/clear-real-streamer', viewBotAuth, (req, r
   
   try {
     // Force clear real streamer status and validate
-    console.log('🔧 DEBUG: Manually clearing real streamer status');
+    logger.info('🔧 DEBUG: Manually clearing real streamer status');
     viewBotClientService.setRealStreamerStatus(false);
     viewBotClientService.validateRealStreamerStatus();
     
     const currentStreamer = streamService.getCurrentStreamer();
-    console.log(`🔧 DEBUG: Current streamer: ${currentStreamer || 'None'}`);
+    logger.info(`🔧 DEBUG: Current streamer: ${currentStreamer || 'None'}`);
     
     if (currentStreamer) {
       // Enhanced ViewBot detection for debug
@@ -2525,12 +2525,12 @@ app.post('/admin/viewbot-client/debug/clear-real-streamer', viewBotAuth, (req, r
       const isNewViewBot = userId && userId < 0;
       const isViewbot = isOldViewBot || isNewViewBot;
       
-      console.log(`🔧 DEBUG: Current streamer analysis:`);
-      console.log(`   Socket: ${currentStreamer}`);
-      console.log(`   User ID: ${userId}`);
-      console.log(`   Old ViewBot: ${isOldViewBot}`);
-      console.log(`   New ViewBot: ${isNewViewBot}`);
-      console.log(`   Is ViewBot: ${isViewbot}`);
+      logger.info(`🔧 DEBUG: Current streamer analysis:`);
+      logger.info(`   Socket: ${currentStreamer}`);
+      logger.info(`   User ID: ${userId}`);
+      logger.info(`   Old ViewBot: ${isOldViewBot}`);
+      logger.info(`   New ViewBot: ${isNewViewBot}`);
+      logger.info(`   Is ViewBot: ${isViewbot}`);
     }
     
     res.json({ 
@@ -2540,7 +2540,7 @@ app.post('/admin/viewbot-client/debug/clear-real-streamer', viewBotAuth, (req, r
       realStreamerActive: viewBotClientService.realStreamerActive
     });
   } catch (error) {
-    console.error('Error clearing real streamer status:', error);
+    logger.error({ err: error }, 'Error clearing real streamer status');
     res.status(500).json({ error: 'Failed to clear real streamer status' });
   }
 });
@@ -2555,7 +2555,7 @@ app.get('/admin/viewbot-client/streaming-method', viewBotAuth, (req, res) => {
     const result = viewBotClientService.getStreamingMethod();
     res.json(result);
   } catch (error) {
-    console.error('Error getting streaming method:', error);
+    logger.error({ err: error }, 'Error getting streaming method');
     res.status(500).json({ error: 'Failed to get streaming method' });
   }
 });
@@ -2577,7 +2577,7 @@ app.post('/admin/viewbot-client/streaming-method', viewBotAuth, async (req, res)
     const result = await viewBotClientService.setStreamingMethod(method);
     res.json(result);
   } catch (error) {
-    console.error('Error setting streaming method:', error);
+    logger.error({ err: error }, 'Error setting streaming method');
     res.status(500).json({ error: error.message || 'Failed to set streaming method' });
   }
 });
@@ -2630,7 +2630,7 @@ app.post('/admin/send-message', authenticateAdmin, (req, res) => {
 app.post('/admin/clear-stream', authenticateAdmin, (req, res) => {
   const clearedStreamer = streamService.clearStreamer();
   mediasoupService.currentStreamer = null;
-  console.log(`🧹 ADMIN CLEAR: Cleared ${clearedStreamer} from both services`);
+  logger.info(`🧹 ADMIN CLEAR: Cleared ${clearedStreamer} from both services`);
 
   streamNotifier.streamEnded({ reason: 'admin_clear', previousStreamer: clearedStreamer });
   viewerCountNotifier.broadcast();
@@ -2683,7 +2683,7 @@ app.get('/admin/connections', authenticateAdmin, async (req, res) => {
         // Get real-time stats from database
         userStats = await accountService.getUserStats(session.userId);
       } catch (err) {
-        console.log(`Could not fetch user details for ${session.userId}:`, err.message);
+        logger.info({ err }, `Could not fetch user details for ${session.userId}`);
       }
     }
     
@@ -2742,13 +2742,13 @@ app.post('/admin/remove-cooldown', authenticateAdmin, async (req, res) => {
     const result = await takeoverService.removeCooldown(socketId);
     
     if (result) {
-      console.log(`🔥 ADMIN: Cooldown removed for ${socketId}`);
+      logger.info(`🔥 ADMIN: Cooldown removed for ${socketId}`);
       res.json({ success: true, message: `Cooldown removed for ${socketId}` });
     } else {
       res.status(404).json({ error: 'No cooldown found for this socket' });
     }
   } catch (error) {
-    console.error('❌ ADMIN: Failed to remove cooldown:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to remove cooldown');
     res.status(500).json({ error: 'Failed to remove cooldown' });
   }
 });
@@ -2757,14 +2757,14 @@ app.post('/admin/reset-cooldowns', authenticateAdmin, async (req, res) => {
   try {
     // Reset TakeoverService cooldowns (global system cooldowns)
     const takeoverCount = await takeoverService.resetAllCooldowns();
-    console.log(`🔥 ADMIN: Reset ${takeoverCount} takeover cooldowns`);
+    logger.info(`🔥 ADMIN: Reset ${takeoverCount} takeover cooldowns`);
     
     // Reset ItemService cooldowns (item usage cooldowns)
     const itemCount = await itemService.resetAllItemCooldowns();
-    console.log(`🔥 ADMIN: Reset ${itemCount} item usage cooldowns`);
+    logger.info(`🔥 ADMIN: Reset ${itemCount} item usage cooldowns`);
     
     const totalCount = takeoverCount + itemCount;
-    console.log(`🔥 ADMIN: Total cooldowns reset: ${totalCount}`);
+    logger.info(`🔥 ADMIN: Total cooldowns reset: ${totalCount}`);
     
     res.json({ 
       success: true, 
@@ -2776,7 +2776,7 @@ app.post('/admin/reset-cooldowns', authenticateAdmin, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to reset cooldowns:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to reset cooldowns');
     res.status(500).json({ error: 'Failed to reset cooldowns' });
   }
 });
@@ -2796,7 +2796,7 @@ app.get('/admin/cooldowns', authenticateAdmin, async (req, res) => {
     
     res.json({ cooldowns: formattedCooldowns });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get cooldowns:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get cooldowns');
     res.status(500).json({ error: 'Failed to get cooldowns' });
   }
 });
@@ -2840,7 +2840,7 @@ app.get('/admin/system-metrics', authenticateAdmin, (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get system metrics:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get system metrics');
     res.status(500).json({ error: 'Failed to get system metrics' });
   }
 });
@@ -2850,7 +2850,7 @@ app.get('/admin/system-health', authenticateAdmin, (req, res) => {
     const healthSummary = resourceMonitor.getHealthSummary();
     res.json(healthSummary);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get system health:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get system health');
     res.status(500).json({ error: 'Failed to get system health' });
   }
 });
@@ -2860,7 +2860,7 @@ app.post('/admin/clear-alerts', authenticateAdmin, (req, res) => {
     resourceMonitor.clearAlerts();
     res.json({ success: true, message: 'System alerts cleared' });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to clear alerts:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to clear alerts');
     res.status(500).json({ error: 'Failed to clear alerts' });
   }
 });
@@ -2891,7 +2891,7 @@ app.get('/admin/performance-stats', authenticateAdmin, (req, res) => {
 
     res.json(performanceStats);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get performance stats:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get performance stats');
     res.status(500).json({ error: 'Failed to get performance stats' });
   }
 });
@@ -2920,7 +2920,7 @@ app.get('/api/admin/stream-details/:streamerId', authenticateModerator, (req, re
       connectionTime: socket.handshake.time
     });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get stream details:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get stream details');
     res.status(500).json({ error: 'Failed to get stream details' });
   }
 });
@@ -2944,7 +2944,7 @@ app.post('/api/admin/stream/disconnect', authenticateModerator, async (req, res)
     
     if (isViewbotStream) {
       // For viewbots, trigger rotation instead of disconnect
-      console.log(`🔨 MODERATION: Admin triggering viewbot rotation for stream ${streamerId}`);
+      logger.info(`🔨 MODERATION: Admin triggering viewbot rotation for stream ${streamerId}`);
       
       // Try different rotation methods based on what's available
       let rotationResult = { success: false, message: 'No rotation service available' };
@@ -2952,12 +2952,12 @@ app.post('/api/admin/stream/disconnect', authenticateModerator, async (req, res)
       if (viewBotClientService) {
         // Use ViewBotClientService for rotation
         rotationResult = await viewBotClientService.forceRotation();
-        console.log(`🤖 ROTATION: Triggered via ViewBotClientService:`, rotationResult);
+        logger.info({ rotationResult }, `🤖 ROTATION: Triggered via ViewBotClientService`);
       } else if (global.viewBotRotation) {
         // Use simple rotation service
         await global.viewBotRotation.forceRotation();
         rotationResult = { success: true, message: 'Rotation triggered via simple rotation service' };
-        console.log(`🤖 ROTATION: Triggered via simple rotation service`);
+        logger.info(`🤖 ROTATION: Triggered via simple rotation service`);
       }
       
       // Also ensure rotation is enabled after this action
@@ -2973,7 +2973,7 @@ app.post('/api/admin/stream/disconnect', authenticateModerator, async (req, res)
       });
     } else {
       // For regular users, perform normal disconnect
-      console.log(`🔨 MODERATION: Admin disconnecting regular stream ${streamerId}`);
+      logger.info(`🔨 MODERATION: Admin disconnecting regular stream ${streamerId}`);
       
       // Get the socket
       const socket = io.sockets.sockets.get(streamerId);
@@ -3002,7 +3002,7 @@ app.post('/api/admin/stream/disconnect', authenticateModerator, async (req, res)
       
       // After disconnecting a regular user, ensure viewbot rotation is enabled
       if (global.viewBotRotation) {
-        console.log(`🤖 ROTATION: Enabling rotation after user disconnect`);
+        logger.info(`🤖 ROTATION: Enabling rotation after user disconnect`);
         await global.viewBotRotation.startRotation();
       }
       
@@ -3014,7 +3014,7 @@ app.post('/api/admin/stream/disconnect', authenticateModerator, async (req, res)
       });
     }
   } catch (error) {
-    console.error('❌ MODERATION: Failed to disconnect/rotate stream:', error);
+    logger.error({ err: error }, '❌ MODERATION: Failed to disconnect/rotate stream');
     res.status(500).json({ error: 'Failed to disconnect stream' });
   }
 });
@@ -3052,7 +3052,7 @@ app.post('/api/admin/stream/ban-ip', authenticateModerator, async (req, res) => 
       return res.status(500).json({ error: 'Failed to ban IP', details: banResult.error });
     }
     
-    console.log(`🚫 MODERATION: IP ${ipToBan} banned by ${req.userRecord.username}`);
+    logger.info(`🚫 MODERATION: IP ${ipToBan} banned by ${req.userRecord.username}`);
     
     // If the streamer is currently streaming, disconnect them
     const currentStreamer = streamService.getCurrentStreamer();
@@ -3091,7 +3091,7 @@ app.post('/api/admin/stream/ban-ip', authenticateModerator, async (req, res) => 
       streamerId 
     });
   } catch (error) {
-    console.error('❌ MODERATION: Failed to ban IP:', error);
+    logger.error({ err: error }, '❌ MODERATION: Failed to ban IP');
     res.status(500).json({ error: 'Failed to ban IP' });
   }
 });
@@ -3101,7 +3101,7 @@ app.get('/api/admin/banned-ips', authenticateModerator, async (req, res) => {
     const bannedIPs = await IPBanService.getBannedIPs();
     res.json({ success: true, bannedIPs });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get banned IPs:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get banned IPs');
     res.status(500).json({ error: 'Failed to get banned IPs' });
   }
 });
@@ -3121,7 +3121,7 @@ app.post('/api/admin/unban-ip', authenticateModerator, async (req, res) => {
       return res.status(500).json({ error: 'Failed to unban IP', details: result.error });
     }
     
-    console.log(`✅ MODERATION: IP ${ip} unbanned by ${req.userRecord.username}`);
+    logger.info(`✅ MODERATION: IP ${ip} unbanned by ${req.userRecord.username}`);
     
     res.json({ 
       success: true, 
@@ -3129,7 +3129,7 @@ app.post('/api/admin/unban-ip', authenticateModerator, async (req, res) => {
       ip 
     });
   } catch (error) {
-    console.error('❌ MODERATION: Failed to unban IP:', error);
+    logger.error({ err: error }, '❌ MODERATION: Failed to unban IP');
     res.status(500).json({ error: 'Failed to unban IP' });
   }
 });
@@ -3162,7 +3162,7 @@ app.post('/api/admin/ban-ip-manual', authenticateModerator, async (req, res) => 
       return res.status(500).json({ error: 'Failed to ban IP', details: result.error });
     }
     
-    console.log(`🚫 MODERATION: IP ${ip} manually banned by ${req.userRecord.username} - Reason: ${reason}`);
+    logger.info(`🚫 MODERATION: IP ${ip} manually banned by ${req.userRecord.username} - Reason: ${reason}`);
     
     res.json({ 
       success: true, 
@@ -3171,7 +3171,7 @@ app.post('/api/admin/ban-ip-manual', authenticateModerator, async (req, res) => 
       reason 
     });
   } catch (error) {
-    console.error('❌ MODERATION: Failed to manually ban IP:', error);
+    logger.error({ err: error }, '❌ MODERATION: Failed to manually ban IP');
     res.status(500).json({ error: 'Failed to ban IP' });
   }
 });
@@ -3209,7 +3209,7 @@ app.get('/api/admin/streamer-connections', authenticateModerator, async (req, re
       count: connections.length 
     });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get streamer connections:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get streamer connections');
     res.status(500).json({ error: 'Failed to get streamer connections' });
   }
 });
@@ -3239,7 +3239,7 @@ app.get('/api/admin/streaming-logs', authenticateModerator, async (req, res) => 
     
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get streaming logs:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get streaming logs');
     res.status(500).json({ error: 'Failed to get streaming logs' });
   }
 });
@@ -3255,7 +3255,7 @@ app.get('/api/admin/streaming-logs/stats', authenticateModerator, async (req, re
     
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get streaming stats:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get streaming stats');
     res.status(500).json({ error: 'Failed to get streaming stats' });
   }
 });
@@ -3286,7 +3286,7 @@ app.post('/api/admin/streaming-logs/ban-ip', authenticateModerator, async (req, 
     // Mark session as banned
     await streamingLogsService.markSessionBanned(ip);
     
-    console.log(`🚫 STREAMING LOGS: IP ${ip} banned by ${req.userRecord.username} from logs`);
+    logger.info(`🚫 STREAMING LOGS: IP ${ip} banned by ${req.userRecord.username} from logs`);
     
     res.json({ 
       success: true, 
@@ -3294,7 +3294,7 @@ app.post('/api/admin/streaming-logs/ban-ip', authenticateModerator, async (req, 
       ip
     });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to ban IP from logs:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to ban IP from logs');
     res.status(500).json({ error: 'Failed to ban IP' });
   }
 });
@@ -3319,7 +3319,7 @@ app.post('/admin/upload-video', adminKeyAuth, upload.single('video'), (req, res)
       });
     }
 
-    console.log(`📁 ADMIN: Video uploaded - ${req.file.filename} (${(req.file.size / 1024 / 1024).toFixed(1)}MB)`);
+    logger.info(`📁 ADMIN: Video uploaded - ${req.file.filename} (${(req.file.size / 1024 / 1024).toFixed(1)}MB)`);
 
     res.json({
       success: true,
@@ -3332,7 +3332,7 @@ app.post('/admin/upload-video', adminKeyAuth, upload.single('video'), (req, res)
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Video upload error:', error);
+    logger.error({ err: error }, '❌ ADMIN: Video upload error');
     res.status(500).json({ 
       success: false, 
       error: 'Upload failed: ' + error.message 
@@ -3369,7 +3369,7 @@ app.get('/admin/uploaded-videos', adminKeyAuth, (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to list uploaded videos:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to list uploaded videos');
     res.status(500).json({ error: 'Failed to list videos' });
   }
 });
@@ -3390,7 +3390,7 @@ app.delete('/admin/uploaded-videos/:filename', adminKeyAuth, (req, res) => {
     }
 
     fs.unlinkSync(filePath);
-    console.log(`🗑️ ADMIN: Deleted uploaded video - ${filename}`);
+    logger.info(`🗑️ ADMIN: Deleted uploaded video - ${filename}`);
     
     res.json({ 
       success: true, 
@@ -3398,7 +3398,7 @@ app.delete('/admin/uploaded-videos/:filename', adminKeyAuth, (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to delete video:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to delete video');
     res.status(500).json({ error: 'Failed to delete video' });
   }
 });
@@ -3416,7 +3416,7 @@ app.post('/admin/recordings/start', authenticateAdmin, async (req, res) => {
       return res.status(400).json({ error: 'streamerId is required' });
     }
     
-    console.log(`🎬 ADMIN: Starting recording for streamer ${streamerId} with quality ${quality}`);
+    logger.info(`🎬 ADMIN: Starting recording for streamer ${streamerId} with quality ${quality}`);
     
     const result = await recordingService.startRecording(streamerId, { quality });
     
@@ -3436,7 +3436,7 @@ app.post('/admin/recordings/start', authenticateAdmin, async (req, res) => {
     }
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to start recording:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to start recording');
     res.status(500).json({ error: 'Failed to start recording' });
   }
 });
@@ -3447,7 +3447,7 @@ app.post('/admin/recordings/stop/:recordingId', authenticateAdmin, async (req, r
     const { recordingId } = req.params;
     const userId = req.user?.id || 'admin';
     
-    console.log(`🛑 ADMIN: Stopping recording ${recordingId}`);
+    logger.info(`🛑 ADMIN: Stopping recording ${recordingId}`);
     
     const result = await recordingService.stopRecording(recordingId, userId);
     
@@ -3466,7 +3466,7 @@ app.post('/admin/recordings/stop/:recordingId', authenticateAdmin, async (req, r
     }
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to stop recording:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to stop recording');
     res.status(500).json({ error: 'Failed to stop recording' });
   }
 });
@@ -3485,7 +3485,7 @@ app.get('/admin/recordings/status', authenticateAdmin, (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get recordings status:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get recordings status');
     res.status(500).json({ error: 'Failed to get recordings status' });
   }
 });
@@ -3502,7 +3502,7 @@ app.get('/admin/recordings/status/:recordingId', authenticateAdmin, (req, res) =
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get recording status:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get recording status');
     res.status(500).json({ error: 'Failed to get recording status' });
   }
 });
@@ -3546,7 +3546,7 @@ app.get('/admin/recordings/list', authenticateAdmin, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to list recordings:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to list recordings');
     res.status(500).json({ error: 'Failed to list recordings' });
   }
 });
@@ -3602,7 +3602,7 @@ app.get('/admin/recordings/stream/:filename', authenticateAdmin, async (req, res
     }
     
   } catch (error) {
-    console.error('❌ ADMIN: Error streaming recording:', error);
+    logger.error({ err: error }, '❌ ADMIN: Error streaming recording');
     res.status(500).json({ error: 'Failed to stream recording' });
   }
 });
@@ -3671,7 +3671,7 @@ app.get('/admin/recordings/all', authenticateAdmin, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Error fetching recordings:', error);
+    logger.error({ err: error }, '❌ ADMIN: Error fetching recordings');
     res.status(500).json({ error: 'Failed to fetch recordings' });
   }
 });
@@ -3711,14 +3711,14 @@ app.get('/admin/recordings/download/:recordingId', authenticateAdmin, async (req
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.setHeader('Content-Type', 'application/octet-stream');
     
-    console.log(`📥 ADMIN: Downloading recording ${recordingId} - ${fileName}`);
+    logger.info(`📥 ADMIN: Downloading recording ${recordingId} - ${fileName}`);
     
     // Stream the file
     const fileStream = fs.createReadStream(recording.file_path);
     fileStream.pipe(res);
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to download recording:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to download recording');
     res.status(500).json({ error: 'Failed to download recording' });
   }
 });
@@ -3729,7 +3729,7 @@ app.delete('/admin/recordings/:recordingId', authenticateAdmin, async (req, res)
     const { recordingId } = req.params;
     const userId = req.user?.id || 'admin';
     
-    console.log(`🗑️ ADMIN: Deleting recording ${recordingId}`);
+    logger.info(`🗑️ ADMIN: Deleting recording ${recordingId}`);
     
     // Check if this is a filename (contains .webm) or a recording ID
     if (recordingId.endsWith('.webm')) {
@@ -3745,7 +3745,7 @@ app.delete('/admin/recordings/:recordingId', authenticateAdmin, async (req, res)
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
           fileDeleted = true;
-          console.log(`🗑️ ADMIN: Deleted file: ${filePath}`);
+          logger.info(`🗑️ ADMIN: Deleted file: ${filePath}`);
           break;
         }
       }
@@ -3759,10 +3759,10 @@ app.delete('/admin/recordings/:recordingId', authenticateAdmin, async (req, res)
           // Try to find and delete database record
           const deleteQuery = 'DELETE FROM recordings WHERE file_path LIKE ?';
           await database.run(deleteQuery, [`%${filename}%`]);
-          console.log(`🗑️ ADMIN: Deleted database record for file: ${filename}`);
+          logger.info(`🗑️ ADMIN: Deleted database record for file: ${filename}`);
         }
       } catch (dbError) {
-        console.log('Note: Could not delete database record for file:', dbError.message);
+        logger.info({ err: dbError }, 'Note: Could not delete database record for file');
       }
       
       if (fileDeleted) {
@@ -3794,7 +3794,7 @@ app.delete('/admin/recordings/:recordingId', authenticateAdmin, async (req, res)
     }
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to delete recording:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to delete recording');
     res.status(500).json({ error: 'Failed to delete recording' });
   }
 });
@@ -3811,7 +3811,7 @@ app.get('/admin/recordings/active', authenticateAdmin, (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get active recordings:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get active recordings');
     res.status(500).json({ error: 'Failed to get active recordings' });
   }
 });
@@ -3831,7 +3831,7 @@ app.get('/admin/recordings/system-status', authenticateAdmin, async (req, res) =
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get system status:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get system status');
     res.status(500).json({ error: 'Failed to get system status' });
   }
 });
@@ -3839,7 +3839,7 @@ app.get('/admin/recordings/system-status', authenticateAdmin, async (req, res) =
 // Manual cleanup
 app.post('/admin/recordings/cleanup', authenticateAdmin, async (req, res) => {
   try {
-    console.log('🧹 ADMIN: Starting manual cleanup');
+    logger.info('🧹 ADMIN: Starting manual cleanup');
     
     const result = await recordingStorageService.cleanupOldRecordings();
     
@@ -3859,7 +3859,7 @@ app.post('/admin/recordings/cleanup', authenticateAdmin, async (req, res) => {
     }
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to run cleanup:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to run cleanup');
     res.status(500).json({ error: 'Failed to run cleanup' });
   }
 });
@@ -3883,7 +3883,7 @@ app.post('/admin/recordings/settings', authenticateAdmin, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to update settings:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to update settings');
     res.status(500).json({ error: 'Failed to update settings' });
   }
 });
@@ -3906,7 +3906,7 @@ app.post('/admin/recordings/:recordingId/compress', authenticateAdmin, async (re
       return res.status(404).json({ error: 'Recording file not found' });
     }
     
-    console.log(`🗜️ ADMIN: Adding recording ${recordingId} to compression queue`);
+    logger.info(`🗜️ ADMIN: Adding recording ${recordingId} to compression queue`);
     
     const result = await fileCompressionService.addToCompressionQueue(
       recordingId, 
@@ -3928,7 +3928,7 @@ app.post('/admin/recordings/:recordingId/compress', authenticateAdmin, async (re
     }
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to queue compression:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to queue compression');
     res.status(500).json({ error: 'Failed to queue compression' });
   }
 });
@@ -3942,7 +3942,7 @@ app.post('/admin/recordings/continuous/enable', authenticateAdmin, async (req, r
   try {
     const { quality } = req.body;
     
-    console.log(`🔄 ADMIN: Enabling continuous recording (${quality || '720p'})`);
+    logger.info(`🔄 ADMIN: Enabling continuous recording (${quality || '720p'})`);
     
     const result = await recordingService.enableContinuousRecording(quality);
     
@@ -3960,7 +3960,7 @@ app.post('/admin/recordings/continuous/enable', authenticateAdmin, async (req, r
     }
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to enable continuous recording:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to enable continuous recording');
     res.status(500).json({ error: 'Failed to enable continuous recording' });
   }
 });
@@ -3968,7 +3968,7 @@ app.post('/admin/recordings/continuous/enable', authenticateAdmin, async (req, r
 // Disable continuous recording
 app.post('/admin/recordings/continuous/disable', authenticateAdmin, async (req, res) => {
   try {
-    console.log('🛑 ADMIN: Disabling continuous recording');
+    logger.info('🛑 ADMIN: Disabling continuous recording');
     
     const result = await recordingService.disableContinuousRecording();
     
@@ -3985,7 +3985,7 @@ app.post('/admin/recordings/continuous/disable', authenticateAdmin, async (req, 
     }
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to disable continuous recording:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to disable continuous recording');
     res.status(500).json({ error: 'Failed to disable continuous recording' });
   }
 });
@@ -4001,7 +4001,7 @@ app.get('/admin/recordings/continuous/status', authenticateAdmin, (req, res) => 
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get continuous recording status:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get continuous recording status');
     res.status(500).json({ error: 'Failed to get continuous recording status' });
   }
 });
@@ -4009,7 +4009,7 @@ app.get('/admin/recordings/continuous/status', authenticateAdmin, (req, res) => 
 // Manually check and start continuous recording if stream is active
 app.post('/admin/recordings/continuous/check-and-start', authenticateAdmin, async (req, res) => {
   try {
-    console.log('🔍 ADMIN: Manually checking for active streams to start continuous recording');
+    logger.info('🔍 ADMIN: Manually checking for active streams to start continuous recording');
     
     const result = await recordingService.checkAndStartContinuousRecording();
     
@@ -4020,7 +4020,7 @@ app.post('/admin/recordings/continuous/check-and-start', authenticateAdmin, asyn
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to check and start continuous recording:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to check and start continuous recording');
     res.status(500).json({ error: 'Failed to check and start continuous recording' });
   }
 });
@@ -4039,19 +4039,19 @@ app.get('/admin/recordings/continuous/history/:sessionId', authenticateAdmin, as
     });
     
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get continuous recording history:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get continuous recording history');
     res.status(500).json({ error: 'Failed to get continuous recording history' });
   }
 });
 
 // Helper functions for stream state changes
 function notifyViewersStreamStarted() {
-  console.log('📊 TIME: Stream started - notifying viewers to start earning view time');
+  logger.info('📊 TIME: Stream started - notifying viewers to start earning view time');
 
   // Start continuous recording for clips
   if (continuousRecordingService) {
     continuousRecordingService.startRecording().catch(err => {
-      console.error('Failed to start continuous recording:', err);
+      logger.error({ err }, 'Failed to start continuous recording');
     });
   }
 
@@ -4068,7 +4068,7 @@ function notifyViewersStreamStarted() {
         const viewerSocket = io.sockets.sockets.get(socketId);
         if (viewerSocket && viewerSocket.rooms.has('viewers')) {
           timeTrackingService.startViewingSession(session.userId, socketId, true);
-          console.log(`📊 TIME: Started view tracking for existing viewer ${session.userId}`);
+          logger.info(`📊 TIME: Started view tracking for existing viewer ${session.userId}`);
         }
       }
     }
@@ -4076,7 +4076,7 @@ function notifyViewersStreamStarted() {
 }
 
 function notifyViewersStreamEnded() {
-  console.log('📊 TIME: Stream ended - stopping view time tracking for all viewers');
+  logger.info('📊 TIME: Stream ended - stopping view time tracking for all viewers');
   
   // Emit to all viewers
   io.to('viewers').emit('stream-ended-for-viewing');
@@ -4084,34 +4084,34 @@ function notifyViewersStreamEnded() {
   // Also manually stop existing viewing sessions
   for (const [socketId, session] of timeTrackingService.viewingSessions.entries()) {
     timeTrackingService.endViewingSessionBySocket(socketId);
-    console.log(`📊 TIME: Stopped view tracking for viewer socket ${socketId}`);
+    logger.info(`📊 TIME: Stopped view tracking for viewer socket ${socketId}`);
   }
   
   // Trigger ViewBot rotation after a delay when stream ends
   const triggerTime = Date.now();
-  console.log(`🔍 ROTATION TRIGGER: Stream ended at ${new Date(triggerTime).toISOString()}`);
-  console.log(`🔍 ROTATION TRIGGER: Checking conditions - viewBotRotation exists: ${!!global.viewBotRotation}, enabled: ${global.viewBotRotation?.enabled}`);
+  logger.info(`🔍 ROTATION TRIGGER: Stream ended at ${new Date(triggerTime).toISOString()}`);
+  logger.info(`🔍 ROTATION TRIGGER: Checking conditions - viewBotRotation exists: ${!!global.viewBotRotation}, enabled: ${global.viewBotRotation?.enabled}`);
   if (global.viewBotRotation && global.viewBotRotation.enabled) {
-    console.log('✅ ROTATION TRIGGER: Conditions met, scheduling rotation in 5s');
+    logger.info('✅ ROTATION TRIGGER: Conditions met, scheduling rotation in 5s');
     // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
     // grace window cancels the rotation attempt against a torn-down service.
     lifecycleManager.schedule('post-stream-rotation', async () => {
       const currentStreamer = streamService.getCurrentStreamer();
-      console.log(`🔍 ROTATION TRIGGER: After 5s delay (${Date.now() - triggerTime}ms elapsed) - currentStreamer: ${currentStreamer}`);
+      logger.info(`🔍 ROTATION TRIGGER: After 5s delay (${Date.now() - triggerTime}ms elapsed) - currentStreamer: ${currentStreamer}`);
       if (!currentStreamer && global.viewBotRotation && global.viewBotRotation.enabled) {
-        console.log('✅ ROTATION TRIGGER: No streamer, triggering rotation...');
+        logger.info('✅ ROTATION TRIGGER: No streamer, triggering rotation...');
         try {
           await global.viewBotRotation.rotateToNextBot();
-          console.log(`⏱️ ROTATION TRIGGER: Total time from stream end to rotation complete: ${Date.now() - triggerTime}ms`);
+          logger.info(`⏱️ ROTATION TRIGGER: Total time from stream end to rotation complete: ${Date.now() - triggerTime}ms`);
         } catch (error) {
-          console.error('❌ Failed to start rotation after stream end:', error);
+          logger.error({ err: error }, '❌ Failed to start rotation after stream end');
         }
       } else {
-        console.log(`⏭️  ROTATION TRIGGER: Skipped - currentStreamer: ${currentStreamer}`);
+        logger.info(`⏭️  ROTATION TRIGGER: Skipped - currentStreamer: ${currentStreamer}`);
       }
     }, 5000);
   } else {
-    console.log('❌ ROTATION TRIGGER: Conditions not met, rotation will not trigger');
+    logger.info('❌ ROTATION TRIGGER: Conditions not met, rotation will not trigger');
   }
 }
 
@@ -4124,14 +4124,14 @@ app.post('/admin/transcription/start', authenticateAdmin, async (req, res) => {
       return res.status(400).json({ error: 'streamerId is required' });
     }
     
-    console.log(`🎙️ ADMIN: Starting transcription for ${streamerId}`);
-    console.log(`🎙️ ADMIN: Options:`, options);
-    console.log(`🎙️ ADMIN: Current active streamer:`, streamService.getCurrentStreamer());
-    console.log(`🎙️ ADMIN: Stream type:`, streamService.getStreamType());
+    logger.info(`🎙️ ADMIN: Starting transcription for ${streamerId}`);
+    logger.info({ options }, `🎙️ ADMIN: Options`);
+    logger.info({ currentStreamer: streamService.getCurrentStreamer() }, `🎙️ ADMIN: Current active streamer`);
+    logger.info({ streamType: streamService.getStreamType() }, `🎙️ ADMIN: Stream type`);
     
     const result = await transcriptionService.startTranscription(streamerId, options);
     
-    console.log(`🎙️ ADMIN: Transcription start result:`, result);
+    logger.info({ result }, `🎙️ ADMIN: Transcription start result`);
     
     if (result.success) {
       // Forward to WebSocket clients
@@ -4144,7 +4144,7 @@ app.post('/admin/transcription/start', authenticateAdmin, async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to start transcription:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to start transcription');
     res.status(500).json({ error: 'Failed to start transcription' });
   }
 });
@@ -4153,7 +4153,7 @@ app.post('/admin/transcription/stop/:sessionId', authenticateAdmin, async (req, 
   try {
     const { sessionId } = req.params;
     
-    console.log(`🛑 ADMIN: Stopping transcription ${sessionId}`);
+    logger.info(`🛑 ADMIN: Stopping transcription ${sessionId}`);
     const result = await transcriptionService.stopTranscription(sessionId);
     
     if (result.success) {
@@ -4167,7 +4167,7 @@ app.post('/admin/transcription/stop/:sessionId', authenticateAdmin, async (req, 
     
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to stop transcription:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to stop transcription');
     res.status(500).json({ error: 'Failed to stop transcription' });
   }
 });
@@ -4180,7 +4180,7 @@ app.post('/admin/transcription/timed', authenticateAdmin, async (req, res) => {
       return res.status(400).json({ error: 'streamerId is required' });
     }
     
-    console.log(`⏱️ ADMIN: Timed transcription requested for ${streamerId} (${duration}s)`);
+    logger.info(`⏱️ ADMIN: Timed transcription requested for ${streamerId} (${duration}s)`);
     
     // Verify stream is active
     const currentStreamer = mediasoupService.getCurrentStreamer();
@@ -4195,7 +4195,7 @@ app.post('/admin/transcription/timed', authenticateAdmin, async (req, res) => {
     const result = await transcriptionService.startTimedTranscription(streamerId, duration, options);
     
     if (result.success) {
-      console.log(`✅ ADMIN: Timed transcription started: ${result.sessionId}`);
+      logger.info(`✅ ADMIN: Timed transcription started: ${result.sessionId}`);
       
       // Emit to WebSocket clients
       io.emit('transcription-started', {
@@ -4209,7 +4209,7 @@ app.post('/admin/transcription/timed', authenticateAdmin, async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to start timed transcription:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to start timed transcription');
     res.status(500).json({ error: 'Failed to start timed transcription' });
   }
 });
@@ -4235,7 +4235,7 @@ app.get('/api/transcription/:sessionId', authenticateAdmin, async (req, res) => 
     
     res.json(transcription);
   } catch (error) {
-    console.error('❌ API: Failed to get transcription:', error);
+    logger.error({ err: error }, '❌ API: Failed to get transcription');
     res.status(500).json({ error: 'Failed to get transcription' });
   }
 });
@@ -4248,7 +4248,7 @@ app.get('/api/transcriptions/active', authenticateAdmin, async (req, res) => {
       transcriptions: activeTranscriptions 
     });
   } catch (error) {
-    console.error('❌ API: Failed to get active transcriptions:', error);
+    logger.error({ err: error }, '❌ API: Failed to get active transcriptions');
     res.status(500).json({ error: 'Failed to get active transcriptions' });
   }
 });
@@ -4301,7 +4301,7 @@ app.post('/admin/transcription/config', authenticateAdmin, async (req, res) => {
       config: transcriptionService.config 
     });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to update transcription config:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to update transcription config');
     res.status(500).json({ error: 'Failed to update configuration' });
   }
 });
@@ -4341,7 +4341,7 @@ app.get('/admin/transcription/status', authenticateAdmin, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get transcription status:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get transcription status');
     res.status(500).json({ error: 'Failed to get status' });
   }
 });
@@ -4367,7 +4367,7 @@ app.get('/api/transcriptions/history', authenticateAdmin, async (req, res) => {
       ...result
     });
   } catch (error) {
-    console.error('❌ API: Failed to get transcription history:', error);
+    logger.error({ err: error }, '❌ API: Failed to get transcription history');
     res.status(500).json({ error: 'Failed to get history' });
   }
 });
@@ -4382,7 +4382,7 @@ app.delete('/admin/transcriptions/old', authenticateAdmin, async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to delete old transcriptions:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to delete old transcriptions');
     res.status(500).json({ error: 'Failed to delete old transcriptions' });
   }
 });
@@ -4404,7 +4404,7 @@ app.post('/admin/moviebot/enable', adminKeyAuth, async (req, res) => {
     const result = await movieBotService.enable(streamerId);
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to enable MovieBot:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to enable MovieBot');
     res.status(500).json({ error: 'Failed to enable MovieBot' });
   }
 });
@@ -4414,7 +4414,7 @@ app.post('/admin/moviebot/disable', adminKeyAuth, async (req, res) => {
     const result = await movieBotService.disable();
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to disable MovieBot:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to disable MovieBot');
     res.status(500).json({ error: 'Failed to disable MovieBot' });
   }
 });
@@ -4424,7 +4424,7 @@ app.get('/admin/moviebot/status', adminKeyAuth, async (req, res) => {
     const status = movieBotService.getStatus();
     res.json(status);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get MovieBot status:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get MovieBot status');
     res.status(500).json({ error: 'Failed to get MovieBot status' });
   }
 });
@@ -4434,7 +4434,7 @@ app.post('/admin/moviebot/config', adminKeyAuth, async (req, res) => {
     const result = movieBotService.updateConfig(req.body);
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to update MovieBot config:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to update MovieBot config');
     res.status(500).json({ error: 'Failed to update MovieBot config' });
   }
 });
@@ -4445,7 +4445,7 @@ app.get('/admin/moviebot/logs', adminKeyAuth, async (req, res) => {
     const logs = movieBotService.getRecentLogs(parseInt(limit));
     res.json({ logs });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get MovieBot logs:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get MovieBot logs');
     res.status(500).json({ error: 'Failed to get MovieBot logs' });
   }
 });
@@ -4465,7 +4465,7 @@ app.post('/admin/visionbot/enable', adminKeyAuth, async (req, res) => {
     const result = await svc.enable(streamerId);
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to enable VisionBot:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to enable VisionBot');
     res.status(500).json({ error: 'Failed to enable VisionBot' });
   }
 });
@@ -4477,7 +4477,7 @@ app.post('/admin/visionbot/disable', adminKeyAuth, async (req, res) => {
     const result = await svc.disable();
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to disable VisionBot:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to disable VisionBot');
     res.status(500).json({ error: 'Failed to disable VisionBot' });
   }
 });
@@ -4488,7 +4488,7 @@ app.get('/admin/visionbot/status', adminKeyAuth, async (req, res) => {
     if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
     res.json(svc.getStatus());
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get VisionBot status:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get VisionBot status');
     res.status(500).json({ error: 'Failed to get VisionBot status' });
   }
 });
@@ -4500,7 +4500,7 @@ app.post('/admin/visionbot/config', adminKeyAuth, async (req, res) => {
     const result = svc.updateConfig(req.body || {});
     res.json(result);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to update VisionBot config:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to update VisionBot config');
     res.status(500).json({ error: 'Failed to update VisionBot config' });
   }
 });
@@ -4512,7 +4512,7 @@ app.get('/admin/visionbot/logs', adminKeyAuth, async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
     res.json({ logs: svc.getRecentLogs(limit) });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get VisionBot logs:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get VisionBot logs');
     res.status(500).json({ error: 'Failed to get VisionBot logs' });
   }
 });
@@ -4523,7 +4523,7 @@ app.get('/admin/groq/status', adminKeyAuth, async (req, res) => {
     const status = chatBotService.llmService.getGroqStatus();
     res.json(status);
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get Groq status:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get Groq status');
     res.status(500).json({ error: 'Failed to get Groq status' });
   }
 });
@@ -4539,10 +4539,10 @@ app.post('/admin/groq/config', adminKeyAuth, async (req, res) => {
       model || null
     );
 
-    console.log('🚀 ADMIN: Updated global Groq settings:', result);
+    logger.info({ result }, '🚀 ADMIN: Updated global Groq settings');
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to update Groq config:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to update Groq config');
     res.status(500).json({ error: 'Failed to update Groq config' });
   }
 });
@@ -4571,7 +4571,7 @@ app.get('/admin/openai/status', adminKeyAuth, async (req, res) => {
       envKeyPresent: !!process.env.OPENAI_API_KEY,
     });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to get OpenAI status:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to get OpenAI status');
     res.status(500).json({ error: 'Failed to get OpenAI status' });
   }
 });
@@ -4606,7 +4606,7 @@ app.post('/admin/openai/config', adminKeyAuth, async (req, res) => {
     params.push('admin');
     await database.runAsync(`UPDATE openai_config SET ${fields.join(', ')} WHERE id = 1`, params);
 
-    console.log(`🔑 ADMIN: Updated openai_config (enabled=${enabled !== undefined ? enabled : 'unchanged'}, apiKey=${apiKey === undefined ? 'unchanged' : (apiKey ? 'updated' : 'cleared')})`);
+    logger.info(`🔑 ADMIN: Updated openai_config (enabled=${enabled !== undefined ? enabled : 'unchanged'}, apiKey=${apiKey === undefined ? 'unchanged' : (apiKey ? 'updated' : 'cleared')})`);
     // Return the same shape as /status so the admin UI can render the
     // post-write state without an extra round-trip.
     const row = await database.getAsync('SELECT enabled, api_key, updated_at, updated_by FROM openai_config WHERE id = 1');
@@ -4622,7 +4622,7 @@ app.post('/admin/openai/config', adminKeyAuth, async (req, res) => {
       note: 'A server restart is required for the new key to take effect — the boot-time resolver reads this row once on startup.',
     });
   } catch (error) {
-    console.error('❌ ADMIN: Failed to update OpenAI config:', error);
+    logger.error({ err: error }, '❌ ADMIN: Failed to update OpenAI config');
     res.status(500).json({ error: 'Failed to update OpenAI config' });
   }
 });
@@ -4630,7 +4630,7 @@ app.post('/admin/openai/config', adminKeyAuth, async (req, res) => {
 // Forward transcription events to clients
 transcriptionService.on('transcription-chunk', (data) => {
   io.emit('transcription-update', data);
-  console.log(`📝 TRANSCRIPTION: Broadcasting chunk ${data.chunkNumber} for session ${data.sessionId}`);
+  logger.info(`📝 TRANSCRIPTION: Broadcasting chunk ${data.chunkNumber} for session ${data.sessionId}`);
 });
 
 // Forward audio buffer status updates
@@ -4651,17 +4651,17 @@ transcriptionService.on('transcription-stopped', (data) => {
 // Forward MovieBot events to clients
 movieBotService.on('moviebot-enabled', (data) => {
   io.emit('moviebot-enabled', data);
-  console.log(`🎬 MOVIEBOT: Broadcasting enabled event`);
+  logger.info(`🎬 MOVIEBOT: Broadcasting enabled event`);
 });
 
 movieBotService.on('moviebot-disabled', (data) => {
   io.emit('moviebot-disabled', data);
-  console.log(`🎬 MOVIEBOT: Broadcasting disabled event`);
+  logger.info(`🎬 MOVIEBOT: Broadcasting disabled event`);
 });
 
 movieBotService.on('moviebot-comment', (data) => {
   io.emit('moviebot-comment', data);
-  console.log(`🎬 MOVIEBOT: Broadcasting comment from ${data.bot}`);
+  logger.info(`🎬 MOVIEBOT: Broadcasting comment from ${data.bot}`);
 });
 
 // VisionBot lifecycle events forwarded to clients (parallel to MovieBot above).
@@ -4674,18 +4674,18 @@ visionBotService.on('visionbot-disabled', (data) => {
 
 movieBotService.on('prompt-logged', (data) => {
   io.emit('moviebot-prompt-logged', data);
-  console.log(`📋 MOVIEBOT: Prompt logged for ${data.bot}`);
+  logger.info(`📋 MOVIEBOT: Prompt logged for ${data.bot}`);
 });
 
 io.on('connection', async (socket) => {
-  console.log(`🆕 NEW CONNECTION: Socket ${socket.id} connected at ${new Date().toISOString()}`);
+  logger.info(`🆕 NEW CONNECTION: Socket ${socket.id} connected at ${new Date().toISOString()}`);
   
   // Check if IP is banned
   const clientIP = IPBanService.getIPFromSocket(socket);
   const isBanned = await IPBanService.isIPBanned(clientIP);
   
   if (isBanned) {
-    console.log(`🚫 CONNECTION: Banned IP attempted to connect: ${clientIP}`);
+    logger.info(`🚫 CONNECTION: Banned IP attempted to connect: ${clientIP}`);
     socket.emit('banned', { 
       reason: 'Your IP address has been banned from this service',
       timestamp: new Date().toISOString()
@@ -4696,16 +4696,16 @@ io.on('connection', async (socket) => {
   
   // Handle authentication if token is provided
   const token = socket.handshake.auth?.token;
-  console.log(`🔑 SOCKET AUTH: Token provided for ${socket.id}:`, !!token);
+  logger.info({ token: !!token }, `🔑 SOCKET AUTH: Token provided for ${socket.id}`);
   
   let authenticatedUserId = null;
   if (token) {
     try {
       const decoded = authService.verifyToken(token);
       authenticatedUserId = decoded.id;
-      console.log(`✅ SOCKET AUTH: User authenticated: ${socket.id} -> User ID ${authenticatedUserId}`);
+      logger.info(`✅ SOCKET AUTH: User authenticated: ${socket.id} -> User ID ${authenticatedUserId}`);
     } catch (error) {
-      console.log(`❌ SOCKET AUTH: Invalid token for ${socket.id}:`, error.message);
+      logger.info({ err: error }, `❌ SOCKET AUTH: Invalid token for ${socket.id}`);
     }
   }
 
@@ -4717,21 +4717,21 @@ io.on('connection', async (socket) => {
   if (authenticatedUserId) {
     sessionService.linkUserToSession(ip, authenticatedUserId);
     sessionService.linkUserToSocket(socket.id, authenticatedUserId);
-    console.log(`🔗 SOCKET AUTH: Associated user ${authenticatedUserId} with session for IP ${ip}`);
+    logger.info(`🔗 SOCKET AUTH: Associated user ${authenticatedUserId} with session for IP ${ip}`);
   } else {
     // Clear any existing user ID from the session for anonymous users
     sessionService.linkUserToSession(ip, null);
     sessionService.linkUserToSocket(socket.id, null);
-    console.log(`🔗 SOCKET AUTH: Cleared user ID for anonymous connection from IP ${ip}`);
+    logger.info(`🔗 SOCKET AUTH: Cleared user ID for anonymous connection from IP ${ip}`);
   }
   
-  console.log(`📡 SOCKET: User connected: ${socket.id} from IP: ${ip}, session: ${JSON.stringify(session)}`);
+  logger.info(`📡 SOCKET: User connected: ${socket.id} from IP: ${ip}, session: ${JSON.stringify(session)}`);
 
   // Debug: Log all events for ViewBot connections
   socket.onAny((eventName, ...args) => {
-    console.log(`🔴 DEBUG: Socket ${socket.id} received event '${eventName}'`);
+    logger.info(`🔴 DEBUG: Socket ${socket.id} received event '${eventName}'`);
     if (eventName === 'request-to-stream') {
-      console.log(`🔴 DEBUG: request-to-stream args:`, args);
+      logger.info({ args }, `🔴 DEBUG: request-to-stream args`);
     }
   });
 
@@ -4948,13 +4948,13 @@ async function startServer() {
   // Initialize resource monitoring
   resourceMonitor.setCallbacks({
     onAlert: (alert) => {
-      console.warn(`🚨 RESOURCE ALERT: ${alert.message} (${alert.value})`);
+      logger.warn(`🚨 RESOURCE ALERT: ${alert.message} (${alert.value})`);
       // Could emit to admin clients here
     },
     onMetricsUpdate: (metrics) => {
       // Could emit real-time metrics to admin clients
       if (metrics.system.cpuUsage > 90 || metrics.system.memoryUsage > 95) {
-        console.error('🔴 CRITICAL: System resources critically high!');
+        logger.error('🔴 CRITICAL: System resources critically high!');
       }
     }
   });
@@ -4964,12 +4964,12 @@ async function startServer() {
   // Start time tracking cleanup
   timeTrackingService.startPeriodicCleanup();
   timeTrackingService.setSocketIO(io); // Pass Socket.IO instance to time tracking service
-  console.log('✅ TIME: Started periodic cleanup for time tracking service');
+  logger.info('✅ TIME: Started periodic cleanup for time tracking service');
   
   // Initialize mediasoup worker (restored to original)
   try {
     await mediasoupService.initialize();
-    console.log('✅ MEDIASOUP: Initialization completed');
+    logger.info('✅ MEDIASOUP: Initialization completed');
     
     // ── PR-I4: late ViewBot service construction ───────────────────────────
     // The four named ViewBot services (Viewbot, ViewBotWebRTC,
@@ -5001,14 +5001,14 @@ async function startServer() {
       stoppables.push(livekitService);
     }
     stoppables.push(...viewBotStoppables);
-    console.log('✅ VIEWBOT: ViewbotService initialized');
+    logger.info('✅ VIEWBOT: ViewbotService initialized');
     if (viewBotWebRTCService) {
-      console.log('✅ VIEWBOT: ViewBotWebRTCService initialized for mobile 5G/TURN support');
+      logger.info('✅ VIEWBOT: ViewBotWebRTCService initialized for mobile 5G/TURN support');
     } else {
-      console.log('ℹ️ VIEWBOT: Skipping ViewBotWebRTCService (using LiveKit backend)');
+      logger.info('ℹ️ VIEWBOT: Skipping ViewBotWebRTCService (using LiveKit backend)');
     }
     if (viewBotLiveKitService) {
-      console.log('✅ VIEWBOT: ViewBotLiveKitService initialized for LiveKit RTMP ingress');
+      logger.info('✅ VIEWBOT: ViewBotLiveKitService initialized for LiveKit RTMP ingress');
     }
 
     // Branch-shared orchestration: SimpleViewBotRotation always learns about
@@ -5036,7 +5036,7 @@ async function startServer() {
       app.locals.whitelistService = whitelistService;
       global.whitelistService = whitelistService;
     } catch (e) {
-      console.error('❌ WhitelistService failed to initialize:', e.message);
+      logger.error({ err: e }, '❌ WhitelistService failed to initialize');
       if (process.env.URL_RELAY_REQUIRE_WHITELIST_SERVICE === 'true') {
         throw e;
       }
@@ -5053,7 +5053,7 @@ async function startServer() {
     // app.locals.whitelistService is missing.
     const whitelistRoutes = require('./routes/whitelist');
     app.use('/api/whitelist', whitelistRoutes());
-    console.log('✅ WHITELIST: API routes mounted at /api/whitelist');
+    logger.info('✅ WHITELIST: API routes mounted at /api/whitelist');
 
     // PR-M1 (ADR-0013): AI-moderation pipeline. Inline init because
     // initialize() is async — applies the schema, verifies seed integrity
@@ -5084,12 +5084,12 @@ async function startServer() {
         const row = await database.getAsync('SELECT api_key, enabled FROM groq_config WHERE id = 1');
         if (row && row.enabled === 1 && row.api_key) {
           moderationGroqKey = row.api_key;
-          console.log('✅ ModerationStage2: Groq key loaded from groq_config table (env unset)');
+          logger.info('✅ ModerationStage2: Groq key loaded from groq_config table (env unset)');
         } else {
-          console.log('⚠️ ModerationStage2: no Groq key in env OR groq_config — Stage 2 will be skipped');
+          logger.info('⚠️ ModerationStage2: no Groq key in env OR groq_config — Stage 2 will be skipped');
         }
       } catch (e) {
-        console.warn('⚠️ ModerationStage2: could not read groq_config:', e.message);
+        logger.warn({ err: e }, '⚠️ ModerationStage2: could not read groq_config');
       }
     }
     const moderationStage2 = new ModerationStage2({
@@ -5120,12 +5120,12 @@ async function startServer() {
         const row = await database.getAsync('SELECT api_key, enabled FROM openai_config WHERE id = 1');
         if (row && row.enabled === 1 && row.api_key) {
           moderationOpenAiKey = row.api_key;
-          console.log('✅ ModerationStage3: OpenAI key loaded from openai_config table (env unset)');
+          logger.info('✅ ModerationStage3: OpenAI key loaded from openai_config table (env unset)');
         } else {
-          console.log('⚠️ ModerationStage3: no OpenAI key in env OR openai_config — Stage 3 (text + image) will be skipped');
+          logger.info('⚠️ ModerationStage3: no OpenAI key in env OR openai_config — Stage 3 (text + image) will be skipped');
         }
       } catch (e) {
-        console.warn('⚠️ ModerationStage3: could not read openai_config:', e.message);
+        logger.warn({ err: e }, '⚠️ ModerationStage3: could not read openai_config');
       }
     }
     const moderationStage3 = new ModerationStage3({
@@ -5162,7 +5162,7 @@ async function startServer() {
         cleanRetentionDays: parseInt(process.env.AI_MODERATION_RETENTION_CLEAN_DAYS, 10) || 30,
       });
     } catch (e) {
-      console.error('❌ ModerationService failed to initialize:', e.message);
+      logger.error({ err: e }, '❌ ModerationService failed to initialize');
       if (process.env.AI_MODERATION_REQUIRE_SERVICE === 'true') {
         throw e;
       }
@@ -5199,7 +5199,7 @@ async function startServer() {
     // safe to mount unconditionally (matches the PR-W5 whitelist pattern).
     const moderationAIRoutes = require('./routes/moderation-ai');
     app.use('/api/moderation-ai', moderationAIRoutes());
-    console.log('✅ MODERATION-AI: API routes mounted at /api/moderation-ai');
+    logger.info('✅ MODERATION-AI: API routes mounted at /api/moderation-ai');
 
     // ── Streaming-backend orchestration (extracted in PR 9.3) ─────────────
     // The aligned ~160-line block produced by PR 9.2 lives in
@@ -5231,21 +5231,21 @@ async function startServer() {
       // Run database migration to ensure recording tables exist
       const { setupRecordingTables } = require('./migrations/setup-recording-tables');
       await setupRecordingTables();
-      console.log('✅ RECORDING: Database tables verified');
+      logger.info('✅ RECORDING: Database tables verified');
 
       // Recording service is ready to use
-      console.log('✅ RECORDING: Recording system initialized and ready');
+      logger.info('✅ RECORDING: Recording system initialized and ready');
     } catch (error) {
-      console.error('❌ RECORDING: Failed to initialize recording system:', error);
+      logger.error({ err: error }, '❌ RECORDING: Failed to initialize recording system');
     }
 
     // Run clips table migration (separate try/catch so it runs even if recording fails)
     try {
       const setupClipsTables = require('./migrations/setup-clips-tables');
       await setupClipsTables(database.db);
-      console.log('✅ CLIPS: Database tables verified');
+      logger.info('✅ CLIPS: Database tables verified');
     } catch (error) {
-      console.error('❌ CLIPS: Failed to initialize clips tables:', error);
+      logger.error({ err: error }, '❌ CLIPS: Failed to initialize clips tables');
     }
     
     // Inject viewbotService into InventoryService for viewbot targeting
@@ -5258,7 +5258,7 @@ async function startServer() {
     // global, route hookup, and async initialize() that depend on it still
     // happen here because their error handling nulls out the local on
     // failure (and that pattern is too entangled to lift cleanly).
-    console.log('🚀 VIEWBOT CLIENT: ViewBotClientService constructed by factory');
+    logger.info('🚀 VIEWBOT CLIENT: ViewBotClientService constructed by factory');
 
     // Set global reference for ViewBotClientService (needed for GStreamer WebRTC)
     global.viewBotClientService = viewBotClientService;
@@ -5266,17 +5266,17 @@ async function startServer() {
     // CRITICAL: Wire ViewBotClientService to ViewBotURLService for real streamer protection
     if (global.viewBotURLService) {
       global.viewBotURLService.setViewBotClientService(viewBotClientService);
-      console.log('✅ VIEWBOT CLIENT: Linked to ViewBotURLService for real streamer protection');
+      logger.info('✅ VIEWBOT CLIENT: Linked to ViewBotURLService for real streamer protection');
     }
 
     // CRITICAL: Initialize the service to restore state from database
     try {
-      console.log('🚀 VIEWBOT CLIENT: Initializing ViewBotClientService...');
+      logger.info('🚀 VIEWBOT CLIENT: Initializing ViewBotClientService...');
       await viewBotClientService.initialize();
-      console.log('✅ VIEWBOT CLIENT: ViewBotClientService initialized and state restored');
+      logger.info('✅ VIEWBOT CLIENT: ViewBotClientService initialized and state restored');
     } catch (error) {
-      console.error('❌ VIEWBOT CLIENT: Failed to initialize ViewBotClientService:', error);
-      console.log('⚠️ VIEWBOT CLIENT: Continuing without ViewBotClientService');
+      logger.error({ err: error }, '❌ VIEWBOT CLIENT: Failed to initialize ViewBotClientService');
+      logger.info('⚠️ VIEWBOT CLIENT: Continuing without ViewBotClientService');
       viewBotClientService = null;
     }
     
@@ -5284,7 +5284,7 @@ async function startServer() {
     global.io = io;
     global.streamService = streamService;
     global.streamManager = streamService;  // streamManager and streamService are same
-    console.log('✅ GLOBAL OBJECTS: Set global.io and global.streamService for event emission');
+    logger.info('✅ GLOBAL OBJECTS: Set global.io and global.streamService for event emission');
     // PR 4.2: removed a 5-second dev-only "test-event" emit that fired on
     // every boot just to sanity-check global.io. The two preceding typeof
     // log lines already cover that — the deferred broadcast was dead-code
@@ -5299,19 +5299,19 @@ async function startServer() {
           .filter(file => ['.mp4', '.webm', '.mkv', '.avi', '.mov'].includes(path.extname(file).toLowerCase()))
           .map(file => path.join(uploadsDir, file));
       } catch (error) {
-        console.error('Failed to read video files:', error);
+        logger.error({ err: error }, 'Failed to read video files');
         return [];
       }
     }
     
     // Initialize NEW ViewBot Rotation System with Socket.IO clients
-    console.log('🚀 VIEWBOT ROTATION: Starting initialization...');
+    logger.info('🚀 VIEWBOT ROTATION: Starting initialization...');
     try {
       const ViewBotRotationService = require('./services/ViewBotRotationService');
-      console.log('✅ VIEWBOT ROTATION: Service module loaded');
+      logger.info('✅ VIEWBOT ROTATION: Service module loaded');
       
       const viewBotRotation = new ViewBotRotationService('https://127.0.0.1:8443');
-      console.log('✅ VIEWBOT ROTATION: Service instance created');
+      logger.info('✅ VIEWBOT ROTATION: Service instance created');
 
       // PR 3.1: stop-bot's `stream-ended` emit now goes through the chokepoint.
       viewBotRotation.setStreamNotifier(streamNotifier);
@@ -5319,9 +5319,9 @@ async function startServer() {
       // Register LiveKit service if available
       if (global.viewBotLiveKitService) {
         viewBotRotation.setLiveKitService(global.viewBotLiveKitService);
-        console.log('✅ VIEWBOT ROTATION: LiveKit service registered');
+        logger.info('✅ VIEWBOT ROTATION: LiveKit service registered');
       } else {
-        console.log('⚠️ VIEWBOT ROTATION: LiveKit service not available, will use MediaSoup');
+        logger.info('⚠️ VIEWBOT ROTATION: LiveKit service not available, will use MediaSoup');
       }
 
       // Store globally for admin routes
@@ -5330,10 +5330,10 @@ async function startServer() {
 
       // Initialize with media files
       await viewBotRotation.initialize();
-      console.log('✅ VIEWBOT ROTATION: Service initialized');
+      logger.info('✅ VIEWBOT ROTATION: Service initialized');
       
       // Initialize Unified ViewBot Rotation with WebRTC support
-      console.log('🌐 Initializing WebRTC ViewBot support...');
+      logger.info('🌐 Initializing WebRTC ViewBot support...');
       try {
         const UnifiedViewBotRotation = require('./services/UnifiedViewBotRotation');
         const ViewBotManager = require('./services/ViewBotManager');
@@ -5356,17 +5356,17 @@ async function startServer() {
         // Set initial mode based on config
         if (viewBotConfig.viewbots.useWebRTCViewBots) {
           await unifiedRotation.setMode('webrtc');
-          console.log('✅ WebRTC ViewBot mode enabled (mobile compatible)');
+          logger.info('✅ WebRTC ViewBot mode enabled (mobile compatible)');
         } else {
           // CRITICAL: Explicitly set mode to plainrtp - default is 'webrtc' which would cause failures
           await unifiedRotation.setMode('plainrtp');
-          console.log('ℹ️ Using Plain RTP ViewBot mode (desktop only)');
+          logger.info('ℹ️ Using Plain RTP ViewBot mode (desktop only)');
         }
         
-        console.log('✅ Unified ViewBot Rotation initialized');
+        logger.info('✅ Unified ViewBot Rotation initialized');
       } catch (error) {
-        console.warn('⚠️ WebRTC ViewBot support not available:', error.message);
-        console.log('ℹ️ Continuing with Plain RTP viewbots only');
+        logger.warn({ err: error }, '⚠️ WebRTC ViewBot support not available');
+        logger.info('ℹ️ Continuing with Plain RTP viewbots only');
       }
       
       // Update settings to achieve ~3.5 minute average
@@ -5384,33 +5384,33 @@ async function startServer() {
       global.portMonitor = portMonitor;
       portMonitor.startMonitoring();
       stoppables.push(portMonitor);
-      console.log('✅ PORT MONITOR: Service started');
+      logger.info('✅ PORT MONITOR: Service started');
       
       // Enable rotation
       viewBotRotation.enabled = true;
-      console.log(`🔍 VIEWBOT ROTATION: Enabled set to ${viewBotRotation.enabled}`);
+      logger.info(`🔍 VIEWBOT ROTATION: Enabled set to ${viewBotRotation.enabled}`);
 
       // Delay rotation start to ensure server is fully ready.
       // PR 4.2: routed through LifecycleManager so SIGTERM during the 10 s
       // grace window cancels the rotation start against a torn-down
       // mediasoup / viewbot stack.
-      console.log('⏰ VIEWBOT ROTATION: Scheduling rotation start in 10 seconds...');
+      logger.info('⏰ VIEWBOT ROTATION: Scheduling rotation start in 10 seconds...');
       lifecycleManager.schedule('viewbot-rotation-start', async () => {
         try {
-          console.log('🚀 VIEWBOT ROTATION: Starting rotation after delay...');
+          logger.info('🚀 VIEWBOT ROTATION: Starting rotation after delay...');
           await viewBotRotation.startRotation();
-          console.log('✅ VIEWBOT ROTATION: Rotation started successfully');
+          logger.info('✅ VIEWBOT ROTATION: Rotation started successfully');
         } catch (error) {
-          console.error('❌ VIEWBOT ROTATION: Failed to start rotation:', error);
+          logger.error({ err: error }, '❌ VIEWBOT ROTATION: Failed to start rotation');
         }
       }, 10000);
-      console.log('✅ VIEWBOT ROTATION: schedule registered');
+      logger.info('✅ VIEWBOT ROTATION: schedule registered');
       
-      console.log('✅ VIEWBOT ROTATION: New Socket.IO-based rotation system initialized');
+      logger.info('✅ VIEWBOT ROTATION: New Socket.IO-based rotation system initialized');
 
     } catch (error) {
-      console.error('❌ VIEWBOT ROTATION: Failed to initialize:', error);
-      console.error(error.stack);
+      logger.error({ err: error }, '❌ VIEWBOT ROTATION: Failed to initialize');
+      logger.error(error.stack);
     }
     
     // ViewBots are now persisted in database and restored automatically
@@ -5425,44 +5425,44 @@ async function startServer() {
     
     // Add new video management API routes
     app.use('/admin/viewbot', viewbotVideoApi);
-    console.log('✅ VIEWBOT API: Routes initialized with service instance');
+    logger.info('✅ VIEWBOT API: Routes initialized with service instance');
   } catch (error) {
-    console.error('❌ MEDIASOUP: Initialization failed:', error);
-    console.log('⚠️ Continuing without mediasoup and viewbot services...');
+    logger.error({ err: error }, '❌ MEDIASOUP: Initialization failed');
+    logger.info('⚠️ Continuing without mediasoup and viewbot services...');
     viewbotService = null;
     viewBotClientService = null;
   }
   
   // Initialize ChatBot service
   try {
-    console.log('🤖 SERVER: Initializing ChatBot service...');
+    logger.info('🤖 SERVER: Initializing ChatBot service...');
     initializeChatBotRoutes(chatBotService);
-    console.log('🤖 SERVER: ChatBot routes initialized');
+    logger.info('🤖 SERVER: ChatBot routes initialized');
     
     await chatBotService.initialize();
-    console.log('🤖 SERVER: ChatBot service initialization completed');
+    logger.info('🤖 SERVER: ChatBot service initialization completed');
     
     // Initialize StreamBot service
     await streamBotService.initialize();
-    console.log('📢 SERVER: StreamBot service initialized');
+    logger.info('📢 SERVER: StreamBot service initialized');
     
     // Set up periodic cleanup for expired temporary bots
     setInterval(async () => {
       try {
         const cleaned = await chatBotService.cleanupExpiredBots();
         if (cleaned > 0) {
-          console.log(`🧹 Cleaned up ${cleaned} expired temporary bots`);
+          logger.info(`🧹 Cleaned up ${cleaned} expired temporary bots`);
         }
       } catch (error) {
-        console.error('❌ Error during bot cleanup:', error);
+        logger.error({ err: error }, '❌ Error during bot cleanup');
       }
     }, 5 * 60 * 1000); // Run every 5 minutes
-    console.log('⏰ Scheduled periodic cleanup for expired bots');
+    logger.info('⏰ Scheduled periodic cleanup for expired bots');
   } catch (error) {
-    console.error('❌ SERVER: ChatBot service initialization failed:', error);
-    console.error('❌ SERVER: ChatBot service stack trace:', error.stack);
+    logger.error({ err: error }, '❌ SERVER: ChatBot service initialization failed');
+    logger.error({ err: error }, '❌ SERVER: ChatBot service stack trace');
     // Continue without ChatBot service rather than crashing
-    console.log('⚠️ SERVER: Continuing without ChatBot service...');
+    logger.info('⚠️ SERVER: Continuing without ChatBot service...');
   }
 
   // Social-media embed routes (Open Graph + Twitter Card + JSON-LD for the
@@ -5535,7 +5535,7 @@ async function startServer() {
     const deletionScheduler = new AccountDeletionScheduler();
     deletionScheduler.start();
     stoppables.push(deletionScheduler);
-    console.log('🗑️ Account deletion scheduler started');
+    logger.info('🗑️ Account deletion scheduler started');
   }, 5000);
 
   // HTTP + HTTPS listener startup extracted to server/bootstrap/start-listeners.js
@@ -5544,20 +5544,20 @@ async function startServer() {
   startListeners({ httpServer, httpsServer, port: PORT, httpsPort: HTTPS_PORT });
 
   // PR 4.3: deleted a 5-second-interval "keep-alive log" setInterval whose
-  // body was a commented-out console.log — the timer was no-op work that
+  // body was a commented-out log call — the timer was no-op work that
   // contributed to the leaked-handle tally in background-work.md. Node
   // doesn't need a setInterval to stay alive — the httpServer/httpsServer
   // listening sockets already keep the process up.
 
   httpServer.on('error', (err) => {
-    console.error('❌ SERVER: Server error:', err);
+    logger.error({ err }, '❌ SERVER: Server error');
   });
 }
 
-startServer().catch(console.error);
+startServer().catch((err) => logger.error({ err }, 'startServer failed'));
 
 async function shutdown(signal) {
-  console.log(`🛑 Received ${signal}, shutting down server gracefully...`);
+  logger.info(`🛑 Received ${signal}, shutting down server gracefully...`);
 
   try {
     // PR 1.2: iterate the stoppables registry in reverse-construction
@@ -5567,7 +5567,7 @@ async function shutdown(signal) {
     // would surface as an unhandled rejection after Promise.race resolves.
     // svc.stop?.() is wrapped in an async IIFE so a synchronous throw
     // inside stop() lands in the per-iteration catch rather than escaping.
-    console.log(`🛑 Stopping ${stoppables.length} registered service(s)...`);
+    logger.info(`🛑 Stopping ${stoppables.length} registered service(s)...`);
     for (const svc of [...stoppables].reverse()) {
       const name = svc?.constructor?.name || 'anonymous';
       let timer;
@@ -5577,14 +5577,14 @@ async function shutdown(signal) {
       try {
         await Promise.race([(async () => svc.stop?.())(), timeout]);
       } catch (e) {
-        console.error(`   ⚠️  ${name}.stop() failed: ${e.message}`);
+        logger.error({ err: e, name }, '   ⚠️  service stop() failed');
       } finally {
         clearTimeout(timer);
       }
     }
 
     // 1. Disconnect all socket connections
-    console.log('🔌 Disconnecting all socket connections...');
+    logger.info('🔌 Disconnecting all socket connections...');
     const sockets = await io.fetchSockets();
     for (const socket of sockets) {
       socket.disconnect(true);
@@ -5596,18 +5596,18 @@ async function shutdown(signal) {
     // not yet wrapped (viewBotGStreamerService, ffmpeg children on
     // RecordingService.activeRecordings, etc.). A follow-up PR can prune
     // entries that overlap with stoppables once the iterator is proven.
-    console.log('🎬 Stopping all media streams...');
+    logger.info('🎬 Stopping all media streams...');
     
     // Stop ViewBot GStreamer streams (check if service exists first)
     if (typeof viewBotGStreamerService !== 'undefined' && viewBotGStreamerService) {
-      console.log('   Stopping ViewBot GStreamer streams...');
+      logger.info('   Stopping ViewBot GStreamer streams...');
       if (viewBotGStreamerService.stopAll) {
         await viewBotGStreamerService.stopAll();
       } else if (viewBotGStreamerService.activeStreams) {
         // Fallback if stopAll method doesn't exist
         for (const [botId, stream] of viewBotGStreamerService.activeStreams) {
           if (stream.process && !stream.process.killed) {
-            console.log(`   - Killing GStreamer for bot ${botId}`);
+            logger.info(`   - Killing GStreamer for bot ${botId}`);
             stream.process.kill('SIGTERM');
           }
         }
@@ -5620,7 +5620,7 @@ async function shutdown(signal) {
     
     // Stop ViewBot Client Service streams
     if (viewBotClientService) {
-      console.log('   Cleaning up ViewBot Client Service...');
+      logger.info('   Cleaning up ViewBot Client Service...');
       await viewBotClientService.cleanup();
     }
     
@@ -5629,10 +5629,10 @@ async function shutdown(signal) {
     
     // Stop Stream Interceptor Service GStreamer processes
     if (streamInterceptorService && streamInterceptorService.activeIntercepts) {
-      console.log('   Stopping Stream Interceptor GStreamer processes...');
+      logger.info('   Stopping Stream Interceptor GStreamer processes...');
       for (const [streamId, intercept] of streamInterceptorService.activeIntercepts) {
         if (intercept.processor && !intercept.processor.killed) {
-          console.log(`   - Killing GStreamer interceptor for stream ${streamId}`);
+          logger.info(`   - Killing GStreamer interceptor for stream ${streamId}`);
           intercept.processor.kill('SIGTERM');
         }
       }
@@ -5641,9 +5641,9 @@ async function shutdown(signal) {
     
     // Stop main Viewbot service
     if (viewbotService) {
-      console.log('   Stopping main Viewbot service...');
+      logger.info('   Stopping main Viewbot service...');
       if (viewbotService.viewbotProcess && !viewbotService.viewbotProcess.killed) {
-        console.log('   - Killing Viewbot FFmpeg process');
+        logger.info('   - Killing Viewbot FFmpeg process');
         viewbotService.viewbotProcess.kill('SIGTERM');
       }
       // Always cleanup to ensure WebRTC service is stopped
@@ -5652,13 +5652,13 @@ async function shutdown(signal) {
 
     // Stop URL Stream ViewBot service (critical for cleanup of FFmpeg processes)
     if (global.viewBotURLService) {
-      console.log('   Stopping URL Stream ViewBot service...');
+      logger.info('   Stopping URL Stream ViewBot service...');
       await global.viewBotURLService.stopAllURLStreams();
     }
     
     // Stop Simple Media Stream Service
     if (typeof simpleMediaStreamService !== 'undefined' && simpleMediaStreamService && simpleMediaStreamService.ffmpegProcess) {
-      console.log('   Stopping Simple Media Stream FFmpeg...');
+      logger.info('   Stopping Simple Media Stream FFmpeg...');
       if (!simpleMediaStreamService.ffmpegProcess.killed) {
         simpleMediaStreamService.ffmpegProcess.kill('SIGTERM');
       }
@@ -5666,10 +5666,10 @@ async function shutdown(signal) {
     
     // Stop Recording Service streams
     if (recordingService && recordingService.activeRecordings) {
-      console.log('   Stopping Recording Service FFmpeg processes...');
+      logger.info('   Stopping Recording Service FFmpeg processes...');
       for (const [id, recording] of recordingService.activeRecordings) {
         if (recording.ffmpegProcess && !recording.ffmpegProcess.killed) {
-          console.log(`   - Stopping recording ${id}`);
+          logger.info(`   - Stopping recording ${id}`);
           recording.ffmpegProcess.kill('SIGTERM');
         }
       }
@@ -5677,34 +5677,34 @@ async function shutdown(signal) {
     
     // Stop Visual FX Service pipelines
     if (visualFxService && visualFxService.activePipelines) {
-      console.log('   Stopping Visual FX pipelines...');
+      logger.info('   Stopping Visual FX pipelines...');
       for (const [id, pipeline] of visualFxService.activePipelines) {
         if (pipeline.ffmpegProcess && !pipeline.ffmpegProcess.killed) {
-          console.log(`   - Stopping visual FX pipeline ${id}`);
+          logger.info(`   - Stopping visual FX pipeline ${id}`);
           pipeline.ffmpegProcess.kill('SIGTERM');
         }
       }
     }
     
     // Kill any remaining FFmpeg/GStreamer/Puppeteer processes as a safety measure
-    console.log('🔍 Checking for any remaining media processes...');
+    logger.info('🔍 Checking for any remaining media processes...');
     const { exec } = require('child_process');
     
     // Windows-specific process cleanup
     if (process.platform === 'win32') {
       // Kill all ffmpeg processes
       exec('taskkill /F /IM ffmpeg.exe 2>nul', (err) => {
-        if (!err) console.log('   - Killed remaining FFmpeg processes');
+        if (!err) logger.info('   - Killed remaining FFmpeg processes');
       });
       
       // Kill all gst-launch processes (multiple possible names)
       exec('taskkill /F /IM gst-launch-1.0.exe 2>nul', (err) => {
-        if (!err) console.log('   - Killed remaining GStreamer (gst-launch-1.0) processes');
+        if (!err) logger.info('   - Killed remaining GStreamer (gst-launch-1.0) processes');
       });
       
       // Also check for gst-launch without version
       exec('taskkill /F /IM gst-launch.exe 2>nul', (err) => {
-        if (!err) console.log('   - Killed remaining GStreamer (gst-launch) processes');
+        if (!err) logger.info('   - Killed remaining GStreamer (gst-launch) processes');
       });
       
       // Kill any other GStreamer-related processes
@@ -5713,22 +5713,22 @@ async function shutdown(signal) {
       
       // Use WMI to find and kill processes by command line pattern
       exec('wmic process where "CommandLine like \'%gstreamer%\'" delete 2>nul', (err) => {
-        if (!err) console.log('   - Killed processes with gstreamer in command line');
+        if (!err) logger.info('   - Killed processes with gstreamer in command line');
       });
       
       // Kill Puppeteer Chrome processes
       exec('taskkill /F /IM chrome.exe /FI "COMMANDLINE like *puppeteer*" 2>nul', (err) => {
-        if (!err) console.log('   - Killed Puppeteer Chrome processes');
+        if (!err) logger.info('   - Killed Puppeteer Chrome processes');
       });
       exec('taskkill /F /IM chromium.exe /FI "COMMANDLINE like *puppeteer*" 2>nul', () => {});
     } else {
       // Unix-like systems
       exec('pkill -TERM ffmpeg 2>/dev/null', (err) => {
-        if (!err) console.log('   - Killed remaining FFmpeg processes');
+        if (!err) logger.info('   - Killed remaining FFmpeg processes');
       });
       
       exec('pkill -TERM gst-launch 2>/dev/null', (err) => {
-        if (!err) console.log('   - Killed remaining GStreamer processes');
+        if (!err) logger.info('   - Killed remaining GStreamer processes');
       });
       
       // Also kill by full name pattern
@@ -5737,7 +5737,7 @@ async function shutdown(signal) {
       
       // Kill Puppeteer Chrome/Chromium processes
       exec('pkill -f "puppeteer.*chrome" 2>/dev/null', (err) => {
-        if (!err) console.log('   - Killed Puppeteer Chrome processes');
+        if (!err) logger.info('   - Killed Puppeteer Chrome processes');
       });
       exec('pkill -f "chrome.*--no-sandbox.*--disable-setuid-sandbox" 2>/dev/null', () => {});
     }
@@ -5746,13 +5746,13 @@ async function shutdown(signal) {
     await new Promise(resolve => setTimeout(resolve, 500));
     
     // 3. Clean up MediaSoup resources
-    console.log('🧹 Cleaning up MediaSoup resources...');
+    logger.info('🧹 Cleaning up MediaSoup resources...');
     if (mediasoupService) {
       mediasoupService.cleanupAll();
     }
     
     // 3.5. Clean up WebRTC ViewBot systems
-    console.log('🧹 Cleaning up ViewBot systems...');
+    logger.info('🧹 Cleaning up ViewBot systems...');
     if (global.unifiedViewBotRotation) {
       await global.unifiedViewBotRotation.shutdown();
     }
@@ -5761,37 +5761,37 @@ async function shutdown(signal) {
     }
     
     // 4. Clear all sessions
-    console.log('📊 Clearing session data...');
+    logger.info('📊 Clearing session data...');
     if (sessionService) {
       sessionService.clearAllSessions();
     }
     
     // 5. Stop resource monitoring
-    console.log('📈 Stopping resource monitor...');
+    logger.info('📈 Stopping resource monitor...');
     resourceMonitor.stopMonitoring();
     
     // 6. Stop time tracking
-    console.log('⏱️ Stopping time tracking...');
+    logger.info('⏱️ Stopping time tracking...');
     if (timeTrackingService) {
       timeTrackingService.stopPeriodicCleanup();
     }
     
     // 7. Close Redis connection
     if (redisClient) {
-      console.log('🔴 Closing Redis connection...');
+      logger.info('🔴 Closing Redis connection...');
       await redisClient.quit();
     }
     
     // 8. Close the HTTP server
-    console.log('🌐 Closing HTTP server...');
+    logger.info('🌐 Closing HTTP server...');
     await new Promise((resolve) => {
       server.close(resolve);
     });
     
-    console.log('✅ Graceful shutdown complete');
+    logger.info('✅ Graceful shutdown complete');
     process.exit(0);
   } catch (error) {
-    console.error('❌ Error during shutdown:', error);
+    logger.error({ err: error }, '❌ Error during shutdown');
     process.exit(1);
   }
 }
@@ -5804,6 +5804,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // Handle uncaught exceptions and unhandled rejections
 process.on('uncaughtException', (error) => {
+  // console-allowed: uncaughtException fallback
   console.error('💥 Uncaught Exception:', error);
   // Attempt cleanup before exit
   cleanupMediaProcesses();
@@ -5811,6 +5812,7 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
+  // console-allowed: uncaughtException fallback
   console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
   // Don't exit on unhandled rejection, but log it
 });
