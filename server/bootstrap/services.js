@@ -134,6 +134,10 @@ const { GameService, GameStreamService } = require('../services/game');
 const ChatBotService = require('../services/ChatBotService');
 const StreamBotService = require('../services/StreamBotService');
 const MovieBotService = require('../services/MovieBotService');
+// VisionBot — sibling of MovieBot. Frame source is egressFrameCaptureService;
+// trigger is BotEventBus 'moviebot-transcription-complete' (when MovieBot is
+// also enabled) and/or its own scheduler.
+const VisionBotService = require('../services/VisionBotService');
 // PR 1.3: shared event bus that decouples ChatBot from MovieBot.
 const BotEventBus = require('../services/BotEventBus');
 
@@ -371,6 +375,21 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     botEventBus
   );
 
+  // VisionBot subscribes to MovieBot's bus event ('moviebot-transcription-
+  // complete') AND runs its own scheduler — dedup catches doubles. Must
+  // be constructed AFTER movieBotService so the listener attaches before
+  // the first scheduled MovieBot cycle fires.
+  const visionBotService = new VisionBotService({
+    transcriptionService,
+    chatBotService,
+    chatService: chatServiceWrapper,
+    database,
+    botEventBus,
+    frameCaptureService: egressFrameCaptureService,
+    streamService,
+    continuousRecordingService,
+  });
+
   // Post-construction wiring. setMovieBotService was removed in PR 1.3
   // (replaced by the bus); the rest remain because they pass forward-
   // declared instances, not because of a cycle.
@@ -420,6 +439,8 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     chatBotService,
     streamBotService,
     movieBotService,
+    // VisionBot phase:
+    visionBotService,
     // PR 1.3:
     botEventBus,
     // PR 4.2:
@@ -446,6 +467,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     recordingCleanupScheduler,
     continuousRecordingService,
     egressFrameCaptureService,
+    visionBotService,
     streamBotService,
     // PR 8.3 (Phase 8): ProcessManager runs LATE in the shutdown order
     // (early in the array → late in reverse-iteration) so the per-bot

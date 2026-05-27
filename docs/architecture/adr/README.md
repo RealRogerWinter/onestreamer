@@ -59,6 +59,7 @@ What else we looked at and why we did not pick it.
 | 0015 | [Transaction shape for multi-statement DB operations](0015-transaction-shape-for-multi-statement.md) | accepted |
 | 0016 | [Tick-loop watchdog pattern (observability only)](0016-tick-loop-watchdog-observability-only.md) | accepted |
 | 0017 | [MediaSoup/LiveKit branch alignment plan](0017-mediasoup-livekit-alignment-plan.md) | accepted |
+| 0018 | [VisionBot — multi-modal screenshot commentary](0018-visionbot-screenshot-comments.md) | accepted |
 
 ### Note on the 0013a slug
 

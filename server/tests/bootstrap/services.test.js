@@ -58,6 +58,7 @@ jest.mock('../../services/ClipStorageService', () => class { constructor(...args
 jest.mock('../../services/ClipProcessorService', () => class { constructor(...args) { this._args = args; this._stubName = 'ClipProcessorService'; } });
 jest.mock('../../services/ContinuousRecordingService', () => class { constructor(...args) { this._args = args; this._stubName = 'ContinuousRecordingService'; } });
 jest.mock('../../services/EgressFrameCaptureService', () => class { constructor(...args) { this._args = args; this._stubName = 'EgressFrameCaptureService'; } });
+jest.mock('../../services/VisionBotService', () => class { constructor(...args) { this._args = args; this._stubName = 'VisionBotService'; } });
 jest.mock('../../services/ClipService', () => class { constructor(...args) { this._args = args; this._stubName = 'ClipService'; } });
 jest.mock('../../services/SessionChatCaptureService', () => class { constructor(...args) { this._args = args; this._stubName = 'SessionChatCaptureService'; } });
 jest.mock('../../services/RecordingUploadScheduler', () => class { constructor(...args) { this._args = args; this._stubName = 'RecordingUploadScheduler'; } });
@@ -203,6 +204,7 @@ const ClipStorageService = require('../../services/ClipStorageService');
 const ClipProcessorService = require('../../services/ClipProcessorService');
 const ContinuousRecordingService = require('../../services/ContinuousRecordingService');
 const EgressFrameCaptureService = require('../../services/EgressFrameCaptureService');
+const VisionBotService = require('../../services/VisionBotService');
 const ClipService = require('../../services/ClipService');
 const SessionChatCaptureService = require('../../services/SessionChatCaptureService');
 const RecordingUploadScheduler = require('../../services/RecordingUploadScheduler');
@@ -239,7 +241,7 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 41 expected keys (no more, no less)', () => {
+  test('returns all 42 expected keys (no more, no less)', () => {
     const { services } = createServices(buildDeps());
 
     const expectedKeys = [
@@ -290,6 +292,8 @@ describe('server/bootstrap/services factory', () => {
       'chatBotService',
       'streamBotService',
       'movieBotService',
+      // VisionBot phase
+      'visionBotService',
       // PR 1.3
       'botEventBus',
       // PR 4.2
@@ -297,7 +301,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(41);
+    expect(expectedKeys).toHaveLength(42);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -345,6 +349,7 @@ describe('server/bootstrap/services factory', () => {
     expect(s.chatBotService).toBeInstanceOf(ChatBotService);
     expect(s.streamBotService).toBeInstanceOf(StreamBotService);
     expect(s.movieBotService).toBeInstanceOf(MovieBotService);
+    expect(s.visionBotService).toBeInstanceOf(VisionBotService);
     // PR 4.2
     expect(s.lifecycleManager).toBeInstanceOf(LifecycleManager);
   });

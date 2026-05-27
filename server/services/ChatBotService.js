@@ -1260,7 +1260,155 @@ class ChatBotService {
             return { success: false, error: error.message };
         }
     }
-    
+
+    // VisionBot dispatch. Mirrors generateMovieComment but routes through
+    // ChatBotLLMService.generateVisionComment (which sends a base64 image
+    // to Groq Llama 4 Scout). Adds two guards on top of MovieBot's flow:
+    //   1. Stream-takeover check at emit time — if streamGeneration has
+    //      bumped since the frame was captured, drop the message; otherwise
+    //      streamer A's frame would post into streamer B's chat.
+    //   2. exact_prompt persisted to chatbot_message_history is a redacted
+    //      summary, NOT the raw chat history + transcription. Raw text
+    //      alongside a face image is the PII trifecta we want to avoid.
+    async generateVisionCommentForBot({
+        bot,
+        frame,
+        transcription,
+        chatHistory,
+        abortSignal,
+        sourceStreamerId,
+        sourceStreamGeneration,
+        visionPromptTemplate,
+        model,
+        maxTokens,
+        temperature,
+        streamService,
+    }) {
+        const botInstance = this.bots.get(bot.id);
+        if (!botInstance || !botInstance.connected) {
+            return { success: false, error: 'Bot not connected' };
+        }
+        if (botInstance.data && botInstance.data.is_temporary && botInstance.data.expires_at) {
+            const now = new Date();
+            const expiresAt = new Date(botInstance.data.expires_at);
+            if (now >= expiresAt) {
+                this.cleanupExpiredBots();
+                return { success: false, error: 'Bot has expired' };
+            }
+        }
+
+        const personality = botInstance.data && botInstance.data.personality_traits
+            ? JSON.parse(botInstance.data.personality_traits)
+            : {};
+
+        // Vision-template-aware bot prompt: combine the bot's own personality
+        // prompt with the VisionBot system template (transcription is
+        // interpolated into the user-role text, not the system prompt).
+        const botPrompt = (botInstance.data && botInstance.data.prompt) || '';
+
+        let response;
+        try {
+            response = await this.llmService.generateVisionComment({
+                botPrompt: visionPromptTemplate
+                    ? `${botPrompt}\n\n${visionPromptTemplate.replace('[TRANSCRIPTION_DATA]', '')}`
+                    : botPrompt,
+                imageBase64: frame.jpegBase64,
+                transcription,
+                chatHistory: chatHistory || [],
+                personality,
+                model,
+                username: bot.username,
+                maxTokens,
+                temperature,
+                abortSignal,
+            });
+        } catch (err) {
+            // Re-throw typed errors so VisionBotService can record them in
+            // stats / backoff state.
+            throw err;
+        }
+
+        // Output moderation gate (same as MovieBot).
+        if (response && response.message && this.moderationService &&
+            typeof this.moderationService.checkBotOutput === 'function') {
+            try {
+                const gate = await this.moderationService.checkBotOutput(response.message, {
+                    streamerId: null,
+                    botUsername: bot.username,
+                    botType: 'vision',
+                    frame_path: frame.sourceSegment,
+                });
+                if (gate && gate.allowed === false) {
+                    const err = new Error(`moderation_dropped:${gate.reason}`);
+                    err.droppedReason = 'moderated';
+                    throw err;
+                }
+            } catch (modErr) {
+                if (modErr.droppedReason === 'moderated') throw modErr;
+                console.error('❌ ChatBotService: vision moderation gate threw:', modErr.message);
+            }
+        }
+
+        // F3 takeover guard. Compare the stream generation captured at frame
+        // time against the current value at emit time. Mismatch → streamer
+        // A's frame is about to land in streamer B's chat. Drop instead.
+        if (streamService && typeof streamService.streamGeneration === 'number'
+            && typeof sourceStreamGeneration === 'number'
+            && streamService.streamGeneration !== sourceStreamGeneration) {
+            const err = new Error('streamer_changed');
+            err.droppedReason = 'streamer_changed';
+            throw err;
+        }
+
+        if (!response || !response.message || !botInstance.socket || !botInstance.connected) {
+            return { success: false, error: 'no_response_or_socket' };
+        }
+
+        const messageId = `vision_${Date.now()}_${bot.id}`;
+        botInstance.socket.emit('send-message', {
+            message: response.message,
+            messageId,
+        });
+
+        // Persist with REDACTED exact_prompt — only structural metadata, no
+        // raw chat usernames/messages/transcription. The frame is referenced
+        // by its segment name (the JPEG itself lives under logs/visionbot/
+        // frames/ with its own retention). This is the F5a PII fix.
+        const exactPromptRedacted = JSON.stringify({
+            type: 'vision_comment',
+            systemPromptLength: response.exactPrompt ? response.exactPrompt.systemPromptLength : null,
+            userPromptLength: response.exactPrompt ? response.exactPrompt.userPromptLength : null,
+            chatHistoryCount: chatHistory ? chatHistory.length : 0,
+            transcriptionLength: transcription ? transcription.length : 0,
+            model: response.model,
+            personalityName: personality && personality.name ? personality.name : null,
+        });
+
+        try {
+            await this.repo.insertMovieComment({
+                chatbotId: bot.id,
+                message: response.message,
+                metadata: JSON.stringify({
+                    is_vision_comment: true,
+                    timestamp: new Date().toISOString(),
+                    messageId,
+                    socket_id: botInstance.socket.id,
+                    frame_segment: frame.sourceSegment,
+                    frame_size_bytes: frame.sizeBytes,
+                    frame_captured_at: frame.capturedAt,
+                    source_streamer_id: sourceStreamerId,
+                    source_stream_generation: sourceStreamGeneration,
+                    model: response.model,
+                }),
+                exactPrompt: exactPromptRedacted,
+            });
+        } catch (persistErr) {
+            console.error('❌ ChatBotService: vision comment persistence failed:', persistErr.message);
+        }
+
+        return { success: true, message: response.message, bot: bot.username, messageId };
+    }
+
     setGlobalPrompt(prompt) {
         this.globalPrompt = prompt;
         console.log('🤖 ChatBotService: Global prompt updated');

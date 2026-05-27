@@ -421,6 +421,17 @@ function initializeDatabase() {
                     }
                 });
             }
+
+            // VisionBot per-bot opt-in flag.
+            if (!columnNames.includes('vision_bot_enabled')) {
+                db.run(`ALTER TABLE chatbots ADD COLUMN vision_bot_enabled BOOLEAN DEFAULT 0`, (err) => {
+                    if (err && !err.message.includes('duplicate column')) {
+                        console.error('Error adding vision_bot_enabled column to chatbots:', err);
+                    } else if (!err) {
+                        console.log('Added vision_bot_enabled column to chatbots');
+                    }
+                });
+            }
         });
 
         // Chat Messages Table for MovieBot history
@@ -437,6 +448,49 @@ function initializeDatabase() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_chatbot_sessions_bot_id ON chatbot_sessions(chatbot_id)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_chatbot_message_history_bot_id ON chatbot_message_history(chatbot_id)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)`);
+
+        // VisionBot singleton config. Mirrors moviebot_config but with the
+        // vision-specific knobs (model, frame resolution/quality, retention,
+        // url-relay gate, backoff state, status counters).
+        db.run(`
+            CREATE TABLE IF NOT EXISTS visionbot_config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled BOOLEAN DEFAULT 0,
+                streamer_id TEXT DEFAULT NULL,
+                vision_prompt_template TEXT,
+                transcription_frequency_s INTEGER DEFAULT 120,
+                transcription_duration_s INTEGER DEFAULT 45,
+                image_resolution_px INTEGER DEFAULT 384,
+                image_quality INTEGER DEFAULT 70,
+                vision_model TEXT DEFAULT 'meta-llama/llama-4-scout-17b-16e-instruct',
+                max_response_tokens INTEGER DEFAULT 150,
+                temperature REAL DEFAULT 0.7,
+                max_bots_per_cycle INTEGER DEFAULT 3,
+                frame_retention_hours INTEGER DEFAULT 1,
+                allow_url_relay BOOLEAN DEFAULT 0,
+                last_groq_429_at DATETIME,
+                consecutive_failures INTEGER DEFAULT 0,
+                last_success_at DATETIME,
+                last_error_reason TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Per-user opt-out for vision frame capture (privacy).
+        db.all(`PRAGMA table_info(users)`, (err, columns) => {
+            if (err) return;
+            const colNames = (columns || []).map(c => c.name);
+            if (!colNames.includes('vision_audit_optout')) {
+                db.run(`ALTER TABLE users ADD COLUMN vision_audit_optout BOOLEAN DEFAULT 0`, (e) => {
+                    if (e && !e.message.includes('duplicate column')) {
+                        console.error('Error adding vision_audit_optout to users:', e);
+                    } else if (!e) {
+                        console.log('Added vision_audit_optout column to users');
+                    }
+                });
+            }
+        });
 
         // Global ChatBot Configuration
         db.run(`

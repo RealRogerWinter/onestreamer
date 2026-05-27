@@ -138,7 +138,19 @@ class MovieBotService extends TranscriptionDrivenBotService {
         };
     }
 
-    async onTranscriptionComplete(transcription, _sessionData) {
+    async onTranscriptionComplete(transcription, sessionData) {
+        // Rebroadcast on BotEventBus so siblings (VisionBot) can ride this
+        // window. Done before the dispatch so VisionBot starts its frame
+        // capture in parallel with MovieBot's chat dispatch.
+        if (this.botEventBus && sessionData) {
+            this.botEventBus.emit('moviebot-transcription-complete', {
+                streamerId: this.currentStreamerId,
+                sessionId: sessionData.sessionId,
+                transcription,
+                endTime: sessionData.endTime,
+                wordCount: sessionData.wordCount,
+            });
+        }
         await this.processTranscriptionWithBatching(transcription, 0);
     }
 

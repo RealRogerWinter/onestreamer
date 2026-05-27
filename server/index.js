@@ -510,6 +510,8 @@ const {
   chatBotService,
   streamBotService,
   movieBotService,
+  // VisionBot phase: sibling of MovieBotService.
+  visionBotService,
   // PR 3.1: single `stream-ended` emit chokepoint.
   streamNotifier,
   // PR 3.2: single `viewer-count-update` emit chokepoint.
@@ -4442,6 +4444,73 @@ app.get('/admin/moviebot/logs', adminKeyAuth, async (req, res) => {
   }
 });
 
+// VisionBot admin endpoints — sibling block to MovieBot above. Mirrors that
+// shape: enable / disable / status / config / logs. Auth via adminKeyAuth
+// to match the existing MovieBot client-side calls from BotsPanel.
+app.post('/admin/visionbot/enable', adminKeyAuth, async (req, res) => {
+  try {
+    const svc = req.app.locals.services && req.app.locals.services.visionBotService;
+    if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
+    const streamerId = (req.body && req.body.streamerId)
+      || (streamService.getCurrentStreamer && streamService.getCurrentStreamer());
+    if (!streamerId) {
+      return res.status(400).json({ success: false, error: 'No active streamer; pass streamerId.' });
+    }
+    const result = await svc.enable(streamerId);
+    res.json(result);
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to enable VisionBot:', error);
+    res.status(500).json({ error: 'Failed to enable VisionBot' });
+  }
+});
+
+app.post('/admin/visionbot/disable', adminKeyAuth, async (req, res) => {
+  try {
+    const svc = req.app.locals.services && req.app.locals.services.visionBotService;
+    if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
+    const result = await svc.disable();
+    res.json(result);
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to disable VisionBot:', error);
+    res.status(500).json({ error: 'Failed to disable VisionBot' });
+  }
+});
+
+app.get('/admin/visionbot/status', adminKeyAuth, async (req, res) => {
+  try {
+    const svc = req.app.locals.services && req.app.locals.services.visionBotService;
+    if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
+    res.json(svc.getStatus());
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get VisionBot status:', error);
+    res.status(500).json({ error: 'Failed to get VisionBot status' });
+  }
+});
+
+app.post('/admin/visionbot/config', adminKeyAuth, async (req, res) => {
+  try {
+    const svc = req.app.locals.services && req.app.locals.services.visionBotService;
+    if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
+    const result = svc.updateConfig(req.body || {});
+    res.json(result);
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to update VisionBot config:', error);
+    res.status(500).json({ error: 'Failed to update VisionBot config' });
+  }
+});
+
+app.get('/admin/visionbot/logs', adminKeyAuth, async (req, res) => {
+  try {
+    const svc = req.app.locals.services && req.app.locals.services.visionBotService;
+    if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
+    res.json({ logs: svc.getRecentLogs(limit) });
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get VisionBot logs:', error);
+    res.status(500).json({ error: 'Failed to get VisionBot logs' });
+  }
+});
+
 // Global Groq API endpoints for ALL chatbots
 app.get('/admin/groq/status', adminKeyAuth, async (req, res) => {
   try {
@@ -4507,6 +4576,14 @@ movieBotService.on('moviebot-disabled', (data) => {
 movieBotService.on('moviebot-comment', (data) => {
   io.emit('moviebot-comment', data);
   console.log(`🎬 MOVIEBOT: Broadcasting comment from ${data.bot}`);
+});
+
+// VisionBot lifecycle events forwarded to clients (parallel to MovieBot above).
+visionBotService.on('visionbot-enabled', (data) => {
+  io.emit('visionbot-enabled', data);
+});
+visionBotService.on('visionbot-disabled', (data) => {
+  io.emit('visionbot-disabled', data);
 });
 
 movieBotService.on('prompt-logged', (data) => {
