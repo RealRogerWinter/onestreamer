@@ -2,6 +2,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcrypt');
 const applyPragmas = require('./applyPragmas');
+const migrationRunner = require('../migrations/_runner');
 
 const logger = require('../bootstrap/logger').child({ svc: 'database' });
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
@@ -101,43 +102,6 @@ function initializeDatabase() {
         db.run(`
             CREATE INDEX IF NOT EXISTS idx_user_sessions_ip ON user_sessions(ip_address)
         `);
-
-        // Add new columns if they don't exist (migration)
-        db.run(`ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                logger.error('Error adding is_admin column:', err);
-            }
-        });
-
-        db.run(`ALTER TABLE users ADD COLUMN is_banned BOOLEAN DEFAULT 0`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                logger.error('Error adding is_banned column:', err);
-            }
-        });
-
-        db.run(`ALTER TABLE users ADD COLUMN is_moderator BOOLEAN DEFAULT 0`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                logger.error('Error adding is_moderator column:', err);
-            }
-        });
-
-        // Drop the legacy `points` column. `user_stats.points_balance` is the
-        // authoritative source per the migrate-points-system migration; the
-        // `points` column was its calculated-on-read predecessor and has been
-        // unread for some time. Idempotent: second run errors with "no such
-        // column" which we ignore.
-        db.run(`ALTER TABLE user_stats DROP COLUMN points`, (err) => {
-            if (err && !err.message.includes('no such column')) {
-                logger.error('Error dropping legacy points column:', err);
-            }
-        });
-
-        // Add chat_color column to user_stats if it doesn't exist (migration)
-        db.run(`ALTER TABLE user_stats ADD COLUMN chat_color TEXT DEFAULT NULL`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                logger.error('Error adding chat_color column:', err);
-            }
-        });
 
         // Item System Tables
         db.run(`
@@ -253,25 +217,6 @@ function initializeDatabase() {
             )
         `);
 
-        // Add new columns to items table for buff/debuff properties
-        db.run(`ALTER TABLE items ADD COLUMN duration_seconds INTEGER DEFAULT 0`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                logger.error('Error adding duration_seconds column:', err);
-            }
-        });
-
-        db.run(`ALTER TABLE items ADD COLUMN effect_data TEXT`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                logger.error('Error adding effect_data column:', err);
-            }
-        });
-
-        db.run(`ALTER TABLE items ADD COLUMN stack_behavior TEXT DEFAULT 'replace'`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                logger.error('Error adding stack_behavior column:', err);
-            }
-        });
-
         // Create indexes for better performance
         db.run(`CREATE INDEX IF NOT EXISTS idx_user_inventory_user_id ON user_inventory(user_id)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_item_usage_log_user_id ON item_usage_log(user_id)`);
@@ -322,118 +267,6 @@ function initializeDatabase() {
             )
         `);
 
-        // Add new columns to existing table if they don't exist
-        db.all("PRAGMA table_info(chatbot_message_history)", (err, columns) => {
-            if (err) {
-                logger.error('Error checking table structure:', err);
-                return;
-            }
-            
-            const columnNames = columns.map(col => col.name);
-            
-            if (!columnNames.includes('exact_prompt')) {
-                db.run(`ALTER TABLE chatbot_message_history ADD COLUMN exact_prompt TEXT`, (err) => {
-                    if (err) logger.error('Error adding exact_prompt column:', err);
-                    else logger.debug('Added exact_prompt column to chatbot_message_history');
-                });
-            }
-            
-            // Add message_type column for MovieBot logging
-            if (!columnNames.includes('message_type')) {
-                db.run(`ALTER TABLE chatbot_message_history ADD COLUMN message_type TEXT DEFAULT 'chat'`, (err) => {
-                    if (err) logger.error('Error adding message_type column:', err);
-                    else logger.debug('Added message_type column to chatbot_message_history');
-                });
-            }
-            
-            // Add content column for MovieBot logging (alias for message)
-            if (!columnNames.includes('content')) {
-                db.run(`ALTER TABLE chatbot_message_history ADD COLUMN content TEXT`, (err) => {
-                    if (err) logger.error('Error adding content column:', err);
-                    else logger.debug('Added content column to chatbot_message_history');
-                });
-            }
-            
-            // Add metadata column for MovieBot logging
-            if (!columnNames.includes('metadata')) {
-                db.run(`ALTER TABLE chatbot_message_history ADD COLUMN metadata TEXT`, (err) => {
-                    if (err) logger.error('Error adding metadata column:', err);
-                    else logger.debug('Added metadata column to chatbot_message_history');
-                });
-            }
-        });
-
-        // Add llm_model column to chatbot_config if it doesn't exist
-        db.all("PRAGMA table_info(chatbot_config)", (err, columns) => {
-            if (err) {
-                logger.error('Error checking chatbot_config structure:', err);
-                return;
-            }
-            
-            const columnNames = columns.map(col => col.name);
-            
-            if (!columnNames.includes('llm_model')) {
-                db.run(`ALTER TABLE chatbot_config ADD COLUMN llm_model TEXT DEFAULT 'mistral'`, (err) => {
-                    if (err) logger.error('Error adding llm_model column:', err);
-                    else logger.debug('Added llm_model column to chatbot_config');
-                });
-            }
-        });
-
-        // Add missing columns to chatbots table
-        db.all("PRAGMA table_info(chatbots)", (err, columns) => {
-            if (err) {
-                logger.error('Error checking chatbots structure:', err);
-                return;
-            }
-            
-            const columnNames = columns.map(col => col.name);
-            
-            // Add use_assigned_name column if it doesn't exist
-            if (!columnNames.includes('use_assigned_name')) {
-                db.run(`ALTER TABLE chatbots ADD COLUMN use_assigned_name BOOLEAN DEFAULT 1`, (err) => {
-                    if (err && !err.message.includes('duplicate column')) {
-                        logger.error('Error adding use_assigned_name column:', err);
-                    } else if (!err) {
-                        logger.debug('Added use_assigned_name column to chatbots');
-                    }
-                });
-            }
-            
-            // Add llm_model column if it doesn't exist
-            if (!columnNames.includes('llm_model')) {
-                db.run(`ALTER TABLE chatbots ADD COLUMN llm_model TEXT`, (err) => {
-                    if (err && !err.message.includes('duplicate column')) {
-                        logger.error('Error adding llm_model column to chatbots:', err);
-                    } else if (!err) {
-                        logger.debug('Added llm_model column to chatbots');
-                    }
-                });
-            }
-            
-            // Add moviebot_enabled column if it doesn't exist
-            if (!columnNames.includes('moviebot_enabled')) {
-                db.run(`ALTER TABLE chatbots ADD COLUMN moviebot_enabled BOOLEAN DEFAULT 0`, (err) => {
-                    if (err && !err.message.includes('duplicate column')) {
-                        logger.error('Error adding moviebot_enabled column to chatbots:', err);
-                    } else if (!err) {
-                        logger.debug('Added moviebot_enabled column to chatbots');
-                    }
-                });
-            }
-
-            // VisionBot per-bot opt-in flag.
-            if (!columnNames.includes('vision_bot_enabled')) {
-                db.run(`ALTER TABLE chatbots ADD COLUMN vision_bot_enabled BOOLEAN DEFAULT 0`, (err) => {
-                    if (err && !err.message.includes('duplicate column')) {
-                        logger.error('Error adding vision_bot_enabled column to chatbots:', err);
-                    } else if (!err) {
-                        logger.debug('Added vision_bot_enabled column to chatbots');
-                    }
-                });
-            }
-        });
-
         // Chat Messages Table for MovieBot history
         db.run(`
             CREATE TABLE IF NOT EXISTS messages (
@@ -476,21 +309,6 @@ function initializeDatabase() {
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `);
-
-        // Per-user opt-out for vision frame capture (privacy).
-        db.all(`PRAGMA table_info(users)`, (err, columns) => {
-            if (err) return;
-            const colNames = (columns || []).map(c => c.name);
-            if (!colNames.includes('vision_audit_optout')) {
-                db.run(`ALTER TABLE users ADD COLUMN vision_audit_optout BOOLEAN DEFAULT 0`, (e) => {
-                    if (e && !e.message.includes('duplicate column')) {
-                        logger.error('Error adding vision_audit_optout to users:', e);
-                    } else if (!e) {
-                        logger.debug('Added vision_audit_optout column to users');
-                    }
-                });
-            }
-        });
 
         // Global ChatBot Configuration
         db.run(`
@@ -632,31 +450,6 @@ function initializeDatabase() {
         `);
         db.run(`CREATE INDEX IF NOT EXISTS idx_clip_chat_clip_id ON clip_chat_messages(clip_id)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_clip_chat_relative_time ON clip_chat_messages(clip_id, relative_time_ms)`);
-
-        // Add missing columns if they don't exist (migration)
-        db.run(`ALTER TABLE recordings ADD COLUMN session_id TEXT`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                if (!err.message.includes('no such table')) {
-                    logger.error('Note: session_id column migration:', err.message);
-                }
-            }
-        });
-        
-        db.run(`ALTER TABLE recordings ADD COLUMN user_id INTEGER`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                if (!err.message.includes('no such table')) {
-                    logger.error('Note: user_id column migration:', err.message);
-                }
-            }
-        });
-        
-        db.run(`ALTER TABLE recording_events ADD COLUMN user_id INTEGER`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-                if (!err.message.includes('no such table')) {
-                    logger.error('Note: recording_events user_id column migration:', err.message);
-                }
-            }
-        });
 
         // IP Ban Management Table
         db.run(`
@@ -866,6 +659,13 @@ function initializeDatabase() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_game_sessions_active ON game_sessions(ended_at)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_game_player_sessions_session ON game_player_sessions(session_id)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_game_player_sessions_user ON game_player_sessions(user_id)`);
+
+        // Run numbered schema migrations (ADR-0022). Each migration is
+        // idempotent and queues callback-style ALTER statements onto the
+        // same handle, so they execute in order after all CREATE TABLE
+        // statements above. Filename-order is the contract — see
+        // server/migrations/_runner.js.
+        migrationRunner.runAll(db, logger);
 
         logger.debug('Database tables initialized (including game system)');
     });

@@ -331,19 +331,19 @@ Cover: `ContinuousRecordingService` lifecycle, `RecordingCleanupScheduler` vs up
 
 ## Phase 14 — Schema cleanup (NOT a migration framework)
 
-**Theme**: Reliability + tooling. **Risk**: LOW. **Cadence**: 1 PR.
+**Theme**: Reliability + tooling. **Risk**: MEDIUM. **Cadence**: 1 PR.
 
 Red-team #1 flagged the original Phase 13 plan as over-engineered for the single-host single-tenant posture. The user's "schema is painful" signal is a vote to clean up the inline `ALTER TABLE catch duplicate column` sprawl in `database.js`, not to adopt a migration framework. Collapse to one PR.
 
 ### PR 14.1 — Extract inline ALTER TABLE block
 
-Move the ~30 inline `ALTER TABLE ... CATCH duplicate column` calls out of `server/database/database.js` and into properly-shaped numbered migration scripts under `server/migrations/2026MMDDHHMM-<description>.js`. Each migration is idempotent (the same "if column doesn't exist, add it" check it has today). The schema bootstrap at the top of `database.js` (CREATE TABLE IF NOT EXISTS) stays — those are the ground-state schema, not migrations. The `applyPragmas` flow runs FIRST, then `initializeDatabase()` creates ground-state tables, then any pending migrations under `server/migrations/` execute in filename order. **Fresh-clone onboarding preserved**: `npm start` against an empty DB does CREATE TABLE → migrations → done. No manual `npm run migrate` step required.
+Move the 21 inline `ALTER TABLE ... CATCH duplicate column` calls out of `server/database/database.js` and into properly-shaped numbered migration scripts under `server/migrations/2026MMDDHHMM-<description>.js`. Each migration is idempotent (the same "if column doesn't exist, add it" check it has today). The schema bootstrap at the top of `database.js` (CREATE TABLE IF NOT EXISTS) stays — those are the ground-state schema, not migrations. The `applyPragmas` flow runs FIRST, then `initializeDatabase()` creates ground-state tables, then any pending migrations under `server/migrations/` execute in filename order. **Fresh-clone onboarding preserved**: `npm start` against an empty DB does CREATE TABLE → migrations → done. No manual `npm run migrate` step required.
 
 - Size: ~200 LoC moved + ~50 LoC migration-runner code + ~50 LoC test.
 - Risk: MEDIUM (the schema bootstrap is load-bearing; the diff must produce a bit-identical schema state).
-- ADR: ADR-0020 — "Schema migrations layout (light-weight, no framework)." Documents the in-filename-order convention and why we DIDN'T adopt knex-migrate/umzug/db-migrate at this scale.
+- ADR: ADR-0022 — "Schema migrations layout (light-weight, no framework)." Documents the in-filename-order convention and why we DIDN'T adopt knex-migrate/umzug/db-migrate at this scale. (Originally drafted as ADR-0020 in this plan, then ADR-0021 in the Phase 13 handoff — both turned out to be already taken. 0022 is the actual landing slot.)
 
-**Success criteria**: New schema changes are written as numbered migration files, not as inline ALTERs in `database.js`. `database.js` shrinks ~150 lines. `npm start` against an empty DB produces a working schema with no manual steps.
+**Success criteria**: New schema changes are written as numbered migration files, not as inline ALTERs in `database.js`. `database.js` shrinks ~150 lines. `npm start` against an empty DB produces a working schema with no manual steps. A bit-identical-schema test pins `PRAGMA table_info` for every user table against a pre-PR snapshot.
 
 ---
 

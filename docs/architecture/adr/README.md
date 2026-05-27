@@ -62,6 +62,8 @@ What else we looked at and why we did not pick it.
 | 0018 | [VisionBot — multi-modal screenshot commentary](0018-visionbot-screenshot-comments.md) | accepted |
 | 0019 | [ViewBotClientService decomposition outcome](0019-viewbot-instance-extraction.md) | accepted |
 | 0020 | [Namespaced logging with pino](0020-namespaced-logging-with-pino.md) | accepted |
+| 0021 | [Omni image moderation pipeline](0021-omni-image-moderation.md) | accepted |
+| 0022 | [Schema migrations layout (light-weight, no framework)](0022-schema-migrations-layout.md) | accepted |
 
 ### Note on the 0013a slug
 
