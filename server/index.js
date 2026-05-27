@@ -4897,15 +4897,23 @@ async function startServer() {
     // (fails closed on SHA-256 mismatch), upserts the embedded core word
     // list into moderation_terms, loads the enabled-terms cache, and
     // subscribes to transcriptionService's `transcription-chunk` event.
-    // PR-M1 is log-only: hits land in moderation_events with
-    // final_decision='admin_review' and emit via moderationNotifier; M3
-    // wires enforcement actions and the AI_MODERATION_ENFORCE env flag.
+    // PR-M2 adds the Stage 2 Groq classifier (demand-gated on a Stage 1
+    // hit). M3 wires enforcement actions and the AI_MODERATION_ENFORCE
+    // env flag; M2 stays log-only.
     const ModerationService = require('./services/ModerationService');
+    const ModerationStage2 = require('./services/ModerationStage2');
+    const moderationStage2 = new ModerationStage2({
+      // GROQ_API_KEY is read from process.env by default. Override via
+      // `MODERATION_GROQ_API_KEY` if ops want a separate quota from MovieBot.
+      apiKey: process.env.MODERATION_GROQ_API_KEY || process.env.GROQ_API_KEY || null,
+      model: process.env.MODERATION_GROQ_MODEL || undefined,
+    });
     let moderationService = new ModerationService({
       database,
       transcriptionService,
       moderationNotifier,
       streamService,
+      stage2: moderationStage2,
       failClosed: process.env.AI_MODERATION_FAIL_CLOSED !== 'false',
     });
     try {

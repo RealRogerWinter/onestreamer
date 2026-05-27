@@ -46,8 +46,15 @@ class ModerationService extends EventEmitter {
    * @param {object} deps.transcriptionService  Source of 'transcription-chunk' events.
    * @param {object} deps.moderationNotifier    Socket emit chokepoint.
    * @param {object} deps.streamService     Stream-state lookup (type, generation).
+   * @param {object} [deps.stage2]          ModerationStage2 instance. If absent
+   *                                        or its isReady() returns false,
+   *                                        Stage 2 is skipped (M1 log-only).
+   * @param {number} [deps.contextWindowMs] How much surrounding context to
+   *                                        retain per streamer for Stage 2.
+   *                                        Default 60000 (60s).
    * @param {string} [deps.seedPath]        Override embedded seed file path (tests).
    * @param {string} [deps.seedHashPath]    Override SHA-256 sibling file path (tests).
+   * @param {string} [deps.schemaPath]      Override schema file path (tests).
    * @param {boolean} [deps.failClosed=true] If true, throw on seed-hash mismatch.
    *                                        If false (tests), log and continue.
    */
@@ -58,6 +65,8 @@ class ModerationService extends EventEmitter {
       transcriptionService,
       moderationNotifier,
       streamService,
+      stage2 = null,
+      contextWindowMs = 60_000,
       seedPath = DEFAULT_SEED_PATH,
       seedHashPath = DEFAULT_SEED_HASH_PATH,
       schemaPath = DEFAULT_SCHEMA_PATH,
@@ -73,6 +82,8 @@ class ModerationService extends EventEmitter {
     this.transcriptionService = transcriptionService;
     this.moderationNotifier = moderationNotifier;
     this.streamService = streamService;
+    this.stage2 = stage2;
+    this.contextWindowMs = contextWindowMs;
     this.seedPath = seedPath;
     this.seedHashPath = seedHashPath;
     this.schemaPath = schemaPath;
@@ -81,6 +92,13 @@ class ModerationService extends EventEmitter {
     this._termsCache = [];
     this._termsCacheAt = 0;
     this._streamerChains = new Map();
+    // Per-streamer rolling context buffer used by Stage 2. Each entry:
+    // { text: string, t: ms-epoch }. Capped by contextWindowMs.
+    this._contextBuffers = new Map();
+    // Per-streamer previous-chunk text used for sliding-overlap Stage 1.
+    // A phrase that straddles the 5s chunk boundary lands intact in the
+    // concatenation of chunk N-1 and chunk N.
+    this._previousChunkText = new Map();
     this._chunkListener = null;
     this._stopped = false;
     this.initialized = false;
@@ -324,27 +342,86 @@ class ModerationService extends EventEmitter {
   }
 
   async _processChunk(chunk) {
-    // Stage 1: normalize.
-    const normalized = Stage1.normalize(chunk.text);
-    if (!normalized) return null;
+    const streamerId = chunk.streamerId || 'unknown';
 
-    // Stage 1: match.
+    // Append this chunk to the streamer's rolling context buffer BEFORE
+    // matching so the context buffer reflects everything spoken in the
+    // window, not just chunks that tripped Stage 1.
+    this._pushContext(streamerId, chunk.text);
+
+    // Sliding-overlap Stage 1: concat previous chunk + this chunk so a
+    // multi-word phrase that straddles the 5s boundary still matches.
+    const previous = this._previousChunkText.get(streamerId) || '';
+    const slidingText = previous ? `${previous} ${chunk.text}` : chunk.text;
+    this._previousChunkText.set(streamerId, chunk.text);
+
+    const normalized = Stage1.normalize(slidingText);
+    if (!normalized) return null;
     const matches = Stage1.findMatches(normalized, this._termsCache);
     if (matches.length === 0) {
-      // No hit — no row written. Stage 2/3 don't run.
+      // No Stage 1 hit — no row written, Stage 2/3 don't run.
       return null;
     }
 
-    // Stage 1 hit. In M1 (log-only), every hit → 'admin_review'. M2 will
-    // upgrade this to a Stage 2 LLM call; M3 will wire enforcement.
     const streamType = this._resolveStreamType();
     const streamGeneration = this.streamService.getStreamGeneration();
-
     const matchedTermsJson = JSON.stringify(matches.map((m) => ({
       term: m.term,
       category: m.category,
       severity: m.severity,
     })));
+    const surroundingContext = this._buildSurroundingContext(streamerId);
+
+    // Stage 2: structured LLM verdict. Demand-gated on a Stage 1 hit.
+    // Skipped if Stage 2 isn't wired (M1 backcompat) or its circuit
+    // breaker is open / the GROQ_API_KEY is missing.
+    let stage2Result = null;
+    if (this.stage2 && this.stage2.isReady()) {
+      try {
+        stage2Result = await this.stage2.classify({
+          transcriptExcerpt: chunk.text,
+          surroundingContext,
+        });
+      } catch (err) {
+        console.error('❌ ModerationService: Stage 2 threw:', err);
+        stage2Result = { error: 'stage2_threw', raw_status: null, raw_body: null };
+      }
+    }
+
+    // Stage 2's verdict shape: success → {risk_level, categories,
+    // explanation, model, latency_ms, raw}; degraded → {degraded: true,
+    // reason}; error → {error, raw_status, raw_body}. M2 stays log-only:
+    // even a clean risk_level=3 verdict produces 'admin_review' here. M3
+    // wires the action arbiter that translates risk_level + Stage 3
+    // agreement → auto_ban / auto_skip.
+    let finalDecision = 'admin_review';
+    let stage2VerdictJson = null;
+    let stage2RiskLevel = null;
+    let stage2CategoriesJson = null;
+    const mlModels = { stage1: 'embedded-v1' };
+
+    if (stage2Result) {
+      if (stage2Result.degraded) {
+        finalDecision = 'deferred_degraded';
+        stage2VerdictJson = JSON.stringify({ degraded: true, reason: stage2Result.reason });
+      } else if (stage2Result.error) {
+        finalDecision = 'deferred_degraded';
+        stage2VerdictJson = JSON.stringify({
+          error: stage2Result.error,
+          raw_status: stage2Result.raw_status || null,
+        });
+      } else if (Number.isInteger(stage2Result.risk_level)) {
+        stage2VerdictJson = JSON.stringify({
+          risk_level: stage2Result.risk_level,
+          categories: stage2Result.categories,
+          explanation: stage2Result.explanation,
+          latency_ms: stage2Result.latency_ms,
+        });
+        stage2RiskLevel = stage2Result.risk_level;
+        stage2CategoriesJson = JSON.stringify(stage2Result.categories);
+        mlModels.stage2 = stage2Result.model;
+      }
+    }
 
     const event = await this._insertEvent({
       stream_session_id: String(streamGeneration),
@@ -352,16 +429,19 @@ class ModerationService extends EventEmitter {
       stream_type: streamType,
       transcript_chunk_id: chunk.chunkId || null,
       transcript_excerpt: chunk.text,
-      surrounding_context: null,
+      surrounding_context: surroundingContext,
       matched_terms_json: matchedTermsJson,
       stage1_hit: 1,
-      final_decision: 'admin_review',
+      stage2_verdict_json: stage2VerdictJson,
+      stage2_risk_level: stage2RiskLevel,
+      stage2_categories_json: stage2CategoriesJson,
+      final_decision: finalDecision,
       action_taken: null,
       actor: 'system',
       automated_decision: 1,
       legal_basis: null,
       redress_url: null,
-      ml_model_versions_json: JSON.stringify({ stage1: 'embedded-v1' }),
+      ml_model_versions_json: JSON.stringify(mlModels),
     });
 
     if (event) {
@@ -369,6 +449,24 @@ class ModerationService extends EventEmitter {
       this.emit('event-created', event);
     }
     return event;
+  }
+
+  _pushContext(streamerId, text) {
+    const now = Date.now();
+    let buf = this._contextBuffers.get(streamerId);
+    if (!buf) {
+      buf = [];
+      this._contextBuffers.set(streamerId, buf);
+    }
+    buf.push({ text, t: now });
+    const cutoff = now - this.contextWindowMs;
+    while (buf.length > 0 && buf[0].t < cutoff) buf.shift();
+  }
+
+  _buildSurroundingContext(streamerId) {
+    const buf = this._contextBuffers.get(streamerId);
+    if (!buf || buf.length === 0) return null;
+    return buf.map((c) => c.text).join(' ');
   }
 
   /**
@@ -391,10 +489,11 @@ class ModerationService extends EventEmitter {
             (stream_session_id, streamer_id, stream_type,
              transcript_chunk_id, transcript_excerpt, surrounding_context,
              matched_terms_json, stage1_hit,
+             stage2_verdict_json, stage2_risk_level, stage2_categories_json,
              final_decision, action_taken, actor,
              automated_decision, legal_basis, redress_url,
              ml_model_versions_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           row.stream_session_id,
           row.streamer_id,
@@ -404,6 +503,9 @@ class ModerationService extends EventEmitter {
           row.surrounding_context,
           row.matched_terms_json,
           row.stage1_hit,
+          row.stage2_verdict_json || null,
+          row.stage2_risk_level == null ? null : row.stage2_risk_level,
+          row.stage2_categories_json || null,
           row.final_decision,
           row.action_taken,
           row.actor,
@@ -424,6 +526,9 @@ class ModerationService extends EventEmitter {
         stream_type: row.stream_type,
         transcript_excerpt: row.transcript_excerpt,
         matched_terms_json: row.matched_terms_json,
+        stage2_verdict_json: row.stage2_verdict_json || null,
+        stage2_risk_level: row.stage2_risk_level == null ? null : row.stage2_risk_level,
+        stage2_categories_json: row.stage2_categories_json || null,
         final_decision: row.final_decision,
         actor: row.actor,
         created_at: new Date().toISOString(),
@@ -471,6 +576,8 @@ class ModerationService extends EventEmitter {
     const chains = Array.from(this._streamerChains.values());
     await Promise.allSettled(chains);
     this._streamerChains.clear();
+    this._contextBuffers.clear();
+    this._previousChunkText.clear();
   }
 }
 

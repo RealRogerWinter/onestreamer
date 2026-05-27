@@ -76,6 +76,21 @@ function makeStreamServiceStub({ streamType = 'webcam', generation = 1 } = {}) {
   };
 }
 
+function makeStage2Stub(overrides = {}) {
+  return {
+    isReady: jest.fn(() => true),
+    isDegraded: jest.fn(() => false),
+    classify: jest.fn(async () => ({
+      risk_level: 3,
+      categories: ['hate_speech'],
+      explanation: 'stub said so',
+      model: 'stub-model',
+      latency_ms: 42,
+    })),
+    ...overrides,
+  };
+}
+
 function openInMemoryDb() {
   return new Promise((resolve, reject) => {
     const db = new sqlite3.Database(':memory:', (err) => {
@@ -325,6 +340,98 @@ describe('ModerationService.handleTranscriptChunk', () => {
     // Post-stop chunks are no-ops.
     const result = await svc.handleTranscriptChunk({ streamerId: 'sock_late', text: 'faggot' });
     expect(result).toBeNull();
+  });
+});
+
+describe('ModerationService Stage 2 integration', () => {
+  test('calls Stage 2 only when Stage 1 hits', async () => {
+    const stage2 = makeStage2Stub();
+    const { svc } = await buildService({ stage2 });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_clean', text: 'hello world' });
+    expect(stage2.classify).not.toHaveBeenCalled();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_hit', text: 'i am a faggot for sure' });
+    expect(stage2.classify).toHaveBeenCalledTimes(1);
+  });
+
+  test('passes surrounding context (60s) to Stage 2', async () => {
+    const stage2 = makeStage2Stub();
+    const { svc } = await buildService({ stage2 });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_ctx', text: 'we were discussing history' });
+    await svc.handleTranscriptChunk({ streamerId: 'sock_ctx', text: 'and someone said faggot' });
+    expect(stage2.classify).toHaveBeenCalledTimes(1);
+    const callArg = stage2.classify.mock.calls[0][0];
+    expect(callArg.transcriptExcerpt).toBe('and someone said faggot');
+    expect(callArg.surroundingContext).toContain('we were discussing history');
+    expect(callArg.surroundingContext).toContain('and someone said faggot');
+  });
+
+  test('persists Stage 2 verdict to moderation_events row', async () => {
+    const stage2 = makeStage2Stub();
+    const { svc, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_v', text: 'faggot in chat' });
+    const row = await wrapper.getAsync('SELECT * FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.stage2_risk_level).toBe(3);
+    expect(JSON.parse(row.stage2_categories_json)).toEqual(['hate_speech']);
+    const verdict = JSON.parse(row.stage2_verdict_json);
+    expect(verdict.risk_level).toBe(3);
+    expect(verdict.explanation).toBe('stub said so');
+    // M2 stays log-only: even risk=3 stays admin_review until M3 wires
+    // the action arbiter.
+    expect(row.final_decision).toBe('admin_review');
+    const models = JSON.parse(row.ml_model_versions_json);
+    expect(models.stage2).toBe('stub-model');
+  });
+
+  test('Stage 2 degraded -> final_decision is deferred_degraded', async () => {
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => ({ degraded: true, reason: 'breaker_open' })),
+    });
+    const { svc, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_d', text: 'faggot' });
+    const row = await wrapper.getAsync('SELECT final_decision, stage2_verdict_json FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.final_decision).toBe('deferred_degraded');
+    expect(JSON.parse(row.stage2_verdict_json)).toEqual({ degraded: true, reason: 'breaker_open' });
+  });
+
+  test('Stage 2 error -> final_decision is deferred_degraded', async () => {
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => ({ error: 'groq_500', raw_status: 500, raw_body: 'x' })),
+    });
+    const { svc, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_e', text: 'faggot' });
+    const row = await wrapper.getAsync('SELECT final_decision, stage2_verdict_json FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.final_decision).toBe('deferred_degraded');
+    expect(JSON.parse(row.stage2_verdict_json).error).toBe('groq_500');
+  });
+
+  test('Stage 2 not ready -> no call, row still written with admin_review', async () => {
+    const stage2 = makeStage2Stub({ isReady: jest.fn(() => false) });
+    const { svc, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_skip', text: 'faggot' });
+    expect(stage2.classify).not.toHaveBeenCalled();
+    const row = await wrapper.getAsync('SELECT final_decision, stage2_verdict_json FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.final_decision).toBe('admin_review');
+    expect(row.stage2_verdict_json).toBeNull();
+  });
+
+  test('sliding-overlap matching: phrase split across two chunks is caught', async () => {
+    const stage2 = makeStage2Stub();
+    const { svc } = await buildService({ stage2 });
+    await svc.initialize();
+    // 'kill all jews' is in the embedded seed as 'threat' hard. Split it
+    // across two chunks: a streamer says "i would never kill" then "all
+    // jews i swear". Stage 1 on either chunk alone would miss it; the
+    // sliding overlap (previous + current) catches it.
+    await svc.handleTranscriptChunk({ streamerId: 'sock_split', text: 'i would never kill' });
+    expect(stage2.classify).not.toHaveBeenCalled();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_split', text: 'all jews i swear' });
+    expect(stage2.classify).toHaveBeenCalledTimes(1);
   });
 });
 
