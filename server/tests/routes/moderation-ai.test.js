@@ -206,6 +206,50 @@ describe('/api/moderation-ai', () => {
     });
   });
 
+  describe('global-config (enforce toggle)', () => {
+    test('GET /global-config returns the row', async () => {
+      const svc = stubService({
+        getGlobalConfig: jest.fn().mockResolvedValue({ enforce: 0, updated_at: '2026-05-27', updated_by: 'seed' }),
+      });
+      const r = await request(makeApp(svc)).get('/api/moderation-ai/global-config');
+      expect(r.status).toBe(200);
+      expect(r.body.row).toEqual({ enforce: 0, updated_at: '2026-05-27', updated_by: 'seed' });
+    });
+
+    test('POST /global-config { enforce: true } calls setEnforce with actor', async () => {
+      const svc = stubService({
+        setEnforce: jest.fn().mockResolvedValue({ ok: true, enforce: true }),
+      });
+      const r = await request(makeApp(svc))
+        .post('/api/moderation-ai/global-config')
+        .send({ enforce: true });
+      expect(r.status).toBe(200);
+      expect(r.body).toEqual({ ok: true, enforce: true });
+      expect(svc.setEnforce).toHaveBeenCalledWith(true, 'admin-test');
+    });
+
+    test('POST /global-config { enforce: false } calls setEnforce', async () => {
+      const svc = stubService({
+        setEnforce: jest.fn().mockResolvedValue({ ok: true, enforce: false }),
+      });
+      const r = await request(makeApp(svc))
+        .post('/api/moderation-ai/global-config')
+        .send({ enforce: false });
+      expect(r.status).toBe(200);
+      expect(svc.setEnforce).toHaveBeenCalledWith(false, 'admin-test');
+    });
+
+    test('POST /global-config rejects non-boolean enforce with 400', async () => {
+      const svc = stubService();
+      const r1 = await request(makeApp(svc)).post('/api/moderation-ai/global-config').send({});
+      expect(r1.status).toBe(400);
+      const r2 = await request(makeApp(svc)).post('/api/moderation-ai/global-config').send({ enforce: 'true' });
+      expect(r2.status).toBe(400);
+      const r3 = await request(makeApp(svc)).post('/api/moderation-ai/global-config').send({ enforce: 1 });
+      expect(r3.status).toBe(400);
+    });
+  });
+
   describe('GDPR export (PR-M6)', () => {
     test('GET /me/export returns events tied to the caller via session map', async () => {
       const svc = stubService({

@@ -70,6 +70,12 @@ function safeJsonParse(raw: string | null): any {
   try { return JSON.parse(raw); } catch { return raw; }
 }
 
+interface GlobalConfigRow {
+  enforce: number;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
 export default function AIModerationManagement({ makeApiCall }: Props) {
   const api = useMemo(() => aiModerationApi(makeApiCall), [makeApiCall]);
   const [events, setEvents] = useState<ModerationEventRow[]>([]);
@@ -79,6 +85,14 @@ export default function AIModerationManagement({ makeApiCall }: Props) {
   const [offset, setOffset] = useState(0);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [reversing, setReversing] = useState<number | null>(null);
+
+  // Global enforce toggle state. The DB-backed master switch — when ON,
+  // confirmed 2-of-2 HIGH agreement verdicts produce real bans + URL-relay
+  // blocklists; when OFF, every verdict routes to admin_review. Loaded on
+  // mount and on every successful toggle.
+  const [globalConfig, setGlobalConfig] = useState<GlobalConfigRow | null>(null);
+  const [globalLoading, setGlobalLoading] = useState(false);
+  const [globalToggling, setGlobalToggling] = useState(false);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -97,6 +111,45 @@ export default function AIModerationManagement({ makeApiCall }: Props) {
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
+  const fetchGlobalConfig = useCallback(async () => {
+    setGlobalLoading(true);
+    try {
+      const resp = await api.getGlobalConfig();
+      setGlobalConfig(resp.row);
+    } catch (e: any) {
+      setError((e && e.message) || String(e));
+    } finally {
+      setGlobalLoading(false);
+    }
+  }, [api]);
+
+  useEffect(() => { fetchGlobalConfig(); }, [fetchGlobalConfig]);
+
+  const handleToggleEnforce = useCallback(async () => {
+    if (!globalConfig) return;
+    const turningOn = globalConfig.enforce !== 1;
+    if (turningOn) {
+      const ok = window.confirm(
+        'Enable AI moderation enforcement?\n\n' +
+        'When ON, confirmed Stage 2 + Stage 3 HIGH agreement verdicts will automatically:\n' +
+        '  • Ban webcam streamers (set users.streaming_banned=1) and force-rotate the stream.\n' +
+        '  • Add URL-relay sources to the WhitelistService block list and skip to the next stream.\n\n' +
+        'False positives result in real bans. The flag can be turned off again here, and the admin events tab supports per-event reversal.\n\n' +
+        'Proceed?'
+      );
+      if (!ok) return;
+    }
+    setGlobalToggling(true);
+    try {
+      await api.setEnforce(turningOn);
+      await fetchGlobalConfig();
+    } catch (e: any) {
+      setError((e && e.message) || String(e));
+    } finally {
+      setGlobalToggling(false);
+    }
+  }, [api, fetchGlobalConfig, globalConfig]);
+
   const handleReverse = useCallback(async (eventId: number) => {
     const reason = window.prompt('Reversal reason (optional, shown in audit log):') ?? undefined;
     setReversing(eventId);
@@ -110,8 +163,50 @@ export default function AIModerationManagement({ makeApiCall }: Props) {
     }
   }, [api, fetchEvents]);
 
+  const enforceOn = globalConfig?.enforce === 1;
+
   return (
     <div style={{ padding: '16px 24px', color: '#e8e8e8' }}>
+      {/* Global enforcement toggle — DB-backed master switch */}
+      <div style={enforceCardStyle(enforceOn)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize: 13, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            AI Moderation Enforcement
+          </div>
+          <div style={enforceStatusStyle(enforceOn)}>
+            {globalLoading ? '…' : enforceOn ? 'ENFORCING' : 'LOG-ONLY'}
+          </div>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={handleToggleEnforce}
+            disabled={globalLoading || globalToggling || !globalConfig}
+            style={enforceOn ? toggleOffBtnStyle : toggleOnBtnStyle}
+          >
+            {globalToggling ? 'Saving…' : enforceOn ? 'Turn OFF' : 'Turn ON'}
+          </button>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 12, color: '#aaa', lineHeight: 1.5 }}>
+          {enforceOn ? (
+            <>
+              <strong style={{ color: '#fcc' }}>Live.</strong>{' '}
+              Confirmed Stage 2 + Stage 3 HIGH agreement verdicts will automatically ban webcam streamers (force-rotate + set <code style={codeStyle}>users.streaming_banned=1</code>) and blocklist URL-relay sources (add a <code style={codeStyle}>url_relay_filter_entries</code> block row + rotate). False positives produce real bans; use the events table below to reverse them.
+            </>
+          ) : (
+            <>
+              <strong>Off.</strong>{' '}
+              All Stage 1 / Stage 2 / Stage 3 verdicts are downgraded to{' '}
+              <code style={codeStyle}>admin_review</code>. Events still log and the notifier still emits to admins, but no bans or blocklists are written. This is the safe default.
+            </>
+          )}
+          {globalConfig?.updated_at && (
+            <div style={{ marginTop: 6, color: '#888' }}>
+              Last changed: {formatTs(globalConfig.updated_at)}
+              {globalConfig.updated_by && <> by <code style={codeStyle}>{globalConfig.updated_by}</code></>}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 20 }}>AI Moderation Events</h2>
         <div style={{ flex: 1 }} />
@@ -305,3 +400,43 @@ const preStyle: React.CSSProperties = { background: '#111', padding: 8, borderRa
 const codeStyle: React.CSSProperties = { background: '#111', padding: '1px 5px', borderRadius: 2, fontSize: 12, color: '#cfc' };
 const emptyCellStyle: React.CSSProperties = { padding: 24, textAlign: 'center', color: '#888' };
 const errorBoxStyle: React.CSSProperties = { background: '#3a1818', color: '#fcc', padding: '8px 12px', borderRadius: 4, marginBottom: 12, border: '1px solid #6a2828' };
+
+function enforceCardStyle(enforceOn: boolean): React.CSSProperties {
+  return {
+    padding: '12px 16px',
+    borderRadius: 6,
+    marginBottom: 20,
+    background: enforceOn ? '#2a1818' : '#1d2030',
+    border: `1px solid ${enforceOn ? '#b32424' : '#3a4060'}`,
+  };
+}
+function enforceStatusStyle(enforceOn: boolean): React.CSSProperties {
+  return {
+    display: 'inline-block',
+    padding: '4px 10px',
+    borderRadius: 4,
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: 0.5,
+    background: enforceOn ? '#b32424' : '#3a3a3a',
+    color: '#fff',
+  };
+}
+const toggleOnBtnStyle: React.CSSProperties = {
+  background: '#1a6e1a',
+  color: '#fff',
+  border: '1px solid #2d8c2d',
+  padding: '6px 14px',
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontWeight: 600,
+};
+const toggleOffBtnStyle: React.CSSProperties = {
+  background: '#5a1818',
+  color: '#fff',
+  border: '1px solid #b32424',
+  padding: '6px 14px',
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontWeight: 600,
+};

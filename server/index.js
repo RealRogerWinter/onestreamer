@@ -5068,6 +5068,12 @@ async function startServer() {
           randomStreamRotationService,
           whitelistService,
           moderationNotifier,
+          // Initial value (paranoid fallback). The authoritative source is
+          // the DB-backed `moderation_global_config.enforce` row, which
+          // `moderationService.setActionArbiter()` immediately syncs into
+          // the arbiter via its `setEnforce()` method. The env flag is
+          // honored ONCE at first install (when the DB row is still the
+          // 'seed' default) so an upgrading operator's env=true persists.
           enforce: process.env.AI_MODERATION_ENFORCE === 'true',
         });
         moderationService.setActionArbiter(actionArbiter);
@@ -5191,6 +5197,12 @@ async function startServer() {
           randomStreamRotationService,
           whitelistService,
           moderationNotifier,
+          // Initial value (paranoid fallback). The authoritative source is
+          // the DB-backed `moderation_global_config.enforce` row, which
+          // `moderationService.setActionArbiter()` immediately syncs into
+          // the arbiter via its `setEnforce()` method. The env flag is
+          // honored ONCE at first install (when the DB row is still the
+          // 'seed' default) so an upgrading operator's env=true persists.
           enforce: process.env.AI_MODERATION_ENFORCE === 'true',
         });
         moderationService.setActionArbiter(actionArbiter);

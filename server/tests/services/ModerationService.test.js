@@ -739,6 +739,93 @@ describe('ModerationService.checkBotOutput (MovieBot output gate)', () => {
   });
 });
 
+describe('ModerationService global enforce toggle', () => {
+  test('initialize() reads the seeded row and exposes enforce=false via isEnforced()', async () => {
+    const { svc } = await buildService();
+    await svc.initialize();
+    expect(svc.isEnforced()).toBe(false);
+    const row = await svc.getGlobalConfig();
+    expect(row.enforce).toBe(0);
+  });
+
+  test('setEnforce(true) writes DB, updates in-memory cache, propagates to actionArbiter', async () => {
+    const stage2 = makeStage2Stub();
+    const arbiter = { arbitrate: jest.fn(async () => ({ final_decision: 'auto_ban', action_taken: 'x' })), setEnforce: jest.fn() };
+    const { svc, wrapper } = await buildService({ stage2, actionArbiter: arbiter });
+    await svc.initialize();
+    expect(svc.isEnforced()).toBe(false);
+    expect(arbiter.setEnforce).toHaveBeenCalledWith(false); // setActionArbiter sync
+
+    const r = await svc.setEnforce(true, 'admin-test');
+    expect(r).toEqual({ ok: true, enforce: true });
+    expect(svc.isEnforced()).toBe(true);
+
+    const row = await wrapper.getAsync('SELECT enforce, updated_by FROM moderation_global_config WHERE id = 1');
+    expect(row.enforce).toBe(1);
+    expect(row.updated_by).toBe('admin-test');
+
+    expect(arbiter.setEnforce).toHaveBeenLastCalledWith(true);
+  });
+
+  test('setEnforce is idempotent and round-trips', async () => {
+    const { svc } = await buildService();
+    await svc.initialize();
+    await svc.setEnforce(true, 'a1');
+    await svc.setEnforce(true, 'a2');
+    await svc.setEnforce(false, 'a3');
+    expect(svc.isEnforced()).toBe(false);
+    const row = await svc.getGlobalConfig();
+    expect(row.enforce).toBe(0);
+    expect(row.updated_by).toBe('a3');
+  });
+
+  test('env-flag upgrade: AI_MODERATION_ENFORCE=true bumps the seed row on first install', async () => {
+    const prev = process.env.AI_MODERATION_ENFORCE;
+    process.env.AI_MODERATION_ENFORCE = 'true';
+    try {
+      const { svc } = await buildService();
+      await svc.initialize();
+      expect(svc.isEnforced()).toBe(true);
+      const row = await svc.getGlobalConfig();
+      expect(row.enforce).toBe(1);
+      expect(row.updated_by).toBe('env');
+    } finally {
+      if (prev === undefined) delete process.env.AI_MODERATION_ENFORCE;
+      else process.env.AI_MODERATION_ENFORCE = prev;
+    }
+  });
+
+  test('env-flag upgrade does NOT override an admin-set value', async () => {
+    const prev = process.env.AI_MODERATION_ENFORCE;
+    delete process.env.AI_MODERATION_ENFORCE;
+    const { svc, wrapper } = await buildService();
+    await svc.initialize();
+    await svc.setEnforce(true, 'admin-test');
+    expect(svc.isEnforced()).toBe(true);
+
+    process.env.AI_MODERATION_ENFORCE = 'true';
+    try {
+      await svc._loadGlobalConfig();
+      expect(svc.isEnforced()).toBe(true);
+      const row = await wrapper.getAsync('SELECT updated_by FROM moderation_global_config WHERE id = 1');
+      expect(row.updated_by).toBe('admin-test');
+    } finally {
+      if (prev === undefined) delete process.env.AI_MODERATION_ENFORCE;
+      else process.env.AI_MODERATION_ENFORCE = prev;
+    }
+  });
+
+  test('setActionArbiter syncs the current enforce state into a freshly-injected arbiter', async () => {
+    const { svc } = await buildService();
+    await svc.initialize();
+    await svc.setEnforce(true, 'admin-test');
+
+    const lateArbiter = { setEnforce: jest.fn(), arbitrate: jest.fn() };
+    svc.setActionArbiter(lateArbiter);
+    expect(lateArbiter.setEnforce).toHaveBeenCalledWith(true);
+  });
+});
+
 describe('ModerationService.purgeOldEvents (PR-M6)', () => {
   test('deletes flagged rows older than retention, keeps recent', async () => {
     const { svc, wrapper } = await buildService();

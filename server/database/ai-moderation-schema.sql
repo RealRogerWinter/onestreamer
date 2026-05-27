@@ -121,3 +121,24 @@ INSERT OR IGNORE INTO moderation_config (category, action_mode, stage2_threshold
     VALUES ('threat',       'auto_ban', 3, 1);
 INSERT OR IGNORE INTO moderation_config (category, action_mode, stage2_threshold, stage3_required)
     VALUES ('sexual',       'auto_ban', 3, 1);
+
+-- Singleton global config. One row, id=1, enforced by the CHECK constraint.
+-- `enforce`: 1 = ActionArbiter applies real bans + URL-relay blocklists on a
+-- confirmed 2-of-2 HIGH agreement; 0 = arbiter downgrades every verdict to
+-- 'admin_review' (so events still log + notifier emits, but no destructive
+-- actions). Replaces the boot-time-only AI_MODERATION_ENFORCE env flag with
+-- a runtime-mutable DB-backed value an admin can flip from the admin UI
+-- without a restart. The env flag is still honored ONCE at first install
+-- (when no row exists yet) so existing operator-set values aren't ignored
+-- on upgrade.
+CREATE TABLE IF NOT EXISTS moderation_global_config (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    enforce     INTEGER NOT NULL DEFAULT 0,
+    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by  TEXT
+);
+-- Seed only if the row doesn't exist. The env-fallback runs in
+-- ModerationService.initialize() AFTER this seed — if the env says enforce=true
+-- AND no row exists yet, initialize() upgrades the row. Idempotent.
+INSERT OR IGNORE INTO moderation_global_config (id, enforce, updated_by)
+    VALUES (1, 0, 'seed');

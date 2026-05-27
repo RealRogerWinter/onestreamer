@@ -69,6 +69,15 @@ class ModerationActionArbiter {
   }
 
   /**
+   * Toggle the enforcement flag at runtime. Called by ModerationService when
+   * the global-config row changes via the admin UI. The next arbitrate()
+   * call uses the new value — no restart required. Idempotent.
+   */
+  setEnforce(enforce) {
+    this.enforce = !!enforce;
+  }
+
+  /**
    * Decide and perform the action for a moderation event whose Stage 2
    * (and Stage 3 when applicable) verdicts agree on high risk.
    *

@@ -142,5 +142,16 @@ export function aiModerationApi(makeApiCall: ApiCall) {
         method: 'POST',
         body: JSON.stringify(payload),
       }) as Promise<{ ok: true; category: ModerationCategory }>,
+
+    getGlobalConfig: () =>
+      makeApiCall('/api/moderation-ai/global-config') as Promise<{
+        row: { enforce: number; updated_at: string | null; updated_by: string | null };
+      }>,
+
+    setEnforce: (enforce: boolean) =>
+      makeApiCall('/api/moderation-ai/global-config', {
+        method: 'POST',
+        body: JSON.stringify({ enforce }),
+      }) as Promise<{ ok: true; enforce: boolean }>,
   };
 }

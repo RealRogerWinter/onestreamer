@@ -230,6 +230,39 @@ module.exports = function moderationAIRoutes() {
     }
   });
 
+  // ── Global enforce toggle ──────────────────────────────────────────────
+  // The DB-backed master switch for AI moderation enforcement. When
+  // enforce=1, the ActionArbiter applies real bans + URL-relay blocklists
+  // on confirmed 2-of-2 HIGH agreement. When enforce=0, all verdicts are
+  // downgraded to admin_review (events still log + notifier emits, no
+  // destructive action). Replaces the boot-time-only AI_MODERATION_ENFORCE
+  // env flag with a runtime-mutable value.
+  router.get('/global-config', authenticateAdmin, async (req, res) => {
+    const s = svcOr503(req, res);
+    if (!s) return;
+    try {
+      const row = await s.getGlobalConfig();
+      res.json({ row });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.post('/global-config', authenticateAdmin, async (req, res) => {
+    const s = svcOr503(req, res);
+    if (!s) return;
+    const body = req.body || {};
+    if (typeof body.enforce !== 'boolean') {
+      return res.status(400).json({ error: 'enforce must be a boolean' });
+    }
+    try {
+      const r = await s.setEnforce(body.enforce, actor(req));
+      res.json(r);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── GDPR data subject access (PR-M6) ───────────────────────────────────
   // Any authenticated user (not just admins) can fetch the moderation
   // events that name them. Implements GDPR Article 15 (right of access)

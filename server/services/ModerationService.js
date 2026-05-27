@@ -130,10 +130,91 @@ class ModerationService extends EventEmitter {
     await this._verifySeedIntegrity();
     await this._upsertEmbeddedTerms();
     await this._loadTermsCache();
+    await this._loadGlobalConfig();
     this._subscribeToTranscriptionChunks();
 
     this.initialized = true;
-    console.log(`✅ ModerationService initialized (terms=${this._termsCache.length})`);
+    console.log(`✅ ModerationService initialized (terms=${this._termsCache.length}, enforce=${this._enforce ? 'on' : 'off'})`);
+  }
+
+  /**
+   * Load the singleton global-config row. Replaces the boot-time-only
+   * `AI_MODERATION_ENFORCE` env flag with a DB-backed runtime-mutable
+   * value. The env flag is honored ONCE at first install: if the DB row
+   * is still the seed default (enforce=0, updated_by='seed') AND the env
+   * says enforce=true, we upgrade the row so operators upgrading from a
+   * pre-toggle build don't suddenly lose their enforce=true setting.
+   * Subsequent admin toggles take precedence — once an admin has touched
+   * the row, the env flag is ignored.
+   */
+  async _loadGlobalConfig() {
+    let row = null;
+    try {
+      row = await this.database.getAsync('SELECT enforce, updated_by FROM moderation_global_config WHERE id = 1');
+    } catch (err) {
+      console.warn('⚠️ ModerationService: could not read moderation_global_config:', err.message);
+    }
+
+    if (row && row.updated_by === 'seed' && process.env.AI_MODERATION_ENFORCE === 'true') {
+      try {
+        await this.database.runAsync(
+          `UPDATE moderation_global_config
+             SET enforce = 1, updated_at = CURRENT_TIMESTAMP, updated_by = 'env'
+           WHERE id = 1 AND updated_by = 'seed'`
+        );
+        console.log('✅ ModerationService: upgraded global enforce 0→1 from AI_MODERATION_ENFORCE env (first-install path)');
+        row = { enforce: 1, updated_by: 'env' };
+      } catch (err) {
+        console.warn('⚠️ ModerationService: env-flag upgrade failed:', err.message);
+      }
+    }
+
+    this._enforce = !!(row && row.enforce === 1);
+    // Propagate to a constructor-injected arbiter as well. setActionArbiter()
+    // covers late-injected ones; this covers the build-time case where the
+    // arbiter was passed via deps.actionArbiter and initialize() then loaded
+    // the authoritative DB value.
+    if (this.actionArbiter && typeof this.actionArbiter.setEnforce === 'function') {
+      this.actionArbiter.setEnforce(this._enforce);
+    }
+  }
+
+  /**
+   * Read the current enforce state (in-memory cache).
+   */
+  isEnforced() {
+    return !!this._enforce;
+  }
+
+  /**
+   * Read the global-config row (full shape for the admin UI).
+   */
+  async getGlobalConfig() {
+    const row = await this.database.getAsync(
+      'SELECT enforce, updated_at, updated_by FROM moderation_global_config WHERE id = 1'
+    );
+    return row || { enforce: 0, updated_at: null, updated_by: null };
+  }
+
+  /**
+   * Flip the global enforce switch. Writes DB and propagates to the
+   * currently-injected ActionArbiter (if any) so the next arbitrate()
+   * call uses the new value WITHOUT a service restart. Returns
+   * `{ ok, enforce }`.
+   */
+  async setEnforce(enforce, adminId) {
+    const next = enforce ? 1 : 0;
+    await this.database.runAsync(
+      `UPDATE moderation_global_config
+         SET enforce = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+       WHERE id = 1`,
+      [next, adminId || null]
+    );
+    this._enforce = !!next;
+    if (this.actionArbiter && typeof this.actionArbiter.setEnforce === 'function') {
+      this.actionArbiter.setEnforce(this._enforce);
+    }
+    return { ok: true, enforce: this._enforce };
   }
 
   /**
@@ -316,6 +397,11 @@ class ModerationService extends EventEmitter {
    */
   setActionArbiter(arbiter) {
     this.actionArbiter = arbiter || null;
+    // Sync enforce state when an arbiter is (re)injected so a late-wired
+    // arbiter doesn't operate against a stale flag value.
+    if (this.actionArbiter && typeof this.actionArbiter.setEnforce === 'function' && this._enforce !== undefined) {
+      this.actionArbiter.setEnforce(this._enforce);
+    }
   }
 
   setStage3(stage3) {
