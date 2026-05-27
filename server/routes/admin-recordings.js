@@ -13,9 +13,22 @@ const express = require('express');
 const router = express.Router();
 const { authenticateAdmin } = require('../middleware/auth');
 const { runAsync, getAsync, allAsync } = require('../database/database');
+const ContinuousRecordingRepository = require('../database/repository/ContinuousRecordingRepository');
+const SessionChatMessageRepository = require('../database/repository/SessionChatMessageRepository');
+const AdminReviewSettingsRepository = require('../database/repository/AdminReviewSettingsRepository');
 const b2Storage = require('../services/B2StorageService');
 const path = require('path');
 const fs = require('fs');
+
+// PR 10.1 (Phase 10): module-scoped repositories own the single-table
+// SQL surface for the recording/settings/chat tables this route hits.
+// The cross-domain reads (`url_streams`, `streaming_logs`) and the
+// `session_chat_messages ⋈ recording_sessions` JOIN below intentionally
+// stay inline — single-domain repos don't reach across tables, per the
+// convention set in PR 6.3.
+const recordingRepository = new ContinuousRecordingRepository({ getAsync, runAsync, allAsync });
+const sessionChatMessageRepository = new SessionChatMessageRepository({ getAsync, runAsync, allAsync });
+const adminReviewSettingsRepository = new AdminReviewSettingsRepository({ getAsync, runAsync, allAsync });
 
 /**
  * Extract username from a streaming platform URL
@@ -94,40 +107,21 @@ router.get('/sessions', authenticateAdmin, async (req, res) => {
             dateTo
         } = req.query;
 
-        let sql = 'SELECT * FROM recording_sessions WHERE 1=1';
-        const params = [];
+        const filters = {
+            status: status || undefined,
+            streamer: streamer || undefined,
+            dateFromMs: dateFrom ? new Date(dateFrom).getTime() : undefined,
+            dateToMs: dateTo ? new Date(dateTo).getTime() : undefined,
+        };
 
-        if (status) {
-            sql += ' AND status = ?';
-            params.push(status);
-        }
-
-        if (streamer) {
-            sql += ' AND (streamer_identity LIKE ? OR streamer_username LIKE ?)';
-            params.push(`%${streamer}%`, `%${streamer}%`);
-        }
-
-        if (dateFrom) {
-            sql += ' AND start_time >= ?';
-            params.push(new Date(dateFrom).getTime());
-        }
-
-        if (dateTo) {
-            sql += ' AND start_time <= ?';
-            params.push(new Date(dateTo).getTime());
-        }
-
-        // Get total count
-        const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as count');
-        const countResult = await getAsync(countSql, params);
+        const countResult = await recordingRepository.countSessionsForAdmin(filters);
         const totalCount = countResult?.count || 0;
 
-        // Add pagination
-        sql += ' ORDER BY start_time DESC';
-        sql += ` LIMIT ? OFFSET ?`;
-        params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
-
-        const sessions = await allAsync(sql, params);
+        const sessions = await recordingRepository.listSessionsForAdmin({
+            ...filters,
+            limit: parseInt(limit),
+            offset: (parseInt(page) - 1) * parseInt(limit),
+        });
 
         // Format response
         const formattedSessions = sessions.map(s => ({
@@ -169,7 +163,7 @@ router.get('/sessions/:sessionId', authenticateAdmin, async (req, res) => {
     try {
         const { sessionId } = req.params;
 
-        const session = await getAsync('SELECT * FROM recording_sessions WHERE session_id = ?', [sessionId]);
+        const session = await recordingRepository.getSessionById(sessionId);
 
         if (!session) {
             return res.status(404).json({ success: false, error: 'Session not found' });
@@ -211,7 +205,7 @@ router.get('/sessions/:sessionId/video', authenticateAdmin, async (req, res) => 
     try {
         const { sessionId } = req.params;
 
-        const session = await getAsync('SELECT * FROM recording_sessions WHERE session_id = ?', [sessionId]);
+        const session = await recordingRepository.getSessionById(sessionId);
 
         if (!session) {
             return res.status(404).json({ success: false, error: 'Session not found' });
@@ -263,7 +257,7 @@ router.get('/sessions/:sessionId/stream', authenticateAdmin, async (req, res) =>
         const { sessionId } = req.params;
         const { file } = req.query; // Optional: request specific segment file
 
-        const session = await getAsync('SELECT * FROM recording_sessions WHERE session_id = ?', [sessionId]);
+        const session = await recordingRepository.getSessionById(sessionId);
 
         if (!session || !session.local_path) {
             return res.status(404).json({ success: false, error: 'Session not found' });
@@ -317,22 +311,10 @@ router.get('/sessions/:sessionId/chat', authenticateAdmin, async (req, res) => {
         const { sessionId } = req.params;
         const { fromMs, toMs } = req.query;
 
-        let sql = 'SELECT * FROM session_chat_messages WHERE session_id = ?';
-        const params = [sessionId];
-
-        if (fromMs) {
-            sql += ' AND relative_time_ms >= ?';
-            params.push(parseInt(fromMs));
-        }
-
-        if (toMs) {
-            sql += ' AND relative_time_ms <= ?';
-            params.push(parseInt(toMs));
-        }
-
-        sql += ' ORDER BY relative_time_ms ASC';
-
-        const messages = await allAsync(sql, params);
+        const messages = await sessionChatMessageRepository.listBySession(sessionId, {
+            fromMs: fromMs ? parseInt(fromMs) : undefined,
+            toMs: toMs ? parseInt(toMs) : undefined,
+        });
 
         res.json({
             success: true,
@@ -368,7 +350,7 @@ router.post('/sessions/:sessionId/clip', authenticateAdmin, async (req, res) => 
             return res.status(400).json({ success: false, error: 'startMs and endMs are required' });
         }
 
-        const session = await getAsync('SELECT * FROM recording_sessions WHERE session_id = ?', [sessionId]);
+        const session = await recordingRepository.getSessionById(sessionId);
 
         if (!session) {
             return res.status(404).json({ success: false, error: 'Session not found' });
@@ -457,7 +439,7 @@ router.post('/sessions/:sessionId/upload', authenticateAdmin, async (req, res) =
  */
 router.get('/settings', authenticateAdmin, async (req, res) => {
     try {
-        const settings = await allAsync('SELECT * FROM admin_review_settings');
+        const settings = await adminReviewSettingsRepository.listAll();
 
         const settingsObj = {};
         for (const s of settings) {
@@ -498,28 +480,16 @@ router.put('/settings', authenticateAdmin, async (req, res) => {
 
         if (retention_days !== undefined) {
             const days = Math.max(1, Math.min(7, parseInt(retention_days)));
-            await runAsync(`
-                INSERT INTO admin_review_settings (key, value, updated_at)
-                VALUES ('retention_days', ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
-            `, [days.toString(), days.toString()]);
+            await adminReviewSettingsRepository.upsertSetting('retention_days', days.toString());
         }
 
         if (upload_enabled !== undefined) {
-            await runAsync(`
-                INSERT INTO admin_review_settings (key, value, updated_at)
-                VALUES ('upload_enabled', ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
-            `, [upload_enabled.toString(), upload_enabled.toString()]);
+            await adminReviewSettingsRepository.upsertSetting('upload_enabled', upload_enabled.toString());
         }
 
         if (local_buffer_hours !== undefined) {
             const hours = Math.max(1, Math.min(24, parseInt(local_buffer_hours)));
-            await runAsync(`
-                INSERT INTO admin_review_settings (key, value, updated_at)
-                VALUES ('local_buffer_hours', ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
-            `, [hours.toString(), hours.toString()]);
+            await adminReviewSettingsRepository.upsertSetting('local_buffer_hours', hours.toString());
         }
 
         res.json({ success: true, message: 'Settings updated' });
@@ -534,9 +504,9 @@ router.put('/settings', authenticateAdmin, async (req, res) => {
  */
 router.get('/status', authenticateAdmin, async (req, res) => {
     try {
-        const totalSessions = await getAsync('SELECT COUNT(*) as count FROM recording_sessions');
-        const activeSessions = await getAsync("SELECT COUNT(*) as count FROM recording_sessions WHERE status = 'recording'");
-        const uploadedSessions = await getAsync("SELECT COUNT(*) as count FROM recording_sessions WHERE status = 'uploaded'");
+        const totalSessions = await recordingRepository.countAllSessions();
+        const activeSessions = await recordingRepository.countSessionsByStatus('recording');
+        const uploadedSessions = await recordingRepository.countSessionsByStatus('uploaded');
 
         const chatStatus = chatCaptureService ? chatCaptureService.getStatus() : { activeSessions: [], sessionCount: 0 };
 
@@ -571,12 +541,7 @@ router.get('/timeline', authenticateAdmin, async (req, res) => {
         const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
 
         // First, get the recording session boundaries
-        const recordingSessions = await allAsync(`
-            SELECT session_id, start_time, end_time, local_path, status
-            FROM recording_sessions
-            WHERE local_path IS NOT NULL
-            ORDER BY start_time ASC
-        `);
+        const recordingSessions = await recordingRepository.listSessionsWithLocalPathBasic();
 
         if (recordingSessions.length === 0) {
             return res.json({
@@ -613,21 +578,7 @@ router.get('/timeline', authenticateAdmin, async (req, res) => {
         const timelineEnd = recordingEndTime;
 
         // Get stream segments from the recording_stream_segments table (accurate data captured during recording)
-        const streamSegments = await allAsync(`
-            SELECT
-                id,
-                session_id,
-                stream_identity,
-                stream_type,
-                display_name,
-                platform,
-                source_url,
-                started_at,
-                ended_at
-            FROM recording_stream_segments
-            WHERE started_at >= ?
-            ORDER BY started_at ASC
-        `, [sinceMs]);
+        const streamSegments = await recordingRepository.listStreamSegmentsSince(sinceMs);
 
         // Batch-prefetch display names for all url_streams referenced by these
         // segments. The previous inline N+1 (one or two SELECTs per segment)
@@ -784,12 +735,7 @@ router.get('/timeline', authenticateAdmin, async (req, res) => {
 router.get('/playback', authenticateAdmin, async (req, res) => {
     try {
         // Get all recording sessions with local files
-        const sessions = await allAsync(`
-            SELECT session_id, start_time, end_time, local_path, status, duration_ms, segment_count
-            FROM recording_sessions
-            WHERE local_path IS NOT NULL
-            ORDER BY start_time ASC
-        `);
+        const sessions = await recordingRepository.listSessionsWithLocalPathFull();
 
         if (sessions.length === 0) {
             return res.json({
@@ -821,10 +767,7 @@ router.get('/playback', authenticateAdmin, async (req, res) => {
         latestEnd = earliestStart + totalDurationMs;
 
         // Get total chat message count
-        const chatCount = await getAsync(`
-            SELECT COUNT(*) as count FROM session_chat_messages
-            WHERE session_id IN (${sessions.map(() => '?').join(',')})
-        `, sessions.map(s => s.session_id));
+        const chatCount = await sessionChatMessageRepository.countBySessionIds(sessions.map(s => s.session_id));
 
         res.json({
             success: true,
@@ -855,12 +798,7 @@ router.get('/playback', authenticateAdmin, async (req, res) => {
 router.get('/master-stream', authenticateAdmin, async (req, res) => {
     try {
         // Get all sessions with local paths
-        const sessions = await allAsync(`
-            SELECT session_id, local_path
-            FROM recording_sessions
-            WHERE local_path IS NOT NULL
-            ORDER BY start_time ASC
-        `);
+        const sessions = await recordingRepository.listSessionsWithLocalPathIdsOnly();
 
         if (sessions.length === 0) {
             return res.status(404).json({ success: false, error: 'No recordings available' });
@@ -992,10 +930,7 @@ router.get('/segment/:sessionId/:filename', authenticateAdmin, async (req, res) 
     try {
         const { sessionId, filename } = req.params;
 
-        const session = await getAsync(
-            'SELECT local_path FROM recording_sessions WHERE session_id = ?',
-            [sessionId]
-        );
+        const session = await recordingRepository.getSessionLocalPath(sessionId);
 
         if (!session || !session.local_path) {
             return res.status(404).json({ success: false, error: 'Session not found' });

@@ -260,6 +260,182 @@ describe.each([
     });
 
     // ============================================================
+    // PR 10.1 admin-side queries
+    // ============================================================
+
+    describe('listSessionsForAdmin', () => {
+        it('no filters → SELECT * WHERE 1=1 ORDER BY start_time DESC LIMIT/OFFSET; limit+offset always trail', async () => {
+            const { repo, allAsync } = makeRepo();
+            allAsync.mockResolvedValue([]);
+            await repo.listSessionsForAdmin({ limit: 20, offset: 0 });
+            const [sql, params] = allAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT * FROM recording_sessions WHERE 1=1 ORDER BY start_time DESC LIMIT ? OFFSET ?'
+            );
+            expect(params).toEqual([20, 0]);
+        });
+
+        it('streamer wraps with %...% on both placeholders (LIKE on identity OR username)', async () => {
+            const { repo, allAsync } = makeRepo();
+            allAsync.mockResolvedValue([]);
+            await repo.listSessionsForAdmin({ streamer: 'alice', limit: 10, offset: 5 });
+            const [sql, params] = allAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT * FROM recording_sessions WHERE 1=1 ' +
+                'AND (streamer_identity LIKE ? OR streamer_username LIKE ?) ' +
+                'ORDER BY start_time DESC LIMIT ? OFFSET ?'
+            );
+            expect(params).toEqual(['%alice%', '%alice%', 10, 5]);
+        });
+
+        it('builds all four optional fragments in documented order', async () => {
+            const { repo, allAsync } = makeRepo();
+            allAsync.mockResolvedValue([]);
+            await repo.listSessionsForAdmin({
+                status: 'uploaded',
+                streamer: 'bob',
+                dateFromMs: 1716800000000,
+                dateToMs: 1716810000000,
+                limit: 20,
+                offset: 40,
+            });
+            const [sql, params] = allAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT * FROM recording_sessions WHERE 1=1 ' +
+                'AND status = ? AND (streamer_identity LIKE ? OR streamer_username LIKE ?) ' +
+                'AND start_time >= ? AND start_time <= ? ' +
+                'ORDER BY start_time DESC LIMIT ? OFFSET ?'
+            );
+            expect(params).toEqual([
+                'uploaded', '%bob%', '%bob%', 1716800000000, 1716810000000, 20, 40,
+            ]);
+        });
+    });
+
+    describe('countSessionsForAdmin', () => {
+        it('matches listSessionsForAdmin filters WITHOUT pagination tail', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ count: 7 });
+            await repo.countSessionsForAdmin({
+                status: 'recording',
+                streamer: 'alice',
+                dateFromMs: 1716800000000,
+                dateToMs: 1716810000000,
+            });
+            const [sql, params] = getAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT COUNT(*) as count FROM recording_sessions WHERE 1=1 ' +
+                'AND status = ? AND (streamer_identity LIKE ? OR streamer_username LIKE ?) ' +
+                'AND start_time >= ? AND start_time <= ?'
+            );
+            expect(params).toEqual([
+                'recording', '%alice%', '%alice%', 1716800000000, 1716810000000,
+            ]);
+        });
+
+        it('returns the raw getAsync row ({ count })', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ count: 0 });
+            const row = await repo.countSessionsForAdmin();
+            expect(row).toEqual({ count: 0 });
+        });
+    });
+
+    describe('getSessionLocalPath', () => {
+        it('SELECTs local_path only (not the full row)', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ local_path: '/r/sess' });
+            await repo.getSessionLocalPath('sess_20260527');
+            const [sql, params] = getAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT local_path FROM recording_sessions WHERE session_id = ?'
+            );
+            expect(params).toEqual(['sess_20260527']);
+        });
+    });
+
+    describe('countAllSessions', () => {
+        it('SELECTs unconditional COUNT(*); no params', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ count: 42 });
+            const row = await repo.countAllSessions();
+            const [sql, params] = getAsync.mock.calls[0];
+            expect(norm(sql)).toBe('SELECT COUNT(*) as count FROM recording_sessions');
+            expect(params).toBeUndefined();
+            expect(row).toEqual({ count: 42 });
+        });
+    });
+
+    describe('countSessionsByStatus', () => {
+        it('parameterizes the status; same SQL string regardless of which status', async () => {
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ count: 3 });
+            await repo.countSessionsByStatus('recording');
+            await repo.countSessionsByStatus('uploaded');
+            expect(getAsync.mock.calls[0][0]).toBe(getAsync.mock.calls[1][0]);
+            expect(norm(getAsync.mock.calls[0][0])).toBe(
+                'SELECT COUNT(*) as count FROM recording_sessions WHERE status = ?'
+            );
+            expect(getAsync.mock.calls[0][1]).toEqual(['recording']);
+            expect(getAsync.mock.calls[1][1]).toEqual(['uploaded']);
+        });
+    });
+
+    describe('listSessionsWithLocalPathBasic', () => {
+        it('5-col projection, local_path IS NOT NULL, ORDER ASC, no params', async () => {
+            const { repo, allAsync } = makeRepo();
+            allAsync.mockResolvedValue([]);
+            await repo.listSessionsWithLocalPathBasic();
+            const [sql, params] = allAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT session_id, start_time, end_time, local_path, status ' +
+                'FROM recording_sessions WHERE local_path IS NOT NULL ORDER BY start_time ASC'
+            );
+            expect(params).toBeUndefined();
+        });
+    });
+
+    describe('listSessionsWithLocalPathFull', () => {
+        it('7-col projection (adds duration_ms + segment_count); same filter/order', async () => {
+            const { repo, allAsync } = makeRepo();
+            allAsync.mockResolvedValue([]);
+            await repo.listSessionsWithLocalPathFull();
+            const [sql] = allAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT session_id, start_time, end_time, local_path, status, duration_ms, segment_count ' +
+                'FROM recording_sessions WHERE local_path IS NOT NULL ORDER BY start_time ASC'
+            );
+        });
+    });
+
+    describe('listSessionsWithLocalPathIdsOnly', () => {
+        it('2-col projection (session_id + local_path); same filter/order', async () => {
+            const { repo, allAsync } = makeRepo();
+            allAsync.mockResolvedValue([]);
+            await repo.listSessionsWithLocalPathIdsOnly();
+            const [sql] = allAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT session_id, local_path FROM recording_sessions ' +
+                'WHERE local_path IS NOT NULL ORDER BY start_time ASC'
+            );
+        });
+    });
+
+    describe('listStreamSegmentsSince', () => {
+        it('SELECTs 9-col projection, started_at >= ?, ORDER ASC', async () => {
+            const { repo, allAsync } = makeRepo();
+            allAsync.mockResolvedValue([]);
+            await repo.listStreamSegmentsSince(1716800000000);
+            const [sql, params] = allAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                'SELECT id, session_id, stream_identity, stream_type, display_name, platform, source_url, started_at, ended_at ' +
+                'FROM recording_stream_segments WHERE started_at >= ? ORDER BY started_at ASC'
+            );
+            expect(params).toEqual([1716800000000]);
+        });
+    });
+
+    // ============================================================
     // Constructor / dep injection
     // ============================================================
 

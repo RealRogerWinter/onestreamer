@@ -27,6 +27,17 @@
  *
  * Extracted from `server/services/ContinuousRecordingService.js` in
  * PR 6.3. Pre-extraction: 10 inline call-sites against recording_*.
+ *
+ * PR 10.1 (Phase 10) extended this repo to cover the admin-side
+ * read paths in `server/routes/admin-recordings.js`. The repo's
+ * existing scope (single ownership of `recording_sessions` and
+ * `recording_stream_segments`) is the reason the admin queries land
+ * here rather than in a sibling `RecordingSessionRepository` — two
+ * repos writing/reading the same table is a smell we avoided. The
+ * 14 admin call-sites split into nine new methods below; the JOIN
+ * at admin-recordings.js:~1034 (session_chat_messages ⋈ recording_sessions)
+ * intentionally stays inline because cross-table queries belong to
+ * the route layer per the repository pattern.
  */
 class ContinuousRecordingRepository {
     /**
@@ -181,6 +192,164 @@ class ContinuousRecordingRepository {
         );
     }
 
+    // ------------------------------------------------------------
+    // Admin-side queries (PR 10.1)
+    // ------------------------------------------------------------
+    //
+    // The admin "review" routes hit recording_sessions with a
+    // different filter shape than the service. They search by
+    // partial streamer name (LIKE on two columns), they paginate,
+    // they need COUNT(*) for the pagination header, and they project
+    // to a few different column lists depending on the surface
+    // (timeline / playback / master-stream). The methods below keep
+    // each legacy SQL string byte-for-byte; that's the convention
+    // PR 6.3 set and the maintainer reviews against.
+
+    /**
+     * Dynamic-filtered SELECT used by the admin /sessions listing.
+     * Distinct from `listSessions` above because the admin endpoint
+     * matches `streamer` partially against either `streamer_identity`
+     * OR `streamer_username` (the legacy SQL OR-pair at admin-recordings.js:106).
+     * Pagination is required (limit + offset are always non-null on
+     * this path; the route defaults to limit=20, page=1).
+     *
+     * All fragments are static-string conditionals; user-controlled
+     * values only flow on `params`. The `streamer` value is wrapped
+     * with `%...%` in the route layer, matching legacy behaviour.
+     */
+    async listSessionsForAdmin({ status, streamer, dateFromMs, dateToMs, limit, offset } = {}) {
+        let sql = 'SELECT * FROM recording_sessions WHERE 1=1';
+        const params = [];
+        if (status) {
+            sql += ' AND status = ?';
+            params.push(status);
+        }
+        if (streamer) {
+            sql += ' AND (streamer_identity LIKE ? OR streamer_username LIKE ?)';
+            params.push(`%${streamer}%`, `%${streamer}%`);
+        }
+        if (dateFromMs) {
+            sql += ' AND start_time >= ?';
+            params.push(dateFromMs);
+        }
+        if (dateToMs) {
+            sql += ' AND start_time <= ?';
+            params.push(dateToMs);
+        }
+        sql += ' ORDER BY start_time DESC';
+        sql += ' LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+        return await this.allAsync(sql, params);
+    }
+
+    /**
+     * Matching COUNT for `listSessionsForAdmin`. Builds the same
+     * WHERE-fragments (no pagination tail) so the count is
+     * consistent with the page query. Legacy used `sql.replace`
+     * trickery (admin-recordings.js:121); rebuilding here is
+     * clearer and avoids the implicit replace-once contract.
+     */
+    async countSessionsForAdmin({ status, streamer, dateFromMs, dateToMs } = {}) {
+        let sql = 'SELECT COUNT(*) as count FROM recording_sessions WHERE 1=1';
+        const params = [];
+        if (status) {
+            sql += ' AND status = ?';
+            params.push(status);
+        }
+        if (streamer) {
+            sql += ' AND (streamer_identity LIKE ? OR streamer_username LIKE ?)';
+            params.push(`%${streamer}%`, `%${streamer}%`);
+        }
+        if (dateFromMs) {
+            sql += ' AND start_time >= ?';
+            params.push(dateFromMs);
+        }
+        if (dateToMs) {
+            sql += ' AND start_time <= ?';
+            params.push(dateToMs);
+        }
+        return await this.getAsync(sql, params);
+    }
+
+    /**
+     * SELECT local_path-only by session_id. Used by the segment-
+     * serving endpoint where the rest of the row is dead weight.
+     * Matches the legacy SQL at admin-recordings.js:995.
+     */
+    async getSessionLocalPath(sessionId) {
+        return await this.getAsync(
+            'SELECT local_path FROM recording_sessions WHERE session_id = ?',
+            [sessionId]
+        );
+    }
+
+    /**
+     * Total session COUNT. Used by /status. No parameters.
+     */
+    async countAllSessions() {
+        return await this.getAsync(
+            'SELECT COUNT(*) as count FROM recording_sessions'
+        );
+    }
+
+    /**
+     * COUNT by status. Legacy /status endpoint runs this twice with
+     * hard-coded 'recording' and 'uploaded' literals; here it's
+     * parameterized so the SQL is one string instead of two.
+     */
+    async countSessionsByStatus(status) {
+        return await this.getAsync(
+            'SELECT COUNT(*) as count FROM recording_sessions WHERE status = ?',
+            [status]
+        );
+    }
+
+    /**
+     * Sessions with a non-null `local_path`, ordered ASC. Five-column
+     * projection used by the /timeline endpoint (matches
+     * admin-recordings.js:574-579).
+     */
+    async listSessionsWithLocalPathBasic() {
+        return await this.allAsync(`
+            SELECT session_id, start_time, end_time, local_path, status
+            FROM recording_sessions
+            WHERE local_path IS NOT NULL
+            ORDER BY start_time ASC
+        `);
+    }
+
+    /**
+     * Sessions with a non-null `local_path`, ordered ASC. Seven-column
+     * projection used by the /playback endpoint (matches
+     * admin-recordings.js:787-792).
+     */
+    async listSessionsWithLocalPathFull() {
+        return await this.allAsync(`
+            SELECT session_id, start_time, end_time, local_path, status, duration_ms, segment_count
+            FROM recording_sessions
+            WHERE local_path IS NOT NULL
+            ORDER BY start_time ASC
+        `);
+    }
+
+    /**
+     * Sessions with a non-null `local_path`, ordered ASC. Two-column
+     * projection used by the /master-stream endpoint (matches
+     * admin-recordings.js:858-862). Three separate methods rather
+     * than one widest projection because the existing repo's
+     * `listSessionsPendingUpload` set the precedent — different
+     * column lists get different methods to keep each SQL string
+     * matchable against the legacy source.
+     */
+    async listSessionsWithLocalPathIdsOnly() {
+        return await this.allAsync(`
+            SELECT session_id, local_path
+            FROM recording_sessions
+            WHERE local_path IS NOT NULL
+            ORDER BY start_time ASC
+        `);
+    }
+
     // ============================================================
     // recording_stream_segments
     // ============================================================
@@ -225,6 +394,30 @@ class ContinuousRecordingRepository {
                 SET ended_at = ?
                 WHERE session_id = ? AND ended_at IS NULL
             `, [endedAt, sessionId]);
+    }
+
+    /**
+     * SELECT stream segments started on/after `sinceMs`. Nine-column
+     * projection drives the admin /timeline event list (matches
+     * admin-recordings.js:616-630). ASC order so the route can build
+     * events without re-sorting at the repo layer.
+     */
+    async listStreamSegmentsSince(sinceMs) {
+        return await this.allAsync(`
+            SELECT
+                id,
+                session_id,
+                stream_identity,
+                stream_type,
+                display_name,
+                platform,
+                source_url,
+                started_at,
+                ended_at
+            FROM recording_stream_segments
+            WHERE started_at >= ?
+            ORDER BY started_at ASC
+        `, [sinceMs]);
     }
 }
 
