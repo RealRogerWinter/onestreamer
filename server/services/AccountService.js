@@ -2,6 +2,8 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { db, runAsync, getAsync, allAsync } = require('../database/database');
 const UserRepository = require('../database/repository/UserRepository');
+const AccountStatsRepository = require('../database/repository/AccountStatsRepository');
+const UserSessionRepository = require('../database/repository/UserSessionRepository');
 
 class AccountService {
     /**
@@ -10,11 +12,21 @@ class AccountService {
      *   (useful for tests). Defaults to a fresh `UserRepository()` so the
      *   `new AccountService()` callsites scattered throughout the codebase
      *   continue to work unchanged.
+     * @param {AccountStatsRepository} [deps.accountStatsRepository]
+     * @param {UserSessionRepository} [deps.userSessionRepository]
      */
-    constructor({ userRepository } = {}) {
+    constructor({ userRepository, accountStatsRepository, userSessionRepository } = {}) {
         this.saltRounds = 10;
         this.db = db; // Add database reference for raw queries
         this.userRepository = userRepository || new UserRepository({ getAsync, runAsync, allAsync });
+        // PR 10.3 (Phase 10): user-economy + session/lifecycle SQL
+        // collapses to two sibling repos. Both accept the same
+        // dep-injection shape as UserRepository so the test surface
+        // stays uniform.
+        this.accountStatsRepository = accountStatsRepository
+            || new AccountStatsRepository({ getAsync, runAsync, allAsync });
+        this.userSessionRepository = userSessionRepository
+            || new UserSessionRepository({ getAsync, runAsync, allAsync });
     }
 
     async createUser(email, username, password, oauthProvider = null, oauthId = null) {
@@ -56,10 +68,7 @@ class AccountService {
     }
 
     async createUserStats(userId) {
-        await runAsync(
-            `INSERT INTO user_stats (user_id) VALUES (?)`,
-            [userId]
-        );
+        await this.accountStatsRepository.insertEmptyStats(userId);
     }
 
     async getUserById(id) {
@@ -195,21 +204,18 @@ class AccountService {
             return;
         }
 
-        updateFields.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(userId);
+        // updateStats appends `updated_at = CURRENT_TIMESTAMP` and the
+        // WHERE-by-user_id; the whitelist-and-relative-vs-absolute
+        // decisions stay here in the service per the comment in
+        // AccountStatsRepository.
+        await this.accountStatsRepository.updateStats(userId, updateFields, values);
 
-        const sql = `UPDATE user_stats SET ${updateFields.join(', ')} WHERE user_id = ?`;
-        await runAsync(sql, values);
-        
         // Points are now managed independently through addPoints/subtractPoints
         // No need to recalculate here
     }
 
     async getUserStats(userId) {
-        return await getAsync(
-            `SELECT * FROM user_stats WHERE user_id = ?`,
-            [userId]
-        );
+        return await this.accountStatsRepository.getStatsByUserId(userId);
     }
 
     // ==================== NEW POINTS SYSTEM METHODS ====================
@@ -230,25 +236,16 @@ class AccountService {
 
         // Atomic relative-arithmetic UPDATE. RETURNING gives us the post-write
         // balance without a follow-up SELECT, so concurrent callers can't
-        // race on stale reads (ADR-0013).
-        const updated = await getAsync(
-            `UPDATE user_stats
-                SET points_balance = points_balance + ?,
-                    updated_at = CURRENT_TIMESTAMP
-              WHERE user_id = ?
-          RETURNING points_balance`,
-            [amount, userId]
-        );
+        // race on stale reads (ADR-0013a). PR 10.3 routes through the
+        // repo — the SQL is byte-equivalent to the legacy inline form.
+        const updated = await this.accountStatsRepository.atomicAddPoints({ userId, amount });
 
         let newBalance;
         if (updated) {
             newBalance = updated.points_balance;
         } else {
             // No stats row yet — INSERT with the amount as the initial balance.
-            await runAsync(
-                `INSERT INTO user_stats (user_id, points_balance) VALUES (?, ?)`,
-                [userId, amount]
-            );
+            await this.accountStatsRepository.insertStatsWithBalance({ userId, balance: amount });
             newBalance = amount;
         }
 
@@ -274,25 +271,16 @@ class AccountService {
 
         // Atomic guarded UPDATE: only debit if the row exists AND has enough
         // balance. RETURNING gives us the post-debit balance for the
-        // transaction record; no follow-up SELECT, no race window.
-        const updated = await getAsync(
-            `UPDATE user_stats
-                SET points_balance = points_balance - ?,
-                    updated_at = CURRENT_TIMESTAMP
-              WHERE user_id = ?
-                AND points_balance >= ?
-          RETURNING points_balance`,
-            [amount, userId, amount]
-        );
+        // transaction record; no follow-up SELECT, no race window. PR 10.3
+        // routes through the repo — the SQL is byte-equivalent to the
+        // legacy inline form.
+        const updated = await this.accountStatsRepository.atomicSubtractPoints({ userId, amount });
 
         if (!updated) {
             // Either no stats row or insufficient balance — disambiguate
             // for the error message. The SELECT can race with concurrent
             // mutations but it's only feeding the error string.
-            const stats = await getAsync(
-                'SELECT points_balance FROM user_stats WHERE user_id = ?',
-                [userId]
-            );
+            const stats = await this.accountStatsRepository.getPointsBalanceByUserId(userId);
             const currentBalance = stats?.points_balance || 0;
             throw new Error(`Insufficient points balance. Has: ${currentBalance}, Needs: ${amount}`);
         }
@@ -319,13 +307,14 @@ class AccountService {
      * Record a points transaction
      */
     async recordTransaction(userId, amount, balanceAfter, type, description, metadata = null) {
-        await runAsync(
-            `INSERT INTO points_transactions 
-             (user_id, amount, balance_after, type, description, metadata)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [userId, amount, balanceAfter, type, description, 
-             metadata ? JSON.stringify(metadata) : null]
-        );
+        await this.accountStatsRepository.insertTransaction({
+            userId,
+            amount,
+            balanceAfter,
+            type,
+            description,
+            metadataJson: metadata ? JSON.stringify(metadata) : null,
+        });
     }
     
     /**
@@ -335,21 +324,15 @@ class AccountService {
      * @returns {Array} Transaction history
      */
     async getTransactionHistory(userId, limit = 50) {
-        return await allAsync(
-            `SELECT * FROM points_transactions 
-             WHERE user_id = ? 
-             ORDER BY created_at DESC 
-             LIMIT ?`,
-            [userId, limit]
-        );
+        return await this.accountStatsRepository.listTransactionsByUserId(userId, limit);
     }
 
     async transferIPSessionToUser(userId, ipAddress, sessionData) {
-        await runAsync(
-            `INSERT INTO ip_to_user_transfers (user_id, ip_address, session_data) 
-             VALUES (?, ?, ?)`,
-            [userId, ipAddress, JSON.stringify(sessionData)]
-        );
+        await this.userSessionRepository.insertIpTransfer({
+            userId,
+            ipAddress,
+            sessionDataJson: JSON.stringify(sessionData),
+        });
 
         if (sessionData.stats) {
             await this.updateUserStats(userId, sessionData.stats);
@@ -358,36 +341,24 @@ class AccountService {
 
     async createSession(userId, ipAddress, expiresIn = 86400000) {
         const expiresAt = new Date(Date.now() + expiresIn);
-        
-        const result = await runAsync(
-            `INSERT INTO user_sessions (user_id, ip_address, expires_at) 
-             VALUES (?, ?, ?)`,
-            [userId, ipAddress, expiresAt.toISOString()]
-        );
-
+        const result = await this.userSessionRepository.insertSession({
+            userId,
+            ipAddress,
+            expiresAtIso: expiresAt.toISOString(),
+        });
         return result.id;
     }
 
     async getSessionByUserId(userId) {
-        return await getAsync(
-            `SELECT * FROM user_sessions 
-             WHERE user_id = ? AND expires_at > datetime('now') 
-             ORDER BY created_at DESC LIMIT 1`,
-            [userId]
-        );
+        return await this.userSessionRepository.getActiveSessionByUserId(userId);
     }
 
     async deleteSession(sessionId) {
-        await runAsync(
-            `DELETE FROM user_sessions WHERE id = ?`,
-            [sessionId]
-        );
+        await this.userSessionRepository.deleteSessionById(sessionId);
     }
 
     async cleanupExpiredSessions() {
-        await runAsync(
-            `DELETE FROM user_sessions WHERE expires_at < datetime('now')`
-        );
+        await this.userSessionRepository.deleteExpiredSessions();
     }
 
     async promoteToAdmin(userId) {
@@ -408,10 +379,10 @@ class AccountService {
 
     async deleteUser(userId) {
         // First delete user stats
-        await runAsync(`DELETE FROM user_stats WHERE user_id = ?`, [userId]);
+        await this.accountStatsRepository.deleteStatsByUserId(userId);
 
         // Then delete user sessions
-        await runAsync(`DELETE FROM user_sessions WHERE user_id = ?`, [userId]);
+        await this.userSessionRepository.deleteSessionsByUserId(userId);
 
         // Finally delete the user
         await this.userRepository.deleteById(userId);
@@ -533,30 +504,28 @@ class AccountService {
     }
 
     async logDeletionAction(userId, action, ipAddress = null, userAgent = null) {
-        return new Promise((resolve, reject) => {
-            // First get user info for logging
-            this.getUserById(userId).then(user => {
-                if (!user) {
-                    resolve(false);
-                    return;
-                }
-                
-                const query = `
-                    INSERT INTO account_deletion_logs 
-                    (user_id, username, email, action, ip_address, user_agent, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-                `;
-                
-                this.db.run(query, [userId, user.username, user.email, action, ipAddress, userAgent], (err) => {
-                    if (err) {
-                        console.error('Failed to log deletion action:', err);
-                        resolve(false);
-                    } else {
-                        resolve(true);
-                    }
-                });
+        // PR 10.3 (Phase 10): moved off raw `db.run` callback shape onto
+        // the repo's runAsync-backed insertDeletionLog. The legacy code
+        // SWALLOWED audit-log INSERT failures (logged + resolved false
+        // instead of rejecting); the swallow shape is preserved here at
+        // the service level via try/catch.
+        const user = await this.getUserById(userId);
+        if (!user) return false;
+
+        try {
+            await this.userSessionRepository.insertDeletionLog({
+                userId,
+                username: user.username,
+                email: user.email,
+                action,
+                ipAddress,
+                userAgent,
             });
-        });
+            return true;
+        } catch (err) {
+            console.error('Failed to log deletion action:', err);
+            return false;
+        }
     }
 
     async getAccountsPendingDeletion() {
@@ -568,7 +537,14 @@ class AccountService {
         // Log the permanent deletion
         await this.logDeletionAction(userId, 'data_purged');
 
-        // Delete user data from all related tables
+        // **Cascade-delete loop stays inline by design** (PR 10.3 / Phase 10).
+        // The enumerated table list IS the audit trail for what
+        // permanent-deletion covers. Replacing it with N
+        // repo-method calls would expand the diff without changing
+        // semantics, and three of the seven tables aren't owned
+        // by any repo yet (`user_inventory` is owned by
+        // UserInventoryRepository but the others aren't). A future
+        // PR can revisit once every table has a repo.
         const tables = [
             'user_sessions',
             'user_stats',
