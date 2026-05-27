@@ -209,15 +209,13 @@ sudo systemctl status certbot.timer # automated renewal timer status
 
 The ACME challenge path (`/.well-known/acme-challenge/`) is served from `/var/www/html` on port 80 — confirmed in the nginx config.
 
-## React build vs dev server in production
+## React build served from /var/www/html
 
-A notable quirk: production currently runs the **CRA dev server** (`npm start` from the client/ directory) rather than a static `npm run build` output served by nginx. The reasons aren't fully documented; likely historical convenience. Implications:
+nginx serves the SPA bundle directly from `/var/www/html` — see the catch-all `location /` block. There is no proxy from nginx to the Node server for the React app itself; the Node `app.get('*')` catch-all is only reached for routes nginx doesn't match (e.g., `/clips/{uuid}` SSR, `/blog/{slug}` SSR).
 
-- Higher memory + CPU than a static build would require.
-- Hot-reload code exists in production (no observed exploit vector, but unnecessary).
-- nginx still serves `/var/www/html` for some static paths (per the routes above) — this is the build artifact when one exists, but the live SPA may be the dev-server output served via the catch-all proxy.
+Historical note: until 2026-05-26 a `onestreamer-client` PM2 entry ran the CRA dev server on `:3443`. nginx never actually proxied to it (the `upstream client_app` block was commented out), so the dev server was orphaned — wasting ~1.2 GB RAM with ~59 crash-restarts. It was removed from [`config/ecosystem.config.js`](../../config/ecosystem.config.js).
 
-A cleanup PR would `npm run build` once, copy `client/build/*` to `/var/www/html/`, and remove `onestreamer-client` from PM2. Captured as a follow-up; not in scope of the docs overhaul.
+That removal exposed a latent deploy gap: **nothing in the existing deploy flow rebuilt `client/` or synced the output to `/var/www/html`**. The docroot was a frozen snapshot from 2026-01-11, meaning every client-side PR from January through May silently failed to reach users. The incident is documented in [`runbooks/stale-frontend-after-deploy.md`](runbooks/stale-frontend-after-deploy.md). Fixed in [`scripts/deploy/start-production.sh`](../../scripts/deploy/start-production.sh) — it now runs `npm run build` and rsyncs to `/var/www/html` as part of every deploy.
 
 ## Companion services
 
@@ -293,10 +291,16 @@ cd client && npm install && cd ..    # if client deps changed
 cd chat-service && npm install && cd ..  # if chat deps changed
 # Run any pending migrations
 node server/migrations/<new-migration>.js
+# Build + sync the React client to nginx docroot
+# (skipped historically — see runbooks/stale-frontend-after-deploy.md)
+cd client && npm run build && cd ..
+sudo rsync -a --no-owner --no-group client/build/ /var/www/html/
 # Restart
 pm2 restart all --update-env
 pm2 logs                             # watch for boot errors
 ```
+
+Or run [`scripts/deploy/start-production.sh`](../../scripts/deploy/start-production.sh), which bundles the build + rsync + nginx reload + PM2 boot into one script.
 
 For database schema changes: back up first.
 

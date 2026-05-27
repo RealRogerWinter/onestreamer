@@ -61,5 +61,12 @@ module.exports = {
     // built bundle from /var/www/html; the dev server was crash-looping (~59 restarts)
     // and consuming ~1.2 GB RAM for no benefit. To re-enable for local debugging,
     // restore from ecosystem.config.js.bak-* and `pm2 start ecosystem.config.js`.
+    //
+    // IMPORTANT: with the dev server gone, /var/www/html only updates when a
+    // built bundle is rsynced there. scripts/deploy/start-production.sh handles
+    // this. For incremental deploys without the full restart, run:
+    //   cd client && npm run build
+    //   sudo rsync -a --no-owner --no-group client/build/ /var/www/html/
+    // See docs/operations/runbooks/stale-frontend-after-deploy.md.
   ]
 };

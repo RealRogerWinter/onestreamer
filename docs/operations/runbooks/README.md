@@ -38,3 +38,4 @@ What would have prevented this. Could be code, monitoring, runbook update, etc.
 | [`viewbot-fleet-misbehaving.md`](viewbot-fleet-misbehaving.md) | Viewbot rotation hung, leaking processes, or stuck on one channel. |
 | [`secret-rotation.md`](secret-rotation.md) | Procedure for rotating any of the project's credentials. |
 | [`better-sqlite3-rebuild.md`](better-sqlite3-rebuild.md) | better-sqlite3 native binding fails to load (NODE_MODULE_VERSION mismatch on Ubuntu-patched Node 18). |
+| [`stale-frontend-after-deploy.md`](stale-frontend-after-deploy.md) | A merged client feature isn't visible in the browser after a deploy — `/var/www/html` not synced with `client/build`. |

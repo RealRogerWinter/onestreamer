@@ -63,6 +63,22 @@ else
     echo -e "${RED}!${NC} Let's Encrypt certificates not found - nginx will fail"
 fi
 
+# Build the React client and sync to nginx docroot.
+# nginx serves the SPA from /var/www/html (see deployment.md for routing). The
+# CRA dev server was retired 2026-05-26, so without this step the docroot goes
+# stale on every deploy. rsync without --delete preserves /var/www/html/blog,
+# /var/www/html/turn-test.html, and the default nginx-debian page.
+echo -e "\n${YELLOW}Building and deploying React client...${NC}"
+if (cd client && npm run build > /dev/null 2>&1); then
+    echo -e "${GREEN}✓${NC} Client build succeeded"
+else
+    echo -e "${RED}✗${NC} Client build failed — aborting"
+    (cd client && npm run build) 2>&1 | tail -30
+    exit 1
+fi
+sudo rsync -a --no-owner --no-group /root/onestreamer/client/build/ /var/www/html/
+echo -e "${GREEN}✓${NC} Synced client/build → /var/www/html (bundle: $(grep -oE 'main\.[a-f0-9]+\.js' /var/www/html/index.html))"
+
 # Test nginx configuration
 echo -e "\n${YELLOW}Testing nginx configuration...${NC}"
 if nginx -t > /dev/null 2>&1; then
