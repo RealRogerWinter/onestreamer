@@ -1,4 +1,4 @@
-const { runAsync, getAsync, allAsync } = require('../database/database');
+const { runAsync, getAsync, allAsync, withTransaction } = require('../database/database');
 const UserRepository = require('../database/repository/UserRepository');
 const ShopRepository = require('../database/repository/ShopRepository');
 const ItemTransactionRepository = require('../database/repository/ItemTransactionRepository');
@@ -12,6 +12,10 @@ class ShopService {
         this.userRepository = deps.userRepository || new UserRepository({ getAsync, runAsync, allAsync });
         this.shopRepository = deps.shopRepository || new ShopRepository();
         this.itemTransactionRepository = deps.itemTransactionRepository || new ItemTransactionRepository();
+        // Injected for testability — withTransaction is normally the module
+        // singleton from database.js. Tests override with an isolated helper
+        // bound to an in-memory connection (see purchaseItem.atomic.test.js).
+        this.withTransaction = deps.withTransaction || withTransaction;
         this.initializeShop();
     }
 
@@ -96,53 +100,54 @@ class ShopService {
             return await this.updateShopItem(existing.id, { price, ...options });
         }
 
-        const result = await runAsync(
-            `INSERT INTO shop_items 
-             (item_id, price, discount_percentage, is_featured, stock_limit, available_from, available_until)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [itemId, price, discount_percentage, is_featured, stock_limit, available_from, available_until]
-        );
+        const result = await this.shopRepository.insertShopItem({
+            itemId,
+            price,
+            discountPercentage: discount_percentage,
+            isFeatured: is_featured,
+            stockLimit: stock_limit,
+            availableFrom: available_from,
+            availableUntil: available_until,
+        });
 
         return { id: result.id, itemId, price, ...options };
     }
 
     async updateShopItem(shopItemId, updates) {
         const allowedFields = [
-            'price', 'discount_percentage', 'is_featured', 
+            'price', 'discount_percentage', 'is_featured',
             'stock_limit', 'available_from', 'available_until'
         ];
 
-        const fields = Object.keys(updates).filter(field => allowedFields.includes(field));
-        if (fields.length === 0) {
+        const fields = {};
+        for (const key of Object.keys(updates)) {
+            if (allowedFields.includes(key)) fields[key] = updates[key];
+        }
+        if (Object.keys(fields).length === 0) {
             throw new Error('No valid fields to update');
         }
 
-        const setClause = fields.map(field => `${field} = ?`).join(', ');
-        const values = fields.map(field => updates[field]);
-        values.push(shopItemId);
-
-        await runAsync(
-            `UPDATE shop_items SET ${setClause} WHERE id = ?`,
-            values
-        );
+        await this.shopRepository.updateShopItemFields(shopItemId, fields);
 
         return { success: true };
     }
 
     async removeItemFromShop(shopItemId) {
-        await runAsync('DELETE FROM shop_items WHERE id = ?', [shopItemId]);
+        await this.shopRepository.deleteShopItemById(shopItemId);
         return { success: true };
     }
 
     async purchaseItem(userId, itemId, quantity = 1) {
+        // Pre-tx validation. Read-only checks for fast-fail on common errors
+        // (no points, no stock, max-stack exceeded). The atomic-guard SQL inside
+        // subtractPoints (ADR-0013a) is the source of truth — these pre-checks
+        // just give the user a clean error before we pay the tx-open cost.
         const user = await this.userRepository.getById(userId);
-
         if (!user) {
             throw new Error('User not found');
         }
 
         const shopItem = await this.shopRepository.findItemForPurchase(itemId);
-
         if (!shopItem) {
             throw new Error('Item not available in shop');
         }
@@ -150,7 +155,6 @@ class ShopService {
         const finalPrice = this.calculateFinalPrice(shopItem.price, shopItem.discount_percentage);
         const totalCost = finalPrice * quantity;
 
-        // Check current balance
         const currentBalance = await this.accountService.getPointsBalance(userId);
         if (currentBalance < totalCost) {
             throw new Error('Insufficient points');
@@ -162,42 +166,90 @@ class ShopService {
 
         const currentInventory = await this.inventoryService.getInventoryItem(userId, itemId);
         const currentQuantity = currentInventory ? currentInventory.quantity : 0;
-        
-        // Convert to integer to handle potential string values from database
         const maxStack = parseInt(shopItem.max_stack) || 0;
         if (maxStack > 0 && currentQuantity + quantity > maxStack) {
             throw new Error(`Cannot exceed maximum stack of ${maxStack}`);
         }
 
-        // Deduct points using new method
-        const newBalance = await this.accountService.subtractPoints(
-            userId,
-            totalCost,
-            'purchase',
-            `Purchased ${quantity}x ${shopItem.display_name}`,
-            { itemId, quantity, pricePerItem: finalPrice }
-        );
+        // Atomic money flow (ADR-0015). Wraps, in order:
+        //   1. subtractPoints       — debit user_stats (atomic per ADR-0013a;
+        //                             inside the tx so a downstream throw rolls it back)
+        //   2. decrementStockLimit  — guarded UPDATE; throws "Insufficient stock"
+        //                             inside the tx if a concurrent purchase consumed
+        //                             the last unit between our pre-check and our debit
+        //   3. inventory cap re-check — re-reads inventory inside the scope; the pre-check
+        //                             at the top of this method is a fast-fail UX hint,
+        //                             this re-check is the source of truth
+        //   4. addItemToInventory   — credit user_inventory
+        //   5. insertPurchase       — audit row in item_transactions
+        //
+        // If any step throws (e.g. SQLite I/O error mid-tx, or the server crashes),
+        // the connection rolls back on next open / on the next withTransaction call
+        // and the user is NOT debited. See ADR-0015 for the crash-recovery story.
+        //
+        // The accountService/inventoryService methods use the module-level
+        // runAsync/getAsync wrappers (captured at their construction). Inside
+        // the BEGIN IMMEDIATE scope those wrappers route through the same
+        // connection, so every statement is part of our tx. The tx proxy here
+        // is unused — kept for documentation symmetry with PR 10.2 and future
+        // consumers that DO need to thread it through.
+        const newBalance = await this.withTransaction(async (_tx) => {
+            const balanceAfter = await this.accountService.subtractPoints(
+                userId,
+                totalCost,
+                'purchase',
+                `Purchased ${quantity}x ${shopItem.display_name}`,
+                { itemId, quantity, pricePerItem: finalPrice }
+            );
 
-        await this.inventoryService.addItemToInventory(userId, itemId, quantity);
+            // Guarded stock decrement happens BEFORE inventory credit so a
+            // SQLITE-level race against a concurrent purchaser surfaces as a
+            // user-facing "Insufficient stock" before we've started writing
+            // inventory rows. The guard returns no row when stock_limit < quantity;
+            // we throw, the tx rolls back, no one is debited.
+            if (shopItem.stock_limit !== 0) {
+                const after = await this.shopRepository.decrementStockLimit(shopItem.id, quantity);
+                if (!after) {
+                    throw new Error('Insufficient stock');
+                }
+            }
 
-        await this.itemTransactionRepository.insertPurchase({
-            userId,
-            itemId,
-            quantity,
-            pricePerItem: finalPrice,
-            totalCost,
-            pointsBefore: currentBalance,
-            pointsAfter: newBalance,
+            // Inventory cap re-check inside the scope. The pre-tx check at the
+            // top of purchaseItem is a UX fast-fail; this is the source of truth.
+            // addItemToInventory itself silently clamps to max_stack rather than
+            // throwing, so without this check a user purchasing past their cap
+            // would get debited the full price but receive only (cap - currentQty)
+            // items. Throwing here triggers ROLLBACK.
+            const inventoryNow = await this.inventoryService.getInventoryItem(userId, itemId);
+            const quantityNow = inventoryNow ? inventoryNow.quantity : 0;
+            if (maxStack > 0 && quantityNow + quantity > maxStack) {
+                throw new Error(`Cannot exceed maximum stack of ${maxStack}`);
+            }
+
+            await this.inventoryService.addItemToInventory(userId, itemId, quantity);
+
+            // Compute pointsBefore from the exact-subtract relationship:
+            // subtractPoints succeeded iff balanceAfter = oldBalance - totalCost,
+            // so oldBalance = balanceAfter + totalCost. This is more accurate
+            // than the pre-tx `currentBalance` read, which can race with
+            // concurrent debits/credits from other code paths.
+            await this.itemTransactionRepository.insertPurchase({
+                userId,
+                itemId,
+                quantity,
+                pricePerItem: finalPrice,
+                totalCost,
+                pointsBefore: balanceAfter + totalCost,
+                pointsAfter: balanceAfter,
+            });
+
+            return balanceAfter;
         });
 
-        if (shopItem.stock_limit !== 0) {
-            await runAsync(
-                'UPDATE shop_items SET stock_limit = stock_limit - ? WHERE id = ?',
-                [quantity, shopItem.id]
-            );
-        }
-
-        // Emit socket event for real-time update
+        // Side effects after commit. Emitting the socket event inside the tx
+        // would surface "points-updated" to the client before COMMIT — if the
+        // tx then rolled back, the client would show a balance that didn't
+        // actually exist. Outside the tx, ordering is: tx commits → emit.
         if (this.io) {
             this.io.emit('points-updated', {
                 userId,

@@ -1,19 +1,12 @@
 /**
- * ShopRepository (read-only methods — PR 7.3)
+ * ShopRepository
  *
  * Pure SQL wrapper for the shop_items table:
  *   - shop_items              (per-item pricing, availability windows, stock)
  *
- * PR 7.3 covers the **read-only** methods only — the six SELECT shapes
- * that ShopService consumes for the customer-facing shop view, the
- * admin shop-items list, the existence check before insert, the
- * single-row purchase lookup, and the featured / discounted sub-views.
- *
- * The write methods (INSERT new shop_item, UPDATE existing fields,
- * DELETE by id, UPDATE stock_limit after purchase) stay inline in
- * ShopService for now and will be extracted by **PR 7.4** alongside
- * the atomic `purchaseItem` refactor — separating read from write
- * keeps this PR mechanical and reviewable.
+ * Read-only methods landed in PR 7.3; write methods (insert, update,
+ * delete, stock decrement) landed in PR 7.4 alongside the atomic
+ * purchaseItem refactor.
  *
  * Every method JOINs to `items` for display columns. The SELECT shape
  * is shop-centric (anchored on `shop_items`, ordered by
@@ -202,6 +195,94 @@ class ShopRepository {
              JOIN items i ON si.item_id = i.id
              WHERE si.discount_percentage > 0 AND i.is_active = 1
              ORDER BY si.discount_percentage DESC`
+        );
+    }
+
+    // ============================================================
+    // Write methods (PR 7.4)
+    // ============================================================
+
+    /**
+     * INSERT a new shop_items row. Seven-column shape matching the legacy
+     * `addItemToShop` SQL. Caller (ShopService.addItemToShop) handles the
+     * existence-check + dispatch-to-update path.
+     */
+    async insertShopItem({ itemId, price, discountPercentage, isFeatured, stockLimit, availableFrom, availableUntil }) {
+        return await this.runAsync(
+            `INSERT INTO shop_items
+                (item_id, price, discount_percentage, is_featured, stock_limit, available_from, available_until)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [itemId, price, discountPercentage, isFeatured, stockLimit, availableFrom, availableUntil]
+        );
+    }
+
+    /**
+     * UPDATE selected fields on a shop_items row, identified by `id`.
+     * Builds the SET clause dynamically from the keys of `fields`.
+     *
+     * The repo owns the field-name allowlist (defense in depth — even
+     * if a future route handler forwards user input straight in,
+     * unsanitized keys are rejected here, not just at the service
+     * layer). The allowlist matches the legacy `allowedFields` set
+     * from `ShopService.updateShopItem` exactly.
+     *
+     * Throws if `fields` is empty OR if any key falls outside the
+     * allowlist — same as the legacy service-level "No valid fields to
+     * update" guard.
+     */
+    async updateShopItemFields(shopItemId, fields) {
+        const allowedFields = [
+            'price', 'discount_percentage', 'is_featured',
+            'stock_limit', 'available_from', 'available_until',
+        ];
+        const keys = Object.keys(fields);
+        if (keys.length === 0) {
+            throw new Error('updateShopItemFields: no fields supplied');
+        }
+        for (const k of keys) {
+            if (!allowedFields.includes(k)) {
+                throw new Error(`updateShopItemFields: field not allowed: ${k}`);
+            }
+        }
+        const setClause = keys.map((k) => `${k} = ?`).join(', ');
+        const values = keys.map((k) => fields[k]);
+        values.push(shopItemId);
+        return await this.runAsync(
+            `UPDATE shop_items SET ${setClause} WHERE id = ?`,
+            values
+        );
+    }
+
+    /**
+     * DELETE a shop_items row by id.
+     */
+    async deleteShopItemById(shopItemId) {
+        return await this.runAsync(
+            'DELETE FROM shop_items WHERE id = ?',
+            [shopItemId]
+        );
+    }
+
+    /**
+     * Guarded atomic stock decrement: UPDATE shop_items SET stock_limit
+     * = stock_limit - ? WHERE id = ? AND stock_limit >= ? RETURNING
+     * stock_limit. The guard prevents stock from going negative when
+     * two concurrent purchases pass the pre-tx stock check at the
+     * service layer; the inner-of-the-two debits gets rolled back via
+     * the throw → withTransaction's ROLLBACK path.
+     *
+     * Returns `undefined` if the guard fails (no row updated); caller
+     * is expected to throw a user-facing "Insufficient stock" error in
+     * that case so the surrounding transaction rolls back.
+     *
+     * stock_limit = 0 is the "unlimited stock" sentinel. Callers must
+     * skip the decrement entirely for unlimited rows; the guard would
+     * succeed (0 >= 0) but the decrement would land at -1.
+     */
+    async decrementStockLimit(shopItemId, quantity) {
+        return await this.getAsync(
+            'UPDATE shop_items SET stock_limit = stock_limit - ? WHERE id = ? AND stock_limit >= ? RETURNING stock_limit',
+            [quantity, shopItemId, quantity]
         );
     }
 }

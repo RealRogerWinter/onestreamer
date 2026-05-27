@@ -221,12 +221,25 @@ the helper's doc-comment.
 - **Both backends supported.** No env-flag-conditional code paths in
   callers. The same `withTransaction(fn)` body runs unchanged whether
   sqlite3 or better-sqlite3 is active.
-- **Crash safety.** A process crash mid-tx leaves the DB in a
-  consistent state (sqlite3 rolls back the un-committed tx on next
-  open). For Phase 7's specific hazard — server crash between
-  subtractPoints and the inventory INSERT — the user's points are NOT
-  debited because the COMMIT didn't fire. Verified empirically in the
-  PR 7.4 integration test.
+- **Crash safety relies on SQLite's standard recovery, not on this
+  helper's code.** A process crash mid-tx leaves the file-backed WAL'd
+  DB in a state that SQLite's next-open recovery rolls back; the
+  helper does not own this property — it inherits it from SQLite. For
+  Phase 7's specific hazard (server crash between subtractPoints and
+  the inventory INSERT), the user's points are NOT debited because the
+  COMMIT didn't fire and SQLite's recovery undoes the partial work.
+  **What the PR 7.4 integration tests actually verify** is the
+  JS-level ROLLBACK path: a thrown error inside the body fn causes
+  the helper to issue a `ROLLBACK` statement that undoes all
+  uncommitted writes against the same connection. The tests run
+  against `:memory:` connections (no WAL, no rollback journal on
+  disk), so they exercise the in-process rollback only. The actual
+  cross-process crash-recovery property is not tested by this PR;
+  it's the contract SQLite has already provided for years on
+  file-backed WAL'd databases. If a future regression in either
+  SQLite's recovery or the way the helper interacts with WAL needs
+  to be caught, a dedicated test would have to spawn a subprocess,
+  kill it mid-tx, reopen the file, and assert no committed delta.
 
 ### Negative / Trade-offs
 
