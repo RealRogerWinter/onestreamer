@@ -31,8 +31,8 @@
 // Stateful service deps come from `req.app.locals.<serviceName>` with the
 // JSON-500 short-circuit pattern from `server/routes/audio.js`.
 //
-//   286–311     visualfx debug static assets → routes/visualfx-static.js (15B.3.a — trivial)
-//   1123–1145   root + health + webrtc cfg   → routes/health.js          (15B.3.a)
+//   286–311     visualfx debug static assets → routes/visualfx-static.js (deferred — trivial)
+//   [extracted] root + health + webrtc cfg   → routes/health.js          (15B.3.a — landed)
 //   1180–1587   emoji CRUD (user + admin)    → routes/emojis.js          (15B.3.b)
 //   1235–1326   admin moderation ban/timeout → routes/admin-moderation.js (15B.3.c)
 //   1590–1696   user chat-color get/set      → routes/user-prefs.js      (15B.3.d)
@@ -615,6 +615,8 @@ app.locals.audioOptimizationService = audioOptimizationService;
 // it via req.app.locals.mediasoupService (PR-G3).
 app.locals.mediasoupService = mediasoupService;
 app.locals.usingAdapter = usingAdapter;
+app.locals.webrtcAdapter = global.webrtcAdapter; // mirrors the global; routes/health.js reads
+app.locals.adminKey = ADMIN_KEY; // for routes/health.js admin-config endpoint
 // generateTurnCredentials is a top-level helper in server/index.js; expose
 // it for server/routes/media.js (used by /api/livekit/token).
 app.locals.generateTurnCredentials = generateTurnCredentials;
@@ -1007,46 +1009,14 @@ const streamOrchestration = createStreamOrchestration({
 });
 const { broadcastGlobalCooldown, enrichStreamStatus, verifyAndEmitStreamReady } = streamOrchestration;
 
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'OneStreamer API Server', 
-    version: '1.0.0',
-    endpoints: {
-      health: '/health',
-      streamStatus: '/api/stream/status',
-      frontend: process.env.CLIENT_URL || 'https://onestreamer.live:3443'
-    }
-  });
-});
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
+// Phase 15B.3.a — health/root/webrtc-config moved to routes/health.js
+// (covers GET /, GET /health, GET /api/admin/webrtc/config).
+app.use(require('./routes/health'));
 
 // /api/stream/status, /api/stream/active, /api/media/*, /api/mediasoup/*,
-// /api/webrtc/backend, and /api/livekit/token now live in
+// /api/webrtc/backend, and /api/livekit/token live in
 // server/routes/mediasoup.js and server/routes/media.js (mounted above).
 // PR-G3.
-
-// Admin endpoint to check backend configuration
-app.get('/api/admin/webrtc/config', (req, res) => {
-  const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
-  const correctKey = ADMIN_KEY;
-  
-  if (adminKey !== correctKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  
-  res.json({
-    adapterEnabled: usingAdapter,
-    currentBackend: usingAdapter ? global.webrtcAdapter.getBackendType() : 'mediasoup',
-    availableBackends: ['mediasoup', 'livekit'],
-    environmentVariables: {
-      USE_WEBRTC_ADAPTER: process.env.USE_WEBRTC_ADAPTER || 'false',
-      WEBRTC_BACKEND: process.env.WEBRTC_BACKEND || 'mediasoup'
-    }
-  });
-});
 
 // Import JWT admin authentication middleware
 const { authenticateAdmin, authenticateModerator } = require('./middleware/auth');
