@@ -22,6 +22,13 @@ class ChatBotService {
         // Falls back to null when not injected (the test mocks don't pass one);
         // emit() guards on truthiness so the no-bus case is a silent no-op.
         this.botEventBus = botEventBus;
+        // PR-M4 (ADR-0013): optional ModerationService reference. When set,
+        // every MovieBot reply runs through `checkBotOutput()` before it's
+        // emitted to chat — flagged outputs are dropped silently and a
+        // 'mb_output_dropped' moderation_events row is written. Late-
+        // injected from server/index.js via setModerationService() because
+        // ModerationService is built after ChatBotService.
+        this.moderationService = null;
         // getMoviePromptTemplate is a closure provided by the factory that
         // lazily reads movieBotService.config.moviePromptTemplate at call
         // time (movieBotService is constructed AFTER chatBotService, so the
@@ -82,6 +89,10 @@ class ChatBotService {
         } catch (error) {
             console.error('❌ ChatBot Service initialization error:', error);
         }
+    }
+
+    setModerationService(moderationService) {
+        this.moderationService = moderationService || null;
     }
 
     setIoInstance(io) {
@@ -1137,6 +1148,41 @@ class ChatBotService {
                 botInstance.username  // Pass bot's username for self-awareness
             );
             
+            // PR-M4 (ADR-0013): output-moderation gate. Runs Stage 1 + Stage 2
+            // on the generated reply before it reaches chat-service. Flagged
+            // replies are dropped silently — the bot occasionally "skips a
+            // beat" (fine for an entertainment bot) and the admin events
+            // tab shows the drop with full context for tuning. Drop semantics
+            // chosen per user M0 decision: no retry, no [filtered] placeholder
+            // (which would surface moderation noise to chat), no persona
+            // disable. If the moderationService isn't wired, this is a no-op
+            // and behaviour matches pre-M4.
+            if (response && response.message && this.moderationService &&
+                typeof this.moderationService.checkBotOutput === 'function') {
+                try {
+                    // ctx.streamerId is for admin-diagnostics display only.
+                    // The streamer's socket id isn't readily available in this
+                    // scope (ChatBotService doesn't hold streamService), so
+                    // we pass null and the admin UI surfaces just the bot
+                    // username + transcript_excerpt for the dropped output.
+                    const gate = await this.moderationService.checkBotOutput(response.message, {
+                        streamerId: null,
+                        botUsername: bot.username,
+                    });
+                    if (gate && gate.allowed === false) {
+                        console.log(`🛡️ ChatBotService: MovieBot reply from ${bot.username} dropped by moderation (reason=${gate.reason}, eventId=${gate.eventId})`);
+                        return { success: false, error: `moderation_dropped:${gate.reason}`, moderation_event_id: gate.eventId || null };
+                    }
+                } catch (err) {
+                    console.error('❌ ChatBotService: moderation gate threw:', err.message);
+                    // Fail open here — a bug in the moderation gate shouldn't
+                    // silence the bot. The next-tier defense (Stage 1+2 on the
+                    // STREAMER's audio) still applies, and outright slurs in
+                    // the bot reply would have to come from a Groq response
+                    // that escaped its own safety filters.
+                }
+            }
+
             // Send the message through the bot's socket
             if (response && response.message && botInstance.socket && botInstance.connected) {
                 console.log(`🎬 ChatBotService: Attempting to send movie comment from ${bot.username}: "${response.message}"`);

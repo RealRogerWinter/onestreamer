@@ -485,9 +485,20 @@ class TranscriptionService extends EventEmitter {
                 '-f', audioPath,
                 '-t', '2', // reduced threads to avoid hanging
                 '--no-timestamps',
-                '-otxt'
+                '-otxt',
+                // PR-M4 (ADR-0013): Whisper hardening for the AI moderation
+                // pipeline. (1) `--temperature 0.0` for deterministic output —
+                // ASR moderation evidence is more credible when re-running
+                // produces the same transcript. (2) `--initial-prompt` steers
+                // Whisper away from its default behaviour of redacting
+                // profanity to `***` — that redaction defeats Stage 1 word-
+                // filter matching. The prompt is short and avoids any
+                // appearance of an instruction that could fight the user's
+                // language choice.
+                '--temperature', '0.0',
+                '--prompt', 'Transcribe verbatim, including any profanity.',
             ];
-            
+
             if (config.language && config.language !== 'auto') {
                 args.push('-l', config.language);
             }

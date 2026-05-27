@@ -576,6 +576,89 @@ describe('ModerationService Stage 3 + ActionArbiter integration', () => {
   });
 });
 
+describe('ModerationService.checkBotOutput (MovieBot output gate)', () => {
+  test('clean text → allowed:true, no row written', async () => {
+    const stage2 = makeStage2Stub();
+    const { svc, moderationNotifier, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    const result = await svc.checkBotOutput('That was a really fun stream segment, classic dad jokes.', { botUsername: 'bot_a' });
+    expect(result.allowed).toBe(true);
+    expect(stage2.classify).not.toHaveBeenCalled();
+    expect(moderationNotifier.botOutputDropped).not.toHaveBeenCalled();
+    const rows = await wrapper.allAsync('SELECT * FROM moderation_events');
+    expect(rows).toHaveLength(0);
+  });
+
+  test('hard-tier word match drops the output and writes a mb_output_dropped row', async () => {
+    const stage2 = makeStage2Stub();
+    const { svc, moderationNotifier, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    const result = await svc.checkBotOutput('lol what a faggot move from the streamer', { botUsername: 'bot_a' });
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe('hard_tier_word');
+    expect(result.eventId).toBeGreaterThan(0);
+    expect(moderationNotifier.botOutputDropped).toHaveBeenCalledTimes(1);
+    const row = await wrapper.getAsync('SELECT * FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.stream_type).toBe('moviebot-output');
+    expect(row.final_decision).toBe('mb_output_dropped');
+    expect(row.action_taken).toBe('dropped_hard_tier_word');
+    expect(row.surrounding_context).toBe('bot=bot_a');
+  });
+
+  test('soft-tier match alone with low Stage 2 risk does NOT drop', async () => {
+    // The 'nigga' entry in the seed is 'soft' severity. Stage 2 stub returns
+    // risk_level=3 by default; override to a low risk so the soft-tier
+    // shouldn't trigger a drop.
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => ({
+        risk_level: 1,
+        categories: ['hate_speech'],
+        explanation: 'reclaimed AAVE usage',
+        model: 'stub', latency_ms: 10,
+      })),
+    });
+    const { svc } = await buildService({ stage2 });
+    await svc.initialize();
+    // Use a soft-tier reclamation-context word.
+    const r = await svc.checkBotOutput('that was so cool nigga, fair play', { botUsername: 'bot_b' });
+    expect(r.allowed).toBe(true);
+  });
+
+  test('soft-tier match + Stage 2 risk >= 2 drops the output', async () => {
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => ({
+        risk_level: 2,
+        categories: ['hate_speech'],
+        explanation: 'aggressive use',
+        model: 'stub', latency_ms: 10,
+      })),
+    });
+    const { svc, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    const r = await svc.checkBotOutput('shut up retard you are bad at this', { botUsername: 'bot_c' });
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toBe('stage2_risk');
+    const row = await wrapper.getAsync('SELECT * FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.action_taken).toBe('dropped_stage2_risk');
+  });
+
+  test('empty / non-string input is allowed (silent pass-through)', async () => {
+    const { svc } = await buildService();
+    await svc.initialize();
+    expect((await svc.checkBotOutput(null)).allowed).toBe(true);
+    expect((await svc.checkBotOutput('')).allowed).toBe(true);
+    expect((await svc.checkBotOutput(undefined)).allowed).toBe(true);
+  });
+
+  test('stopped service short-circuits to allowed:true', async () => {
+    const { svc } = await buildService();
+    await svc.initialize();
+    await svc.stop();
+    const r = await svc.checkBotOutput('faggot');
+    expect(r.allowed).toBe(true);
+  });
+});
+
 describe('ModerationService.getEvents / getEvent', () => {
   test('getEvents returns rows in reverse-chronological order (newest first)', async () => {
     const { svc, wrapper } = await buildService();

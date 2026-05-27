@@ -4942,6 +4942,15 @@ async function startServer() {
       moderationService = null;
     }
 
+    // PR-M4 (ADR-0013): wire the MovieBot output-moderation gate. When a
+    // bot reply is generated, ChatBotService.generateMovieComment runs it
+    // through moderationService.checkBotOutput before the chat-service
+    // emit. Flagged replies are dropped silently and a 'mb_output_dropped'
+    // event row is written. No-op if moderationService failed to init.
+    if (moderationService && chatBotService && typeof chatBotService.setModerationService === 'function') {
+      chatBotService.setModerationService(moderationService);
+    }
+
     if (!livekitService) {
       // ── MediaSoup branch orchestration ────────────────────────────────
       // Initialize URL Stream ViewBot Service for MediaSoup backend

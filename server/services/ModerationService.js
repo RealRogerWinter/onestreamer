@@ -668,6 +668,111 @@ class ModerationService extends EventEmitter {
     }
   }
 
+  // ── MovieBot output gate (PR-M4) ───────────────────────────────────────
+
+  /**
+   * Stage-1 + Stage-2 gate for outbound MovieBot chat replies. Called by
+   * MovieBotService just before it emits a generated response. Runs the
+   * same word-filter + LLM classifier as the streamer-audio pipeline, but
+   * with three differences:
+   *   1. NO Stage 3 cross-check — bot output is dropped silently per the
+   *      user's choice (M0 decision matrix), so the cross-check has nothing
+   *      to gate. Cheaper, faster.
+   *   2. NO ActionArbiter — drop is the only action.
+   *   3. Stream-type is 'moviebot-output' so admin events tab can filter.
+   *
+   * @param {string} text                 The generated bot reply.
+   * @param {object} [ctx]
+   * @param {string} [ctx.streamerId]     Current streamer's socket id (context).
+   * @param {string} [ctx.botUsername]    Bot persona id (admin diagnostics).
+   * @returns {Promise<{allowed: boolean, reason?: string, eventId?: number}>}
+   */
+  async checkBotOutput(text, ctx = {}) {
+    if (this._stopped) return { allowed: true };
+    if (typeof text !== 'string' || text.length === 0) return { allowed: true };
+
+    const normalized = Stage1.normalize(text);
+    const matches = Stage1.findMatches(normalized, this._termsCache);
+
+    let stage2VerdictJson = null;
+    let stage2RiskLevel = null;
+    let stage2CategoriesJson = null;
+    let stage2Said = null;
+    if (matches.length > 0 && this.stage2 && this.stage2.isReady()) {
+      try {
+        const r = await this.stage2.classify({ transcriptExcerpt: text });
+        if (r) {
+          if (r.degraded) {
+            stage2VerdictJson = JSON.stringify({ degraded: true, reason: r.reason });
+          } else if (r.error) {
+            stage2VerdictJson = JSON.stringify({ error: r.error });
+          } else if (Number.isInteger(r.risk_level)) {
+            stage2Said = r;
+            stage2VerdictJson = JSON.stringify({
+              risk_level: r.risk_level,
+              categories: r.categories,
+              explanation: r.explanation,
+              latency_ms: r.latency_ms,
+            });
+            stage2RiskLevel = r.risk_level;
+            stage2CategoriesJson = JSON.stringify(r.categories);
+          }
+        }
+      } catch (err) {
+        console.error('❌ ModerationService: checkBotOutput Stage 2 threw:', err);
+      }
+    }
+
+    // Decision: drop if Stage 1 matched a hard-tier term OR Stage 2 returned
+    // risk_level >= 2. The threshold here is lower than the streamer-audio
+    // pipeline (which only acts on risk_level=3 + 2-of-2) because bot output
+    // is a controlled surface — we'd rather drop a borderline reply than
+    // emit it under the platform's identity.
+    const hardHit = matches.some((m) => m.severity === 'hard');
+    const stage2Hit = stage2Said && stage2Said.risk_level >= 2;
+    const shouldDrop = matches.length > 0 && (hardHit || stage2Hit);
+
+    if (!shouldDrop) {
+      return { allowed: true };
+    }
+
+    const event = await this._insertEvent({
+      stream_session_id: String(this.streamService.getStreamGeneration()),
+      streamer_id: ctx.streamerId || null,
+      stream_type: 'moviebot-output',
+      transcript_chunk_id: null,
+      transcript_excerpt: text,
+      surrounding_context: ctx.botUsername ? `bot=${ctx.botUsername}` : null,
+      matched_terms_json: JSON.stringify(matches.map((m) => ({
+        term: m.term, category: m.category, severity: m.severity,
+      }))),
+      stage1_hit: matches.length > 0 ? 1 : 0,
+      stage2_verdict_json: stage2VerdictJson,
+      stage2_risk_level: stage2RiskLevel,
+      stage2_categories_json: stage2CategoriesJson,
+      final_decision: 'mb_output_dropped',
+      action_taken: hardHit ? 'dropped_hard_tier_word' : 'dropped_stage2_risk',
+      actor: 'system',
+      automated_decision: 1,
+      legal_basis: null,
+      redress_url: null,
+      ml_model_versions_json: JSON.stringify({
+        stage1: 'embedded-v1',
+        stage2: stage2Said && stage2Said.model || null,
+      }),
+    });
+
+    if (event) {
+      this.moderationNotifier.botOutputDropped({ event });
+      this.emit('bot-output-dropped', event);
+    }
+    return {
+      allowed: false,
+      reason: hardHit ? 'hard_tier_word' : 'stage2_risk',
+      eventId: event && event.id,
+    };
+  }
+
   // ── Read API for admin (PR-M5 will use these via routes) ──────────────
 
   async getEvent(id) {
