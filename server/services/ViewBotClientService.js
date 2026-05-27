@@ -1,9 +1,7 @@
-const { v4: uuidv4 } = require('uuid');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const io = require('socket.io-client');
-const puppeteer = require('puppeteer');
 const ViewBotDatabaseService = require('./ViewBotDatabaseService');
 const ViewBotGStreamerService = require('./ViewBotGStreamerService');
 const processManager = require('./ProcessManager');
@@ -188,14 +186,24 @@ class ViewBotClientService {
     // Save to config file
     this.saveRotationConfig();
     
-    // Restart rotation timers with new intervals if any bots are active
-    const activeBots = Array.from(this.viewBots.values()).filter(bot => bot.isStreaming);
+    // Restart rotation timers with new intervals if any bots are active.
+    // `this.activeBots` is the canonical map (PR 11.1's split surfaced three
+    // typos here: the previous `this.viewBots` lookup TypeError'd, masking
+    // both the broken `this.startRotationCheckTimer(bot.botId)` call below
+    // — that method lives on ViewBotInstance and takes no args — and a
+    // truthy-function-reference filter `bot.isStreaming` that never invoked
+    // the method. `activeBots` can also contain placeholder objects from
+    // `restoreViewBots`, hence the `typeof === 'function'` guard matching
+    // the dominant pattern at lines 1514/1562 below.
+    const activeBots = Array.from(this.activeBots.values()).filter(
+      (bot) => (typeof bot.isStreaming === 'function' ? bot.isStreaming() : bot.streaming)
+    );
     if (activeBots.length > 0) {
       console.log('🔄 Restarting rotation timers with new settings...');
       activeBots.forEach(bot => {
         if (bot.rotationCheckTimer) {
           clearTimeout(bot.rotationCheckTimer);
-          this.startRotationCheckTimer(bot.botId);
+          bot.startRotationCheckTimer();
         }
       });
     }

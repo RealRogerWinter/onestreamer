@@ -1891,7 +1891,7 @@ class ViewBotInstance {
     
     // Start FFmpeg process
     try {
-      this.videoFFmpeg = spawn(this.ffmpegPath, ffmpegArgs, {
+      this.videoFFmpeg = spawn(this.parentService?.ffmpegPath || 'ffmpeg', ffmpegArgs, {
         stdio: ['pipe', 'pipe', 'pipe']
       });
       
