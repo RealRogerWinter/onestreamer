@@ -4930,6 +4930,14 @@ async function startServer() {
       await moderationService.initialize();
       app.locals.moderationService = moderationService;
       global.moderationService = moderationService;
+      // PR-M6: kick off the 24h retention purger. First run after a 60s
+      // grace; ticks every 24h. The timer is .unref()'d so SIGTERM still
+      // exits cleanly. moderationService.stop() (deferred wiring) also
+      // clears it. Retention is 90d for non-clean rows, 30d for clean.
+      moderationService.startRetentionScheduler({
+        flaggedRetentionDays: parseInt(process.env.AI_MODERATION_RETENTION_FLAGGED_DAYS, 10) || 90,
+        cleanRetentionDays: parseInt(process.env.AI_MODERATION_RETENTION_CLEAN_DAYS, 10) || 30,
+      });
     } catch (e) {
       console.error('❌ ModerationService failed to initialize:', e.message);
       if (process.env.AI_MODERATION_REQUIRE_SERVICE === 'true') {

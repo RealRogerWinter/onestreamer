@@ -659,6 +659,73 @@ describe('ModerationService.checkBotOutput (MovieBot output gate)', () => {
   });
 });
 
+describe('ModerationService.purgeOldEvents (PR-M6)', () => {
+  test('deletes flagged rows older than retention, keeps recent', async () => {
+    const { svc, wrapper } = await buildService();
+    await svc.initialize();
+    // Insert two flagged rows: one ancient, one recent.
+    await wrapper.runAsync(
+      `INSERT INTO moderation_events (stream_type, transcript_excerpt, final_decision, created_at)
+       VALUES ('webcam', 'old', 'admin_review', datetime('now', '-100 days'))`
+    );
+    await wrapper.runAsync(
+      `INSERT INTO moderation_events (stream_type, transcript_excerpt, final_decision)
+       VALUES ('webcam', 'fresh', 'admin_review')`
+    );
+    const r = await svc.purgeOldEvents({ flaggedRetentionDays: 90, cleanRetentionDays: 30 });
+    expect(r.flaggedDeleted).toBe(1);
+    const remaining = await wrapper.allAsync('SELECT transcript_excerpt FROM moderation_events');
+    expect(remaining.map((row) => row.transcript_excerpt)).toEqual(['fresh']);
+  });
+
+  test('deletes clean rows older than clean retention but not within window', async () => {
+    const { svc, wrapper } = await buildService();
+    await svc.initialize();
+    await wrapper.runAsync(
+      `INSERT INTO moderation_events (stream_type, transcript_excerpt, final_decision, created_at)
+       VALUES ('webcam', 'old_clean', 'clean', datetime('now', '-40 days'))`
+    );
+    await wrapper.runAsync(
+      `INSERT INTO moderation_events (stream_type, transcript_excerpt, final_decision, created_at)
+       VALUES ('webcam', 'fresh_clean', 'clean', datetime('now', '-10 days'))`
+    );
+    const r = await svc.purgeOldEvents({ flaggedRetentionDays: 90, cleanRetentionDays: 30 });
+    expect(r.cleanDeleted).toBe(1);
+    const remaining = await wrapper.allAsync('SELECT transcript_excerpt FROM moderation_events ORDER BY id');
+    expect(remaining.map((row) => row.transcript_excerpt)).toEqual(['fresh_clean']);
+  });
+
+  test('different retention windows for flagged vs clean', async () => {
+    const { svc, wrapper } = await buildService();
+    await svc.initialize();
+    // 50 days old: keep (clean retention=30 means old, but flagged retention=90 means fresh)
+    await wrapper.runAsync(
+      `INSERT INTO moderation_events (stream_type, transcript_excerpt, final_decision, created_at)
+       VALUES ('webcam', 'flagged_50', 'admin_review', datetime('now', '-50 days'))`
+    );
+    await wrapper.runAsync(
+      `INSERT INTO moderation_events (stream_type, transcript_excerpt, final_decision, created_at)
+       VALUES ('webcam', 'clean_50', 'clean', datetime('now', '-50 days'))`
+    );
+    await svc.purgeOldEvents({ flaggedRetentionDays: 90, cleanRetentionDays: 30 });
+    const rows = await wrapper.allAsync('SELECT transcript_excerpt FROM moderation_events ORDER BY id');
+    // flagged_50 stays (under 90d); clean_50 dies (over 30d).
+    expect(rows.map((r) => r.transcript_excerpt)).toEqual(['flagged_50']);
+  });
+
+  test('startRetentionScheduler is idempotent and stop() clears the timer', async () => {
+    const { svc } = await buildService();
+    await svc.initialize();
+    svc.startRetentionScheduler({ intervalMs: 100_000 });
+    const firstTimer = svc._retentionTimer;
+    expect(firstTimer).toBeTruthy();
+    svc.startRetentionScheduler({ intervalMs: 100_000 });
+    expect(svc._retentionTimer).toBe(firstTimer);
+    await svc.stop();
+    expect(svc._retentionTimer).toBeNull();
+  });
+});
+
 describe('ModerationService.getEvents / getEvent', () => {
   test('getEvents returns rows in reverse-chronological order (newest first)', async () => {
     const { svc, wrapper } = await buildService();

@@ -19,7 +19,7 @@
  */
 
 const express = require('express');
-const { authenticateAdmin } = require('../middleware/auth');
+const { authenticateAdmin, authenticateToken } = require('../middleware/auth');
 
 module.exports = function moderationAIRoutes() {
   const router = express.Router();
@@ -227,6 +227,70 @@ module.exports = function moderationAIRoutes() {
       res.json(r);
     } catch (e) {
       res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ── GDPR data subject access (PR-M6) ───────────────────────────────────
+  // Any authenticated user (not just admins) can fetch the moderation
+  // events that name them. Implements GDPR Article 15 (right of access)
+  // and provides a hook for Article 17 (right to erasure) — erasure is
+  // handled administratively via a manual review for now because some
+  // moderation_events retention is "necessary for legitimate safety
+  // interest" per GDPR Article 6(1)(f) and cannot be erased on demand;
+  // a separate request-and-review flow is the right approach (deferred).
+  //
+  // Match logic: events whose `streamer_id` resolves to the caller's user
+  // id via the action arbiter's sessionService mapping. This is best-
+  // effort — anonymous streams won't appear because no socketId → userId
+  // mapping ever existed, but those events also lack a user identifier
+  // in any other sense (the user wasn't authenticated when the chunk was
+  // emitted).
+  router.get('/me/export', authenticateToken, async (req, res) => {
+    const s = svcOr503(req, res);
+    if (!s) return;
+    const userId = req.user && (req.user.id || req.user.userId);
+    if (!userId) {
+      return res.status(400).json({ error: 'no_user_id_in_token' });
+    }
+    try {
+      const arb = actionArbiter(req);
+      let userSocketIds = [];
+      if (arb && arb.sessionService && typeof arb.sessionService.socketToUserId !== 'undefined') {
+        // SessionService exposes `socketToUserId` as a public Map; we walk
+        // it for socket ids mapping to this user. The mapping reflects
+        // CURRENT live sockets only — historical bans rely on the
+        // moderation_events row carrying the streamer socket id at
+        // capture time, but since SessionService.socketToUserId is the
+        // only socketId → userId reverse map, this is the best we can do
+        // for live correlation. Persistent socketId-to-userId history is
+        // deferred to a future PR.
+        for (const [socketId, mappedUserId] of arb.sessionService.socketToUserId.entries()) {
+          if (mappedUserId === userId) userSocketIds.push(socketId);
+        }
+      }
+
+      // Pull all events authored against any of the caller's known
+      // historical socket ids. Cap at the standard 500-row limit.
+      const events = userSocketIds.length === 0
+        ? []
+        : await s.database.allAsync(
+            `SELECT * FROM moderation_events
+              WHERE streamer_id IN (${userSocketIds.map(() => '?').join(',')})
+              ORDER BY created_at DESC, id DESC LIMIT 500`,
+            userSocketIds
+          );
+
+      res.json({
+        user_id: userId,
+        generated_at: new Date().toISOString(),
+        notice: 'Per GDPR Article 15, this export lists moderation events known to be associated with your account. Anonymous-session events are not included. Retention: flagged events are kept for 90 days; clean events for 30 days. To request erasure of a specific event under Article 17, contact a platform administrator — note that events retained under Article 6(1)(f) legitimate-safety-interest may not be erasable on demand.',
+        legal_basis: 'GDPR Article 6(1)(f) — legitimate safety interest',
+        event_count: events.length,
+        events,
+      });
+    } catch (e) {
+      console.error('moderation-ai/me/export error:', e);
+      res.status(500).json({ error: e.message });
     }
   });
 

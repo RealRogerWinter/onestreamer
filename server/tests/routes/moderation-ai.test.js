@@ -16,6 +16,12 @@ jest.mock('../../middleware/auth', () => ({
     next();
   },
   authenticateModerator: (req, _res, next) => next(),
+  authenticateToken: (req, _res, next) => {
+    // Tests inject a user via app.locals._testUser when they need a specific id;
+    // default is a normal authenticated user with id=42.
+    req.user = (req.app && req.app.locals && req.app.locals._testUser) || { id: 42, username: 'user-test' };
+    next();
+  },
 }));
 
 const moderationAIRoutes = require('../../routes/moderation-ai');
@@ -197,6 +203,48 @@ describe('/api/moderation-ai', () => {
       });
       const r = await request(makeApp(svc)).post('/api/moderation-ai/config').send({ category: 'hate_speech', action_mode: 'bogus' });
       expect(r.status).toBe(400);
+    });
+  });
+
+  describe('GDPR export (PR-M6)', () => {
+    test('GET /me/export returns events tied to the caller via session map', async () => {
+      const svc = stubService({
+        database: {
+          allAsync: jest.fn().mockResolvedValue([
+            { id: 11, streamer_id: 'sock_a', final_decision: 'admin_review' },
+          ]),
+        },
+      });
+      const arb = {
+        sessionService: { socketToUserId: new Map([['sock_a', 42], ['sock_other', 99]]) },
+      };
+      const r = await request(makeApp(svc, arb)).get('/api/moderation-ai/me/export');
+      expect(r.status).toBe(200);
+      expect(r.body.user_id).toBe(42);
+      expect(r.body.event_count).toBe(1);
+      expect(r.body.events[0].id).toBe(11);
+      expect(r.body.legal_basis).toMatch(/Article 6\(1\)\(f\)/);
+      expect(r.body.notice).toMatch(/GDPR/);
+    });
+
+    test('GET /me/export returns empty when caller has no socket history', async () => {
+      const svc = stubService({
+        database: { allAsync: jest.fn().mockResolvedValue([]) },
+      });
+      const arb = { sessionService: { socketToUserId: new Map() } };
+      const r = await request(makeApp(svc, arb)).get('/api/moderation-ai/me/export');
+      expect(r.status).toBe(200);
+      expect(r.body.event_count).toBe(0);
+      expect(r.body.events).toEqual([]);
+    });
+
+    test('GET /me/export 400 when token has no user id', async () => {
+      const svc = stubService();
+      const app = makeApp(svc);
+      app.locals._testUser = { username: 'no-id-here' };
+      const r = await request(app).get('/api/moderation-ai/me/export');
+      expect(r.status).toBe(400);
+      expect(r.body.error).toBe('no_user_id_in_token');
     });
   });
 });
