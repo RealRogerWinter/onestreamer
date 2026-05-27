@@ -142,3 +142,31 @@ CREATE TABLE IF NOT EXISTS moderation_global_config (
 -- AND no row exists yet, initialize() upgrades the row. Idempotent.
 INSERT OR IGNORE INTO moderation_global_config (id, enforce, updated_by)
     VALUES (1, 0, 'seed');
+
+-- ── OmniImageMod additions (ADR-0021, PR 2) ──────────────────────────────
+-- Image moderation as a parallel pipeline on top of the existing
+-- transcript-text path. Image events route to the SAME ActionArbiter and
+-- moderation_events table; the new columns distinguish source (text vs
+-- image) and preserve the audit JPEG path for ban-appeal evidence.
+--
+-- The ALTER statements rely on `_applySchema` swallowing "duplicate column"
+-- errors so they're idempotent across reboots. On a brand-new install the
+-- ALTER adds the column to the just-created table; on an existing install
+-- with the column already present, the ALTER fails and is ignored.
+
+ALTER TABLE moderation_events ADD COLUMN source TEXT;
+ALTER TABLE moderation_events ADD COLUMN image_path TEXT;
+ALTER TABLE moderation_events ADD COLUMN applied_input_types_json TEXT;
+
+ALTER TABLE moderation_global_config ADD COLUMN image_moderation_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE moderation_global_config ADD COLUMN image_categories_enabled_json TEXT;
+ALTER TABLE moderation_global_config ADD COLUMN image_frame_retention_days INTEGER NOT NULL DEFAULT 30;
+
+-- Default category set: only the 6 image-supported categories per OpenAI's
+-- omni-moderation docs. sexual/minors (CSAM), hate, hate/threatening,
+-- harassment, harassment/threatening, illicit, illicit/violent are TEXT-ONLY
+-- and would never trigger from image input — leaving them off the default
+-- prevents misleading admin UI checkboxes.
+UPDATE moderation_global_config
+    SET image_categories_enabled_json = '["sexual","violence","violence/graphic","self-harm","self-harm/intent","self-harm/instructions"]'
+    WHERE id = 1 AND image_categories_enabled_json IS NULL;

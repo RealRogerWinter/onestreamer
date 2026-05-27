@@ -24,10 +24,16 @@ const logger = require('../bootstrap/logger').child({ svc: 'EgressFrameCaptureSe
  * prevent runaway under back-pressure.
  */
 class EgressFrameCaptureService {
-    constructor({ continuousRecordingService, framesArchiveDir, frameRetentionHours, cleanupIntervalMs } = {}) {
+    constructor({ continuousRecordingService, framesArchiveDir, frameRetentionHours, bannedRetentionDays, cleanupIntervalMs } = {}) {
         this.continuousRecordingService = continuousRecordingService;
         this.framesArchiveDir = framesArchiveDir || path.join(__dirname, '..', '..', 'logs', 'visionbot', 'frames');
         this.frameRetentionHours = frameRetentionHours ?? 1;
+        // OmniImageMod PR 2: flagged frames are promoted to the `banned/`
+        // subdir on moderation events and survive the rolling-hour purge so
+        // ban appeals can show the evidence. ModerationService loads the
+        // current value from moderation_global_config.image_frame_retention_days
+        // at boot and pushes it via setBannedRetentionDays().
+        this.bannedRetentionDays = bannedRetentionDays ?? 30;
         this.cleanupIntervalMs = cleanupIntervalMs ?? 30 * 60 * 1000;
 
         this.activeProcesses = new Set();
@@ -139,7 +145,10 @@ class EgressFrameCaptureService {
         };
 
         this.cache = result;
-        this._writeAuditCopy(streamerId, capturedAt, jpegBuffer);
+        // Capture the audit path so callers (ModerationService.handleVisionFrame)
+        // can hand it back to promoteFrameForEvent if the frame is flagged.
+        // The audit copy itself is best-effort; null on failure is fine.
+        result.auditPath = this._writeAuditCopy(streamerId, capturedAt, jpegBuffer);
         return result;
     }
 
@@ -291,14 +300,51 @@ class EgressFrameCaptureService {
             const isoTs = new Date(capturedAt).toISOString().replace(/[:.]/g, '-');
             const auditPath = path.join(streamerDir, `${isoTs}.jpg`);
             fs.writeFileSync(auditPath, jpegBuffer);
+            return auditPath;
         } catch (e) {
             // Audit copy is best-effort.
+            return null;
+        }
+    }
+
+    /**
+     * Promote a flagged frame out of the rolling-purge directory so it
+     * survives the short hourly retention and is available for ban-appeal
+     * review. Used by ModerationService.handleVisionFrame (OmniImageMod
+     * PR 2) when an image moderation event is persisted. The target is the
+     * `banned/` subdirectory under framesArchiveDir; purgeOldFrames skips
+     * that subdir and uses bannedRetentionDays instead.
+     *
+     * @param {object} args
+     * @param {string} args.originalPath  Path returned by _writeAuditCopy
+     *                                    (also in capture result.auditPath).
+     * @param {number} args.eventId       moderation_events.id; used in the
+     *                                    permanent filename so an admin can
+     *                                    match audit JPEG to event row.
+     * @returns {Promise<string|null>} New absolute path, or null if the
+     *   source file is missing or the copy failed.
+     */
+    async promoteFrameForEvent({ originalPath, eventId } = {}) {
+        if (!originalPath || !eventId) return null;
+        if (!fs.existsSync(originalPath)) return null;
+        try {
+            const bannedDir = path.join(this.framesArchiveDir, 'banned');
+            if (!fs.existsSync(bannedDir)) {
+                fs.mkdirSync(bannedDir, { recursive: true });
+            }
+            const target = path.join(bannedDir, `${eventId}.jpg`);
+            fs.copyFileSync(originalPath, target);
+            return target;
+        } catch (e) {
+            logger.warn(`EgressFrameCaptureService: promoteFrameForEvent failed: ${e.message}`);
+            return null;
         }
     }
 
     async purgeOldFrames() {
         if (!fs.existsSync(this.framesArchiveDir)) return { deleted: 0 };
-        const cutoff = Date.now() - this.frameRetentionHours * 60 * 60 * 1000;
+        const rollingCutoff = Date.now() - this.frameRetentionHours * 60 * 60 * 1000;
+        const bannedCutoff = Date.now() - this.bannedRetentionDays * 24 * 60 * 60 * 1000;
         let deleted = 0;
         const streamerDirs = fs.readdirSync(this.framesArchiveDir);
         for (const sd of streamerDirs) {
@@ -306,6 +352,11 @@ class EgressFrameCaptureService {
             let stat;
             try { stat = fs.statSync(dirPath); } catch (_) { continue; }
             if (!stat.isDirectory()) continue;
+            // The `banned/` subdir holds frames promoted by
+            // promoteFrameForEvent on moderation flag. Apply a different
+            // retention (days, not hours) so ban-appeal evidence survives
+            // the rolling purge window.
+            const cutoff = sd === 'banned' ? bannedCutoff : rollingCutoff;
             const files = fs.readdirSync(dirPath);
             for (const f of files) {
                 if (!f.endsWith('.jpg')) continue;
@@ -325,6 +376,12 @@ class EgressFrameCaptureService {
     setRetentionHours(hours) {
         if (typeof hours === 'number' && hours > 0 && hours <= 24) {
             this.frameRetentionHours = hours;
+        }
+    }
+
+    setBannedRetentionDays(days) {
+        if (typeof days === 'number' && days > 0 && days <= 365) {
+            this.bannedRetentionDays = days;
         }
     }
 

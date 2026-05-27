@@ -76,6 +76,8 @@ class ModerationService extends EventEmitter {
       streamService,
       stage2 = null,
       stage3 = null,
+      stage3Image = null,
+      frameCaptureService = null,
       actionArbiter = null,
       contextWindowMs = 60_000,
       stage3QuotaPerHour = 20,
@@ -96,6 +98,11 @@ class ModerationService extends EventEmitter {
     this.streamService = streamService;
     this.stage2 = stage2;
     this.stage3 = stage3;
+    // OmniImageMod (ADR-0021): separate Stage 3 instance for image input.
+    // Distinct circuit-breaker state so a stall on the image path can't
+    // blind the text path and vice versa.
+    this.stage3Image = stage3Image;
+    this.frameCaptureService = frameCaptureService;
     this.actionArbiter = actionArbiter;
     this.contextWindowMs = contextWindowMs;
     this.stage3QuotaPerHour = stage3QuotaPerHour;
@@ -106,6 +113,13 @@ class ModerationService extends EventEmitter {
     this.seedHashPath = seedHashPath;
     this.schemaPath = schemaPath;
     this.failClosed = failClosed;
+
+    // Image-moderation config (loaded from moderation_global_config in
+    // _loadGlobalConfig). Defaults are off + the 6 omni image-supported
+    // categories + 30-day banned-frame retention.
+    this._imageModerationEnabled = false;
+    this._imageCategoriesEnabled = new Set();
+    this._imageFrameRetentionDays = 30;
 
     this._termsCache = [];
     this._termsCacheAt = 0;
@@ -151,7 +165,14 @@ class ModerationService extends EventEmitter {
   async _loadGlobalConfig() {
     let row = null;
     try {
-      row = await this.database.getAsync('SELECT enforce, updated_by FROM moderation_global_config WHERE id = 1');
+      row = await this.database.getAsync(
+        `SELECT enforce, updated_by,
+                image_moderation_enabled,
+                image_categories_enabled_json,
+                image_frame_retention_days
+           FROM moderation_global_config
+          WHERE id = 1`
+      );
     } catch (err) {
       logger.warn('⚠️ ModerationService: could not read moderation_global_config:', err.message);
     }
@@ -164,7 +185,7 @@ class ModerationService extends EventEmitter {
            WHERE id = 1 AND updated_by = 'seed'`
         );
         logger.debug('✅ ModerationService: upgraded global enforce 0→1 from AI_MODERATION_ENFORCE env (first-install path)');
-        row = { enforce: 1, updated_by: 'env' };
+        row = { ...row, enforce: 1, updated_by: 'env' };
       } catch (err) {
         logger.warn('⚠️ ModerationService: env-flag upgrade failed:', err.message);
       }
@@ -178,6 +199,284 @@ class ModerationService extends EventEmitter {
     if (this.actionArbiter && typeof this.actionArbiter.setEnforce === 'function') {
       this.actionArbiter.setEnforce(this._enforce);
     }
+
+    // OmniImageMod (ADR-0021): cache the image-moderation knobs alongside
+    // enforce. Defaults are conservative — feature off, only the 6 omni
+    // image-supported categories enabled, 30-day banned-frame retention.
+    this._imageModerationEnabled = !!(row && row.image_moderation_enabled === 1);
+    let cats = null;
+    if (row && row.image_categories_enabled_json) {
+      try { cats = JSON.parse(row.image_categories_enabled_json); } catch (_) { cats = null; }
+    }
+    if (!Array.isArray(cats) || cats.length === 0) {
+      cats = ['sexual', 'violence', 'violence/graphic', 'self-harm', 'self-harm/intent', 'self-harm/instructions'];
+    }
+    this._imageCategoriesEnabled = new Set(cats);
+    this._imageFrameRetentionDays = (row && Number.isFinite(row.image_frame_retention_days))
+      ? row.image_frame_retention_days
+      : 30;
+    if (this.frameCaptureService && typeof this.frameCaptureService.setBannedRetentionDays === 'function') {
+      this.frameCaptureService.setBannedRetentionDays(this._imageFrameRetentionDays);
+    }
+  }
+
+  // ── Image-moderation config (OmniImageMod PR 2/3, ADR-0021) ──────────
+
+  /**
+   * In-memory read of the cached image-moderation enable flag.
+   */
+  isImageModerationEnabled() {
+    return !!this._imageModerationEnabled;
+  }
+
+  /**
+   * Read the image-moderation config from the DB (full shape for admin UI).
+   */
+  async getImageModerationConfig() {
+    const row = await this.database.getAsync(
+      `SELECT image_moderation_enabled, image_categories_enabled_json, image_frame_retention_days
+         FROM moderation_global_config WHERE id = 1`
+    );
+    let categories = null;
+    if (row && row.image_categories_enabled_json) {
+      try { categories = JSON.parse(row.image_categories_enabled_json); } catch (_) { categories = null; }
+    }
+    return {
+      enabled: !!(row && row.image_moderation_enabled === 1),
+      categories: Array.isArray(categories) ? categories : [],
+      frame_retention_days: row ? row.image_frame_retention_days : 30,
+    };
+  }
+
+  /**
+   * Update image-moderation config. Validates inputs server-side so PR 3's
+   * admin endpoint doesn't have to repeat the logic. `categories` must be a
+   * subset of the 6 image-capable omni-moderation categories; passing a
+   * text-only category (e.g., 'sexual/minors') silently drops it because
+   * image input cannot trigger those.
+   */
+  async setImageModerationConfig({ enabled, categories, frame_retention_days } = {}, adminId = null) {
+    const IMAGE_SUPPORTED = new Set([
+      'sexual', 'violence', 'violence/graphic',
+      'self-harm', 'self-harm/intent', 'self-harm/instructions',
+    ]);
+    const fields = [];
+    const params = [];
+    if (typeof enabled === 'boolean') {
+      fields.push('image_moderation_enabled = ?');
+      params.push(enabled ? 1 : 0);
+      this._imageModerationEnabled = enabled;
+    }
+    if (Array.isArray(categories)) {
+      const filtered = categories.filter((c) => IMAGE_SUPPORTED.has(c));
+      fields.push('image_categories_enabled_json = ?');
+      params.push(JSON.stringify(filtered));
+      this._imageCategoriesEnabled = new Set(filtered);
+    }
+    if (Number.isFinite(frame_retention_days)) {
+      const clamped = Math.max(1, Math.min(365, Math.floor(frame_retention_days)));
+      fields.push('image_frame_retention_days = ?');
+      params.push(clamped);
+      this._imageFrameRetentionDays = clamped;
+      if (this.frameCaptureService && typeof this.frameCaptureService.setBannedRetentionDays === 'function') {
+        this.frameCaptureService.setBannedRetentionDays(clamped);
+      }
+    }
+    if (fields.length === 0) return { changed: false };
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    if (adminId) {
+      fields.push('updated_by = ?');
+      params.push(String(adminId));
+    }
+    params.push();
+    await this.database.runAsync(
+      `UPDATE moderation_global_config SET ${fields.join(', ')} WHERE id = 1`,
+      params
+    );
+    return { changed: true };
+  }
+
+  /**
+   * Image-moderation entry point. Called by VisionBotService._runCycle
+   * (OmniImageMod PR 3) after frame capture, before bot dispatch. Returns
+   * the moderation_events row that was written (or null if no row, e.g.,
+   * clean frame, feature disabled, or stage3Image degraded). The caller
+   * uses the returned final_decision to decide whether to halt the cycle.
+   *
+   * CSAM caveat: omni-moderation's `sexual/minors` category is TEXT-ONLY
+   * per OpenAI's docs. An image-CSAM screenshot returns flagged=false from
+   * the image path. The transcription text (when supplied) IS classified
+   * for `sexual/minors`, but the existing transcript-chunk pipeline
+   * already covers that case. See ADR-0021.
+   *
+   * @param {object} args
+   * @param {string} args.streamerId
+   * @param {object} args.frame             Result from
+   *   EgressFrameCaptureService.captureFrame — must include jpegBase64,
+   *   streamGeneration, auditPath.
+   * @param {string} [args.sessionId]       Transcription session correlation.
+   * @param {number|Date} [args.endTime]    Transcription window endTime.
+   * @param {string} [args.transcription]   Optional spoken-text alongside
+   *   the frame. omni accepts both in one call and we surface the per-input
+   *   trigger via applied_input_types so the audit row says whether image
+   *   or text fired.
+   * @returns {Promise<object|null>}
+   */
+  async handleVisionFrame({ streamerId, frame, sessionId, endTime, transcription } = {}) {
+    if (this._stopped) return null;
+    if (!this._imageModerationEnabled) return null;
+    if (!frame || typeof frame.jpegBase64 !== 'string' || frame.jpegBase64.length === 0) return null;
+    if (!this.stage3Image || !this.stage3Image.isReady()) return null;
+
+    const call = { imageBase64: frame.jpegBase64, imageMime: 'image/jpeg' };
+    if (typeof transcription === 'string' && transcription.length > 0) {
+      call.text = transcription;
+    }
+
+    let result;
+    try {
+      result = await this.stage3Image.classify(call);
+    } catch (err) {
+      logger.warn('⚠️ ModerationService.handleVisionFrame: classify threw:', err.message);
+      return null;
+    }
+
+    if (!result || result.degraded) return null;
+    if (result.error) {
+      logger.warn(`⚠️ ModerationService.handleVisionFrame: stage3Image error: ${result.error}`);
+      return null;
+    }
+
+    const triggered = [];
+    const cats = result.categories || {};
+    const appliedTypes = result.applied_input_types || {};
+    for (const cat of Object.keys(cats)) {
+      if (!cats[cat]) continue;
+      if (!this._imageCategoriesEnabled.has(cat)) continue;
+      const applied = appliedTypes[cat];
+      // For the image pipeline, only treat as a hit when the IMAGE input
+      // contributed. Suppresses, e.g., a `sexual/minors` flag whose applied
+      // type is `['text']` in a text+image call (that gets handled by the
+      // existing transcript-chunk path, not the image one).
+      if (Array.isArray(applied) && !applied.includes('image')) continue;
+      triggered.push(cat);
+    }
+
+    if (triggered.length === 0) {
+      // Clean frame. Don't write a row — image moderation runs frequently
+      // and storing every clean frame would balloon the table.
+      return null;
+    }
+
+    const streamType = this._resolveStreamType(streamerId);
+    const streamGeneration = (this.streamService && typeof this.streamService.getStreamGeneration === 'function')
+      ? this.streamService.getStreamGeneration()
+      : null;
+    const verdictJson = JSON.stringify({
+      flagged: !!result.flagged,
+      categories: cats,
+      scores: result.scores || {},
+      applied_input_types: appliedTypes,
+      model: result.model,
+      latency_ms: result.latency_ms,
+    });
+    const excerpt = (typeof transcription === 'string' && transcription.length > 0)
+      ? transcription.slice(0, 500)
+      : '[image-only — no transcription]';
+    const surrounding = `Image-source moderation event. Triggered categories: ${triggered.join(', ')}`;
+    const modelVersions = JSON.stringify({ stage3_image: result.model });
+
+    // Initial final_decision is admin_review — arbiter promotes to
+    // auto_ban / auto_skip when enforce=true and stream_type is webcam or
+    // url-relay. ArbitrationArbiter.arbitrate also rejects stale
+    // streamGeneration mismatches (the F7 takeover guard).
+    const insertResult = await this.database.runAsync(
+      `INSERT INTO moderation_events
+         (stream_session_id, streamer_id, stream_type, source,
+          transcript_excerpt, surrounding_context,
+          stage1_hit, stage3_verdict_json, applied_input_types_json,
+          image_path, final_decision, actor, automated_decision, ml_model_versions_json)
+       VALUES (?, ?, ?, 'image', ?, ?, 0, ?, ?, ?, 'admin_review', 'system', 1, ?)`,
+      [
+        streamGeneration,
+        streamerId,
+        streamType,
+        excerpt,
+        surrounding,
+        verdictJson,
+        JSON.stringify(appliedTypes),
+        frame.auditPath || null,
+        modelVersions,
+      ]
+    );
+
+    const eventId = insertResult && (insertResult.lastID || insertResult.insertId || null);
+
+    // Promote the audit JPEG to logs/visionbot/frames/banned/<eventId>.jpg
+    // so it survives the rolling-hour purge and is available for appeal
+    // review. The original is also kept for the rolling-purge window so a
+    // race between purge and promote can't lose the evidence.
+    let permanentPath = frame.auditPath || null;
+    if (frame.auditPath && eventId && this.frameCaptureService
+        && typeof this.frameCaptureService.promoteFrameForEvent === 'function') {
+      try {
+        const promoted = await this.frameCaptureService.promoteFrameForEvent({
+          originalPath: frame.auditPath,
+          eventId,
+        });
+        if (promoted) {
+          permanentPath = promoted;
+          await this.database.runAsync(
+            'UPDATE moderation_events SET image_path = ? WHERE id = ?',
+            [permanentPath, eventId]
+          );
+        }
+      } catch (err) {
+        logger.warn(`⚠️ ModerationService.handleVisionFrame: promoteFrameForEvent failed: ${err.message}`);
+      }
+    }
+
+    const eventForArbiter = {
+      id: eventId,
+      stream_session_id: streamGeneration,
+      streamer_id: streamerId,
+      stream_type: streamType,
+      source: 'image',
+      final_decision: 'admin_review',
+      image_path: permanentPath,
+    };
+
+    let arbResult = null;
+    if (this.actionArbiter && typeof this.actionArbiter.arbitrate === 'function') {
+      try {
+        arbResult = await this.actionArbiter.arbitrate(eventForArbiter);
+      } catch (err) {
+        logger.warn(`⚠️ ModerationService.handleVisionFrame: arbiter threw: ${err.message}`);
+      }
+    }
+
+    if (arbResult && arbResult.final_decision && arbResult.final_decision !== 'admin_review') {
+      try {
+        await this.database.runAsync(
+          'UPDATE moderation_events SET final_decision = ?, action_taken = ? WHERE id = ?',
+          [arbResult.final_decision, arbResult.action_taken || null, eventId]
+        );
+        eventForArbiter.final_decision = arbResult.final_decision;
+        eventForArbiter.action_taken = arbResult.action_taken;
+      } catch (err) {
+        logger.warn(`⚠️ ModerationService.handleVisionFrame: event update failed: ${err.message}`);
+      }
+    }
+
+    if (this.moderationNotifier && typeof this.moderationNotifier.eventCreated === 'function') {
+      try {
+        this.moderationNotifier.eventCreated({ event: eventForArbiter });
+      } catch (err) {
+        logger.warn(`⚠️ ModerationService.handleVisionFrame: notifier threw: ${err.message}`);
+      }
+    }
+
+    return eventForArbiter;
   }
 
   /**
@@ -252,6 +551,14 @@ class ModerationService extends EventEmitter {
       try {
         await this.database.runAsync(stmt + ';');
       } catch (err) {
+        // SQLite raises "duplicate column name: X" when an ALTER TABLE adds
+        // a column that already exists. The OmniImageMod schema additions
+        // (ADR-0021) ship ALTERs that need to be idempotent across reboots,
+        // so we tolerate that specific error and move on. Any other schema
+        // failure still throws.
+        if (err && typeof err.message === 'string' && err.message.toLowerCase().includes('duplicate column')) {
+          continue;
+        }
         logger.error('❌ ModerationService: schema statement failed:', err.message);
         logger.error('   Offending statement:', stmt.slice(0, 200));
         throw err;

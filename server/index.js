@@ -5024,6 +5024,13 @@ async function startServer() {
     const moderationStage3 = new ModerationStage3({
       apiKey: process.env.OPENAI_API_KEY || null,
     });
+    // OmniImageMod PR 2 (ADR-0021): a SECOND Stage 3 instance for the image
+    // input pipeline. Same endpoint + key, but a separate circuit-breaker
+    // state so a stall on the heavier-payload image path can't blind text
+    // moderation (and vice versa).
+    const moderationStage3Image = new ModerationStage3({
+      apiKey: process.env.OPENAI_API_KEY || null,
+    });
     let moderationService = new ModerationService({
       database,
       transcriptionService,
@@ -5031,6 +5038,8 @@ async function startServer() {
       streamService,
       stage2: moderationStage2,
       stage3: moderationStage3,
+      stage3Image: moderationStage3Image,
+      frameCaptureService: services.egressFrameCaptureService,
       failClosed: process.env.AI_MODERATION_FAIL_CLOSED !== 'false',
     });
     try {
