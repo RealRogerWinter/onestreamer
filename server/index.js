@@ -63,6 +63,10 @@
 //                   download,active,system-status,cleanup,settings,
 //                   :id/compress + continuous/{enable,disable,status,
 //                   check-and-start,history/:sessionId})
+//   [extracted] transcription                 → routes/admin-transcription.js (15B.3.i — landed)
+//                  (10 routes; transcription/{start,stop/:id,timed,instant,
+//                   config,status} + /api/transcription{,s}/*; lazy
+//                   transcriptionService via getter)
 //
 //   [Phase 15B residual — explicit] route clusters still inline:
 //     - visualfx debug static assets       (~5 routes; trivial — paths
@@ -76,11 +80,10 @@
 //     - admin cooldowns                    (~3 routes)
 //     - debug + system metrics             (~5 routes)
 //     - uploaded videos                    (~3 routes)
-//     - transcription                      (~10 routes)
 //     - MovieBot + VisionBot + Groq +
 //       OpenAI admin                       (~13 routes total)
 //
-// Total residual: ~66 inline handlers (down from ~140 at Phase-15-start), ~2000 LoC of route bodies.
+// Total residual: ~56 inline handlers (down from ~140 at Phase-15-start), ~1700 LoC of route bodies.
 // All have a clean destination per the table above; further extractions
 // would be a Phase 16 candidate if scope permits.
 //
@@ -2595,276 +2598,12 @@ function notifyViewersStreamEnded() {
 }
 
 // Transcription API endpoints
-app.post('/admin/transcription/start', authenticateAdmin, async (req, res) => {
-  try {
-    const { streamerId, options } = req.body;
-    
-    if (!streamerId) {
-      return res.status(400).json({ error: 'streamerId is required' });
-    }
-    
-    logger.info(`🎙️ ADMIN: Starting transcription for ${streamerId}`);
-    logger.info({ options }, `🎙️ ADMIN: Options`);
-    logger.info({ currentStreamer: streamService.getCurrentStreamer() }, `🎙️ ADMIN: Current active streamer`);
-    logger.info({ streamType: streamService.getStreamType() }, `🎙️ ADMIN: Stream type`);
-    
-    const result = await transcriptionService.startTranscription(streamerId, options);
-    
-    logger.info({ result }, `🎙️ ADMIN: Transcription start result`);
-    
-    if (result.success) {
-      // Forward to WebSocket clients
-      io.emit('transcription-started', {
-        sessionId: result.sessionId,
-        streamerId: streamerId,
-        startTime: result.startTime
-      });
-    }
-    
-    res.json(result);
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to start transcription');
-    res.status(500).json({ error: 'Failed to start transcription' });
-  }
-});
-
-app.post('/admin/transcription/stop/:sessionId', authenticateAdmin, async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    
-    logger.info(`🛑 ADMIN: Stopping transcription ${sessionId}`);
-    const result = await transcriptionService.stopTranscription(sessionId);
-    
-    if (result.success) {
-      // Forward to WebSocket clients
-      io.emit('transcription-stopped', {
-        sessionId: sessionId,
-        duration: result.duration,
-        wordCount: result.wordCount
-      });
-    }
-    
-    res.json(result);
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to stop transcription');
-    res.status(500).json({ error: 'Failed to stop transcription' });
-  }
-});
-
-app.post('/admin/transcription/timed', authenticateAdmin, async (req, res) => {
-  try {
-    const { streamerId, duration = 30, options } = req.body;
-    
-    if (!streamerId) {
-      return res.status(400).json({ error: 'streamerId is required' });
-    }
-    
-    logger.info(`⏱️ ADMIN: Timed transcription requested for ${streamerId} (${duration}s)`);
-    
-    // Verify stream is active
-    const currentStreamer = mediasoupService.getCurrentStreamer();
-    if (!currentStreamer || currentStreamer !== streamerId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Stream is not active or streamer mismatch' 
-      });
-    }
-    
-    // Start timed transcription (will auto-stop after duration)
-    const result = await transcriptionService.startTimedTranscription(streamerId, duration, options);
-    
-    if (result.success) {
-      logger.info(`✅ ADMIN: Timed transcription started: ${result.sessionId}`);
-      
-      // Emit to WebSocket clients
-      io.emit('transcription-started', {
-        sessionId: result.sessionId,
-        streamerId: streamerId,
-        startTime: result.startTime,
-        duration: duration,
-        timed: true
-      });
-    }
-    
-    res.json(result);
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to start timed transcription');
-    res.status(500).json({ error: 'Failed to start timed transcription' });
-  }
-});
-
-// Keep the instant endpoint for backward compatibility
-app.post('/admin/transcription/instant', authenticateAdmin, async (req, res) => {
-  // Redirect to timed endpoint
-  req.body.duration = req.body.duration || 30;
-  return app._router.handle(Object.assign(req, { 
-    url: '/admin/transcription/timed',
-    originalUrl: '/admin/transcription/timed' 
-  }), res);
-});
-
-app.get('/api/transcription/:sessionId', authenticateAdmin, async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    const transcription = await transcriptionService.getTranscription(sessionId);
-    
-    if (!transcription) {
-      return res.status(404).json({ error: 'Transcription not found' });
-    }
-    
-    res.json(transcription);
-  } catch (error) {
-    logger.error({ err: error }, '❌ API: Failed to get transcription');
-    res.status(500).json({ error: 'Failed to get transcription' });
-  }
-});
-
-app.get('/api/transcriptions/active', authenticateAdmin, async (req, res) => {
-  try {
-    const activeTranscriptions = await transcriptionService.getActiveTranscriptions();
-    res.json({ 
-      success: true, 
-      transcriptions: activeTranscriptions 
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ API: Failed to get active transcriptions');
-    res.status(500).json({ error: 'Failed to get active transcriptions' });
-  }
-});
-
-app.post('/admin/transcription/config', authenticateAdmin, async (req, res) => {
-  try {
-    const { enable, autoStart, model, language, chunkDuration, bufferDuration } = req.body;
-    
-    // Update main enable/disable state
-    if (enable !== undefined) {
-      if (enable) {
-        transcriptionService.enableTranscription();
-      } else {
-        transcriptionService.disableTranscription();
-        // Stop all active transcriptions when disabling
-        const activeSessions = await transcriptionService.getActiveTranscriptions();
-        for (const session of activeSessions) {
-          await transcriptionService.stopTranscription(session.id);
-        }
-      }
-    }
-    
-    // Update auto-start setting
-    if (autoStart !== undefined) {
-      transcriptionService.config.autoStart = autoStart;
-    }
-    
-    // Update model
-    if (model) {
-      transcriptionService.setModel(model);
-    }
-    
-    // Update language
-    if (language !== undefined) {
-      transcriptionService.setLanguage(language);
-    }
-    
-    // Update chunk duration (processing interval)
-    if (chunkDuration !== undefined) {
-      transcriptionService.config.chunkDuration = chunkDuration;
-    }
-    
-    // Update buffer duration
-    if (bufferDuration !== undefined && transcriptionService.audioBufferService) {
-      transcriptionService.audioBufferService.config.bufferDuration = bufferDuration;
-    }
-    
-    res.json({ 
-      success: true, 
-      config: transcriptionService.config 
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to update transcription config');
-    res.status(500).json({ error: 'Failed to update configuration' });
-  }
-});
-
-app.get('/admin/transcription/status', authenticateAdmin, async (req, res) => {
-  try {
-    const active = await transcriptionService.getActiveTranscriptions();
-    const config = transcriptionService.config;
-    
-    // Get buffer status for active sessions
-    const activeSessions = active.map(session => {
-      const bufferInfo = transcriptionService.audioBufferService ? 
-        transcriptionService.audioBufferService.getSessionInfo(session.id) : null;
-      
-      return {
-        ...session,
-        bufferStatus: bufferInfo ? {
-          size: bufferInfo.bytesWritten,
-          duration: bufferInfo.duration,
-          isActive: bufferInfo.isActive
-        } : null
-      };
-    });
-    
-    res.json({
-      success: true,
-      status: {
-        enabled: config.enableTranscription,
-        autoStart: config.autoStart || false,
-        model: config.model,
-        language: config.language,
-        chunkDuration: config.chunkDuration,
-        bufferDuration: transcriptionService.audioBufferService ? 
-          transcriptionService.audioBufferService.config.bufferDuration : 60,
-        activeCount: active.length,
-        activeSessions: activeSessions
-      }
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to get transcription status');
-    res.status(500).json({ error: 'Failed to get status' });
-  }
-});
-
-app.get('/api/transcriptions/history', authenticateAdmin, async (req, res) => {
-  try {
-    const { limit = 50, offset = 0, status, streamerId, startDate, endDate } = req.query;
-    
-    const filters = {};
-    if (status) filters.status = status;
-    if (streamerId) filters.streamerId = streamerId;
-    if (startDate) filters.startDate = startDate;
-    if (endDate) filters.endDate = endDate;
-    
-    const result = await transcriptionService.getTranscriptionHistory(
-      parseInt(limit),
-      parseInt(offset),
-      filters
-    );
-    
-    res.json({
-      success: true,
-      ...result
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ API: Failed to get transcription history');
-    res.status(500).json({ error: 'Failed to get history' });
-  }
-});
-
-// /api/stream/active moved to server/routes/media.js (PR-G3).
-
-app.delete('/admin/transcriptions/old', authenticateAdmin, async (req, res) => {
-  try {
-    const { days = 30 } = req.query;
-    
-    const result = await transcriptionService.deleteOldTranscriptions(parseInt(days));
-    
-    res.json(result);
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to delete old transcriptions');
-    res.status(500).json({ error: 'Failed to delete old transcriptions' });
-  }
-});
+// Phase 15B.3.i — transcription cluster extracted to routes/admin-transcription.js.
+// 10 routes; transcriptionService passed via getter.
+app.use(require("./routes/admin-transcription")({
+  authenticateAdmin, streamService, mediasoupService, io, logger,
+  getTranscriptionService: () => transcriptionService,
+}));
 
 // MovieBot API endpoints
 app.post('/admin/moviebot/enable', adminKeyAuth, async (req, res) => {
