@@ -252,10 +252,111 @@ function forEachBackend(fn) {
     }
 }
 
+/**
+ * Create the subset of the production schema that recording-pipeline
+ * services touch — `recording_sessions`, `session_chat_messages`,
+ * `admin_review_settings`. Mirrors columns the live SQL references in
+ * RecordingCleanupScheduler, RecordingUploadScheduler, and the PR 2.6
+ * ContinuousRecordingService cleanup path. Added in PR 13.3.
+ */
+async function bootstrapRecordingSchema(primitives) {
+    await primitives.runAsync(`
+        CREATE TABLE recording_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT UNIQUE NOT NULL,
+            streamer_identity TEXT,
+            streamer_user_id INTEGER,
+            streamer_username TEXT,
+            start_time INTEGER NOT NULL,
+            end_time INTEGER,
+            duration_ms INTEGER,
+            status TEXT DEFAULT 'recording',
+            local_path TEXT,
+            b2_file_id TEXT,
+            b2_file_name TEXT,
+            file_size_bytes INTEGER,
+            segment_count INTEGER DEFAULT 0,
+            chat_message_count INTEGER DEFAULT 0,
+            metadata_json TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    await primitives.runAsync(`
+        CREATE TABLE session_chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            message TEXT NOT NULL,
+            color TEXT,
+            absolute_time_ms INTEGER NOT NULL,
+            relative_time_ms INTEGER NOT NULL,
+            is_system INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    await primitives.runAsync(`
+        CREATE TABLE admin_review_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            description TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    await primitives.runAsync(
+        `INSERT INTO admin_review_settings (key, value, description) VALUES
+           ('retention_days', '7', 'Days to keep recordings on B2 (1-7)'),
+           ('upload_enabled', 'true', 'Enable automatic upload to B2'),
+           ('local_buffer_hours', '2', 'Hours to keep local copies before upload')`
+    );
+}
+
+/**
+ * Insert a recording_sessions row with sensible defaults. Caller can
+ * override any column. Returns the inserted row's session_id.
+ */
+async function seedRecordingSession(primitives, overrides = {}) {
+    const row = {
+        session_id: 'session-' + Date.now() + '-' + Math.floor(Math.random() * 100000),
+        streamer_identity: 'tester',
+        streamer_user_id: null,
+        streamer_username: 'tester',
+        start_time: Date.now() - 60_000,
+        end_time: Date.now(),
+        duration_ms: 60_000,
+        status: 'completed',
+        local_path: null,
+        b2_file_id: null,
+        b2_file_name: null,
+        file_size_bytes: 0,
+        segment_count: 1,
+        chat_message_count: 0,
+        metadata_json: null,
+        ...overrides,
+    };
+    await primitives.runAsync(
+        `INSERT INTO recording_sessions
+            (session_id, streamer_identity, streamer_user_id, streamer_username,
+             start_time, end_time, duration_ms, status, local_path,
+             b2_file_id, b2_file_name, file_size_bytes, segment_count,
+             chat_message_count, metadata_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            row.session_id, row.streamer_identity, row.streamer_user_id, row.streamer_username,
+            row.start_time, row.end_time, row.duration_ms, row.status, row.local_path,
+            row.b2_file_id, row.b2_file_name, row.file_size_bytes, row.segment_count,
+            row.chat_message_count, row.metadata_json,
+        ]
+    );
+    return row.session_id;
+}
+
 module.exports = {
     makeSqlite3Primitives,
     makeBetterPrimitives,
     bootstrapMoneyFlowSchema,
+    bootstrapRecordingSchema,
     seedUserAndItem,
+    seedRecordingSession,
     forEachBackend,
 };
