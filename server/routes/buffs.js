@@ -293,32 +293,6 @@ router.get('/stats', authenticateToken, async (req, res) => {
     }
 });
 
-// Apply buff to current streamer (special endpoint for viewers)
-router.post('/apply-to-streamer', authenticateToken, async (req, res) => {
-    try {
-        const { itemId } = req.body;
-        const appliedByUserId = req.user.id;
-
-        if (!itemId) {
-            return res.status(400).json({ error: 'Item ID is required' });
-        }
-
-        if (!buffDebuffService || !itemService || !inventoryService) {
-            return res.status(500).json({ error: 'Required services not available' });
-        }
-
-        // Get current streamer - this would need to be implemented
-        // For now, return an error indicating this feature needs streamer mapping
-        return res.status(501).json({ 
-            error: 'Streamer targeting not yet implemented - need socketId to userId mapping' 
-        });
-
-    } catch (error) {
-        logger.error('Error applying buff to current streamer:', error);
-        res.status(500).json({ error: 'Failed to apply buff to current streamer' });
-    }
-});
-
 // Get cooldowns for a user's buff items
 router.get('/cooldowns/:userId', authenticateToken, async (req, res) => {
     try {
