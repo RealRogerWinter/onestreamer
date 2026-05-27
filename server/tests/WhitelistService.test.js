@@ -203,6 +203,7 @@ describe('WhitelistService', () => {
 
       const result = svc.checkAllowed({
         platform: 'twitch', login: 'CohhCarnage', currentGameName: 'Just Chatting',
+        language: 'en',
       });
       expect(result.allowed).toBe(true);
       expect(result.reason).toBe('streamer_allowed');
@@ -217,6 +218,7 @@ describe('WhitelistService', () => {
 
       const result = svc.checkAllowed({
         platform: 'twitch', login: 'unknown_person', currentGameName: 'Minecraft',
+        language: 'en',
       });
       expect(result.allowed).toBe(true);
       expect(result.reason).toBe('category_allowed');
@@ -228,6 +230,7 @@ describe('WhitelistService', () => {
 
       const result = svc.checkAllowed({
         platform: 'twitch', login: 'whoever', currentGameName: 'Anything',
+        language: 'en',
       });
       expect(result.allowed).toBe(false);
       expect(result.gateThatBlocked).toBe('whitelist_miss');
@@ -241,6 +244,7 @@ describe('WhitelistService', () => {
       }, 'test');
       const result = svc.checkAllowed({
         platform: 'twitch', login: 'LOWERCASE', currentGameName: 'Anything',
+        language: 'en',
       });
       expect(result.allowed).toBe(true);
     });
@@ -254,6 +258,7 @@ describe('WhitelistService', () => {
       const result = svc.checkAllowed({
         platform: 'twitch', login: 'flipped',
         ccls: ['SexualThemes'],
+        language: 'en',
       });
       expect(result.allowed).toBe(false);
       expect(result.gateThatBlocked).toBe('ccl_gate');
@@ -269,13 +274,193 @@ describe('WhitelistService', () => {
       }, 'test');
 
       const candidates = [
-        { login: 'good_a', currentGameName: 'Minecraft' },
-        { login: 'bad_b', currentGameName: 'Minecraft' },
-        { login: 'good_a', currentGameName: 'Other', isMature: true },  // mature wins
+        { login: 'good_a', currentGameName: 'Minecraft', language: 'en' },
+        { login: 'bad_b', currentGameName: 'Minecraft', language: 'en' },
+        { login: 'good_a', currentGameName: 'Other', isMature: true, language: 'en' },  // mature wins
       ];
       const out = svc.filterCandidates('twitch', candidates);
       expect(out).toHaveLength(1);
       expect(out[0].login).toBe('good_a');
+    });
+  });
+
+  describe('language gate', () => {
+    test('default preferred_languages is ["en"] via DEFAULT constant', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      const cfg = await svc.getConfig();
+      expect(cfg.config.twitch.preferred_languages).toEqual(['en']);
+      expect(cfg.config.kick.preferred_languages).toEqual(['en']);
+    });
+
+    test('allows when language matches preferred', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'blacklist', 'test');
+      const result = svc.checkAllowed({
+        platform: 'twitch', login: 'someone', currentGameName: 'Minecraft',
+        language: 'en',
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    test('rejects when language does not match preferred', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'blacklist', 'test');
+      const result = svc.checkAllowed({
+        platform: 'twitch', login: 'someone', currentGameName: 'Minecraft',
+        language: 'de',
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.gateThatBlocked).toBe('language_gate');
+      expect(result.reason).toContain('language_not_preferred:de');
+    });
+
+    test('blacklist mode is lenient on null language (allows when missing)', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'blacklist', 'test');
+      const result = svc.checkAllowed({
+        platform: 'twitch', login: 'someone', currentGameName: 'Minecraft',
+        // language omitted
+      });
+      expect(result.allowed).toBe(true);
+      expect(result.reason).toBe('blacklist_pass');
+    });
+
+    test('whitelist mode is strict on null language (rejects when missing)', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'whitelist', 'test');
+      await svc.addEntry({
+        platform: 'twitch', entry_type: 'streamer', value: 'allowedone', list: 'allow',
+      }, 'test');
+      const result = svc.checkAllowed({
+        platform: 'twitch', login: 'allowedone', currentGameName: 'Minecraft',
+        // language omitted
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.gateThatBlocked).toBe('language_gate');
+      expect(result.reason).toBe('language_unknown_strict');
+    });
+
+    test('off mode skips language gate entirely', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'off', 'test');
+      const result = svc.checkAllowed({
+        platform: 'twitch', login: 'someone', currentGameName: 'Minecraft',
+        language: 'de',
+      });
+      expect(result.allowed).toBe(true);
+      expect(result.reason).toBe('mode_off');
+    });
+
+    test('empty preferred_languages disables gate', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'whitelist', 'test');
+      await svc.setLanguagePreference('twitch', [], 'test');
+      await svc.addEntry({
+        platform: 'twitch', entry_type: 'streamer', value: 'allowedone', list: 'allow',
+      }, 'test');
+      // No language in snapshot — would normally trigger strict reject;
+      // with empty preferred_languages the gate is skipped entirely.
+      const result = svc.checkAllowed({
+        platform: 'twitch', login: 'allowedone', currentGameName: 'Minecraft',
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    test('language match is case-insensitive', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'blacklist', 'test');
+      const result = svc.checkAllowed({
+        platform: 'twitch', login: 'someone', currentGameName: 'Minecraft',
+        language: 'EN',
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    test('language gate fires after CCL gate (CCL is always-on, higher priority)', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'blacklist', 'test');
+      const result = svc.checkAllowed({
+        platform: 'twitch', login: 'someone',
+        ccls: ['SexualThemes'],
+        language: 'de',  // would also be rejected by language gate
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.gateThatBlocked).toBe('ccl_gate');
+    });
+
+    test('multi-language preference allows any in the set', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'blacklist', 'test');
+      await svc.setLanguagePreference('twitch', ['en', 'ja'], 'test');
+      const enResult = svc.checkAllowed({
+        platform: 'twitch', login: 'someone', currentGameName: 'Minecraft',
+        language: 'en',
+      });
+      const jaResult = svc.checkAllowed({
+        platform: 'twitch', login: 'someone', currentGameName: 'Minecraft',
+        language: 'ja',
+      });
+      const deResult = svc.checkAllowed({
+        platform: 'twitch', login: 'someone', currentGameName: 'Minecraft',
+        language: 'de',
+      });
+      expect(enResult.allowed).toBe(true);
+      expect(jaResult.allowed).toBe(true);
+      expect(deResult.allowed).toBe(false);
+    });
+  });
+
+  describe('setLanguagePreference', () => {
+    test('writes audit row', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setLanguagePreference('twitch', ['en'], 'alice');
+      const log = await svc.getAuditLog({ action: 'language_preference_change' });
+      expect(log.length).toBeGreaterThan(0);
+      expect(log[0].actor).toBe('alice');
+      expect(JSON.parse(log[0].after_json).preferred_languages).toEqual(['en']);
+    });
+
+    test('normalizes to lowercase and dedupes', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setLanguagePreference('twitch', ['EN', 'en', '  ja  ', 'JA'], 'test');
+      const cfg = await svc.getConfig();
+      expect(cfg.config.twitch.preferred_languages).toEqual(['en', 'ja']);
+    });
+
+    test('rejects non-array input', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await expect(svc.setLanguagePreference('twitch', 'en', 'test'))
+        .rejects.toThrow(/array/);
+    });
+
+    test('rejects unknown platform', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await expect(svc.setLanguagePreference('mixer', ['en'], 'test'))
+        .rejects.toThrow(/platform/);
+    });
+
+    test('preserves mode through preference change (does not reset to off)', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setMode('twitch', 'blacklist', 'test');
+      await svc.setLanguagePreference('twitch', ['en', 'ja'], 'test');
+      const cfg = await svc.getConfig();
+      expect(cfg.config.twitch.mode).toBe('blacklist');
+      expect(cfg.config.twitch.preferred_languages).toEqual(['en', 'ja']);
+    });
+
+    test('emits change event', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      const events = [];
+      svc.on('change', (e) => events.push(e));
+      await svc.setLanguagePreference('twitch', ['en'], 'test');
+      expect(events.some((e) => e.kind === 'language_preference')).toBe(true);
+    });
+
+    test('empty array persists as "filter disabled"', async () => {
+      const { svc } = await makeService({ withSeed: false });
+      await svc.setLanguagePreference('twitch', [], 'test');
+      const cfg = await svc.getConfig();
+      expect(cfg.config.twitch.preferred_languages).toEqual([]);
     });
   });
 

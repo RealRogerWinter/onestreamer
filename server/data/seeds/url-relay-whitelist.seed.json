@@ -21,7 +21,8 @@
       "fallback_category": "Minecraft",
       "fallback_evergreen": "bobross",
       "drift_check_seconds": 60,
-      "rationale": "Twitch's surface is broad enough that an evolving blocklist + CCL gates is the lighter-touch default. Operators can switch to 'whitelist' from the admin UI."
+      "preferred_languages": ["en"],
+      "rationale": "Twitch's surface is broad enough that an evolving blocklist + CCL gates is the lighter-touch default. Operators can switch to 'whitelist' from the admin UI. preferred_languages is broadcaster-declared; in blacklist mode missing values are allowed through (lenient), in whitelist mode they're rejected (strict). Empty array disables the filter."
     },
     {
       "platform": "kick",
@@ -29,7 +30,8 @@
       "fallback_category": "Minecraft",
       "fallback_evergreen": "hotradio",
       "drift_check_seconds": 60,
-      "rationale": "Kick's top channels skew gambling/IRL/drama. Whitelist-only is the safer default; expect frequent fallback engagement."
+      "preferred_languages": ["en"],
+      "rationale": "Kick's top channels skew gambling/IRL/drama. Whitelist-only is the safer default; expect frequent fallback engagement. preferred_languages: in whitelist mode missing/unknown language = reject (strict)."
     }
   ],
 

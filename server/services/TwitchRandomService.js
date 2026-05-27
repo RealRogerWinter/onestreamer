@@ -302,6 +302,7 @@ class TwitchRandomService {
           currentGameName: stream.game_name,
           isMature: stream.is_mature === true,
           ccls: stream._ccls || [],
+          language: stream.language,
         }));
         candidates = this.whitelistService
           .filterCandidates('twitch', shaped)
@@ -391,6 +392,7 @@ class TwitchRandomService {
         currentGameName: stream.game_name,
         isMature: stream.is_mature === true,
         ccls,
+        language: stream.language,
       };
     } catch (error) {
       logger.error(`❌ Twitch drift check failed for ${username}:`, error.message);

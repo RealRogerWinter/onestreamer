@@ -3,12 +3,15 @@
 -- See docs/architecture/adr/0010-url-relay-whitelist-mode.md for the design.
 
 -- One row per platform. Mode + fallback choices.
+-- preferred_languages is a JSON-encoded ISO-639-1 array (e.g. '["en"]').
+-- Empty array '[]' disables the language gate for that platform.
 CREATE TABLE IF NOT EXISTS url_relay_filter_config (
     platform            TEXT PRIMARY KEY CHECK (platform IN ('twitch', 'kick')),
     mode                TEXT NOT NULL CHECK (mode IN ('off', 'blacklist', 'whitelist')) DEFAULT 'off',
     fallback_category   TEXT,
     fallback_evergreen  TEXT,
     drift_check_seconds INTEGER NOT NULL DEFAULT 60,
+    preferred_languages TEXT NOT NULL DEFAULT '["en"]',
     updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_by          TEXT
 );

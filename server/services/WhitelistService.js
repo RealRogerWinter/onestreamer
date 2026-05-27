@@ -19,7 +19,32 @@ const logger = require('../bootstrap/logger').child({ svc: 'WhitelistService' })
 const PLATFORMS = ['twitch', 'kick'];
 const MODES = ['off', 'blacklist', 'whitelist'];
 const CCL_BLOCK_DEFAULT = ['SexualThemes', 'ViolentGraphic', 'DrugsIntoxication'];
+const DEFAULT_PREFERRED_LANGUAGES = ['en'];
 const CACHE_TTL_MS = 5_000;
+
+// Best-effort parse of the JSON-encoded TEXT column. Falls back to default
+// when null/missing/malformed so an empty DB or partial migration doesn't
+// break the rotation. Caller should treat an empty array as "language gate
+// disabled" (operator opt-out), not as "no signal."
+function parsePreferredLanguages(raw) {
+  if (raw == null) return DEFAULT_PREFERRED_LANGUAGES.slice();
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((l) => typeof l === 'string' && l.trim())
+      .map((l) => l.trim().toLowerCase());
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((l) => typeof l === 'string' && l.trim())
+        .map((l) => l.trim().toLowerCase());
+    }
+  } catch (_) {
+    /* fall through */
+  }
+  return DEFAULT_PREFERRED_LANGUAGES.slice();
+}
 
 class WhitelistService extends EventEmitter {
   constructor(options = {}) {
@@ -102,16 +127,20 @@ class WhitelistService extends EventEmitter {
 
     for (const cfg of seed.config || []) {
       if (!PLATFORMS.includes(cfg.platform)) continue;
+      const seededLangs = Array.isArray(cfg.preferred_languages)
+        ? cfg.preferred_languages
+        : DEFAULT_PREFERRED_LANGUAGES;
       await this._run(
         `INSERT INTO url_relay_filter_config
-            (platform, mode, fallback_category, fallback_evergreen, drift_check_seconds, updated_by)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+            (platform, mode, fallback_category, fallback_evergreen, drift_check_seconds, preferred_languages, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           cfg.platform,
           cfg.mode,
           cfg.fallback_category || null,
           cfg.fallback_evergreen || null,
           cfg.drift_check_seconds || 60,
+          JSON.stringify(seededLangs),
           'seed',
         ]
       );
@@ -174,12 +203,17 @@ class WhitelistService extends EventEmitter {
    * @param {boolean|null} snapshot.isMature      Twitch is_mature
    * @param {string[]|null} snapshot.ccls         Twitch content_classification_labels
    * @param {boolean|null} snapshot.hasMatureContent  Kick has_mature_content
+   * @param {string|null} snapshot.language       Broadcaster-declared ISO-639-1
+   *   language code (e.g. "en"). Twitch's /helix/streams populates this
+   *   directly; Kick's helper normalizes from the response. Rejected via
+   *   `language_gate` when not in cfg.preferred_languages, or when null in
+   *   whitelist mode (strict). Lenient on null in blacklist mode.
    * @returns {{allowed: boolean, reason: string, gateThatBlocked?: string}}
    */
   checkAllowed(snapshot) {
     this._ensureCache();
 
-    const { platform, login, currentGameName, isMature, ccls, hasMatureContent } = snapshot || {};
+    const { platform, login, currentGameName, isMature, ccls, hasMatureContent, language } = snapshot || {};
 
     if (!PLATFORMS.includes(platform)) {
       return { allowed: false, reason: 'unsupported_platform', gateThatBlocked: 'platform_check' };
@@ -209,6 +243,34 @@ class WhitelistService extends EventEmitter {
 
     if (cfg.mode === 'off') {
       return { allowed: true, reason: 'mode_off' };
+    }
+
+    // Language gate. Empty preferred_languages = operator opt-out. When set,
+    // an explicit non-matching language is always rejected; a null/missing
+    // language is rejected only in whitelist mode (strict) and waved through
+    // in blacklist mode (lenient — Twitch's broadcaster_language has a
+    // ~10–20% mislabel rate per Twitch dev forum, so treating "unknown" as
+    // bad would over-filter the blacklist mode's "include by default" intent).
+    const preferredLangs = Array.isArray(cfg.preferred_languages) ? cfg.preferred_languages : [];
+    if (preferredLangs.length > 0) {
+      const langLc = typeof language === 'string' && language.trim()
+        ? language.trim().toLowerCase()
+        : null;
+      if (langLc) {
+        if (!preferredLangs.includes(langLc)) {
+          return {
+            allowed: false,
+            reason: `language_not_preferred:${langLc}`,
+            gateThatBlocked: 'language_gate',
+          };
+        }
+      } else if (cfg.mode === 'whitelist') {
+        return {
+          allowed: false,
+          reason: 'language_unknown_strict',
+          gateThatBlocked: 'language_gate',
+        };
+      }
     }
 
     const loginLc = login ? login.toLowerCase() : null;
@@ -356,6 +418,54 @@ class WhitelistService extends EventEmitter {
     this.emit('change', { kind: 'fallback', platform, ...after });
   }
 
+  /**
+   * Set the preferred-languages list for a platform. Empty array disables
+   * the language gate; non-empty array enforces it (strict in whitelist
+   * mode, lenient in blacklist mode — see checkAllowed).
+   *
+   * @param {string} platform
+   * @param {string[]} preferred_languages  ISO-639-1 codes; normalized to lowercase
+   * @param {string} actor
+   */
+  async setLanguagePreference(platform, preferred_languages, actor) {
+    if (!PLATFORMS.includes(platform)) throw new Error(`unknown platform: ${platform}`);
+    if (!Array.isArray(preferred_languages)) {
+      throw new Error('preferred_languages must be an array');
+    }
+    const normalized = Array.from(new Set(
+      preferred_languages
+        .filter((l) => typeof l === 'string' && l.trim())
+        .map((l) => l.trim().toLowerCase())
+    ));
+
+    const before = await this._get(
+      'SELECT preferred_languages FROM url_relay_filter_config WHERE platform = ?',
+      [platform]
+    );
+
+    await this._run(
+      `INSERT INTO url_relay_filter_config
+            (platform, mode, preferred_languages, updated_by)
+         VALUES (?, COALESCE((SELECT mode FROM url_relay_filter_config WHERE platform = ?), 'off'), ?, ?)
+       ON CONFLICT(platform) DO UPDATE
+         SET preferred_languages = excluded.preferred_languages,
+             updated_by = excluded.updated_by,
+             updated_at = CURRENT_TIMESTAMP`,
+      [platform, platform, JSON.stringify(normalized), actor || null]
+    );
+
+    await this._audit({
+      actor,
+      action: 'language_preference_change',
+      platform,
+      before_json: JSON.stringify(before || {}),
+      after_json: JSON.stringify({ preferred_languages: normalized }),
+    });
+
+    await this._refreshCache();
+    this.emit('change', { kind: 'language_preference', platform, preferred_languages: normalized });
+  }
+
   async addEntry({ platform, entry_type, value, list, notes, risk_flag, is_evergreen }, actor) {
     if (!PLATFORMS.includes(platform)) throw new Error(`unknown platform: ${platform}`);
     if (!['streamer', 'category'].includes(entry_type)) throw new Error(`unknown entry_type: ${entry_type}`);
@@ -466,13 +576,22 @@ class WhitelistService extends EventEmitter {
 
     const config = {};
     for (const platform of PLATFORMS) {
-      config[platform] = configRows.find((r) => r.platform === platform) || {
-        platform,
-        mode: 'off',
-        fallback_category: null,
-        fallback_evergreen: null,
-        drift_check_seconds: 60,
-      };
+      const row = configRows.find((r) => r.platform === platform);
+      if (row) {
+        config[platform] = {
+          ...row,
+          preferred_languages: parsePreferredLanguages(row.preferred_languages),
+        };
+      } else {
+        config[platform] = {
+          platform,
+          mode: 'off',
+          fallback_category: null,
+          fallback_evergreen: null,
+          drift_check_seconds: 60,
+          preferred_languages: DEFAULT_PREFERRED_LANGUAGES.slice(),
+        };
+      }
     }
 
     const entries = {};
@@ -546,3 +665,4 @@ module.exports = WhitelistService;
 module.exports.PLATFORMS = PLATFORMS;
 module.exports.MODES = MODES;
 module.exports.CCL_BLOCK_DEFAULT = CCL_BLOCK_DEFAULT;
+module.exports.DEFAULT_PREFERRED_LANGUAGES = DEFAULT_PREFERRED_LANGUAGES;

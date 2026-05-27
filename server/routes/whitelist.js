@@ -90,6 +90,20 @@ module.exports = function whitelistRoutes() {
     }
   });
 
+  // POST /api/whitelist/language — { platform, preferred_languages: ["en", ...] }
+  // Empty array disables the language gate for that platform.
+  router.post('/language', authenticateAdmin, async (req, res) => {
+    const s = svcOr503(req, res);
+    if (!s) return;
+    const { platform, preferred_languages } = req.body || {};
+    try {
+      await s.setLanguagePreference(platform, preferred_languages, actor(req));
+      res.json({ ok: true, platform, preferred_languages });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   // POST /api/whitelist/entry — add an entry
   router.post('/entry', authenticateAdmin, async (req, res) => {
     const s = svcOr503(req, res);

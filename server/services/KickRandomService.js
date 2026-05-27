@@ -201,6 +201,7 @@ class KickRandomService {
           login: stream.channel?.slug,
           currentGameName: stream.categories?.[0]?.name || null,
           hasMatureContent: stream.is_mature === true || stream.has_mature_content === true,
+          language: stream.language || stream.channel?.language || null,
         }));
         candidates = this.whitelistService
           .filterCandidates('kick', shaped)
@@ -293,6 +294,15 @@ class KickRandomService {
         (livestream.categories && livestream.categories[0] && livestream.categories[0].name) ||
         (channel.recent_categories && channel.recent_categories[0] && channel.recent_categories[0].name) ||
         null;
+      // Probe the common shapes for a broadcaster-declared language. Kick's
+      // /api/v2/channels response isn't uniformly documented, so we try each
+      // known carrier and leave it null if none match — the language gate's
+      // whitelist-mode strict path will reject on null.
+      const language =
+        (typeof livestream.language === 'string' && livestream.language) ||
+        (typeof channel.language === 'string' && channel.language) ||
+        (channel.user && typeof channel.user.language === 'string' && channel.user.language) ||
+        null;
       return {
         platform: 'kick',
         login: (channel.slug || username || '').toLowerCase(),
@@ -300,6 +310,7 @@ class KickRandomService {
         hasMatureContent:
           livestream.is_mature === true ||
           livestream.has_mature_content === true,
+        language: language ? language.toLowerCase() : null,
       };
     } catch (error) {
       logger.error(`❌ Kick drift check failed for ${username}:`, error.message);
