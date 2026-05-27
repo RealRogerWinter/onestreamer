@@ -78,6 +78,8 @@
  *   - axios                    HTTP client for chat-service announcement POST.
  *   - https                    Used for the relaxed-TLS Agent on the above.
  */
+const logger = require('../bootstrap/logger').child({ svc: 'StreamHandler' });
+
 module.exports = function registerStreamHandler(io, socket, deps) {
   const {
     streamService,
@@ -156,7 +158,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     // try {
     //   const activeVisualEffects = await getActiveVisualEffects();
     //   if (activeVisualEffects.length > 0) {
-    //     console.log(`🎨 VISUAL FX: Sending ${activeVisualEffects.length} active effects to new viewer ${socket.id}`);
+    //     logger.info(`🎨 VISUAL FX: Sending ${activeVisualEffects.length} active effects to new viewer ${socket.id}`);
     //
     //     // Send each effect to the viewer with a small delay to prevent overwhelming
     //     activeVisualEffects.forEach((buff, index) => {
@@ -174,7 +176,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     //     });
     //   }
     // } catch (error) {
-    //   console.error(`❌ VISUAL FX: Error sending effects to viewer ${socket.id}:`, error);
+    //   logger.error({ err: error }, `❌ VISUAL FX: Error sending effects to viewer ${socket.id}`);
     // }
 
     // Emit unique viewer count based on IPs (PR 3.2 chokepoint).
@@ -183,19 +185,19 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     // Start time tracking for viewing session if user is authenticated
     const ip = sessionService.getIpAddress(socket);
     const session = sessionService.getSessionByIp(ip);
-    console.log(`📊 TIME DEBUG: join-as-viewer - IP: ${ip}, session: ${JSON.stringify(session)}, hasActiveStream: ${status.hasActiveStream}`);
+    logger.info(`📊 TIME DEBUG: join-as-viewer - IP: ${ip}, session: ${JSON.stringify(session)}, hasActiveStream: ${status.hasActiveStream}`);
     if (session && session.userId) {
       const hasActiveStream = status.hasActiveStream;
       timeTrackingService.startViewingSession(session.userId, socket.id, hasActiveStream);
-      console.log(`📊 TIME: Started viewing time tracking for user ${session.userId}, active stream: ${hasActiveStream}`);
+      logger.info(`📊 TIME: Started viewing time tracking for user ${session.userId}, active stream: ${hasActiveStream}`);
     } else {
-      console.log(`📊 TIME DEBUG: No authenticated user found for socket ${socket.id} (IP: ${ip})`);
+      logger.info(`📊 TIME DEBUG: No authenticated user found for socket ${socket.id} (IP: ${ip})`);
     }
 
     // Check if user has an active cooldown and send it to them
     const canTakeOver = await takeoverService.canTakeOver(socket.id);
     if (!canTakeOver.allowed) {
-      console.log(`🔒 COOLDOWN: New viewer ${socket.id} has active cooldown (${canTakeOver.reason}: ${canTakeOver.cooldownRemaining}s)`);
+      logger.info(`🔒 COOLDOWN: New viewer ${socket.id} has active cooldown (${canTakeOver.reason}: ${canTakeOver.cooldownRemaining}s)`);
       socket.emit('global-cooldown', {
         cooldownRemaining: canTakeOver.cooldownRemaining,
         reason: canTakeOver.reason
@@ -204,18 +206,18 @@ module.exports = function registerStreamHandler(io, socket, deps) {
   });
 
   socket.on('request-to-stream', async (data, callback) => {
-    console.log(`📥 STREAMING: Received request-to-stream from socket ${socket.id} at ${new Date().toISOString()}`);
-    console.log(`📥 STREAMING: Request data:`, JSON.stringify(data));
-    console.log(`📥 STREAMING: Callback type:`, typeof callback);
-    console.log(`📥 STREAMING: Current streamer:`, streamService.getCurrentStreamer());
-    console.log(`📥 STREAMING: Server state - hasStreamer:`, !!streamService.getCurrentStreamer());
+    logger.info(`📥 STREAMING: Received request-to-stream from socket ${socket.id} at ${new Date().toISOString()}`);
+    logger.info({ data }, `📥 STREAMING: Request data`);
+    logger.info({ callbackType: typeof callback }, `📥 STREAMING: Callback type`);
+    logger.info({ currentStreamer: streamService.getCurrentStreamer() }, `📥 STREAMING: Current streamer`);
+    logger.info({ hasStreamer: !!streamService.getCurrentStreamer() }, `📥 STREAMING: Server state - hasStreamer`);
 
     // CRITICAL: Check for permission confirmation (new in permission system)
     const isViewBot = data.isViewBot || data.streamType === 'viewbot';
     if (!isViewBot && data.streamType === 'webcam') {
       // For real users streaming from webcam, require permission confirmation
       if (!data.permissionsGranted) {
-        console.log(`🚫 STREAMING: Request denied - no permission confirmation from ${socket.id}`);
+        logger.info(`🚫 STREAMING: Request denied - no permission confirmation from ${socket.id}`);
         socket.emit('stream-denied', {
           reason: 'Camera and microphone permissions are required to stream',
           requiresPermissions: true,
@@ -231,7 +233,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       if (data.permissionStatus) {
         const { camera, microphone } = data.permissionStatus;
         if (camera !== 'granted' || microphone !== 'granted') {
-          console.log(`🚫 STREAMING: Insufficient permissions - camera: ${camera}, mic: ${microphone}`);
+          logger.info(`🚫 STREAMING: Insufficient permissions - camera: ${camera}, mic: ${microphone}`);
           socket.emit('stream-denied', {
             reason: 'Both camera and microphone permissions must be granted',
             permissionStatus: data.permissionStatus,
@@ -243,7 +245,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
           return;
         }
       }
-      console.log(`✅ STREAMING: Permissions verified for ${socket.id}`);
+      logger.info(`✅ STREAMING: Permissions verified for ${socket.id}`);
     }
 
     // Check if IP is banned before allowing streaming
@@ -251,7 +253,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     const isBanned = await IPBanService.isIPBanned(clientIP);
 
     if (isBanned) {
-      console.log(`🚫 STREAMING: Banned IP ${clientIP} attempted to stream`);
+      logger.info(`🚫 STREAMING: Banned IP ${clientIP} attempted to stream`);
       socket.emit('stream-denied', {
         reason: 'Your IP address has been banned from streaming',
         timestamp: new Date().toISOString()
@@ -265,7 +267,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     // Send acknowledgment if callback provided
     if (callback && typeof callback === 'function') {
       callback(true);
-      console.log(`✅ STREAMING: Sent acknowledgment for request-to-stream`);
+      logger.info(`✅ STREAMING: Sent acknowledgment for request-to-stream`);
     }
 
     try {
@@ -293,17 +295,17 @@ module.exports = function registerStreamHandler(io, socket, deps) {
 
         currentIsViewbot = isOldViewBot || isNewViewBot;
 
-        console.log(`🔍 VIEWBOT CHECK: Socket ${currentStreamer.substring(0, 12)}...`);
-        console.log(`   Old ViewBot: ${isOldViewBot}`);
-        console.log(`   New ViewBot: ${isNewViewBot} (userID: ${userId})`);
-        console.log(`   Is ViewBot: ${currentIsViewbot}`);
+        logger.info(`🔍 VIEWBOT CHECK: Socket ${currentStreamer.substring(0, 12)}...`);
+        logger.info(`   Old ViewBot: ${isOldViewBot}`);
+        logger.info(`   New ViewBot: ${isNewViewBot} (userID: ${userId})`);
+        logger.info(`   Is ViewBot: ${currentIsViewbot}`);
       }
 
       const currentIsRealUser = currentStreamer && !currentIsViewbot;
 
       // PRIORITY RULE: Viewbots can NEVER take over from real users
       if (isViewBot && currentIsRealUser) {
-        console.log(`🚫 PRIORITY: ViewBot ${socket.id} denied - cannot take over real streamer ${currentStreamer}`);
+        logger.info(`🚫 PRIORITY: ViewBot ${socket.id} denied - cannot take over real streamer ${currentStreamer}`);
         socket.emit('takeover-denied', {
           reason: 'Real streamer has priority. ViewBots cannot interrupt real streams.',
           cooldownRemaining: 0
@@ -314,7 +316,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       // CRITICAL FIX: ViewBots should completely bypass cooldown checks
       // Only check cooldowns for real users
       if (!isViewBot) {
-        console.log(`🔍 COOLDOWN: Checking cooldown for real user ${socket.id}`);
+        logger.info(`🔍 COOLDOWN: Checking cooldown for real user ${socket.id}`);
         const canTakeOver = await takeoverService.canTakeOver(socket.id);
 
         if (!canTakeOver.allowed) {
@@ -325,17 +327,17 @@ module.exports = function registerStreamHandler(io, socket, deps) {
           return;
         }
       } else {
-        console.log(`🤖 COOLDOWN: Skipping cooldown check for viewbot ${socket.id} - viewbots bypass all cooldowns`);
+        logger.info(`🤖 COOLDOWN: Skipping cooldown check for viewbot ${socket.id} - viewbots bypass all cooldowns`);
       }
 
       // If real user is taking over, set the realStreamerActive flag
       if (isRealUser && viewBotClientService) {
-        console.log(`✅ PRIORITY: Real user ${socket.id} starting stream - protecting from viewbot interruption`);
+        logger.info(`✅ PRIORITY: Real user ${socket.id} starting stream - protecting from viewbot interruption`);
         viewBotClientService.setRealStreamerStatus(true);
       }
 
       if (currentStreamer) {
-        console.log(`📢 TAKEOVER: Notifying current streamer ${currentStreamer} of takeover by ${socket.id}`);
+        logger.info(`📢 TAKEOVER: Notifying current streamer ${currentStreamer} of takeover by ${socket.id}`);
 
         // CRITICAL FIX: Comprehensive viewbot detection including LiveKit viewbots
         const isOldViewBot = viewbotService && viewbotService.isViewbotStream(currentStreamer);
@@ -344,62 +346,62 @@ module.exports = function registerStreamHandler(io, socket, deps) {
         const isLiveKitViewBot = currentStreamer.startsWith('viewbot-'); // LiveKit viewbots have this prefix
         const currentIsViewbot = isOldViewBot || isNewViewBot || isLiveKitViewBot;
 
-        console.log(`🔍 TAKEOVER: Viewbot detection - old: ${isOldViewBot}, new: ${isNewViewBot}, livekit: ${isLiveKitViewBot}`);
+        logger.info(`🔍 TAKEOVER: Viewbot detection - old: ${isOldViewBot}, new: ${isNewViewBot}, livekit: ${isLiveKitViewBot}`);
 
         // Handle viewbot takeover - must stop the viewbot properly
         if (currentIsViewbot) {
-          console.log(`🤖 TAKEOVER: Current streamer ${currentStreamer} is a viewbot, stopping it`);
+          logger.info(`🤖 TAKEOVER: Current streamer ${currentStreamer} is a viewbot, stopping it`);
 
           // Stop OLD viewbot system
           if (isOldViewBot && viewbotService) {
-            console.log('🤖 TAKEOVER: Stopping old viewbot service');
+            logger.info('🤖 TAKEOVER: Stopping old viewbot service');
             await viewbotService.handleTakeover(socket.id);
           }
 
           // CRITICAL: Stop LiveKit/SimpleViewBotRotation viewbot
           if (isLiveKitViewBot || isNewViewBot) {
-            console.log('🤖 TAKEOVER: Stopping LiveKit viewbot rotation');
+            logger.info('🤖 TAKEOVER: Stopping LiveKit viewbot rotation');
             try {
               // Stop via SimpleViewBotRotation (main rotation system)
               if (SimpleViewBotRotation && SimpleViewBotRotation.stopRotation) {
                 await SimpleViewBotRotation.stopRotation();
-                console.log('✅ TAKEOVER: SimpleViewBotRotation stopped');
+                logger.info('✅ TAKEOVER: SimpleViewBotRotation stopped');
               }
 
               // Also stop via ViewBotClientService if available
               if (viewBotClientService && viewBotClientService.stopViewBotRotation) {
                 viewBotClientService.stopViewBotRotation();
-                console.log('✅ TAKEOVER: ViewBotClientService rotation stopped');
+                logger.info('✅ TAKEOVER: ViewBotClientService rotation stopped');
               }
 
               // Stop via global viewBotRotation if available
               if (global.viewBotRotation && global.viewBotRotation.stopRotation) {
                 await global.viewBotRotation.stopRotation();
-                console.log('✅ TAKEOVER: global.viewBotRotation stopped');
+                logger.info('✅ TAKEOVER: global.viewBotRotation stopped');
               }
 
               // Stop via unified rotation if available
               if (global.unifiedViewBotRotation && global.unifiedViewBotRotation.stopRotation) {
                 await global.unifiedViewBotRotation.stopRotation();
-                console.log('✅ TAKEOVER: unifiedViewBotRotation stopped');
+                logger.info('✅ TAKEOVER: unifiedViewBotRotation stopped');
               }
             } catch (viewbotStopError) {
-              console.error('❌ TAKEOVER: Error stopping viewbot:', viewbotStopError);
+              logger.error({ err: viewbotStopError }, '❌ TAKEOVER: Error stopping viewbot');
             }
           }
 
           // Set protection for real user taking over from viewbot
           if (isRealUser && viewBotClientService) {
             viewBotClientService.setRealStreamerStatus(true);
-            console.log('✅ TAKEOVER: Set real streamer status to protect from viewbot interruption');
+            logger.info('✅ TAKEOVER: Set real streamer status to protect from viewbot interruption');
           }
         } else {
           // Current streamer is a real user (not a viewbot)
-          console.log(`👤 TAKEOVER: Current streamer ${currentStreamer} is a real user`);
+          logger.info(`👤 TAKEOVER: Current streamer ${currentStreamer} is a real user`);
 
           // Set cooldown for real user being taken over
           let cooldownInfo = null;
-          console.log(`🔒 TAKEOVER: Setting cooldown for real user ${currentStreamer} being taken over`);
+          logger.info(`🔒 TAKEOVER: Setting cooldown for real user ${currentStreamer} being taken over`);
           await takeoverService.setSocketCooldown(currentStreamer, 'stream_taken_over');
           cooldownInfo = await takeoverService.getSocketCooldown(currentStreamer);
 
@@ -410,14 +412,14 @@ module.exports = function registerStreamHandler(io, socket, deps) {
             newStreamerDisplayName: newStreamerDisplayNameForTakeover,
             cooldownRemaining: cooldownInfo ? cooldownInfo.remaining : takeoverService.getCooldownSeconds()
           });
-          console.log(`📢 TAKEOVER: Notified ${currentStreamer} of takeover by ${socket.id} (${newStreamerDisplayNameForTakeover})`);
+          logger.info(`📢 TAKEOVER: Notified ${currentStreamer} of takeover by ${socket.id} (${newStreamerDisplayNameForTakeover})`);
 
           // Remove from streamer room but DON'T disconnect the socket
           // The cooldown already prevents them from streaming again
           // Disconnecting the socket causes race conditions with viewer initialization
           const previousStreamerSocket = io.sockets.sockets.get(currentStreamer);
           if (previousStreamerSocket) {
-            console.log(`🔌 TAKEOVER: Removing previous streamer ${currentStreamer} from streamer room (keeping socket connected for viewer transition)`);
+            logger.info(`🔌 TAKEOVER: Removing previous streamer ${currentStreamer} from streamer room (keeping socket connected for viewer transition)`);
             previousStreamerSocket.leave('streamer');
 
             // Send force-disconnect event to signal transition (but don't actually disconnect socket)
@@ -426,14 +428,14 @@ module.exports = function registerStreamHandler(io, socket, deps) {
               message: 'Your stream has been taken over by another user',
               shouldReconnect: false
             });
-            console.log(`✅ TAKEOVER: Previous streamer ${currentStreamer} notified - socket remains connected for viewer mode`);
+            logger.info(`✅ TAKEOVER: Previous streamer ${currentStreamer} notified - socket remains connected for viewer mode`);
           }
         }
 
         // Emit stream-ended to notify viewers before cleanup, but not to the new streamer
         // Include new streamer's display name so UI can update immediately
         const newStreamerDisplayName = await getStreamerDisplayName(socket.id);
-        console.log(`📢 TAKEOVER: Notifying viewers of stream end before cleanup (excluding new streamer ${socket.id}, display: ${newStreamerDisplayName})`);
+        logger.info(`📢 TAKEOVER: Notifying viewers of stream end before cleanup (excluding new streamer ${socket.id}, display: ${newStreamerDisplayName})`);
         // PR 3.1: chokepoint. `excludeSocket: socket` preserves the
         // socket.broadcast.emit semantic (everyone except the new streamer).
         streamNotifier.streamEnded({
@@ -445,17 +447,17 @@ module.exports = function registerStreamHandler(io, socket, deps) {
         });
 
         // Give viewers time to cleanup their consumers before we close producers
-        console.log(`⏳ TAKEOVER: Waiting 200ms for viewer cleanup before producer cleanup`);
+        logger.info(`⏳ TAKEOVER: Waiting 200ms for viewer cleanup before producer cleanup`);
         await new Promise(resolve => setTimeout(resolve, 200));
 
-        console.log(`🧹 TAKEOVER: Cleaning up resources for previous streamer ${currentStreamer}`);
+        logger.info(`🧹 TAKEOVER: Cleaning up resources for previous streamer ${currentStreamer}`);
         mediasoupService.cleanup(currentStreamer);
 
         // Clear from notified streamers to allow fresh notifications
         notifiedStreamers.delete(currentStreamer);
       } else {
         // CRITICAL FIX: No current streamer - this is a fresh start (e.g., after server restart)
-        console.log(`🚀 STREAMING: No current streamer - ${socket.id} starting fresh stream (isViewBot: ${isViewBot})`);
+        logger.info(`🚀 STREAMING: No current streamer - ${socket.id} starting fresh stream (isViewBot: ${isViewBot})`);
       }
 
       streamService.setStreamer(socket.id, data.streamType);
@@ -464,7 +466,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
 
       // Ensure the new streamer is also cleared from notifiedStreamers to allow fresh notifications
       notifiedStreamers.delete(socket.id);
-      console.log(`🎯 TAKEOVER: Set ${socket.id} as current streamer in both services, cleared from notified set`);
+      logger.info(`🎯 TAKEOVER: Set ${socket.id} as current streamer in both services, cleared from notified set`);
 
       // Send StreamBot announcement about the stream takeover or new stream
       if (!isViewBot) {
@@ -482,7 +484,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
                 streamerName = rows[0].username;
               }
             } catch (err) {
-              console.error('Error fetching username:', err);
+              logger.error({ err }, 'Error fetching username');
             }
           } else {
             // Anonymous user - get chat username from session
@@ -515,12 +517,12 @@ module.exports = function registerStreamHandler(io, socket, deps) {
             }),
             timeout: 5000
           }).then(response => {
-            console.log(`📢 STREAM: Sent StreamBot announcement for ${streamerName}`);
+            logger.info(`📢 STREAM: Sent StreamBot announcement for ${streamerName}`);
           }).catch(error => {
-            console.error('❌ STREAM: Failed to send StreamBot announcement:', error.message);
+            logger.error({ err: error }, '❌ STREAM: Failed to send StreamBot announcement');
           });
         } catch (error) {
-          console.error('❌ STREAM: Error sending stream announcement:', error);
+          logger.error({ err: error }, '❌ STREAM: Error sending stream announcement');
         }
       }
 
@@ -529,12 +531,12 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       // Emit streamer buff updates when user becomes current streamer
       try {
         const streamerBuffs = await buffDebuffService.getActiveBuffsForCurrentStreamer();
-        console.log(`🎭 BUFF: Emitting streamer buffs for new streamer ${socket.id}: ${streamerBuffs.length} buffs`);
+        logger.info(`🎭 BUFF: Emitting streamer buffs for new streamer ${socket.id}: ${streamerBuffs.length} buffs`);
         buffNotifier.streamerBuffsUpdate({ buffs: streamerBuffs });
 
         // NOTE: Visual effects re-application moved to stream-ready event for better timing
       } catch (error) {
-        console.error('❌ BUFF: Error emitting streamer buffs on stream start:', error);
+        logger.error({ err: error }, '❌ BUFF: Error emitting streamer buffs on stream start');
       }
 
       // Broadcast updated stream status to all viewers so "Current Streamer" updates in real-time
@@ -542,23 +544,23 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       updatedStatus.viewerCount = sessionService.getUniqueViewerCount();
       const enrichedStatus = await enrichStreamStatus(updatedStatus);
       io.emit('stream-status', enrichedStatus);
-      console.log(`📡 TAKEOVER: Broadcasted updated stream status with streamer: ${enrichedStatus.streamerDisplayName}`);
+      logger.info(`📡 TAKEOVER: Broadcasted updated stream status with streamer: ${enrichedStatus.streamerDisplayName}`);
 
       // Only record takeover (and trigger global cooldown) for real users, not viewbots
-      console.log(`🔍 CRITICAL: Checking if we should record takeover - isViewBot: ${isViewBot}, data: ${JSON.stringify(data)}`);
+      logger.info(`🔍 CRITICAL: Checking if we should record takeover - isViewBot: ${isViewBot}, data: ${JSON.stringify(data)}`);
       if (!isViewBot) {
-        console.log(`🔒 TAKEOVER: Recording takeover for real user ${socket.id} - global cooldown will be triggered`);
+        logger.info(`🔒 TAKEOVER: Recording takeover for real user ${socket.id} - global cooldown will be triggered`);
         await takeoverService.recordTakeover();
       } else {
-        console.log(`🤖 TAKEOVER: Viewbot ${socket.id} starting - NOT triggering any cooldown`);
+        logger.info(`🤖 TAKEOVER: Viewbot ${socket.id} starting - NOT triggering any cooldown`);
       }
 
       socket.join('streamer');
       socket.leave('viewers');
 
-      console.log(`✅ STREAMING: Sending streaming-approved to socket ${socket.id} (isViewBot: ${isViewBot})`);
-      console.log(`📡 STREAMING: Socket state - connected: ${socket.connected}, transport: ${socket.conn?.transport?.name}`);
-      console.log(`📡 STREAMING: Socket rooms:`, Array.from(socket.rooms));
+      logger.info(`✅ STREAMING: Sending streaming-approved to socket ${socket.id} (isViewBot: ${isViewBot})`);
+      logger.info(`📡 STREAMING: Socket state - connected: ${socket.connected}, transport: ${socket.conn?.transport?.name}`);
+      logger.info({ rooms: Array.from(socket.rooms) }, `📡 STREAMING: Socket rooms`);
 
       // CRITICAL: Emit the streaming-approved event with multiple attempts
       socket.emit('streaming-approved');
@@ -568,7 +570,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
 
       // For ViewBots, also directly call their handler if they have one
       if (isViewBot) {
-        console.log(`🔄 STREAMING: Attempting direct ViewBot notification for ${socket.id}`);
+        logger.info(`🔄 STREAMING: Attempting direct ViewBot notification for ${socket.id}`);
         // Send a different event that ViewBots might be listening to
         socket.emit('viewbot-stream-approved', { approved: true });
 
@@ -582,9 +584,9 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       // Also try sending with acknowledgment to verify delivery
       socket.emit('streaming-approved-ack', {}, (ack) => {
         if (ack) {
-          console.log(`✅ STREAMING: ViewBot acknowledged streaming-approved`);
+          logger.info(`✅ STREAMING: ViewBot acknowledged streaming-approved`);
         } else {
-          console.log(`⚠️ STREAMING: No acknowledgment from ViewBot for streaming-approved`);
+          logger.info(`⚠️ STREAMING: No acknowledgment from ViewBot for streaming-approved`);
         }
       });
 
@@ -599,9 +601,9 @@ module.exports = function registerStreamHandler(io, socket, deps) {
           (streamer_id, streamer_name, ip_address, connection_type, user_agent)
           VALUES (?, ?, ?, ?, ?)
         `, [socket.id, streamerName, clientIP, 'websocket', userAgent]);
-        console.log(`📝 IP TRACKING: Recorded streamer connection for ${streamerName} from IP ${clientIP}`);
+        logger.info(`📝 IP TRACKING: Recorded streamer connection for ${streamerName} from IP ${clientIP}`);
       } catch (error) {
-        console.error('❌ IP TRACKING: Failed to record streamer connection:', error);
+        logger.error({ err: error }, '❌ IP TRACKING: Failed to record streamer connection');
       }
 
       // Start streaming log session
@@ -614,11 +616,11 @@ module.exports = function registerStreamHandler(io, socket, deps) {
         // CRITICAL: Pause random rotation when a real streamer starts
         // It will auto-restart when the real streamer ends
         if (global.randomStreamRotationService && global.randomStreamRotationService.isEnabled) {
-          console.log('⏸️ RANDOM ROTATION: Pausing - real streamer taking over');
+          logger.info('⏸️ RANDOM ROTATION: Pausing - real streamer taking over');
           try {
             await global.randomStreamRotationService.pause();
           } catch (err) {
-            console.error('❌ RANDOM ROTATION: Failed to pause:', err.message);
+            logger.error({ err }, '❌ RANDOM ROTATION: Failed to pause');
           }
         }
 
@@ -631,19 +633,19 @@ module.exports = function registerStreamHandler(io, socket, deps) {
           data.streamType || 'standard',
           false // not a viewbot
         );
-        console.log(`📝 STREAMING LOGS: Started session for ${streamerName} (${clientIP})`);
+        logger.info(`📝 STREAMING LOGS: Started session for ${streamerName} (${clientIP})`);
       }
 
       // Start time tracking for streaming session if user is authenticated
-      console.log(`📊 TIME DEBUG: request-to-stream approved - IP: ${ip}, session: ${JSON.stringify(session)}`);
+      logger.info(`📊 TIME DEBUG: request-to-stream approved - IP: ${ip}, session: ${JSON.stringify(session)}`);
       if (session && session.userId) {
         // End any viewing session first
         await timeTrackingService.endViewingSession(session.userId, socket.id);
         // Start streaming session
         timeTrackingService.startStreamingSession(session.userId, socket.id);
-        console.log(`📊 TIME: Started streaming time tracking for user ${session.userId}`);
+        logger.info(`📊 TIME: Started streaming time tracking for user ${session.userId}`);
       } else {
-        console.log(`📊 TIME DEBUG: No authenticated user found for streaming socket ${socket.id} (IP: ${ip})`);
+        logger.info(`📊 TIME DEBUG: No authenticated user found for streaming socket ${socket.id} (IP: ${ip})`);
       }
 
       // Send stream status to the streamer so they can see duration
@@ -657,7 +659,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       if (data.isViewBot || data.streamType === 'viewbot') {
         // Track this socket ID as a ViewBot
         viewbotSocketIds.add(socket.id);
-        console.log(`🤖 VIEWBOT: Added socket ID ${socket.id} to ViewBot tracking`);
+        logger.info(`🤖 VIEWBOT: Added socket ID ${socket.id} to ViewBot tracking`);
 
         // Register synthetic negative user ID for viewbot
         // Create a simple hash from socket ID to generate consistent negative user ID
@@ -668,11 +670,11 @@ module.exports = function registerStreamHandler(io, socket, deps) {
         }
         const syntheticUserId = -Math.abs(hash);
         sessionService.linkUserToSocket(socket.id, syntheticUserId);
-        console.log(`🎭 VIEWBOT: Registered synthetic user ID ${syntheticUserId} for socket ${socket.id}`);
+        logger.info(`🎭 VIEWBOT: Registered synthetic user ID ${syntheticUserId} for socket ${socket.id}`);
 
         // CRITICAL FIX: Update ViewbotService configuration with ViewBot's streamConfig
         if (data.streamConfig && viewbotService) {
-          console.log(`🎨 VIEWBOT CONFIG: Updating ViewbotService with config from ${socket.id}:`, data.streamConfig);
+          logger.info({ streamConfig: data.streamConfig }, `🎨 VIEWBOT CONFIG: Updating ViewbotService with config from ${socket.id}`);
           viewbotService.updateViewbotConfig(data.streamConfig);
         }
 
@@ -687,14 +689,14 @@ module.exports = function registerStreamHandler(io, socket, deps) {
         if ((data.isViewBot || (hasVideo && hasAudio)) && !notifiedStreamers.has(socket.id)) {
           notifiedStreamers.add(socket.id);
 
-          console.log(`🎬 TAKEOVER: ViewBot ${socket.id} ready - notifying viewers immediately (GStreamer mode)`);
+          logger.info(`🎬 TAKEOVER: ViewBot ${socket.id} ready - notifying viewers immediately (GStreamer mode)`);
           const streamerDisplayName = await getStreamerDisplayName(socket.id);
           const emitTimestamp = Date.now();
 
           // DEDUP: Check if we already emitted for this stream recently
           if (lastEmittedStreamReady.streamerId === socket.id &&
               (emitTimestamp - lastEmittedStreamReady.timestamp) < 2000) {
-            console.log(`⏭️ STREAM-READY: Skipping duplicate ViewBot emission for ${socket.id}`);
+            logger.info(`⏭️ STREAM-READY: Skipping duplicate ViewBot emission for ${socket.id}`);
           } else {
             io.emit('stream-ready', {
               streamerId: socket.id,
@@ -711,17 +713,17 @@ module.exports = function registerStreamHandler(io, socket, deps) {
             });
             lastEmittedStreamReady.streamerId = socket.id;
             lastEmittedStreamReady.timestamp = emitTimestamp;
-            console.log(`📡 STREAM-READY: ViewBot ${socket.id} ready with display name: ${streamerDisplayName}`);
+            logger.info(`📡 STREAM-READY: ViewBot ${socket.id} ready with display name: ${streamerDisplayName}`);
           }
 
           // Notify existing viewers to start tracking view time
           notifyViewersStreamStarted();
         } else {
-          console.log(`📢 TAKEOVER: ViewBot ${socket.id} approved to stream, waiting for producers (video: ${hasVideo}, audio: ${hasAudio})`);
+          logger.info(`📢 TAKEOVER: ViewBot ${socket.id} approved to stream, waiting for producers (video: ${hasVideo}, audio: ${hasAudio})`);
         }
       } else {
         // Note: Regular streamers will be notified via 'stream-ready' event after producers are created and verified
-        console.log(`📢 TAKEOVER: ${socket.id} approved to stream, waiting for producers to be created`);
+        logger.info(`📢 TAKEOVER: ${socket.id} approved to stream, waiting for producers to be created`);
       }
 
       viewerCountNotifier.broadcast();
@@ -730,12 +732,12 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       if (!isViewBot) {
         await broadcastGlobalCooldown(socket.id);
       } else {
-        console.log(`🤖 COOLDOWN: Skipping global cooldown broadcast for viewbot ${socket.id}`);
+        logger.info(`🤖 COOLDOWN: Skipping global cooldown broadcast for viewbot ${socket.id}`);
       }
 
-      console.log(`Stream taken over by: ${socket.id}`);
+      logger.info(`Stream taken over by: ${socket.id}`);
     } catch (error) {
-      console.error('Error handling takeover request:', error);
+      logger.error({ err: error }, 'Error handling takeover request');
       socket.emit('takeover-error', { message: 'Server error occurred' });
     }
   });
@@ -743,7 +745,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
   // Handle streamer sending offer to specific viewer
   socket.on('stream-offer', (data) => {
     const { offer, toViewerId } = data;
-    console.log(`Streamer ${socket.id} sending offer to viewer ${toViewerId}`);
+    logger.info(`Streamer ${socket.id} sending offer to viewer ${toViewerId}`);
 
     io.to(toViewerId).emit('stream-offer', {
       offer,
@@ -754,7 +756,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
   // Handle viewer sending answer back to streamer
   socket.on('stream-answer', (data) => {
     const { answer, toStreamerId } = data;
-    console.log(`Viewer ${socket.id} sending answer to streamer ${toStreamerId}`);
+    logger.info(`Viewer ${socket.id} sending answer to streamer ${toStreamerId}`);
 
     io.to(toStreamerId).emit('stream-answer', {
       answer,
@@ -777,9 +779,9 @@ module.exports = function registerStreamHandler(io, socket, deps) {
               disconnect_reason = 'voluntary_stop'
           WHERE streamer_id = ? AND disconnected_at IS NULL
         `, [socket.id]);
-        console.log(`📝 IP TRACKING: Updated disconnect for streamer ${socket.id}`);
+        logger.info(`📝 IP TRACKING: Updated disconnect for streamer ${socket.id}`);
       } catch (error) {
-        console.error('❌ IP TRACKING: Failed to update disconnect:', error);
+        logger.error({ err: error }, '❌ IP TRACKING: Failed to update disconnect');
       }
 
       // End streaming log session
@@ -790,12 +792,12 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       const session = sessionService.getSessionByIp(ip);
       if (session && session.userId) {
         await timeTrackingService.endStreamingSession(session.userId);
-        console.log(`📊 TIME: Ended streaming time tracking for user ${session.userId}`);
+        logger.info(`📊 TIME: Ended streaming time tracking for user ${session.userId}`);
       }
 
       // Apply individual cooldown when streamer voluntarily stops
       await takeoverService.setSocketCooldown(socket.id, 'voluntary_stream_end');
-      console.log(`🔒 COOLDOWN: Applied individual cooldown to ${socket.id} for voluntary stream end`);
+      logger.info(`🔒 COOLDOWN: Applied individual cooldown to ${socket.id} for voluntary stream end`);
 
       streamService.clearStreamer();
       mediasoupService.currentStreamer = null;
@@ -803,14 +805,14 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       // Handle continuous recording for stream end
       if (recordingService) {
         recordingService.handleStreamEnd(socket.id).catch(error => {
-          console.error('❌ RECORDING: Error handling stream end:', error);
+          logger.error({ err: error }, '❌ RECORDING: Error handling stream end');
         });
       }
 
       // Clear streamer buff display when streaming ends
-      console.log(`🎭 BUFF: Clearing streamer buffs display (streaming ended)`);
+      logger.info(`🎭 BUFF: Clearing streamer buffs display (streaming ended)`);
       buffNotifier.streamerBuffsUpdate({ buffs: [] });
-      console.log(`🧹 VOLUNTARY STOP: Cleared ${socket.id} from both services`);
+      logger.info(`🧹 VOLUNTARY STOP: Cleared ${socket.id} from both services`);
 
       socket.leave('streamer');
       socket.join('viewers');
@@ -820,7 +822,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       notifyViewersStreamEnded();
       viewerCountNotifier.broadcast();
 
-      console.log(`Stream ended by: ${socket.id}`);
+      logger.info(`Stream ended by: ${socket.id}`);
 
       // CRITICAL: Restart viewbot rotation after real user stops streaming
       // Check if this was a real user (not a viewbot)
@@ -829,28 +831,28 @@ module.exports = function registerStreamHandler(io, socket, deps) {
       const isLiveKitViewBot = socket.id.startsWith('viewbot-');
 
       if (!isViewbot && !isLiveKitViewBot && viewBotClientService) {
-        console.log(`🔓 VOLUNTARY STOP: Real user ${socket.id} stopped streaming - clearing viewbot protection`);
+        logger.info(`🔓 VOLUNTARY STOP: Real user ${socket.id} stopped streaming - clearing viewbot protection`);
         viewBotClientService.setRealStreamerStatus(false);
 
         // Restart viewbot rotation after real user voluntarily stops
         setTimeout(async () => {
-          console.log(`🔄 RESTART: Attempting to restart viewbot rotation after voluntary stop`);
+          logger.info(`🔄 RESTART: Attempting to restart viewbot rotation after voluntary stop`);
 
           if (global.viewBotRotation && global.viewBotRotation.startRotation) {
             try {
-              console.log(`🚀 RESTART: Restarting global.viewBotRotation`);
+              logger.info(`🚀 RESTART: Restarting global.viewBotRotation`);
               await global.viewBotRotation.startRotation();
             } catch (e) {
-              console.error(`❌ RESTART: Failed to restart global.viewBotRotation:`, e);
+              logger.error({ err: e }, `❌ RESTART: Failed to restart global.viewBotRotation`);
             }
           }
 
           if (SimpleViewBotRotation && SimpleViewBotRotation.startRotation) {
             try {
-              console.log(`🚀 RESTART: Restarting SimpleViewBotRotation`);
+              logger.info(`🚀 RESTART: Restarting SimpleViewBotRotation`);
               await SimpleViewBotRotation.startRotation();
             } catch (e) {
-              console.error(`❌ RESTART: Failed to restart SimpleViewBotRotation:`, e);
+              logger.error({ err: e }, `❌ RESTART: Failed to restart SimpleViewBotRotation`);
             }
           }
         }, 3000);
@@ -861,7 +863,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
   // Handle viewer requesting stream from streamer
   socket.on('request-stream', (data) => {
     const { streamerId } = data;
-    console.log(`Viewer ${socket.id} requesting stream from ${streamerId}`);
+    logger.info(`Viewer ${socket.id} requesting stream from ${streamerId}`);
 
     // Tell the streamer to send offer to this viewer
     io.to(streamerId).emit('viewer-requesting-stream', { viewerId: socket.id });
@@ -869,7 +871,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
 
   // Handle graceful degradation viewbot stream request
   socket.on('request-test-stream', async () => {
-    console.log(`🧪 GRACEFUL DEGRADATION: Viewbot stream requested by ${socket.id}`);
+    logger.info(`🧪 GRACEFUL DEGRADATION: Viewbot stream requested by ${socket.id}`);
 
     // Late-init service resolution: viewbotService can flip from null to a
     // real instance after MediaSoup init lands. Capture once per request so
@@ -877,7 +879,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
     const viewbotService = getViewbotService();
 
     if (!viewbotService) {
-      console.log('⚠️ GRACEFUL DEGRADATION: ViewbotService not available, falling back to test stream');
+      logger.info('⚠️ GRACEFUL DEGRADATION: ViewbotService not available, falling back to test stream');
 
       // Fallback to legacy test stream
       const testStreamStatus = testStreamService.getTestStreamStatus();
@@ -890,7 +892,7 @@ module.exports = function registerStreamHandler(io, socket, deps) {
 
         if (result.success) {
           streamService.setStreamer(result.streamId, 'test');
-          console.log('🧪 GRACEFUL DEGRADATION: Auto-started test stream for fallback');
+          logger.info('🧪 GRACEFUL DEGRADATION: Auto-started test stream for fallback');
           io.emit('test-stream-available', { streamId: result.streamId });
         }
       } else {
@@ -915,15 +917,15 @@ module.exports = function registerStreamHandler(io, socket, deps) {
 
       if (result.success) {
         streamService.setStreamer(result.streamId, 'viewbot');
-        console.log('🤖 GRACEFUL DEGRADATION: Auto-started viewbot for fallback');
+        logger.info('🤖 GRACEFUL DEGRADATION: Auto-started viewbot for fallback');
 
         // Create synthetic user ID for viewbot to enable buff/debuff support
         const syntheticUserId = -Math.abs(result.streamId.hashCode ? result.streamId.hashCode() : result.streamId.split('-')[1].slice(0, 8).split('').reduce((a, b) => (a * 31 + b.charCodeAt(0)) & 0x7fffffff, 0));
-        console.log(`🎭 BUFF: Created synthetic user ID ${syntheticUserId} for auto-started viewbot ${result.streamId}`);
+        logger.info(`🎭 BUFF: Created synthetic user ID ${syntheticUserId} for auto-started viewbot ${result.streamId}`);
 
         // Link synthetic user ID to viewbot socket ID for buff system compatibility
         sessionService.linkUserToSocket(result.streamId, syntheticUserId);
-        console.log(`🎭 BUFF: Linked auto-started viewbot ${result.streamId} to synthetic user ${syntheticUserId} for buff system`);
+        logger.info(`🎭 BUFF: Linked auto-started viewbot ${result.streamId} to synthetic user ${syntheticUserId} for buff system`);
 
         // Broadcast global cooldown to all users
         await broadcastGlobalCooldown(result.streamId);

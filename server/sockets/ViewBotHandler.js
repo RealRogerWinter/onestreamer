@@ -76,6 +76,8 @@
  *     long-lived singletons set up during startServer and the inline code
  *     reaches into them the same way.
  */
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotHandler' });
+
 module.exports = function registerViewBotHandler(io, socket, deps) {
   const {
     mediasoupService,
@@ -92,7 +94,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
   // Handle ViewBot Plain RTP bridge creation (for FFmpeg/GStreamer to WebRTC producer)
   socket.on('viewbot-create-plain-bridge', async (data, callback) => {
     const { botId, producerId, kind, rtpParameters } = data;
-    console.log(`🤖 SERVER: ViewBot ${botId} creating Plain RTP bridge for ${kind} producer ${producerId}`);
+    logger.info(`🤖 SERVER: ViewBot ${botId} creating Plain RTP bridge for ${kind} producer ${producerId}`);
 
     try {
       // Generate a fixed SSRC for this producer
@@ -110,7 +112,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       });
 
       const listenPort = plainTransport.tuple.localPort;
-      console.log(`✅ SERVER: Plain RTP bridge created on port ${listenPort} for ${kind}`);
+      logger.info(`✅ SERVER: Plain RTP bridge created on port ${listenPort} for ${kind}`);
 
       // Store the Plain transport
       if (!mediasoupService.plainBridges) {
@@ -128,7 +130,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       });
 
     } catch (error) {
-      console.error(`❌ SERVER: Failed to create Plain RTP bridge:`, error);
+      logger.error({ err: error }, `❌ SERVER: Failed to create Plain RTP bridge`);
       callback({
         success: false,
         error: error.message
@@ -139,7 +141,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
   // Handle ViewBot WebRTC transport creation for mobile 5G/TURN support (legacy - kept for compatibility)
   socket.on('viewbot-create-webrtc-transport', async (data) => {
     const { botId, kind, rtpParameters } = data;
-    console.log(`🤖 SERVER: ViewBot ${botId} creating WebRTC transport for ${kind} (LEGACY METHOD)`);
+    logger.info(`🤖 SERVER: ViewBot ${botId} creating WebRTC transport for ${kind} (LEGACY METHOD)`);
 
     try {
       // Create WebRTC transport like regular users for TURN support
@@ -168,7 +170,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         }
       });
 
-      console.log(`✅ SERVER: ViewBot ${botId} WebRTC ${kind} producer created: ${producer.id}`);
+      logger.info(`✅ SERVER: ViewBot ${botId} WebRTC ${kind} producer created: ${producer.id}`);
 
       // Store producer
       if (!mediasoupService.producers) {
@@ -192,7 +194,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       });
 
     } catch (error) {
-      console.error(`❌ SERVER: Failed to create WebRTC transport for ViewBot ${botId}:`, error);
+      logger.error({ err: error }, `❌ SERVER: Failed to create WebRTC transport for ViewBot ${botId}`);
       socket.emit('viewbot-producer-error', {
         botId: botId,
         kind: kind,
@@ -204,7 +206,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
   // Handle ViewBot plain RTP transport creation
   socket.on('viewbot-create-plain-transport', async (data) => {
     const { botId, kind, rtpParameters } = data;
-    console.log(`🤖 SERVER: ViewBot ${botId} creating plain RTP transport for ${kind}`);
+    logger.info(`🤖 SERVER: ViewBot ${botId} creating plain RTP transport for ${kind}`);
 
     try {
       // Generate a fixed SSRC for this producer
@@ -224,9 +226,9 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
 
       const listenPort = plainTransport.tuple.localPort;
       const rtcpPort = plainTransport.rtcpTuple ? plainTransport.rtcpTuple.localPort : null;
-      console.log(`📡 SERVER: Plain RTP transport created for ViewBot ${botId} ${kind}`);
-      console.log(`📡 SERVER: Transport listening for RTP on port ${listenPort}, RTCP on port ${rtcpPort}`);
-      console.log(`📡 SERVER: Using SSRC ${ssrc} for ${kind}`);
+      logger.info(`📡 SERVER: Plain RTP transport created for ViewBot ${botId} ${kind}`);
+      logger.info(`📡 SERVER: Transport listening for RTP on port ${listenPort}, RTCP on port ${rtcpPort}`);
+      logger.info(`📡 SERVER: Using SSRC ${ssrc} for ${kind}`);
 
       // For comedia mode, don't pre-connect - let it auto-detect from first packet
 
@@ -278,28 +280,28 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         }
       });
 
-      console.log(`✅ SERVER: ViewBot ${botId} ${kind} producer created: ${producer.id}`);
+      logger.info(`✅ SERVER: ViewBot ${botId} ${kind} producer created: ${producer.id}`);
 
       // Monitor producer and transport for debugging
       producer.on('score', (score) => {
-        console.log(`📊 SERVER: ViewBot ${botId} ${kind} producer score:`, score);
+        logger.info({ score }, `📊 SERVER: ViewBot ${botId} ${kind} producer score`);
       });
 
       producer.on('videoorientationchange', (videoOrientation) => {
-        console.log(`📐 SERVER: ViewBot ${botId} video orientation changed:`, videoOrientation);
+        logger.info({ videoOrientation }, `📐 SERVER: ViewBot ${botId} video orientation changed`);
       });
 
       producer.on('trace', (trace) => {
-        console.log(`🔍 SERVER: ViewBot ${botId} ${kind} producer trace:`, trace.type, trace.info);
+        logger.info({ traceType: trace.type, traceInfo: trace.info }, `🔍 SERVER: ViewBot ${botId} ${kind} producer trace`);
       });
 
       // Monitor the plain transport tuple for incoming RTP
       plainTransport.on('tuple', (tuple) => {
-        console.log(`🔌 SERVER: ViewBot ${botId} ${kind} transport tuple updated:`, tuple);
+        logger.info({ tuple }, `🔌 SERVER: ViewBot ${botId} ${kind} transport tuple updated`);
       });
 
       plainTransport.on('rtcp', (rtcp) => {
-        console.log(`📡 SERVER: ViewBot ${botId} ${kind} received RTCP:`, rtcp);
+        logger.info({ rtcp }, `📡 SERVER: ViewBot ${botId} ${kind} received RTCP`);
       });
 
       // Get producer stats periodically
@@ -308,7 +310,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
           const stats = await producer.getStats();
           const hasData = stats && stats.length > 0 && stats[0].bytesCount > 0;
           if (hasData) {
-            console.log(`📈 SERVER: ViewBot ${botId} ${kind} producer stats:`, stats[0]);
+            logger.info({ stats: stats[0] }, `📈 SERVER: ViewBot ${botId} ${kind} producer stats`);
             clearInterval(statsInterval); // Stop once we see data flowing
           }
         } catch (error) {
@@ -337,8 +339,8 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       // Only proceed with stream ready notification if both are ready
       // The actual takeover and streamer setting will be handled by request-to-stream event
       if ((hasVideo && kind === 'audio') || (hasAudio && kind === 'video')) {
-        console.log(`🎯 SERVER: ViewBot ${botId} has both video and audio producers ready`);
-        console.log(`📡 SERVER: ViewBot producers ready - waiting for takeover via request-to-stream`);
+        logger.info(`🎯 SERVER: ViewBot ${botId} has both video and audio producers ready`);
+        logger.info(`📡 SERVER: ViewBot producers ready - waiting for takeover via request-to-stream`);
       }
 
       // Return the port that FFmpeg should use
@@ -351,7 +353,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       });
 
     } catch (error) {
-      console.error(`❌ SERVER: ViewBot ${kind} plain transport creation failed:`, error);
+      logger.error({ err: error }, `❌ SERVER: ViewBot ${kind} plain transport creation failed`);
 
       socket.emit('viewbot-producer-error', {
         botId: botId,
@@ -363,17 +365,17 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
 
   // Handle stop-stream event (used by ViewBots during rotation)
   socket.on('stop-stream', async (data) => {
-    console.log(`🛑 STOP-STREAM: Received from ${socket.id} (ViewBot: ${data?.isViewBot}, BotId: ${data?.botId})`);
+    logger.info(`🛑 STOP-STREAM: Received from ${socket.id} (ViewBot: ${data?.isViewBot}, BotId: ${data?.botId})`);
 
     // Clean up MediaSoup resources immediately
     if (mediasoupService) {
-      console.log(`🧹 MEDIASOUP: Cleaning up resources for ${socket.id} on stop-stream`);
+      logger.info(`🧹 MEDIASOUP: Cleaning up resources for ${socket.id} on stop-stream`);
       await mediasoupService.cleanupSocketResources(socket.id);
     }
 
     // Clean up Plain Transport resources for ViewBots
     if (data?.isViewBot && data?.botId && plainTransportService) {
-      console.log(`🧹 PLAIN TRANSPORT: Cleaning up resources for ViewBot ${data.botId}`);
+      logger.info(`🧹 PLAIN TRANSPORT: Cleaning up resources for ViewBot ${data.botId}`);
       await plainTransportService.cleanup(data.botId);
     }
 
@@ -388,21 +390,21 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         notifyViewersStreamEnded();
       }
 
-      console.log(`📺 STOP-STREAM: Cleared streamer ${socket.id} from services`);
+      logger.info(`📺 STOP-STREAM: Cleared streamer ${socket.id} from services`);
     }
   });
 
   // ViewBot request to create WebRTC transport (mobile-compatible)
   socket.on('viewbot-create-webrtc-transport', async (data, callback) => {
-    console.log(`🚀 SERVER: ViewBot ${data.botId} requesting WebRTC transport (mobile-compatible)`);
+    logger.info(`🚀 SERVER: ViewBot ${data.botId} requesting WebRTC transport (mobile-compatible)`);
 
     try {
       // Create WebRTC transport exactly like normal users
       const transportOptions = await mediasoupService.createWebRtcTransport(socket.id, false);
 
-      console.log(`✅ SERVER: Created WebRTC transport for ViewBot ${data.botId}`);
-      console.log(`   Transport ID: ${transportOptions.id}`);
-      console.log(`   ICE candidates: ${transportOptions.iceCandidates?.length || 0}`);
+      logger.info(`✅ SERVER: Created WebRTC transport for ViewBot ${data.botId}`);
+      logger.info(`   Transport ID: ${transportOptions.id}`);
+      logger.info(`   ICE candidates: ${transportOptions.iceCandidates?.length || 0}`);
 
       callback({
         success: true,
@@ -410,14 +412,14 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       });
 
     } catch (error) {
-      console.error(`❌ SERVER: Failed to create WebRTC transport for ViewBot:`, error);
+      logger.error({ err: error }, `❌ SERVER: Failed to create WebRTC transport for ViewBot`);
       callback({ success: false, error: error.message });
     }
   });
 
   // ViewBot request to create Plain RTP transport (legacy, not mobile-compatible)
   socket.on('viewbot-create-transport', async (data, callback) => {
-    console.log(`🚚 SERVER: ViewBot ${data.botId} requesting Plain RTP transports (LEGACY - not mobile compatible)`);
+    logger.info(`🚚 SERVER: ViewBot ${data.botId} requesting Plain RTP transports (LEGACY - not mobile compatible)`);
 
     try {
       // Check if we're using LiveKit backend
@@ -428,7 +430,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       if (isLiveKit) {
         // For LiveKit, ViewBots should use GStreamer with whipsink
         // Return special response indicating LiveKit mode
-        console.log(`🎮 SERVER: ViewBot ${data.botId} should use LiveKit GStreamer pipeline`);
+        logger.info(`🎮 SERVER: ViewBot ${data.botId} should use LiveKit GStreamer pipeline`);
 
         // Get LiveKit service from adapter
         const livekitService = global.webrtcAdapter._backend;
@@ -475,9 +477,9 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         comedia: true  // Auto-detect source
       });
 
-      console.log(`✅ SERVER: Created Plain RTP transports for ViewBot ${data.botId}`);
-      console.log(`📡 SERVER: Video RTP port: ${videoTransport.tuple.localPort}`);
-      console.log(`📡 SERVER: Audio RTP port: ${audioTransport.tuple.localPort}`);
+      logger.info(`✅ SERVER: Created Plain RTP transports for ViewBot ${data.botId}`);
+      logger.info(`📡 SERVER: Video RTP port: ${videoTransport.tuple.localPort}`);
+      logger.info(`📡 SERVER: Audio RTP port: ${audioTransport.tuple.localPort}`);
 
       // Store both transports for this socket
       if (!mediasoupService.transports) {
@@ -488,7 +490,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         audio: audioTransport,
         botId: data.botId  // Store bot ID for debugging
       });
-      console.log(`📦 SERVER: Stored transports for socket ${socket.id} (ViewBot ${data.botId})`);
+      logger.info(`📦 SERVER: Stored transports for socket ${socket.id} (ViewBot ${data.botId})`);
 
       callback({
         videoTransportId: videoTransport.id,
@@ -497,14 +499,14 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         audioPort: audioTransport.tuple.localPort
       });
     } catch (error) {
-      console.error(`❌ SERVER: Failed to create Plain RTP transports:`, error);
+      logger.error({ err: error }, `❌ SERVER: Failed to create Plain RTP transports`);
       callback({ error: error.message });
     }
   });
 
   // ViewBot request to produce to WebRTC transport (mobile-compatible)
   socket.on('viewbot-webrtc-produce', async (data, callback) => {
-    console.log(`🎬 SERVER: ViewBot ${data.botId} producing to WebRTC transport`);
+    logger.info(`🎬 SERVER: ViewBot ${data.botId} producing to WebRTC transport`);
 
     try {
       // Lazy-resolve viewbot client service — see top-of-file note.
@@ -513,7 +515,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       // CRITICAL: Check if a real user is currently streaming
       // Viewbots should NEVER override a real streamer
       if (viewBotClientService && viewBotClientService.realStreamerActive) {
-        console.log(`⛔ SERVER: Blocking viewbot ${data.botId} - real streamer is active`);
+        logger.info(`⛔ SERVER: Blocking viewbot ${data.botId} - real streamer is active`);
         callback({
           success: false,
           error: 'Real streamer is active - viewbot creation blocked'
@@ -526,7 +528,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       if (currentStreamer && currentStreamer !== socket.id) {
         // Check if current streamer is a URL stream (they have priority)
         if (currentStreamer.startsWith('url-stream-')) {
-          console.log(`⛔ SERVER: Blocking viewbot ${data.botId} - URL stream ${currentStreamer} is active`);
+          logger.info(`⛔ SERVER: Blocking viewbot ${data.botId} - URL stream ${currentStreamer} is active`);
           callback({
             success: false,
             error: 'URL stream is active - viewbot creation blocked'
@@ -537,7 +539,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         // Check if current streamer has active producers (is actually streaming)
         const currentProducers = mediasoupService.producers?.get(currentStreamer);
         if (currentProducers && currentProducers.size > 0) {
-          console.log(`⛔ SERVER: Blocking viewbot ${data.botId} - another streamer ${currentStreamer} has active producers`);
+          logger.info(`⛔ SERVER: Blocking viewbot ${data.botId} - another streamer ${currentStreamer} has active producers`);
           callback({
             success: false,
             error: 'Another streamer is active - viewbot creation blocked'
@@ -591,7 +593,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       const videoProducer = await mediasoupService.createProducer(socket.id, videoRtpParameters, 'video');
       const audioProducer = await mediasoupService.createProducer(socket.id, audioRtpParameters, 'audio');
 
-      console.log(`✅ SERVER: Created WebRTC producers for ViewBot ${data.botId}`);
+      logger.info(`✅ SERVER: Created WebRTC producers for ViewBot ${data.botId}`);
 
       // Mark as viewbot producers
       if (videoProducer && videoProducer.producer) {
@@ -608,16 +610,16 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       });
 
     } catch (error) {
-      console.error(`❌ SERVER: Failed to create WebRTC producers for ViewBot:`, error);
+      logger.error({ err: error }, `❌ SERVER: Failed to create WebRTC producers for ViewBot`);
       callback({ success: false, error: error.message });
     }
   });
 
   // ViewBot request to create producers
   socket.on('viewbot-create-producers', async (data, callback) => {
-    console.log(`🎤 SERVER: ViewBot ${data.botId} requesting to create producers`);
-    console.log(`🔍 SERVER: Looking for transports for socket ${socket.id}`);
-    console.log(`🔍 SERVER: Available transports: ${mediasoupService.transports ? mediasoupService.transports.size : 0}`);
+    logger.info(`🎤 SERVER: ViewBot ${data.botId} requesting to create producers`);
+    logger.info(`🔍 SERVER: Looking for transports for socket ${socket.id}`);
+    logger.info(`🔍 SERVER: Available transports: ${mediasoupService.transports ? mediasoupService.transports.size : 0}`);
 
     try {
       // Lazy-resolve viewbot client service — see top-of-file note.
@@ -626,7 +628,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       // CRITICAL: Check if a real user is currently streaming
       // Viewbots should NEVER override a real streamer
       if (viewBotClientService && viewBotClientService.realStreamerActive) {
-        console.log(`⛔ SERVER: Blocking viewbot ${data.botId} producer creation - real streamer is active`);
+        logger.info(`⛔ SERVER: Blocking viewbot ${data.botId} producer creation - real streamer is active`);
         callback({
           success: false,
           error: 'Real streamer is active - viewbot creation blocked'
@@ -639,7 +641,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       if (currentStreamer && currentStreamer !== socket.id) {
         // Check if current streamer is a URL stream (they have priority)
         if (currentStreamer.startsWith('url-stream-')) {
-          console.log(`⛔ SERVER: Blocking viewbot ${data.botId} producer creation - URL stream ${currentStreamer} is active`);
+          logger.info(`⛔ SERVER: Blocking viewbot ${data.botId} producer creation - URL stream ${currentStreamer} is active`);
           callback({
             success: false,
             error: 'URL stream is active - viewbot creation blocked'
@@ -650,7 +652,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         // Check if current streamer has active producers (is actually streaming)
         const currentProducers = mediasoupService.producers?.get(currentStreamer);
         if (currentProducers && currentProducers.size > 0) {
-          console.log(`⛔ SERVER: Blocking viewbot ${data.botId} producer creation - another streamer ${currentStreamer} has active producers`);
+          logger.info(`⛔ SERVER: Blocking viewbot ${data.botId} producer creation - another streamer ${currentStreamer} has active producers`);
           callback({
             success: false,
             error: 'Another streamer is active - viewbot creation blocked'
@@ -661,8 +663,8 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
 
       const transports = mediasoupService.transports?.get(socket.id);
       if (!transports || !transports.video || !transports.audio) {
-        console.error(`❌ SERVER: Transports not found for socket ${socket.id}`);
-        console.error(`   Available sockets: ${mediasoupService.transports ? Array.from(mediasoupService.transports.keys()).join(', ') : 'none'}`);
+        logger.error(`❌ SERVER: Transports not found for socket ${socket.id}`);
+        logger.error(`   Available sockets: ${mediasoupService.transports ? Array.from(mediasoupService.transports.keys()).join(', ') : 'none'}`);
         throw new Error('Transports not found');
       }
 
@@ -710,9 +712,9 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       producerMap.set('video', videoProducer);
       producerMap.set('audio', audioProducer);
 
-      console.log(`✅ SERVER: Created producers for ViewBot ${data.botId}`);
-      console.log(`   Video Producer ID: ${videoProducer.id}`);
-      console.log(`   Audio Producer ID: ${audioProducer.id}`);
+      logger.info(`✅ SERVER: Created producers for ViewBot ${data.botId}`);
+      logger.info(`   Video Producer ID: ${videoProducer.id}`);
+      logger.info(`   Audio Producer ID: ${audioProducer.id}`);
 
       callback({
         success: true,
@@ -720,14 +722,14 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         audioProducerId: audioProducer.id
       });
     } catch (error) {
-      console.error(`❌ SERVER: Failed to create producers:`, error);
+      logger.error({ err: error }, `❌ SERVER: Failed to create producers`);
       callback({ error: error.message });
     }
   });
 
   // ViewBot stream ready notification
   socket.on('viewbot-stream-ready', async (data) => {
-    console.log(`📺 SERVER: ViewBot ${data.botId} reports stream ready, triggering stream switch`);
+    logger.info(`📺 SERVER: ViewBot ${data.botId} reports stream ready, triggering stream switch`);
 
     try {
       // Lazy-resolve viewbot client service — see top-of-file note.
@@ -736,14 +738,14 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       // CRITICAL: Check if a real user is currently streaming
       // Don't emit stream-ready for viewbots if real streamer is active
       if (viewBotClientService && viewBotClientService.realStreamerActive) {
-        console.log(`⛔ STREAM-READY: Blocking viewbot ${data.botId} stream-ready - real streamer is active`);
+        logger.info(`⛔ STREAM-READY: Blocking viewbot ${data.botId} stream-ready - real streamer is active`);
         return;
       }
 
       // Check if another non-viewbot streamer is active (e.g., URL stream)
       const currentStreamer = streamService.getCurrentStreamer();
       if (currentStreamer && currentStreamer !== socket.id && currentStreamer.startsWith('url-stream-')) {
-        console.log(`⛔ STREAM-READY: Blocking viewbot ${data.botId} stream-ready - URL stream ${currentStreamer} is active`);
+        logger.info(`⛔ STREAM-READY: Blocking viewbot ${data.botId} stream-ready - URL stream ${currentStreamer} is active`);
         return;
       }
 
@@ -752,7 +754,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       // DEDUP: Check if we already emitted for this stream recently
       if (lastEmittedStreamReady.streamerId === socket.id &&
           (emitTimestamp - lastEmittedStreamReady.timestamp) < 2000) {
-        console.log(`⏭️ STREAM-READY: Skipping duplicate viewbot-stream-ready emission for ${socket.id}`);
+        logger.info(`⏭️ STREAM-READY: Skipping duplicate viewbot-stream-ready emission for ${socket.id}`);
         return;
       }
 
@@ -767,28 +769,28 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
 
       lastEmittedStreamReady.streamerId = socket.id;
       lastEmittedStreamReady.timestamp = emitTimestamp;
-      console.log(`✅ SERVER: Stream-ready notification sent for ViewBot ${data.botId}`);
+      logger.info(`✅ SERVER: Stream-ready notification sent for ViewBot ${data.botId}`);
 
     } catch (error) {
-      console.error(`❌ SERVER: Failed to handle ViewBot stream ready for ${data.botId}:`, error);
+      logger.error({ err: error }, `❌ SERVER: Failed to handle ViewBot stream ready for ${data.botId}`);
     }
   });
 
   // ViewBot rotation request handler
   socket.on('viewbot-rotation-request', async (data) => {
-    console.log(`🔄 SERVER: ViewBot rotation request from ${data.botId} (reason: ${data.reason})`);
+    logger.info(`🔄 SERVER: ViewBot rotation request from ${data.botId} (reason: ${data.reason})`);
 
     // Lazy-resolve viewbot client service — see top-of-file note.
     const viewBotClientService = getViewBotClientService();
 
     if (!viewBotClientService) {
-      console.error(`❌ SERVER: ViewBotClientService not available for rotation request`);
+      logger.error(`❌ SERVER: ViewBotClientService not available for rotation request`);
       return;
     }
 
     // CRITICAL FIX: Check if rotation is enabled before processing request
     if (!viewBotClientService.rotationEnabled) {
-      console.log(`🚫 SERVER: ViewBot rotation request ignored - rotation system disabled`);
+      logger.info(`🚫 SERVER: ViewBot rotation request ignored - rotation system disabled`);
       return;
     }
 
@@ -796,7 +798,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       const result = await viewBotClientService.handleRotationRequest(data.botId, data.reason);
 
       if (result.success) {
-        console.log(`✅ SERVER: ViewBot rotation completed: ${result.previousBot} → ${result.newBot}`);
+        logger.info(`✅ SERVER: ViewBot rotation completed: ${result.previousBot} → ${result.newBot}`);
 
         // Notify all admins about the rotation
         io.emit('viewbot-rotation-completed', {
@@ -806,36 +808,36 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
           timestamp: Date.now()
         });
       } else {
-        console.log(`⚠️ SERVER: ViewBot rotation failed: ${result.message}`);
+        logger.info(`⚠️ SERVER: ViewBot rotation failed: ${result.message}`);
       }
 
     } catch (error) {
-      console.error(`❌ SERVER: Failed to handle ViewBot rotation request from ${data.botId}:`, error);
+      logger.error({ err: error }, `❌ SERVER: Failed to handle ViewBot rotation request from ${data.botId}`);
     }
   });
 
   // Handle when a ViewBot video file ends naturally
   socket.on('viewbot-video-ended', async (data) => {
-    console.log(`🎬 SERVER: ViewBot ${data.botId} video file ended: ${data.videoFile}`);
+    logger.info(`🎬 SERVER: ViewBot ${data.botId} video file ended: ${data.videoFile}`);
 
     // Use the global viewBotRotation service
     if (!global.viewBotRotation) {
-      console.error(`❌ SERVER: ViewBotRotation service not available for video-ended event`);
+      logger.error(`❌ SERVER: ViewBotRotation service not available for video-ended event`);
       return;
     }
 
     // Only trigger rotation if rotation is enabled
     if (!global.viewBotRotation.enabled) {
-      console.log(`🚫 SERVER: ViewBot video ended but rotation is disabled`);
+      logger.info(`🚫 SERVER: ViewBot video ended but rotation is disabled`);
       return;
     }
 
     try {
       // Force a rotation to the next video
-      console.log(`🔄 SERVER: Triggering rotation after video ended for ViewBot ${data.botId}`);
+      logger.info(`🔄 SERVER: Triggering rotation after video ended for ViewBot ${data.botId}`);
       await global.viewBotRotation.rotateToNextBot();
 
-      console.log(`✅ SERVER: Rotation triggered successfully after video end`);
+      logger.info(`✅ SERVER: Rotation triggered successfully after video end`);
 
       // Notify admins
       io.emit('viewbot-rotation-after-video-end', {
@@ -844,19 +846,19 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         timestamp: Date.now()
       });
     } catch (error) {
-      console.error(`❌ SERVER: Error handling video-ended event:`, error);
+      logger.error({ err: error }, `❌ SERVER: Error handling video-ended event`);
     }
   });
 
   // ViewBot explicit transport cleanup request
   socket.on('viewbot-cleanup-transports', (data) => {
-    console.log(`🧹 SERVER: ViewBot ${data.botId} requesting transport cleanup for socket ${data.socketId}`);
+    logger.info(`🧹 SERVER: ViewBot ${data.botId} requesting transport cleanup for socket ${data.socketId}`);
 
     // Use the socketId from data, not socket.id (they're different!)
     const targetSocketId = data.socketId || socket.id;
 
-    console.log(`🔍 DEBUG: Cleanup requested by socket ${socket.id} for target ${targetSocketId}`);
-    console.log(`🔍 DEBUG: Current transport keys:`, Array.from(mediasoupService.transports?.keys() || []));
+    logger.info(`🔍 DEBUG: Cleanup requested by socket ${socket.id} for target ${targetSocketId}`);
+    logger.info({ transportKeys: Array.from(mediasoupService.transports?.keys() || []) }, `🔍 DEBUG: Current transport keys`);
 
     // Try to find transports by socket ID or by bot ID
     let transportEntry = null;
@@ -869,7 +871,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
       // If not found by socket ID, search by bot ID
       for (const [key, value] of mediasoupService.transports?.entries() || []) {
         if (value.botId === data.botId) {
-          console.log(`🔍 DEBUG: Found transport by botId ${data.botId} under socket ${key}`);
+          logger.info(`🔍 DEBUG: Found transport by botId ${data.botId} under socket ${key}`);
           transportEntry = value;
           transportKey = key;
           break;
@@ -884,23 +886,23 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
           // Close both video and audio transports
           if (!transportEntry.video.closed) {
             transportEntry.video.close();
-            console.log(`✅ Closed video transport for ViewBot ${data.botId}`);
+            logger.info(`✅ Closed video transport for ViewBot ${data.botId}`);
           }
           if (!transportEntry.audio.closed) {
             transportEntry.audio.close();
-            console.log(`✅ Closed audio transport for ViewBot ${data.botId}`);
+            logger.info(`✅ Closed audio transport for ViewBot ${data.botId}`);
           }
         } else if (typeof transportEntry.close === 'function' && !transportEntry.closed) {
           transportEntry.close();
-          console.log(`✅ Closed transport for ViewBot ${data.botId}`);
+          logger.info(`✅ Closed transport for ViewBot ${data.botId}`);
         }
       } catch (e) {
-        console.error(`❌ Error closing transports for ViewBot ${data.botId}:`, e);
+        logger.error({ err: e }, `❌ Error closing transports for ViewBot ${data.botId}`);
       }
       mediasoupService.transports.delete(transportKey);
-      console.log(`✅ SERVER: Cleaned up transports for ViewBot ${data.botId}`);
+      logger.info(`✅ SERVER: Cleaned up transports for ViewBot ${data.botId}`);
     } else {
-      console.log(`⚠️ SERVER: No transports found for socket ${targetSocketId}`);
+      logger.info(`⚠️ SERVER: No transports found for socket ${targetSocketId}`);
     }
 
     // Also clean up producers if they exist
@@ -910,7 +912,7 @@ module.exports = function registerViewBotHandler(io, socket, deps) {
         for (const [kind, producer] of producers) {
           if (!producer.closed) {
             producer.close();
-            console.log(`✅ Closed ${kind} producer for ViewBot ${data.botId}`);
+            logger.info(`✅ Closed ${kind} producer for ViewBot ${data.botId}`);
           }
         }
       }

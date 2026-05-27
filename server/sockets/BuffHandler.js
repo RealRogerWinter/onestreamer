@@ -31,6 +31,8 @@
  * `io` is also required for the user-buff-update broadcast on successful
  * apply against a human target.
  */
+const logger = require('../bootstrap/logger').child({ svc: 'BuffHandler' });
+
 module.exports = function registerBuffHandler(io, socket, deps) {
   const {
     itemService,
@@ -62,7 +64,7 @@ module.exports = function registerBuffHandler(io, socket, deps) {
       if (viewbotService && viewbotService.isViewbotStream(targetUserId)) {
         const syntheticUserId = sessionService.getUserIdBySocketId(targetUserId);
         if (syntheticUserId) {
-          console.log(`🎭 BUFF SOCKET: Translating viewbot ${targetUserId} to synthetic user ${syntheticUserId}`);
+          logger.info(`🎭 BUFF SOCKET: Translating viewbot ${targetUserId} to synthetic user ${syntheticUserId}`);
           targetUserId = syntheticUserId;
         } else {
           buffNotifier.buffError({ toSocket: socket, error: 'Viewbot target not properly initialized for buff system' });
@@ -80,14 +82,14 @@ module.exports = function registerBuffHandler(io, socket, deps) {
           const targetUserIdNum = typeof targetUserId === 'string' ? parseInt(targetUserId, 10) : targetUserId;
 
           if (currentStreamerUserId && (targetUserIdNum === Math.abs(currentStreamerUserId))) {
-            console.log(`🎯 BUFF SOCKET: Client sent current streamer user ID, translating to viewbot`);
-            console.log(`🎭 BUFF SOCKET: Converting user ID ${targetUserId} to viewbot synthetic user ${currentStreamerUserId}`);
+            logger.info(`🎯 BUFF SOCKET: Client sent current streamer user ID, translating to viewbot`);
+            logger.info(`🎭 BUFF SOCKET: Converting user ID ${targetUserId} to viewbot synthetic user ${currentStreamerUserId}`);
             targetUserId = currentStreamerUserId; // This should be the negative synthetic user ID
           }
         }
       }
 
-      console.log(`🎯 BUFF SOCKET: Final targetUserId after all processing: ${targetUserId} (type: ${typeof targetUserId})`);
+      logger.info(`🎯 BUFF SOCKET: Final targetUserId after all processing: ${targetUserId} (type: ${typeof targetUserId})`);
 
       // Apply the buff/debuff
       const result = await itemService.applyBuffDebuffItem(
@@ -110,11 +112,11 @@ module.exports = function registerBuffHandler(io, socket, deps) {
           buffs: await buffDebuffService.getActiveBuffsForUser(targetUserId)
         });
       } else {
-        console.log(`🎭 BUFF: Skipping broadcast for viewbot user ${targetUserId} - buffs applied silently`);
+        logger.info(`🎭 BUFF: Skipping broadcast for viewbot user ${targetUserId} - buffs applied silently`);
       }
 
     } catch (error) {
-      console.error('Socket buff application error:', error);
+      logger.error({ err: error }, 'Socket buff application error');
       buffNotifier.buffError({ toSocket: socket, error: error.message });
     }
   });
@@ -132,7 +134,7 @@ module.exports = function registerBuffHandler(io, socket, deps) {
       socket.emit('my-buffs-update', { buffs });
 
     } catch (error) {
-      console.error('Socket get buffs error:', error);
+      logger.error({ err: error }, 'Socket get buffs error');
       buffNotifier.buffError({ toSocket: socket, error: error.message });
     }
   });
@@ -145,7 +147,7 @@ module.exports = function registerBuffHandler(io, socket, deps) {
       buffNotifier.streamerBuffsUpdate({ buffs, toSocket: socket });
 
     } catch (error) {
-      console.error('Socket get streamer buffs error:', error);
+      logger.error({ err: error }, 'Socket get streamer buffs error');
       buffNotifier.buffError({ toSocket: socket, error: error.message });
     }
   });
@@ -180,7 +182,7 @@ module.exports = function registerBuffHandler(io, socket, deps) {
       }
 
     } catch (error) {
-      console.error('Socket remove buff error:', error);
+      logger.error({ err: error }, 'Socket remove buff error');
       buffNotifier.buffError({ toSocket: socket, error: error.message });
     }
   });

@@ -67,6 +67,8 @@
  *   - getTranscriptionService     () => transcriptionService. Lazy for the
  *                                 same reason (auto-start path).
  */
+const logger = require('../bootstrap/logger').child({ svc: 'MediaSoupHandler' });
+
 module.exports = function registerMediaSoupHandler(io, socket, deps) {
   const {
     mediasoupService,
@@ -120,10 +122,10 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
   socket.on('mediasoup:get-rtp-capabilities', async (data, callback) => {
     try {
       const rtpCapabilities = await mediasoupService.getRouterRtpCapabilities();
-      console.log(`📊 MEDIASOUP: Sent RTP capabilities to ${socket.id}`);
+      logger.info(`📊 MEDIASOUP: Sent RTP capabilities to ${socket.id}`);
       callback({ success: true, rtpCapabilities });
     } catch (error) {
-      console.error(`❌ MEDIASOUP: Failed to get RTP capabilities for ${socket.id}:`, error);
+      logger.error({ err: error }, `❌ MEDIASOUP: Failed to get RTP capabilities for ${socket.id}`);
       callback({ success: false, error: error.message });
     }
   });
@@ -132,10 +134,10 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
   socket.on('mediasoup:create-send-transport', async (data, callback) => {
     try {
       const transport = await mediasoupService.createWebRtcTransport(socket.id);
-      console.log(`📡 MEDIASOUP: Send transport created for ${socket.id}`);
+      logger.info(`📡 MEDIASOUP: Send transport created for ${socket.id}`);
       callback({ success: true, ...transport });
     } catch (error) {
-      console.error(`❌ MEDIASOUP: Failed to create send transport for ${socket.id}:`, error);
+      logger.error({ err: error }, `❌ MEDIASOUP: Failed to create send transport for ${socket.id}`);
       callback({ success: false, error: error.message });
     }
   });
@@ -147,10 +149,10 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
 
       // All clients including viewbots use the same connection flow
       await mediasoupService.connectTransport(socket.id, dtlsParameters);
-      console.log(`🔗 MEDIASOUP: Transport connected for ${socket.id}`);
+      logger.info(`🔗 MEDIASOUP: Transport connected for ${socket.id}`);
       callback({ success: true });
     } catch (error) {
-      console.error(`❌ MEDIASOUP: Failed to connect transport for ${socket.id}:`, error);
+      logger.error({ err: error }, `❌ MEDIASOUP: Failed to connect transport for ${socket.id}`);
       callback({ success: false, error: error.message });
     }
   });
@@ -165,10 +167,10 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
       const userAgent = socket.handshake?.headers?.['user-agent'] || 'unknown';
       const ip = socket.handshake?.address || 'unknown';
 
-      console.log(`🎬 MEDIASOUP PRODUCE: Request from ${username} (${socket.id})`);
-      console.log(`📱 User Agent: ${userAgent}`);
-      console.log(`🌐 IP: ${ip}`);
-      console.log(`🎥 Track kind: ${kind}, Transport ID: ${transportId}`);
+      logger.info(`🎬 MEDIASOUP PRODUCE: Request from ${username} (${socket.id})`);
+      logger.info(`📱 User Agent: ${userAgent}`);
+      logger.info(`🌐 IP: ${ip}`);
+      logger.info(`🎥 Track kind: ${kind}, Transport ID: ${transportId}`);
 
       // Check if there's already an active streamer
       const currentStreamer = streamService.getCurrentStreamer();
@@ -187,26 +189,26 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
       // Allow real users to override viewbots, but prevent viewbots from overriding real users
       if (currentStreamer && wasNewStreamer) {
         if (isRealUser && currentStreamerIsViewbot) {
-          console.log(`✅ MEDIASOUP: Real user ${socket.id} (${username}) overriding viewbot streamer ${currentStreamer}`);
+          logger.info(`✅ MEDIASOUP: Real user ${socket.id} (${username}) overriding viewbot streamer ${currentStreamer}`);
           // Clear the viewbot streamer
           streamService.clearStreamer();
           mediasoupService.currentStreamer = null;
         } else if (!isRealUser && !currentStreamerIsViewbot) {
-          console.log(`⚠️ MEDIASOUP: Blocking viewbot ${socket.id} - real user ${currentStreamer} is streaming`);
+          logger.info(`⚠️ MEDIASOUP: Blocking viewbot ${socket.id} - real user ${currentStreamer} is streaming`);
           callback({
             success: false,
             error: 'A real user is currently streaming.'
           });
           return;
         } else if (!isRealUser && currentStreamerIsViewbot) {
-          console.log(`⚠️ MEDIASOUP: Blocking viewbot ${socket.id} - another viewbot ${currentStreamer} is streaming`);
+          logger.info(`⚠️ MEDIASOUP: Blocking viewbot ${socket.id} - another viewbot ${currentStreamer} is streaming`);
           callback({
             success: false,
             error: 'Another viewbot is currently streaming.'
           });
           return;
         } else {
-          console.log(`⚠️ MEDIASOUP: Blocking produce attempt from ${socket.id} - active streamer is ${currentStreamer}`);
+          logger.info(`⚠️ MEDIASOUP: Blocking produce attempt from ${socket.id} - active streamer is ${currentStreamer}`);
           callback({
             success: false,
             error: 'Another user is currently streaming. Please request takeover first.'
@@ -215,11 +217,11 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
         }
       }
 
-      console.log(`🔍 MEDIASOUP: Before producer creation - current streamer: ${currentStreamer}, this socket: ${socket.id}, wasNewStreamer: ${wasNewStreamer}`);
+      logger.info(`🔍 MEDIASOUP: Before producer creation - current streamer: ${currentStreamer}, this socket: ${socket.id}, wasNewStreamer: ${wasNewStreamer}`);
 
       // ViewBots now use the same producer creation as regular users
       const result = await mediasoupService.createProducer(socket.id, rtpParameters, kind);
-      console.log(`✅ Producer created: ${result.id} for ${username} (${kind})`)
+      logger.info(`✅ Producer created: ${result.id} for ${username} (${kind})`)
 
       // Only update stream service if this is the first producer or the current streamer
       if (!currentStreamer || socket.id === currentStreamer) {
@@ -234,18 +236,18 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
       const hasAudio = producerMap && producerMap.has('audio');
       const hasBothTracks = hasVideo && hasAudio;
 
-      console.log(`🎬 MEDIASOUP: Producer created - streamer: ${socket.id}, kind: ${kind}, wasNewStreamer: ${wasNewStreamer}, notified: ${notifiedStreamers.has(socket.id)}`);
+      logger.info(`🎬 MEDIASOUP: Producer created - streamer: ${socket.id}, kind: ${kind}, wasNewStreamer: ${wasNewStreamer}, notified: ${notifiedStreamers.has(socket.id)}`);
 
-      // console.log(`🔍 MEDIASOUP DEBUG: Checking notification conditions for ${socket.id}:`);
-      // console.log(`🔍   wasNewStreamer: ${wasNewStreamer}`);
-      // console.log(`🔍   notifiedStreamers.has(${socket.id}): ${notifiedStreamers.has(socket.id)}`);
-      // console.log(`🔍   Current streamer: ${mediasoupService.getCurrentStreamer()}`);
-      // console.log(`🔍   notifiedStreamers Set:`, Array.from(notifiedStreamers));
+      // logger.info(`🔍 MEDIASOUP DEBUG: Checking notification conditions for ${socket.id}:`);
+      // logger.info(`🔍   wasNewStreamer: ${wasNewStreamer}`);
+      // logger.info(`🔍   notifiedStreamers.has(${socket.id}): ${notifiedStreamers.has(socket.id)}`);
+      // logger.info(`🔍   Current streamer: ${mediasoupService.getCurrentStreamer()}`);
+      // logger.info(`🔍   notifiedStreamers Set:`, Array.from(notifiedStreamers));
 
       // Notify viewers if this is a new streamer OR if we haven't notified about this streamer yet
       // This handles both fresh streams and takeover scenarios where the streamer changes
       if ((wasNewStreamer || !notifiedStreamers.has(socket.id)) && mediasoupService.getCurrentStreamer() === socket.id) {
-        console.log(`🎬 MEDIASOUP: Processing new streamer ${socket.id} with ${kind} track (video: ${hasVideo}, audio: ${hasAudio})`);
+        logger.info(`🎬 MEDIASOUP: Processing new streamer ${socket.id} with ${kind} track (video: ${hasVideo}, audio: ${hasAudio})`);
 
         // Emit stream-ready for any functional producers (don't wait for both tracks)
         let emitReady = false;
@@ -269,7 +271,7 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
         }
 
         if (emitReady) {
-          console.log(`✅ MEDIASOUP: Producer(s) verified for ${socket.id} (video: ${readyHasVideo}, audio: ${readyHasAudio}), notifying viewers`);
+          logger.info(`✅ MEDIASOUP: Producer(s) verified for ${socket.id} (video: ${readyHasVideo}, audio: ${readyHasAudio}), notifying viewers`);
 
           // Immediately mark as notified to prevent race conditions between video/audio producers
           if (!notifiedStreamers.has(socket.id)) {
@@ -288,7 +290,7 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
                   hasAudio: readyHasAudio,
                   timestamp: Date.now()
                 });
-                console.log(`✅ MEDIASOUP: Producer verified for ${socket.id} (video: ${readyHasVideo}, audio: ${readyHasAudio})`);
+                logger.info(`✅ MEDIASOUP: Producer verified for ${socket.id} (video: ${readyHasVideo}, audio: ${readyHasAudio})`);
 
                 // Use verified emission helper for LiveKit backend track verification
                 await verifyAndEmitStreamReady(socket.id, {
@@ -297,13 +299,13 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
                   hasAudio: readyHasAudio,
                   streamStartTime: streamService.streamStartTime
                 });
-                console.log(`📡 STREAM-READY: Regular streamer ${socket.id} ready emission completed`);
+                logger.info(`📡 STREAM-READY: Regular streamer ${socket.id} ready emission completed`);
 
               // Visual effects sync temporarily disabled to debug rotate_90 issue
               // try {
               //   const activeVisualEffects = await getActiveVisualEffects();
               //   if (activeVisualEffects.length > 0) {
-              //     console.log(`🎨 VISUAL FX: Broadcasting ${activeVisualEffects.length} active effects with stream-ready`);
+              //     logger.info(`🎨 VISUAL FX: Broadcasting ${activeVisualEffects.length} active effects with stream-ready`);
               //
               //     // Broadcast visual effects state to all clients
               //     io.emit('visual-effects-state', {
@@ -318,14 +320,14 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
               //     });
               //   }
               // } catch (error) {
-              //   console.error('❌ VISUAL FX: Error broadcasting effects with stream-ready:', error);
+              //   logger.error({ err: error }, '❌ VISUAL FX: Error broadcasting effects with stream-ready');
               // }
 
               // Handle continuous recording now that producers are ready
               const recordingService = getRecordingService();
               if (recordingService) {
                 recordingService.handleStreamStart(socket.id).catch(error => {
-                  console.error('❌ RECORDING: Error handling stream start:', error);
+                  logger.error({ err: error }, '❌ RECORDING: Error handling stream start');
                 });
               }
 
@@ -334,10 +336,10 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
               if (transcriptionService &&
                   transcriptionService.config.enableTranscription &&
                   transcriptionService.config.autoStart) {
-                console.log('🎙️ AUTO-START: Starting transcription automatically for stream');
+                logger.info('🎙️ AUTO-START: Starting transcription automatically for stream');
                 transcriptionService.startTranscription(socket.id).then(result => {
                   if (result.success) {
-                    console.log(`✅ AUTO-START: Transcription started: ${result.sessionId}`);
+                    logger.info(`✅ AUTO-START: Transcription started: ${result.sessionId}`);
                     io.emit('transcription-started', {
                       sessionId: result.sessionId,
                       streamerId: socket.id,
@@ -345,10 +347,10 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
                       autoStarted: true
                     });
                   } else {
-                    console.error(`❌ AUTO-START: Failed to start transcription: ${result.error}`);
+                    logger.error(`❌ AUTO-START: Failed to start transcription: ${result.error}`);
                   }
                 }).catch(error => {
-                  console.error('❌ AUTO-START: Error starting transcription:', error);
+                  logger.error({ err: error }, '❌ AUTO-START: Error starting transcription');
                 });
               }
 
@@ -362,7 +364,7 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
           }, 250); // Small delay for MediaSoup stability
           }
         } else {
-          console.log(`⚠️ MEDIASOUP: ${socket.id} already notified or not ready to emit (video: ${readyHasVideo}, audio: ${readyHasAudio})`);
+          logger.info(`⚠️ MEDIASOUP: ${socket.id} already notified or not ready to emit (video: ${readyHasVideo}, audio: ${readyHasAudio})`);
         }
 
         // Always set up fallback notification for reliability
@@ -372,7 +374,7 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
             const currentHasVideo = currentProducerMap && currentProducerMap.has('video') && !currentProducerMap.get('video')?.closed;
             const currentHasAudio = currentProducerMap && currentProducerMap.has('audio') && !currentProducerMap.get('audio')?.closed;
 
-            console.log(`🎬 MEDIASOUP: Fallback notification for ${socket.id} (video: ${currentHasVideo}, audio: ${currentHasAudio})`);
+            logger.info(`🎬 MEDIASOUP: Fallback notification for ${socket.id} (video: ${currentHasVideo}, audio: ${currentHasAudio})`);
             notifiedStreamers.add(socket.id);
 
             // Use verified emission helper for LiveKit backend track verification
@@ -391,13 +393,13 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
           }
         }, 4000); // Extended timeout for better reliability
       } else {
-        console.log(`🎬 MEDIASOUP: Existing streamer ${socket.id} producing additional ${kind} track`);
+        logger.info(`🎬 MEDIASOUP: Existing streamer ${socket.id} producing additional ${kind} track`);
       }
 
       callback({ success: true, producerId: result.id });
-      console.log(`🎬 MEDIASOUP: ${socket.id} started producing ${kind}`);
+      logger.info(`🎬 MEDIASOUP: ${socket.id} started producing ${kind}`);
     } catch (error) {
-      console.error('❌ MEDIASOUP: Failed to create producer:', error);
+      logger.error({ err: error }, '❌ MEDIASOUP: Failed to create producer');
       callback({ success: false, error: error.message });
     }
   });
@@ -407,12 +409,12 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
       const { rtpCapabilities, kind } = data;
       const currentStreamer = mediasoupService.getCurrentStreamer();
 
-      // console.log(`📺 MEDIASOUP: ${socket.id} requesting to consume ${kind || 'any'} from streamer ${currentStreamer}`);
-      // console.log(`🔍 MEDIASOUP DEBUG: StreamService current streamer: ${streamService.getCurrentStreamer()}`);
-      // console.log(`🔍 MEDIASOUP DEBUG: MediasoupService current streamer: ${mediasoupService.getCurrentStreamer()}`);
+      // logger.info(`📺 MEDIASOUP: ${socket.id} requesting to consume ${kind || 'any'} from streamer ${currentStreamer}`);
+      // logger.info(`🔍 MEDIASOUP DEBUG: StreamService current streamer: ${streamService.getCurrentStreamer()}`);
+      // logger.info(`🔍 MEDIASOUP DEBUG: MediasoupService current streamer: ${mediasoupService.getCurrentStreamer()}`);
 
       if (!currentStreamer) {
-        // console.log(`❌ MEDIASOUP: ${socket.id} tried to consume but no active streamer`);
+        // logger.info(`❌ MEDIASOUP: ${socket.id} tried to consume but no active streamer`);
         callback({ success: false, error: 'No active streamer available' });
         return;
       }
@@ -420,8 +422,8 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
       // Verify producer exists and is functional before attempting consumption
       const producerMap = mediasoupService.producers.get(currentStreamer);
       if (!producerMap || producerMap.size === 0) {
-        console.log(`⚠️ MEDIASOUP: ${socket.id} tried to consume from ${currentStreamer} but no producers found yet`);
-        console.log(`📺 MEDIASOUP: Streamer ${currentStreamer} is registered but may still be setting up media stream`);
+        logger.info(`⚠️ MEDIASOUP: ${socket.id} tried to consume from ${currentStreamer} but no producers found yet`);
+        logger.info(`📺 MEDIASOUP: Streamer ${currentStreamer} is registered but may still be setting up media stream`);
         callback({ success: false, error: `Streamer ${currentStreamer} is preparing stream - please wait` });
         return;
       }
@@ -430,13 +432,13 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
       if (kind) {
         const specificProducer = producerMap.get(kind);
         if (!specificProducer || specificProducer.closed) {
-          console.log(`❌ MEDIASOUP: ${socket.id} requested ${kind} from ${currentStreamer} but producer not available or closed`);
+          logger.info(`❌ MEDIASOUP: ${socket.id} requested ${kind} from ${currentStreamer} but producer not available or closed`);
           callback({ success: false, error: `No ${kind} producer available from streamer ${currentStreamer}` });
           return;
         }
       }
 
-      console.log(`📺 MEDIASOUP: ${socket.id} attempting to consume ${kind || 'any'} from ${currentStreamer} (producers: ${producerMap.size})`);
+      logger.info(`📺 MEDIASOUP: ${socket.id} attempting to consume ${kind || 'any'} from ${currentStreamer} (producers: ${producerMap.size})`);
 
       const result = await mediasoupService.createConsumer(
         socket.id,
@@ -458,12 +460,12 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
           streamerId: currentStreamer,
           isViewbotStream: isViewbotProducer
         });
-        console.log(`✅ MEDIASOUP: ${socket.id} successfully consuming ${kind || 'media'} from ${currentStreamer} (viewbot: ${isViewbotProducer})`);
+        logger.info(`✅ MEDIASOUP: ${socket.id} successfully consuming ${kind || 'media'} from ${currentStreamer} (viewbot: ${isViewbotProducer})`);
       } else {
         callback({ success: false, error: `Cannot create consumer for ${kind || 'media'}` });
       }
     } catch (error) {
-      console.error('❌ MEDIASOUP: Failed to create consumer:', error);
+      logger.error({ err: error }, '❌ MEDIASOUP: Failed to create consumer');
       callback({ success: false, error: error.message });
     }
   });
@@ -473,9 +475,9 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
       const { consumerId } = data;
       await mediasoupService.resumeConsumer(socket.id, consumerId);
       callback({ success: true });
-      console.log(`▶️ MEDIASOUP: ${socket.id} resumed consumer ${consumerId}`);
+      logger.info(`▶️ MEDIASOUP: ${socket.id} resumed consumer ${consumerId}`);
     } catch (error) {
-      console.error('❌ MEDIASOUP: Failed to resume consumer:', error);
+      logger.error({ err: error }, '❌ MEDIASOUP: Failed to resume consumer');
       callback({ success: false, error: error.message });
     }
   });
@@ -492,13 +494,13 @@ module.exports = function registerMediaSoupHandler(io, socket, deps) {
 
       // Request keyframe from the producer
       if (consumer.kind === 'video') {
-        console.log(`📱 iOS: Requesting keyframe for consumer ${consumerId}`);
+        logger.info(`📱 iOS: Requesting keyframe for consumer ${consumerId}`);
         await consumer.requestKeyFrame();
       }
 
       callback({ success: true });
     } catch (error) {
-      console.error('❌ MEDIASOUP: Failed to request keyframe:', error);
+      logger.error({ err: error }, '❌ MEDIASOUP: Failed to request keyframe');
       callback({ success: false, error: error.message });
     }
   });

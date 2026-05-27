@@ -23,12 +23,14 @@
  *   - sessionService    Used to resolve the requester's session (for userId
  *                       attribution on apply-visual-effect).
  */
+const logger = require('../bootstrap/logger').child({ svc: 'EffectHandler' });
+
 module.exports = function registerEffectHandler(io, socket, deps) {
   const { visualFxService, streamService, sessionService } = deps;
 
   socket.on('apply-visual-effect', async (data) => {
-    console.log(`🎬🎬🎬 VISUALFX HANDLER CALLED: ${socket.id} requesting effect`);
-    console.log(`🎬 VISUALFX: Data received:`, data);
+    logger.info(`🎬🎬🎬 VISUALFX HANDLER CALLED: ${socket.id} requesting effect`);
+    logger.info({ data }, `🎬 VISUALFX: Data received`);
 
     try {
       const { effectId, options } = data;
@@ -37,7 +39,7 @@ module.exports = function registerEffectHandler(io, socket, deps) {
       const ip = sessionService.getIpAddress(socket);
       const session = sessionService.getSessionByIp(ip);
 
-      console.log(`🎬 VISUALFX: Effect request from ${socket.id}: ${effectId}`);
+      logger.info(`🎬 VISUALFX: Effect request from ${socket.id}: ${effectId}`);
 
       // Get current streamer
       const currentStreamer = streamService.getCurrentStreamer();
@@ -91,13 +93,13 @@ module.exports = function registerEffectHandler(io, socket, deps) {
         });
 
         socket.emit('visual-effect-success', { effect });
-        console.log(`✅ VISUALFX: Applied effect ${effectId} to stream ${currentStreamer} (including streamer preview)`);
+        logger.info(`✅ VISUALFX: Applied effect ${effectId} to stream ${currentStreamer} (including streamer preview)`);
       } else {
         socket.emit('visual-effect-error', { error: 'Effect could not be applied (resource limits)' });
       }
 
     } catch (error) {
-      console.error('❌ VISUALFX: Error applying effect:', error);
+      logger.error({ err: error }, '❌ VISUALFX: Error applying effect');
       socket.emit('visual-effect-error', { error: error.message });
     }
   });
@@ -125,7 +127,7 @@ module.exports = function registerEffectHandler(io, socket, deps) {
       });
 
     } catch (error) {
-      console.error('❌ VISUALFX: Error removing effect:', error);
+      logger.error({ err: error }, '❌ VISUALFX: Error removing effect');
       socket.emit('visual-effect-error', { error: error.message });
     }
   });
@@ -144,7 +146,7 @@ module.exports = function registerEffectHandler(io, socket, deps) {
       });
 
     } catch (error) {
-      console.error('❌ VISUALFX: Error getting effects:', error);
+      logger.error({ err: error }, '❌ VISUALFX: Error getting effects');
       socket.emit('visual-effect-error', { error: error.message });
     }
   });
@@ -163,7 +165,7 @@ module.exports = function registerEffectHandler(io, socket, deps) {
       });
 
     } catch (error) {
-      console.error('❌ VISUALFX: Error getting stats:', error);
+      logger.error({ err: error }, '❌ VISUALFX: Error getting stats');
       socket.emit('visual-effect-error', { error: error.message });
     }
   });

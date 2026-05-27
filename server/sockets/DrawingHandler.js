@@ -25,10 +25,12 @@
  * 4.1). The call site in server/index.js correspondingly passes only
  * `(io, socket)`.
  */
+const logger = require('../bootstrap/logger').child({ svc: 'DrawingHandler' });
+
 module.exports = function registerDrawingHandler(io, socket) {
   // Drawing path broadcast handler
   socket.on('drawing-path-complete', (data) => {
-    console.log('✏️ DRAWING: Received drawing path from client', socket.id);
+    logger.info({ socketId: socket.id }, '✏️ DRAWING: Received drawing path from client');
     // Broadcast to all other clients (not back to sender)
     socket.broadcast.emit('drawing-path-broadcast', data);
   });

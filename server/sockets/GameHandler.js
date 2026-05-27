@@ -24,6 +24,8 @@
  *   - sessionService       Socket -> session lookup.
  *   - accountService       Used to load `is_admin` for admin-gated events.
  */
+const logger = require('../bootstrap/logger').child({ svc: 'GameHandler' });
+
 module.exports = function registerGameHandler(io, socket, deps) {
   const { gameService, gameStreamService, sessionService, accountService } = deps;
 
@@ -35,7 +37,7 @@ module.exports = function registerGameHandler(io, socket, deps) {
       const userId = session?.userId;
 
       if (!userId) {
-        console.log('🎮 GAME: Unauthenticated user tried to start game');
+        logger.info('🎮 GAME: Unauthenticated user tried to start game');
         if (callback) callback({ success: false, error: 'Authentication required' });
         return;
       }
@@ -43,18 +45,18 @@ module.exports = function registerGameHandler(io, socket, deps) {
       // Get user from database to check admin status
       const user = await accountService.getUserById(userId);
       if (!user || !user.is_admin) {
-        console.log('🎮 GAME: Non-admin tried to start game');
+        logger.info('🎮 GAME: Non-admin tried to start game');
         if (callback) callback({ success: false, error: 'Admin privileges required' });
         return;
       }
 
-      console.log(`🎮 GAME: Admin ${userId} starting game`);
+      logger.info(`🎮 GAME: Admin ${userId} starting game`);
 
       const result = await gameStreamService.startGameStream(userId);
 
       if (callback) callback(result);
     } catch (error) {
-      console.error('🎮 GAME: Error starting game:', error);
+      logger.error({ err: error }, '🎮 GAME: Error starting game');
       if (callback) callback({ success: false, error: error.message });
     }
   });
@@ -67,7 +69,7 @@ module.exports = function registerGameHandler(io, socket, deps) {
       const userId = session?.userId;
 
       if (!userId) {
-        console.log('🎮 GAME: Unauthenticated user tried to stop game');
+        logger.info('🎮 GAME: Unauthenticated user tried to stop game');
         if (callback) callback({ success: false, error: 'Authentication required' });
         return;
       }
@@ -75,18 +77,18 @@ module.exports = function registerGameHandler(io, socket, deps) {
       // Get user from database to check admin status
       const user = await accountService.getUserById(userId);
       if (!user || !user.is_admin) {
-        console.log('🎮 GAME: Non-admin tried to stop game');
+        logger.info('🎮 GAME: Non-admin tried to stop game');
         if (callback) callback({ success: false, error: 'Admin privileges required' });
         return;
       }
 
-      console.log(`🎮 GAME: Admin ${userId} stopping game`);
+      logger.info(`🎮 GAME: Admin ${userId} stopping game`);
 
       const result = await gameStreamService.stopGameStream(userId);
 
       if (callback) callback(result);
     } catch (error) {
-      console.error('🎮 GAME: Error stopping game:', error);
+      logger.error({ err: error }, '🎮 GAME: Error stopping game');
       if (callback) callback({ success: false, error: error.message });
     }
   });
@@ -109,7 +111,7 @@ module.exports = function registerGameHandler(io, socket, deps) {
       const userId = session.userId;
       const userData = session.userData || {};
 
-      console.log(`🎮 GAME: Player ${userData.username || userId} joining game`);
+      logger.info(`🎮 GAME: Player ${userData.username || userId} joining game`);
 
       const player = await gameService.handlePlayerJoin(socket, userId, {
         username: userData.username || `Player${userId}`,
@@ -123,7 +125,7 @@ module.exports = function registerGameHandler(io, socket, deps) {
         });
       }
     } catch (error) {
-      console.error('🎮 GAME: Error joining game:', error);
+      logger.error({ err: error }, '🎮 GAME: Error joining game');
       socket.emit('game:error', { message: 'Failed to join game', code: 'JOIN_ERROR' });
     }
   });
@@ -134,10 +136,10 @@ module.exports = function registerGameHandler(io, socket, deps) {
       const session = sessionService.getSessionBySocketId(socket.id);
       if (session?.userId) {
         await gameService.handlePlayerLeave(session.userId, socket.id);
-        console.log(`🎮 GAME: Player ${session.userId} left game`);
+        logger.info(`🎮 GAME: Player ${session.userId} left game`);
       }
     } catch (error) {
-      console.error('🎮 GAME: Error leaving game:', error);
+      logger.error({ err: error }, '🎮 GAME: Error leaving game');
     }
   });
 
@@ -151,7 +153,7 @@ module.exports = function registerGameHandler(io, socket, deps) {
 
       gameService.handlePlayerInput(session.userId, data);
     } catch (error) {
-      console.error('🎮 GAME: Error processing input:', error);
+      logger.error({ err: error }, '🎮 GAME: Error processing input');
     }
   });
 
@@ -168,7 +170,7 @@ module.exports = function registerGameHandler(io, socket, deps) {
         action: { type: 'use-item', itemId: data.itemId }
       });
     } catch (error) {
-      console.error('🎮 GAME: Error using item:', error);
+      logger.error({ err: error }, '🎮 GAME: Error using item');
     }
   });
 
@@ -185,7 +187,7 @@ module.exports = function registerGameHandler(io, socket, deps) {
         action: { type: 'interact' }
       });
     } catch (error) {
-      console.error('🎮 GAME: Error interacting:', error);
+      logger.error({ err: error }, '🎮 GAME: Error interacting');
     }
   });
 
@@ -197,7 +199,7 @@ module.exports = function registerGameHandler(io, socket, deps) {
       const player = gameService.playerManager.getPlayer(session.userId);
       if (player && player.socketId === socket.id) {
         gameService.handlePlayerLeave(session.userId, socket.id).catch(err => {
-          console.error('🎮 GAME: Error handling disconnect:', err);
+          logger.error({ err }, '🎮 GAME: Error handling disconnect');
         });
       }
     }

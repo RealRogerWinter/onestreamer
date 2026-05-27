@@ -20,6 +20,8 @@
  *   - process.env.ADMIN_KEY  Compared with the `adminKey` field on incoming
  *                            admin-message / admin-kick payloads.
  */
+const logger = require('../bootstrap/logger').child({ svc: 'AdminHandler' });
+
 module.exports = function registerAdminHandler(io, socket, deps) {
   const { gameStreamService } = deps;
 
@@ -37,7 +39,7 @@ module.exports = function registerAdminHandler(io, socket, deps) {
 
     // Verify admin key
     if (!verifyAdminKey(adminKey)) {
-      console.log('❌ ADMIN: Invalid admin key for message');
+      logger.info('❌ ADMIN: Invalid admin key for message');
       return;
     }
 
@@ -49,7 +51,7 @@ module.exports = function registerAdminHandler(io, socket, deps) {
         timestamp: Date.now(),
         type: 'info'
       });
-      console.log(`💬 ADMIN: Message sent to ${targetSocketId}`);
+      logger.info(`💬 ADMIN: Message sent to ${targetSocketId}`);
     }
   });
 
@@ -58,7 +60,7 @@ module.exports = function registerAdminHandler(io, socket, deps) {
 
     // Verify admin key
     if (!verifyAdminKey(adminKey)) {
-      console.log('❌ ADMIN: Invalid admin key for kick');
+      logger.info('❌ ADMIN: Invalid admin key for kick');
       return;
     }
 
@@ -73,7 +75,7 @@ module.exports = function registerAdminHandler(io, socket, deps) {
 
       setTimeout(() => {
         targetSocket.disconnect(true);
-        console.log(`🚫 ADMIN: Kicked connection ${targetSocketId}`);
+        logger.info(`🚫 ADMIN: Kicked connection ${targetSocketId}`);
       }, 1000);
     }
   });
@@ -84,7 +86,7 @@ module.exports = function registerAdminHandler(io, socket, deps) {
       const status = gameStreamService.getStatus();
       if (callback) callback({ success: true, status });
     } catch (error) {
-      console.error('🎮 GAME: Error getting status:', error);
+      logger.error({ err: error }, '🎮 GAME: Error getting status');
       if (callback) callback({ success: false, error: error.message });
     }
   });

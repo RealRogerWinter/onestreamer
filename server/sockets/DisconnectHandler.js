@@ -60,6 +60,8 @@
  *   - getViewBotClientService   `() => viewBotClientService` getter — same
  *                               reason as above.
  */
+const logger = require('../bootstrap/logger').child({ svc: 'DisconnectHandler' });
+
 module.exports = function registerDisconnectHandler(io, socket, deps) {
   const {
     lifecycleManager,
@@ -91,14 +93,14 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
           // Dual transport case (ViewBots)
           if (!transports.video.closed) transports.video.close();
           if (!transports.audio.closed) transports.audio.close();
-          console.log(`🧹 SERVER: Closed Plain RTP transports (video & audio) for socket ${socket.id}`);
+          logger.info(`🧹 SERVER: Closed Plain RTP transports (video & audio) for socket ${socket.id}`);
         } else if (typeof transports.close === 'function' && !transports.closed) {
           // Single transport case
           transports.close();
-          console.log(`🧹 SERVER: Closed Plain RTP transport for socket ${socket.id}`);
+          logger.info(`🧹 SERVER: Closed Plain RTP transport for socket ${socket.id}`);
         }
       } catch (e) {
-        console.error('Error closing transports:', e);
+        logger.error({ err: e }, 'Error closing transports');
       }
       mediasoupService.transports.delete(socket.id);
     }
@@ -108,12 +110,12 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
     const session = sessionService.getSessionByIp(ip);
     if (session && session.userId) {
       await timeTrackingService.handleUserDisconnect(session.userId, socket.id);
-      console.log(`📊 TIME: Cleaned up time tracking for disconnected user ${session.userId}`);
+      logger.info(`📊 TIME: Cleaned up time tracking for disconnected user ${session.userId}`);
     }
 
     // Unregister session for this socket
     const actualIp = sessionService.unregisterSocket(socket.id);
-    console.log(`User disconnected: ${socket.id} from IP: ${actualIp}`);
+    logger.info(`User disconnected: ${socket.id} from IP: ${actualIp}`);
 
     // Clean up notified streamers tracking
     notifiedStreamers.delete(socket.id);
@@ -133,7 +135,7 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
       if (viewBotClientService && plainTransportService) {
         const botId = viewBotClientService.getBotIdBySocketId(socket.id);
         if (botId) {
-          console.log(`🧹 DISCONNECT: Cleaning up Plain Transport for ViewBot ${botId}`);
+          logger.info(`🧹 DISCONNECT: Cleaning up Plain Transport for ViewBot ${botId}`);
           await plainTransportService.cleanup(botId);
         }
       }
@@ -151,10 +153,10 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
       const isViewbot = isOldViewBot || isNewViewBot;
       const isRealUser = !isViewbot;
 
-      console.log(`🔍 DISCONNECT CHECK: Socket ${socket.id.substring(0, 12)}...`);
-      console.log(`   Old ViewBot: ${isOldViewBot}`);
-      console.log(`   New ViewBot: ${isNewViewBot} (userID: ${userId})`);
-      console.log(`   Is ViewBot: ${isViewbot}, Is Real User: ${isRealUser}`);
+      logger.info(`🔍 DISCONNECT CHECK: Socket ${socket.id.substring(0, 12)}...`);
+      logger.info(`   Old ViewBot: ${isOldViewBot}`);
+      logger.info(`   New ViewBot: ${isNewViewBot} (userID: ${userId})`);
+      logger.info(`   Is ViewBot: ${isViewbot}, Is Real User: ${isRealUser}`);
 
       // End streaming log session for real streamers
       if (isRealUser) {
@@ -163,7 +165,7 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
 
       // If real user is disconnecting, clear the protection flag and restart viewbot rotation
       if (isRealUser && viewBotClientService) {
-        console.log(`🔓 PRIORITY: Real user ${socket.id} disconnected - clearing viewbot protection`);
+        logger.info(`🔓 PRIORITY: Real user ${socket.id} disconnected - clearing viewbot protection`);
         viewBotClientService.setRealStreamerStatus(false);
 
         // CRITICAL: Restart viewbot rotation after real user disconnects.
@@ -173,25 +175,25 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
         // against torn-down rotation services rather than firing against
         // half-cleaned-up state.
         lifecycleManager.schedule('viewbot-rotation-restart-after-disconnect', async () => {
-          console.log(`🔄 RESTART: Attempting to restart viewbot rotation after real user disconnect`);
+          logger.info(`🔄 RESTART: Attempting to restart viewbot rotation after real user disconnect`);
 
           // Restart ViewBotRotationService (global.viewBotRotation)
           if (global.viewBotRotation && global.viewBotRotation.startRotation) {
             try {
-              console.log(`🚀 RESTART: Restarting global.viewBotRotation`);
+              logger.info(`🚀 RESTART: Restarting global.viewBotRotation`);
               await global.viewBotRotation.startRotation();
             } catch (e) {
-              console.error(`❌ RESTART: Failed to restart global.viewBotRotation:`, e);
+              logger.error({ err: e }, `❌ RESTART: Failed to restart global.viewBotRotation`);
             }
           }
 
           // Also restart SimpleViewBotRotation if it was stopped
           if (SimpleViewBotRotation && SimpleViewBotRotation.startRotation) {
             try {
-              console.log(`🚀 RESTART: Restarting SimpleViewBotRotation`);
+              logger.info(`🚀 RESTART: Restarting SimpleViewBotRotation`);
               await SimpleViewBotRotation.startRotation();
             } catch (e) {
-              console.error(`❌ RESTART: Failed to restart SimpleViewBotRotation:`, e);
+              logger.error({ err: e }, `❌ RESTART: Failed to restart SimpleViewBotRotation`);
             }
           }
         }, 3000);
@@ -200,15 +202,15 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
       // Only apply individual cooldown for real users, not viewbots
       if (!isViewbot) {
         await takeoverService.setSocketCooldown(socket.id, 'streamer_disconnect');
-        console.log(`🔒 COOLDOWN: Applied individual cooldown to real user ${socket.id} for streamer disconnect`);
+        logger.info(`🔒 COOLDOWN: Applied individual cooldown to real user ${socket.id} for streamer disconnect`);
       } else {
-        console.log(`🤖 COOLDOWN: Skipping individual cooldown for viewbot ${socket.id} disconnect`);
+        logger.info(`🤖 COOLDOWN: Skipping individual cooldown for viewbot ${socket.id} disconnect`);
       }
 
       streamService.clearStreamer();
       // CRITICAL FIX: Also clear MediasoupService currentStreamer
       mediasoupService.currentStreamer = null;
-      console.log(`🧹 DISCONNECT: Cleared ${socket.id} from both services`);
+      logger.info(`🧹 DISCONNECT: Cleared ${socket.id} from both services`);
 
       // Additional validation: Ensure real streamer status is accurate after disconnect.
       // PR 4.2: routed through LifecycleManager so the 1 s grace window is
