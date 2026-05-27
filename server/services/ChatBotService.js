@@ -1,11 +1,20 @@
 const { io: ioClient } = require('socket.io-client');
-const database = require('../database/database');
 const ChatBotLLMService = require('./ChatBotLLMService');
+const ChatBotRepository = require('../database/repository/ChatBotRepository');
 
 class ChatBotService {
-    constructor({ botEventBus = null, getMoviePromptTemplate = null } = {}) {
+    /**
+     * @param {object} [deps]
+     * @param {object} [deps.botEventBus]            - BotEventBus instance (PR 1.3 path)
+     * @param {Function} [deps.getMoviePromptTemplate] - factory closure for movie prompt
+     * @param {ChatBotRepository} [deps.chatBotRepository] - inject a custom
+     *   repository for tests. Defaults to a fresh `ChatBotRepository()` so
+     *   the existing `new ChatBotService({ ... })` callsites work unchanged.
+     */
+    constructor({ botEventBus = null, getMoviePromptTemplate = null, chatBotRepository = null } = {}) {
         this.bots = new Map(); // botId -> BotInstance
         this.llmService = new ChatBotLLMService();
+        this.repo = chatBotRepository || new ChatBotRepository();
         this.chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
         this.isInitialized = false;
         this.io = null; // Reference to Socket.IO server instance for managing connections
@@ -55,9 +64,7 @@ class ChatBotService {
             console.log('🤖 INIT: Starting ChatBot Service initialization...');
             
             // Load and start all enabled bots
-            const bots = await database.allAsync(
-                'SELECT * FROM chatbots WHERE is_enabled = 1'
-            );
+            const bots = await this.repo.getEnabled();
             
             console.log(`🤖 INIT: Found ${bots.length} enabled bots in database`);
             bots.forEach(bot => console.log(`   - Bot ${bot.id}: ${bot.name}`));
@@ -98,34 +105,26 @@ class ChatBotService {
 
     async createBot(data) {
         try {
-            const result = await database.runAsync(
-                `INSERT INTO chatbots (name, prompt, is_enabled, response_interval_min, 
-                 response_interval_max, show_robot_emoji, personality_traits, use_assigned_name, llm_model, moviebot_enabled, response_creativity_temperature)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    data.name || this.generateUsername(),
-                    data.prompt || 'You are a friendly chat participant.',
-                    data.is_enabled !== undefined ? data.is_enabled : 1,
-                    data.response_interval_min || 60,
-                    data.response_interval_max || 180,
-                    data.show_robot_emoji !== undefined ? data.show_robot_emoji : 1,
-                    JSON.stringify(data.personality_traits || {}),
-                    data.use_assigned_name !== undefined ? data.use_assigned_name : 1,
-                    data.llm_model || null,  // null means use global default
-                    data.moviebot_enabled !== undefined ? data.moviebot_enabled : 0,
-                    data.response_creativity_temperature !== undefined ? data.response_creativity_temperature : 0.7
-                ]
-            );
-            
-            const bot = await database.getAsync(
-                'SELECT * FROM chatbots WHERE id = ?',
-                [result.id]
-            );
-            
+            const result = await this.repo.create({
+                name: data.name || this.generateUsername(),
+                prompt: data.prompt || 'You are a friendly chat participant.',
+                is_enabled: data.is_enabled !== undefined ? data.is_enabled : 1,
+                response_interval_min: data.response_interval_min || 60,
+                response_interval_max: data.response_interval_max || 180,
+                show_robot_emoji: data.show_robot_emoji !== undefined ? data.show_robot_emoji : 1,
+                personality_traits: JSON.stringify(data.personality_traits || {}),
+                use_assigned_name: data.use_assigned_name !== undefined ? data.use_assigned_name : 1,
+                llm_model: data.llm_model || null,  // null means use global default
+                moviebot_enabled: data.moviebot_enabled !== undefined ? data.moviebot_enabled : 0,
+                response_creativity_temperature: data.response_creativity_temperature !== undefined ? data.response_creativity_temperature : 0.7,
+            });
+
+            const bot = await this.repo.getById(result.id);
+
             if (bot.is_enabled) {
                 await this.startBot(bot);
             }
-            
+
             return bot;
         } catch (error) {
             console.error('Error creating bot:', error);
@@ -137,67 +136,26 @@ class ChatBotService {
         try {
             // Convert id to number for consistency with the Map keys
             const botId = parseInt(id);
-            
-            const updates = [];
-            const params = [];
-            
-            if (data.name !== undefined) {
-                updates.push('name = ?');
-                params.push(data.name);
-            }
-            if (data.prompt !== undefined) {
-                updates.push('prompt = ?');
-                params.push(data.prompt);
-            }
-            if (data.is_enabled !== undefined) {
-                updates.push('is_enabled = ?');
-                params.push(data.is_enabled);
-            }
-            if (data.response_interval_min !== undefined) {
-                updates.push('response_interval_min = ?');
-                params.push(data.response_interval_min);
-            }
-            if (data.response_interval_max !== undefined) {
-                updates.push('response_interval_max = ?');
-                params.push(data.response_interval_max);
-            }
-            if (data.show_robot_emoji !== undefined) {
-                updates.push('show_robot_emoji = ?');
-                params.push(data.show_robot_emoji);
-            }
-            if (data.personality_traits !== undefined) {
-                updates.push('personality_traits = ?');
-                params.push(JSON.stringify(data.personality_traits));
-            }
-            if (data.use_assigned_name !== undefined) {
-                updates.push('use_assigned_name = ?');
-                params.push(data.use_assigned_name);
-            }
-            if (data.llm_model !== undefined) {
-                updates.push('llm_model = ?');
-                params.push(data.llm_model || null);
-            }
-            if (data.moviebot_enabled !== undefined) {
-                updates.push('moviebot_enabled = ?');
-                params.push(data.moviebot_enabled);
-            }
-            if (data.response_creativity_temperature !== undefined) {
-                updates.push('response_creativity_temperature = ?');
-                params.push(data.response_creativity_temperature);
-            }
-            
-            updates.push('updated_at = CURRENT_TIMESTAMP');
-            params.push(botId);
-            
-            await database.runAsync(
-                `UPDATE chatbots SET ${updates.join(', ')} WHERE id = ?`,
-                params
-            );
-            
-            const bot = await database.getAsync(
-                'SELECT * FROM chatbots WHERE id = ?',
-                [botId]
-            );
+
+            // Whitelist of mutable columns. Anything not in this map is
+            // silently dropped — the repo would happily SET ?=? on any
+            // key passed, so the whitelist is the request-side guard.
+            const fields = {};
+            if (data.name !== undefined) fields.name = data.name;
+            if (data.prompt !== undefined) fields.prompt = data.prompt;
+            if (data.is_enabled !== undefined) fields.is_enabled = data.is_enabled;
+            if (data.response_interval_min !== undefined) fields.response_interval_min = data.response_interval_min;
+            if (data.response_interval_max !== undefined) fields.response_interval_max = data.response_interval_max;
+            if (data.show_robot_emoji !== undefined) fields.show_robot_emoji = data.show_robot_emoji;
+            if (data.personality_traits !== undefined) fields.personality_traits = JSON.stringify(data.personality_traits);
+            if (data.use_assigned_name !== undefined) fields.use_assigned_name = data.use_assigned_name;
+            if (data.llm_model !== undefined) fields.llm_model = data.llm_model || null;
+            if (data.moviebot_enabled !== undefined) fields.moviebot_enabled = data.moviebot_enabled;
+            if (data.response_creativity_temperature !== undefined) fields.response_creativity_temperature = data.response_creativity_temperature;
+
+            await this.repo.updateFields(botId, fields);
+
+            const bot = await this.repo.getById(botId);
             
             // Restart bot if it's running (use numeric id for Map lookup)
             if (this.bots.has(botId)) {
@@ -219,7 +177,7 @@ class ChatBotService {
         try {
             const botId = parseInt(id);
             await this.stopBot(botId);
-            await database.runAsync('DELETE FROM chatbots WHERE id = ?', [botId]);
+            await this.repo.deleteById(botId);
             return { success: true };
         } catch (error) {
             console.error('Error deleting bot:', error);
@@ -229,24 +187,12 @@ class ChatBotService {
 
     async getAllBots() {
         try {
-            const bots = await database.allAsync('SELECT * FROM chatbots ORDER BY created_at DESC');
-            
+            const bots = await this.repo.getAll();
+
             // Add runtime status and last message for each bot
             const botsWithStatus = await Promise.all(bots.map(async (bot) => {
-                // Get the last message from history
-                const lastMessage = await database.getAsync(
-                    `SELECT message, created_at FROM chatbot_message_history 
-                     WHERE chatbot_id = ? 
-                     ORDER BY created_at DESC 
-                     LIMIT 1`,
-                    [bot.id]
-                );
-                
-                // Check if this is a temporary bot
-                const tempBotInfo = await database.getAsync(
-                    `SELECT * FROM temporary_bots WHERE chatbot_id = ?`,
-                    [bot.id]
-                );
+                const lastMessage = await this.repo.getLastMessageForBot(bot.id);
+                const tempBotInfo = await this.repo.getTemporaryBotInfo(bot.id);
                 
                 let additionalInfo = {};
                 if (tempBotInfo) {
@@ -350,11 +296,12 @@ class ChatBotService {
             botInstance.connected = true;
             
             // Store session in database
-            const session = await database.runAsync(
-                `INSERT INTO chatbot_sessions (chatbot_id, socket_id, username, color)
-                 VALUES (?, ?, ?, ?)`,
-                [botData.id, socket.id, username, color]
-            );
+            const session = await this.repo.createSession({
+                chatbotId: botData.id,
+                socketId: socket.id,
+                username,
+                color,
+            });
             botInstance.sessionId = session.id;
             
             // Join chat with bot metadata
@@ -414,10 +361,7 @@ class ChatBotService {
             
             // Mark session as disconnected
             if (botInstance.sessionId) {
-                database.runAsync(
-                    'UPDATE chatbot_sessions SET socket_id = NULL WHERE id = ?',
-                    [botInstance.sessionId]
-                );
+                this.repo.markSessionDisconnected(botInstance.sessionId);
             }
         });
 
@@ -447,10 +391,7 @@ class ChatBotService {
         console.log(`🗑️ Bot ${id} removed from bots Map. Remaining bots: ${this.bots.size}`);
 
         // Clean up session
-        await database.runAsync(
-            'DELETE FROM chatbot_sessions WHERE chatbot_id = ?',
-            [id]
-        );
+        await this.repo.deleteSessionsForBot(id);
     }
 
     scheduleNextResponse(botInstance) {
@@ -550,22 +491,15 @@ class ChatBotService {
                 });
 
                 // Log message to history with exact prompt
-                await database.runAsync(
-                    `INSERT INTO chatbot_message_history (chatbot_id, message, context, exact_prompt)
-                     VALUES (?, ?, ?, ?)`,
-                    [
-                        botInstance.id,
-                        response.message,
-                        JSON.stringify(botInstance.messageHistory.slice(-5)),
-                        response.exactPrompt
-                    ]
-                );
+                await this.repo.insertChatMessage({
+                    chatbotId: botInstance.id,
+                    message: response.message,
+                    context: JSON.stringify(botInstance.messageHistory.slice(-5)),
+                    exactPrompt: response.exactPrompt,
+                });
 
                 // Update last message time
-                await database.runAsync(
-                    'UPDATE chatbot_sessions SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?',
-                    [botInstance.sessionId]
-                );
+                await this.repo.touchSessionLastMessage(botInstance.sessionId);
             } else if (!botInstance.data.is_enabled) {
                 console.log(`🤖 Bot ${botInstance.id} was disabled during message generation, message not sent`);
             }
@@ -596,45 +530,27 @@ class ChatBotService {
             const combinedPrompt = `${movieBotPrompt}\n\nYour specific personality: ${data.personalityPrompt}\nYour name is ${data.name}.`;
             
             // Create the bot in database
-            const result = await database.runAsync(
-                `INSERT INTO chatbots (
-                    name, prompt, is_enabled, is_temporary,
-                    summoned_by_user_id, expires_at, summon_item_id,
-                    moviebot_enabled, use_assigned_name,
-                    response_interval_min, response_interval_max,
-                    show_robot_emoji, llm_model, response_creativity_temperature
-                ) VALUES (?, ?, 1, 1, ?, ?, ?, 1, 1, 30, 90, 1, ?, ?)`,
-                [
-                    data.name,
-                    combinedPrompt,
-                    data.summonedBy,
-                    expiresAt.toISOString(),
-                    data.itemId || null,
-                    data.llmModel || 'openai',
-                    data.temperature || 0.8
-                ]
-            );
-            
+            const result = await this.repo.createTemporary({
+                name: data.name,
+                prompt: combinedPrompt,
+                summoned_by_user_id: data.summonedBy,
+                expires_at: expiresAt.toISOString(),
+                summon_item_id: data.itemId || null,
+                llm_model: data.llmModel || 'openai',
+                response_creativity_temperature: data.temperature || 0.8,
+            });
+
             // Get the created bot
-            const bot = await database.getAsync(
-                'SELECT * FROM chatbots WHERE id = ?',
-                [result.id]
-            );
-            
+            const bot = await this.repo.getById(result.id);
+
             // Create entry in temporary_bots table
-            await database.runAsync(
-                `INSERT INTO temporary_bots (
-                    chatbot_id, summoned_by_user_id, summoned_by_username,
-                    personality_prompt, expires_at
-                ) VALUES (?, ?, ?, ?, ?)`,
-                [
-                    bot.id,
-                    data.summonedBy,
-                    data.summonedByUsername || 'User',
-                    data.personalityPrompt,
-                    expiresAt.toISOString()
-                ]
-            );
+            await this.repo.createTemporaryRecord({
+                chatbotId: bot.id,
+                summonedByUserId: data.summonedBy,
+                summonedByUsername: data.summonedByUsername || 'User',
+                personalityPrompt: data.personalityPrompt,
+                expiresAt: expiresAt.toISOString(),
+            });
             
             // Start the bot
             await this.startBot(bot);
@@ -664,20 +580,12 @@ class ChatBotService {
                 await this.stopBot(botId);
 
                 // Delete from related tables first (order matters due to foreign keys)
-                await database.runAsync(
-                    'DELETE FROM auto_summoned_bots WHERE chatbot_id = ?',
-                    [botId]
-                );
-                await database.runAsync(
-                    'DELETE FROM temporary_bots WHERE chatbot_id = ?',
-                    [botId]
-                );
+                await this.repo.deleteAutoSummonedForBot(botId);
+                await this.repo.deleteTemporaryRecord(botId);
 
-                // Delete from chatbots table
-                await database.runAsync(
-                    'DELETE FROM chatbots WHERE id = ? AND is_temporary = 1',
-                    [botId]
-                );
+                // Delete from chatbots table — only if the row is still
+                // marked temporary, in case it was promoted out from under us.
+                await this.repo.deleteTemporaryById(botId);
 
                 console.log(`✅ Temporary bot ${botId} expired and removed`);
             } catch (error) {
@@ -689,10 +597,7 @@ class ChatBotService {
     async cleanupExpiredBots() {
         try {
             // Find all expired temporary bots
-            // Use datetime() on expires_at to handle ISO 8601 format (e.g. 2026-01-08T07:24:27.751Z)
-            const expired = await database.allAsync(
-                'SELECT id, name FROM chatbots WHERE is_temporary = 1 AND datetime(expires_at) < datetime("now")'
-            );
+            const expired = await this.repo.findExpiredTemporary();
             
             if (expired.length === 0) {
                 return 0;
@@ -721,11 +626,11 @@ class ChatBotService {
 
                 // Delete from related tables first (order matters due to foreign keys)
                 // auto_summoned_bots doesn't have ON DELETE CASCADE, so must delete manually
-                await database.runAsync('DELETE FROM auto_summoned_bots WHERE chatbot_id = ?', [bot.id]);
-                await database.runAsync('DELETE FROM temporary_bots WHERE chatbot_id = ?', [bot.id]);
+                await this.repo.deleteAutoSummonedForBot(bot.id);
+                await this.repo.deleteTemporaryRecord(bot.id);
 
                 // Then delete from chatbots table (chatbot_sessions and chatbot_message_history cascade)
-                await database.runAsync('DELETE FROM chatbots WHERE id = ?', [bot.id]);
+                await this.repo.deleteById(bot.id);
             }
             
             console.log(`✅ Successfully cleaned up ${expired.length} expired temporary bots`);
@@ -739,21 +644,15 @@ class ChatBotService {
     async toggleBot(id) {
         try {
             const botId = parseInt(id);
-            const bot = await database.getAsync(
-                'SELECT * FROM chatbots WHERE id = ?',
-                [botId]
-            );
-            
+            const bot = await this.repo.getById(botId);
+
             if (!bot) {
                 throw new Error('Bot not found');
             }
 
             const newState = !bot.is_enabled;
-            
-            await database.runAsync(
-                'UPDATE chatbots SET is_enabled = ? WHERE id = ?',
-                [newState ? 1 : 0, botId]
-            );
+
+            await this.repo.setEnabled(botId, newState);
 
             // Update in-memory state
             const botInstance = this.bots.get(botId);
@@ -788,10 +687,10 @@ class ChatBotService {
     async enableAllBots() {
         try {
             // Update all bots to enabled state
-            await database.runAsync('UPDATE chatbots SET is_enabled = 1');
-            
+            await this.repo.enableAll();
+
             // Get all bots
-            const bots = await database.allAsync('SELECT * FROM chatbots');
+            const bots = await this.repo.listForBulk();
             
             // Update in-memory bot instances and start bots
             for (const bot of bots) {
@@ -825,16 +724,16 @@ class ChatBotService {
             console.log(`🤖 DISABLE ALL: Current bots Map keys: ${Array.from(this.bots.keys())}`);
             
             // Check what's actually in the database
-            const dbBots = await database.allAsync('SELECT id, name, is_enabled FROM chatbots');
+            const dbBots = await this.repo.listSummary();
             console.log(`🤖 DISABLE ALL: Found ${dbBots.length} bots in database:`);
             dbBots.forEach(bot => console.log(`   - Bot ${bot.id}: ${bot.name} (enabled: ${bot.is_enabled})`));
-            
+
             // Check active sessions (for logging purposes only)
-            const activeSessions = await database.allAsync('SELECT * FROM chatbot_sessions WHERE socket_id IS NOT NULL');
+            const activeSessions = await this.repo.listConnectedSessions();
             console.log(`🤖 DISABLE ALL: Found ${activeSessions.length} active sessions with socket connections`);
-            
+
             // Update all bots to disabled state
-            await database.runAsync('UPDATE chatbots SET is_enabled = 0');
+            await this.repo.disableAll();
             console.log('🤖 DISABLE ALL: Database updated - all bots set to disabled');
             
             // CRITICAL: Stop all in-memory bot instances FIRST (to disconnect their chat service sockets)
@@ -865,7 +764,7 @@ class ChatBotService {
             }
             
             // Clean up ALL active sessions from database
-            const deleteResult = await database.runAsync('DELETE FROM chatbot_sessions');
+            await this.repo.deleteAllSessions();
             console.log(`🤖 DISABLE ALL: Cleaned up ${activeSessions.length} active sessions from database`);
             
             // Clear the entire bots Map to ensure clean state
@@ -885,11 +784,8 @@ class ChatBotService {
     async testBot(id) {
         try {
             const botId = parseInt(id);
-            const bot = await database.getAsync(
-                'SELECT * FROM chatbots WHERE id = ?',
-                [botId]
-            );
-            
+            const bot = await this.repo.getById(botId);
+
             if (!bot) {
                 throw new Error('Bot not found');
             }
@@ -935,11 +831,8 @@ class ChatBotService {
     async sendManualMessage(id, customMessage = null) {
         try {
             const botId = parseInt(id);
-            const bot = await database.getAsync(
-                'SELECT * FROM chatbots WHERE id = ?',
-                [botId]
-            );
-            
+            const bot = await this.repo.getById(botId);
+
             if (!bot) {
                 throw new Error('Bot not found');
             }
@@ -1085,16 +978,12 @@ class ChatBotService {
                 botInstance.socket.emit('send-message', { message });
                 
                 // Log to history with exact prompt
-                await database.runAsync(
-                    `INSERT INTO chatbot_message_history (chatbot_id, message, context, exact_prompt)
-                     VALUES (?, ?, ?, ?)`,
-                    [
-                        botId,
-                        message,
-                        JSON.stringify(botInstance.messageHistory.slice(-5)),
-                        promptInfo?.exactPrompt || null
-                    ]
-                );
+                await this.repo.insertChatMessage({
+                    chatbotId: botId,
+                    message,
+                    context: JSON.stringify(botInstance.messageHistory.slice(-5)),
+                    exactPrompt: promptInfo?.exactPrompt || null,
+                });
 
                 console.log(`🤖 Manual message sent from ${bot.name}: "${message}"`);
                 
@@ -1112,14 +1001,7 @@ class ChatBotService {
 
     async getActiveSessions() {
         try {
-            const sessions = await database.allAsync(
-                `SELECT s.*, b.name as bot_name, b.show_robot_emoji
-                 FROM chatbot_sessions s
-                 JOIN chatbots b ON s.chatbot_id = b.id
-                 WHERE s.socket_id IS NOT NULL
-                 ORDER BY s.connected_at DESC`
-            );
-            return sessions;
+            return await this.repo.listActiveSessionsWithBot();
         } catch (error) {
             console.error('Error getting active sessions:', error);
             throw error;
@@ -1128,15 +1010,7 @@ class ChatBotService {
 
     async getMessageHistory(botId, limit = 50) {
         try {
-            const id = parseInt(botId);
-            const messages = await database.allAsync(
-                `SELECT * FROM chatbot_message_history
-                 WHERE chatbot_id = ?
-                 ORDER BY created_at DESC
-                 LIMIT ?`,
-                [id, limit]
-            );
-            return messages;
+            return await this.repo.getMessages(parseInt(botId), limit);
         } catch (error) {
             console.error('Error getting message history:', error);
             throw error;
@@ -1173,9 +1047,7 @@ class ChatBotService {
     
     async getMovieBotEnabledBots() {
         try {
-            const bots = await database.allAsync(
-                'SELECT * FROM chatbots WHERE is_enabled = 1 AND moviebot_enabled = 1'
-            );
+            const bots = await this.repo.getMovieBotEnabled();
             
             const activeBots = [];
             const now = new Date();
@@ -1295,24 +1167,18 @@ class ChatBotService {
                 });
                 
                 // Log the movie comment with delivery status
-                await database.runAsync(
-                    `INSERT INTO chatbot_message_history 
-                     (chatbot_id, message, message_type, metadata, exact_prompt) 
-                     VALUES (?, ?, ?, ?, ?)`,
-                    [
-                        bot.id,
-                        response.message,
-                        'movie_comment',
-                        JSON.stringify({ 
-                            is_movie_comment: true,
-                            timestamp: new Date().toISOString(),
-                            messageId: messageId,
-                            chat_service_url: this.chatServiceUrl,
-                            socket_id: botInstance.socket.id
-                        }),
-                        moviePrompt
-                    ]
-                );
+                await this.repo.insertMovieComment({
+                    chatbotId: bot.id,
+                    message: response.message,
+                    metadata: JSON.stringify({
+                        is_movie_comment: true,
+                        timestamp: new Date().toISOString(),
+                        messageId: messageId,
+                        chat_service_url: this.chatServiceUrl,
+                        socket_id: botInstance.socket.id,
+                    }),
+                    exactPrompt: moviePrompt,
+                });
                 
                 console.log(`✅ ChatBotService: Movie comment sent from ${bot.username} to chat service`);
                 
