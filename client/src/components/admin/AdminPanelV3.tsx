@@ -8,6 +8,7 @@ import WhitelistManagement from './WhitelistManagement';
 import AIModerationManagement from './AIModerationManagement';
 import ItemManagement from './ItemManagement';
 import ChatBotManagement from './ChatBotManagement';
+import VisionBotManagement from './VisionBotManagement';
 import RecordingManagement from './RecordingManagement';
 import AdminRecordingReview from './AdminRecordingReview';
 import TranscriptionManagement from './TranscriptionManagement';
@@ -56,6 +57,7 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
     { id: 'whitelist', label: 'Relay Whitelist', icon: '🛡️', category: 'Services' },
     { id: 'items', label: 'Items & Shop', icon: '🛍️', category: 'Content' },
     { id: 'chatbots', label: 'Chat Bots', icon: '💬', category: 'Services' },
+    { id: 'visionbot', label: 'Vision Bot', icon: '👁️', category: 'Services' },
     { id: 'streambot', label: 'StreamBot', icon: '📢', category: 'Services' },
     { id: 'recordings', label: 'Recordings', icon: '📹', category: 'Media' },
     { id: 'recording-review', label: 'Recording Review', icon: '🎬', category: 'Media' },
@@ -226,6 +228,8 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
         return <ItemManagement addLog={addLog} />;
       case 'chatbots':
         return <ChatBotManagement addLog={addLog} />;
+      case 'visionbot':
+        return <VisionBotManagement addLog={addLog} />;
       case 'streambot':
         return <StreamBotManager />;
       case 'recordings':

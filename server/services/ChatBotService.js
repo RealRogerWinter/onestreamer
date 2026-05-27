@@ -129,6 +129,7 @@ class ChatBotService {
                 use_assigned_name: data.use_assigned_name !== undefined ? data.use_assigned_name : 1,
                 llm_model: data.llm_model || null,  // null means use global default
                 moviebot_enabled: data.moviebot_enabled !== undefined ? data.moviebot_enabled : 0,
+                vision_bot_enabled: data.vision_bot_enabled !== undefined ? data.vision_bot_enabled : 0,
                 response_creativity_temperature: data.response_creativity_temperature !== undefined ? data.response_creativity_temperature : 0.7,
             });
 
@@ -164,6 +165,7 @@ class ChatBotService {
             if (data.use_assigned_name !== undefined) fields.use_assigned_name = data.use_assigned_name;
             if (data.llm_model !== undefined) fields.llm_model = data.llm_model || null;
             if (data.moviebot_enabled !== undefined) fields.moviebot_enabled = data.moviebot_enabled;
+            if (data.vision_bot_enabled !== undefined) fields.vision_bot_enabled = data.vision_bot_enabled;
             if (data.response_creativity_temperature !== undefined) fields.response_creativity_temperature = data.response_creativity_temperature;
 
             await this.repo.updateFields(botId, fields);
@@ -229,6 +231,7 @@ class ChatBotService {
                     is_connected: this.bots.has(bot.id) && this.bots.get(bot.id).connected,
                     personality_traits: bot.personality_traits ? JSON.parse(bot.personality_traits) : {},
                     moviebot_enabled: bot.moviebot_enabled === 1 || bot.moviebot_enabled === true,
+                    vision_bot_enabled: bot.vision_bot_enabled === 1 || bot.vision_bot_enabled === true,
                     last_message: lastMessage ? lastMessage.message : null,
                     last_message_at: lastMessage ? lastMessage.created_at : null,
                     ...additionalInfo
@@ -1051,13 +1054,14 @@ class ChatBotService {
                     username: bot.username,
                     name: bot.data.name,
                     model: bot.data.llm_model,
-                    moviebot_enabled: bot.data.moviebot_enabled === 1 || bot.data.moviebot_enabled === true
+                    moviebot_enabled: bot.data.moviebot_enabled === 1 || bot.data.moviebot_enabled === true,
+                    vision_bot_enabled: bot.data.vision_bot_enabled === 1 || bot.data.vision_bot_enabled === true
                 });
             }
         }
         return activeBots;
     }
-    
+
     async getMovieBotEnabledBots() {
         try {
             const bots = await this.repo.getMovieBotEnabled();
