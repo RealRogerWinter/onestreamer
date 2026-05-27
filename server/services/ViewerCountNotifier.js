@@ -48,6 +48,11 @@ class ViewerCountNotifier {
    */
   broadcast() {
     const count = this.sessionService.getUniqueViewerCount();
+    // _traceId propagation deliberately omitted (ADR-0020 §4): this event's
+    // payload is a bare integer, not an object. Adding _traceId would break
+    // every existing client consumer (which destructures `count` directly).
+    // Migrating the signature to `{ count, _traceId }` is a separate
+    // breaking-change PR that needs client coordination.
     this.io.emit('viewer-count-update', count);
   }
 }

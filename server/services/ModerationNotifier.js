@@ -1,4 +1,5 @@
 const logger = require('../bootstrap/logger').child({ svc: 'ModerationNotifier' });
+const { getTraceId } = require('../bootstrap/trace-context');
 
 // server/services/ModerationNotifier.js
 //
@@ -56,7 +57,8 @@ class ModerationNotifier {
     if (!ModerationNotifier.MODERATION_EVENT_DECISIONS.has(event.final_decision)) {
       logger.warn(`⚠️ MOD_NOTIFIER: unknown final_decision "${event.final_decision}" — MODERATION_EVENT_DECISIONS set is out of date`);
     }
-    this.io.to('admin').emit('moderation-event-created', { event });
+    const _traceId = getTraceId();
+    this.io.to('admin').emit('moderation-event-created', { event, ...(_traceId !== undefined && { _traceId }) });
   }
 
   /**
@@ -73,7 +75,8 @@ class ModerationNotifier {
       logger.warn('⚠️ MOD_NOTIFIER: actionTaken called without event or action — emit suppressed');
       return;
     }
-    this.io.to('admin').emit('moderation-action-taken', { event, action });
+    const _traceId = getTraceId();
+    this.io.to('admin').emit('moderation-action-taken', { event, action, ...(_traceId !== undefined && { _traceId }) });
   }
 
   /**
@@ -95,6 +98,11 @@ class ModerationNotifier {
       logger.warn('⚠️ MOD_NOTIFIER: streamerBanner called without event — emit suppressed');
       return;
     }
+    // Distinct payload shape: this event spreads fields directly (event_id,
+    // transcript_excerpt, categories, appeal_url) rather than wrapping in
+    // { event }. Adding _traceId is a safe key-addition that preserves the
+    // existing shape — receivers can ignore the underscore-prefixed field.
+    const _traceId = getTraceId();
     this.io.to(socketId).emit('moderation-streamer-banner', {
       event_id: event.id,
       transcript_excerpt: event.transcript_excerpt,
@@ -102,6 +110,7 @@ class ModerationNotifier {
         ? JSON.parse(event.stage2_categories_json)
         : [],
       appeal_url: appealUrl || null,
+      ...(_traceId !== undefined && { _traceId }),
     });
   }
 
@@ -119,7 +128,8 @@ class ModerationNotifier {
       logger.warn('⚠️ MOD_NOTIFIER: botOutputDropped called without event — emit suppressed');
       return;
     }
-    this.io.to('admin').emit('moderation-bot-output-dropped', { event });
+    const _traceId = getTraceId();
+    this.io.to('admin').emit('moderation-bot-output-dropped', { event, ...(_traceId !== undefined && { _traceId }) });
   }
 }
 
