@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "description": "Embedded core list for Stage 1 word filter. RECALL-ONLY — Stage 2 LLM disambiguates context (use/mention, AAVE reclamation, quotation, song lyrics, educational framing).",
+  "curation_note": "This seed is the minimum viable hard-tier set. It is intentionally conservative. Admins should extend via the DB-backed moderation_terms table (source='admin') based on observed patterns. Entries here cannot be deleted, only disabled. To add or remove from this file, update both the JSON and the SHA-256 checksum sibling file — the server fails closed on a mismatch.",
+  "stage_role": "Stage 1 only flags; never auto-bans. A flag escalates to Stage 2 (Groq LLM with AAVE/quotation guidance). The hard-tier flag does NOT mean automatic action.",
+  "applied_by_boot": true,
+  "terms": [
+    {"term": "nigger", "normalized_form": "nigger", "category": "hate_speech", "severity": "hard", "notes": "Hard-r form. Stage 2 must disambiguate AAVE reclamation context (the soft-a 'nigga' form is intentionally NOT in the embedded hard tier per the AAVE-bias accepted risk discussion)."},
+    {"term": "kike", "normalized_form": "kike", "category": "hate_speech", "severity": "hard", "notes": "Anti-Jewish slur."},
+    {"term": "chink", "normalized_form": "chink", "category": "hate_speech", "severity": "hard", "notes": "Anti-East-Asian slur. Note: 'chink in the armor' idiom exists; Stage 2 must use context."},
+    {"term": "gook", "normalized_form": "gook", "category": "hate_speech", "severity": "hard", "notes": "Anti-East-Asian slur, originating from Korean War era."},
+    {"term": "wetback", "normalized_form": "wetback", "category": "hate_speech", "severity": "hard", "notes": "Anti-Mexican/Latino slur."},
+    {"term": "raghead", "normalized_form": "raghead", "category": "hate_speech", "severity": "hard", "notes": "Anti-Arab/Sikh/Muslim slur, often targeting head-covering practices."},
+    {"term": "faggot", "normalized_form": "faggot", "category": "hate_speech", "severity": "hard", "notes": "Homophobic slur. The 'fag' alone is intentionally excluded due to too many false-positive uses (British English 'cigarette', surname, etc.)."},
+    {"term": "tranny", "normalized_form": "tranny", "category": "hate_speech", "severity": "hard", "notes": "Transphobic slur. Note: 'tranny' also slang for automotive transmission; Stage 2 must disambiguate."},
+    {"term": "jigaboo", "normalized_form": "jigaboo", "category": "hate_speech", "severity": "hard", "notes": "Anti-Black racial slur."},
+    {"term": "spic", "normalized_form": "spic", "category": "hate_speech", "severity": "hard", "notes": "Anti-Latino slur. Note: also a common surname in some communities; admin should review false positives."},
+    {"term": "nigga", "normalized_form": "nigga", "category": "hate_speech", "severity": "soft", "notes": "Soft-a form, widely reclaimed in AAVE. Soft tier — flag for Stage 2 evaluation only; never the basis of auto-action without strong out-of-AAVE context evidence."},
+    {"term": "dyke", "normalized_form": "dyke", "category": "hate_speech", "severity": "soft", "notes": "Reclaimed within the lesbian community. Soft tier for Stage 2 context evaluation."},
+    {"term": "queer", "normalized_form": "queer", "category": "hate_speech", "severity": "soft", "notes": "Reclaimed within the LGBTQ+ community. Soft tier."},
+    {"term": "retard", "normalized_form": "retard", "category": "hate_speech", "severity": "soft", "notes": "Ableist; major platforms have moved away from auto-banning. Soft tier."},
+    {"term": "tar baby", "normalized_form": "tar baby", "category": "hate_speech", "severity": "soft", "notes": "Anti-Black slur derived from folk story; sometimes used metaphorically. Soft tier."},
+
+    {"term": "kill all jews", "normalized_form": "kill all jews", "category": "threat", "severity": "hard", "notes": "Explicit incitement to genocide. Stage 2 will not find a defensible use case."},
+    {"term": "gas the jews", "normalized_form": "gas the jews", "category": "threat", "severity": "hard", "notes": "Explicit Holocaust reference as incitement."},
+    {"term": "shoot up the school", "normalized_form": "shoot up the school", "category": "threat", "severity": "hard", "notes": "School-shooting threat phrase."},
+    {"term": "shoot up the", "normalized_form": "shoot up the", "category": "threat", "severity": "hard", "notes": "Mass-violence threat phrase pattern; Stage 2 evaluates target."},
+    {"term": "rope yourself", "normalized_form": "rope yourself", "category": "threat", "severity": "hard", "notes": "Suicide-bait phrase, commonly hurled at targets in harassment campaigns."},
+    {"term": "kys", "normalized_form": "kys", "category": "threat", "severity": "soft", "notes": "Internet shorthand for 'kill yourself'. Soft tier because Stage 2 must consider context (anger expressed at oneself vs. directed at another)."},
+    {"term": "white genocide", "normalized_form": "white genocide", "category": "threat", "severity": "soft", "notes": "White-nationalist dog whistle. Soft tier — Stage 2 evaluates surrounding rhetoric."},
+    {"term": "14 words", "normalized_form": "14 words", "category": "threat", "severity": "soft", "notes": "White-nationalist slogan reference. Soft tier."},
+    {"term": "remove kebab", "normalized_form": "remove kebab", "category": "threat", "severity": "soft", "notes": "Anti-Muslim ethnic-cleansing meme phrase. Soft tier — meme deployment varies."},
+
+    {"term": "child porn", "normalized_form": "child porn", "category": "sexual", "severity": "hard", "notes": "CSAM reference."},
+    {"term": "child pornography", "normalized_form": "child pornography", "category": "sexual", "severity": "hard", "notes": "CSAM reference."},
+    {"term": "preteen sex", "normalized_form": "preteen sex", "category": "sexual", "severity": "hard", "notes": "CSAM-adjacent."},
+    {"term": "underage girls", "normalized_form": "underage girls", "category": "sexual", "severity": "hard", "notes": "CSAM-adjacent phrase. Stage 2 considers context (e.g., news report citation vs. solicitation)."},
+    {"term": "underage boys", "normalized_form": "underage boys", "category": "sexual", "severity": "hard", "notes": "CSAM-adjacent phrase."},
+    {"term": "jailbait", "normalized_form": "jailbait", "category": "sexual", "severity": "hard", "notes": "Sexualization of minors."},
+    {"term": "loli", "normalized_form": "loli", "category": "sexual", "severity": "soft", "notes": "Anime fandom term that can be benign (Lolita-style character archetype) or CSAM-coded. Soft tier."},
+    {"term": "shotacon", "normalized_form": "shotacon", "category": "sexual", "severity": "soft", "notes": "Anime fandom term with similar issues; soft tier."}
+  ]
+}
