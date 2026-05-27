@@ -1,15 +1,22 @@
 const { runAsync, getAsync, allAsync } = require('../database/database');
 const EventEmitter = require('events');
 const ItemRepository = require('../database/repository/ItemRepository');
+const BuffRepository = require('../database/repository/BuffRepository');
 
 class BuffDebuffService extends EventEmitter {
-    constructor(io = null, streamService = null, timeTrackingService = null, sessionService = null, { itemRepository, buffNotifier = null } = {}) {
+    constructor(io = null, streamService = null, timeTrackingService = null, sessionService = null, { itemRepository, buffRepository, buffNotifier = null } = {}) {
         super();
         this.io = io;
         this.streamService = streamService;
         this.timeTrackingService = timeTrackingService;
         this.sessionService = sessionService;
         this.itemRepository = itemRepository || new ItemRepository({ getAsync, runAsync, allAsync });
+        // PR 6.2: BuffRepository wraps the 12 inline runAsync/getAsync/
+        // allAsync calls against active_buffs. Same dep-injection
+        // shape ItemRepository carries — callers can pass a custom
+        // repo for tests, or let it default to a real one captured
+        // at construction time.
+        this.buffRepository = buffRepository || new BuffRepository({ getAsync, runAsync, allAsync });
         // PR 3.3: optional BuffNotifier — routes the 4 internal
         // `streamer-buffs-update` emit sites through the chokepoint. Null
         // fallback preserves behaviour for any construction path that
@@ -89,12 +96,7 @@ class BuffDebuffService extends EventEmitter {
     // Load all active buffs into memory cache for performance
     async loadActiveBuffsIntoCache() {
         try {
-            const activeBuffs = await allAsync(`
-                SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data
-                FROM active_buffs ab
-                JOIN items i ON ab.item_id = i.id
-                WHERE ab.is_active = 1 AND ab.remaining_seconds > 0
-            `);
+            const activeBuffs = await this.buffRepository.listActiveWithItems();
 
             this.activeBuffsCache.clear();
             for (const buff of activeBuffs) {
@@ -293,20 +295,16 @@ class BuffDebuffService extends EventEmitter {
         
         // For regular users, use database
         try {
-            const insertQuery = `
-                INSERT INTO active_buffs (
-                    user_id, item_id, applied_by_user_id, buff_type,
-                    duration_seconds, remaining_seconds, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            `;
             console.log(`🎭 BUFF: Executing INSERT query with params:`, [userId, itemId, appliedByUserId, buffType, duration, duration, metadata]);
-            
-            const result = await runAsync(insertQuery, [userId, itemId, appliedByUserId, buffType, duration, duration, metadata]);
-            
+
+            const result = await this.buffRepository.insertBuff({
+                userId, itemId, appliedByUserId, buffType, duration, metadata,
+            });
+
             console.log(`🎭 BUFF: Successfully created buff with ID: ${result.id}, changes: ${result.changes}`);
-            
+
             // Verify the buff was actually inserted
-            const verifyBuff = await getAsync('SELECT * FROM active_buffs WHERE id = ?', [result.id]);
+            const verifyBuff = await this.buffRepository.getById(result.id);
             console.log(`🎭 BUFF: Verification - buff exists in DB:`, !!verifyBuff, verifyBuff ? `(user_id: ${verifyBuff.user_id})` : '');
             
             return result.id;
@@ -334,11 +332,7 @@ class BuffDebuffService extends EventEmitter {
         }
         
         // For regular buffs, update database
-        await runAsync(`
-            UPDATE active_buffs 
-            SET remaining_seconds = ?, last_updated = CURRENT_TIMESTAMP
-            WHERE id = ?
-        `, [newRemainingSeconds, buffId]);
+        await this.buffRepository.updateRemainingSeconds(buffId, newRemainingSeconds);
 
         // Update cache
         const cachedBuff = this.activeBuffsCache.get(buffId);
@@ -361,11 +355,7 @@ class BuffDebuffService extends EventEmitter {
         }
         
         // For regular users, check database
-        return await getAsync(`
-            SELECT * FROM active_buffs 
-            WHERE user_id = ? AND item_id = ? AND is_active = 1 AND remaining_seconds > 0
-            ORDER BY applied_at DESC LIMIT 1
-        `, [userId, itemId]);
+        return await this.buffRepository.getActiveByUserAndItem(userId, itemId);
     }
 
     // Get buff by ID with item details
@@ -391,12 +381,7 @@ class BuffDebuffService extends EventEmitter {
         }
         
         // For regular buffs, query database
-        return await getAsync(`
-            SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data
-            FROM active_buffs ab
-            JOIN items i ON ab.item_id = i.id
-            WHERE ab.id = ?
-        `, [buffId]);
+        return await this.buffRepository.getByIdWithItem(buffId);
     }
 
     // Get all active buffs for a user
@@ -421,13 +406,7 @@ class BuffDebuffService extends EventEmitter {
         }
         
         // For regular users, query database
-        const buffs = await allAsync(`
-            SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data
-            FROM active_buffs ab
-            JOIN items i ON ab.item_id = i.id
-            WHERE ab.user_id = ? AND ab.is_active = 1 AND ab.remaining_seconds > 0
-            ORDER BY ab.applied_at DESC
-        `, [userId]);
+        const buffs = await this.buffRepository.listActiveForUser(userId);
 
         return buffs.map(buff => this.formatBuffForClient(buff));
     }
@@ -458,14 +437,7 @@ class BuffDebuffService extends EventEmitter {
             // Fallback: Try to get any active buffs from the database
             // This handles viewbots and other special cases
             console.log(`🎭 BUFF: Attempting fallback - checking for any active buffs in database`);
-            const allActiveBuffs = await allAsync(`
-                SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data,
-                       ab.user_id
-                FROM active_buffs ab
-                JOIN items i ON ab.item_id = i.id
-                WHERE ab.is_active = 1 AND ab.remaining_seconds > 0
-                ORDER BY ab.applied_at DESC
-            `);
+            const allActiveBuffs = await this.buffRepository.listActiveWithItemsOrdered();
             
             if (allActiveBuffs && allActiveBuffs.length > 0) {
                 console.log(`🎭 BUFF: Found ${allActiveBuffs.length} active buffs in fallback query`);
@@ -543,11 +515,7 @@ class BuffDebuffService extends EventEmitter {
             }
 
             // Mark as inactive in database
-            await runAsync(`
-                UPDATE active_buffs 
-                SET is_active = 0, remaining_seconds = 0, last_updated = CURRENT_TIMESTAMP
-                WHERE id = ?
-            `, [buffId]);
+            await this.buffRepository.markInactive(buffId);
 
             // Remove from cache
             this.activeBuffsCache.delete(buffId);
@@ -676,11 +644,7 @@ class BuffDebuffService extends EventEmitter {
                     await this.updateBuffDuration(buff.id, newRemaining);
                     
                     // Update streaming time used
-                    await runAsync(`
-                        UPDATE active_buffs 
-                        SET streaming_time_used = streaming_time_used + 1
-                        WHERE id = ?
-                    `, [buff.id]);
+                    await this.buffRepository.incrementStreamingTime(buff.id);
                 }
                 // If user is not streaming, buff duration is preserved (no database update needed)
             }
@@ -753,10 +717,7 @@ class BuffDebuffService extends EventEmitter {
     // Clean up expired buffs
     async cleanupExpiredBuffs() {
         try {
-            const expiredBuffs = await allAsync(`
-                SELECT id FROM active_buffs 
-                WHERE is_active = 1 AND remaining_seconds <= 0
-            `);
+            const expiredBuffs = await this.buffRepository.findExpired();
 
             for (const buff of expiredBuffs) {
                 await this.removeBuff(buff.id, 'cleanup');
@@ -794,22 +755,7 @@ class BuffDebuffService extends EventEmitter {
     // Get buff statistics
     async getBuffStats() {
         try {
-            const stats = await allAsync(`
-                SELECT 
-                    i.name,
-                    i.display_name,
-                    i.emoji,
-                    i.item_type as buff_type,
-                    COUNT(*) as total_applications,
-                    COUNT(DISTINCT ab.user_id) as unique_users,
-                    AVG(ab.duration_seconds) as avg_duration,
-                    AVG(ab.streaming_time_used) as avg_streaming_time_used
-                FROM active_buffs ab
-                JOIN items i ON ab.item_id = i.id
-                WHERE ab.applied_at >= datetime('now', '-7 days')
-                GROUP BY ab.item_id
-                ORDER BY total_applications DESC
-            `);
+            const stats = await this.buffRepository.getStatsLast7Days();
 
             return stats;
         } catch (error) {
