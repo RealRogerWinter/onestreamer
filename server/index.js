@@ -59,10 +59,9 @@
 // Lifecycle (lines 4945–5835, ~890 LoC) — non-route inline surfaces:
 //
 //   4945–5556   startServer()                → keeps inline; orchestration spine
-//   5559–5818   shutdown() + SIGINT/SIGTERM/ → bootstrap/shutdown.js     (15B.4)
+//   [extracted] shutdown() + SIGINT/SIGTERM/ → bootstrap/shutdown.js     (15B.4 — landed)
 //               uncaughtException +
 //               cleanupMediaProcesses
-//   5821–5835   cleanupMediaProcesses        → bootstrap/shutdown.js     (15B.4)
 //
 //   [extracted] io.on('connection', ...)     → bootstrap/register-       (15B.5 — landed)
 //               socket-handler registration    socket-handlers.js
@@ -5252,280 +5251,29 @@ async function startServer() {
 
 startServer().catch((err) => logger.error({ err }, 'startServer failed'));
 
-async function shutdown(signal) {
-  logger.info(`🛑 Received ${signal}, shutting down server gracefully...`);
-
-  try {
-    // PR 1.2: iterate the stoppables registry in reverse-construction
-    // order. Each service.stop() races against a 5 s timeout so a single
-    // wedged teardown can't hold up the whole shutdown. The timer is
-    // cleared on each iteration to avoid leaking a pending rejection that
-    // would surface as an unhandled rejection after Promise.race resolves.
-    // svc.stop?.() is wrapped in an async IIFE so a synchronous throw
-    // inside stop() lands in the per-iteration catch rather than escaping.
-    logger.info(`🛑 Stopping ${stoppables.length} registered service(s)...`);
-    for (const svc of [...stoppables].reverse()) {
-      const name = svc?.constructor?.name || 'anonymous';
-      let timer;
-      const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('stop() timed out after 5s')), 5000);
-      });
-      try {
-        await Promise.race([(async () => svc.stop?.())(), timeout]);
-      } catch (e) {
-        logger.error({ err: e, name }, '   ⚠️  service stop() failed');
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-
-    // 1. Disconnect all socket connections
-    logger.info('🔌 Disconnecting all socket connections...');
-    const sockets = await io.fetchSockets();
-    for (const socket of sockets) {
-      socket.disconnect(true);
-    }
-
-    // 2. Stop all media streams (GStreamer and FFmpeg)
-    // NOTE: services with stop() are already drained above via stoppables —
-    // this block intentionally remains as belt-and-braces for processes
-    // not yet wrapped (viewBotGStreamerService, ffmpeg children on
-    // RecordingService.activeRecordings, etc.). A follow-up PR can prune
-    // entries that overlap with stoppables once the iterator is proven.
-    logger.info('🎬 Stopping all media streams...');
-    
-    // Stop ViewBot GStreamer streams (check if service exists first)
-    if (typeof viewBotGStreamerService !== 'undefined' && viewBotGStreamerService) {
-      logger.info('   Stopping ViewBot GStreamer streams...');
-      if (viewBotGStreamerService.stopAll) {
-        await viewBotGStreamerService.stopAll();
-      } else if (viewBotGStreamerService.activeStreams) {
-        // Fallback if stopAll method doesn't exist
-        for (const [botId, stream] of viewBotGStreamerService.activeStreams) {
-          if (stream.process && !stream.process.killed) {
-            logger.info(`   - Killing GStreamer for bot ${botId}`);
-            stream.process.kill('SIGTERM');
-          }
-        }
-        viewBotGStreamerService.activeStreams.clear();
-      }
-    }
-    
-    // Stop ViewBot FFmpeg streams (service removed - handled by ViewBotClientService)
-    // viewBotFFmpegService was removed - FFmpeg/GStreamer streams are now handled by ViewBotClientService
-    
-    // Stop ViewBot Client Service streams
-    if (viewBotClientService) {
-      logger.info('   Cleaning up ViewBot Client Service...');
-      await viewBotClientService.cleanup();
-    }
-    
-    // Stop ViewBot Muxed streams (service removed - handled by ViewBotClientService)
-    // viewBotMuxedStreamService was removed - muxed streams are now handled by ViewBotClientService
-    
-    // Stop Stream Interceptor Service GStreamer processes
-    if (streamInterceptorService && streamInterceptorService.activeIntercepts) {
-      logger.info('   Stopping Stream Interceptor GStreamer processes...');
-      for (const [streamId, intercept] of streamInterceptorService.activeIntercepts) {
-        if (intercept.processor && !intercept.processor.killed) {
-          logger.info(`   - Killing GStreamer interceptor for stream ${streamId}`);
-          intercept.processor.kill('SIGTERM');
-        }
-      }
-      streamInterceptorService.activeIntercepts.clear();
-    }
-    
-    // Stop main Viewbot service
-    if (viewbotService) {
-      logger.info('   Stopping main Viewbot service...');
-      if (viewbotService.viewbotProcess && !viewbotService.viewbotProcess.killed) {
-        logger.info('   - Killing Viewbot FFmpeg process');
-        viewbotService.viewbotProcess.kill('SIGTERM');
-      }
-      // Always cleanup to ensure WebRTC service is stopped
-      await viewbotService.cleanup();
-    }
-
-    // Stop URL Stream ViewBot service (critical for cleanup of FFmpeg processes)
-    if (global.viewBotURLService) {
-      logger.info('   Stopping URL Stream ViewBot service...');
-      await global.viewBotURLService.stopAllURLStreams();
-    }
-    
-    // Stop Simple Media Stream Service
-    if (typeof simpleMediaStreamService !== 'undefined' && simpleMediaStreamService && simpleMediaStreamService.ffmpegProcess) {
-      logger.info('   Stopping Simple Media Stream FFmpeg...');
-      if (!simpleMediaStreamService.ffmpegProcess.killed) {
-        simpleMediaStreamService.ffmpegProcess.kill('SIGTERM');
-      }
-    }
-    
-    // Stop Recording Service streams
-    if (recordingService && recordingService.activeRecordings) {
-      logger.info('   Stopping Recording Service FFmpeg processes...');
-      for (const [id, recording] of recordingService.activeRecordings) {
-        if (recording.ffmpegProcess && !recording.ffmpegProcess.killed) {
-          logger.info(`   - Stopping recording ${id}`);
-          recording.ffmpegProcess.kill('SIGTERM');
-        }
-      }
-    }
-    
-    // Stop Visual FX Service pipelines
-    if (visualFxService && visualFxService.activePipelines) {
-      logger.info('   Stopping Visual FX pipelines...');
-      for (const [id, pipeline] of visualFxService.activePipelines) {
-        if (pipeline.ffmpegProcess && !pipeline.ffmpegProcess.killed) {
-          logger.info(`   - Stopping visual FX pipeline ${id}`);
-          pipeline.ffmpegProcess.kill('SIGTERM');
-        }
-      }
-    }
-    
-    // Kill any remaining FFmpeg/GStreamer/Puppeteer processes as a safety measure
-    logger.info('🔍 Checking for any remaining media processes...');
-    const { exec } = require('child_process');
-    
-    // Windows-specific process cleanup
-    if (process.platform === 'win32') {
-      // Kill all ffmpeg processes
-      exec('taskkill /F /IM ffmpeg.exe 2>nul', (err) => {
-        if (!err) logger.info('   - Killed remaining FFmpeg processes');
-      });
-      
-      // Kill all gst-launch processes (multiple possible names)
-      exec('taskkill /F /IM gst-launch-1.0.exe 2>nul', (err) => {
-        if (!err) logger.info('   - Killed remaining GStreamer (gst-launch-1.0) processes');
-      });
-      
-      // Also check for gst-launch without version
-      exec('taskkill /F /IM gst-launch.exe 2>nul', (err) => {
-        if (!err) logger.info('   - Killed remaining GStreamer (gst-launch) processes');
-      });
-      
-      // Kill any other GStreamer-related processes
-      exec('taskkill /F /IM gst-play-1.0.exe 2>nul', () => {});
-      exec('taskkill /F /IM gst-inspect-1.0.exe 2>nul', () => {});
-      
-      // Use WMI to find and kill processes by command line pattern
-      exec('wmic process where "CommandLine like \'%gstreamer%\'" delete 2>nul', (err) => {
-        if (!err) logger.info('   - Killed processes with gstreamer in command line');
-      });
-      
-      // Kill Puppeteer Chrome processes
-      exec('taskkill /F /IM chrome.exe /FI "COMMANDLINE like *puppeteer*" 2>nul', (err) => {
-        if (!err) logger.info('   - Killed Puppeteer Chrome processes');
-      });
-      exec('taskkill /F /IM chromium.exe /FI "COMMANDLINE like *puppeteer*" 2>nul', () => {});
-    } else {
-      // Unix-like systems
-      exec('pkill -TERM ffmpeg 2>/dev/null', (err) => {
-        if (!err) logger.info('   - Killed remaining FFmpeg processes');
-      });
-      
-      exec('pkill -TERM gst-launch 2>/dev/null', (err) => {
-        if (!err) logger.info('   - Killed remaining GStreamer processes');
-      });
-      
-      // Also kill by full name pattern
-      exec('pkill -f "gst-launch-1.0" 2>/dev/null', () => {});
-      exec('pkill -f "gstreamer" 2>/dev/null', () => {});
-      
-      // Kill Puppeteer Chrome/Chromium processes
-      exec('pkill -f "puppeteer.*chrome" 2>/dev/null', (err) => {
-        if (!err) logger.info('   - Killed Puppeteer Chrome processes');
-      });
-      exec('pkill -f "chrome.*--no-sandbox.*--disable-setuid-sandbox" 2>/dev/null', () => {});
-    }
-    
-    // Wait a bit for processes to terminate cleanly
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // 3. Clean up MediaSoup resources
-    logger.info('🧹 Cleaning up MediaSoup resources...');
-    if (mediasoupService) {
-      mediasoupService.cleanupAll();
-    }
-    
-    // 3.5. Clean up WebRTC ViewBot systems
-    logger.info('🧹 Cleaning up ViewBot systems...');
-    if (global.unifiedViewBotRotation) {
-      await global.unifiedViewBotRotation.shutdown();
-    }
-    if (global.viewBotManager) {
-      await global.viewBotManager.cleanup();
-    }
-    
-    // 4. Clear all sessions
-    logger.info('📊 Clearing session data...');
-    if (sessionService) {
-      sessionService.clearAllSessions();
-    }
-    
-    // 5. Stop resource monitoring
-    logger.info('📈 Stopping resource monitor...');
-    resourceMonitor.stopMonitoring();
-    
-    // 6. Stop time tracking
-    logger.info('⏱️ Stopping time tracking...');
-    if (timeTrackingService) {
-      timeTrackingService.stopPeriodicCleanup();
-    }
-    
-    // 7. Close Redis connection
-    if (redisClient) {
-      logger.info('🔴 Closing Redis connection...');
-      await redisClient.quit();
-    }
-    
-    // 8. Close the HTTP server
-    logger.info('🌐 Closing HTTP server...');
-    await new Promise((resolve) => {
-      server.close(resolve);
-    });
-    
-    logger.info('✅ Graceful shutdown complete');
-    process.exit(0);
-  } catch (error) {
-    logger.error({ err: error }, '❌ Error during shutdown');
-    process.exit(1);
-  }
-}
-
-// PR 1.2: both signals route through the same shutdown function so SIGTERM
-// (the systemd / Docker production path) actually awaits the work instead of
-// fire-and-forgetting via process.emit('SIGINT').
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-// Handle uncaught exceptions and unhandled rejections
-process.on('uncaughtException', (error) => {
-  // console-allowed: uncaughtException fallback
-  console.error('💥 Uncaught Exception:', error);
-  // Attempt cleanup before exit
-  cleanupMediaProcesses();
-  process.exit(1);
+// Phase 15B.4 — shutdown sequence + signal handlers + cleanupMediaProcesses
+// extracted to bootstrap/shutdown.js. Lazy services are passed via getters
+// so the lookup happens at signal-time. The two `// console-allowed:
+// uncaughtException fallback` markers ride along inside that module.
+require('./bootstrap/shutdown')({
+  stoppables,
+  io,
+  server,
+  getRedisClient: () => redisClient,
+  getMediasoupService: () => mediasoupService,
+  getViewbotService: () => viewbotService,
+  getViewBotClientService: () => viewBotClientService,
+  getRecordingService: () => recordingService,
+  getVisualFxService: () => visualFxService,
+  getStreamInterceptorService: () => streamInterceptorService,
+  getTimeTrackingService: () => timeTrackingService,
+  getResourceMonitor: () => resourceMonitor,
+  getSessionService: () => sessionService,
+  getViewBotGStreamerService: () => (typeof viewBotGStreamerService !== 'undefined' ? viewBotGStreamerService : undefined),
+  getSimpleMediaStreamService: () => (typeof simpleMediaStreamService !== 'undefined' ? simpleMediaStreamService : undefined),
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  // console-allowed: uncaughtException fallback
-  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
-  // Don't exit on unhandled rejection, but log it
-});
-
-// Quick cleanup function for emergency exits
-function cleanupMediaProcesses() {
-  const { execSync } = require('child_process');
-  try {
-    if (process.platform === 'win32') {
-      execSync('taskkill /F /IM ffmpeg.exe 2>nul', { stdio: 'ignore' });
-      execSync('taskkill /F /IM gst-launch-1.0.exe 2>nul', { stdio: 'ignore' });
-      execSync('taskkill /F /IM gst-launch.exe 2>nul', { stdio: 'ignore' });
-    } else {
-      execSync('pkill -9 ffmpeg 2>/dev/null', { stdio: 'ignore' });
-      execSync('pkill -9 gst-launch 2>/dev/null', { stdio: 'ignore' });
-    }
-  } catch (e) {
-    // Ignore errors in emergency cleanup
-  }
-}
+// Pre-extraction body — the entire shutdown function + handlers + cleanup
+// helper lived here before 15B.4. Kept temporarily during a search-and-
+// destroy pass below; if you see live code below this marker, the extraction
+// is incomplete.
