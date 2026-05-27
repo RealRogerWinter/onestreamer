@@ -1,3 +1,77 @@
+// ============================================================================
+// Phase 15B decomposition inventory (read-only; PR 15B.1).
+//
+// `server/index.js` is the orchestrator. Phases 6–14 carved its services and
+// repositories out into their own modules; Phase 15B finishes the job for
+// routes, helpers, socket-handler registration, and the shutdown sequence.
+// This block maps the remaining inline surfaces to their destination files.
+// Each PR-15B.X sub-PR removes its line as it lands; by the end of 15B the
+// block is either empty (delete it) or holds explicitly-justified residuals.
+//
+// Helpers (lines 432–1121, ~690 LoC) — extracted by PR 15B.2 (helpers go
+// FIRST because routes call them; reversing the order would force a
+// back-import phase). Closure-over-lazy-service hazard documented in the
+// 15B.1 PR description.
+//
+//   432–446     initializeRedis              → bootstrap/redis.js     (15B.2.b)
+//   557–582     getActiveVisualEffects       → services/VisualFxService.js (15B.2.b)
+//   587–623     startVisualEffectSync        → services/VisualFxService.js (15B.2.b)
+//   841–860     broadcastGlobalCooldown      → services/StreamOrchestration.js (15B.2.a)
+//   882–893     cleanupViewbotUsername       → services/viewbot/UsernameCache.js (15B.2.b)
+//   896–916     generateViewbotUsername      → services/viewbot/UsernameCache.js (15B.2.b)
+//   919–1014    getStreamerDisplayName       → services/UserService.js OR keep in index.js
+//                                              with header (lazy-service closure — see audit)
+//   1021–1030   enrichStreamStatus           → services/StreamOrchestration.js (15B.2.a)
+//   1042–1121   verifyAndEmitStreamReady     → services/StreamOrchestration.js (15B.2.a)
+//
+// Routes (lines 1123–4598, ~3475 LoC, 143 handlers) — extracted by PR 15B.3.
+// One PR per cluster; ordered by independence (lowest cross-reference first).
+// Stateful service deps come from `req.app.locals.<serviceName>` with the
+// JSON-500 short-circuit pattern from `server/routes/audio.js`.
+//
+//   286–311     visualfx debug static assets → routes/visualfx-static.js (15B.3.a — trivial)
+//   1123–1145   root + health + webrtc cfg   → routes/health.js          (15B.3.a)
+//   1180–1587   emoji CRUD (user + admin)    → routes/emojis.js          (15B.3.b)
+//   1235–1326   admin moderation ban/timeout → routes/admin-moderation.js (15B.3.c)
+//   1590–1696   user chat-color get/set      → routes/user-prefs.js      (15B.3.d)
+//   1698        admin dashboard HTML render  → routes/admin-dashboard.js (15B.3.d or .e)
+//   1762–2585   ViewBot HTTP admin bridge    → routes/viewbot-admin.js   (15B.3.e — largest)
+//                  (covers viewbot/, test-stream/, viewbot-manager,
+//                   viewbot-webrtc, viewbot-client, simple-rotation,
+//                   debug/, streaming-method)
+//   2594–2645   admin stream control         → routes/admin-stream.js    (15B.3.f)
+//                  (force-disconnect, send-message, clear-stream, connections)
+//   2734–2784   admin cooldowns              → routes/admin-cooldowns.js (15B.3.f)
+//   2804–2868   debug + system metrics       → routes/admin-debug.js     (15B.3.f)
+//   2900–3264   admin verify / IP-ban / logs → routes/admin-moderation.js (extends 15B.3.c)
+//   3303–3378   uploaded videos              → routes/admin-uploads.js   (15B.3.g)
+//   3411–3892   recordings (start/stop/...)  → routes/admin-recordings-ext.js (15B.3.h)
+//                  (existing /admin/review/* is in routes/admin-recordings.js;
+//                   this cluster is the larger admin set)
+//   3941–4029   recordings continuous        → routes/admin-recordings-ext.js (extends 15B.3.h)
+//   4119–4377   transcription                → routes/admin-transcription.js (15B.3.i)
+//   4391–4442   MovieBot admin               → routes/admin-bots.js      (15B.3.j)
+//   4456–4508   VisionBot admin              → routes/admin-bots.js      (15B.3.j)
+//   4521–4598   Groq + OpenAI config         → routes/admin-ai-config.js (15B.3.j)
+//
+// Lifecycle (lines 4945–5835, ~890 LoC) — non-route inline surfaces:
+//
+//   4945–5556   startServer()                → keeps inline; orchestration spine
+//   5559–5818   shutdown() + SIGINT/SIGTERM/ → bootstrap/shutdown.js     (15B.4)
+//               uncaughtException +
+//               cleanupMediaProcesses
+//   5821–5835   cleanupMediaProcesses        → bootstrap/shutdown.js     (15B.4)
+//
+//   4600–4863   io.on('connection', ...)     → bootstrap/register-       (15B.5)
+//               socket-handler registration    socket-handlers.js
+//
+// Middleware (lines 188–374, ~186 LoC) — stays in index.js with section
+// headers (15B.6); pure `app.use(...)` wiring is wiring, and middleware
+// order is load-bearing.
+//
+// Status: 0/N sub-PRs landed (this PR is the inventory itself).
+// ============================================================================
+
 const express = require('express');
 const http = require('http');
 const https = require('https');
