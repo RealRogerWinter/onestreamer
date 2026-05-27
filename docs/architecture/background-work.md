@@ -91,6 +91,31 @@ Less concerning for lifecycle since they exit on their own work boundaries:
 - **`puppeteer` / Chromium**: one browser per viewbot in `ViewBotClientService`. Closed in `stopViewbot()`. Browser leaks are a known viewbot fleet issue (`docs/operations/runbooks/viewbot-fleet-misbehaving.md`).
 - **`whisper.cpp`**: spawned per active transcription session. Exits when the session ends.
 
+## Atomic-SQL audit closure
+
+_Verified 2026-05-27 (Phase 8 PR 8.1)._ Cross-reference: [ADR-0013a](adr/0013a-atomic-sql-for-mutable-counters.md).
+
+[ADR-0013a](adr/0013a-atomic-sql-for-mutable-counters.md) codifies the relative-arithmetic write pattern (`SET col = col + ?`) for mutable counters. This audit enumerates the six counter columns called out in the runbook follow-up — `total_stream_time`, `total_view_time`, `stream_count`, `chat_message_count`, `view_count`, `quantity` — and classifies the write path of each.
+
+| Column | Table(s) | Writer | Pattern |
+|--------|----------|--------|---------|
+| `total_stream_time` | `user_stats` | `AccountService.updateUserStats` ([line 170](../../server/services/AccountService.js)) | Relative arithmetic ✓ |
+| `total_view_time` | `user_stats` | `AccountService.updateUserStats` ([line 175](../../server/services/AccountService.js)) | Relative arithmetic ✓ |
+| `stream_count` | `user_stats` | `AccountService.updateUserStats` ([line 180](../../server/services/AccountService.js)) | Relative arithmetic ✓ |
+| `chat_message_count` | `user_stats` | `AccountService.updateUserStats` ([line 185](../../server/services/AccountService.js)) | Relative arithmetic ✓ |
+| `view_count` | `clips` | `ClipService.incrementClipViews` ([line 431](../../server/services/ClipService.js)) | Relative arithmetic ✓ |
+| `chat_message_count` | `recording_sessions` | `SessionChatCaptureService.updateSessionChatCount` ([line 164](../../server/services/SessionChatCaptureService.js)) | Derived recompute — `SELECT COUNT(*) FROM session_chat_messages WHERE session_id = ?` followed by absolute `SET chat_message_count = ?`. A single capture-service instance owns each session_id; the next tick re-derives, so a missed message becomes lag, not loss. |
+| `quantity` | `user_inventory` | `UserInventoryRepository.updateQuantity` ([line 194](../../server/database/repository/UserInventoryRepository.js)) | Absolute set (read-compute-write). The purchase path is closed by PR 7.4's `withTransaction` wrap. Other callers (`InventoryService.addItemToInventory` / `removeItemFromInventory`) are invoked from request handlers only (auth signup grant, `routes/buffs.js`, `routes/internal.js` admin grant + gift, `sockets/BuffHandler.js`) — never from background timers. Race-vulnerable only if the same user fires concurrent inventory-mutating requests for the same item_id; in the [single-tenant single-streamer scope](../../README.md) this is bounded by per-user request cadence. Flagged for follow-up if a future feature adds a background mutator. |
+| `quantity` | `item_transactions`, `gift_transactions` | Insert-only audit ledgers | Not a mutable counter — each row is immutable once written. |
+
+**Repro:**
+
+```bash
+grep -rnE "(SELECT|getAsync|allAsync|UPDATE).*(stream_time|view_time|chat_message_count|stream_count|quantity|view_count)" server/ --include='*.js' | grep -v tests/
+```
+
+No race-vulnerable read-compute-write site found among the six listed counters as of the verification date. Future audits should re-run the grep before adding new counter writes.
+
 ## Refresh
 
 ```bash
