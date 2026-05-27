@@ -7,6 +7,7 @@
 
 const { spawn } = require('child_process');
 
+const logger = require('../bootstrap/logger').child({ svc: 'StreamProbeService' });
 class StreamProbeService {
   constructor() {
     this.ffprobePath = 'ffprobe';
@@ -38,7 +39,7 @@ class StreamProbeService {
     if (input !== '-' && this.probeCache.has(input)) {
       const cached = this.probeCache.get(input);
       if (Date.now() - cached.timestamp < this.cacheTimeout) {
-        console.log(`📊 StreamProbe: Using cached result for ${input.substring(0, 50)}...`);
+        logger.debug(`📊 StreamProbe: Using cached result for ${input.substring(0, 50)}...`);
         return cached.result;
       }
       this.probeCache.delete(input);
@@ -57,7 +58,7 @@ class StreamProbeService {
 
       return result;
     } catch (error) {
-      console.warn(`⚠️ StreamProbe: Failed to probe stream, using defaults: ${error.message}`);
+      logger.warn(`⚠️ StreamProbe: Failed to probe stream, using defaults: ${error.message}`);
       return { ...this.defaults, probeError: error.message };
     }
   }
@@ -86,7 +87,7 @@ class StreamProbeService {
 
       args.push('-i', input);
 
-      console.log(`📊 StreamProbe: Probing ${input.substring(0, 60)}...`);
+      logger.debug(`📊 StreamProbe: Probing ${input.substring(0, 60)}...`);
 
       const ffprobe = spawn(this.ffprobePath, args);
 
@@ -122,7 +123,7 @@ class StreamProbeService {
 
         try {
           const parsed = this._parseProbeOutput(stdout);
-          console.log(`✅ StreamProbe: ${parsed.width}x${parsed.height}@${parsed.fps}fps, ` +
+          logger.debug(`✅ StreamProbe: ${parsed.width}x${parsed.height}@${parsed.fps}fps, ` +
                      `video: ${Math.round(parsed.videoBitrate/1000)}kbps, ` +
                      `audio: ${parsed.hasAudio ? Math.round(parsed.audioBitrate/1000) + 'kbps' : 'none'}`);
           resolve(parsed);
@@ -270,7 +271,7 @@ class StreamProbeService {
     try {
       return await this.probeStream(url, { timeout: 8000 });
     } catch (e) {
-      console.log(`📊 StreamProbe: Direct probe failed, returning defaults`);
+      logger.debug(`📊 StreamProbe: Direct probe failed, returning defaults`);
       return { ...this.defaults, probeNote: 'direct_failed' };
     }
   }
@@ -280,7 +281,7 @@ class StreamProbeService {
    */
   clearCache() {
     this.probeCache.clear();
-    console.log('📊 StreamProbe: Cache cleared');
+    logger.debug('📊 StreamProbe: Cache cleared');
   }
 }
 

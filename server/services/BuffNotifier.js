@@ -1,3 +1,6 @@
+const logger = require('../bootstrap/logger').child({ svc: 'BuffNotifier' });
+const { getTraceId } = require('../bootstrap/trace-context');
+
 // server/services/BuffNotifier.js
 //
 // Single emission chokepoint for the buff/inventory cluster of socket events:
@@ -56,10 +59,13 @@ class BuffNotifier {
   streamerBuffsUpdate(opts = {}) {
     const { buffs, toSocket = null } = opts;
     if (!Array.isArray(buffs)) {
-      console.warn('⚠️ BUFF_NOTIFIER: streamerBuffsUpdate called without `buffs` array — emit suppressed');
+      logger.warn('⚠️ BUFF_NOTIFIER: streamerBuffsUpdate called without `buffs` array — emit suppressed');
       return;
     }
-    const payload = { buffs };
+    // ADR-0020 §4: tag the chokepoint emit with the request-scoped
+    // trace ID; see the matching comment in StreamNotifier.broadcast.
+    const _traceId = getTraceId();
+    const payload = { buffs, ...(_traceId !== undefined && { _traceId }) };
     if (toSocket) {
       toSocket.emit('streamer-buffs-update', payload);
     } else {
@@ -86,15 +92,15 @@ class BuffNotifier {
   inventoryUpdated(opts = {}) {
     const { toSocketId, action, itemId, quantity, remainingQuantity } = opts;
     if (!toSocketId) {
-      console.warn('⚠️ BUFF_NOTIFIER: inventoryUpdated called without toSocketId — emit suppressed');
+      logger.warn('⚠️ BUFF_NOTIFIER: inventoryUpdated called without toSocketId — emit suppressed');
       return;
     }
     if (!action) {
-      console.warn('⚠️ BUFF_NOTIFIER: inventoryUpdated called without action — emit suppressed');
+      logger.warn('⚠️ BUFF_NOTIFIER: inventoryUpdated called without action — emit suppressed');
       return;
     }
     if (!BuffNotifier.INVENTORY_ACTIONS.has(action)) {
-      console.warn(`⚠️ BUFF_NOTIFIER: unknown inventory action "${action}" — INVENTORY_ACTIONS set is out of date`);
+      logger.warn(`⚠️ BUFF_NOTIFIER: unknown inventory action "${action}" — INVENTORY_ACTIONS set is out of date`);
     }
     const payload = { action, itemId, quantity };
     if (remainingQuantity !== undefined) {
@@ -114,7 +120,7 @@ class BuffNotifier {
   buffError(opts = {}) {
     const { toSocket, error } = opts;
     if (!toSocket) {
-      console.warn('⚠️ BUFF_NOTIFIER: buffError called without toSocket — emit suppressed');
+      logger.warn('⚠️ BUFF_NOTIFIER: buffError called without toSocket — emit suppressed');
       return;
     }
     if (typeof error !== 'string' || error.length === 0) {
@@ -124,8 +130,8 @@ class BuffNotifier {
       // But silently dropping costs the operator a server-log breadcrumb —
       // log the original argument so the underlying exception is recoverable
       // from the logs even though the wire emit was suppressed.
-      console.warn('⚠️ BUFF_NOTIFIER: buffError called without `error` string — emit suppressed');
-      console.error('⚠️ BUFF_NOTIFIER: original error argument was:', error);
+      logger.warn('⚠️ BUFF_NOTIFIER: buffError called without `error` string — emit suppressed');
+      logger.error('⚠️ BUFF_NOTIFIER: original error argument was:', error);
       return;
     }
     toSocket.emit('buff-error', { error });

@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 
+const logger = require('../bootstrap/logger').child({ svc: 'EmailService' });
 class EmailService {
     constructor() {
         this.transporter = null;
@@ -18,22 +19,22 @@ class EmailService {
             }
         };
 
-        console.log('📧 EMAIL: Initializing email service...');
-        console.log('📧 EMAIL: SMTP_HOST:', process.env.SMTP_HOST ? 'configured' : 'not set');
-        console.log('📧 EMAIL: SMTP_USER:', process.env.SMTP_USER ? 'configured' : 'not set');
+        logger.debug('📧 EMAIL: Initializing email service...');
+        logger.debug('📧 EMAIL: SMTP_HOST:', process.env.SMTP_HOST ? 'configured' : 'not set');
+        logger.debug('📧 EMAIL: SMTP_USER:', process.env.SMTP_USER ? 'configured' : 'not set');
 
         // If no SMTP config provided, use a test account or console logging
         if (!emailConfig.host || !emailConfig.auth.user) {
-            console.log('📧 EMAIL: No SMTP configuration found. Using console logging for emails.');
+            logger.debug('📧 EMAIL: No SMTP configuration found. Using console logging for emails.');
             this.transporter = {
                 sendMail: async (mailOptions) => {
-                    console.log('\n' + '='.repeat(50));
-                    console.log('📧 EMAIL WOULD BE SENT:');
-                    console.log('To:', mailOptions.to);
-                    console.log('Subject:', mailOptions.subject);
-                    console.log('Content:');
-                    console.log(mailOptions.html || mailOptions.text);
-                    console.log('='.repeat(50) + '\n');
+                    logger.debug('\n' + '='.repeat(50));
+                    logger.debug('📧 EMAIL WOULD BE SENT:');
+                    logger.debug('To:', mailOptions.to);
+                    logger.debug('Subject:', mailOptions.subject);
+                    logger.debug('Content:');
+                    logger.debug(mailOptions.html || mailOptions.text);
+                    logger.debug('='.repeat(50) + '\n');
                     
                     return { messageId: 'console-log-' + Date.now() };
                 }
@@ -43,18 +44,18 @@ class EmailService {
 
         try {
             this.transporter = nodemailer.createTransport(emailConfig);
-            console.log('📧 EMAIL: SMTP transporter initialized');
+            logger.debug('📧 EMAIL: SMTP transporter initialized');
             
             // Verify connection
             this.transporter.verify((error, success) => {
                 if (error) {
-                    console.error('📧 EMAIL: SMTP verification failed:', error);
+                    logger.error('📧 EMAIL: SMTP verification failed:', error);
                 } else {
-                    console.log('📧 EMAIL: SMTP server ready');
+                    logger.debug('📧 EMAIL: SMTP server ready');
                 }
             });
         } catch (error) {
-            console.error('📧 EMAIL: Failed to initialize transporter:', error);
+            logger.error('📧 EMAIL: Failed to initialize transporter:', error);
         }
     }
 
@@ -102,10 +103,10 @@ class EmailService {
 
         try {
             const result = await this.transporter.sendMail(mailOptions);
-            console.log(`📧 EMAIL: Verification email sent to ${email}:`, result.messageId);
+            logger.debug(`📧 EMAIL: Verification email sent to ${email}:`, result.messageId);
             return result;
         } catch (error) {
-            console.error('📧 EMAIL: Failed to send verification email:', error);
+            logger.error('📧 EMAIL: Failed to send verification email:', error);
             throw error;
         }
     }
@@ -155,10 +156,10 @@ class EmailService {
 
         try {
             const result = await this.transporter.sendMail(mailOptions);
-            console.log(`📧 EMAIL: Password reset email sent to ${email}:`, result.messageId);
+            logger.debug(`📧 EMAIL: Password reset email sent to ${email}:`, result.messageId);
             return result;
         } catch (error) {
-            console.error('📧 EMAIL: Failed to send password reset email:', error);
+            logger.error('📧 EMAIL: Failed to send password reset email:', error);
             throw error;
         }
     }
@@ -179,15 +180,15 @@ class EmailService {
 
         try {
             const result = await this.transporter.sendMail(mailOptions);
-            console.log(`📧 EMAIL: Test email sent to ${to}:`, result.messageId);
+            logger.debug(`📧 EMAIL: Test email sent to ${to}:`, result.messageId);
             return result;
         } catch (error) {
-            console.error('📧 EMAIL: Failed to send test email:', error);
+            logger.error('📧 EMAIL: Failed to send test email:', error);
             throw error;
         }
     }
     async sendAccountDeletionEmail(email, username, deletionToken) {
-        console.log('📧 EMAIL SERVICE - sendAccountDeletionEmail called with:', {
+        logger.debug('📧 EMAIL SERVICE - sendAccountDeletionEmail called with:', {
             email: email,
             username: username,
             tokenLength: deletionToken?.length,
@@ -254,7 +255,7 @@ class EmailService {
             const result = await this.transporter.sendMail(mailOptions);
             return result;
         } catch (error) {
-            console.error('📧 EMAIL: Failed to send account deletion email:', error);
+            logger.error('📧 EMAIL: Failed to send account deletion email:', error);
             throw error;
         }
     }
@@ -294,7 +295,7 @@ class EmailService {
             const result = await this.transporter.sendMail(mailOptions);
             return result;
         } catch (error) {
-            console.error('📧 EMAIL: Failed to send account restored email:', error);
+            logger.error('📧 EMAIL: Failed to send account restored email:', error);
             // Don't throw error for restoration email
         }
     }

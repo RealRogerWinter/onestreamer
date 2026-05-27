@@ -1,6 +1,9 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+
+const logger = require('../bootstrap/logger').child({ svc: 'tutorial' });
+
 const router = express.Router();
 
 const AuthService = require('../services/AuthService');
@@ -25,7 +28,7 @@ router.get('/', (req, res) => {
     }
     return res.json({ content: '' });
   } catch (error) {
-    console.error('Failed to load tutorial:', error);
+    logger.error('Failed to load tutorial:', error);
     return res.status(500).json({ error: 'Failed to load tutorial content' });
   }
 });
@@ -70,7 +73,7 @@ router.post('/', async (req, res) => {
 
     return res.json({ success: true, message: 'Tutorial content saved successfully' });
   } catch (error) {
-    console.error('Failed to save tutorial:', error);
+    logger.error('Failed to save tutorial:', error);
     return res.status(500).json({ error: 'Failed to save tutorial content' });
   }
 });

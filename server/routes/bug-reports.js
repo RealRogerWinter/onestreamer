@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'bug-reports' });
+
 const router = express.Router();
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
@@ -6,7 +9,6 @@ const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const { requireTurnstile } = require('../middleware/turnstile');
 const UserRepository = require('../database/repository/UserRepository');
 const applyPragmas = require('../database/applyPragmas');
-const logger = require('../bootstrap/logger');
 
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
 const db = new sqlite3.Database(dbPath, (err) => {
@@ -100,11 +102,11 @@ router.post('/', requireTurnstile, optionalAuth, async (req, res) => {
             'new'
         ], function(err) {
             if (err) {
-                console.error('Error inserting bug report:', err);
+                logger.error('Error inserting bug report:', err);
                 return res.status(500).json({ error: 'Failed to submit bug report' });
             }
 
-            console.log(`Bug report submitted: ID ${this.lastID} by ${reportUsername}`);
+            logger.debug(`Bug report submitted: ID ${this.lastID} by ${reportUsername}`);
             
             res.json({
                 success: true,
@@ -114,7 +116,7 @@ router.post('/', requireTurnstile, optionalAuth, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error processing bug report:', error);
+        logger.error('Error processing bug report:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -164,7 +166,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
         db.all(query, params, (err, reports) => {
             if (err) {
-                console.error('Error fetching bug reports:', err);
+                logger.error('Error fetching bug reports:', err);
                 return res.status(500).json({ error: 'Failed to fetch bug reports' });
             }
 
@@ -184,7 +186,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
             db.get(countQuery, countParams, (err, count) => {
                 if (err) {
-                    console.error('Error counting bug reports:', err);
+                    logger.error('Error counting bug reports:', err);
                     return res.status(500).json({ error: 'Failed to count bug reports' });
                 }
 
@@ -203,7 +205,7 @@ router.get('/', authenticateToken, async (req, res) => {
             });
         });
     } catch (error) {
-        console.error('Error in bug reports endpoint:', error);
+        logger.error('Error in bug reports endpoint:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -257,7 +259,7 @@ router.patch('/:id', authenticateToken, async (req, res) => {
 
         db.run(query, params, function(err) {
             if (err) {
-                console.error('Error updating bug report:', err);
+                logger.error('Error updating bug report:', err);
                 return res.status(500).json({ error: 'Failed to update bug report' });
             }
 
@@ -271,7 +273,7 @@ router.patch('/:id', authenticateToken, async (req, res) => {
             });
         });
     } catch (error) {
-        console.error('Error updating bug report:', error);
+        logger.error('Error updating bug report:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -294,7 +296,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
         db.run('DELETE FROM bug_reports WHERE id = ?', [id], function(err) {
             if (err) {
-                console.error('Error deleting bug report:', err);
+                logger.error('Error deleting bug report:', err);
                 return res.status(500).json({ error: 'Failed to delete bug report' });
             }
 
@@ -308,7 +310,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
             });
         });
     } catch (error) {
-        console.error('Error deleting bug report:', error);
+        logger.error('Error deleting bug report:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

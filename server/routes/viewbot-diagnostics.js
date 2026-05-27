@@ -2,6 +2,9 @@ const express = require('express');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+
+const logger = require('../bootstrap/logger').child({ svc: 'viewbot-diagnostics' });
+
 const router = express.Router();
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 
@@ -30,7 +33,7 @@ router.get('/viewbot/diagnostics', async (req, res) => {
     
     res.json(diagnostics);
   } catch (error) {
-    console.error('Failed to run diagnostics:', error);
+    logger.error('Failed to run diagnostics:', error);
     res.status(500).json({ error: 'Failed to run diagnostics', details: error.message });
   }
 });
@@ -97,9 +100,9 @@ router.post('/viewbot/test-creation', async (req, res) => {
         setTimeout(async () => {
           try {
             await global.viewBotClientService.destroyBot(result.botId);
-            console.log(`🧹 Cleaned up test bot ${result.botId}`);
+            logger.debug(`🧹 Cleaned up test bot ${result.botId}`);
           } catch (error) {
-            console.error('Failed to cleanup test bot:', error);
+            logger.error('Failed to cleanup test bot:', error);
           }
         }, 5000);
         
@@ -114,7 +117,7 @@ router.post('/viewbot/test-creation', async (req, res) => {
     
     res.json({ success: true, steps });
   } catch (error) {
-    console.error('Test creation failed:', error);
+    logger.error('Test creation failed:', error);
     res.status(500).json({ error: 'Test creation failed', details: error.message });
   }
 });

@@ -2,6 +2,7 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'TranscriptionDrivenBotService' });
 // Whisper hallucinates conversational filler ("you you you", "the the and")
 // on silent or near-silent audio. We drop transcriptions whose content
 // reduces to those tokens before they reach the LLM.
@@ -103,7 +104,7 @@ class TranscriptionDrivenBotService extends EventEmitter {
         this.scheduleNextTranscription();
         this.emit(`${this.eventPrefix}-enabled`, { streamerId, timestamp: new Date() });
         this.logEvent('ENABLED', { streamerId, config: this.config });
-        console.log(`🎬 ${this.botName}: Enabled for streamer ${streamerId}`);
+        logger.debug(`🎬 ${this.botName}: Enabled for streamer ${streamerId}`);
         return { success: true, message: `${this.botName} enabled successfully` };
     }
 
@@ -124,7 +125,7 @@ class TranscriptionDrivenBotService extends EventEmitter {
         this.emit(`${this.eventPrefix}-disabled`, { timestamp: new Date() });
         this.logEvent('DISABLED', {});
         this.currentStreamerId = null;
-        console.log(`🎬 ${this.botName}: Disabled`);
+        logger.debug(`🎬 ${this.botName}: Disabled`);
         return { success: true, message: `${this.botName} disabled successfully` };
     }
 
@@ -132,26 +133,26 @@ class TranscriptionDrivenBotService extends EventEmitter {
 
     loadConfigFromDatabase() {
         if (!this.db) {
-            console.log(`⚠️ ${this.botName}: Database not ready, using defaults`);
+            logger.debug(`⚠️ ${this.botName}: Database not ready, using defaults`);
             this.config = this.getDefaultConfig();
             return;
         }
         this.db.get(`SELECT * FROM ${this.configTableName} WHERE id = 1`, (err, row) => {
             if (err) {
-                console.error(`❌ ${this.botName}: Error loading config from database:`, err);
+                logger.error(`❌ ${this.botName}: Error loading config from database:`, err);
                 return;
             }
             if (row) {
                 this.config = this.parseConfigRow(row);
                 this.afterConfigLoaded(row);
                 if (this.config.enabled && this.config.streamerId) {
-                    console.log(`🔄 ${this.botName}: Restoring active state for streamer ${this.config.streamerId}`);
+                    logger.debug(`🔄 ${this.botName}: Restoring active state for streamer ${this.config.streamerId}`);
                     this.isActive = true;
                     this.currentStreamerId = this.config.streamerId;
                     this.scheduleNextTranscription();
                 }
             } else {
-                console.log(`📝 ${this.botName}: No saved config found, creating defaults`);
+                logger.debug(`📝 ${this.botName}: No saved config found, creating defaults`);
                 this.config = this.getDefaultConfig();
                 this.saveConfigToDatabase();
             }
@@ -160,13 +161,13 @@ class TranscriptionDrivenBotService extends EventEmitter {
 
     saveConfigToDatabase(includeApiKey = false, apiKey = null) {
         if (!this.db) {
-            console.log(`⚠️ ${this.botName}: Database not ready, cannot save config`);
+            logger.debug(`⚠️ ${this.botName}: Database not ready, cannot save config`);
             return;
         }
         const { query, params } = this.buildSaveConfigSQL(includeApiKey, apiKey);
         this.db.run(query, params, (err) => {
             if (err) {
-                console.error(`❌ ${this.botName}: Error saving config to database:`, err);
+                logger.error(`❌ ${this.botName}: Error saving config to database:`, err);
             }
         });
     }
@@ -190,7 +191,7 @@ class TranscriptionDrivenBotService extends EventEmitter {
                 { model: 'base', language: 'en' }
             );
             if (!result.success) {
-                console.error(`❌ ${this.botName}: Failed to start transcription:`, result.error);
+                logger.error(`❌ ${this.botName}: Failed to start transcription:`, result.error);
                 this.scheduleNextTranscription();
                 return;
             }
@@ -208,13 +209,13 @@ class TranscriptionDrivenBotService extends EventEmitter {
                     try {
                         await this.onTranscriptionComplete(transcription, data);
                     } catch (handlerError) {
-                        console.error(`❌ ${this.botName}: onTranscriptionComplete failed:`, handlerError);
+                        logger.error(`❌ ${this.botName}: onTranscriptionComplete failed:`, handlerError);
                     }
                 }
                 this.scheduleNextTranscription();
             });
         } catch (error) {
-            console.error(`❌ ${this.botName}: Error capturing transcription:`, error);
+            logger.error(`❌ ${this.botName}: Error capturing transcription:`, error);
             this.scheduleNextTranscription();
         }
     }
@@ -227,7 +228,7 @@ class TranscriptionDrivenBotService extends EventEmitter {
             }
             return null;
         } catch (error) {
-            console.error(`❌ ${this.botName}: Failed to get transcription text:`, error);
+            logger.error(`❌ ${this.botName}: Failed to get transcription text:`, error);
             return null;
         }
     }
@@ -238,7 +239,7 @@ class TranscriptionDrivenBotService extends EventEmitter {
                 try {
                     await this.transcriptionService.stopTranscription(sessionId);
                 } catch (error) {
-                    console.error(`❌ ${this.botName}: Error stopping session ${sessionId}:`, error);
+                    logger.error(`❌ ${this.botName}: Error stopping session ${sessionId}:`, error);
                 }
             }
             this.currentSessions = [];
@@ -249,7 +250,7 @@ class TranscriptionDrivenBotService extends EventEmitter {
                 await this.transcriptionService.stopTranscription(this.currentSession);
                 this.currentSession = null;
             } catch (error) {
-                console.error(`❌ ${this.botName}: Error stopping legacy session:`, error);
+                logger.error(`❌ ${this.botName}: Error stopping legacy session:`, error);
             }
         }
     }
@@ -275,7 +276,7 @@ class TranscriptionDrivenBotService extends EventEmitter {
                 }
             });
         } else if (!this.botEventBus) {
-            console.log(`⚠️ ${this.botName}: No chat source available (no BotEventBus, no chatService.on)`);
+            logger.debug(`⚠️ ${this.botName}: No chat source available (no BotEventBus, no chatService.on)`);
         }
     }
 
@@ -303,7 +304,7 @@ class TranscriptionDrivenBotService extends EventEmitter {
             }
             return messages;
         } catch (error) {
-            console.error(`❌ ${this.botName}: Failed to get chat history:`, error);
+            logger.error(`❌ ${this.botName}: Failed to get chat history:`, error);
             return [];
         }
     }
@@ -320,7 +321,7 @@ class TranscriptionDrivenBotService extends EventEmitter {
         return new Promise((resolve) => {
             this.db.all(query, [limit], (err, rows) => {
                 if (err) {
-                    console.error(`❌ ${this.botName}: Error fetching messages from database:`, err);
+                    logger.error(`❌ ${this.botName}: Error fetching messages from database:`, err);
                     resolve([]);
                     return;
                 }

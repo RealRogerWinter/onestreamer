@@ -1,9 +1,11 @@
+const logger = require('./logger').child({ svc: 'start-listeners' });
+
 /**
  * HTTP / HTTPS listener startup helper.
  *
  * Pulled out of `server/index.js` startServer() body in PR 4.3 as part of
  * the orchestrator decomposition. Each `<server>.listen(port, host,
- * callback)` call was 7-8 lines of boilerplate console.log inline; the
+ * callback)` call was 7-8 lines of boilerplate log lines inline; the
  * combined block plus the surrounding `if (httpsServer)` branch was ~20
  * lines that have nothing to do with the rest of startServer's
  * service-wiring work.
@@ -25,20 +27,20 @@
  */
 module.exports = function startListeners({ httpServer, httpsServer, port, httpsPort }) {
   httpServer.listen(port, '0.0.0.0', () => {
-    console.log(`🌐 HTTP server running on port ${port}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log('🔍 HTTP Server accessible on:');
-    console.log('  - http://localhost:' + port);
-    console.log('  - http://onestreamer.live:' + port);
+    logger.debug(`🌐 HTTP server running on port ${port}`);
+    logger.debug(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    logger.debug('🔍 HTTP Server accessible on:');
+    logger.debug('  - http://localhost:' + port);
+    logger.debug('  - http://onestreamer.live:' + port);
   });
 
   if (httpsServer) {
     httpsServer.listen(httpsPort, '0.0.0.0', () => {
-      console.log(`🔒 HTTPS server running on port ${httpsPort}`);
-      console.log('🔍 HTTPS Server accessible on:');
-      console.log('  - https://localhost:' + httpsPort);
-      console.log('  - https://onestreamer.live:' + httpsPort);
-      console.log('⚠️  Note: Using self-signed certificate. Browser will show security warning.');
+      logger.debug(`🔒 HTTPS server running on port ${httpsPort}`);
+      logger.debug('🔍 HTTPS Server accessible on:');
+      logger.debug('  - https://localhost:' + httpsPort);
+      logger.debug('  - https://onestreamer.live:' + httpsPort);
+      logger.debug('⚠️  Note: Using self-signed certificate. Browser will show security warning.');
     });
   }
 };

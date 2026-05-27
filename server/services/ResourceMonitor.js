@@ -7,6 +7,7 @@ const os = require('os');
 const process = require('process');
 const { performance } = require('perf_hooks');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ResourceMonitor' });
 class ResourceMonitor {
   constructor() {
     this.metrics = {
@@ -66,12 +67,12 @@ class ResourceMonitor {
   // Start monitoring
   startMonitoring(intervalMs = 5000) {
     if (this.isMonitoring) {
-      console.warn('⚠️ RESOURCE MONITOR: Already monitoring');
+      logger.warn('⚠️ RESOURCE MONITOR: Already monitoring');
       return;
     }
 
     this.isMonitoring = true;
-    console.log('📊 RESOURCE MONITOR: Starting resource monitoring');
+    logger.debug('📊 RESOURCE MONITOR: Starting resource monitoring');
 
     this.monitoringInterval = setInterval(() => {
       this.updateMetrics();
@@ -91,7 +92,7 @@ class ResourceMonitor {
   stopMonitoring() {
     if (!this.isMonitoring) return;
 
-    console.log('📊 RESOURCE MONITOR: Stopping resource monitoring');
+    logger.debug('📊 RESOURCE MONITOR: Stopping resource monitoring');
     this.isMonitoring = false;
 
     if (this.monitoringInterval) {
@@ -262,7 +263,7 @@ class ResourceMonitor {
         this.alerts = this.alerts.slice(-25);
       }
 
-      console.warn(`⚠️ RESOURCE ALERT [${type.toUpperCase()}]: ${message} (${value})`);
+      logger.warn(`⚠️ RESOURCE ALERT [${type.toUpperCase()}]: ${message} (${value})`);
 
       if (this.callbacks.onAlert) {
         this.callbacks.onAlert(alert);

@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotGStreamerService' });
 /**
  * ViewBotGStreamerService - Properly integrated GStreamer streaming for ViewBots
  * Handles video file streaming to MediaSoup using correct RTP/RTCP configuration
@@ -140,9 +141,9 @@ class ViewBotGStreamerService {
     try {
       const pipeline = await this.createStreamPipeline(config);
       
-      console.log(`🎬 ViewBot ${botId}: Starting GStreamer stream`);
-      console.log(`   Video: RTP=${config.videoRtpPort} RTCP=${config.videoRtcpPort}`);
-      console.log(`   Audio: RTP=${config.audioRtpPort} RTCP=${config.audioRtcpPort}`);
+      logger.debug(`🎬 ViewBot ${botId}: Starting GStreamer stream`);
+      logger.debug(`   Video: RTP=${config.videoRtpPort} RTCP=${config.videoRtcpPort}`);
+      logger.debug(`   Audio: RTP=${config.audioRtpPort} RTCP=${config.audioRtcpPort}`);
 
       // Check GStreamer availability
       if (!fs.existsSync(this.gstreamerPath)) {
@@ -178,7 +179,7 @@ class ViewBotGStreamerService {
       };
 
     } catch (error) {
-      console.error(`❌ ViewBot ${botId}: Failed to start GStreamer:`, error);
+      logger.error(`❌ ViewBot ${botId}: Failed to start GStreamer:`, error);
       throw error;
     }
   }
@@ -196,40 +197,40 @@ class ViewBotGStreamerService {
       // Collect errors
       if (output.includes('ERROR')) {
         errorBuffer += output;
-        console.error(`❌ ViewBot ${botId}: GStreamer error:`, output);
+        logger.error(`❌ ViewBot ${botId}: GStreamer error:`, output);
       }
       
       // Track pipeline state changes
       if (output.includes('PLAYING')) {
-        console.log(`▶️ ViewBot ${botId}: Pipeline is playing`);
+        logger.debug(`▶️ ViewBot ${botId}: Pipeline is playing`);
       } else if (output.includes('PAUSED')) {
-        console.log(`⏸️ ViewBot ${botId}: Pipeline is paused`);
+        logger.debug(`⏸️ ViewBot ${botId}: Pipeline is paused`);
       } else if (output.includes('EOS')) {
-        console.log(`🏁 ViewBot ${botId}: End of stream reached`);
+        logger.debug(`🏁 ViewBot ${botId}: End of stream reached`);
       }
       
       // Progress tracking
       const now = Date.now();
       if (now - lastProgressTime > 5000) {
         if (output.includes('running_time')) {
-          console.log(`📊 ViewBot ${botId}: Stream active`);
+          logger.debug(`📊 ViewBot ${botId}: Stream active`);
           lastProgressTime = now;
         }
       }
     });
 
     process.on('close', (code) => {
-      console.log(`🛑 ViewBot ${botId}: GStreamer process exited with code ${code}`);
+      logger.debug(`🛑 ViewBot ${botId}: GStreamer process exited with code ${code}`);
       
       if (code !== 0 && errorBuffer) {
-        console.error(`❌ ViewBot ${botId}: Process failed with errors:`, errorBuffer);
+        logger.error(`❌ ViewBot ${botId}: Process failed with errors:`, errorBuffer);
       }
       
       this.activeStreams.delete(botId);
     });
 
     process.on('error', (error) => {
-      console.error(`❌ ViewBot ${botId}: Process error:`, error);
+      logger.error(`❌ ViewBot ${botId}: Process error:`, error);
       this.activeStreams.delete(botId);
     });
   }
@@ -280,11 +281,11 @@ class ViewBotGStreamerService {
       
       this.activeStreams.delete(botId);
       
-      console.log(`✅ ViewBot ${botId}: Stream stopped`);
+      logger.debug(`✅ ViewBot ${botId}: Stream stopped`);
       return { success: true, message: 'Stream stopped successfully' };
       
     } catch (error) {
-      console.error(`❌ ViewBot ${botId}: Error stopping stream:`, error);
+      logger.error(`❌ ViewBot ${botId}: Error stopping stream:`, error);
       return { success: false, message: error.message };
     }
   }
@@ -293,7 +294,7 @@ class ViewBotGStreamerService {
    * Stop all active streams
    */
   async stopAll() {
-    console.log(`🛑 Stopping all GStreamer streams (${this.activeStreams.size} active)`);
+    logger.debug(`🛑 Stopping all GStreamer streams (${this.activeStreams.size} active)`);
     
     const stopPromises = [];
     for (const [botId, stream] of this.activeStreams) {
@@ -306,20 +307,20 @@ class ViewBotGStreamerService {
     // Log any failures
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        console.error(`Failed to stop stream: ${result.reason}`);
+        logger.error(`Failed to stop stream: ${result.reason}`);
       }
     });
     
     // Force cleanup any remaining streams
     for (const [botId, stream] of this.activeStreams) {
       if (stream.process && !stream.process.killed) {
-        console.log(`Force killing GStreamer process for bot ${botId}`);
+        logger.debug(`Force killing GStreamer process for bot ${botId}`);
         stream.process.kill('SIGKILL');
       }
     }
     
     this.activeStreams.clear();
-    console.log('✅ All GStreamer streams stopped');
+    logger.debug('✅ All GStreamer streams stopped');
   }
 
   /**
@@ -374,11 +375,11 @@ class ViewBotGStreamerService {
         testProcess.on('error', reject);
       });
 
-      console.log('✅ GStreamer test successful:', result.split('\n')[0]);
+      logger.debug('✅ GStreamer test successful:', result.split('\n')[0]);
       return true;
       
     } catch (error) {
-      console.error('❌ GStreamer test failed:', error);
+      logger.error('❌ GStreamer test failed:', error);
       return false;
     }
   }

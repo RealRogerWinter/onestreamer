@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
+const logger = require('../bootstrap/logger').child({ svc: 'SimpleMediaStreamService' });
 class SimpleMediaStreamService {
   constructor() {
     this.activeStreamer = null;
@@ -16,12 +17,12 @@ class SimpleMediaStreamService {
   ensureHLSDirectory() {
     if (!fs.existsSync(this.hlsPath)) {
       fs.mkdirSync(this.hlsPath, { recursive: true });
-      console.log('📁 Created HLS directory:', this.hlsPath);
+      logger.debug('📁 Created HLS directory:', this.hlsPath);
     }
   }
 
   async startIngestion(streamerId) {
-    console.log('🎥 SIMPLE_MEDIA: Starting simple stream ingestion for:', streamerId);
+    logger.debug('🎥 SIMPLE_MEDIA: Starting simple stream ingestion for:', streamerId);
     
     // Clean up existing stream
     this.stopIngestion();
@@ -40,7 +41,7 @@ class SimpleMediaStreamService {
   }
 
   createMockHLSStream() {
-    console.log('📺 SIMPLE_MEDIA: Creating test HLS stream');
+    logger.debug('📺 SIMPLE_MEDIA: Creating test HLS stream');
     
     // Skip FFmpeg entirely and use a working public stream
     this.createWorkingTestStream();
@@ -61,9 +62,9 @@ https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_exam
 
     try {
       fs.writeFileSync(m3u8FilePath, workingM3u8Content);
-      console.log('✅ SIMPLE_MEDIA: Created working test stream using Apple HLS sample');
+      logger.debug('✅ SIMPLE_MEDIA: Created working test stream using Apple HLS sample');
     } catch (error) {
-      console.error('❌ SIMPLE_MEDIA: Failed to write working manifest:', error);
+      logger.error('❌ SIMPLE_MEDIA: Failed to write working manifest:', error);
     }
   }
 
@@ -72,12 +73,12 @@ https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_exam
       const testProcess = spawn('ffmpeg', ['-version']);
       
       testProcess.on('error', (error) => {
-        console.log('📺 SIMPLE_MEDIA: FFmpeg not found:', error.message);
+        logger.debug('📺 SIMPLE_MEDIA: FFmpeg not found:', error.message);
         resolve(false);
       });
       
       testProcess.on('close', (code) => {
-        console.log(`📺 SIMPLE_MEDIA: FFmpeg version check exited with code ${code}`);
+        logger.debug(`📺 SIMPLE_MEDIA: FFmpeg version check exited with code ${code}`);
         resolve(code === 0);
       });
       
@@ -117,45 +118,45 @@ https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_exam
       m3u8FilePath
     ];
     
-    console.log('🎬 SIMPLE_MEDIA: Starting FFmpeg with args:', ffmpegArgs.join(' '));
+    logger.debug('🎬 SIMPLE_MEDIA: Starting FFmpeg with args:', ffmpegArgs.join(' '));
     
     this.ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
     
     this.ffmpegProcess.stdout.on('data', (data) => {
-      console.log('📺 FFmpeg stdout:', data.toString().trim());
+      logger.debug('📺 FFmpeg stdout:', data.toString().trim());
     });
     
     this.ffmpegProcess.stderr.on('data', (data) => {
       const output = data.toString().trim();
       if (output.includes('frame=') || output.includes('time=')) {
         // Progress info - log occasionally
-        if (Math.random() < 0.1) console.log('📺 FFmpeg progress:', output);
+        if (Math.random() < 0.1) logger.debug('📺 FFmpeg progress:', output);
       } else if (output.length > 0) {
-        console.log('📺 FFmpeg stderr:', output);
+        logger.debug('📺 FFmpeg stderr:', output);
       }
     });
     
     this.ffmpegProcess.on('error', (error) => {
-      console.error('❌ SIMPLE_MEDIA: FFmpeg process error:', error);
-      console.warn('🔄 SIMPLE_MEDIA: Falling back to manual segments');
+      logger.error('❌ SIMPLE_MEDIA: FFmpeg process error:', error);
+      logger.warn('🔄 SIMPLE_MEDIA: Falling back to manual segments');
       this.fallbackToManualSegments();
     });
     
     this.ffmpegProcess.on('close', (code) => {
-      console.log(`📺 SIMPLE_MEDIA: FFmpeg process exited with code ${code}`);
+      logger.debug(`📺 SIMPLE_MEDIA: FFmpeg process exited with code ${code}`);
       this.ffmpegProcess = null;
       
       if (code !== 0) {
-        console.warn('🔄 SIMPLE_MEDIA: FFmpeg failed, using fallback');
+        logger.warn('🔄 SIMPLE_MEDIA: FFmpeg failed, using fallback');
         this.fallbackToManualSegments();
       }
     });
     
-    console.log('✅ SIMPLE_MEDIA: FFmpeg HLS stream started');
+    logger.debug('✅ SIMPLE_MEDIA: FFmpeg HLS stream started');
   }
 
   fallbackToManualSegments() {
-    console.log('🔄 SIMPLE_MEDIA: Creating live HLS stream without FFmpeg');
+    logger.debug('🔄 SIMPLE_MEDIA: Creating live HLS stream without FFmpeg');
     
     this.setupStaticHLSStream();
   }
@@ -185,9 +186,9 @@ ${segments.join('\n')}`;
 
       try {
         fs.writeFileSync(m3u8FilePath, m3u8Content);
-        console.log(`📝 SIMPLE_MEDIA: Updated live manifest (segment ${segmentIndex})`);
+        logger.debug(`📝 SIMPLE_MEDIA: Updated live manifest (segment ${segmentIndex})`);
       } catch (error) {
-        console.error('❌ SIMPLE_MEDIA: Failed to write manifest:', error);
+        logger.error('❌ SIMPLE_MEDIA: Failed to write manifest:', error);
       }
       
       segmentIndex++;
@@ -198,7 +199,7 @@ ${segments.join('\n')}`;
     
     // Update playlist every 4 seconds to simulate live stream
     this.testStreamInterval = setInterval(updatePlaylist, 4000);
-    console.log('✅ SIMPLE_MEDIA: Live HLS stream started (no FFmpeg required)');
+    logger.debug('✅ SIMPLE_MEDIA: Live HLS stream started (no FFmpeg required)');
   }
 
   async downloadTestSegments() {
@@ -209,7 +210,7 @@ ${segments.join('\n')}`;
       'https://demo.unified-streaming.com/k8s/features/stable/no-handler-origin/tears-of-steel/tears-of-steel-multi-lang.ism/.m3u8/QualityLevels(680000)/Fragments(video=80000000,format=m3u8-aapl)'
     ];
     
-    console.log('📥 SIMPLE_MEDIA: Downloading test segments...');
+    logger.debug('📥 SIMPLE_MEDIA: Downloading test segments...');
     
     // Instead of downloading, create simple solid-color TS segments
     for (let i = 0; i < 3; i++) {
@@ -218,11 +219,11 @@ ${segments.join('\n')}`;
         const colorSegment = this.generateColorTestSegment(i);
         fs.writeFileSync(segmentPath, colorSegment);
       } catch (error) {
-        console.warn(`⚠️ SIMPLE_MEDIA: Failed to create segment ${i}:`, error);
+        logger.warn(`⚠️ SIMPLE_MEDIA: Failed to create segment ${i}:`, error);
       }
     }
     
-    console.log('✅ SIMPLE_MEDIA: Test segments ready');
+    logger.debug('✅ SIMPLE_MEDIA: Test segments ready');
   }
 
   generateColorTestSegment(segmentIndex) {
@@ -334,11 +335,11 @@ ${segments.join('\n')}`;
   }
 
   stopIngestion() {
-    console.log('🛑 SIMPLE_MEDIA: Stopping stream ingestion');
+    logger.debug('🛑 SIMPLE_MEDIA: Stopping stream ingestion');
     
     // Stop FFmpeg process
     if (this.ffmpegProcess) {
-      console.log('🛑 SIMPLE_MEDIA: Stopping FFmpeg process');
+      logger.debug('🛑 SIMPLE_MEDIA: Stopping FFmpeg process');
       this.ffmpegProcess.kill('SIGTERM');
       this.ffmpegProcess = null;
     }
@@ -498,9 +499,9 @@ ${segments.join('\n')}`;
           fs.unlinkSync(path.join(this.hlsPath, file));
         }
       });
-      console.log('🧹 SIMPLE_MEDIA: Cleaned up HLS files for stream:', this.streamId);
+      logger.debug('🧹 SIMPLE_MEDIA: Cleaned up HLS files for stream:', this.streamId);
     } catch (error) {
-      console.warn('⚠️ SIMPLE_MEDIA: Failed to cleanup HLS files:', error);
+      logger.warn('⚠️ SIMPLE_MEDIA: Failed to cleanup HLS files:', error);
     }
   }
 

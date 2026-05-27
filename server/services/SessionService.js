@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'SessionService' });
+
 class SessionService {
   constructor() {
     // Store sessions by IP address
@@ -89,7 +91,7 @@ class SessionService {
     // Add to unique viewers
     this.uniqueViewers.add(ip);
     
-    console.log(`📊 SESSION: Registered socket ${socket.id} for IP ${ip} (${session.socketCount} sockets)`);
+    logger.debug(`📊 SESSION: Registered socket ${socket.id} for IP ${ip} (${session.socketCount} sockets)`);
     
     return session;
   }
@@ -116,18 +118,18 @@ class SessionService {
         if (session) {
           session.socketCount = 0;
           session.isStreaming = false;
-          console.log(`📊 SESSION: IP ${ip} has no more connections, removed from viewers`);
+          logger.debug(`📊 SESSION: IP ${ip} has no more connections, removed from viewers`);
         }
         
         // Clean up the session entirely to prevent phantom connections
         this.sessions.delete(ip);
-        console.log(`📊 SESSION: Removed stale session for IP ${ip}`);
+        logger.debug(`📊 SESSION: Removed stale session for IP ${ip}`);
       } else {
         // Update socket count in session
         const session = this.sessions.get(ip);
         if (session) {
           session.socketCount = sockets.size;
-          console.log(`📊 SESSION: IP ${ip} still has ${session.socketCount} sockets`);
+          logger.debug(`📊 SESSION: IP ${ip} still has ${session.socketCount} sockets`);
         }
       }
     }
@@ -181,7 +183,7 @@ class SessionService {
       session.chatUsername = username;
       session.chatColor = color;
       this.ipToUsername.set(ip, { username, color });
-      console.log(`📊 SESSION: Set chat username for IP ${ip}: ${username} (${color})`);
+      logger.debug(`📊 SESSION: Set chat username for IP ${ip}: ${username} (${color})`);
     }
     return session;
   }
@@ -200,7 +202,7 @@ class SessionService {
     const session = this.sessions.get(ip);
     if (session) {
       session.isStreaming = isStreaming;
-      console.log(`📊 SESSION: IP ${ip} streaming status: ${isStreaming}`);
+      logger.debug(`📊 SESSION: IP ${ip} streaming status: ${isStreaming}`);
     }
     return session;
   }
@@ -298,7 +300,7 @@ class SessionService {
    * Clear all sessions (for server shutdown)
    */
   clearAllSessions() {
-    console.log('📊 SESSION: Clearing all sessions...');
+    logger.debug('📊 SESSION: Clearing all sessions...');
     this.sessions.clear();
     this.socketToIp.clear();
     this.ipToSockets.clear();
@@ -306,7 +308,7 @@ class SessionService {
     this.uniqueViewers.clear();
     this.ipToUserId.clear();
     this.socketToUserId.clear();
-    console.log('✅ SESSION: All sessions cleared');
+    logger.debug('✅ SESSION: All sessions cleared');
   }
 
   /**
@@ -325,7 +327,7 @@ class SessionService {
     }
     
     if (cleaned > 0) {
-      console.log(`📊 SESSION: Cleaned up ${cleaned} old sessions`);
+      logger.debug(`📊 SESSION: Cleaned up ${cleaned} old sessions`);
     }
     
     return cleaned;
@@ -360,9 +362,9 @@ class SessionService {
     if (session) {
       session.userId = userId;
       if (userId === null) {
-        console.log(`📊 SESSION: Cleared user ID for IP ${ip} (now anonymous)`);
+        logger.debug(`📊 SESSION: Cleared user ID for IP ${ip} (now anonymous)`);
       } else {
-        console.log(`📊 SESSION: Linked user ${userId} to IP ${ip}`);
+        logger.debug(`📊 SESSION: Linked user ${userId} to IP ${ip}`);
       }
     }
     return session;
@@ -374,10 +376,10 @@ class SessionService {
   linkUserToSocket(socketId, userId) {
     if (userId === null || userId === undefined) {
       this.socketToUserId.delete(socketId);
-      console.log(`📊 SESSION: Cleared user ID for socket ${socketId} (now anonymous)`);
+      logger.debug(`📊 SESSION: Cleared user ID for socket ${socketId} (now anonymous)`);
     } else {
       this.socketToUserId.set(socketId, userId);
-      console.log(`📊 SESSION: Linked user ${userId} to socket ${socketId}`);
+      logger.debug(`📊 SESSION: Linked user ${userId} to socket ${socketId}`);
     }
   }
 
@@ -403,7 +405,7 @@ class SessionService {
     const session = this.sessions.get(ip);
     if (session && session.stats) {
       Object.assign(session.stats, statsUpdate);
-      console.log(`📊 SESSION: Updated stats for IP ${ip}:`, statsUpdate);
+      logger.debug(`📊 SESSION: Updated stats for IP ${ip}:`, statsUpdate);
     }
     return session;
   }
@@ -432,15 +434,15 @@ class SessionService {
   getSocketsByUserId(userId) {
     const socketIds = [];
     
-    console.log(`🔍 SESSION: Looking for sockets for user ${userId}`);
-    console.log(`🔍 SESSION: Current IP to User mappings:`, Object.fromEntries(this.ipToUserId));
-    console.log(`🔍 SESSION: Current Socket to User mappings:`, Object.fromEntries(this.socketToUserId));
+    logger.debug(`🔍 SESSION: Looking for sockets for user ${userId}`);
+    logger.debug(`🔍 SESSION: Current IP to User mappings:`, Object.fromEntries(this.ipToUserId));
+    logger.debug(`🔍 SESSION: Current Socket to User mappings:`, Object.fromEntries(this.socketToUserId));
     
     // First, find sockets directly mapped to this user ID (preferred method)
     for (const [socketId, mappedUserId] of this.socketToUserId.entries()) {
       if (mappedUserId === userId) {
         socketIds.push(socketId);
-        console.log(`🔍 SESSION: Found socket ${socketId} directly mapped to user ${userId}`);
+        logger.debug(`🔍 SESSION: Found socket ${socketId} directly mapped to user ${userId}`);
       }
     }
     
@@ -456,14 +458,14 @@ class SessionService {
             const socketSpecificUserId = this.socketToUserId.get(socketId);
             if (socketSpecificUserId === undefined || socketSpecificUserId === userId) {
               socketIds.push(socketId);
-              console.log(`🔍 SESSION: Found socket ${socketId} via IP ${ip} mapping for user ${userId}`);
+              logger.debug(`🔍 SESSION: Found socket ${socketId} via IP ${ip} mapping for user ${userId}`);
             }
           }
         }
       }
     }
     
-    console.log(`🔍 SESSION: Total sockets found for user ${userId}: [${socketIds.join(', ')}]`);
+    logger.debug(`🔍 SESSION: Total sockets found for user ${userId}: [${socketIds.join(', ')}]`);
     return socketIds;
   }
 }

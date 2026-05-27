@@ -8,6 +8,7 @@
 const WebRTCViewBot = require('./WebRTCViewBot');
 const ViewBotManager = require('./ViewBotManager');
 
+const logger = require('../bootstrap/logger').child({ svc: 'WebRTCViewBotRotation' });
 class WebRTCViewBotRotation {
   constructor(io, streamService, streamNotifier = null) {
     this.io = io;
@@ -40,7 +41,7 @@ class WebRTCViewBotRotation {
     // Cooldowns - Map of videoFile -> lastPlayedTimestamp
     this.cooldowns = new Map();
     
-    console.log('🌐 WebRTCViewBotRotation: Initialized');
+    logger.debug('🌐 WebRTCViewBotRotation: Initialized');
   }
   
   /**
@@ -48,7 +49,7 @@ class WebRTCViewBotRotation {
    */
   async initialize(videoFiles) {
     this.videoFiles = videoFiles;
-    console.log(`📦 Loaded ${videoFiles.length} videos for WebRTC rotation`);
+    logger.debug(`📦 Loaded ${videoFiles.length} videos for WebRTC rotation`);
     
     // Detect backend to determine if we should use WebRTC mode
     // When LiveKit is enabled, we use Plain RTP mode (ViewBotSocketClient)
@@ -84,7 +85,7 @@ class WebRTCViewBotRotation {
       this.io.on('connection', (socket) => {
         socket.on('viewbot-video-ended', async (data) => {
           if (data.botId === this.currentBot?.id) {
-            console.log(`🔄 WebRTC ViewBot video ended, rotating...`);
+            logger.debug(`🔄 WebRTC ViewBot video ended, rotating...`);
             await this.rotateToNextBot();
           }
         });
@@ -92,7 +93,7 @@ class WebRTCViewBotRotation {
         // Handle stream takeover coordination
         socket.on('viewbot-stream-ready', (data) => {
           if (data.botId === this.currentBot?.id) {
-            console.log(`📢 WebRTC ViewBot ${data.botId} stream ready`);
+            logger.debug(`📢 WebRTC ViewBot ${data.botId} stream ready`);
             
             // Notify all clients about new stream
             this.io.emit('stream-ready', {
@@ -114,7 +115,7 @@ class WebRTCViewBotRotation {
    * Start rotation system
    */
   async startRotation() {
-    console.log('🎬 Starting WebRTC viewbot rotation');
+    logger.debug('🎬 Starting WebRTC viewbot rotation');
     
     // Stop any existing rotation
     await this.stopRotation();
@@ -131,7 +132,7 @@ class WebRTCViewBotRotation {
     // watchdog (in UnifiedViewBotRotation) reads this to detect a stalled
     // chain; see ADR-0016.
     this.lastTickAt = Date.now();
-    console.log('🔄 Rotating to next WebRTC viewbot');
+    logger.debug('🔄 Rotating to next WebRTC viewbot');
     
     // Emit stream-ending event for smooth transition
     if (this.currentBot && this.io) {
@@ -148,7 +149,7 @@ class WebRTCViewBotRotation {
     const nextVideo = this.selectNextVideo();
     
     if (!nextVideo) {
-      console.log('⚠️ No available videos (all on cooldown)');
+      logger.debug('⚠️ No available videos (all on cooldown)');
       this.scheduleNextRotation(30000);
       return;
     }
@@ -160,7 +161,7 @@ class WebRTCViewBotRotation {
       // Check if stream is available (no real user streaming)
       const currentStreamer = this.streamService?.getCurrentStreamer();
       if (currentStreamer && !currentStreamer.includes('viewbot')) {
-        console.log('🚫 Real user is streaming, waiting...');
+        logger.debug('🚫 Real user is streaming, waiting...');
         this.scheduleNextRotation(60000);
         return;
       }
@@ -174,14 +175,14 @@ class WebRTCViewBotRotation {
       this.currentBot = { id: botId, videoFile: nextVideo, bot };
       this.cooldowns.set(nextVideo, Date.now());
       
-      console.log(`✅ WebRTC ViewBot ${botId} is now streaming`);
+      logger.debug(`✅ WebRTC ViewBot ${botId} is now streaming`);
       
       // Schedule next rotation
       const interval = this.getRandomInterval();
       this.scheduleNextRotation(interval);
       
     } catch (error) {
-      console.error(`❌ Failed to start WebRTC viewbot:`, error);
+      logger.error(`❌ Failed to start WebRTC viewbot:`, error);
       this.handleBotError(botId);
     }
   }
@@ -213,7 +214,7 @@ class WebRTCViewBotRotation {
     if (!this.currentBot) return;
     
     const botId = this.currentBot.id;
-    console.log(`⏹️ Stopping WebRTC viewbot: ${botId}`);
+    logger.debug(`⏹️ Stopping WebRTC viewbot: ${botId}`);
     
     // Emit stream-ended event (PR 3.1 chokepoint when wired).
     // The original emit had no `reason` field — the chokepoint enforces one,
@@ -256,7 +257,7 @@ class WebRTCViewBotRotation {
     const interval = Math.floor(
       Math.random() * (maxRotationInterval - minRotationInterval)
     ) + minRotationInterval;
-    console.log(`⏱️ Next rotation in ${Math.round(interval / 1000)} seconds`);
+    logger.debug(`⏱️ Next rotation in ${Math.round(interval / 1000)} seconds`);
     return interval;
   }
   
@@ -279,7 +280,7 @@ class WebRTCViewBotRotation {
    * Handle bot error
    */
   handleBotError(botId) {
-    console.error(`🔧 Handling error for WebRTC bot ${botId}`);
+    logger.error(`🔧 Handling error for WebRTC bot ${botId}`);
     
     // Add cooldown for errored video
     if (this.currentBot?.videoFile) {
@@ -299,7 +300,7 @@ class WebRTCViewBotRotation {
    * Stop rotation
    */
   async stopRotation() {
-    console.log('⏹️ Stopping WebRTC viewbot rotation');
+    logger.debug('⏹️ Stopping WebRTC viewbot rotation');
     
     if (this.rotationTimer) {
       clearTimeout(this.rotationTimer);
@@ -313,7 +314,7 @@ class WebRTCViewBotRotation {
    * Force rotation
    */
   async forceRotation() {
-    console.log('🔄 Forcing WebRTC viewbot rotation');
+    logger.debug('🔄 Forcing WebRTC viewbot rotation');
     await this.rotateToNextBot();
   }
   
@@ -342,7 +343,7 @@ class WebRTCViewBotRotation {
    */
   updateSettings(newSettings) {
     this.settings = { ...this.settings, ...newSettings };
-    console.log('⚙️ Updated WebRTC rotation settings:', this.settings);
+    logger.debug('⚙️ Updated WebRTC rotation settings:', this.settings);
     
     if (newSettings.enabled !== undefined) {
       if (newSettings.enabled && this.videoFiles.length > 0) {
@@ -357,7 +358,7 @@ class WebRTCViewBotRotation {
    * Shutdown
    */
   async shutdown() {
-    console.log('🛑 Shutting down WebRTC rotation');
+    logger.debug('🛑 Shutting down WebRTC rotation');
     await this.stopRotation();
     
     if (this.viewBotManager) {

@@ -8,6 +8,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'KickRandomService' });
 class KickRandomService {
   constructor() {
     // Cache of recently seen streamers to avoid duplicates
@@ -32,7 +33,7 @@ class KickRandomService {
     // local blockedCategories Set above is the only filter.
     this.whitelistService = null;
 
-    console.log('🟢 KickRandomService initialized (using curl_cffi helper)');
+    logger.debug('🟢 KickRandomService initialized (using curl_cffi helper)');
   }
 
   /**
@@ -42,7 +43,7 @@ class KickRandomService {
    */
   setWhitelistService(whitelistService) {
     this.whitelistService = whitelistService;
-    console.log('✅ WhitelistService registered with KickRandomService');
+    logger.debug('✅ WhitelistService registered with KickRandomService');
   }
 
   /**
@@ -68,7 +69,7 @@ class KickRandomService {
 
       proc.on('close', (code) => {
         if (code !== 0) {
-          console.error('❌ Kick helper error:', stderr);
+          logger.error('❌ Kick helper error:', stderr);
           reject(new Error(stderr || `Helper exited with code ${code}`));
           return;
         }
@@ -104,10 +105,10 @@ class KickRandomService {
         return result.streams;
       }
 
-      console.warn('⚠️ Kick API returned no streams:', result.error || 'Unknown error');
+      logger.warn('⚠️ Kick API returned no streams:', result.error || 'Unknown error');
       return [];
     } catch (error) {
-      console.error('❌ Kick API error:', error.message);
+      logger.error('❌ Kick API error:', error.message);
       return [];
     }
   }
@@ -125,7 +126,7 @@ class KickRandomService {
 
       return null;
     } catch (error) {
-      console.error(`❌ Error getting Kick channel info for ${username}:`, error.message);
+      logger.error(`❌ Error getting Kick channel info for ${username}:`, error.message);
       return null;
     }
   }
@@ -141,10 +142,10 @@ class KickRandomService {
         return result;
       }
 
-      console.warn(`⚠️ No playback URL for ${username}:`, result.error || 'Unknown error');
+      logger.warn(`⚠️ No playback URL for ${username}:`, result.error || 'Unknown error');
       return null;
     } catch (error) {
-      console.error(`❌ Error getting Kick playback URL for ${username}:`, error.message);
+      logger.error(`❌ Error getting Kick playback URL for ${username}:`, error.message);
       return null;
     }
   }
@@ -159,7 +160,7 @@ class KickRandomService {
       excludeUsernames = []
     } = options;
 
-    console.log('🔍 Searching for random Kick streamer...');
+    logger.debug('🔍 Searching for random Kick streamer...');
 
     try {
       // Get multiple pages for more variety
@@ -167,7 +168,7 @@ class KickRandomService {
       const streams = await this.getLiveStreams(page, 100);
 
       if (!streams || streams.length === 0) {
-        console.warn('⚠️ No Kick streams found');
+        logger.warn('⚠️ No Kick streams found');
         return null;
       }
 
@@ -209,7 +210,7 @@ class KickRandomService {
       const filtered = candidates;
 
       if (filtered.length === 0) {
-        console.warn('⚠️ No suitable Kick streams found after filtering');
+        logger.warn('⚠️ No suitable Kick streams found after filtering');
         return null;
       }
 
@@ -232,7 +233,7 @@ class KickRandomService {
       const categoryName = selected.categories?.[0]?.name || 'Unknown';
       const thumbnailUrl = selected.thumbnail?.src || selected.channel?.user?.profilepic;
 
-      console.log(`✅ Found random Kick streamer: ${displayName} in ${categoryName} (${viewers} viewers)`);
+      logger.debug(`✅ Found random Kick streamer: ${displayName} in ${categoryName} (${viewers} viewers)`);
 
       // Get authenticated playback URL (with JWT token) from the channel API
       // This is crucial because:
@@ -242,9 +243,9 @@ class KickRandomService {
       const playbackInfo = await this.getPlaybackUrl(username);
       if (playbackInfo && playbackInfo.playback_url) {
         playbackUrl = playbackInfo.playback_url;
-        console.log(`   📺 Authenticated Playback URL obtained`);
+        logger.debug(`   📺 Authenticated Playback URL obtained`);
       } else {
-        console.warn(`   ⚠️ Could not get authenticated playback URL for ${username}`);
+        logger.warn(`   ⚠️ Could not get authenticated playback URL for ${username}`);
       }
 
       return {
@@ -261,7 +262,7 @@ class KickRandomService {
       };
 
     } catch (error) {
-      console.error('❌ Error finding random Kick streamer:', error.message);
+      logger.error('❌ Error finding random Kick streamer:', error.message);
       return null;
     }
   }
@@ -301,7 +302,7 @@ class KickRandomService {
           livestream.has_mature_content === true,
       };
     } catch (error) {
-      console.error(`❌ Kick drift check failed for ${username}:`, error.message);
+      logger.error(`❌ Kick drift check failed for ${username}:`, error.message);
       return null;
     }
   }
@@ -311,7 +312,7 @@ class KickRandomService {
    */
   clearRecentCache() {
     this.recentStreamers = [];
-    console.log('🧹 Kick recent streamers cache cleared');
+    logger.debug('🧹 Kick recent streamers cache cleared');
   }
 
   /**
@@ -320,7 +321,7 @@ class KickRandomService {
   setViewerRange(min, max) {
     this.minViewers = min;
     this.maxViewers = max;
-    console.log(`👁️ Kick viewer range set: ${min} - ${max}`);
+    logger.debug(`👁️ Kick viewer range set: ${min} - ${max}`);
   }
 
   /**

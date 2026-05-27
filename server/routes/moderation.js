@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'moderation' });
+
 const router = express.Router();
 const AuthService = require('../services/AuthService');
 const authService = new AuthService();
@@ -15,8 +18,8 @@ const authenticate = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     
-    console.log('🔐 Moderation auth check - Header:', authHeader);
-    console.log('🔐 Moderation auth check - Token:', token ? `${token.substring(0, 20)}...` : 'No token');
+    logger.debug('🔐 Moderation auth check - Header:', authHeader);
+    logger.debug('🔐 Moderation auth check - Token:', token ? `${token.substring(0, 20)}...` : 'No token');
     
     if (!token) {
         return res.status(401).json({ error: 'Unauthorized - No token provided' });
@@ -25,14 +28,14 @@ const authenticate = (req, res, next) => {
     try {
         const decoded = authService.verifyToken(token);
         if (!decoded) {
-            console.log('❌ Token verification returned null');
+            logger.debug('❌ Token verification returned null');
             return res.status(403).json({ error: 'Invalid token - verification failed' });
         }
-        console.log('✅ Moderation auth successful for user:', decoded.id);
+        logger.debug('✅ Moderation auth successful for user:', decoded.id);
         req.user = decoded;
         next();
     } catch (err) {
-        console.log('❌ Token verification error:', err.message);
+        logger.debug('❌ Token verification error:', err.message);
         return res.status(403).json({ error: `Invalid token: ${err.message}` });
     }
 };
@@ -146,7 +149,7 @@ router.post('/ban-chat', authenticateModerator, async (req, res) => {
         
         res.json({ success: true, message: `${username} has been banned from chat` });
     } catch (error) {
-        console.error('Chat ban error:', error);
+        logger.error('Chat ban error:', error);
         res.status(500).json({ error: 'Failed to ban user from chat' });
     }
 });
@@ -215,7 +218,7 @@ router.post('/timeout', authenticateModerator, async (req, res) => {
         
         res.json({ success: true, message: `${username} has been timed out for ${duration}` });
     } catch (error) {
-        console.error('Timeout error:', error);
+        logger.error('Timeout error:', error);
         res.status(500).json({ error: 'Failed to timeout user' });
     }
 });
@@ -258,7 +261,7 @@ router.post('/ban-streamer', authenticateAdmin, async (req, res) => {
         
         res.json({ success: true, message: `${username} has been banned from streaming` });
     } catch (error) {
-        console.error('Streaming ban error:', error);
+        logger.error('Streaming ban error:', error);
         res.status(500).json({ error: 'Failed to ban user from streaming' });
     }
 });

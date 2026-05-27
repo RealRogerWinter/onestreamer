@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'EgressFrameCaptureService' });
 /**
  * EgressFrameCaptureService
  *
@@ -47,7 +48,7 @@ class EgressFrameCaptureService {
     _startCleanupInterval() {
         this._cleanupTimer = setInterval(() => {
             this.purgeOldFrames().catch(err => {
-                console.error('❌ EgressFrameCaptureService: purgeOldFrames failed:', err.message);
+                logger.error('❌ EgressFrameCaptureService: purgeOldFrames failed:', err.message);
             });
         }, this.cleanupIntervalMs);
         // Don't keep the event loop alive solely for this timer.
@@ -335,7 +336,7 @@ class EgressFrameCaptureService {
         // Quiet skip logging — captureFrame is called frequently and most
         // skips are "no_egress" while a stream isn't live.
         if (process.env.VISIONBOT_FRAME_DEBUG === '1') {
-            console.log(`⏭️  EgressFrameCaptureService skip: ${reason}`, details);
+            logger.debug(`⏭️  EgressFrameCaptureService skip: ${reason}`, details);
         }
     }
 

@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'viewbot-video-api' });
+
 const router = express.Router();
 const fs = require('fs').promises;
 const path = require('path');
@@ -12,7 +15,7 @@ const storage = multer.diskStorage({
     try {
       await fs.mkdir(uploadDir, { recursive: true });
     } catch (error) {
-      console.error('Failed to create uploads directory:', error);
+      logger.error('Failed to create uploads directory:', error);
     }
     cb(null, uploadDir);
   },
@@ -87,7 +90,7 @@ router.get('/videos', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Failed to get videos:', error);
+    logger.error('Failed to get videos:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Failed to retrieve videos' 
@@ -105,12 +108,12 @@ router.post('/videos/upload', upload.single('video'), async (req, res) => {
       });
     }
     
-    console.log(`📹 Uploaded video: ${req.file.filename} (${req.file.size} bytes)`);
+    logger.debug(`📹 Uploaded video: ${req.file.filename} (${req.file.size} bytes)`);
     
     // Reinitialize rotation service to include new video
     if (global.viewBotRotation) {
       await global.viewBotRotation.initialize();
-      console.log('🔄 Reinitialized ViewBot rotation with new video');
+      logger.debug('🔄 Reinitialized ViewBot rotation with new video');
     }
     
     res.json({ 
@@ -121,7 +124,7 @@ router.post('/videos/upload', upload.single('video'), async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Upload failed:', error);
+    logger.error('Upload failed:', error);
     res.status(500).json({ 
       success: false, 
       error: error.message || 'Upload failed' 
@@ -172,12 +175,12 @@ router.delete('/videos/delete', async (req, res) => {
     
     // Delete the file
     await fs.unlink(filePath);
-    console.log(`🗑️ Deleted video: ${filename}`);
+    logger.debug(`🗑️ Deleted video: ${filename}`);
     
     // Reinitialize rotation service
     if (global.viewBotRotation) {
       await global.viewBotRotation.initialize();
-      console.log('🔄 Reinitialized ViewBot rotation after deletion');
+      logger.debug('🔄 Reinitialized ViewBot rotation after deletion');
     }
     
     res.json({ 
@@ -186,7 +189,7 @@ router.delete('/videos/delete', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Delete failed:', error);
+    logger.error('Delete failed:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Failed to delete video' 
@@ -232,7 +235,7 @@ router.get('/rotation/status', (req, res) => {
     });
     
   } catch (error) {
-    console.error('Failed to get status:', error);
+    logger.error('Failed to get status:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Failed to get rotation status' 
@@ -265,7 +268,7 @@ router.post('/rotation/start', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Failed to start rotation:', error);
+    logger.error('Failed to start rotation:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Failed to start rotation' 
@@ -291,7 +294,7 @@ router.post('/rotation/stop', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Failed to stop rotation:', error);
+    logger.error('Failed to stop rotation:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Failed to stop rotation' 
@@ -324,7 +327,7 @@ router.post('/rotation/force', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Failed to force rotation:', error);
+    logger.error('Failed to force rotation:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Failed to force rotation' 

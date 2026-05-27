@@ -5,6 +5,7 @@
 
 const EventEmitter = require('events');
 
+const logger = require('../../bootstrap/logger').child({ svc: 'GameStreamService' });
 class GameStreamService extends EventEmitter {
     constructor(io, gameService, takeoverService = null, streamService = null) {
         super();
@@ -34,7 +35,7 @@ class GameStreamService extends EventEmitter {
             });
         }
 
-        console.log('[GameStreamService] Initialized');
+        logger.debug('[GameStreamService] Initialized');
     }
 
     /**
@@ -78,12 +79,12 @@ class GameStreamService extends EventEmitter {
 
             if (result.success) {
                 this.isGameActive = true;
-                console.log(`[GameStreamService] Game stream started by admin ${adminUserId}`);
+                logger.debug(`[GameStreamService] Game stream started by admin ${adminUserId}`);
             }
 
             return result;
         } catch (error) {
-            console.error('[GameStreamService] Error starting game stream:', error);
+            logger.error('[GameStreamService] Error starting game stream:', error);
             return { success: false, error: error.message };
         }
     }
@@ -117,12 +118,12 @@ class GameStreamService extends EventEmitter {
                     });
                 }
 
-                console.log(`[GameStreamService] Game stream stopped by admin ${adminUserId}`);
+                logger.debug(`[GameStreamService] Game stream stopped by admin ${adminUserId}`);
             }
 
             return result;
         } catch (error) {
-            console.error('[GameStreamService] Error stopping game stream:', error);
+            logger.error('[GameStreamService] Error stopping game stream:', error);
             return { success: false, error: error.message };
         }
     }

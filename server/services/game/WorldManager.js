@@ -4,6 +4,7 @@
 
 const EventEmitter = require('events');
 
+const logger = require('../../bootstrap/logger').child({ svc: 'WorldManager' });
 class WorldManager extends EventEmitter {
     constructor(db) {
         super();
@@ -41,21 +42,21 @@ class WorldManager extends EventEmitter {
                     if (savedWorld.config) {
                         Object.assign(this.config, JSON.parse(savedWorld.config));
                     }
-                    console.log('[WorldManager] Loaded world from database');
+                    logger.debug('[WorldManager] Loaded world from database');
                 } else {
                     this.generateDefaultWorld();
                     await this.saveWorld();
-                    console.log('[WorldManager] Generated and saved new world');
+                    logger.debug('[WorldManager] Generated and saved new world');
                 }
             } else {
                 this.generateDefaultWorld();
-                console.log('[WorldManager] Generated world (no database)');
+                logger.debug('[WorldManager] Generated world (no database)');
             }
 
             this.buildInteractablesList();
             this.isLoaded = true;
         } catch (error) {
-            console.error('[WorldManager] Error loading world:', error);
+            logger.error('[WorldManager] Error loading world:', error);
             this.generateDefaultWorld();
             this.isLoaded = true;
         }
@@ -77,9 +78,9 @@ class WorldManager extends EventEmitter {
                 JSON.stringify(this.spawnPoints),
                 JSON.stringify(this.config)
             ]);
-            console.log('[WorldManager] World saved to database');
+            logger.debug('[WorldManager] World saved to database');
         } catch (error) {
-            console.error('[WorldManager] Error saving world:', error);
+            logger.error('[WorldManager] Error saving world:', error);
         }
     }
 

@@ -20,6 +20,14 @@
 //     must NOT process the `stream-ended` event as if their own stream
 //     ended.
 
+// PR 12.3 (ADR-0020): see ModerationService.test.js for the pattern.
+jest.mock('../../bootstrap/logger', () => {
+  const m = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), fatal: jest.fn(), trace: jest.fn() };
+  m.child = jest.fn(() => m);
+  return m;
+});
+const logger = require('../../bootstrap/logger');
+
 const StreamNotifier = require('../../services/StreamNotifier');
 
 function makeIo() {
@@ -103,7 +111,8 @@ describe('StreamNotifier', () => {
     beforeEach(() => {
       io = makeIo();
       notifier = new StreamNotifier(io);
-      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      logger.warn.mockClear();
+      warnSpy = logger.warn;
     });
 
     afterEach(() => {

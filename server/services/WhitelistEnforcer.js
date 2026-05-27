@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'WhitelistEnforcer' });
+
 /**
  * WhitelistEnforcer.js — mid-stream drift enforcement for URL relay.
  *
@@ -45,30 +47,30 @@ class WhitelistEnforcer {
     this._driftCheckSeconds = DEFAULT_DRIFT_CHECK_SECONDS;
     this._lastSnapshotFailureAt = new Map(); // urlId -> ts
 
-    console.log('🛡️  WhitelistEnforcer created (not yet started)');
+    logger.debug('🛡️  WhitelistEnforcer created (not yet started)');
   }
 
   start({ intervalSeconds } = {}) {
     if (this._timer) return;
     if (!this.viewBotURLService || !this.whitelistService) {
-      console.warn('⚠️  WhitelistEnforcer: missing required deps; not starting');
+      logger.warn('⚠️  WhitelistEnforcer: missing required deps; not starting');
       return;
     }
     this._driftCheckSeconds = intervalSeconds || this._readDriftIntervalFromConfig();
     this._timer = setInterval(() => {
       this._tick().catch((e) =>
-        console.error('❌ WhitelistEnforcer tick failed:', e.message || e)
+        logger.error('❌ WhitelistEnforcer tick failed:', e.message || e)
       );
     }, this._driftCheckSeconds * 1000);
     if (typeof this._timer.unref === 'function') this._timer.unref();
-    console.log(`✅ WhitelistEnforcer started (interval ${this._driftCheckSeconds}s)`);
+    logger.debug(`✅ WhitelistEnforcer started (interval ${this._driftCheckSeconds}s)`);
   }
 
   stop() {
     if (this._timer) {
       clearInterval(this._timer);
       this._timer = null;
-      console.log('🛑 WhitelistEnforcer stopped');
+      logger.debug('🛑 WhitelistEnforcer stopped');
     }
   }
 
@@ -129,7 +131,7 @@ class WhitelistEnforcer {
   }
 
   async _stop(active, context) {
-    console.log(`⛔ WhitelistEnforcer: drift detected, stopping ${active.urlId} (${context.reason})`);
+    logger.debug(`⛔ WhitelistEnforcer: drift detected, stopping ${active.urlId} (${context.reason})`);
 
     // Stop first, then audit with the actual outcome. Per code review:
     // an audit row written before the stop attempt implied stream-was-
@@ -140,7 +142,7 @@ class WhitelistEnforcer {
       await this.viewBotURLService.stopURLStream(active.urlId);
       stopSucceeded = true;
     } catch (e) {
-      console.error('❌ WhitelistEnforcer: stopURLStream failed:', e.message);
+      logger.error('❌ WhitelistEnforcer: stopURLStream failed:', e.message);
     }
 
     try {
@@ -151,7 +153,7 @@ class WhitelistEnforcer {
         context: JSON.stringify({ ...context, stopSucceeded }),
       });
     } catch (e) {
-      console.warn('⚠️  WhitelistEnforcer: audit log write failed:', e.message);
+      logger.warn('⚠️  WhitelistEnforcer: audit log write failed:', e.message);
     }
 
     // Socket event fires regardless of stop success — the admin UI needs to

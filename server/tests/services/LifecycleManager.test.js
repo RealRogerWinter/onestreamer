@@ -8,25 +8,40 @@
  * message; restoreAllMocks cleans up at teardown.
  */
 
+// PR 12.3 (ADR-0020): LifecycleManager migrated from console.* to the
+// namespaced logger. Spy on the mocked logger module; `child()` returns
+// the same mock so the service's child logger hits the same jest.fn()s.
+jest.mock('../../bootstrap/logger', () => {
+  const m = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), fatal: jest.fn(), trace: jest.fn() };
+  m.child = jest.fn(() => m);
+  return m;
+});
+
+const logger = require('../../bootstrap/logger');
 const LifecycleManager = require('../../services/LifecycleManager');
 
 describe('LifecycleManager', () => {
   let manager;
+  // Aliases — the spy variables in the original tests pointed at console.*;
+  // they now point at the mocked logger's level methods. console.log →
+  // logger.debug per the ADR-0020 mapping.
   let logSpy;
   let warnSpy;
   let errorSpy;
 
   beforeEach(() => {
     jest.useFakeTimers();
-    logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    logger.debug.mockClear();
+    logger.warn.mockClear();
+    logger.error.mockClear();
+    logSpy = logger.debug;
+    warnSpy = logger.warn;
+    errorSpy = logger.error;
     manager = new LifecycleManager();
   });
 
   afterEach(() => {
     jest.useRealTimers();
-    jest.restoreAllMocks();
   });
 
   // ── schedule + happy-path firing ─────────────────────────────────────

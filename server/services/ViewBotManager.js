@@ -11,6 +11,7 @@ const WebRTCViewBot = require('./WebRTCViewBot');
 const fs = require('fs').promises;
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotManager' });
 class ViewBotManager {
   constructor(config = {}) {
     // Configuration
@@ -29,14 +30,14 @@ class ViewBotManager {
     this.currentVideoIndex = 0;
     this.rotationTimer = null;
     
-    console.log(`🤖 ViewBotManager: Initialized with mode: ${this.config.useWebRTC ? 'WebRTC' : 'Plain RTP'}`);
+    logger.debug(`🤖 ViewBotManager: Initialized with mode: ${this.config.useWebRTC ? 'WebRTC' : 'Plain RTP'}`);
   }
   
   /**
    * Initialize the manager and load video files
    */
   async initialize() {
-    console.log(`📦 ViewBotManager: Loading video files from ${this.config.videoFolder}`);
+    logger.debug(`📦 ViewBotManager: Loading video files from ${this.config.videoFolder}`);
     
     try {
       // Load video files
@@ -46,7 +47,7 @@ class ViewBotManager {
         return ['.mp4', '.webm', '.mkv', '.avi', '.mov'].includes(ext);
       }).map(file => path.join(this.config.videoFolder, file));
       
-      console.log(`✅ ViewBotManager: Loaded ${this.videoFiles.length} video files`);
+      logger.debug(`✅ ViewBotManager: Loaded ${this.videoFiles.length} video files`);
       
       // Start rotation if enabled
       if (this.config.autoRotate) {
@@ -54,7 +55,7 @@ class ViewBotManager {
       }
       
     } catch (error) {
-      console.error(`❌ ViewBotManager: Failed to initialize:`, error);
+      logger.error(`❌ ViewBotManager: Failed to initialize:`, error);
       throw error;
     }
   }
@@ -64,7 +65,7 @@ class ViewBotManager {
    */
   async createBot(botId, videoFile = null) {
     if (this.bots.has(botId)) {
-      console.log(`⚠️ ViewBotManager: Bot ${botId} already exists`);
+      logger.debug(`⚠️ ViewBotManager: Bot ${botId} already exists`);
       return this.bots.get(botId);
     }
     
@@ -73,7 +74,7 @@ class ViewBotManager {
       videoFile = this.getNextVideoFile();
     }
     
-    console.log(`🤖 ViewBotManager: Creating ${this.config.useWebRTC ? 'WebRTC' : 'Plain RTP'} bot ${botId}`);
+    logger.debug(`🤖 ViewBotManager: Creating ${this.config.useWebRTC ? 'WebRTC' : 'Plain RTP'} bot ${botId}`);
     
     let bot;
     
@@ -91,7 +92,7 @@ class ViewBotManager {
     }
     
     this.bots.set(botId, bot);
-    console.log(`✅ ViewBotManager: Created bot ${botId}`);
+    logger.debug(`✅ ViewBotManager: Created bot ${botId}`);
     
     return bot;
   }
@@ -103,21 +104,21 @@ class ViewBotManager {
     const bot = this.bots.get(botId);
     
     if (!bot) {
-      console.error(`❌ ViewBotManager: Bot ${botId} not found`);
+      logger.error(`❌ ViewBotManager: Bot ${botId} not found`);
       throw new Error(`Bot ${botId} not found`);
     }
     
     if (this.activeBots.has(botId)) {
-      console.log(`⚠️ ViewBotManager: Bot ${botId} already streaming`);
+      logger.debug(`⚠️ ViewBotManager: Bot ${botId} already streaming`);
       return;
     }
     
-    console.log(`🎬 ViewBotManager: Starting bot ${botId}`);
+    logger.debug(`🎬 ViewBotManager: Starting bot ${botId}`);
     
     await bot.startStreaming();
     this.activeBots.add(botId);
     
-    console.log(`✅ ViewBotManager: Bot ${botId} is now streaming`);
+    logger.debug(`✅ ViewBotManager: Bot ${botId} is now streaming`);
   }
   
   /**
@@ -127,16 +128,16 @@ class ViewBotManager {
     const bot = this.bots.get(botId);
     
     if (!bot) {
-      console.error(`❌ ViewBotManager: Bot ${botId} not found`);
+      logger.error(`❌ ViewBotManager: Bot ${botId} not found`);
       return;
     }
     
-    console.log(`⏹️ ViewBotManager: Stopping bot ${botId}`);
+    logger.debug(`⏹️ ViewBotManager: Stopping bot ${botId}`);
     
     await bot.stopStreaming();
     this.activeBots.delete(botId);
     
-    console.log(`✅ ViewBotManager: Bot ${botId} stopped`);
+    logger.debug(`✅ ViewBotManager: Bot ${botId} stopped`);
   }
   
   /**
@@ -146,11 +147,11 @@ class ViewBotManager {
     const bot = this.bots.get(botId);
     
     if (!bot) {
-      console.log(`⚠️ ViewBotManager: Bot ${botId} not found`);
+      logger.debug(`⚠️ ViewBotManager: Bot ${botId} not found`);
       return;
     }
     
-    console.log(`🗑️ ViewBotManager: Destroying bot ${botId}`);
+    logger.debug(`🗑️ ViewBotManager: Destroying bot ${botId}`);
     
     // Stop if streaming
     if (this.activeBots.has(botId)) {
@@ -165,7 +166,7 @@ class ViewBotManager {
     }
     
     this.bots.delete(botId);
-    console.log(`✅ ViewBotManager: Bot ${botId} destroyed`);
+    logger.debug(`✅ ViewBotManager: Bot ${botId} destroyed`);
   }
   
   /**
@@ -173,7 +174,7 @@ class ViewBotManager {
    */
   getNextVideoFile() {
     if (this.videoFiles.length === 0) {
-      console.warn(`⚠️ ViewBotManager: No video files available`);
+      logger.warn(`⚠️ ViewBotManager: No video files available`);
       return null;
     }
     
@@ -187,7 +188,7 @@ class ViewBotManager {
    * Start automatic rotation
    */
   startRotation() {
-    console.log(`🔄 ViewBotManager: Starting rotation (interval: ${this.config.rotationInterval}ms)`);
+    logger.debug(`🔄 ViewBotManager: Starting rotation (interval: ${this.config.rotationInterval}ms)`);
     
     // Stop existing rotation
     this.stopRotation();
@@ -208,7 +209,7 @@ class ViewBotManager {
     if (this.rotationTimer) {
       clearInterval(this.rotationTimer);
       this.rotationTimer = null;
-      console.log(`⏹️ ViewBotManager: Rotation stopped`);
+      logger.debug(`⏹️ ViewBotManager: Rotation stopped`);
     }
   }
   
@@ -216,7 +217,7 @@ class ViewBotManager {
    * Rotate to next bot
    */
   async rotateBot() {
-    console.log(`🔄 ViewBotManager: Rotating bots...`);
+    logger.debug(`🔄 ViewBotManager: Rotating bots...`);
     
     try {
       // Stop all active bots
@@ -235,7 +236,7 @@ class ViewBotManager {
       }
       
     } catch (error) {
-      console.error(`❌ ViewBotManager: Rotation error:`, error);
+      logger.error(`❌ ViewBotManager: Rotation error:`, error);
     }
   }
   
@@ -243,7 +244,7 @@ class ViewBotManager {
    * Toggle between WebRTC and Plain RTP mode
    */
   async toggleMode(useWebRTC) {
-    console.log(`🔄 ViewBotManager: Switching to ${useWebRTC ? 'WebRTC' : 'Plain RTP'} mode`);
+    logger.debug(`🔄 ViewBotManager: Switching to ${useWebRTC ? 'WebRTC' : 'Plain RTP'} mode`);
     
     // Stop all bots
     for (const botId of this.activeBots) {
@@ -258,7 +259,7 @@ class ViewBotManager {
     // Update config
     this.config.useWebRTC = useWebRTC;
     
-    console.log(`✅ ViewBotManager: Mode switched to ${useWebRTC ? 'WebRTC' : 'Plain RTP'}`);
+    logger.debug(`✅ ViewBotManager: Mode switched to ${useWebRTC ? 'WebRTC' : 'Plain RTP'}`);
     
     // Restart rotation if it was running
     if (this.rotationTimer) {
@@ -302,7 +303,7 @@ class ViewBotManager {
    * Cleanup all resources
    */
   async cleanup() {
-    console.log(`🧹 ViewBotManager: Cleaning up...`);
+    logger.debug(`🧹 ViewBotManager: Cleaning up...`);
     
     // Stop rotation
     this.stopRotation();
@@ -312,7 +313,7 @@ class ViewBotManager {
       await this.destroyBot(botId);
     }
     
-    console.log(`✅ ViewBotManager: Cleanup complete`);
+    logger.debug(`✅ ViewBotManager: Cleanup complete`);
   }
 }
 

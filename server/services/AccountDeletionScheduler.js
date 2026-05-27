@@ -1,5 +1,6 @@
 const AccountService = require('./AccountService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'AccountDeletionScheduler' });
 class AccountDeletionScheduler {
     constructor() {
         // Delay creating AccountService to ensure database is ready
@@ -15,7 +16,7 @@ class AccountDeletionScheduler {
     }
 
     start() {
-        console.log('🗑️ DELETION SCHEDULER: Starting account deletion scheduler');
+        logger.debug('🗑️ DELETION SCHEDULER: Starting account deletion scheduler');
         
         // Initialize AccountService
         this.initAccountService();
@@ -33,13 +34,13 @@ class AccountDeletionScheduler {
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
-            console.log('🗑️ DELETION SCHEDULER: Stopped account deletion scheduler');
+            logger.debug('🗑️ DELETION SCHEDULER: Stopped account deletion scheduler');
         }
     }
 
     async checkAndDeleteAccounts() {
         try {
-            console.log('🗑️ DELETION SCHEDULER: Checking for accounts pending deletion...');
+            logger.debug('🗑️ DELETION SCHEDULER: Checking for accounts pending deletion...');
             
             // Ensure AccountService is initialized
             this.initAccountService();
@@ -47,25 +48,25 @@ class AccountDeletionScheduler {
             const accountsPendingDeletion = await this.accountService.getAccountsPendingDeletion();
             
             if (accountsPendingDeletion.length === 0) {
-                console.log('🗑️ DELETION SCHEDULER: No accounts ready for permanent deletion');
+                logger.debug('🗑️ DELETION SCHEDULER: No accounts ready for permanent deletion');
                 return;
             }
 
-            console.log(`🗑️ DELETION SCHEDULER: Found ${accountsPendingDeletion.length} accounts ready for permanent deletion`);
+            logger.debug(`🗑️ DELETION SCHEDULER: Found ${accountsPendingDeletion.length} accounts ready for permanent deletion`);
 
             for (const account of accountsPendingDeletion) {
                 try {
-                    console.log(`🗑️ DELETION SCHEDULER: Permanently deleting account: ${account.username} (ID: ${account.id})`);
+                    logger.debug(`🗑️ DELETION SCHEDULER: Permanently deleting account: ${account.username} (ID: ${account.id})`);
                     
                     await this.accountService.permanentlyDeleteAccount(account.id);
                     
-                    console.log(`🗑️ DELETION SCHEDULER: Successfully deleted account: ${account.username} (ID: ${account.id})`);
+                    logger.debug(`🗑️ DELETION SCHEDULER: Successfully deleted account: ${account.username} (ID: ${account.id})`);
                 } catch (error) {
-                    console.error(`🗑️ DELETION SCHEDULER: Failed to delete account ${account.id}:`, error);
+                    logger.error(`🗑️ DELETION SCHEDULER: Failed to delete account ${account.id}:`, error);
                 }
             }
         } catch (error) {
-            console.error('🗑️ DELETION SCHEDULER: Error checking for accounts to delete:', error);
+            logger.error('🗑️ DELETION SCHEDULER: Error checking for accounts to delete:', error);
         }
     }
 }

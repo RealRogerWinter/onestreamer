@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'ModerationNotifier' });
+
 // server/services/ModerationNotifier.js
 //
 // Single emission chokepoint for AI-moderation socket events, following the
@@ -44,15 +46,15 @@ class ModerationNotifier {
   eventCreated(opts = {}) {
     const { event } = opts;
     if (!event || typeof event !== 'object') {
-      console.warn('⚠️ MOD_NOTIFIER: eventCreated called without event — emit suppressed');
+      logger.warn('⚠️ MOD_NOTIFIER: eventCreated called without event — emit suppressed');
       return;
     }
     if (!event.final_decision) {
-      console.warn('⚠️ MOD_NOTIFIER: eventCreated event lacks final_decision — emit suppressed');
+      logger.warn('⚠️ MOD_NOTIFIER: eventCreated event lacks final_decision — emit suppressed');
       return;
     }
     if (!ModerationNotifier.MODERATION_EVENT_DECISIONS.has(event.final_decision)) {
-      console.warn(`⚠️ MOD_NOTIFIER: unknown final_decision "${event.final_decision}" — MODERATION_EVENT_DECISIONS set is out of date`);
+      logger.warn(`⚠️ MOD_NOTIFIER: unknown final_decision "${event.final_decision}" — MODERATION_EVENT_DECISIONS set is out of date`);
     }
     this.io.to('admin').emit('moderation-event-created', { event });
   }
@@ -68,7 +70,7 @@ class ModerationNotifier {
   actionTaken(opts = {}) {
     const { event, action } = opts;
     if (!event || !action) {
-      console.warn('⚠️ MOD_NOTIFIER: actionTaken called without event or action — emit suppressed');
+      logger.warn('⚠️ MOD_NOTIFIER: actionTaken called without event or action — emit suppressed');
       return;
     }
     this.io.to('admin').emit('moderation-action-taken', { event, action });
@@ -86,11 +88,11 @@ class ModerationNotifier {
   streamerBanner(opts = {}) {
     const { socketId, event, appealUrl } = opts;
     if (!socketId) {
-      console.warn('⚠️ MOD_NOTIFIER: streamerBanner called without socketId — emit suppressed');
+      logger.warn('⚠️ MOD_NOTIFIER: streamerBanner called without socketId — emit suppressed');
       return;
     }
     if (!event) {
-      console.warn('⚠️ MOD_NOTIFIER: streamerBanner called without event — emit suppressed');
+      logger.warn('⚠️ MOD_NOTIFIER: streamerBanner called without event — emit suppressed');
       return;
     }
     this.io.to(socketId).emit('moderation-streamer-banner', {
@@ -114,7 +116,7 @@ class ModerationNotifier {
   botOutputDropped(opts = {}) {
     const { event } = opts;
     if (!event) {
-      console.warn('⚠️ MOD_NOTIFIER: botOutputDropped called without event — emit suppressed');
+      logger.warn('⚠️ MOD_NOTIFIER: botOutputDropped called without event — emit suppressed');
       return;
     }
     this.io.to('admin').emit('moderation-bot-output-dropped', { event });

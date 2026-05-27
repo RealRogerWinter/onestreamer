@@ -4,6 +4,7 @@
 
 const EventEmitter = require('events');
 
+const logger = require('../../bootstrap/logger').child({ svc: 'PlayerManager' });
 class PlayerManager extends EventEmitter {
     constructor(db) {
         super();
@@ -431,7 +432,7 @@ class PlayerManager extends EventEmitter {
                 JSON.stringify({})
             ]);
         } catch (error) {
-            console.error('[PlayerManager] Error saving player state:', error);
+            logger.error('[PlayerManager] Error saving player state:', error);
         }
     }
 
@@ -457,7 +458,7 @@ class PlayerManager extends EventEmitter {
                 };
             }
         } catch (error) {
-            console.error('[PlayerManager] Error loading player state:', error);
+            logger.error('[PlayerManager] Error loading player state:', error);
         }
 
         return null;

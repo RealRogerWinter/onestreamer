@@ -5,6 +5,7 @@
 const io = require('socket.io-client');
 const { spawn } = require('child_process');
 
+const logger = require('../bootstrap/logger').child({ svc: 'SimpleViewBotSocket' });
 class SimpleViewBotSocket {
   constructor(botId, serverUrl = 'https://onestreamer.live:8443') {
     this.botId = botId;
@@ -20,7 +21,7 @@ class SimpleViewBotSocket {
    */
   async connect() {
     return new Promise((resolve, reject) => {
-      console.log(`🔌 Connecting bot ${this.botId} to ${this.serverUrl}`);
+      logger.debug(`🔌 Connecting bot ${this.botId} to ${this.serverUrl}`);
       
       this.socket = io(this.serverUrl, {
         transports: ['websocket'],
@@ -32,7 +33,7 @@ class SimpleViewBotSocket {
       });
       
       this.socket.on('connect', () => {
-        console.log(`✅ Bot ${this.botId} connected with socket ID: ${this.socket.id}`);
+        logger.debug(`✅ Bot ${this.botId} connected with socket ID: ${this.socket.id}`);
         
         // Identify as a viewbot
         this.socket.emit('identify', {
@@ -45,12 +46,12 @@ class SimpleViewBotSocket {
       });
       
       this.socket.on('connect_error', (error) => {
-        console.error(`❌ Bot ${this.botId} connection error:`, error.message);
+        logger.error(`❌ Bot ${this.botId} connection error:`, error.message);
         reject(error);
       });
       
       this.socket.on('disconnect', (reason) => {
-        console.log(`🔌 Bot ${this.botId} disconnected: ${reason}`);
+        logger.debug(`🔌 Bot ${this.botId} disconnected: ${reason}`);
         this.streaming = false;
       });
       
@@ -72,24 +73,24 @@ class SimpleViewBotSocket {
   setupStreamingHandlers() {
     // Handle streaming approval
     this.socket.on('streaming-approved', () => {
-      console.log(`🎬 Bot ${this.botId} approved to stream`);
+      logger.debug(`🎬 Bot ${this.botId} approved to stream`);
       this.startGStreamer();
     });
     
     // Handle request acknowledgment
     this.socket.on('request-acknowledged', () => {
-      console.log(`📡 Bot ${this.botId} stream request acknowledged`);
+      logger.debug(`📡 Bot ${this.botId} stream request acknowledged`);
     });
     
     // Handle errors
     this.socket.on('error', (error) => {
-      console.error(`❌ Bot ${this.botId} socket error:`, error);
+      logger.error(`❌ Bot ${this.botId} socket error:`, error);
     });
     
     // Handle stream status updates
     this.socket.on('stream-status', (status) => {
       if (status.isStreaming && status.streamerId === this.socket.id) {
-        console.log(`📺 Bot ${this.botId} is now live`);
+        logger.debug(`📺 Bot ${this.botId} is now live`);
       }
     });
   }
@@ -102,7 +103,7 @@ class SimpleViewBotSocket {
       throw new Error('Not connected');
     }
     
-    console.log(`📨 Bot ${this.botId} requesting to stream`);
+    logger.debug(`📨 Bot ${this.botId} requesting to stream`);
     
     // Request to stream
     this.socket.emit('request-to-stream');
@@ -128,11 +129,11 @@ class SimpleViewBotSocket {
    */
   startGStreamer() {
     if (this.gstreamerProcess) {
-      console.log(`⚠️ Bot ${this.botId} GStreamer already running`);
+      logger.debug(`⚠️ Bot ${this.botId} GStreamer already running`);
       return;
     }
     
-    console.log(`🎥 Bot ${this.botId} starting GStreamer pipeline`);
+    logger.debug(`🎥 Bot ${this.botId} starting GStreamer pipeline`);
     
     // Build pipeline based on media file
     let pipeline;
@@ -186,12 +187,12 @@ class SimpleViewBotSocket {
     });
     
     this.gstreamerProcess.on('error', (error) => {
-      console.error(`❌ Bot ${this.botId} GStreamer error:`, error);
+      logger.error(`❌ Bot ${this.botId} GStreamer error:`, error);
       this.stopGStreamer();
     });
     
     this.gstreamerProcess.on('exit', (code) => {
-      console.log(`📤 Bot ${this.botId} GStreamer exited with code ${code}`);
+      logger.debug(`📤 Bot ${this.botId} GStreamer exited with code ${code}`);
       this.gstreamerProcess = null;
       
       // Notify server that streaming ended
@@ -201,7 +202,7 @@ class SimpleViewBotSocket {
     });
     
     this.streaming = true;
-    console.log(`✅ Bot ${this.botId} GStreamer pipeline started`);
+    logger.debug(`✅ Bot ${this.botId} GStreamer pipeline started`);
   }
   
   /**
@@ -209,7 +210,7 @@ class SimpleViewBotSocket {
    */
   stopGStreamer() {
     if (this.gstreamerProcess) {
-      console.log(`⏹️ Bot ${this.botId} stopping GStreamer`);
+      logger.debug(`⏹️ Bot ${this.botId} stopping GStreamer`);
       this.gstreamerProcess.kill('SIGTERM');
       
       // Force kill after timeout
@@ -248,7 +249,7 @@ class SimpleViewBotSocket {
    * Stop streaming
    */
   async stopStreaming() {
-    console.log(`⏹️ Bot ${this.botId} stopping stream`);
+    logger.debug(`⏹️ Bot ${this.botId} stopping stream`);
     
     // Stop GStreamer
     this.stopGStreamer();
@@ -272,7 +273,7 @@ class SimpleViewBotSocket {
       this.socket = null;
     }
     
-    console.log(`🔌 Bot ${this.botId} disconnected`);
+    logger.debug(`🔌 Bot ${this.botId} disconnected`);
   }
   
   /**

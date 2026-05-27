@@ -7,6 +7,7 @@
 const MediasoupService = require('./MediasoupService');
 const LiveKitService = require('./LiveKitService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'WebRTCAdapterV2' });
 class WebRTCAdapterV2 {
   constructor() {
     const config = require('../config/webrtc.config');
@@ -16,12 +17,12 @@ class WebRTCAdapterV2 {
     let backend;
     switch (this.backendType) {
       case 'livekit':
-        console.log('🎬 WebRTC Adapter: Creating LiveKit backend');
+        logger.debug('🎬 WebRTC Adapter: Creating LiveKit backend');
         backend = new LiveKitService();
         break;
       case 'mediasoup':
       default:
-        console.log('🎬 WebRTC Adapter: Creating MediaSoup backend');
+        logger.debug('🎬 WebRTC Adapter: Creating MediaSoup backend');
         backend = new MediasoupService();
         break;
     }

@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const requireEnv = require('../config/requireEnv');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotWebRTCService' });
 /**
  * ViewBot service using native WebRTC with server-side media generation
  * This provides perfect A/V sync by generating media in a single pipeline
@@ -33,7 +34,7 @@ class ViewBotWebRTCService {
   async createViewBot(config = {}) {
     const botId = `webrtc-viewbot-${uuidv4()}`;
     
-    console.log(`🤖 Creating WebRTC ViewBot: ${botId}`);
+    logger.debug(`🤖 Creating WebRTC ViewBot: ${botId}`);
     
     const bot = {
       id: botId,
@@ -59,14 +60,14 @@ class ViewBotWebRTCService {
       await this.initializeBot(bot);
       this.activeBots.set(botId, bot);
       
-      console.log(`✅ WebRTC ViewBot created: ${botId}`);
+      logger.debug(`✅ WebRTC ViewBot created: ${botId}`);
       return {
         success: true,
         botId,
         message: 'WebRTC ViewBot created successfully'
       };
     } catch (error) {
-      console.error(`❌ Failed to create WebRTC ViewBot:`, error);
+      logger.error(`❌ Failed to create WebRTC ViewBot:`, error);
       await this.cleanup(bot);
       return {
         success: false,
@@ -79,7 +80,7 @@ class ViewBotWebRTCService {
    * Initialize bot with WebRTC components
    */
   async initializeBot(bot) {
-    console.log(`🔧 Initializing WebRTC components for ${bot.id}`);
+    logger.debug(`🔧 Initializing WebRTC components for ${bot.id}`);
     
     // Create WebRTC peer connection with TURN support for mobile 5G
     const turnUsername = `${Math.floor(Date.now() / 1000) + 86400}:webrtc`;
@@ -128,14 +129,14 @@ class ViewBotWebRTCService {
     bot.peerConnection.addTrack(bot.videoTrack, bot.mediaStream);
     bot.peerConnection.addTrack(bot.audioTrack, bot.mediaStream);
 
-    console.log(`✅ WebRTC components initialized for ${bot.id}`);
+    logger.debug(`✅ WebRTC components initialized for ${bot.id}`);
   }
 
   /**
    * Initialize synchronized A/V tracks with shared timing
    */
   async initializeSynchronizedTracks(bot) {
-    console.log(`🎨 Setting up synchronized A/V tracks for ${bot.id}`);
+    logger.debug(`🎨 Setting up synchronized A/V tracks for ${bot.id}`);
     
     // Create track sources
     const videoSource = new wrtc.nonstandard.RTCVideoSource();
@@ -156,8 +157,8 @@ class ViewBotWebRTCService {
     let nextVideoTime = 0;
     let nextAudioTime = 0;
     
-    console.log(`🔊 Audio: ${samplesPerAudioFrame} samples per ${audioFrameDurationMs}ms frame`);
-    console.log(`📺 Video: ${videoFrameDurationMs.toFixed(2)}ms per frame (${bot.config.frameRate}fps)`);
+    logger.debug(`🔊 Audio: ${samplesPerAudioFrame} samples per ${audioFrameDurationMs}ms frame`);
+    logger.debug(`📺 Video: ${videoFrameDurationMs.toFixed(2)}ms per frame (${bot.config.frameRate}fps)`);
     
     // Master clock running at audio rate (10ms intervals)
     bot.masterClock = setInterval(() => {
@@ -181,7 +182,7 @@ class ViewBotWebRTCService {
       
     }, audioFrameDurationMs);
 
-    console.log(`✅ Synchronized A/V tracks initialized for ${bot.id}`);
+    logger.debug(`✅ Synchronized A/V tracks initialized for ${bot.id}`);
   }
 
   /**
@@ -221,28 +222,28 @@ class ViewBotWebRTCService {
    * Initialize video track with canvas-based frame generation (legacy method)
    */
   async initializeVideoTrack(bot) {
-    console.log(`🎨 Setting up video track for ${bot.id}`);
+    logger.debug(`🎨 Setting up video track for ${bot.id}`);
     
     // Create video track source
     const source = new wrtc.nonstandard.RTCVideoSource();
     bot.videoTrack = source.createTrack();
     bot.videoSource = source;
 
-    console.log(`✅ Video track initialized for ${bot.id}`);
+    logger.debug(`✅ Video track initialized for ${bot.id}`);
   }
 
   /**
    * Initialize audio track with tone generation (legacy method)
    */
   async initializeAudioTrack(bot) {
-    console.log(`🔊 Setting up audio track for ${bot.id}`);
+    logger.debug(`🔊 Setting up audio track for ${bot.id}`);
     
     // Create audio track source
     const source = new wrtc.nonstandard.RTCAudioSource();
     bot.audioTrack = source.createTrack();
     bot.audioSource = source;
 
-    console.log(`✅ Audio track initialized for ${bot.id}`);
+    logger.debug(`✅ Audio track initialized for ${bot.id}`);
   }
 
   /**
@@ -459,7 +460,7 @@ class ViewBotWebRTCService {
     }
 
     try {
-      console.log(`🚀 Starting WebRTC ViewBot: ${botId}`);
+      logger.debug(`🚀 Starting WebRTC ViewBot: ${botId}`);
       
       bot.running = true;
       bot.startTime = Date.now();
@@ -472,7 +473,7 @@ class ViewBotWebRTCService {
       
       await bot.peerConnection.setLocalDescription(offer);
       
-      console.log(`✅ WebRTC ViewBot started: ${botId}`);
+      logger.debug(`✅ WebRTC ViewBot started: ${botId}`);
       
       return {
         success: true,
@@ -484,7 +485,7 @@ class ViewBotWebRTCService {
         }
       };
     } catch (error) {
-      console.error(`❌ Failed to start ViewBot ${botId}:`, error);
+      logger.error(`❌ Failed to start ViewBot ${botId}:`, error);
       bot.running = false;
       return {
         success: false,
@@ -502,7 +503,7 @@ class ViewBotWebRTCService {
       return { success: false, message: 'ViewBot not found' };
     }
 
-    console.log(`🛑 Stopping WebRTC ViewBot: ${botId}`);
+    logger.debug(`🛑 Stopping WebRTC ViewBot: ${botId}`);
     
     bot.running = false;
     await this.cleanup(bot);

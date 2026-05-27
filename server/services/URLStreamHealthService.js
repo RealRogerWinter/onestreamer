@@ -11,6 +11,7 @@
 const EventEmitter = require('events');
 const { spawn } = require('child_process');
 
+const logger = require('../bootstrap/logger').child({ svc: 'URLStreamHealthService' });
 class URLStreamHealthService extends EventEmitter {
   constructor(viewBotURLService) {
     super();
@@ -32,7 +33,7 @@ class URLStreamHealthService extends EventEmitter {
     // Timers
     this.checkTimer = null;
 
-    console.log('🏥 URLStreamHealthService initialized');
+    logger.debug('🏥 URLStreamHealthService initialized');
   }
 
   /**
@@ -43,7 +44,7 @@ class URLStreamHealthService extends EventEmitter {
       this.stop();
     }
 
-    console.log('🏥 Starting URL stream health monitoring');
+    logger.debug('🏥 Starting URL stream health monitoring');
     this.config.enabled = true;
 
     this.checkTimer = setInterval(() => {
@@ -58,7 +59,7 @@ class URLStreamHealthService extends EventEmitter {
    * Stop health monitoring
    */
   stop() {
-    console.log('🏥 Stopping URL stream health monitoring');
+    logger.debug('🏥 Stopping URL stream health monitoring');
     this.config.enabled = false;
 
     if (this.checkTimer) {
@@ -128,7 +129,7 @@ class URLStreamHealthService extends EventEmitter {
     if (health.lastFrameTime && (now - health.lastFrameTime > this.config.staleThreshold)) {
       if (isInStartupGrace) {
         // During startup grace period, log but don't emit stale event
-        console.log(`⏳ HEALTH: Stream ${urlId} has no progress but in startup grace period (${Math.round(timeSinceStart/1000)}s/${Math.round(this.config.startupGracePeriod/1000)}s)`);
+        logger.debug(`⏳ HEALTH: Stream ${urlId} has no progress but in startup grace period (${Math.round(timeSinceStart/1000)}s/${Math.round(this.config.startupGracePeriod/1000)}s)`);
         health.ffmpegStatus = 'starting';
       } else {
         health.ffmpegStatus = 'stale';
@@ -242,7 +243,7 @@ class URLStreamHealthService extends EventEmitter {
       health.warnings.shift();
     }
 
-    console.warn(`⚠️ URL Stream ${health.urlId}: ${message}`);
+    logger.warn(`⚠️ URL Stream ${health.urlId}: ${message}`);
   }
 
   /**
@@ -260,7 +261,7 @@ class URLStreamHealthService extends EventEmitter {
       health.errors.shift();
     }
 
-    console.error(`❌ URL Stream ${health.urlId}: ${message}`);
+    logger.error(`❌ URL Stream ${health.urlId}: ${message}`);
   }
 
   /**

@@ -1,6 +1,7 @@
 const { runAsync, getAsync, allAsync } = require('../database/database');
 const ItemRepository = require('../database/repository/ItemRepository');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ItemService' });
 class ItemService {
     /**
      * @param {object} [deps]
@@ -21,7 +22,7 @@ class ItemService {
                 await this.createDefaultItems();
             }
         } catch (error) {
-            console.error('Error initializing default items:', error);
+            logger.error('Error initializing default items:', error);
         }
     }
 
@@ -623,7 +624,7 @@ class ItemService {
         for (const item of defaultItems) {
             await this.createItem(item);
         }
-        console.log('Default items created successfully');
+        logger.debug('Default items created successfully');
     }
 
     async createItem(itemData) {
@@ -658,7 +659,7 @@ class ItemService {
             };
         } catch (error) {
             if (error.message.includes('UNIQUE constraint failed')) {
-                console.log(`Item ${name} already exists`);
+                logger.debug(`Item ${name} already exists`);
                 return await this.getItemByName(name);
             }
             throw error;
@@ -733,15 +734,15 @@ class ItemService {
     }
 
     async validateItemUsage(userId, itemId) {
-        console.log(`🔍 ITEMSERVICE: Validating item usage for user ${userId}, item ${itemId}`);
+        logger.debug(`🔍 ITEMSERVICE: Validating item usage for user ${userId}, item ${itemId}`);
         
         const item = await this.getItemById(itemId);
         if (!item) {
-            console.log(`❌ ITEMSERVICE: Item ${itemId} not found`);
+            logger.debug(`❌ ITEMSERVICE: Item ${itemId} not found`);
             return { valid: false, error: 'Item not found' };
         }
 
-        console.log(`🔍 ITEMSERVICE: Item ${item.name} has cooldown of ${item.cooldown_seconds}s`);
+        logger.debug(`🔍 ITEMSERVICE: Item ${item.name} has cooldown of ${item.cooldown_seconds}s`);
 
         if (item.cooldown_seconds > 0) {
             const lastUsage = await getAsync(
@@ -751,17 +752,17 @@ class ItemService {
                 [userId, itemId]
             );
 
-            console.log(`🔍 ITEMSERVICE: Last usage for user ${userId}, item ${itemId}:`, lastUsage);
+            logger.debug(`🔍 ITEMSERVICE: Last usage for user ${userId}, item ${itemId}:`, lastUsage);
 
             if (lastUsage) {
                 const cooldownEnd = new Date(lastUsage.used_at + 'Z').getTime() + (item.cooldown_seconds * 1000);
                 const now = Date.now();
                 
-                console.log(`🔍 ITEMSERVICE: Cooldown check - now: ${now}, cooldownEnd: ${cooldownEnd}, remaining: ${cooldownEnd - now}ms`);
+                logger.debug(`🔍 ITEMSERVICE: Cooldown check - now: ${now}, cooldownEnd: ${cooldownEnd}, remaining: ${cooldownEnd - now}ms`);
                 
                 if (now < cooldownEnd) {
                     const remainingSeconds = Math.ceil((cooldownEnd - now) / 1000);
-                    console.log(`❌ ITEMSERVICE: Item on cooldown for ${remainingSeconds}s`);
+                    logger.debug(`❌ ITEMSERVICE: Item on cooldown for ${remainingSeconds}s`);
                     return { 
                         valid: false, 
                         error: 'Item on cooldown',
@@ -769,11 +770,11 @@ class ItemService {
                     };
                 }
             } else {
-                console.log(`✅ ITEMSERVICE: No previous usage found - item can be used`);
+                logger.debug(`✅ ITEMSERVICE: No previous usage found - item can be used`);
             }
         }
 
-        console.log(`✅ ITEMSERVICE: Item usage validation passed`);
+        logger.debug(`✅ ITEMSERVICE: Item usage validation passed`);
         return { valid: true };
     }
 
@@ -818,27 +819,27 @@ class ItemService {
 
     async resetAllItemCooldowns() {
         try {
-            console.log(`🔄 ITEMSERVICE: Resetting all item cooldowns - checking current state...`);
+            logger.debug(`🔄 ITEMSERVICE: Resetting all item cooldowns - checking current state...`);
             
             // First, check what's in the table before deletion
             const beforeCount = await getAsync('SELECT COUNT(*) as count FROM item_usage_log');
-            console.log(`🔄 ITEMSERVICE: Found ${beforeCount.count} records in item_usage_log before reset`);
+            logger.debug(`🔄 ITEMSERVICE: Found ${beforeCount.count} records in item_usage_log before reset`);
             
             // Show some sample records
             const sampleRecords = await allAsync('SELECT user_id, item_id, used_at FROM item_usage_log ORDER BY used_at DESC LIMIT 5');
-            console.log(`🔄 ITEMSERVICE: Sample records before reset:`, sampleRecords);
+            logger.debug(`🔄 ITEMSERVICE: Sample records before reset:`, sampleRecords);
             
             const result = await runAsync('DELETE FROM item_usage_log');
             const count = result.changes || 0;
-            console.log(`🔄 ITEMSERVICE: Reset ${count} item usage cooldowns`);
+            logger.debug(`🔄 ITEMSERVICE: Reset ${count} item usage cooldowns`);
             
             // Verify deletion
             const afterCount = await getAsync('SELECT COUNT(*) as count FROM item_usage_log');
-            console.log(`🔄 ITEMSERVICE: Records remaining after reset: ${afterCount.count}`);
+            logger.debug(`🔄 ITEMSERVICE: Records remaining after reset: ${afterCount.count}`);
             
             return count;
         } catch (error) {
-            console.error('❌ ITEMSERVICE: Failed to reset item cooldowns:', error);
+            logger.error('❌ ITEMSERVICE: Failed to reset item cooldowns:', error);
             throw error;
         }
     }
@@ -847,10 +848,10 @@ class ItemService {
         try {
             const result = await runAsync('DELETE FROM item_usage_log WHERE user_id = ?', [userId]);
             const count = result.changes || 0;
-            console.log(`🔄 ITEMSERVICE: Reset ${count} item usage cooldowns for user ${userId}`);
+            logger.debug(`🔄 ITEMSERVICE: Reset ${count} item usage cooldowns for user ${userId}`);
             return count;
         } catch (error) {
-            console.error(`❌ ITEMSERVICE: Failed to reset item cooldowns for user ${userId}:`, error);
+            logger.error(`❌ ITEMSERVICE: Failed to reset item cooldowns for user ${userId}:`, error);
             throw error;
         }
     }
@@ -877,7 +878,7 @@ class ItemService {
 
     // Apply buff/debuff item (requires BuffDebuffService to be injected)
     async applyBuffDebuffItem(userId, itemId, appliedByUserId, buffDebuffService, skipCooldownValidation = false, streamId = null) {
-        console.log(`📦 ITEM: applyBuffDebuffItem called with userId: ${userId}, itemId: ${itemId}, appliedByUserId: ${appliedByUserId}, streamId: ${streamId}`);
+        logger.debug(`📦 ITEM: applyBuffDebuffItem called with userId: ${userId}, itemId: ${itemId}, appliedByUserId: ${appliedByUserId}, streamId: ${streamId}`);
         
         try {
             // Validate item usage (cooldown, ownership, etc.) unless skipped
@@ -894,7 +895,7 @@ class ItemService {
                 throw new Error('Item not found');
             }
             
-            console.log(`📦 ITEM: Found item - name: ${item.name}, display_name: ${item.display_name}, type: ${item.item_type}, duration: ${item.duration_seconds}`);
+            logger.debug(`📦 ITEM: Found item - name: ${item.name}, display_name: ${item.display_name}, type: ${item.item_type}, duration: ${item.duration_seconds}`);
 
             if (!['buff', 'debuff'].includes(item.item_type)) {
                 throw new Error('Item is not a buff or debuff');
@@ -904,7 +905,7 @@ class ItemService {
             // Don't skip broadcasts completely for viewbots - we need streamer updates
             const skipBroadcasts = false;
             
-            console.log(`📦 ITEM: Calling buffDebuffService.applyBuff with params:`, {
+            logger.debug(`📦 ITEM: Calling buffDebuffService.applyBuff with params:`, {
                 userId,
                 itemId,
                 appliedByUserId,
@@ -929,11 +930,11 @@ class ItemService {
                 await this.applyItemCooldown(userId, itemId);
             }
 
-            console.log(`✅ ITEM: Applied ${item.item_type} "${item.display_name}" to user ${userId}`);
+            logger.debug(`✅ ITEM: Applied ${item.item_type} "${item.display_name}" to user ${userId}`);
             return buffResult;
 
         } catch (error) {
-            console.error(`❌ ITEM: Error applying buff/debuff item ${itemId} to user ${userId}:`, error);
+            logger.error(`❌ ITEM: Error applying buff/debuff item ${itemId} to user ${userId}:`, error);
             throw error;
         }
     }
@@ -973,8 +974,8 @@ class ItemService {
             const effectData = item.effect_data ? JSON.parse(item.effect_data) : {};
             let result = { success: true, effects: [] };
 
-            console.log(`🔧 ITEM: Applying cooldown modifier "${item.display_name}" for user ${userId}`);
-            console.log(`🔧 ITEM: Effect data:`, effectData);
+            logger.debug(`🔧 ITEM: Applying cooldown modifier "${item.display_name}" for user ${userId}`);
+            logger.debug(`🔧 ITEM: Effect data:`, effectData);
 
             // Apply global cooldown modifications
             if (effectData.global_cooldown_increase) {
@@ -1033,11 +1034,11 @@ class ItemService {
                 await this.applyItemCooldown(userId, itemId);
             }
 
-            console.log(`✅ ITEM: Applied cooldown modifier "${item.display_name}" with effects:`, result.effects);
+            logger.debug(`✅ ITEM: Applied cooldown modifier "${item.display_name}" with effects:`, result.effects);
             return result;
 
         } catch (error) {
-            console.error(`❌ ITEM: Error applying cooldown modifier item ${itemId} for user ${userId}:`, error);
+            logger.error(`❌ ITEM: Error applying cooldown modifier item ${itemId} for user ${userId}:`, error);
             throw error;
         }
     }
@@ -1045,9 +1046,9 @@ class ItemService {
     // Get current global cooldown info (requires TakeoverService)
     async getGlobalCooldownInfo(takeoverService) {
         try {
-            console.log(`🔧 ITEMSERVICE: Getting global cooldown info...`);
-            console.log(`🔧 ITEMSERVICE: takeoverService.lastStreamStartTime: ${takeoverService.lastStreamStartTime}`);
-            console.log(`🔧 ITEMSERVICE: takeoverService.globalCooldownSeconds: ${takeoverService.globalCooldownSeconds}`);
+            logger.debug(`🔧 ITEMSERVICE: Getting global cooldown info...`);
+            logger.debug(`🔧 ITEMSERVICE: takeoverService.lastStreamStartTime: ${takeoverService.lastStreamStartTime}`);
+            logger.debug(`🔧 ITEMSERVICE: takeoverService.globalCooldownSeconds: ${takeoverService.globalCooldownSeconds}`);
             
             const remaining = await takeoverService.getGlobalCooldownRemaining();
             const result = {
@@ -1056,10 +1057,10 @@ class ItemService {
                 isActive: remaining > 0
             };
             
-            console.log(`🔧 ITEMSERVICE: Global cooldown info result:`, result);
+            logger.debug(`🔧 ITEMSERVICE: Global cooldown info result:`, result);
             return result;
         } catch (error) {
-            console.error('Error getting global cooldown info:', error);
+            logger.error('Error getting global cooldown info:', error);
             return { remainingSeconds: 0, totalSeconds: 30, isActive: false };
         }
     }

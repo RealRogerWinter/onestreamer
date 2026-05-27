@@ -5,6 +5,7 @@
 
 const mediasoup = require('mediasoup');
 
+const logger = require('../bootstrap/logger').child({ svc: 'MediasoupPlainTransportService' });
 class MediasoupPlainTransportService {
   constructor(mediasoupService) {
     this.mediasoupService = mediasoupService;
@@ -43,11 +44,11 @@ class MediasoupPlainTransportService {
    * PlainTransport provides direct RTP/RTCP without WebRTC overhead
    */
   async createPlainTransport(botId, options = {}) {
-    console.log(`🚛 PLAIN: Creating PlainTransport for ${botId}`);
+    logger.debug(`🚛 PLAIN: Creating PlainTransport for ${botId}`);
     
     // Wait for router if not ready
     if (!this.mediasoupService.router) {
-      console.log(`⏳ PLAIN: Waiting for MediaSoup router initialization...`);
+      logger.debug(`⏳ PLAIN: Waiting for MediaSoup router initialization...`);
       // Initialize MediaSoup if needed
       if (!this.mediasoupService.worker) {
         await this.mediasoupService.initializeMediasoup();
@@ -115,9 +116,9 @@ class MediasoupPlainTransportService {
         audioRtcp: audioRtcpPort
       });
 
-      console.log(`✅ PLAIN: PlainTransport created for ${botId}`);
-      console.log(`   Video RTP: ${videoRtpPort}, RTCP: ${videoRtcpPort}`);
-      console.log(`   Audio RTP: ${audioRtpPort}, RTCP: ${audioRtcpPort}`);
+      logger.debug(`✅ PLAIN: PlainTransport created for ${botId}`);
+      logger.debug(`   Video RTP: ${videoRtpPort}, RTCP: ${videoRtcpPort}`);
+      logger.debug(`   Audio RTP: ${audioRtpPort}, RTCP: ${audioRtcpPort}`);
 
       return {
         success: true,
@@ -130,7 +131,7 @@ class MediasoupPlainTransportService {
       };
 
     } catch (error) {
-      console.error(`❌ PLAIN: Failed to create PlainTransport:`, error);
+      logger.error(`❌ PLAIN: Failed to create PlainTransport:`, error);
       throw error;
     }
   }
@@ -139,7 +140,7 @@ class MediasoupPlainTransportService {
    * Creates producers on PlainTransport for synchronized A/V
    */
   async createPlainProducers(botId, options = {}) {
-    console.log(`📡 PLAIN: Creating producers for ViewBot ${botId}`);
+    logger.debug(`📡 PLAIN: Creating producers for ViewBot ${botId}`);
     
     const transports = this.plainTransports.get(botId);
     if (!transports) {
@@ -257,7 +258,7 @@ class MediasoupPlainTransportService {
         audio: audioProducer
       });
 
-      console.log(`✅ PLAIN: Producers created for ${botId}`);
+      logger.debug(`✅ PLAIN: Producers created for ${botId}`);
       
       return {
         success: true,
@@ -267,7 +268,7 @@ class MediasoupPlainTransportService {
       };
 
     } catch (error) {
-      console.error(`❌ PLAIN: Failed to create producers:`, error);
+      logger.error(`❌ PLAIN: Failed to create producers:`, error);
       throw error;
     }
   }
@@ -276,7 +277,7 @@ class MediasoupPlainTransportService {
    * Connects PlainTransport to FFmpeg RTP source
    */
   async connectPlainTransport(botId, kind, remoteRtpPort, remoteRtcpPort = null) {
-    console.log(`🔌 PLAIN: Connecting ${kind} transport for ${botId}`);
+    logger.debug(`🔌 PLAIN: Connecting ${kind} transport for ${botId}`);
     
     const transports = this.plainTransports.get(botId);
     if (!transports) {
@@ -292,11 +293,11 @@ class MediasoupPlainTransportService {
         rtcpPort: remoteRtcpPort || remoteRtpPort + 1
       });
 
-      console.log(`✅ PLAIN: ${kind} transport connected for ${botId}`);
+      logger.debug(`✅ PLAIN: ${kind} transport connected for ${botId}`);
       return { success: true };
 
     } catch (error) {
-      console.error(`❌ PLAIN: Failed to connect transport:`, error);
+      logger.error(`❌ PLAIN: Failed to connect transport:`, error);
       throw error;
     }
   }
@@ -348,7 +349,7 @@ class MediasoupPlainTransportService {
    * Cleans up PlainTransport resources
    */
   async cleanup(botId) {
-    console.log(`🧹 PLAIN: Cleaning up resources for ${botId}`);
+    logger.debug(`🧹 PLAIN: Cleaning up resources for ${botId}`);
     
     // Close producers
     const producers = this.plainProducers.get(botId);
@@ -369,7 +370,7 @@ class MediasoupPlainTransportService {
     // Release ports
     this.rtpPorts.delete(botId);
     
-    console.log(`✅ PLAIN: Cleanup complete for ${botId}`);
+    logger.debug(`✅ PLAIN: Cleanup complete for ${botId}`);
   }
 
   /**

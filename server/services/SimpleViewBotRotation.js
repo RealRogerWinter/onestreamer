@@ -12,6 +12,7 @@ const SimpleViewBotSocket = require('./SimpleViewBotSocket');
 const { spawn } = require('child_process');
 const webrtcConfig = require('../config/webrtc.config');
 
+const logger = require('../bootstrap/logger').child({ svc: 'SimpleViewBotRotation' });
 // PR 8.3 (Phase 8): the actual ProcessManager singleton. The previous
 // `global.processManager.trackProcess(...)` paths in this file were
 // no-ops — `global.processManager` was never assigned. Importing the
@@ -58,7 +59,7 @@ class SimpleViewBotRotation {
 
     // Detect backend
     this.backend = webrtcConfig.backend || 'mediasoup';
-    console.log(`🎯 SimpleViewBotRotation: Initialized (backend: ${this.backend})`);
+    logger.debug(`🎯 SimpleViewBotRotation: Initialized (backend: ${this.backend})`);
   }
 
   /**
@@ -66,7 +67,7 @@ class SimpleViewBotRotation {
    */
   setStreamService(streamService) {
     this.streamService = streamService;
-    console.log('✅ StreamService registered with SimpleViewBotRotation for real streamer protection');
+    logger.debug('✅ StreamService registered with SimpleViewBotRotation for real streamer protection');
   }
 
   /**
@@ -75,7 +76,7 @@ class SimpleViewBotRotation {
    */
   setURLViewBotService(urlViewBotService) {
     this.urlViewBotService = urlViewBotService;
-    console.log('✅ ViewBotURLService registered with SimpleViewBotRotation for URL stream protection');
+    logger.debug('✅ ViewBotURLService registered with SimpleViewBotRotation for URL stream protection');
   }
 
   /**
@@ -90,7 +91,7 @@ class SimpleViewBotRotation {
     const isActive = this.urlViewBotService.isURLStreamActive();
     if (isActive) {
       const activeStream = this.urlViewBotService.getActiveURLStream();
-      console.log(`🛡️ PROTECTION: URL stream ${activeStream?.urlId} is active - viewbots blocked`);
+      logger.debug(`🛡️ PROTECTION: URL stream ${activeStream?.urlId} is active - viewbots blocked`);
     }
     return isActive;
   }
@@ -105,7 +106,7 @@ class SimpleViewBotRotation {
     }
 
     if (!this.streamService) {
-      console.warn('⚠️ SimpleViewBotRotation: No StreamService - cannot check for real streamer');
+      logger.warn('⚠️ SimpleViewBotRotation: No StreamService - cannot check for real streamer');
       return false;
     }
 
@@ -123,7 +124,7 @@ class SimpleViewBotRotation {
     const isRealStreamer = !isViewbot;
 
     if (isRealStreamer) {
-      console.log(`🛡️ PROTECTION: Real streamer ${currentStreamer} is active - viewbots blocked`);
+      logger.debug(`🛡️ PROTECTION: Real streamer ${currentStreamer} is active - viewbots blocked`);
     }
 
     return isRealStreamer;
@@ -134,7 +135,7 @@ class SimpleViewBotRotation {
    */
   setLiveKitService(livekitViewBotService) {
     this.livekitViewBotService = livekitViewBotService;
-    console.log('✅ LiveKit ViewBot service registered with rotation system');
+    logger.debug('✅ LiveKit ViewBot service registered with rotation system');
   }
   
   /**
@@ -142,7 +143,7 @@ class SimpleViewBotRotation {
    */
   async initialize(bots) {
     this.availableBots = bots;
-    console.log(`📦 Loaded ${bots.length} viewbots into rotation pool`);
+    logger.debug(`📦 Loaded ${bots.length} viewbots into rotation pool`);
     
     if (this.settings.enabled && this.availableBots.length > 0) {
       await this.startRotation();
@@ -153,11 +154,11 @@ class SimpleViewBotRotation {
    * Start the rotation system
    */
   async startRotation() {
-    console.log('🎬 Starting viewbot rotation system');
+    logger.debug('🎬 Starting viewbot rotation system');
 
     // Check if random rotation is active - it takes priority
     if (global.randomStreamRotationService && global.randomStreamRotationService.isRandomRotationActive()) {
-      console.log('🛡️ VIEWBOT ROTATION BLOCKED: Random stream rotation is active - viewbots disabled');
+      logger.debug('🛡️ VIEWBOT ROTATION BLOCKED: Random stream rotation is active - viewbots disabled');
       return;
     }
 
@@ -172,7 +173,7 @@ class SimpleViewBotRotation {
    * Stop the rotation system
    */
   async stopRotation() {
-    console.log('⏹️ Stopping viewbot rotation');
+    logger.debug('⏹️ Stopping viewbot rotation');
     
     // Clear rotation timer
     if (this.rotationTimer) {
@@ -193,17 +194,17 @@ class SimpleViewBotRotation {
     // loop returns without scheduling the next tick). The watchdog
     // distinguishes wedge causes via its rotation-state context.
     this.lastTickAt = Date.now();
-    console.log('🔄 Rotating to next viewbot');
+    logger.debug('🔄 Rotating to next viewbot');
 
     // Check if random rotation is active - it takes priority
     if (global.randomStreamRotationService && global.randomStreamRotationService.isRandomRotationActive()) {
-      console.log('🛡️ VIEWBOT ROTATION BLOCKED: Random stream rotation is active - viewbots disabled');
+      logger.debug('🛡️ VIEWBOT ROTATION BLOCKED: Random stream rotation is active - viewbots disabled');
       return;
     }
 
     // CRITICAL: Check if real streamer is active before rotation
     if (this.isRealStreamerActive()) {
-      console.log('🛡️ VIEWBOT ROTATION BLOCKED: Real streamer is active - will not rotate');
+      logger.debug('🛡️ VIEWBOT ROTATION BLOCKED: Real streamer is active - will not rotate');
       // Don't schedule next rotation - wait for real streamer to disconnect
       return;
     }
@@ -215,7 +216,7 @@ class SimpleViewBotRotation {
     const nextBot = this.selectNextBot();
 
     if (!nextBot) {
-      console.log('⚠️ No available bots for rotation (all on cooldown?)');
+      logger.debug('⚠️ No available bots for rotation (all on cooldown?)');
       // Retry in 30 seconds
       this.scheduleNextRotation(30000);
       return;
@@ -258,11 +259,11 @@ class SimpleViewBotRotation {
     try {
       // CRITICAL SAFETY CHECK: Verify no real streamer before starting
       if (this.isRealStreamerActive()) {
-        console.log(`🛡️ VIEWBOT START BLOCKED: Real streamer is active - cannot start ${bot.id}`);
+        logger.debug(`🛡️ VIEWBOT START BLOCKED: Real streamer is active - cannot start ${bot.id}`);
         return;
       }
 
-      console.log(`🚀 Starting viewbot: ${bot.id} (backend: ${this.backend})`);
+      logger.debug(`🚀 Starting viewbot: ${bot.id} (backend: ${this.backend})`);
 
       // Update state
       this.currentBot = bot;
@@ -275,13 +276,13 @@ class SimpleViewBotRotation {
         await this.startMediaSoupBot(bot);
       }
 
-      console.log(`✅ ViewBotRotationService: viewbot-${bot.id} is now streaming`);
+      logger.debug(`✅ ViewBotRotationService: viewbot-${bot.id} is now streaming`);
 
       // Emit event for other systems
       this.emitEvent('viewbot-started', { botId: bot.id });
 
     } catch (error) {
-      console.error(`❌ Failed to start bot ${bot.id}:`, error);
+      logger.error(`❌ Failed to start bot ${bot.id}:`, error);
       this.handleBotError(bot);
     }
   }
@@ -290,10 +291,10 @@ class SimpleViewBotRotation {
    * Start LiveKit RTMP ingress bot
    */
   async startLiveKitBot(bot) {
-    console.log(`🎥 Starting LiveKit RTMP ingress bot: ${bot.id}`);
+    logger.debug(`🎥 Starting LiveKit RTMP ingress bot: ${bot.id}`);
 
     if (!bot.mediaFile) {
-      console.warn(`⚠️ Bot ${bot.id} has no media file, skipping`);
+      logger.warn(`⚠️ Bot ${bot.id} has no media file, skipping`);
       throw new Error('No media file for LiveKit bot');
     }
 
@@ -306,14 +307,14 @@ class SimpleViewBotRotation {
     }
 
     this.livekitViewBotId = result.botId;
-    console.log(`✅ LiveKit viewbot created: ${this.livekitViewBotId}`);
+    logger.debug(`✅ LiveKit viewbot created: ${this.livekitViewBotId}`);
   }
 
   /**
    * Start MediaSoup GStreamer bot
    */
   async startMediaSoupBot(bot) {
-    console.log(`🎥 Starting MediaSoup GStreamer bot: ${bot.id}`);
+    logger.debug(`🎥 Starting MediaSoup GStreamer bot: ${bot.id}`);
 
     // Build GStreamer pipeline
     const pipeline = this.buildGStreamerPipeline(bot);
@@ -343,18 +344,18 @@ class SimpleViewBotRotation {
     // it's inside an event handler.
     this.gstreamerProcess.once('exit', () => {
       processManager.onBotStopped(bot.id).catch((err) => {
-        console.error(`[ProcessManager] onBotStopped(${bot.id}) from exit handler failed:`, err.message);
+        logger.error(`[ProcessManager] onBotStopped(${bot.id}) from exit handler failed:`, err.message);
       });
     });
 
     // Handle process events
     this.gstreamerProcess.on('error', (error) => {
-      console.error(`❌ GStreamer error for ${bot.id}:`, error);
+      logger.error(`❌ GStreamer error for ${bot.id}:`, error);
       this.handleBotError(bot);
     });
 
     this.gstreamerProcess.on('exit', (code) => {
-      console.log(`📤 GStreamer exited for ${bot.id} with code ${code}`);
+      logger.debug(`📤 GStreamer exited for ${bot.id} with code ${code}`);
       if (code !== 0 && this.currentBot?.id === bot.id) {
         this.handleBotError(bot);
       }
@@ -362,12 +363,12 @@ class SimpleViewBotRotation {
 
     // Log output for debugging
     this.gstreamerProcess.stdout.on('data', (data) => {
-      console.log(`[GStreamer ${bot.id}]:`, data.toString());
+      logger.debug(`[GStreamer ${bot.id}]:`, data.toString());
     });
 
     this.gstreamerProcess.stderr.on('data', (data) => {
       if (data.toString().includes('ERROR')) {
-        console.error(`[GStreamer ERROR ${bot.id}]:`, data.toString());
+        logger.error(`[GStreamer ERROR ${bot.id}]:`, data.toString());
       }
     });
   }
@@ -379,7 +380,7 @@ class SimpleViewBotRotation {
     if (!this.currentBot) return;
 
     const botId = this.currentBot.id;
-    console.log(`⏹️ Stopping viewbot: ${botId} (backend: ${this.backend})`);
+    logger.debug(`⏹️ Stopping viewbot: ${botId} (backend: ${this.backend})`);
 
     // Stop LiveKit bot
     if (this.backend === 'livekit' && this.livekitViewBotId && this.livekitViewBotService) {
@@ -387,7 +388,7 @@ class SimpleViewBotRotation {
         await this.livekitViewBotService.stopViewBot(this.livekitViewBotId);
         this.livekitViewBotId = null;
       } catch (error) {
-        console.error(`⚠️ Error stopping LiveKit viewbot ${botId}:`, error);
+        logger.error(`⚠️ Error stopping LiveKit viewbot ${botId}:`, error);
       }
     }
 
@@ -402,7 +403,7 @@ class SimpleViewBotRotation {
           }
         }, 2000);
       } catch (error) {
-        console.error(`⚠️ Error killing GStreamer for ${botId}:`, error);
+        logger.error(`⚠️ Error killing GStreamer for ${botId}:`, error);
       }
 
       this.gstreamerProcess = null;
@@ -415,7 +416,7 @@ class SimpleViewBotRotation {
     try {
       await processManager.onBotStopped(botId);
     } catch (err) {
-      console.error(`⚠️ ProcessManager.onBotStopped(${botId}) failed:`, err.message);
+      logger.error(`⚠️ ProcessManager.onBotStopped(${botId}) failed:`, err.message);
     }
 
     // Emit event
@@ -455,7 +456,7 @@ class SimpleViewBotRotation {
   getRandomInterval() {
     const { minRotationInterval, maxRotationInterval } = this.settings;
     const interval = Math.floor(Math.random() * (maxRotationInterval - minRotationInterval)) + minRotationInterval;
-    console.log(`⏱️ Next rotation in ${Math.round(interval / 1000)} seconds`);
+    logger.debug(`⏱️ Next rotation in ${Math.round(interval / 1000)} seconds`);
     return interval;
   }
   
@@ -468,7 +469,7 @@ class SimpleViewBotRotation {
     }
     
     if (!this.settings.enabled) {
-      console.log('🚫 Rotation disabled, not scheduling next rotation');
+      logger.debug('🚫 Rotation disabled, not scheduling next rotation');
       return;
     }
     
@@ -481,7 +482,7 @@ class SimpleViewBotRotation {
    * Handle bot streaming error
    */
   handleBotError(bot) {
-    console.error(`🔧 Handling error for bot ${bot.id}`);
+    logger.error(`🔧 Handling error for bot ${bot.id}`);
     
     // Mark bot with extended cooldown
     this.cooldowns.set(bot.id, Date.now() + this.settings.cooldownDuration);
@@ -497,7 +498,7 @@ class SimpleViewBotRotation {
    */
   updateSettings(newSettings) {
     this.settings = { ...this.settings, ...newSettings };
-    console.log('⚙️ Updated rotation settings:', this.settings);
+    logger.debug('⚙️ Updated rotation settings:', this.settings);
     
     // Restart rotation if enabled state changed
     if (newSettings.enabled !== undefined) {
@@ -532,14 +533,14 @@ class SimpleViewBotRotation {
    */
   emitEvent(event, data) {
     // This can be replaced with actual event emitter or socket.io emission
-    console.log(`📡 Event: ${event}`, data);
+    logger.debug(`📡 Event: ${event}`, data);
   }
   
   /**
    * Clean shutdown
    */
   async shutdown() {
-    console.log('🛑 Shutting down rotation system');
+    logger.debug('🛑 Shutting down rotation system');
     await this.stopRotation();
   }
 }

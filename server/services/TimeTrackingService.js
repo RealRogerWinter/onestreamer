@@ -1,5 +1,6 @@
 const AccountService = require('./AccountService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'TimeTrackingService' });
 class TimeTrackingService {
     constructor(io = null) {
         this.accountService = new AccountService();
@@ -19,7 +20,7 @@ class TimeTrackingService {
 
     // Start tracking time for a user when they begin streaming
     startStreamingSession(userId, socketId) {
-        console.log(`📊 TIME: Starting streaming session for user ${userId} (socket: ${socketId})`);
+        logger.debug(`📊 TIME: Starting streaming session for user ${userId} (socket: ${socketId})`);
         
         // End any existing streaming session for this user
         this.endStreamingSession(userId);
@@ -38,7 +39,7 @@ class TimeTrackingService {
 
     // Start tracking time for a user when they begin viewing
     startViewingSession(userId, socketId, hasActiveStream = false) {
-        console.log(`📊 TIME: Starting viewing session for user ${userId} (socket: ${socketId}), active stream: ${hasActiveStream}`);
+        logger.debug(`📊 TIME: Starting viewing session for user ${userId} (socket: ${socketId}), active stream: ${hasActiveStream}`);
         
         // End any existing viewing session for this socket
         this.endViewingSessionBySocket(socketId);
@@ -53,9 +54,9 @@ class TimeTrackingService {
 
             // Start real-time updates for this user
             this.startRealTimeUpdates(userId, 'viewing');
-            console.log(`✅ TIME: View time tracking started for user ${userId} (socket: ${socketId})`);
+            logger.debug(`✅ TIME: View time tracking started for user ${userId} (socket: ${socketId})`);
         } else {
-            console.log(`📊 TIME: No active stream, not starting viewing session for user ${userId}`);
+            logger.debug(`📊 TIME: No active stream, not starting viewing session for user ${userId}`);
         }
     }
 
@@ -80,7 +81,7 @@ class TimeTrackingService {
 
     // Cleanup method for when a user disconnects
     async handleUserDisconnect(userId, socketId) {
-        console.log(`📊 TIME: Handling disconnect for user ${userId} (socket: ${socketId})`);
+        logger.debug(`📊 TIME: Handling disconnect for user ${userId} (socket: ${socketId})`);
         
         // End streaming session if active
         const streamingDuration = await this.endStreamingSession(userId);
@@ -105,7 +106,7 @@ class TimeTrackingService {
             // Return the points balance directly
             return stats.points_balance || 0;
         } catch (error) {
-            console.error(`❌ TIME: Failed to get points for user ${userId}:`, error);
+            logger.error(`❌ TIME: Failed to get points for user ${userId}:`, error);
             return 0;
         }
     }
@@ -134,7 +135,7 @@ class TimeTrackingService {
             clearInterval(intervalId);
         }
         this.updateIntervals.clear();
-        console.log('⏱️ TIME: Stopped all periodic tasks');
+        logger.debug('⏱️ TIME: Stopped all periodic tasks');
     }
 
     cleanupStaleSessions() {
@@ -144,7 +145,7 @@ class TimeTrackingService {
         // Clean up streaming sessions older than 1 hour
         for (const [userId, session] of this.activeSessions.entries()) {
             if (now - session.startTime > maxSessionAge) {
-                console.log(`🧹 TIME: Cleaning up stale streaming session for user ${userId}`);
+                logger.debug(`🧹 TIME: Cleaning up stale streaming session for user ${userId}`);
                 this.endStreamingSession(userId);
             }
         }
@@ -152,7 +153,7 @@ class TimeTrackingService {
         // Clean up viewing sessions older than 1 hour
         for (const [socketId, session] of this.viewingSessions.entries()) {
             if (now - session.startTime > maxSessionAge) {
-                console.log(`🧹 TIME: Cleaning up stale viewing session for socket ${socketId}`);
+                logger.debug(`🧹 TIME: Cleaning up stale viewing session for socket ${socketId}`);
                 this.endViewingSessionBySocket(socketId);
             }
         }
@@ -160,10 +161,10 @@ class TimeTrackingService {
 
     // Restart time tracking sessions after a user logs in
     async restartSessionsAfterLogin(userId, ipAddress) {
-        console.log(`📊 TIME: Restarting sessions after login for user ${userId} at IP ${ipAddress}`);
+        logger.debug(`📊 TIME: Restarting sessions after login for user ${userId} at IP ${ipAddress}`);
         
         if (!this.io) {
-            console.log(`📊 TIME: No socket.io instance available for restart`);
+            logger.debug(`📊 TIME: No socket.io instance available for restart`);
             return;
         }
 
@@ -178,11 +179,11 @@ class TimeTrackingService {
         }
 
         if (connectedSockets.length === 0) {
-            console.log(`📊 TIME: No active sockets found for IP ${ipAddress}`);
+            logger.debug(`📊 TIME: No active sockets found for IP ${ipAddress}`);
             return;
         }
 
-        console.log(`📊 TIME: Found ${connectedSockets.length} active sockets for IP ${ipAddress}`);
+        logger.debug(`📊 TIME: Found ${connectedSockets.length} active sockets for IP ${ipAddress}`);
 
         for (const { socketId, socket } of connectedSockets) {
             // Check if socket is in viewers room (watching)
@@ -192,14 +193,14 @@ class TimeTrackingService {
                                        this.io.sockets.adapter.rooms.get('streamer').size > 0;
                 
                 if (hasActiveStream) {
-                    console.log(`📊 TIME: Restarting viewing session for user ${userId} on socket ${socketId}`);
+                    logger.debug(`📊 TIME: Restarting viewing session for user ${userId} on socket ${socketId}`);
                     this.startViewingSession(userId, socketId, true);
                 }
             }
 
             // Check if socket is streaming (in streamer room or test-streamers room)
             if (socket.rooms.has('streamer') || socket.rooms.has('test-streamers')) {
-                console.log(`📊 TIME: Restarting streaming session for user ${userId} on socket ${socketId}`);
+                logger.debug(`📊 TIME: Restarting streaming session for user ${userId} on socket ${socketId}`);
                 this.startStreamingSession(userId, socketId);
             }
 
@@ -210,7 +211,7 @@ class TimeTrackingService {
 
     // Track chat message for a user
     async trackChatMessage(userId) {
-        console.log(`💬 TIME: Tracking chat message for user ${userId}`);
+        logger.debug(`💬 TIME: Tracking chat message for user ${userId}`);
         
         try {
             const CHAT_POINTS = 50; // Points per chat message
@@ -229,12 +230,12 @@ class TimeTrackingService {
                 { messageCount: 1 }
             );
             
-            console.log(`✅ TIME: Chat message tracked for user ${userId}. Awarded ${CHAT_POINTS} points. New balance: ${newBalance}`);
+            logger.debug(`✅ TIME: Chat message tracked for user ${userId}. Awarded ${CHAT_POINTS} points. New balance: ${newBalance}`);
             
             // Send real-time update to user
             await this.sendRealTimeStatsUpdate(userId, 'chat');
         } catch (error) {
-            console.error(`❌ TIME: Failed to track chat message for user ${userId}:`, error);
+            logger.error(`❌ TIME: Failed to track chat message for user ${userId}:`, error);
         }
     }
 
@@ -276,13 +277,13 @@ class TimeTrackingService {
                     timestamp: Date.now()
                 };
 
-                console.log(`📊 TIME: Broadcasting real-time stats update for user ${userId} (${updateType}):`, updateData);
+                logger.debug(`📊 TIME: Broadcasting real-time stats update for user ${userId} (${updateType}):`, updateData);
                 
                 // Broadcast to all sockets - the client-side will filter by userId
                 this.io.emit('time-stats-update', updateData);
             }
         } catch (error) {
-            console.error(`❌ TIME: Error sending real-time stats update for user ${userId}:`, error);
+            logger.error(`❌ TIME: Error sending real-time stats update for user ${userId}:`, error);
         }
     }
 
@@ -305,12 +306,12 @@ class TimeTrackingService {
                     timestamp: Date.now()
                 };
 
-                console.log(`📊 TIME: Broadcasting immediate stats update after login for user ${userId}:`, updateData);
+                logger.debug(`📊 TIME: Broadcasting immediate stats update after login for user ${userId}:`, updateData);
                 // Broadcast to all sockets - client will filter by userId
                 this.io.emit('time-stats-update', updateData);
             }
         } catch (error) {
-            console.error(`❌ TIME: Error sending immediate stats update for user ${userId}:`, error);
+            logger.error(`❌ TIME: Error sending immediate stats update for user ${userId}:`, error);
         }
     }
 
@@ -351,12 +352,12 @@ class TimeTrackingService {
             try {
                 await this.sendRealTimeUpdate(userId, sessionType);
             } catch (error) {
-                console.error(`❌ TIME: Failed to send real-time update for user ${userId}:`, error);
+                logger.error(`❌ TIME: Failed to send real-time update for user ${userId}:`, error);
             }
         }, 25000); // Update every 25 seconds
 
         this.updateIntervals.set(userId, intervalId);
-        console.log(`📊 TIME: Started real-time updates for user ${userId} (${sessionType})`);
+        logger.debug(`📊 TIME: Started real-time updates for user ${userId} (${sessionType})`);
     }
 
     // Stop real-time updates for a user
@@ -365,7 +366,7 @@ class TimeTrackingService {
         if (intervalId) {
             clearInterval(intervalId);
             this.updateIntervals.delete(userId);
-            console.log(`📊 TIME: Stopped real-time updates for user ${userId}`);
+            logger.debug(`📊 TIME: Stopped real-time updates for user ${userId}`);
         }
     }
 
@@ -406,7 +407,7 @@ class TimeTrackingService {
                     `${sessionType === 'streaming' ? 'Streaming' : 'Viewing'} reward (25 seconds)`,
                     { duration: INCREMENT_SECONDS }
                 );
-                console.log(`🎯 Awarded ${pointsToAdd} points to user ${userId} for ${sessionType}. New balance: ${newBalance}`);
+                logger.debug(`🎯 Awarded ${pointsToAdd} points to user ${userId} for ${sessionType}. New balance: ${newBalance}`);
             }
             
             // Get updated stats from database
@@ -433,11 +434,11 @@ class TimeTrackingService {
                 };
                 
                 // Broadcast to ALL sockets - clients will filter by userId
-                console.log(`📊 TIME: Broadcasting real-time update for user ${userId}:`, updateData);
+                logger.debug(`📊 TIME: Broadcasting real-time update for user ${userId}:`, updateData);
                 this.io.emit('time-stats-update', updateData);
             }
         } catch (error) {
-            console.error(`❌ TIME: Error sending real-time update for user ${userId}:`, error);
+            logger.error(`❌ TIME: Error sending real-time update for user ${userId}:`, error);
         }
     }
 
@@ -462,7 +463,7 @@ class TimeTrackingService {
         this.stopRealTimeUpdates(userId);
 
         const duration = Math.floor((Date.now() - session.startTime) / 1000); // Convert to seconds
-        console.log(`📊 TIME: Ending streaming session for user ${userId}, duration: ${duration}s`);
+        logger.debug(`📊 TIME: Ending streaming session for user ${userId}, duration: ${duration}s`);
 
         // Update user stats with streaming time
         try {
@@ -471,9 +472,9 @@ class TimeTrackingService {
                 streamCount: 1,
                 lastStreamAt: new Date().toISOString()
             });
-            console.log(`✅ TIME: Updated streaming stats for user ${userId}: +${duration}s`);
+            logger.debug(`✅ TIME: Updated streaming stats for user ${userId}: +${duration}s`);
         } catch (error) {
-            console.error(`❌ TIME: Failed to update streaming stats for user ${userId}:`, error);
+            logger.error(`❌ TIME: Failed to update streaming stats for user ${userId}:`, error);
         }
 
         // Remove the active session
@@ -491,7 +492,7 @@ class TimeTrackingService {
         this.stopRealTimeUpdates(userId);
 
         const duration = Math.floor((Date.now() - session.startTime) / 1000); // Convert to seconds
-        console.log(`📊 TIME: Ending viewing session for user ${userId} (socket: ${socketId}), duration: ${duration}s`);
+        logger.debug(`📊 TIME: Ending viewing session for user ${userId} (socket: ${socketId}), duration: ${duration}s`);
 
         // Update user stats with viewing time
         if (duration > 5) { // Only count sessions longer than 5 seconds
@@ -499,9 +500,9 @@ class TimeTrackingService {
                 await this.accountService.updateUserStats(userId, {
                     viewTime: duration
                 });
-                console.log(`✅ TIME: Updated viewing stats for user ${userId}: +${duration}s`);
+                logger.debug(`✅ TIME: Updated viewing stats for user ${userId}: +${duration}s`);
             } catch (error) {
-                console.error(`❌ TIME: Failed to update viewing stats for user ${userId}:`, error);
+                logger.error(`❌ TIME: Failed to update viewing stats for user ${userId}:`, error);
             }
         }
 

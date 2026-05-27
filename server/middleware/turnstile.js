@@ -1,6 +1,7 @@
 const axios = require('axios');
 const requireEnv = require('../config/requireEnv');
 
+const logger = require('../bootstrap/logger').child({ svc: 'turnstile' });
 const TURNSTILE_SECRET_KEY = requireEnv('TURNSTILE_SECRET_KEY');
 
 // Cloudflare Turnstile verification endpoint
@@ -47,7 +48,7 @@ const verifyTurnstile = (required = true) => {
       const { success, 'error-codes': errorCodes, challenge_ts, hostname } = response.data;
 
       if (!success) {
-        console.error('Turnstile verification failed:', errorCodes);
+        logger.error('Turnstile verification failed:', errorCodes);
         
         // Map error codes to user-friendly messages
         let errorMessage = 'Security verification failed. Please try again.';
@@ -97,10 +98,10 @@ const verifyTurnstile = (required = true) => {
 
       next();
     } catch (error) {
-      console.error('Turnstile verification error:', error.message);
+      logger.error('Turnstile verification error:', error.message);
       if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
+        logger.error('Response status:', error.response.status);
+        logger.error('Response data:', error.response.data);
       }
       
       // If verification service is down, decide whether to fail open or closed
@@ -110,7 +111,7 @@ const verifyTurnstile = (required = true) => {
         });
       } else {
         // Fail open for non-required verification
-        console.warn('Turnstile verification failed but allowing request to proceed');
+        logger.warn('Turnstile verification failed but allowing request to proceed');
         next();
       }
     }

@@ -7,6 +7,7 @@ const { Room, RoomServiceClient, AccessToken, WebhookReceiver } = require('livek
 const crypto = require('crypto');
 const requireEnv = require('../config/requireEnv');
 
+const logger = require('../bootstrap/logger').child({ svc: 'LiveKitService' });
 // TURN credential generation for coturn with static-auth-secret
 const TURN_SECRET = requireEnv('TURN_SECRET');
 const TURN_TTL = 24 * 60 * 60; // 24 hours in seconds
@@ -50,7 +51,7 @@ class LiveKitService {
       return;
     }
 
-    console.log('🚀 LIVEKIT: Initializing LiveKit service...');
+    logger.debug('🚀 LIVEKIT: Initializing LiveKit service...');
     
     try {
       // Initialize RoomServiceClient for server-side operations
@@ -67,15 +68,15 @@ class LiveKitService {
 
       // Test connection by listing rooms
       const rooms = await this.roomClient.listRooms();
-      console.log(`✅ LIVEKIT: Connected successfully. ${rooms.length} existing rooms found.`);
+      logger.debug(`✅ LIVEKIT: Connected successfully. ${rooms.length} existing rooms found.`);
       
       // Create or get main room
       await this.ensureMainRoom();
       
       this.initialized = true;
-      console.log('✅ LIVEKIT: Service initialized successfully');
+      logger.debug('✅ LIVEKIT: Service initialized successfully');
     } catch (error) {
-      console.error('❌ LIVEKIT: Failed to initialize:', error);
+      logger.error('❌ LIVEKIT: Failed to initialize:', error);
       throw error;
     }
   }
@@ -88,7 +89,7 @@ class LiveKitService {
       
       if (!mainRoom) {
         // Create main room
-        console.log(`📦 LIVEKIT: Creating main room: ${this.config.roomName}`);
+        logger.debug(`📦 LIVEKIT: Creating main room: ${this.config.roomName}`);
         await this.roomClient.createRoom({
           name: this.config.roomName,
           emptyTimeout: this.config.emptyTimeout,
@@ -100,7 +101,7 @@ class LiveKitService {
         });
       }
     } catch (error) {
-      console.error('❌ LIVEKIT: Failed to ensure main room:', error);
+      logger.error('❌ LIVEKIT: Failed to ensure main room:', error);
       throw error;
     }
   }
@@ -178,7 +179,7 @@ class LiveKitService {
   }
 
   async createWebRtcTransport(socketId, isMobile = false) {
-    console.log(`📡 LIVEKIT: Creating transport for ${socketId}`);
+    logger.debug(`📡 LIVEKIT: Creating transport for ${socketId}`);
     
     // Generate access token for this participant
     const token = await this.generateToken(socketId, {
@@ -234,7 +235,7 @@ class LiveKitService {
   }
 
   async connectTransport(socketId, dtlsParameters) {
-    console.log(`🔗 LIVEKIT: Connecting transport for ${socketId}`);
+    logger.debug(`🔗 LIVEKIT: Connecting transport for ${socketId}`);
     
     // LiveKit handles connection automatically via token
     // This is a no-op for compatibility
@@ -250,7 +251,7 @@ class LiveKitService {
   }
 
   async produce(socketId, kind, rtpParameters, appData) {
-    console.log(`🎬 LIVEKIT: Creating ${kind} producer for ${socketId}`);
+    logger.debug(`🎬 LIVEKIT: Creating ${kind} producer for ${socketId}`);
     
     // In LiveKit, tracks are published client-side
     // We track them here for MediaSoup compatibility
@@ -275,7 +276,7 @@ class LiveKitService {
     // Set as current streamer if first producer
     if (!this.currentStreamer && kind === 'video') {
       this.currentStreamer = socketId;
-      console.log(`👑 LIVEKIT: Set ${socketId} as current streamer`);
+      logger.debug(`👑 LIVEKIT: Set ${socketId} as current streamer`);
     }
 
     return producerId;
@@ -286,7 +287,7 @@ class LiveKitService {
   }
 
   async consume(socketId, producerId, rtpCapabilities) {
-    console.log(`📺 LIVEKIT: Creating consumer for ${socketId} to consume ${producerId}`);
+    logger.debug(`📺 LIVEKIT: Creating consumer for ${socketId} to consume ${producerId}`);
     
     // Find the producer
     let targetProducer = null;
@@ -330,7 +331,7 @@ class LiveKitService {
   }
 
   async restartTransportIce(socketId, transportId) {
-    console.log(`🔄 LIVEKIT: Restarting ICE for ${socketId}`);
+    logger.debug(`🔄 LIVEKIT: Restarting ICE for ${socketId}`);
     
     // LiveKit handles ICE restart automatically
     // Return fake ICE parameters for compatibility
@@ -343,7 +344,7 @@ class LiveKitService {
   }
 
   async cleanup(socketId) {
-    console.log(`🧹 LIVEKIT: Cleaning up resources for ${socketId}`);
+    logger.debug(`🧹 LIVEKIT: Cleaning up resources for ${socketId}`);
     
     // Remove from all tracking maps
     this.transports.delete(socketId);
@@ -354,7 +355,7 @@ class LiveKitService {
     // Clear current streamer if it was this socket
     if (this.currentStreamer === socketId) {
       this.currentStreamer = null;
-      console.log(`👑 LIVEKIT: Cleared current streamer`);
+      logger.debug(`👑 LIVEKIT: Cleared current streamer`);
     }
   }
 
@@ -375,13 +376,13 @@ class LiveKitService {
       );
 
       if (streamer) {
-        console.log(`🔍 LIVEKIT: Found active streamer via room query: ${streamer.identity}`);
+        logger.debug(`🔍 LIVEKIT: Found active streamer via room query: ${streamer.identity}`);
         return streamer.identity;
       }
 
       return null;
     } catch (err) {
-      console.error(`❌ LIVEKIT: Error querying for current streamer:`, err.message);
+      logger.error(`❌ LIVEKIT: Error querying for current streamer:`, err.message);
       return null;
     }
   }
@@ -485,7 +486,7 @@ class LiveKitService {
       const participants = await this.roomClient.listParticipants(this.config.roomName);
       return participants;
     } catch (error) {
-      console.error('❌ LIVEKIT: Failed to get participants:', error);
+      logger.error('❌ LIVEKIT: Failed to get participants:', error);
       return [];
     }
   }
@@ -493,9 +494,9 @@ class LiveKitService {
   async removeParticipant(participantId) {
     try {
       await this.roomClient.removeParticipant(this.config.roomName, participantId);
-      console.log(`✅ LIVEKIT: Removed participant ${participantId}`);
+      logger.debug(`✅ LIVEKIT: Removed participant ${participantId}`);
     } catch (error) {
-      console.error(`❌ LIVEKIT: Failed to remove participant ${participantId}:`, error);
+      logger.error(`❌ LIVEKIT: Failed to remove participant ${participantId}:`, error);
     }
   }
 
@@ -507,9 +508,9 @@ class LiveKitService {
         trackSid,
         muted
       );
-      console.log(`✅ LIVEKIT: ${muted ? 'Muted' : 'Unmuted'} track ${trackSid}`);
+      logger.debug(`✅ LIVEKIT: ${muted ? 'Muted' : 'Unmuted'} track ${trackSid}`);
     } catch (error) {
-      console.error(`❌ LIVEKIT: Failed to mute/unmute track:`, error);
+      logger.error(`❌ LIVEKIT: Failed to mute/unmute track:`, error);
     }
   }
 
@@ -525,7 +526,7 @@ class LiveKitService {
       retryDelay = 500
     } = options;
 
-    console.log(`🔍 LIVEKIT: Verifying tracks for participant ${participantIdentity}...`);
+    logger.debug(`🔍 LIVEKIT: Verifying tracks for participant ${participantIdentity}...`);
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
@@ -533,7 +534,7 @@ class LiveKitService {
         const participant = participants.find(p => p.identity === participantIdentity);
 
         if (!participant) {
-          console.warn(`⚠️ LIVEKIT: Participant ${participantIdentity} not found (attempt ${attempt + 1}/${maxAttempts})`);
+          logger.warn(`⚠️ LIVEKIT: Participant ${participantIdentity} not found (attempt ${attempt + 1}/${maxAttempts})`);
           await this.delay(retryDelay * Math.pow(1.5, attempt)); // Exponential backoff
           continue;
         }
@@ -554,7 +555,7 @@ class LiveKitService {
         const audioOk = !requireAudio || hasAudio;
 
         if (videoOk && audioOk) {
-          console.log(`✅ LIVEKIT: Participant ${participantIdentity} has required tracks (video: ${hasVideo}, audio: ${hasAudio})`);
+          logger.debug(`✅ LIVEKIT: Participant ${participantIdentity} has required tracks (video: ${hasVideo}, audio: ${hasAudio})`);
           return {
             verified: true,
             hasVideo,
@@ -564,16 +565,16 @@ class LiveKitService {
           };
         }
 
-        console.log(`⏳ LIVEKIT: Waiting for tracks... (video: ${hasVideo}/${requireVideo}, audio: ${hasAudio}/${requireAudio}) - attempt ${attempt + 1}/${maxAttempts}`);
+        logger.debug(`⏳ LIVEKIT: Waiting for tracks... (video: ${hasVideo}/${requireVideo}, audio: ${hasAudio}/${requireAudio}) - attempt ${attempt + 1}/${maxAttempts}`);
         await this.delay(retryDelay * Math.pow(1.5, attempt));
 
       } catch (error) {
-        console.error(`❌ LIVEKIT: Error verifying tracks (attempt ${attempt + 1}):`, error);
+        logger.error(`❌ LIVEKIT: Error verifying tracks (attempt ${attempt + 1}):`, error);
         await this.delay(retryDelay * Math.pow(1.5, attempt));
       }
     }
 
-    console.error(`❌ LIVEKIT: Failed to verify tracks for ${participantIdentity} after ${maxAttempts} attempts`);
+    logger.error(`❌ LIVEKIT: Failed to verify tracks for ${participantIdentity} after ${maxAttempts} attempts`);
     return {
       verified: false,
       hasVideo: false,
@@ -605,7 +606,7 @@ class LiveKitService {
       clearInterval(this.healthCheckTimer);
     }
 
-    console.log(`✅ LIVEKIT: Starting streamer health check (every ${interval / 1000}s)`);
+    logger.debug(`✅ LIVEKIT: Starting streamer health check (every ${interval / 1000}s)`);
 
     this.healthCheckTimer = setInterval(async () => {
       try {
@@ -624,7 +625,7 @@ class LiveKitService {
         const GRACE_PERIOD_MS = 30000; // 30 seconds grace period
 
         if (streamAge < GRACE_PERIOD_MS) {
-          // console.log(`⏳ LIVEKIT HEALTH: Skipping check for ${currentStreamer} (stream age: ${Math.round(streamAge/1000)}s < ${GRACE_PERIOD_MS/1000}s grace period)`);
+          // logger.debug(`⏳ LIVEKIT HEALTH: Skipping check for ${currentStreamer} (stream age: ${Math.round(streamAge/1000)}s < ${GRACE_PERIOD_MS/1000}s grace period)`);
           return;
         }
 
@@ -633,7 +634,7 @@ class LiveKitService {
         const streamerParticipant = participants.find(p => p.identity === currentStreamer);
 
         if (!streamerParticipant) {
-          console.log(`🔍 LIVEKIT HEALTH: Streamer ${currentStreamer} NOT FOUND in LiveKit room`);
+          logger.debug(`🔍 LIVEKIT HEALTH: Streamer ${currentStreamer} NOT FOUND in LiveKit room`);
           await this.clearStaleStreamer(streamService, io, currentStreamer, 'not_in_room');
           return;
         }
@@ -643,16 +644,16 @@ class LiveKitService {
         const hasActiveTracks = streamerParticipant.tracks?.some(t => t.muted === false);
 
         if (!hasTracks || !hasActiveTracks) {
-          console.log(`🔍 LIVEKIT HEALTH: Streamer ${currentStreamer} has NO ACTIVE TRACKS`);
-          console.log(`   Tracks: ${JSON.stringify(streamerParticipant.tracks?.map(t => ({ sid: t.sid, type: t.type, muted: t.muted })) || [])}`);
+          logger.debug(`🔍 LIVEKIT HEALTH: Streamer ${currentStreamer} has NO ACTIVE TRACKS`);
+          logger.debug(`   Tracks: ${JSON.stringify(streamerParticipant.tracks?.map(t => ({ sid: t.sid, type: t.type, muted: t.muted })) || [])}`);
           await this.clearStaleStreamer(streamService, io, currentStreamer, 'no_tracks');
           return;
         }
 
         // Streamer is healthy
-        // console.log(`✅ LIVEKIT HEALTH: Streamer ${currentStreamer} is healthy (${streamerParticipant.tracks?.length || 0} tracks)`);
+        // logger.debug(`✅ LIVEKIT HEALTH: Streamer ${currentStreamer} is healthy (${streamerParticipant.tracks?.length || 0} tracks)`);
       } catch (error) {
-        console.error(`❌ LIVEKIT HEALTH: Error checking streamer:`, error.message);
+        logger.error(`❌ LIVEKIT HEALTH: Error checking streamer:`, error.message);
       }
     }, interval);
   }
@@ -661,7 +662,7 @@ class LiveKitService {
    * Clear a stale streamer and trigger viewbot rotation
    */
   async clearStaleStreamer(streamService, io, streamerId, reason) {
-    console.log(`🧹 LIVEKIT: Clearing stale streamer ${streamerId} (reason: ${reason})`);
+    logger.debug(`🧹 LIVEKIT: Clearing stale streamer ${streamerId} (reason: ${reason})`);
 
     // Clear the streamer status
     streamService.clearStreamer();
@@ -688,7 +689,7 @@ class LiveKitService {
       streamerId: null
     });
 
-    console.log(`✅ LIVEKIT: Stale streamer ${streamerId} cleared, viewbot should take over`);
+    logger.debug(`✅ LIVEKIT: Stale streamer ${streamerId} cleared, viewbot should take over`);
   }
 
   /**
@@ -698,7 +699,7 @@ class LiveKitService {
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
       this.healthCheckTimer = null;
-      console.log(`⏹️ LIVEKIT: Stopped streamer health check`);
+      logger.debug(`⏹️ LIVEKIT: Stopped streamer health check`);
     }
   }
 }

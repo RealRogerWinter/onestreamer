@@ -2,6 +2,7 @@ const path = require('path');
 const TranscriptionDrivenBotService = require('./TranscriptionDrivenBotService');
 const { GroqRateLimitError, GroqUnavailableError } = require('./ChatBotLLMService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'VisionBotService' });
 const DEFAULT_VISION_PROMPT = `You are a viewer watching this stream. A screenshot of the current moment is attached, along with the last 45 seconds of spoken audio. React briefly and in character to what you see and hear. Keep it under 80 characters. Do not describe the image literally — react like a chat viewer would.
 
 The most recent spoken content was:
@@ -84,7 +85,7 @@ class VisionBotService extends TranscriptionDrivenBotService {
 
         setTimeout(() => this.loadConfigFromDatabase(), 100);
 
-        console.log('🔍 VisionBotService: Initialized');
+        logger.debug('🔍 VisionBotService: Initialized');
     }
 
     // ── Base-class hooks ───────────────────────────────────────────────
@@ -308,7 +309,7 @@ class VisionBotService extends TranscriptionDrivenBotService {
                 [],
                 (err, rows) => {
                     if (err) {
-                        console.error('❌ VisionBotService: Error fetching enabled bots:', err);
+                        logger.error('❌ VisionBotService: Error fetching enabled bots:', err);
                         resolve([]);
                         return;
                     }

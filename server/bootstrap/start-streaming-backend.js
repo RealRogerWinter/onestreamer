@@ -67,6 +67,7 @@ const UserRepository = require('../database/repository/UserRepository');
 const urlStreamRoutesFactory = require('../routes/url-stream');
 const randomStreamRoutesFactory = require('../routes/random-stream');
 
+const logger = require('./logger').child({ svc: 'start-streaming-backend' });
 module.exports = function startStreamingBackend({
   streamService,
   SimpleViewBotRotation,
@@ -93,7 +94,7 @@ module.exports = function startStreamingBackend({
 
   // Handle health service events for automatic recovery
   urlStreamHealthService.on('source-offline', async ({ urlId, sourceUrl }) => {
-    console.log(`🏥 HEALTH: Source offline detected for ${urlId}, triggering reconnect...`);
+    logger.debug(`🏥 HEALTH: Source offline detected for ${urlId}, triggering reconnect...`);
     const stream = viewBotURLService.activeStreams.get(urlId);
     if (stream) {
       viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Source stream went offline'));
@@ -101,18 +102,18 @@ module.exports = function startStreamingBackend({
   });
 
   urlStreamHealthService.on('stream-stale', async ({ urlId }) => {
-    console.log(`🏥 HEALTH: Stale stream detected for ${urlId}, triggering reconnect...`);
+    logger.debug(`🏥 HEALTH: Stale stream detected for ${urlId}, triggering reconnect...`);
     const stream = viewBotURLService.activeStreams.get(urlId);
     if (stream) {
       viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Stream became stale - no progress'));
     }
   });
 
-  console.log('✅ URL STREAM: ViewBotURLService initialized');
+  logger.debug('✅ URL STREAM: ViewBotURLService initialized');
 
   // Register URL ViewBot service with rotation for protection
   SimpleViewBotRotation.setURLViewBotService(viewBotURLService);
-  console.log('✅ URL STREAM: Registered with SimpleViewBotRotation for URL stream protection');
+  logger.debug('✅ URL STREAM: Registered with SimpleViewBotRotation for URL stream protection');
 
   // Store globally for API routes
   global.viewBotURLService = viewBotURLService;
@@ -120,7 +121,7 @@ module.exports = function startStreamingBackend({
 
   // Initialize URL Stream API routes
   app.use('/api/url-stream', urlStreamRoutesFactory(viewBotURLService, urlStreamHealthService));
-  console.log('✅ URL STREAM: API routes initialized at /api/url-stream');
+  logger.debug('✅ URL STREAM: API routes initialized at /api/url-stream');
 
   // Initialize Random Stream Rotation Service.
   const randomStreamRotationService = new RandomStreamRotationService();
@@ -130,7 +131,7 @@ module.exports = function startStreamingBackend({
   randomStreamRotationService.setStreamNotifier(streamNotifier);
   if (whitelistService) randomStreamRotationService.setWhitelistService(whitelistService);
   global.randomStreamRotationService = randomStreamRotationService;
-  console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized');
+  logger.debug('✅ RANDOM STREAM: RandomStreamRotationService initialized');
 
   // PR-M3: wire the AI moderation ActionArbiter now that the rotation
   // service is built. The arbiter is what turns a 2-of-2 HIGH agreement
@@ -180,7 +181,7 @@ module.exports = function startStreamingBackend({
 
   // Initialize Random Stream API routes
   app.use('/api/random-stream', randomStreamRoutesFactory(randomStreamRotationService));
-  console.log('✅ RANDOM STREAM: API routes initialized at /api/random-stream');
+  logger.debug('✅ RANDOM STREAM: API routes initialized at /api/random-stream');
 
   // Auto-start random rotation if it was enabled before restart.
   // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
@@ -192,7 +193,7 @@ module.exports = function startStreamingBackend({
     try {
       await randomStreamRotationService.autoStartIfEnabled();
     } catch (error) {
-      console.error('❌ RANDOM STREAM: Auto-start failed:', error.message);
+      logger.error('❌ RANDOM STREAM: Auto-start failed:', error.message);
     }
   }, 5000);
 
@@ -207,7 +208,7 @@ module.exports = function startStreamingBackend({
     // ─ (a) Rotation + LiveKit-service cross-wires ─────────────────────
     // Register with rotation systems so they can use RTMP viewbots
     SimpleViewBotRotation.setLiveKitService(viewBotLiveKitService);
-    console.log('✅ VIEWBOT: Registered LiveKit service with SimpleViewBotRotation');
+    logger.debug('✅ VIEWBOT: Registered LiveKit service with SimpleViewBotRotation');
 
     // LiveKit-only cross-wire: ViewBotURLService uses livekit-ingress
     // (RTMP) when `livekitService` exists; the MediaSoup branch has no
@@ -218,7 +219,7 @@ module.exports = function startStreamingBackend({
     // CRITICAL: Register URL ViewBot service with LiveKit ViewBot service for protection
     // This prevents viewbot creation when URL stream is active
     viewBotLiveKitService.setURLViewBotService(viewBotURLService);
-    console.log('✅ URL STREAM: Registered with ViewBotLiveKitService for URL stream protection');
+    logger.debug('✅ URL STREAM: Registered with ViewBotLiveKitService for URL stream protection');
 
     // ─ (b) PR 3.1 deliberate-dormancy zone — DO NOT MOVE ──────────────
     // The two setters below wire emit paths that the MediaSoup branch
@@ -240,6 +241,6 @@ module.exports = function startStreamingBackend({
     // The interval is cleared by livekitService.stop() (verified via
     // LiveKitService.stopStreamerHealthCheck on the stoppables-shutdown path).
     livekitService.startStreamerHealthCheck(streamService, io, 10000); // Check every 10 seconds
-    console.log('✅ LIVEKIT: Started streamer health check for stale connection detection');
+    logger.debug('✅ LIVEKIT: Started streamer health check for stale connection detection');
   }
 };

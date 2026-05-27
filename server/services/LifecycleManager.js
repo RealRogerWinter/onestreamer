@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'LifecycleManager' });
+
 /**
  * LifecycleManager
  *
@@ -62,19 +64,19 @@ class LifecycleManager {
 
   schedule(name, fn, delayMs) {
     if (typeof name !== 'string' || name.length === 0) {
-      console.warn('[Lifecycle] schedule() called without a name; dropping');
+      logger.warn('[Lifecycle] schedule() called without a name; dropping');
       return null;
     }
     if (typeof fn !== 'function') {
-      console.warn(`[Lifecycle] schedule(${name}) called without a function; dropping`);
+      logger.warn(`[Lifecycle] schedule(${name}) called without a function; dropping`);
       return null;
     }
     if (typeof delayMs !== 'number' || !Number.isFinite(delayMs) || delayMs < 0) {
-      console.warn(`[Lifecycle] schedule(${name}) called with non-numeric / negative delayMs (${delayMs}); dropping`);
+      logger.warn(`[Lifecycle] schedule(${name}) called with non-numeric / negative delayMs (${delayMs}); dropping`);
       return null;
     }
     if (this.stopped) {
-      console.log(`[Lifecycle] ${name}: dropped (manager stopped)`);
+      logger.debug(`[Lifecycle] ${name}: dropped (manager stopped)`);
       return null;
     }
     const handle = setTimeout(() => {
@@ -86,7 +88,7 @@ class LifecycleManager {
         try {
           await fn();
         } catch (e) {
-          console.error(`[Lifecycle] ${name} threw after ${delayMs}ms:`, e);
+          logger.error(`[Lifecycle] ${name} threw after ${delayMs}ms:`, e);
         }
       })();
       this.inFlight.add(promise);
@@ -112,7 +114,7 @@ class LifecycleManager {
     }
     this.pending.clear();
     if (cleared > 0) {
-      console.log(`[Lifecycle] cleared ${cleared} pending task(s) on shutdown`);
+      logger.debug(`[Lifecycle] cleared ${cleared} pending task(s) on shutdown`);
     }
     // Wait for in-flight fn promises to settle before resolving. The
     // shutdown loop's 5-second `Promise.race` deadline bounds the total
@@ -123,7 +125,7 @@ class LifecycleManager {
     // promise to resolve, not propagate.
     const inFlightCount = this.inFlight.size;
     if (inFlightCount > 0) {
-      console.log(`[Lifecycle] awaiting ${inFlightCount} in-flight task(s) on shutdown`);
+      logger.debug(`[Lifecycle] awaiting ${inFlightCount} in-flight task(s) on shutdown`);
       await Promise.allSettled([...this.inFlight]);
     }
   }

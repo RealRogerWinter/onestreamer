@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotStateManager' });
+
 /**
  * ViewBot State Manager - Middleware for managing ViewBot streaming states
  * Implements a finite state machine to ensure consistent state management
@@ -41,7 +43,7 @@ class ViewBotStateManager {
     // Simplified streaming mode for testing rotation
     this.simplifiedMode = true;
     
-    console.log('📊 ViewBotStateManager: Initialized with simplified mode for rotation testing');
+    logger.debug('📊 ViewBotStateManager: Initialized with simplified mode for rotation testing');
   }
 
   /**
@@ -60,7 +62,7 @@ class ViewBotStateManager {
       
       this.stateHistory.set(botId, []);
       
-      console.log(`📊 StateManager: Registered bot ${botId} in IDLE state`);
+      logger.debug(`📊 StateManager: Registered bot ${botId} in IDLE state`);
     }
   }
 
@@ -87,7 +89,7 @@ class ViewBotStateManager {
     const botState = this.botStates.get(botId);
     
     if (!botState) {
-      console.error(`❌ StateManager: Bot ${botId} not registered`);
+      logger.error(`❌ StateManager: Bot ${botId} not registered`);
       return false;
     }
 
@@ -96,7 +98,7 @@ class ViewBotStateManager {
     // Check if transition is valid
     const validTransitions = this.TRANSITIONS[currentState] || [];
     if (!validTransitions.includes(newState) && currentState !== newState) {
-      console.error(`❌ StateManager: Invalid transition for ${botId}: ${currentState} -> ${newState}`);
+      logger.error(`❌ StateManager: Invalid transition for ${botId}: ${currentState} -> ${newState}`);
       return false;
     }
 
@@ -135,7 +137,7 @@ class ViewBotStateManager {
     
     this.stateHistory.set(botId, history);
 
-    console.log(`📊 StateManager: Bot ${botId} transitioned: ${currentState} -> ${newState}`);
+    logger.debug(`📊 StateManager: Bot ${botId} transitioned: ${currentState} -> ${newState}`);
 
     // Trigger callbacks
     this.triggerCallbacks(botId, currentState, newState, data);
@@ -162,7 +164,7 @@ class ViewBotStateManager {
       try {
         callback(fromState, toState, data);
       } catch (error) {
-        console.error(`❌ StateManager: Callback error for ${botId}:`, error);
+        logger.error(`❌ StateManager: Callback error for ${botId}:`, error);
       }
     });
   }
@@ -183,7 +185,7 @@ class ViewBotStateManager {
           simplified: true,
           mockPipeline: true
         });
-        console.log(`✅ StateManager: Bot ${botId} mock streaming active (simplified mode)`);
+        logger.debug(`✅ StateManager: Bot ${botId} mock streaming active (simplified mode)`);
       }, 100);
       
       return true;
@@ -206,7 +208,7 @@ class ViewBotStateManager {
         duration: streamingDuration
       });
       
-      console.log(`⏹️ StateManager: Bot ${botId} stopped after ${Math.round(streamingDuration / 1000)}s`);
+      logger.debug(`⏹️ StateManager: Bot ${botId} stopped after ${Math.round(streamingDuration / 1000)}s`);
       
       // Auto-transition to IDLE after stop
       setTimeout(() => {
@@ -264,7 +266,7 @@ class ViewBotStateManager {
       botState.streamingStartTime = null;
       botState.errorCount = 0;
       
-      console.log(`🔄 StateManager: Bot ${botId} reset to IDLE`);
+      logger.debug(`🔄 StateManager: Bot ${botId} reset to IDLE`);
     }
   }
 
@@ -310,7 +312,7 @@ class ViewBotStateManager {
    */
   setSimplifiedMode(enabled) {
     this.simplifiedMode = enabled;
-    console.log(`📊 StateManager: Simplified mode ${enabled ? 'enabled' : 'disabled'}`);
+    logger.debug(`📊 StateManager: Simplified mode ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   /**
@@ -326,7 +328,7 @@ class ViewBotStateManager {
         this.botStates.delete(botId);
         this.stateHistory.delete(botId);
         this.stateChangeCallbacks.delete(botId);
-        console.log(`🧹 StateManager: Cleaned up inactive bot ${botId}`);
+        logger.debug(`🧹 StateManager: Cleaned up inactive bot ${botId}`);
       }
     }
   }
@@ -339,7 +341,7 @@ class ViewBotStateManager {
       this.registerBot(botId);
     }
     
-    console.log(`🔧 STATE MANAGER: Force setting bot ${botId} to state: ${state}`);
+    logger.debug(`🔧 STATE MANAGER: Force setting bot ${botId} to state: ${state}`);
     this.bots.set(botId, state);
     
     // Update transition history

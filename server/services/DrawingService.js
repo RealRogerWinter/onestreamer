@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'DrawingService' });
+
 // server/services/DrawingService.js
 //
 // Stateless orchestrator for the standalone drawing-start flow extracted
@@ -38,7 +40,7 @@ class DrawingService {
      */
     async startDrawing({ user, item, services, io, sessionService, sendSystemMessage, buffNotifier }) {
         const userId = user.userId || user.id;
-        console.log(`✏️ DRAWING START: User ${user.username} starting drawing`, { item });
+        logger.debug(`✏️ DRAWING START: User ${user.username} starting drawing`, { item });
 
         if (!item) {
             return { ok: false, kind: 'missing-item' };
@@ -51,17 +53,17 @@ class DrawingService {
 
         // Drawing requires an active stream to draw on.
         if (!streamStatus.hasActiveStream) {
-            console.log(`❌ DRAWING START: No active stream to draw on`);
+            logger.debug(`❌ DRAWING START: No active stream to draw on`);
             return { ok: false, kind: 'no-active-stream' };
         }
 
-        console.log(`✏️ DRAWING START: Consuming marker item ${item.name} for user ${user.username}`);
+        logger.debug(`✏️ DRAWING START: Consuming marker item ${item.name} for user ${user.username}`);
 
         let result;
         try {
             result = await inventoryService.useItem(userId, item.id, streamId);
         } catch (error) {
-            console.error('Error starting drawing:', error);
+            logger.error('Error starting drawing:', error);
             if (error.message && error.message.includes('cooldown')) {
                 return { ok: false, kind: 'cooldown', message: error.message };
             }
@@ -78,15 +80,15 @@ class DrawingService {
                     { username: user.username }
                 );
 
-                console.log(`✏️ DRAWING START: triggerItemEffect returned:`, effect);
+                logger.debug(`✏️ DRAWING START: triggerItemEffect returned:`, effect);
 
                 if (effect) {
-                    console.log(`✏️ DRAWING START: Triggered multi-phase drawing effect for ${result.item.displayName}`);
+                    logger.debug(`✏️ DRAWING START: Triggered multi-phase drawing effect for ${result.item.displayName}`);
                 } else {
-                    console.log(`❌ DRAWING START: Failed to trigger effect for ${result.item.displayName} - null effect returned`);
+                    logger.debug(`❌ DRAWING START: Failed to trigger effect for ${result.item.displayName} - null effect returned`);
                 }
             } catch (error) {
-                console.error(`❌ DRAWING START: Error triggering effect for ${result.item.displayName}:`, error);
+                logger.error(`❌ DRAWING START: Error triggering effect for ${result.item.displayName}:`, error);
             }
         }
 

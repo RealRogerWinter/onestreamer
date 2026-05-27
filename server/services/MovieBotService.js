@@ -1,6 +1,7 @@
 const path = require('path');
 const TranscriptionDrivenBotService = require('./TranscriptionDrivenBotService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'MovieBotService' });
 class MovieBotService extends TranscriptionDrivenBotService {
     constructor(transcriptionService, chatBotService, chatService, database, botEventBus = null) {
         super({
@@ -41,7 +42,7 @@ class MovieBotService extends TranscriptionDrivenBotService {
         // before we issue the first SELECT against moviebot_config.
         setTimeout(() => this.loadConfigFromDatabase(), 100);
 
-        console.log('🎬 MovieBotService: Initialized');
+        logger.debug('🎬 MovieBotService: Initialized');
     }
 
     // ── Base-class hook implementations ────────────────────────────────
@@ -79,7 +80,7 @@ class MovieBotService extends TranscriptionDrivenBotService {
             this.chatBotService.llmService.groqApiKey = row.groq_api_key;
             if (this.config.useGroq) {
                 this.chatBotService.llmService.enableGroq(row.groq_api_key);
-                console.log('✅ MovieBotService: Groq enabled from database config');
+                logger.debug('✅ MovieBotService: Groq enabled from database config');
             }
         }
     }
@@ -189,7 +190,7 @@ class MovieBotService extends TranscriptionDrivenBotService {
     async processTranscription(transcriptionText) {
         const validation = this.validateMeaningfulTranscription(transcriptionText);
         if (!validation) {
-            console.log(`⚠️ MovieBotService: Transcription invalid or lacks meaningful content, skipping`);
+            logger.debug(`⚠️ MovieBotService: Transcription invalid or lacks meaningful content, skipping`);
             return;
         }
         const { cleanText } = validation;
@@ -197,7 +198,7 @@ class MovieBotService extends TranscriptionDrivenBotService {
             const chatHistory = await this.getChatHistory(this.config.chatHistoryLimit);
             const movieBotEnabledBots = await this.chatBotService.getMovieBotEnabledBots();
             if (movieBotEnabledBots.length === 0) {
-                console.log('⚠️ MovieBotService: No chatbots with MovieBot enabled');
+                logger.debug('⚠️ MovieBotService: No chatbots with MovieBot enabled');
                 return;
             }
             const moviePrompt = this.buildMoviePrompt(cleanText, chatHistory);
@@ -221,24 +222,24 @@ class MovieBotService extends TranscriptionDrivenBotService {
                 }
             }
         } catch (error) {
-            console.error('❌ MovieBotService: Error processing transcription:', error);
+            logger.error('❌ MovieBotService: Error processing transcription:', error);
         }
     }
 
     async processTranscriptionWithBatching(transcriptionText, cycleIndex) {
         const validation = this.validateMeaningfulTranscription(transcriptionText);
         if (!validation) {
-            console.log(`⚠️ MovieBotService: Transcription invalid or lacks meaningful content, skipping`);
+            logger.debug(`⚠️ MovieBotService: Transcription invalid or lacks meaningful content, skipping`);
             return;
         }
         const { cleanText, meaningfulWords } = validation;
-        console.log(`🎬 MovieBotService: Processing transcription ${cycleIndex + 1} with batching (${cleanText.length} chars, ${meaningfulWords.length} meaningful words)`);
+        logger.debug(`🎬 MovieBotService: Processing transcription ${cycleIndex + 1} with batching (${cleanText.length} chars, ${meaningfulWords.length} meaningful words)`);
 
         try {
             const chatHistory = await this.getChatHistory(this.config.chatHistoryLimit);
             const allMovieBotEnabledBots = await this.chatBotService.getMovieBotEnabledBots();
             if (allMovieBotEnabledBots.length === 0) {
-                console.log('⚠️ MovieBotService: No chatbots with MovieBot enabled');
+                logger.debug('⚠️ MovieBotService: No chatbots with MovieBot enabled');
                 return;
             }
             const targetBots = allMovieBotEnabledBots;
@@ -277,7 +278,7 @@ class MovieBotService extends TranscriptionDrivenBotService {
                 }, botDelay);
             }
         } catch (error) {
-            console.error('❌ MovieBotService: Error processing transcription with batching:', error);
+            logger.error('❌ MovieBotService: Error processing transcription with batching:', error);
         }
     }
 
@@ -338,7 +339,7 @@ class MovieBotService extends TranscriptionDrivenBotService {
                 if (newConfig.useGroq) {
                     const success = this.chatBotService.llmService.enableGroq(newConfig.groqApiKey);
                     if (!success) {
-                        console.log('⚠️ MovieBotService: Failed to enable Groq (API key missing?)');
+                        logger.debug('⚠️ MovieBotService: Failed to enable Groq (API key missing?)');
                         this.config.useGroq = false;
                     }
                 } else {

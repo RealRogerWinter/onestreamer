@@ -7,6 +7,7 @@
 
 const https = require('https');
 
+const logger = require('../bootstrap/logger').child({ svc: 'TwitchRandomService' });
 class TwitchRandomService {
   constructor() {
     this.clientId = process.env.TWITCH_CLIENT_ID;
@@ -34,10 +35,10 @@ class TwitchRandomService {
     // for hosts that haven't deployed PR-W1).
     this.whitelistService = null;
 
-    console.log('🎮 TwitchRandomService initialized');
+    logger.debug('🎮 TwitchRandomService initialized');
 
     if (!this.clientId || !this.clientSecret) {
-      console.warn('⚠️ TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET not set - random Twitch discovery will not work');
+      logger.warn('⚠️ TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET not set - random Twitch discovery will not work');
     }
   }
 
@@ -48,7 +49,7 @@ class TwitchRandomService {
    */
   setWhitelistService(whitelistService) {
     this.whitelistService = whitelistService;
-    console.log('✅ WhitelistService registered with TwitchRandomService');
+    logger.debug('✅ WhitelistService registered with TwitchRandomService');
   }
 
   /**
@@ -71,7 +72,7 @@ class TwitchRandomService {
       return this.accessToken;
     }
 
-    console.log('🔑 Fetching new Twitch access token...');
+    logger.debug('🔑 Fetching new Twitch access token...');
 
     return new Promise((resolve, reject) => {
       const postData = new URLSearchParams({
@@ -100,7 +101,7 @@ class TwitchRandomService {
             if (json.access_token) {
               this.accessToken = json.access_token;
               this.tokenExpiry = Date.now() + (json.expires_in * 1000);
-              console.log('✅ Twitch access token obtained');
+              logger.debug('✅ Twitch access token obtained');
               resolve(this.accessToken);
             } else {
               reject(new Error(json.message || 'Failed to get access token'));
@@ -192,7 +193,7 @@ class TwitchRandomService {
       const games = await this.getTopGames(100);
 
       if (!games || games.length === 0) {
-        console.warn('⚠️ No games found, falling back to general streams');
+        logger.warn('⚠️ No games found, falling back to general streams');
         return { streams: await this.getLiveStreams({ language, first }), category: null };
       }
 
@@ -201,7 +202,7 @@ class TwitchRandomService {
       const weightedIndex = Math.floor(Math.pow(Math.random(), 0.7) * games.length);
       const randomGame = games[weightedIndex];
 
-      console.log(`🎲 Selected random category: ${randomGame.name}`);
+      logger.debug(`🎲 Selected random category: ${randomGame.name}`);
 
       // Get streams from this category
       const streams = await this.getLiveStreams({
@@ -212,7 +213,7 @@ class TwitchRandomService {
 
       return { streams, category: randomGame.name };
     } catch (error) {
-      console.error('❌ Error getting streams from random category:', error.message);
+      logger.error('❌ Error getting streams from random category:', error.message);
       // Fallback to general streams
       return { streams: await this.getLiveStreams({ language, first }), category: null };
     }
@@ -235,7 +236,7 @@ class TwitchRandomService {
       useCategoryDiversification = true // NEW: use random category selection for variety
     } = options;
 
-    console.log('🔍 Searching for random Twitch streamer...');
+    logger.debug('🔍 Searching for random Twitch streamer...');
 
     try {
       let streams = [];
@@ -293,7 +294,7 @@ class TwitchRandomService {
           // CCL fetch failure shouldn't tank the rotation — fall through
           // with empty CCL data so the mature_flag / ccl_gate checks are
           // effectively no-ops. The streamer/category lists still apply.
-          console.warn(`⚠️ TwitchRandomService: CCL fetch failed (${cclErr.message}); proceeding without CCL data`);
+          logger.warn(`⚠️ TwitchRandomService: CCL fetch failed (${cclErr.message}); proceeding without CCL data`);
         }
         const shaped = candidates.map(stream => ({
           raw: stream,
@@ -310,7 +311,7 @@ class TwitchRandomService {
       const filtered = candidates;
 
       if (filtered.length === 0) {
-        console.warn('⚠️ No suitable streams found');
+        logger.warn('⚠️ No suitable streams found');
         return null;
       }
 
@@ -325,7 +326,7 @@ class TwitchRandomService {
       }
 
       const categoryNote = selectedCategory ? ` (from random category: ${selectedCategory})` : '';
-      console.log(`✅ Found random streamer: ${selected.user_name} playing ${selected.game_name} (${selected.viewer_count} viewers)${categoryNote}`);
+      logger.debug(`✅ Found random streamer: ${selected.user_name} playing ${selected.game_name} (${selected.viewer_count} viewers)${categoryNote}`);
 
       return {
         username: selected.user_login,
@@ -340,7 +341,7 @@ class TwitchRandomService {
       };
 
     } catch (error) {
-      console.error('❌ Error finding random streamer:', error.message);
+      logger.error('❌ Error finding random streamer:', error.message);
       throw error;
     }
   }
@@ -353,7 +354,7 @@ class TwitchRandomService {
       const response = await this.twitchRequest(`/helix/streams?user_login=${username}`);
       return response.data && response.data.length > 0;
     } catch (error) {
-      console.error(`❌ Error checking if ${username} is live:`, error.message);
+      logger.error(`❌ Error checking if ${username} is live:`, error.message);
       return false;
     }
   }
@@ -392,7 +393,7 @@ class TwitchRandomService {
         ccls,
       };
     } catch (error) {
-      console.error(`❌ Twitch drift check failed for ${username}:`, error.message);
+      logger.error(`❌ Twitch drift check failed for ${username}:`, error.message);
       return null;
     }
   }
@@ -408,7 +409,7 @@ class TwitchRandomService {
       }
       return null;
     } catch (error) {
-      console.error(`❌ Error getting streamer info for ${username}:`, error.message);
+      logger.error(`❌ Error getting streamer info for ${username}:`, error.message);
       return null;
     }
   }
@@ -418,7 +419,7 @@ class TwitchRandomService {
    */
   clearRecentCache() {
     this.recentStreamers = [];
-    console.log('🧹 Recent streamers cache cleared');
+    logger.debug('🧹 Recent streamers cache cleared');
   }
 
   /**
@@ -426,7 +427,7 @@ class TwitchRandomService {
    */
   blockCategory(categoryName) {
     this.blockedCategories.add(categoryName);
-    console.log(`🚫 Blocked category: ${categoryName}`);
+    logger.debug(`🚫 Blocked category: ${categoryName}`);
   }
 
   /**
@@ -434,7 +435,7 @@ class TwitchRandomService {
    */
   unblockCategory(categoryName) {
     this.blockedCategories.delete(categoryName);
-    console.log(`✅ Unblocked category: ${categoryName}`);
+    logger.debug(`✅ Unblocked category: ${categoryName}`);
   }
 
   /**
@@ -450,7 +451,7 @@ class TwitchRandomService {
   setViewerRange(min, max) {
     this.minViewers = min;
     this.maxViewers = max;
-    console.log(`👁️ Viewer range set: ${min} - ${max}`);
+    logger.debug(`👁️ Viewer range set: ${min} - ${max}`);
   }
 
   /**

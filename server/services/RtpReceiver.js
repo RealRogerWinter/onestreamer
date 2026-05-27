@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'RtpReceiver' });
 class RtpReceiver extends EventEmitter {
     constructor(port, options = {}) {
         super();
@@ -33,14 +34,14 @@ class RtpReceiver extends EventEmitter {
                 });
                 
                 this.socket.on('error', (err) => {
-                    console.error(`❌ RTP Receiver socket error:`, err);
+                    logger.error(`❌ RTP Receiver socket error:`, err);
                     this.emit('error', err);
                     reject(err);
                 });
                 
                 this.socket.on('listening', () => {
                     const address = this.socket.address();
-                    console.log(`📡 RTP Receiver listening on ${address.address}:${address.port}`);
+                    logger.debug(`📡 RTP Receiver listening on ${address.address}:${address.port}`);
                     this.isRunning = true;
                     
                     // Start FFmpeg process to decode Opus
@@ -52,7 +53,7 @@ class RtpReceiver extends EventEmitter {
                 this.socket.bind(this.port, '0.0.0.0');
                 
             } catch (error) {
-                console.error(`❌ RTP Receiver failed to start:`, error);
+                logger.error(`❌ RTP Receiver failed to start:`, error);
                 reject(error);
             }
         });
@@ -64,7 +65,7 @@ class RtpReceiver extends EventEmitter {
         
         // Extract RTP header (first 12 bytes minimum)
         if (packet.length < 12) {
-            console.warn(`⚠️ RTP packet too small: ${packet.length} bytes`);
+            logger.warn(`⚠️ RTP packet too small: ${packet.length} bytes`);
             return;
         }
         
@@ -85,7 +86,7 @@ class RtpReceiver extends EventEmitter {
         // Handle extension if present
         if (extension) {
             if (packet.length < headerLength + 4) {
-                console.warn(`⚠️ RTP packet with extension too small`);
+                logger.warn(`⚠️ RTP packet with extension too small`);
                 return;
             }
             const extensionLength = packet.readUInt16BE(headerLength + 2) * 4;
@@ -97,7 +98,7 @@ class RtpReceiver extends EventEmitter {
         
         // Log periodically
         if (this.packetsReceived % 100 === 0) {
-            console.log(`📊 RTP Receiver: ${this.packetsReceived} packets, ${this.bytesReceived} bytes, seq: ${sequenceNumber}`);
+            logger.debug(`📊 RTP Receiver: ${this.packetsReceived} packets, ${this.bytesReceived} bytes, seq: ${sequenceNumber}`);
         }
         
         // Accumulate Opus payloads
@@ -116,7 +117,7 @@ class RtpReceiver extends EventEmitter {
     
     startFfmpeg() {
         try {
-            console.log(`🎬 RTP Receiver: Starting audio accumulator (no FFmpeg for now)`);
+            logger.debug(`🎬 RTP Receiver: Starting audio accumulator (no FFmpeg for now)`);
             
             // Initialize buffers - use simpler approach
             this.opusBuffer = [];
@@ -130,13 +131,13 @@ class RtpReceiver extends EventEmitter {
                     const packets = this.opusBuffer.splice(0);
                     
                     if (packets.length > 0) {
-                        console.log(`📊 RTP Receiver: Processing ${packets.length} Opus packets`);
+                        logger.debug(`📊 RTP Receiver: Processing ${packets.length} Opus packets`);
                         
                         // Combine all Opus payloads into a single buffer
                         const combinedOpus = Buffer.concat(packets);
                         
                         // Emit the raw Opus data as an audio chunk (bypassing decoding for now)
-                        console.log(`📊 RTP Receiver: Emitted audio chunk (${combinedOpus.length} bytes of Opus)`);
+                        logger.debug(`📊 RTP Receiver: Emitted audio chunk (${combinedOpus.length} bytes of Opus)`);
                         this.emit('audio-chunk', combinedOpus);
                     }
                 }
@@ -144,14 +145,14 @@ class RtpReceiver extends EventEmitter {
             
             
         } catch (error) {
-            console.error(`❌ Failed to start FFmpeg decoder:`, error);
+            logger.error(`❌ Failed to start FFmpeg decoder:`, error);
             this.emit('error', error);
         }
     }
     
     
     stop() {
-        console.log(`🛑 Stopping RTP Receiver`);
+        logger.debug(`🛑 Stopping RTP Receiver`);
         
         this.isRunning = false;
         
@@ -184,7 +185,7 @@ class RtpReceiver extends EventEmitter {
             this.audioDecoder = null;
         }
         
-        console.log(`📊 RTP Receiver stats: ${this.packetsReceived} packets, ${this.bytesReceived} bytes received`);
+        logger.debug(`📊 RTP Receiver stats: ${this.packetsReceived} packets, ${this.bytesReceived} bytes received`);
     }
     
     getStats() {

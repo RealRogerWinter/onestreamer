@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'ProfanityFilterService' });
+
 class ProfanityFilterService {
     constructor() {
         // Comprehensive profanity word list with evasion variants
@@ -155,7 +157,7 @@ class ProfanityFilterService {
         for (const pattern of this.patterns) {
             pattern.lastIndex = 0; // Reset regex state
             if (pattern.test(lowerText)) {
-                console.log(`🚫 Profanity detected: ${pattern}`);
+                logger.debug(`🚫 Profanity detected: ${pattern}`);
                 return false;
             }
         }
@@ -167,7 +169,7 @@ class ProfanityFilterService {
         for (const word of this.badWords) {
             const normalizedWord = word.replace(/\s/g, '');
             if (normalized.includes(normalizedWord)) {
-                console.log(`🚫 Profanity detected (normalized): ${word}`);
+                logger.debug(`🚫 Profanity detected (normalized): ${word}`);
                 return false;
             }
         }
@@ -190,7 +192,7 @@ class ProfanityFilterService {
 
         for (const pattern of criticalPatterns) {
             if (pattern.test(normalized)) {
-                console.log(`🚫 Profanity detected (critical pattern): ${pattern}`);
+                logger.debug(`🚫 Profanity detected (critical pattern): ${pattern}`);
                 return false;
             }
         }
@@ -198,14 +200,14 @@ class ProfanityFilterService {
         // Check for zalgo text or excessive special characters
         const specialCharRatio = (text.match(/[^\w\s]/g) || []).length / text.length;
         if (specialCharRatio > 0.3 && text.length > 5) {
-            console.log(`🚫 Excessive special characters detected`);
+            logger.debug(`🚫 Excessive special characters detected`);
             return false;
         }
 
         // Check for excessive combining characters (zalgo)
         const combiningChars = (text.match(/[\u0300-\u036f]/g) || []).length;
         if (combiningChars > 5) {
-            console.log(`🚫 Excessive combining characters (zalgo) detected`);
+            logger.debug(`🚫 Excessive combining characters (zalgo) detected`);
             return false;
         }
 

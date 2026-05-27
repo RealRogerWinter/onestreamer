@@ -35,6 +35,7 @@ const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const Stage1 = require('./ModerationStage1');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ModerationService' });
 const DEFAULT_SEED_PATH = path.join(__dirname, '..', 'data', 'seeds', 'moderation-core-list.json');
 const DEFAULT_SEED_HASH_PATH = path.join(__dirname, '..', 'data', 'seeds', 'moderation-core-list.sha256');
 const DEFAULT_SCHEMA_PATH = path.join(__dirname, '..', 'database', 'ai-moderation-schema.sql');
@@ -134,7 +135,7 @@ class ModerationService extends EventEmitter {
     this._subscribeToTranscriptionChunks();
 
     this.initialized = true;
-    console.log(`✅ ModerationService initialized (terms=${this._termsCache.length}, enforce=${this._enforce ? 'on' : 'off'})`);
+    logger.debug(`✅ ModerationService initialized (terms=${this._termsCache.length}, enforce=${this._enforce ? 'on' : 'off'})`);
   }
 
   /**
@@ -152,7 +153,7 @@ class ModerationService extends EventEmitter {
     try {
       row = await this.database.getAsync('SELECT enforce, updated_by FROM moderation_global_config WHERE id = 1');
     } catch (err) {
-      console.warn('⚠️ ModerationService: could not read moderation_global_config:', err.message);
+      logger.warn('⚠️ ModerationService: could not read moderation_global_config:', err.message);
     }
 
     if (row && row.updated_by === 'seed' && process.env.AI_MODERATION_ENFORCE === 'true') {
@@ -162,10 +163,10 @@ class ModerationService extends EventEmitter {
              SET enforce = 1, updated_at = CURRENT_TIMESTAMP, updated_by = 'env'
            WHERE id = 1 AND updated_by = 'seed'`
         );
-        console.log('✅ ModerationService: upgraded global enforce 0→1 from AI_MODERATION_ENFORCE env (first-install path)');
+        logger.debug('✅ ModerationService: upgraded global enforce 0→1 from AI_MODERATION_ENFORCE env (first-install path)');
         row = { enforce: 1, updated_by: 'env' };
       } catch (err) {
-        console.warn('⚠️ ModerationService: env-flag upgrade failed:', err.message);
+        logger.warn('⚠️ ModerationService: env-flag upgrade failed:', err.message);
       }
     }
 
@@ -230,7 +231,7 @@ class ModerationService extends EventEmitter {
     } catch (err) {
       const msg = `ModerationService: cannot read schema file at ${this.schemaPath}: ${err.message}`;
       if (this.failClosed) throw new Error(msg);
-      console.warn('⚠️ ' + msg);
+      logger.warn('⚠️ ' + msg);
       return;
     }
 
@@ -251,8 +252,8 @@ class ModerationService extends EventEmitter {
       try {
         await this.database.runAsync(stmt + ';');
       } catch (err) {
-        console.error('❌ ModerationService: schema statement failed:', err.message);
-        console.error('   Offending statement:', stmt.slice(0, 200));
+        logger.error('❌ ModerationService: schema statement failed:', err.message);
+        logger.error('   Offending statement:', stmt.slice(0, 200));
         throw err;
       }
     }
@@ -272,7 +273,7 @@ class ModerationService extends EventEmitter {
     } catch (err) {
       const msg = `ModerationService: cannot read seed file at ${this.seedPath}: ${err.message}`;
       if (this.failClosed) throw new Error(msg);
-      console.warn('⚠️ ' + msg);
+      logger.warn('⚠️ ' + msg);
       return;
     }
     try {
@@ -280,17 +281,17 @@ class ModerationService extends EventEmitter {
     } catch (err) {
       const msg = `ModerationService: cannot read seed hash file at ${this.seedHashPath}: ${err.message}`;
       if (this.failClosed) throw new Error(msg);
-      console.warn('⚠️ ' + msg);
+      logger.warn('⚠️ ' + msg);
       return;
     }
     const computed = crypto.createHash('sha256').update(seedBytes).digest('hex');
     if (computed !== storedHash) {
       const msg = `ModerationService: seed integrity mismatch (computed=${computed.slice(0, 16)}, stored=${storedHash.slice(0, 16)})`;
       if (this.failClosed) throw new Error(msg);
-      console.warn('⚠️ ' + msg);
+      logger.warn('⚠️ ' + msg);
       return;
     }
-    console.log('✅ ModerationService: seed integrity verified');
+    logger.debug('✅ ModerationService: seed integrity verified');
   }
 
   /**
@@ -313,11 +314,11 @@ class ModerationService extends EventEmitter {
     try {
       seed = JSON.parse(fs.readFileSync(this.seedPath, 'utf8'));
     } catch (err) {
-      console.warn('⚠️ ModerationService: failed to parse seed JSON:', err.message);
+      logger.warn('⚠️ ModerationService: failed to parse seed JSON:', err.message);
       return;
     }
     if (!seed || !Array.isArray(seed.terms)) {
-      console.warn('⚠️ ModerationService: seed JSON has no terms array');
+      logger.warn('⚠️ ModerationService: seed JSON has no terms array');
       return;
     }
 
@@ -352,10 +353,10 @@ class ModerationService extends EventEmitter {
           if (upd && upd.changes > 0) restored += 1;
         }
       } catch (err) {
-        console.warn(`⚠️ ModerationService: upsert failed for term "${entry.term}":`, err.message);
+        logger.warn(`⚠️ ModerationService: upsert failed for term "${entry.term}":`, err.message);
       }
     }
-    console.log(`✅ ModerationService: seed upserted (inserted=${inserted}, restored=${restored}, total=${seed.terms.length})`);
+    logger.debug(`✅ ModerationService: seed upserted (inserted=${inserted}, restored=${restored}, total=${seed.terms.length})`);
   }
 
   /**
@@ -373,7 +374,7 @@ class ModerationService extends EventEmitter {
       this._termsCache = rows || [];
       this._termsCacheAt = Date.now();
     } catch (err) {
-      console.error('❌ ModerationService: failed to load terms cache:', err.message);
+      logger.error('❌ ModerationService: failed to load terms cache:', err.message);
       this._termsCache = [];
     }
   }
@@ -414,7 +415,7 @@ class ModerationService extends EventEmitter {
     if (this._chunkListener) return;
     this._chunkListener = (chunk) => {
       this.handleTranscriptChunk(chunk).catch((err) => {
-        console.error('❌ ModerationService: handleTranscriptChunk error:', err);
+        logger.error('❌ ModerationService: handleTranscriptChunk error:', err);
       });
     };
     this.transcriptionService.on('transcription-chunk', this._chunkListener);
@@ -464,7 +465,7 @@ class ModerationService extends EventEmitter {
 
     const prev = this._streamerChains.get(streamerId) || Promise.resolve();
     const next = prev.then(() => this._processChunk(normalizedChunk).catch((err) => {
-      console.error('❌ ModerationService: chunk processing failed:', err);
+      logger.error('❌ ModerationService: chunk processing failed:', err);
       return null;
     }));
     this._streamerChains.set(streamerId, next);
@@ -523,7 +524,7 @@ class ModerationService extends EventEmitter {
           surroundingContext,
         });
       } catch (err) {
-        console.error('❌ ModerationService: Stage 2 threw:', err);
+        logger.error('❌ ModerationService: Stage 2 threw:', err);
         stage2Result = { error: 'stage2_threw', raw_status: null, raw_body: null };
       }
     }
@@ -676,7 +677,7 @@ class ModerationService extends EventEmitter {
         text: (surroundingContext ? `${surroundingContext}\n\n` : '') + text,
       });
     } catch (err) {
-      console.error('❌ ModerationService: Stage 3 threw:', err);
+      logger.error('❌ ModerationService: Stage 3 threw:', err);
       return { error: 'stage3_threw', raw_status: null, raw_body: null };
     }
   }
@@ -791,7 +792,7 @@ class ModerationService extends EventEmitter {
         created_at: new Date().toISOString(),
       };
     } catch (err) {
-      console.error('❌ ModerationService: failed to insert moderation_events row:', err.message);
+      logger.error('❌ ModerationService: failed to insert moderation_events row:', err.message);
       return null;
     }
   }
@@ -847,7 +848,7 @@ class ModerationService extends EventEmitter {
           }
         }
       } catch (err) {
-        console.error('❌ ModerationService: checkBotOutput Stage 2 threw:', err);
+        logger.error('❌ ModerationService: checkBotOutput Stage 2 threw:', err);
       }
     }
 
@@ -999,7 +1000,7 @@ class ModerationService extends EventEmitter {
       // Embedded rows can be soft-disabled, but they're re-enabled on the
       // next boot (the seed wins). Log it loudly so the admin understands
       // the durability semantics.
-      console.warn(`⚠️ ModerationService: admin disabled embedded term id=${id} ("${before.term}") — will be re-enabled on next boot`);
+      logger.warn(`⚠️ ModerationService: admin disabled embedded term id=${id} ("${before.term}") — will be re-enabled on next boot`);
     }
     await this.database.runAsync(
       'UPDATE moderation_terms SET enabled = ? WHERE id = ?',
@@ -1076,7 +1077,7 @@ class ModerationService extends EventEmitter {
       );
       flaggedDeleted = (r && r.changes) || 0;
     } catch (err) {
-      console.error('❌ ModerationService.purgeOldEvents (flagged) failed:', err.message);
+      logger.error('❌ ModerationService.purgeOldEvents (flagged) failed:', err.message);
     }
     try {
       const r = await this.database.runAsync(
@@ -1087,10 +1088,10 @@ class ModerationService extends EventEmitter {
       );
       cleanDeleted = (r && r.changes) || 0;
     } catch (err) {
-      console.error('❌ ModerationService.purgeOldEvents (clean) failed:', err.message);
+      logger.error('❌ ModerationService.purgeOldEvents (clean) failed:', err.message);
     }
     if (flaggedDeleted > 0 || cleanDeleted > 0) {
-      console.log(`🧹 ModerationService: purged ${flaggedDeleted} flagged + ${cleanDeleted} clean moderation_events rows`);
+      logger.debug(`🧹 ModerationService: purged ${flaggedDeleted} flagged + ${cleanDeleted} clean moderation_events rows`);
     }
     return { flaggedDeleted, cleanDeleted };
   }
@@ -1106,11 +1107,11 @@ class ModerationService extends EventEmitter {
     // Kick off the first run after a 60s grace period so we don't compete
     // with other boot-time IO.
     this._retentionFirstRun = setTimeout(() => {
-      this.purgeOldEvents(opts).catch((err) => console.error('retention first run:', err));
+      this.purgeOldEvents(opts).catch((err) => logger.error('retention first run:', err));
     }, 60_000);
     if (typeof this._retentionFirstRun.unref === 'function') this._retentionFirstRun.unref();
     this._retentionTimer = setInterval(() => {
-      this.purgeOldEvents(opts).catch((err) => console.error('retention tick:', err));
+      this.purgeOldEvents(opts).catch((err) => logger.error('retention tick:', err));
     }, interval);
     if (typeof this._retentionTimer.unref === 'function') this._retentionTimer.unref();
   }

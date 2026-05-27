@@ -10,6 +10,9 @@
  */
 
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'admin-recordings' });
+
 const router = express.Router();
 const { authenticateAdmin } = require('../middleware/auth');
 const { runAsync, getAsync, allAsync } = require('../database/database');
@@ -150,7 +153,7 @@ router.get('/sessions', authenticateAdmin, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error listing sessions:', error);
+        logger.error('Error listing sessions:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -192,7 +195,7 @@ router.get('/sessions/:sessionId', authenticateAdmin, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting session:', error);
+        logger.error('Error getting session:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -243,7 +246,7 @@ router.get('/sessions/:sessionId/video', authenticateAdmin, async (req, res) => 
 
         res.status(404).json({ success: false, error: 'Video file not available' });
     } catch (error) {
-        console.error('Error getting video URL:', error);
+        logger.error('Error getting video URL:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -297,7 +300,7 @@ router.get('/sessions/:sessionId/stream', authenticateAdmin, async (req, res) =>
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
         fs.createReadStream(masterPath).pipe(res);
     } catch (error) {
-        console.error('Error streaming video:', error);
+        logger.error('Error streaming video:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -332,7 +335,7 @@ router.get('/sessions/:sessionId/chat', authenticateAdmin, async (req, res) => {
             count: messages.length
         });
     } catch (error) {
-        console.error('Error getting session chat:', error);
+        logger.error('Error getting session chat:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -388,7 +391,7 @@ router.post('/sessions/:sessionId/clip', authenticateAdmin, async (req, res) => 
             }
         });
     } catch (error) {
-        console.error('Error creating clip:', error);
+        logger.error('Error creating clip:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -408,7 +411,7 @@ router.delete('/sessions/:sessionId', authenticateAdmin, async (req, res) => {
         const result = await cleanupScheduler.deleteSessionById(sessionId);
         res.json(result);
     } catch (error) {
-        console.error('Error deleting session:', error);
+        logger.error('Error deleting session:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -428,7 +431,7 @@ router.post('/sessions/:sessionId/upload', authenticateAdmin, async (req, res) =
         const result = await uploadScheduler.forceUpload(sessionId);
         res.json(result);
     } catch (error) {
-        console.error('Error uploading session:', error);
+        logger.error('Error uploading session:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -465,7 +468,7 @@ router.get('/settings', authenticateAdmin, async (req, res) => {
             settings: settingsObj
         });
     } catch (error) {
-        console.error('Error getting settings:', error);
+        logger.error('Error getting settings:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -494,7 +497,7 @@ router.put('/settings', authenticateAdmin, async (req, res) => {
 
         res.json({ success: true, message: 'Settings updated' });
     } catch (error) {
-        console.error('Error updating settings:', error);
+        logger.error('Error updating settings:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -521,7 +524,7 @@ router.get('/status', authenticateAdmin, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting status:', error);
+        logger.error('Error getting status:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -722,7 +725,7 @@ router.get('/timeline', authenticateAdmin, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting timeline:', error);
+        logger.error('Error getting timeline:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -784,7 +787,7 @@ router.get('/playback', authenticateAdmin, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting playback info:', error);
+        logger.error('Error getting playback info:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -917,7 +920,7 @@ router.get('/master-stream', authenticateAdmin, async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.send(masterContent);
     } catch (error) {
-        console.error('Error generating master stream:', error);
+        logger.error('Error generating master stream:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -948,7 +951,7 @@ router.get('/segment/:sessionId/:filename', authenticateAdmin, async (req, res) 
 
         fs.createReadStream(segmentPath).pipe(res);
     } catch (error) {
-        console.error('Error serving segment:', error);
+        logger.error('Error serving segment:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -1001,7 +1004,7 @@ router.get('/chat-stream', authenticateAdmin, async (req, res) => {
             count: messages.length
         });
     } catch (error) {
-        console.error('Error getting chat stream:', error);
+        logger.error('Error getting chat stream:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

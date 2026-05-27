@@ -13,6 +13,7 @@
 const axios = require('axios');
 const https = require('https');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ChatNotifier' });
 class ChatNotifier {
     /**
      * @param {object} [opts]
@@ -52,7 +53,7 @@ class ChatNotifier {
             // Add timestamp and call stack to debug duplicate messages
             const timestamp = Date.now();
             const stack = new Error().stack.split('\n')[2].trim();
-            console.log(`📤 CHAT: Attempting to send message at ${timestamp}: "${message}" from ${stack}`);
+            logger.debug(`📤 CHAT: Attempting to send message at ${timestamp}: "${message}" from ${stack}`);
 
             const response = await this.axios.post(`${this.chatServiceUrl}/api/system-message`, {
                 message,
@@ -62,11 +63,11 @@ class ChatNotifier {
                 httpsAgent: this.httpsAgent
             });
 
-            console.log(`✅ CHAT: System message sent successfully at ${timestamp}: "${message}"`);
+            logger.debug(`✅ CHAT: System message sent successfully at ${timestamp}: "${message}"`);
             return response.data;
         } catch (error) {
-            console.error(`❌ CHAT: Failed to send system message:`, error.message);
-            console.error(`❌ CHAT: URL attempted: ${this.chatServiceUrl}/api/system-message`);
+            logger.error(`❌ CHAT: Failed to send system message:`, error.message);
+            logger.error(`❌ CHAT: URL attempted: ${this.chatServiceUrl}/api/system-message`);
             return null;
         }
     }

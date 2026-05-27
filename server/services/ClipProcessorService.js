@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const EventEmitter = require('events');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ClipProcessorService' });
 /**
  * ClipProcessorService - Handles FFmpeg processing for clips
  * Manages queue, trimming, thumbnail generation, and callbacks
@@ -34,7 +35,7 @@ class ClipProcessorService extends EventEmitter {
     // Callback for updating clip records
     this.onClipProcessed = null;
 
-    console.log('🎬 CLIP PROCESSOR: Service initialized');
+    logger.debug('🎬 CLIP PROCESSOR: Service initialized');
   }
 
   /**
@@ -96,7 +97,7 @@ class ClipProcessorService extends EventEmitter {
   queueClip(job) {
     const { clipId, segments, clipStartMs, clipEndMs, clipDurationMs } = job;
 
-    console.log(`📥 CLIP PROCESSOR: Queuing clip ${clipId} (${clipDurationMs}ms from ${segments?.length || 0} segments)`);
+    logger.debug(`📥 CLIP PROCESSOR: Queuing clip ${clipId} (${clipDurationMs}ms from ${segments?.length || 0} segments)`);
 
     this.queue.push({
       clipId,
@@ -125,7 +126,7 @@ class ClipProcessorService extends EventEmitter {
     const startTime = Date.now();
 
     try {
-      console.log(`🔄 CLIP PROCESSOR: Starting processing for clip ${job.clipId}`);
+      logger.debug(`🔄 CLIP PROCESSOR: Starting processing for clip ${job.clipId}`);
 
       // Emit processing start event
       this.emitSocketEvent('clip-processing-start', { clipId: job.clipId });
@@ -152,10 +153,10 @@ class ClipProcessorService extends EventEmitter {
         thumbnailUrl: `/api/clips/${job.clipId}/thumbnail`
       });
 
-      console.log(`✅ CLIP PROCESSOR: Completed clip ${job.clipId} in ${Date.now() - startTime}ms`);
+      logger.debug(`✅ CLIP PROCESSOR: Completed clip ${job.clipId} in ${Date.now() - startTime}ms`);
 
     } catch (error) {
-      console.error(`❌ CLIP PROCESSOR: Failed to process clip ${job.clipId}:`, error);
+      logger.error(`❌ CLIP PROCESSOR: Failed to process clip ${job.clipId}:`, error);
 
       this.stats.failed++;
 
@@ -277,7 +278,7 @@ class ClipProcessorService extends EventEmitter {
       outputPath
     ];
 
-    console.log(`📹 CLIP PROCESSOR: Processing ${trimDuration.toFixed(1)}s clip (offset: ${trimStart.toFixed(1)}s)`);
+    logger.debug(`📹 CLIP PROCESSOR: Processing ${trimDuration.toFixed(1)}s clip (offset: ${trimStart.toFixed(1)}s)`);
 
     return this.spawnWithTimeout(args, this.TIMEOUT_ENCODE, 'FFmpeg concat+encode');
   }
@@ -299,13 +300,13 @@ class ClipProcessorService extends EventEmitter {
       thumbnailPath
     ];
 
-    console.log(`🖼️ CLIP PROCESSOR: Generating thumbnail...`);
+    logger.debug(`🖼️ CLIP PROCESSOR: Generating thumbnail...`);
 
     try {
       await this.spawnWithTimeout(args, this.TIMEOUT_THUMBNAIL, 'Thumbnail generation');
     } catch (error) {
       // Thumbnail is non-critical, log but don't fail the whole clip
-      console.warn(`⚠️ CLIP PROCESSOR: Thumbnail generation failed: ${error.message}`);
+      logger.warn(`⚠️ CLIP PROCESSOR: Thumbnail generation failed: ${error.message}`);
     }
   }
 
@@ -356,7 +357,7 @@ class ClipProcessorService extends EventEmitter {
     const index = this.queue.findIndex(job => job.clipId === clipId);
     if (index !== -1) {
       this.queue.splice(index, 1);
-      console.log(`🚫 CLIP PROCESSOR: Cancelled job for clip ${clipId}`);
+      logger.debug(`🚫 CLIP PROCESSOR: Cancelled job for clip ${clipId}`);
       return true;
     }
     return false;

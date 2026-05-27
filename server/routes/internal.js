@@ -24,6 +24,9 @@
 // pattern as routes/tutorial.js).
 
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'internal' });
+
 const router = express.Router();
 
 const AuthService = require('../services/AuthService');
@@ -38,10 +41,10 @@ router.post('/track-chat-message', express.json(), async (req, res) => {
   try {
     const { sessionService, timeTrackingService } = req.app.locals.services;
     const { userId, ip } = req.body;
-    console.log(`💬 API: Received chat message tracking request - userId: ${userId}, ip: ${ip}`);
+    logger.debug(`💬 API: Received chat message tracking request - userId: ${userId}, ip: ${ip}`);
 
     if (!userId && !ip) {
-      console.log(`❌ API: No userId or ip provided`);
+      logger.debug(`❌ API: No userId or ip provided`);
       return res.status(400).json({ error: 'userId or ip required' });
     }
 
@@ -50,19 +53,19 @@ router.post('/track-chat-message', express.json(), async (req, res) => {
     if (!actualUserId && ip) {
       const session = sessionService.getSessionByIp(ip);
       actualUserId = session?.userId;
-      console.log(`💬 API: Looking up user by IP ${ip} - found session:`, !!session, 'userId:', actualUserId);
+      logger.debug(`💬 API: Looking up user by IP ${ip} - found session:`, !!session, 'userId:', actualUserId);
     }
 
     if (actualUserId) {
-      console.log(`✅ API: Tracking chat message for user ${actualUserId}`);
+      logger.debug(`✅ API: Tracking chat message for user ${actualUserId}`);
       await timeTrackingService.trackChatMessage(actualUserId);
       res.json({ success: true, userId: actualUserId });
     } else {
-      console.log(`❌ API: User not found - userId: ${userId}, ip: ${ip}, session: ${sessionService.getSessionByIp(ip) ? 'exists but no userId' : 'not found'}`);
+      logger.debug(`❌ API: User not found - userId: ${userId}, ip: ${ip}, session: ${sessionService.getSessionByIp(ip) ? 'exists but no userId' : 'not found'}`);
       res.json({ success: false, message: 'User not authenticated' });
     }
   } catch (error) {
-    console.error('❌ API: Error tracking chat message:', error);
+    logger.error('❌ API: Error tracking chat message:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -72,20 +75,20 @@ router.post('/sync-chat-username', express.json(), async (req, res) => {
   try {
     const { sessionService } = req.app.locals.services;
     const { ip, username, color } = req.body;
-    console.log(`💬 API: Received chat username sync request - ip: ${ip}, username: ${username}, color: ${color}`);
+    logger.debug(`💬 API: Received chat username sync request - ip: ${ip}, username: ${username}, color: ${color}`);
 
     if (!ip || !username) {
-      console.log(`❌ API: Missing required fields - ip: ${ip}, username: ${username}`);
+      logger.debug(`❌ API: Missing required fields - ip: ${ip}, username: ${username}`);
       return res.status(400).json({ error: 'ip and username required' });
     }
 
     // Update the session service with the chat username
     sessionService.setChatUsername(ip, username, color);
-    console.log(`✅ API: Synced chat username for IP ${ip}: ${username} (${color})`);
+    logger.debug(`✅ API: Synced chat username for IP ${ip}: ${username} (${color})`);
 
     res.json({ success: true, ip, username, color });
   } catch (error) {
-    console.error('❌ API: Error syncing chat username:', error);
+    logger.error('❌ API: Error syncing chat username:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -98,7 +101,7 @@ router.post('/test-viewbot-username', express.json(), async (req, res) => {
     return res.status(400).json({ error: 'streamerId is required' });
   }
 
-  console.log(`🧪 TEST API: Testing viewbot username generation for ${streamerId}`);
+  logger.debug(`🧪 TEST API: Testing viewbot username generation for ${streamerId}`);
 
   try {
     const viewbotService = req.app.locals.viewbotService;
@@ -119,7 +122,7 @@ router.post('/test-viewbot-username', express.json(), async (req, res) => {
       viewbotSocketCount: viewbotSocketIds.size
     });
   } catch (error) {
-    console.error('❌ TEST API: Error testing viewbot username:', error);
+    logger.error('❌ TEST API: Error testing viewbot username:', error);
     res.status(500).json({
       error: error.message,
       streamerId
@@ -148,7 +151,7 @@ router.get('/leaderboard', async (req, res) => {
       leaderboard
     });
   } catch (error) {
-    console.error('❌ LEADERBOARD: Error fetching leaderboard:', error);
+    logger.error('❌ LEADERBOARD: Error fetching leaderboard:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch leaderboard'
@@ -192,7 +195,7 @@ router.get('/stream-uptime', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('❌ UPTIME: Error fetching stream uptime:', error);
+    logger.error('❌ UPTIME: Error fetching stream uptime:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch stream uptime'
@@ -243,7 +246,7 @@ router.post('/award-points', express.json(), async (req, res) => {
       awarded: amount
     });
   } catch (error) {
-    console.error('❌ MAIN SERVER: Failed to award points:', error);
+    logger.error('❌ MAIN SERVER: Failed to award points:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to award points'
@@ -318,7 +321,7 @@ router.post('/gamble', express.json(), async (req, res) => {
       );
     }
 
-    console.log(`🎲 GAMBLE: User ${userId} ${won ? 'won' : 'lost'} ${amount} points. New balance: ${newBalance}`);
+    logger.debug(`🎲 GAMBLE: User ${userId} ${won ? 'won' : 'lost'} ${amount} points. New balance: ${newBalance}`);
 
     res.json({
       success: true,
@@ -327,7 +330,7 @@ router.post('/gamble', express.json(), async (req, res) => {
       newBalance
     });
   } catch (error) {
-    console.error('❌ GAMBLE: Error processing gamble:', error);
+    logger.error('❌ GAMBLE: Error processing gamble:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to process gamble'
@@ -428,7 +431,7 @@ router.post('/slots', express.json(), async (req, res) => {
       );
     }
 
-    console.log(`🎰 SLOTS: User ${userId} bet ${amount}, got [${symbols.join(' ')}], won ${winAmount}. New balance: ${newBalance}`);
+    logger.debug(`🎰 SLOTS: User ${userId} bet ${amount}, got [${symbols.join(' ')}], won ${winAmount}. New balance: ${newBalance}`);
 
     res.json({
       success: true,
@@ -437,7 +440,7 @@ router.post('/slots', express.json(), async (req, res) => {
       newBalance
     });
   } catch (error) {
-    console.error('❌ SLOTS: Error processing slots:', error);
+    logger.error('❌ SLOTS: Error processing slots:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to process slots'
@@ -487,7 +490,7 @@ router.post('/claim-chat-bonus', express.json(), async (req, res) => {
 
       if (timeSinceLastClaim < minimumCooldown) {
         const remainingTime = Math.ceil((minimumCooldown - timeSinceLastClaim) / 1000);
-        console.log(`⏰ BONUS: User ${userId} tried to claim too soon. ${remainingTime}s remaining`);
+        logger.debug(`⏰ BONUS: User ${userId} tried to claim too soon. ${remainingTime}s remaining`);
         return res.status(429).json({
           success: false,
           error: 'Bonus on cooldown',
@@ -515,7 +518,7 @@ router.post('/claim-chat-bonus', express.json(), async (req, res) => {
     const nextBonusDelay = Math.floor(Math.random() * 240000) + 120000; // 2-6 minutes
     const nextBonusTime = new Date(now + nextBonusDelay);
 
-    console.log(`🎁 BONUS: User ${userId} claimed 100 chat bonus points. New balance: ${newBalance}. Next available: ${nextBonusTime.toISOString()}`);
+    logger.debug(`🎁 BONUS: User ${userId} claimed 100 chat bonus points. New balance: ${newBalance}. Next available: ${nextBonusTime.toISOString()}`);
 
     res.json({
       success: true,
@@ -525,7 +528,7 @@ router.post('/claim-chat-bonus', express.json(), async (req, res) => {
       nextBonusTime: nextBonusTime.toISOString()
     });
   } catch (error) {
-    console.error('❌ BONUS: Error claiming chat bonus:', error);
+    logger.error('❌ BONUS: Error claiming chat bonus:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to claim bonus'
@@ -631,7 +634,7 @@ router.post('/gift-item', express.json(), async (req, res) => {
       [fromUserId, toUser.id, item.id, quantity]
     );
 
-    console.log(`🎁 GIFT: ${fromUser.username} gifted ${quantity}x ${item.display_name} to ${toUsername}`);
+    logger.debug(`🎁 GIFT: ${fromUser.username} gifted ${quantity}x ${item.display_name} to ${toUsername}`);
 
     res.json({
       success: true,
@@ -645,7 +648,7 @@ router.post('/gift-item', express.json(), async (req, res) => {
       to: toUsername
     });
   } catch (error) {
-    console.error('❌ GIFT: Error processing gift:', error);
+    logger.error('❌ GIFT: Error processing gift:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to process gift'
@@ -704,7 +707,7 @@ router.get('/giftable-items/:userId', async (req, res) => {
       items: giftableItems
     });
   } catch (error) {
-    console.error('❌ GIFT: Error fetching giftable items:', error);
+    logger.error('❌ GIFT: Error fetching giftable items:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch giftable items'
@@ -758,7 +761,7 @@ router.get('/bonus-status/:userId', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('❌ BONUS: Error checking bonus status:', error);
+    logger.error('❌ BONUS: Error checking bonus status:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to check bonus status'
@@ -818,7 +821,7 @@ router.get('/user-stats/:username', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('❌ STATS: Error fetching user stats:', error);
+    logger.error('❌ STATS: Error fetching user stats:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch user stats'
@@ -913,7 +916,7 @@ router.post('/transfer-points', express.json(), async (req, res) => {
       { senderId: fromUserId, senderUsername: senderUsername || senderUser.username }
     );
 
-    console.log(`💸 TRANSFER: ${senderUsername || senderUser.username} sent ${amount} points to ${toUsername}. Sender balance: ${senderNewBalance}, Recipient balance: ${recipientNewBalance}`);
+    logger.debug(`💸 TRANSFER: ${senderUsername || senderUser.username} sent ${amount} points to ${toUsername}. Sender balance: ${senderNewBalance}, Recipient balance: ${recipientNewBalance}`);
 
     res.json({
       success: true,
@@ -923,7 +926,7 @@ router.post('/transfer-points', express.json(), async (req, res) => {
       recipientUsername: targetUser.username
     });
   } catch (error) {
-    console.error('❌ TRANSFER: Error transferring points:', error);
+    logger.error('❌ TRANSFER: Error transferring points:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to transfer points'
@@ -992,7 +995,7 @@ router.post('/admin/award-points', express.json(), async (req, res) => {
       { adminId: adminUserId }
     );
 
-    console.log(`💰 ADMIN: ${adminUser.username} awarded ${amount} points to ${targetUsername}. New balance: ${newBalance}`);
+    logger.debug(`💰 ADMIN: ${adminUser.username} awarded ${amount} points to ${targetUsername}. New balance: ${newBalance}`);
 
     res.json({
       success: true,
@@ -1001,7 +1004,7 @@ router.post('/admin/award-points', express.json(), async (req, res) => {
       targetUsername: targetUser.username
     });
   } catch (error) {
-    console.error('❌ ADMIN: Error giving points:', error);
+    logger.error('❌ ADMIN: Error giving points:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to give points'
@@ -1080,7 +1083,7 @@ router.post('/admin/take-points', express.json(), async (req, res) => {
       { adminId: adminUserId }
     );
 
-    console.log(`💸 ADMIN: ${adminUser.username} deducted ${amount} points from ${targetUsername}. New balance: ${newBalance}`);
+    logger.debug(`💸 ADMIN: ${adminUser.username} deducted ${amount} points from ${targetUsername}. New balance: ${newBalance}`);
 
     res.json({
       success: true,
@@ -1089,7 +1092,7 @@ router.post('/admin/take-points', express.json(), async (req, res) => {
       targetUsername: targetUser.username
     });
   } catch (error) {
-    console.error('❌ ADMIN: Error taking points:', error);
+    logger.error('❌ ADMIN: Error taking points:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to take points'
@@ -1123,7 +1126,7 @@ router.get('/verify-admin', async (req, res) => {
       res.status(401).json({ isAdmin: false, error: 'Invalid token' });
     }
   } catch (error) {
-    console.error('❌ API: Error verifying admin status:', error);
+    logger.error('❌ API: Error verifying admin status:', error);
     res.status(500).json({ isAdmin: false, error: 'Internal server error' });
   }
 });
@@ -1132,10 +1135,10 @@ router.get('/verify-admin', async (req, res) => {
 router.get('/user/:userId/admin-status', express.json(), async (req, res) => {
   try {
     const { userId } = req.params;
-    console.log(`💬 API: Received admin status request for user ${userId}`);
+    logger.debug(`💬 API: Received admin status request for user ${userId}`);
 
     if (!userId) {
-      console.log(`❌ API: No userId provided`);
+      logger.debug(`❌ API: No userId provided`);
       return res.status(400).json({ error: 'userId required' });
     }
 
@@ -1143,12 +1146,12 @@ router.get('/user/:userId/admin-status', express.json(), async (req, res) => {
     const user = await accountService.getUserById(userId);
 
     if (!user) {
-      console.log(`❌ API: User ${userId} not found`);
+      logger.debug(`❌ API: User ${userId} not found`);
       return res.status(404).json({ error: 'User not found' });
     }
 
     const isAdmin = !!user.is_admin;
-    console.log(`✅ API: User ${userId} admin status: ${isAdmin}`);
+    logger.debug(`✅ API: User ${userId} admin status: ${isAdmin}`);
 
     res.json({
       success: true,
@@ -1157,7 +1160,7 @@ router.get('/user/:userId/admin-status', express.json(), async (req, res) => {
       username: user.username
     });
   } catch (error) {
-    console.error('❌ API: Error checking admin status:', error);
+    logger.error('❌ API: Error checking admin status:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

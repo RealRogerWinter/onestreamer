@@ -19,6 +19,16 @@
 // — including the CHECK constraints and INSERT OR IGNORE semantics on the
 // seed config.
 
+// PR 12.3 (ADR-0020): the service migrated from `console.warn` to the
+// namespaced pino logger. Tests that assert on the warn must spy on the
+// mocked logger module instead. `child()` returns the same mock so
+// `.child({svc:'X'}).warn` resolves to the same `jest.fn()`.
+jest.mock('../../bootstrap/logger', () => {
+    const m = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), fatal: jest.fn(), trace: jest.fn() };
+    m.child = jest.fn(() => m);
+    return m;
+});
+
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -26,6 +36,7 @@ const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const sqlite3 = require('sqlite3').verbose();
 
+const logger = require('../../bootstrap/logger');
 const ModerationService = require('../../services/ModerationService');
 
 const SCHEMA_PATH = path.join(__dirname, '..', '..', 'database', 'ai-moderation-schema.sql');
@@ -204,15 +215,14 @@ describe('ModerationService.initialize', () => {
     fs.writeFileSync(tamperedSeed, JSON.stringify({ version: 1, terms: [] }));
     fs.writeFileSync(tamperedHash, '0'.repeat(64));
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    logger.warn.mockClear();
     const { svc } = await buildService({
       seedPath: tamperedSeed,
       seedHashPath: tamperedHash,
       failClosed: false,
     });
     await expect(svc.initialize()).resolves.not.toThrow();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('seed integrity mismatch'));
-    warnSpy.mockRestore();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('seed integrity mismatch'));
   });
 
   test('verifies the real shipped seed file matches its sha256', () => {

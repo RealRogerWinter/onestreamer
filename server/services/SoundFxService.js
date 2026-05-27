@@ -4,6 +4,7 @@ const { EventEmitter } = require('events');
 const axios = require('axios');
 const https = require('https');
 
+const logger = require('../bootstrap/logger').child({ svc: 'SoundFxService' });
 class SoundFxService extends EventEmitter {
     constructor() {
         super();
@@ -40,9 +41,9 @@ class SoundFxService extends EventEmitter {
             await fs.mkdir(this.audioDirectory, { recursive: true });
             const soundsDir = path.join(this.audioDirectory, 'sounds');
             await fs.mkdir(soundsDir, { recursive: true });
-            console.log('✅ SOUNDFX: Service initialized successfully');
+            logger.debug('✅ SOUNDFX: Service initialized successfully');
         } catch (error) {
-            console.error('❌ SOUNDFX: Failed to initialize service:', error);
+            logger.error('❌ SOUNDFX: Failed to initialize service:', error);
         }
     }
 
@@ -53,7 +54,7 @@ class SoundFxService extends EventEmitter {
     // Register a new item-specific sound that can play simultaneously
     registerItemSound(soundUrl) {
         this.itemSpecificSounds.add(soundUrl);
-        console.log(`🎵 SOUNDFX: Registered item sound for simultaneous playback: ${soundUrl}`);
+        logger.debug(`🎵 SOUNDFX: Registered item sound for simultaneous playback: ${soundUrl}`);
     }
 
     // Check if a sound URL is an item-specific sound
@@ -88,7 +89,7 @@ class SoundFxService extends EventEmitter {
         };
 
         this.ttsQueue.push(ttsRequest);
-        console.log(`🎤 SOUNDFX: TTS queued - User: ${username}, Voice: ${voice.name}, Text: "${text}"`);
+        logger.debug(`🎤 SOUNDFX: TTS queued - User: ${username}, Voice: ${voice.name}, Text: "${text}"`);
 
         this.emit('tts-queued', ttsRequest);
 
@@ -112,7 +113,7 @@ class SoundFxService extends EventEmitter {
             
             if (timeSinceLastTTS < this.ttsQueueDelay && this.lastTTSTime > 0) {
                 const waitTime = this.ttsQueueDelay - timeSinceLastTTS;
-                console.log(`⏳ SOUNDFX: Waiting ${waitTime}ms before next TTS`);
+                logger.debug(`⏳ SOUNDFX: Waiting ${waitTime}ms before next TTS`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
             }
 
@@ -125,7 +126,7 @@ class SoundFxService extends EventEmitter {
                 ttsRequest.status = 'completed';
                 this.emit('tts-completed', ttsRequest);
             } catch (error) {
-                console.error(`❌ SOUNDFX: Failed to process TTS:`, error);
+                logger.error(`❌ SOUNDFX: Failed to process TTS:`, error);
                 ttsRequest.status = 'failed';
                 ttsRequest.error = error.message;
                 this.emit('tts-failed', ttsRequest);
@@ -136,7 +137,7 @@ class SoundFxService extends EventEmitter {
     }
 
     async processTTSRequest(ttsRequest) {
-        console.log(`🔊 SOUNDFX: Processing TTS - User: ${ttsRequest.username}, Voice: ${ttsRequest.voice.name}`);
+        logger.debug(`🔊 SOUNDFX: Processing TTS - User: ${ttsRequest.username}, Voice: ${ttsRequest.voice.name}`);
         
         // Send TTS message to chat
         await this.sendTTSToChat(ttsRequest.username, ttsRequest.text);
@@ -169,7 +170,7 @@ class SoundFxService extends EventEmitter {
             const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'http://127.0.0.1:8081';
             const formattedMessage = `📢 ${username} TTS: ${text}`;
             
-            console.log(`📤 SOUNDFX: Sending TTS to chat at ${chatServiceUrl}/api/system-message`);
+            logger.debug(`📤 SOUNDFX: Sending TTS to chat at ${chatServiceUrl}/api/system-message`);
             
             // Create axios config with HTTPS agent for self-signed certificates
             const axiosConfig = {
@@ -189,11 +190,11 @@ class SoundFxService extends EventEmitter {
                 type: 'tts'
             }, axiosConfig);
             
-            console.log(`💬 SOUNDFX: TTS message sent to chat - ${username}: ${text}`);
-            console.log(`✅ SOUNDFX: Chat response:`, response.data);
+            logger.debug(`💬 SOUNDFX: TTS message sent to chat - ${username}: ${text}`);
+            logger.debug(`✅ SOUNDFX: Chat response:`, response.data);
         } catch (error) {
-            console.error('❌ SOUNDFX: Failed to send TTS to chat:', error.message);
-            console.error('❌ SOUNDFX: Error details:', {
+            logger.error('❌ SOUNDFX: Failed to send TTS to chat:', error.message);
+            logger.error('❌ SOUNDFX: Error details:', {
                 url: error.config?.url,
                 method: error.config?.method,
                 data: error.config?.data
@@ -239,7 +240,7 @@ class SoundFxService extends EventEmitter {
             metadata
         };
 
-        console.log(`🔊 SOUNDFX: Playing audio file - User: ${username}, File: ${fileName}`);
+        logger.debug(`🔊 SOUNDFX: Playing audio file - User: ${username}, File: ${fileName}`);
         
         this.emit('sound-effect', soundEffect);
         await this.broadcastSoundEffect(soundEffect);
@@ -264,7 +265,7 @@ class SoundFxService extends EventEmitter {
         const filePath = path.join(this.audioDirectory, 'sounds', safeName);
 
         await fs.writeFile(filePath, buffer);
-        console.log(`📁 SOUNDFX: Audio file uploaded: ${safeName}`);
+        logger.debug(`📁 SOUNDFX: Audio file uploaded: ${safeName}`);
 
         return {
             fileName: safeName,
@@ -295,7 +296,7 @@ class SoundFxService extends EventEmitter {
 
             return sounds;
         } catch (error) {
-            console.error('❌ SOUNDFX: Failed to get available sounds:', error);
+            logger.error('❌ SOUNDFX: Failed to get available sounds:', error);
             return [];
         }
     }
@@ -303,17 +304,17 @@ class SoundFxService extends EventEmitter {
     async broadcastSoundEffect(soundEffect) {
         const io = this.io;
         if (!io) {
-            console.warn('⚠️ SOUNDFX: Socket.IO not initialized, cannot broadcast');
+            logger.warn('⚠️ SOUNDFX: Socket.IO not initialized, cannot broadcast');
             return;
         }
 
         io.emit('sound-effect-play', soundEffect);
-        console.log(`📢 SOUNDFX: Broadcasted sound effect to all clients`);
+        logger.debug(`📢 SOUNDFX: Broadcasted sound effect to all clients`);
     }
 
     setSocketIO(io) {
         this.io = io;
-        console.log('✅ SOUNDFX: Socket.IO integration configured');
+        logger.debug('✅ SOUNDFX: Socket.IO integration configured');
     }
 
     getTTSQueueStatus() {
@@ -328,7 +329,7 @@ class SoundFxService extends EventEmitter {
     clearTTSQueue() {
         const cleared = this.ttsQueue.length;
         this.ttsQueue = [];
-        console.log(`🗑️ SOUNDFX: Cleared ${cleared} TTS requests from queue`);
+        logger.debug(`🗑️ SOUNDFX: Cleared ${cleared} TTS requests from queue`);
         return cleared;
     }
 
@@ -352,7 +353,7 @@ class SoundFxService extends EventEmitter {
                     { itemId, itemName: itemData.name, ...metadata }
                 );
             } catch (error) {
-                console.log(`📢 SOUNDFX: No audio file for item ${itemData.name}, skipping`);
+                logger.debug(`📢 SOUNDFX: No audio file for item ${itemData.name}, skipping`);
             }
         }
 
@@ -374,7 +375,7 @@ class SoundFxService extends EventEmitter {
                 this.io.emit('sound-effect-stop', { effectId });
             }
             
-            console.log(`⏹️ SOUNDFX: Stopped effect ${effectId}`);
+            logger.debug(`⏹️ SOUNDFX: Stopped effect ${effectId}`);
             return true;
         }
         return false;
@@ -388,7 +389,7 @@ class SoundFxService extends EventEmitter {
             this.io.emit('sound-effect-stop-all');
         }
         
-        console.log(`⏹️ SOUNDFX: Stopped all ${count} active effects`);
+        logger.debug(`⏹️ SOUNDFX: Stopped all ${count} active effects`);
         return count;
     }
 
@@ -413,7 +414,7 @@ class SoundFxService extends EventEmitter {
 
         if (isItemSound) {
             // Item-specific sounds play immediately without queuing
-            console.log(`🔊 SOUNDFX: Item sound playing immediately - User: ${username}, URL: ${soundUrl}`);
+            logger.debug(`🔊 SOUNDFX: Item sound playing immediately - User: ${username}, URL: ${soundUrl}`);
             
             // Process immediately without affecting the queue
             this.processSoundboardRequest(soundboardRequest)
@@ -422,7 +423,7 @@ class SoundFxService extends EventEmitter {
                     this.emit('soundboard-completed', soundboardRequest);
                 })
                 .catch(error => {
-                    console.error(`❌ SOUNDFX: Failed to play item sound:`, error);
+                    logger.error(`❌ SOUNDFX: Failed to play item sound:`, error);
                     soundboardRequest.status = 'failed';
                     soundboardRequest.error = error.message;
                     this.emit('soundboard-failed', soundboardRequest);
@@ -430,7 +431,7 @@ class SoundFxService extends EventEmitter {
         } else {
             // Regular soundboard sounds go through the queue
             this.soundboardQueue.push(soundboardRequest);
-            console.log(`📣 SOUNDFX: 101soundboards queued - User: ${username}, URL: ${soundUrl}`);
+            logger.debug(`📣 SOUNDFX: 101soundboards queued - User: ${username}, URL: ${soundUrl}`);
 
             this.emit('soundboard-queued', soundboardRequest);
 
@@ -455,7 +456,7 @@ class SoundFxService extends EventEmitter {
             
             if (timeSinceLastSound < this.soundboardQueueDelay && this.lastSoundboardTime > 0) {
                 const waitTime = this.soundboardQueueDelay - timeSinceLastSound;
-                console.log(`⏳ SOUNDFX: Waiting ${waitTime}ms before next soundboard`);
+                logger.debug(`⏳ SOUNDFX: Waiting ${waitTime}ms before next soundboard`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
             }
 
@@ -468,7 +469,7 @@ class SoundFxService extends EventEmitter {
                 request.status = 'completed';
                 this.emit('soundboard-completed', request);
             } catch (error) {
-                console.error(`❌ SOUNDFX: Failed to process soundboard:`, error);
+                logger.error(`❌ SOUNDFX: Failed to process soundboard:`, error);
                 request.status = 'failed';
                 request.error = error.message;
                 this.emit('soundboard-failed', request);
@@ -480,7 +481,7 @@ class SoundFxService extends EventEmitter {
 
     async processSoundboardRequest(request) {
         const soundType = request.isItemSound ? 'Item sound (simultaneous)' : 'Queued soundboard';
-        console.log(`🔊 SOUNDFX: Processing ${soundType} - User: ${request.username}, URL: ${request.soundUrl}`);
+        logger.debug(`🔊 SOUNDFX: Processing ${soundType} - User: ${request.username}, URL: ${request.soundUrl}`);
         
         // Parse the URL to extract sound info
         const soundInfo = await this.parse101SoundboardUrl(request.soundUrl);
@@ -543,7 +544,7 @@ class SoundFxService extends EventEmitter {
             }
             return null;
         } catch (error) {
-            console.error('❌ SOUNDFX: Failed to parse 101soundboards URL:', error);
+            logger.error('❌ SOUNDFX: Failed to parse 101soundboards URL:', error);
             return null;
         }
     }
@@ -553,7 +554,7 @@ class SoundFxService extends EventEmitter {
             // Use the API endpoint to fetch sound data
             const apiUrl = `https://www.101soundboards.com/api/v1/sounds/${soundId}`;
             
-            console.log(`🌐 SOUNDFX: Fetching from 101soundboards API: ${apiUrl}`);
+            logger.debug(`🌐 SOUNDFX: Fetching from 101soundboards API: ${apiUrl}`);
             
             const response = await axios.get(apiUrl, {
                 headers: {
@@ -575,7 +576,7 @@ class SoundFxService extends EventEmitter {
                         soundData.sound_file_url = `https://www.101soundboards.com${soundData.sound_file_url}`;
                     }
                     
-                    console.log(`✅ SOUNDFX: Successfully fetched sound data - ID: ${soundData.id}, Title: "${soundData.sound_transcript}"`);
+                    logger.debug(`✅ SOUNDFX: Successfully fetched sound data - ID: ${soundData.id}, Title: "${soundData.sound_transcript}"`);
                     return soundData;
                 } 
                 // Fallback for old API structure (backward compatibility)
@@ -584,18 +585,18 @@ class SoundFxService extends EventEmitter {
                     if (data.sound_file_url && !data.sound_file_url.startsWith('http')) {
                         data.sound_file_url = `https://www.101soundboards.com${data.sound_file_url}`;
                     }
-                    console.log(`✅ SOUNDFX: Successfully fetched sound data (legacy format)`);
+                    logger.debug(`✅ SOUNDFX: Successfully fetched sound data (legacy format)`);
                     return data;
                 }
             }
             
-            console.error('❌ SOUNDFX: Invalid API response structure:', response.data);
+            logger.error('❌ SOUNDFX: Invalid API response structure:', response.data);
             return null;
         } catch (error) {
-            console.error('❌ SOUNDFX: Failed to fetch from 101soundboards:', error.message);
+            logger.error('❌ SOUNDFX: Failed to fetch from 101soundboards:', error.message);
             if (error.response) {
-                console.error('❌ SOUNDFX: API Response status:', error.response.status);
-                console.error('❌ SOUNDFX: API Response data:', error.response.data);
+                logger.error('❌ SOUNDFX: API Response status:', error.response.status);
+                logger.error('❌ SOUNDFX: API Response data:', error.response.data);
             }
             return null;
         }
@@ -606,7 +607,7 @@ class SoundFxService extends EventEmitter {
             const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'http://127.0.0.1:8081';
             const formattedMessage = `🔊 ${username} played: "${soundName}" from ${boardName}\n🎵 Browse more sounds at https://www.101soundboards.com`;
             
-            console.log(`📤 SOUNDFX: Sending soundboard to chat at ${chatServiceUrl}/api/system-message`);
+            logger.debug(`📤 SOUNDFX: Sending soundboard to chat at ${chatServiceUrl}/api/system-message`);
             
             const axiosConfig = {
                 timeout: 5000
@@ -624,9 +625,9 @@ class SoundFxService extends EventEmitter {
                 type: 'soundboard'
             }, axiosConfig);
             
-            console.log(`💬 SOUNDFX: Soundboard message sent to chat`);
+            logger.debug(`💬 SOUNDFX: Soundboard message sent to chat`);
         } catch (error) {
-            console.error('❌ SOUNDFX: Failed to send soundboard to chat:', error.message);
+            logger.error('❌ SOUNDFX: Failed to send soundboard to chat:', error.message);
             // Don't throw - chat integration failure shouldn't stop sound playback
         }
     }
@@ -643,7 +644,7 @@ class SoundFxService extends EventEmitter {
     clearSoundboardQueue() {
         const cleared = this.soundboardQueue.length;
         this.soundboardQueue = [];
-        console.log(`🗑️ SOUNDFX: Cleared ${cleared} soundboard requests from queue`);
+        logger.debug(`🗑️ SOUNDFX: Cleared ${cleared} soundboard requests from queue`);
         return cleared;
     }
 }

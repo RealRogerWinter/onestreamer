@@ -8,6 +8,7 @@
 const axios = require('axios');
 const { runAsync, getAsync, allAsync } = require('../database/database');
 
+const logger = require('../bootstrap/logger').child({ svc: 'SessionChatCaptureService' });
 class SessionChatCaptureService {
     constructor(config = {}) {
         this.chatServiceUrl = config.chatServiceUrl || process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
@@ -17,7 +18,7 @@ class SessionChatCaptureService {
         // Track active capture sessions
         this.activeSessions = new Map(); // sessionId -> { startTimeMs, lastCapturedTime, intervalId }
 
-        console.log(`[SessionChatCapture] Initialized with chat service: ${this.chatServiceUrl}`);
+        logger.debug(`[SessionChatCapture] Initialized with chat service: ${this.chatServiceUrl}`);
     }
 
     /**
@@ -27,11 +28,11 @@ class SessionChatCaptureService {
      */
     startCapturing(sessionId, startTimeMs) {
         if (this.activeSessions.has(sessionId)) {
-            console.log(`[SessionChatCapture] Already capturing session ${sessionId}`);
+            logger.debug(`[SessionChatCapture] Already capturing session ${sessionId}`);
             return;
         }
 
-        console.log(`[SessionChatCapture] Starting capture for session ${sessionId}`);
+        logger.debug(`[SessionChatCapture] Starting capture for session ${sessionId}`);
 
         const sessionData = {
             startTimeMs,
@@ -58,11 +59,11 @@ class SessionChatCaptureService {
     async stopCapturing(sessionId) {
         const sessionData = this.activeSessions.get(sessionId);
         if (!sessionData) {
-            console.log(`[SessionChatCapture] Session ${sessionId} not found in active captures`);
+            logger.debug(`[SessionChatCapture] Session ${sessionId} not found in active captures`);
             return;
         }
 
-        console.log(`[SessionChatCapture] Stopping capture for session ${sessionId}`);
+        logger.debug(`[SessionChatCapture] Stopping capture for session ${sessionId}`);
 
         // Clear the polling interval
         if (sessionData.intervalId) {
@@ -134,13 +135,13 @@ class SessionChatCaptureService {
                 } catch (insertError) {
                     // Ignore duplicate key errors
                     if (!insertError.message.includes('UNIQUE constraint')) {
-                        console.error(`[SessionChatCapture] Error inserting message:`, insertError.message);
+                        logger.error(`[SessionChatCapture] Error inserting message:`, insertError.message);
                     }
                 }
             }
 
             if (newMessageCount > 0) {
-                console.log(`[SessionChatCapture] Captured ${newMessageCount} new messages for session ${sessionId}`);
+                logger.debug(`[SessionChatCapture] Captured ${newMessageCount} new messages for session ${sessionId}`);
             }
 
             // Update last captured time
@@ -152,7 +153,7 @@ class SessionChatCaptureService {
         } catch (error) {
             // Don't log connection errors repeatedly
             if (!error.message.includes('ECONNREFUSED')) {
-                console.error(`[SessionChatCapture] Error capturing messages:`, error.message);
+                logger.error(`[SessionChatCapture] Error capturing messages:`, error.message);
             }
         }
     }
@@ -174,9 +175,9 @@ class SessionChatCaptureService {
                 [count, sessionId]
             );
 
-            console.log(`[SessionChatCapture] Updated session ${sessionId} chat count: ${count}`);
+            logger.debug(`[SessionChatCapture] Updated session ${sessionId} chat count: ${count}`);
         } catch (error) {
-            console.error(`[SessionChatCapture] Error updating chat count:`, error.message);
+            logger.error(`[SessionChatCapture] Error updating chat count:`, error.message);
         }
     }
 
@@ -217,7 +218,7 @@ class SessionChatCaptureService {
                 isContext: msg.relative_time_ms < 0
             }));
         } catch (error) {
-            console.error(`[SessionChatCapture] Error getting session chat:`, error.message);
+            logger.error(`[SessionChatCapture] Error getting session chat:`, error.message);
             return [];
         }
     }
@@ -229,9 +230,9 @@ class SessionChatCaptureService {
     async deleteSessionChat(sessionId) {
         try {
             await runAsync('DELETE FROM session_chat_messages WHERE session_id = ?', [sessionId]);
-            console.log(`[SessionChatCapture] Deleted chat for session ${sessionId}`);
+            logger.debug(`[SessionChatCapture] Deleted chat for session ${sessionId}`);
         } catch (error) {
-            console.error(`[SessionChatCapture] Error deleting session chat:`, error.message);
+            logger.error(`[SessionChatCapture] Error deleting session chat:`, error.message);
         }
     }
 
@@ -249,7 +250,7 @@ class SessionChatCaptureService {
      * Shutdown the service
      */
     shutdown() {
-        console.log('[SessionChatCapture] Shutting down...');
+        logger.debug('[SessionChatCapture] Shutting down...');
 
         // Stop all active captures
         for (const [sessionId, sessionData] of this.activeSessions) {
@@ -259,7 +260,7 @@ class SessionChatCaptureService {
         }
         this.activeSessions.clear();
 
-        console.log('[SessionChatCapture] Shutdown complete');
+        logger.debug('[SessionChatCapture] Shutdown complete');
     }
 }
 

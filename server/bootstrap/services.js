@@ -113,6 +113,7 @@ const ViewerCountNotifier = require('../services/ViewerCountNotifier');
 const BuffNotifier = require('../services/BuffNotifier');
 const ModerationNotifier = require('../services/ModerationNotifier');
 
+const logger = require('./logger').child({ svc: 'services' });
 // PR-I2 additions
 const StreamInterceptorService = require('../services/StreamInterceptorService');
 const VisualFxService = require('../services/VisualFxService');
@@ -361,7 +362,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
         );
         return messages.reverse(); // chronological order
       } catch (error) {
-        console.error('Error getting recent messages:', error);
+        logger.error('Error getting recent messages:', error);
         return [];
       }
     },

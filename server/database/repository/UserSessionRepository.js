@@ -1,3 +1,5 @@
+const logger = require('../../bootstrap/logger').child({ svc: 'UserSessionRepository' });
+
 /**
  * UserSessionRepository
  *
@@ -142,7 +144,7 @@ class UserSessionRepository {
      *
      * **Behaviour preservation note**: the legacy code used a raw
      * `db.run` with a callback-style Promise wrapper that **swallows
-     * errors** (logs to console.error and `resolve(false)` instead
+     * errors** (logs the error via the namespaced logger and `resolve(false)` instead
      * of `reject(err)`). The repo method here is fail-loud
      * (rejects). The service-level method `logDeletionAction` keeps
      * the swallow shape — it try/catches the repo call and resolves

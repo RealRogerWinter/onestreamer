@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'ModerationActionArbiter' });
+
 // server/services/ModerationActionArbiter.js
 //
 // Decides the enforcement action for a fully-classified moderation event
@@ -135,7 +137,7 @@ class ModerationActionArbiter {
         await this.userRepository.banFromStreaming(userId, 'ai-moderation');
         banResult = `banned:${userId}`;
       } catch (err) {
-        console.error('❌ ActionArbiter: banFromStreaming failed:', err.message);
+        logger.error('❌ ActionArbiter: banFromStreaming failed:', err.message);
         banResult = `ban_error:${err.message}`;
       }
     } else {
@@ -151,7 +153,7 @@ class ModerationActionArbiter {
           appealUrl: `/admin/moderation/events/${event.id}`,
         });
       } catch (err) {
-        console.error('❌ ActionArbiter: streamerBanner failed:', err.message);
+        logger.error('❌ ActionArbiter: streamerBanner failed:', err.message);
       }
     }
 
@@ -164,7 +166,7 @@ class ModerationActionArbiter {
         const r = await this.randomStreamRotationService._rotateToNewStream();
         rotationResult = r && r.success ? 'rotated' : `rotation_failed:${r && r.error || 'unknown'}`;
       } catch (err) {
-        console.error('❌ ActionArbiter: rotation threw:', err.message);
+        logger.error('❌ ActionArbiter: rotation threw:', err.message);
         rotationResult = `rotation_error:${err.message}`;
       }
     }
@@ -194,7 +196,7 @@ class ModerationActionArbiter {
         if (String(err.message || '').includes('UNIQUE')) {
           blockResult = `already_blocked:${platform}:${login}`;
         } else {
-          console.error('❌ ActionArbiter: whitelist.addEntry failed:', err.message);
+          logger.error('❌ ActionArbiter: whitelist.addEntry failed:', err.message);
           blockResult = `block_error:${err.message}`;
         }
       }
@@ -208,7 +210,7 @@ class ModerationActionArbiter {
         const r = await this.randomStreamRotationService._rotateToNewStream();
         rotationResult = r && r.success ? 'rotated' : `rotation_failed:${r && r.error || 'unknown'}`;
       } catch (err) {
-        console.error('❌ ActionArbiter: rotation threw:', err.message);
+        logger.error('❌ ActionArbiter: rotation threw:', err.message);
         rotationResult = `rotation_error:${err.message}`;
       }
     }

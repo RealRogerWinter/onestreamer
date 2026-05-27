@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'auth' });
+
 const router = express.Router();
 const passport = require('passport');
 const { body, validationResult } = require('express-validator');
@@ -95,7 +98,7 @@ router.post('/signup', requireTurnstile, validateSignup, async (req, res) => {
             refreshToken: result.refreshToken
         });
     } catch (error) {
-        console.error('Signup error:', error);
+        logger.error('Signup error:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -108,7 +111,7 @@ router.post('/login', requireTurnstile, validateLogin, async (req, res) => {
         }
 
         const { email, password } = req.body;
-        console.log('🔐 Login attempt:', { email, passwordLength: password ? password.length : 0 });
+        logger.debug('🔐 Login attempt:', { email, passwordLength: password ? password.length : 0 });
         const result = await authService.login(email, password);
 
         const ipAddress = req.ip || req.connection.remoteAddress;
@@ -135,7 +138,7 @@ router.post('/login', requireTurnstile, validateLogin, async (req, res) => {
             refreshToken: result.refreshToken
         });
     } catch (error) {
-        console.error('Login error:', error);
+        logger.error('Login error:', error);
         res.status(401).json({ error: error.message });
     }
 });
@@ -159,7 +162,7 @@ router.post('/refresh', async (req, res) => {
             refreshToken: result.refreshToken
         });
     } catch (error) {
-        console.error('Token refresh error:', error);
+        logger.error('Token refresh error:', error);
         res.status(401).json({ error: 'Invalid refresh token' });
     }
 });
@@ -183,16 +186,16 @@ router.get('/verify-email/:token', async (req, res) => {
                     // Grant 5 tomatoes
                     if (tomato) {
                         await inventoryService.addItemToInventory(result.userId, tomato.id, 5);
-                        console.log(`🎁 WELCOME: Granted 5 tomatoes to user ${result.userId}`);
+                        logger.debug(`🎁 WELCOME: Granted 5 tomatoes to user ${result.userId}`);
                     }
 
                     // Grant 1 heart swarm
                     if (heartSwarm) {
                         await inventoryService.addItemToInventory(result.userId, heartSwarm.id, 1);
-                        console.log(`🎁 WELCOME: Granted 1 heart swarm to user ${result.userId}`);
+                        logger.debug(`🎁 WELCOME: Granted 1 heart swarm to user ${result.userId}`);
                     }
                 } catch (grantError) {
-                    console.error('Error granting starter items:', grantError);
+                    logger.error('Error granting starter items:', grantError);
                     // Don't fail verification if item granting fails
                 }
             }
@@ -200,7 +203,7 @@ router.get('/verify-email/:token', async (req, res) => {
 
         res.json({ message: 'Email verified successfully' });
     } catch (error) {
-        console.error('Email verification error:', error);
+        logger.error('Email verification error:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -224,7 +227,7 @@ router.post('/resend-verification', authenticateToken, async (req, res) => {
             success: true 
         });
     } catch (error) {
-        console.error('Resend verification error:', error);
+        logger.error('Resend verification error:', error);
         res.status(500).json({ error: 'Failed to resend verification email' });
     }
 });
@@ -243,7 +246,7 @@ router.post('/forgot-password', requireTurnstile, async (req, res) => {
             res.status(404).json({ error: 'Email not found' });
         }
     } catch (error) {
-        console.error('Password reset request error:', error);
+        logger.error('Password reset request error:', error);
         res.status(500).json({ error: 'Failed to process password reset' });
     }
 });
@@ -259,7 +262,7 @@ router.post('/reset-password', async (req, res) => {
         await authService.resetPassword(resetToken, newPassword);
         res.json({ message: 'Password reset successful' });
     } catch (error) {
-        console.error('Password reset error:', error);
+        logger.error('Password reset error:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -288,7 +291,7 @@ router.get('/me', authenticateToken, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Get user error:', error);
+        logger.error('Get user error:', error);
         res.status(500).json({ error: 'Failed to get user data' });
     }
 });
@@ -316,7 +319,7 @@ router.put('/change-username', authenticateToken, async (req, res) => {
             message: 'Username changed successfully'
         });
     } catch (error) {
-        console.error('Change username error:', error);
+        logger.error('Change username error:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -326,7 +329,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
         const userId = req.user.id;
         const { bio, website, location, displayName, currentPassword, newPassword, description } = req.body;
         
-        console.log('Profile update request:', { 
+        logger.debug('Profile update request:', { 
             userId, 
             hasCurrentPassword: !!currentPassword,
             hasNewPassword: !!newPassword,
@@ -344,17 +347,17 @@ router.put('/profile', authenticateToken, async (req, res) => {
         
         // Handle password change if requested
         if (currentPassword && newPassword) {
-            console.log('Attempting password change for user:', userId);
+            logger.debug('Attempting password change for user:', userId);
             // Verify current password
             const isValidPassword = await authService.accountService.verifyUserPassword(userId, currentPassword);
-            console.log('Current password validation result:', isValidPassword);
+            logger.debug('Current password validation result:', isValidPassword);
             if (!isValidPassword) {
                 return res.status(400).json({ error: 'Current password is incorrect' });
             }
             
             // Update password
             await authService.accountService.changePassword(userId, newPassword);
-            console.log('Password changed successfully for user:', userId);
+            logger.debug('Password changed successfully for user:', userId);
         }
         
         // Update profile fields
@@ -372,7 +375,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
             profile: updatedProfile
         });
     } catch (error) {
-        console.error('Profile update error:', error);
+        logger.error('Profile update error:', error);
         res.status(500).json({ error: 'Failed to update profile' });
     }
 });
@@ -383,7 +386,7 @@ router.post('/avatar', authenticateToken, (req, res) => {
         try {
             // Handle multer errors
             if (err) {
-                console.error('Multer error:', err);
+                logger.error('Multer error:', err);
                 if (err.code === 'LIMIT_FILE_SIZE') {
                     return res.status(400).json({ error: 'File size too large. Maximum size is 5MB.' });
                 }
@@ -400,7 +403,7 @@ router.post('/avatar', authenticateToken, (req, res) => {
             const userId = req.user.id;
             const avatarUrl = `/uploads/avatars/${req.file.filename}`;
             
-            console.log('Avatar upload:', {
+            logger.debug('Avatar upload:', {
                 userId,
                 filename: req.file.filename,
                 mimetype: req.file.mimetype,
@@ -414,9 +417,9 @@ router.post('/avatar', authenticateToken, (req, res) => {
                 const oldAvatarPath = path.join(__dirname, '..', user.avatar_url);
                 try {
                     await fs.unlink(oldAvatarPath);
-                    console.log('Deleted old avatar:', oldAvatarPath);
+                    logger.debug('Deleted old avatar:', oldAvatarPath);
                 } catch (err) {
-                    console.log('Could not delete old avatar:', err.message);
+                    logger.debug('Could not delete old avatar:', err.message);
                 }
             }
             
@@ -431,7 +434,7 @@ router.post('/avatar', authenticateToken, (req, res) => {
                 message: 'Avatar uploaded successfully'
             });
         } catch (error) {
-            console.error('Avatar upload error:', error);
+            logger.error('Avatar upload error:', error);
             res.status(500).json({ error: 'Failed to upload avatar: ' + error.message });
         }
     });
@@ -450,7 +453,7 @@ router.delete('/avatar', authenticateToken, async (req, res) => {
             try {
                 await fs.unlink(avatarPath);
             } catch (err) {
-                console.log('Could not delete avatar file:', err.message);
+                logger.debug('Could not delete avatar file:', err.message);
             }
         }
         
@@ -464,7 +467,7 @@ router.delete('/avatar', authenticateToken, async (req, res) => {
             message: 'Avatar deleted successfully'
         });
     } catch (error) {
-        console.error('Avatar delete error:', error);
+        logger.error('Avatar delete error:', error);
         res.status(500).json({ error: 'Failed to delete avatar' });
     }
 });
@@ -612,7 +615,7 @@ router.get('/user/:username', async (req, res) => {
             stream_count: userStats?.stream_count || 0
         });
     } catch (error) {
-        console.error('Get user profile error:', error);
+        logger.error('Get user profile error:', error);
         res.status(500).json({ error: 'Failed to get user profile' });
     }
 });
@@ -640,7 +643,7 @@ router.get('/check-username/:username', async (req, res) => {
             username: username 
         });
     } catch (error) {
-        console.error('Username check error:', error);
+        logger.error('Username check error:', error);
         res.status(500).json({ error: 'Failed to check username availability' });
     }
 });
@@ -649,7 +652,7 @@ router.post('/complete-oauth-registration', async (req, res) => {
     try {
         const { tempToken, username } = req.body;
         
-        console.log('OAuth registration attempt:', { hasToken: !!tempToken, username });
+        logger.debug('OAuth registration attempt:', { hasToken: !!tempToken, username });
         
         if (!tempToken || !username) {
             return res.status(400).json({ error: 'Temporary token and username are required' });
@@ -658,7 +661,7 @@ router.post('/complete-oauth-registration', async (req, res) => {
         // Verify and decode the temporary token
         const decoded = authService.verifyToken(tempToken);
         
-        console.log('Decoded token:', { 
+        logger.debug('Decoded token:', { 
             hasDecoded: !!decoded, 
             tempOAuth: decoded?.tempOAuth,
             oauthProvider: decoded?.oauthProvider,
@@ -701,7 +704,7 @@ router.post('/complete-oauth-registration', async (req, res) => {
             refreshToken: result.refreshToken
         });
     } catch (error) {
-        console.error('OAuth registration completion error:', error);
+        logger.error('OAuth registration completion error:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -755,7 +758,7 @@ router.get('/google/callback',
                 res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/success?token=${token}&refreshToken=${refreshToken}`);
             }
         } catch (error) {
-            console.error('Google auth callback error:', error);
+            logger.error('Google auth callback error:', error);
             res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/error`);
         }
     }
@@ -772,7 +775,7 @@ router.post('/request-deletion', authenticateToken, async (req, res) => {
             message: 'Account deletion requested. Please check your email to confirm.'
         });
     } catch (error) {
-        console.error('Account deletion request error:', error);
+        logger.error('Account deletion request error:', error);
         res.status(500).json({ 
             success: false,
             error: error.message || 'Failed to request account deletion' 
@@ -798,7 +801,7 @@ router.post('/confirm-deletion', async (req, res) => {
             message: 'Account deletion confirmed. Your account will be permanently deleted in 15 days.'
         });
     } catch (error) {
-        console.error('Account deletion confirmation error:', error);
+        logger.error('Account deletion confirmation error:', error);
         res.status(500).json({ 
             success: false,
             error: error.message || 'Failed to confirm account deletion' 
@@ -872,7 +875,7 @@ router.post('/restore-account', async (req, res) => {
             });
         }
     } catch (error) {
-        console.error('Account restoration error:', error);
+        logger.error('Account restoration error:', error);
         res.status(500).json({ 
             success: false,
             error: error.message || 'Failed to restore account' 
@@ -894,7 +897,7 @@ router.get('/admin/users', authenticateAdmin, async (req, res) => {
         
         res.json({ users });
     } catch (error) {
-        console.error('Get users error:', error);
+        logger.error('Get users error:', error);
         res.status(500).json({ error: 'Failed to fetch users' });
     }
 });
@@ -910,7 +913,7 @@ router.post('/admin/users/:id/promote', authenticateAdmin, async (req, res) => {
         await authService.accountService.promoteToAdmin(userId);
         res.json({ message: 'User promoted to admin' });
     } catch (error) {
-        console.error('Promote user error:', error);
+        logger.error('Promote user error:', error);
         res.status(500).json({ error: 'Failed to promote user' });
     }
 });
@@ -926,7 +929,7 @@ router.post('/admin/users/:id/demote', authenticateAdmin, async (req, res) => {
         await authService.accountService.demoteFromAdmin(userId);
         res.json({ message: 'User demoted from admin' });
     } catch (error) {
-        console.error('Demote user error:', error);
+        logger.error('Demote user error:', error);
         res.status(500).json({ error: 'Failed to demote user' });
     }
 });
@@ -942,7 +945,7 @@ router.post('/admin/users/:id/ban', authenticateAdmin, async (req, res) => {
         await authService.accountService.banUser(userId);
         res.json({ message: 'User banned' });
     } catch (error) {
-        console.error('Ban user error:', error);
+        logger.error('Ban user error:', error);
         res.status(500).json({ error: 'Failed to ban user' });
     }
 });
@@ -953,7 +956,7 @@ router.post('/admin/users/:id/unban', authenticateAdmin, async (req, res) => {
         await authService.accountService.unbanUser(userId);
         res.json({ message: 'User unbanned' });
     } catch (error) {
-        console.error('Unban user error:', error);
+        logger.error('Unban user error:', error);
         res.status(500).json({ error: 'Failed to unban user' });
     }
 });
@@ -969,7 +972,7 @@ router.delete('/admin/users/:id', authenticateAdmin, async (req, res) => {
         await authService.accountService.deleteUser(userId);
         res.json({ message: 'User deleted' });
     } catch (error) {
-        console.error('Delete user error:', error);
+        logger.error('Delete user error:', error);
         res.status(500).json({ error: 'Failed to delete user' });
     }
 });

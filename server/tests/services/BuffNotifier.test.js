@@ -17,6 +17,14 @@
 //   - buffError: per-calling-socket; suppresses on missing toSocket or
 //     non-string error.
 
+// PR 12.3 (ADR-0020): see ModerationService.test.js for the pattern.
+jest.mock('../../bootstrap/logger', () => {
+  const m = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), fatal: jest.fn(), trace: jest.fn() };
+  m.child = jest.fn(() => m);
+  return m;
+});
+const logger = require('../../bootstrap/logger');
+
 const BuffNotifier = require('../../services/BuffNotifier');
 
 function makeIo() {
@@ -71,7 +79,7 @@ describe('BuffNotifier', () => {
     beforeEach(() => {
       io = makeIo();
       notifier = new BuffNotifier(io);
-      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      logger.warn.mockClear(); warnSpy = logger.warn;
     });
 
     afterEach(() => {
@@ -123,7 +131,7 @@ describe('BuffNotifier', () => {
     beforeEach(() => {
       io = makeIo();
       notifier = new BuffNotifier(io);
-      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      logger.warn.mockClear(); warnSpy = logger.warn;
     });
 
     afterEach(() => {
@@ -220,11 +228,11 @@ describe('BuffNotifier', () => {
     beforeEach(() => {
       io = makeIo();
       notifier = new BuffNotifier(io);
-      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      logger.warn.mockClear(); warnSpy = logger.warn;
       // Post-review breadcrumb: the bad-error-arg suppression path also
       // calls console.error so the operator can see the original argument
       // in the logs even when the wire emit is dropped.
-      errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      logger.error.mockClear(); errorSpy = logger.error;
     });
 
     afterEach(() => {

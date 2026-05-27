@@ -1,5 +1,6 @@
 const { db, runAsync, getAsync, allAsync } = require('../database/database');
 
+const logger = require('../bootstrap/logger').child({ svc: 'IPBanService' });
 class IPBanService {
   constructor() {
     this.bannedIPs = new Set();
@@ -17,16 +18,16 @@ class IPBanService {
       const bans = await allAsync(query);
       this.bannedIPs.clear();
       bans.forEach(ban => this.bannedIPs.add(ban.ip_address));
-      console.log(`🚫 Loaded ${this.bannedIPs.size} banned IPs`);
+      logger.debug(`🚫 Loaded ${this.bannedIPs.size} banned IPs`);
       return true;
     } catch (error) {
-      console.error('❌ Failed to load banned IPs:', error);
+      logger.error('❌ Failed to load banned IPs:', error);
       return false;
     }
   }
 
   async forceReloadCache() {
-    console.log('🔄 Force reloading IP ban cache...');
+    logger.debug('🔄 Force reloading IP ban cache...');
     return await this.loadBannedIPs();
   }
 
@@ -49,13 +50,13 @@ class IPBanService {
         
         // If database says not banned but cache says banned, update cache
         if (!isBanned) {
-          console.log(`🔄 Cache sync: Removing ${ip} from banned cache (no longer banned in DB)`);
+          logger.debug(`🔄 Cache sync: Removing ${ip} from banned cache (no longer banned in DB)`);
           this.bannedIPs.delete(ip);
           return false;
         }
         return true;
       } catch (error) {
-        console.error('❌ Failed to verify IP ban from database:', error);
+        logger.error('❌ Failed to verify IP ban from database:', error);
         // If DB check fails, trust the cache
         return true;
       }
@@ -73,13 +74,13 @@ class IPBanService {
       const isBanned = result.count > 0;
       
       if (isBanned) {
-        console.log(`🔄 Cache sync: Adding ${ip} to banned cache (found in DB)`);
+        logger.debug(`🔄 Cache sync: Adding ${ip} to banned cache (found in DB)`);
         this.bannedIPs.add(ip);
       }
       
       return isBanned;
     } catch (error) {
-      console.error('❌ Failed to check IP ban:', error);
+      logger.error('❌ Failed to check IP ban:', error);
       // On error, be conservative and don't ban
       return false;
     }
@@ -98,10 +99,10 @@ class IPBanService {
       // Update cache
       this.bannedIPs.add(ip);
       
-      console.log(`🚫 IP banned: ${ip} by ${bannedByUsername} - Reason: ${reason}`);
+      logger.debug(`🚫 IP banned: ${ip} by ${bannedByUsername} - Reason: ${reason}`);
       return { success: true, ip, reason };
     } catch (error) {
-      console.error('❌ Failed to ban IP:', error);
+      logger.error('❌ Failed to ban IP:', error);
       return { success: false, error: error.message };
     }
   }
@@ -128,10 +129,10 @@ class IPBanService {
         });
       }
       
-      console.log(`✅ IP unbanned: ${ip}`);
+      logger.debug(`✅ IP unbanned: ${ip}`);
       return { success: true, ip };
     } catch (error) {
-      console.error('❌ Failed to unban IP:', error);
+      logger.error('❌ Failed to unban IP:', error);
       return { success: false, error: error.message };
     }
   }
@@ -154,7 +155,7 @@ class IPBanService {
       const bans = await allAsync(query);
       return bans;
     } catch (error) {
-      console.error('❌ Failed to get banned IPs:', error);
+      logger.error('❌ Failed to get banned IPs:', error);
       return [];
     }
   }
@@ -170,10 +171,10 @@ class IPBanService {
       // Reload cache
       await this.loadBannedIPs();
       
-      console.log(`🧹 Cleaned up expired IP bans`);
+      logger.debug(`🧹 Cleaned up expired IP bans`);
       return { success: true };
     } catch (error) {
-      console.error('❌ Failed to cleanup expired bans:', error);
+      logger.error('❌ Failed to cleanup expired bans:', error);
       return { success: false, error: error.message };
     }
   }

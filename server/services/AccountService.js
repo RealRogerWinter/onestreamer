@@ -5,6 +5,7 @@ const UserRepository = require('../database/repository/UserRepository');
 const AccountStatsRepository = require('../database/repository/AccountStatsRepository');
 const UserSessionRepository = require('../database/repository/UserSessionRepository');
 
+const logger = require('../bootstrap/logger').child({ svc: 'AccountService' });
 class AccountService {
     /**
      * @param {object} [deps]
@@ -88,23 +89,23 @@ class AccountService {
     }
 
     async verifyPassword(emailOrUsername, password) {
-        console.log('🔍 Verifying password for:', emailOrUsername);
+        logger.debug('🔍 Verifying password for:', emailOrUsername);
         // Try to find user by email first
         let user = await this.getUserByEmail(emailOrUsername);
         
         // If not found by email, try username
         if (!user) {
-            console.log('🔍 Not found by email, trying username...');
+            logger.debug('🔍 Not found by email, trying username...');
             user = await this.getUserByUsername(emailOrUsername);
         }
         
         if (!user || !user.password) {
-            console.log('❌ User not found or no password set');
+            logger.debug('❌ User not found or no password set');
             return null;
         }
-        console.log('🔍 Found user:', user.email, 'verifying password...');
+        logger.debug('🔍 Found user:', user.email, 'verifying password...');
         const isValid = await bcrypt.compare(password, user.password);
-        console.log('🔍 Password valid:', isValid);
+        logger.debug('🔍 Password valid:', isValid);
         if (!isValid) {
             return null;
         }
@@ -251,7 +252,7 @@ class AccountService {
 
         await this.recordTransaction(userId, amount, newBalance, type, description, metadata);
 
-        console.log(`💰 Added ${amount} points to user ${userId} (${type}). New balance: ${newBalance}`);
+        logger.debug(`💰 Added ${amount} points to user ${userId} (${type}). New balance: ${newBalance}`);
         return newBalance;
     }
     
@@ -289,7 +290,7 @@ class AccountService {
 
         await this.recordTransaction(userId, -amount, newBalance, type, description, metadata);
 
-        console.log(`💸 Subtracted ${amount} points from user ${userId} (${type}). New balance: ${newBalance}`);
+        logger.debug(`💸 Subtracted ${amount} points from user ${userId} (${type}). New balance: ${newBalance}`);
         return newBalance;
     }
     
@@ -523,7 +524,7 @@ class AccountService {
             });
             return true;
         } catch (err) {
-            console.error('Failed to log deletion action:', err);
+            logger.error('Failed to log deletion action:', err);
             return false;
         }
     }
@@ -571,37 +572,37 @@ class AccountService {
 
     async verifyUserPassword(userId, password) {
         try {
-            console.log('Verifying password for user:', userId);
+            logger.debug('Verifying password for user:', userId);
             const user = await this.userRepository.getPasswordHash(userId);
 
             if (!user || !user.password) {
-                console.log('User not found or no password set for user:', userId);
+                logger.debug('User not found or no password set for user:', userId);
                 return false;
             }
 
             const isValid = await bcrypt.compare(password, user.password);
-            console.log('Password comparison result for user', userId, ':', isValid);
+            logger.debug('Password comparison result for user', userId, ':', isValid);
             return isValid;
         } catch (error) {
-            console.error('Error verifying user password:', error);
+            logger.error('Error verifying user password:', error);
             return false;
         }
     }
 
     async changePassword(userId, newPassword) {
         try {
-            console.log('Changing password for user:', userId);
+            logger.debug('Changing password for user:', userId);
             const hashedPassword = await bcrypt.hash(newPassword, this.saltRounds);
-            console.log('Password hashed successfully');
+            logger.debug('Password hashed successfully');
 
             // update() auto-stamps updated_at = CURRENT_TIMESTAMP, matching
             // the legacy inline SQL behavior.
             const result = await this.userRepository.update(userId, { password: hashedPassword });
-            console.log('Database update result:', result);
+            logger.debug('Database update result:', result);
 
             return true;
         } catch (error) {
-            console.error('Error changing password:', error);
+            logger.error('Error changing password:', error);
             throw new Error('Failed to change password');
         }
     }
@@ -632,7 +633,7 @@ class AccountService {
             // Return the updated profile
             return await this.getUserProfile(userId);
         } catch (error) {
-            console.error('Error updating user profile:', error);
+            logger.error('Error updating user profile:', error);
             throw new Error('Failed to update user profile');
         }
     }
@@ -660,7 +661,7 @@ class AccountService {
                 isModerator: user.is_moderator
             };
         } catch (error) {
-            console.error('Error getting user profile:', error);
+            logger.error('Error getting user profile:', error);
             throw error;
         }
     }

@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'AdaptiveEncodingSettings' });
+
 /**
  * AdaptiveEncodingSettings.js - Calculate optimal encoding settings based on source stream
  *
@@ -122,7 +124,7 @@ class AdaptiveEncodingSettings {
       backend: this.config.backend
     };
 
-    console.log(`🎯 Adaptive Settings: ${sourceProps.width}x${sourceProps.height}@${sourceProps.fps}fps → ` +
+    logger.debug(`🎯 Adaptive Settings: ${sourceProps.width}x${sourceProps.height}@${sourceProps.fps}fps → ` +
                `${settings.width}x${settings.height}@${settings.fps}fps, ` +
                `video: ${settings.videoBitrate}kbps, audio: ${settings.audioBitrate}kbps`);
 
@@ -421,7 +423,7 @@ class AdaptiveEncodingSettings {
    */
   setConfig(newConfig) {
     Object.assign(this.config, newConfig);
-    console.log('🎯 Adaptive Settings config updated:', this.config);
+    logger.debug('🎯 Adaptive Settings config updated:', this.config);
   }
 
   /**

@@ -4,6 +4,9 @@
 
 const { exec } = require('child_process');
 const util = require('util');
+
+const logger = require('../bootstrap/logger').child({ svc: 'PortMonitorService' });
+
 const execPromise = util.promisify(exec);
 
 class PortMonitorService {
@@ -20,7 +23,7 @@ class PortMonitorService {
    * Start monitoring port usage
    */
   startMonitoring() {
-    console.log('🔍 PORT MONITOR: Starting port usage monitoring...');
+    logger.debug('🔍 PORT MONITOR: Starting port usage monitoring...');
     
     // Initial check
     this.checkPortUsage();
@@ -44,7 +47,7 @@ class PortMonitorService {
     if (this.monitorInterval) {
       clearInterval(this.monitorInterval);
       this.monitorInterval = null;
-      console.log('⏹️ PORT MONITOR: Stopped monitoring');
+      logger.debug('⏹️ PORT MONITOR: Stopped monitoring');
     }
   }
 
@@ -59,22 +62,22 @@ class PortMonitorService {
       
       // Log if port usage changed significantly
       if (Math.abs(portCount - this.lastPortCount) > 10) {
-        console.log(`📊 PORT MONITOR: UDP ports in use: ${portCount}/200`);
+        logger.debug(`📊 PORT MONITOR: UDP ports in use: ${portCount}/200`);
         this.lastPortCount = portCount;
       }
       
       // Check thresholds
       if (portCount >= this.criticalThreshold) {
-        console.error(`🚨 PORT MONITOR: CRITICAL - ${portCount} ports in use! Forcing cleanup...`);
+        logger.error(`🚨 PORT MONITOR: CRITICAL - ${portCount} ports in use! Forcing cleanup...`);
         await this.forceCleanup();
       } else if (portCount >= this.portExhaustionThreshold) {
-        console.warn(`⚠️ PORT MONITOR: WARNING - ${portCount} ports in use (${Math.round(portCount/2)}% of capacity)`);
+        logger.warn(`⚠️ PORT MONITOR: WARNING - ${portCount} ports in use (${Math.round(portCount/2)}% of capacity)`);
         await this.cleanupOrphanedTransports();
       }
       
       return portCount;
     } catch (error) {
-      console.error('❌ PORT MONITOR: Error checking port usage:', error);
+      logger.error('❌ PORT MONITOR: Error checking port usage:', error);
       return -1;
     }
   }
@@ -85,7 +88,7 @@ class PortMonitorService {
   async cleanupOrphanedTransports() {
     if (!this.mediasoupService.transports) return;
     
-    console.log('🧹 PORT MONITOR: Checking for orphaned transports...');
+    logger.debug('🧹 PORT MONITOR: Checking for orphaned transports...');
     let cleanedCount = 0;
     
     // Get all connected socket IDs
@@ -102,7 +105,7 @@ class PortMonitorService {
     for (const [socketId, transport] of this.mediasoupService.transports) {
       // If socket is not connected, clean up the transport
       if (!connectedSocketIds.has(socketId)) {
-        console.log(`🧹 PORT MONITOR: Cleaning orphaned transport for disconnected socket ${socketId}`);
+        logger.debug(`🧹 PORT MONITOR: Cleaning orphaned transport for disconnected socket ${socketId}`);
         
         try {
           if (transport.video && transport.audio) {
@@ -113,7 +116,7 @@ class PortMonitorService {
             transport.close();
           }
         } catch (e) {
-          console.error(`❌ PORT MONITOR: Error closing transport for ${socketId}:`, e);
+          logger.error(`❌ PORT MONITOR: Error closing transport for ${socketId}:`, e);
         }
         
         this.mediasoupService.transports.delete(socketId);
@@ -122,7 +125,7 @@ class PortMonitorService {
     }
     
     if (cleanedCount > 0) {
-      console.log(`✅ PORT MONITOR: Cleaned up ${cleanedCount} orphaned transports`);
+      logger.debug(`✅ PORT MONITOR: Cleaned up ${cleanedCount} orphaned transports`);
       
       // Also clean up associated producers
       this.cleanupOrphanedProducers(connectedSocketIds);
@@ -138,7 +141,7 @@ class PortMonitorService {
     let cleanedCount = 0;
     for (const [socketId, producers] of this.mediasoupService.producers) {
       if (!connectedSocketIds.has(socketId)) {
-        console.log(`🧹 PORT MONITOR: Cleaning orphaned producers for ${socketId}`);
+        logger.debug(`🧹 PORT MONITOR: Cleaning orphaned producers for ${socketId}`);
         
         if (producers instanceof Map) {
           for (const [kind, producer] of producers) {
@@ -154,7 +157,7 @@ class PortMonitorService {
     }
     
     if (cleanedCount > 0) {
-      console.log(`✅ PORT MONITOR: Cleaned up producers for ${cleanedCount} sockets`);
+      logger.debug(`✅ PORT MONITOR: Cleaned up producers for ${cleanedCount} sockets`);
     }
   }
 
@@ -162,7 +165,7 @@ class PortMonitorService {
    * Force cleanup of all transports (emergency recovery)
    */
   async forceCleanup() {
-    console.log('🚨 PORT MONITOR: Forcing cleanup of all transports...');
+    logger.debug('🚨 PORT MONITOR: Forcing cleanup of all transports...');
     
     if (!this.mediasoupService.transports) return;
     
@@ -177,7 +180,7 @@ class PortMonitorService {
         }
         cleanedCount++;
       } catch (e) {
-        console.error(`❌ Error force-closing transport for ${socketId}:`, e);
+        logger.error(`❌ Error force-closing transport for ${socketId}:`, e);
       }
     }
     
@@ -198,11 +201,11 @@ class PortMonitorService {
       this.mediasoupService.producers.clear();
     }
     
-    console.log(`✅ PORT MONITOR: Force cleaned ${cleanedCount} transports and all producers`);
+    logger.debug(`✅ PORT MONITOR: Force cleaned ${cleanedCount} transports and all producers`);
     
     // Trigger ViewBot rotation restart after cleanup
     if (global.viewBotRotationService && global.viewBotRotationService.enabled) {
-      console.log('🔄 PORT MONITOR: Restarting ViewBot rotation after cleanup...');
+      logger.debug('🔄 PORT MONITOR: Restarting ViewBot rotation after cleanup...');
       setTimeout(() => {
         global.viewBotRotationService.forceRotation();
       }, 2000);

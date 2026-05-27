@@ -3,6 +3,7 @@ const UserRepository = require('../database/repository/UserRepository');
 const ShopRepository = require('../database/repository/ShopRepository');
 const ItemTransactionRepository = require('../database/repository/ItemTransactionRepository');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ShopService' });
 class ShopService {
     constructor(itemService, inventoryService, accountService, io = null, deps = {}) {
         this.itemService = itemService;
@@ -30,7 +31,7 @@ class ShopService {
                 await this.populateDefaultShop();
             }
         } catch (error) {
-            console.error('Error initializing shop:', error);
+            logger.error('Error initializing shop:', error);
         }
     }
 
@@ -45,7 +46,7 @@ class ShopService {
             }
         }
         
-        console.log('Shop populated with default items');
+        logger.debug('Shop populated with default items');
     }
 
     async getShopItems() {

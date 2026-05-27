@@ -12,6 +12,9 @@
 //     service isn't initialized.
 
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'mediasoup' });
+
 const router = express.Router();
 
 function getMediasoup(req, res) {
@@ -32,12 +35,12 @@ router.get('/router-capabilities', async (req, res) => {
     const rtpCapabilities = await mediasoupService.getRouterRtpCapabilities(preferH264);
 
     if (preferH264) {
-      console.log('📱 MEDIASOUP: Sent iOS-optimized RTP capabilities (H264 Baseline only)');
+      logger.debug('📱 MEDIASOUP: Sent iOS-optimized RTP capabilities (H264 Baseline only)');
     }
 
     res.json({ rtpCapabilities });
   } catch (error) {
-    console.error('❌ Failed to get router capabilities:', error);
+    logger.error('❌ Failed to get router capabilities:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -47,12 +50,12 @@ router.post('/create-transport', async (req, res) => {
   if (!mediasoupService) return;
   try {
     const { socketId, isMobile } = req.body;
-    console.log(`📡 API: Creating transport for ${socketId} (mobile: ${isMobile}) (current streamer: ${mediasoupService.getCurrentStreamer()})`);
+    logger.debug(`📡 API: Creating transport for ${socketId} (mobile: ${isMobile}) (current streamer: ${mediasoupService.getCurrentStreamer()})`);
     const transportOptions = await mediasoupService.createWebRtcTransport(socketId, isMobile);
-    console.log(`✅ API: Transport created successfully for ${socketId}`);
+    logger.debug(`✅ API: Transport created successfully for ${socketId}`);
     res.json(transportOptions);
   } catch (error) {
-    console.error(`❌ API: Failed to create transport for ${req.body && req.body.socketId}:`, error);
+    logger.error(`❌ API: Failed to create transport for ${req.body && req.body.socketId}:`, error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -65,7 +68,7 @@ router.post('/connect-transport', async (req, res) => {
     await mediasoupService.connectTransport(socketId, dtlsParameters);
     res.json({ success: true });
   } catch (error) {
-    console.error('❌ Failed to connect transport:', error);
+    logger.error('❌ Failed to connect transport:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -77,25 +80,25 @@ router.post('/produce', async (req, res) => {
     const { socketId, kind, rtpParameters, appData } = req.body;
 
     // Comprehensive logging for debugging MID issues
-    console.log('=== PRODUCE REQUEST DEBUG ===');
-    console.log(`📡 MEDIASOUP: Produce request from ${socketId} for ${kind}`);
-    console.log('RTP Parameters MID:', rtpParameters?.mid);
-    console.log('RTP Codecs:', JSON.stringify(rtpParameters?.codecs?.map(c => ({ mimeType: c.mimeType, payloadType: c.payloadType })), null, 2));
-    console.log('Socket ID:', socketId);
-    console.log('Kind:', kind);
-    console.log('App Data:', JSON.stringify(appData, null, 2));
+    logger.debug('=== PRODUCE REQUEST DEBUG ===');
+    logger.debug(`📡 MEDIASOUP: Produce request from ${socketId} for ${kind}`);
+    logger.debug('RTP Parameters MID:', rtpParameters?.mid);
+    logger.debug('RTP Codecs:', JSON.stringify(rtpParameters?.codecs?.map(c => ({ mimeType: c.mimeType, payloadType: c.payloadType })), null, 2));
+    logger.debug('Socket ID:', socketId);
+    logger.debug('Kind:', kind);
+    logger.debug('App Data:', JSON.stringify(appData, null, 2));
 
     // Log current router state
     try {
       const router = mediasoupService.getRouter();
       if (router && router._producers) {
-        console.log('ROUTER - Active producers:', router._producers.size);
+        logger.debug('ROUTER - Active producers:', router._producers.size);
         let midConflict = false;
         router._producers.forEach((producer, id) => {
           const producerMid = producer.rtpParameters?.mid;
-          console.log(`  Producer ${id}: MID=${producerMid}, kind=${producer.kind}, closed=${producer.closed}`);
+          logger.debug(`  Producer ${id}: MID=${producerMid}, kind=${producer.kind}, closed=${producer.closed}`);
           if (producerMid === rtpParameters?.mid && !producer.closed) {
-            console.error(`⚠️ MID CONFLICT DETECTED! MID ${producerMid} already taken by producer ${id}`);
+            logger.error(`⚠️ MID CONFLICT DETECTED! MID ${producerMid} already taken by producer ${id}`);
             midConflict = true;
           }
         });
@@ -103,27 +106,27 @@ router.post('/produce', async (req, res) => {
         // Emergency MID override for real users if conflict detected
         if (midConflict && rtpParameters?.mid === '0') {
           const newMid = '100';  // Use different range for real users
-          console.log(`🔄 OVERRIDING MID from ${rtpParameters.mid} to ${newMid} to avoid conflict`);
+          logger.debug(`🔄 OVERRIDING MID from ${rtpParameters.mid} to ${newMid} to avoid conflict`);
           rtpParameters.mid = newMid;
         }
       }
     } catch (routerError) {
-      console.error('Could not inspect router state:', routerError.message);
+      logger.error('Could not inspect router state:', routerError.message);
     }
 
     if (!socketId || !kind || !rtpParameters) {
-      console.error('Missing required parameters:', { socketId: !!socketId, kind: !!kind, rtpParameters: !!rtpParameters });
+      logger.error('Missing required parameters:', { socketId: !!socketId, kind: !!kind, rtpParameters: !!rtpParameters });
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    console.log('Calling mediasoupService.produce with MID:', rtpParameters.mid);
+    logger.debug('Calling mediasoupService.produce with MID:', rtpParameters.mid);
     const producerId = await mediasoupService.produce(socketId, kind, rtpParameters, appData);
-    console.log(`✅ MEDIASOUP: Producer created for ${socketId}: ${producerId} with MID ${rtpParameters.mid}`);
+    logger.debug(`✅ MEDIASOUP: Producer created for ${socketId}: ${producerId} with MID ${rtpParameters.mid}`);
 
     res.json({ success: true, producerId });
   } catch (error) {
-    console.error('❌ MEDIASOUP: Failed to produce:', error);
-    console.error('Full error stack:', error.stack);
+    logger.error('❌ MEDIASOUP: Failed to produce:', error);
+    logger.error('Full error stack:', error.stack);
     res.status(500).json({ error: error.message });
   }
 });
@@ -133,7 +136,7 @@ router.post('/consume', async (req, res) => {
   if (!mediasoupService) return;
   try {
     const { socketId, producerId, rtpCapabilities } = req.body;
-    console.log(`📡 MEDIASOUP: Consume request from ${socketId} for producer ${producerId}`);
+    logger.debug(`📡 MEDIASOUP: Consume request from ${socketId} for producer ${producerId}`);
 
     if (!socketId || !producerId || !rtpCapabilities) {
       return res.status(400).json({ error: 'Missing required parameters' });
@@ -145,7 +148,7 @@ router.post('/consume', async (req, res) => {
       return res.status(404).json({ error: 'Producer not found or cannot consume' });
     }
 
-    console.log(`✅ MEDIASOUP: Consumer created for ${socketId}: ${consumer.id}`);
+    logger.debug(`✅ MEDIASOUP: Consumer created for ${socketId}: ${consumer.id}`);
 
     res.json({
       success: true,
@@ -157,7 +160,7 @@ router.post('/consume', async (req, res) => {
       producerPaused: consumer.producerPaused
     });
   } catch (error) {
-    console.error('❌ MEDIASOUP: Failed to consume:', error);
+    logger.error('❌ MEDIASOUP: Failed to consume:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -174,10 +177,10 @@ router.post('/restart-ice', async (req, res) => {
     }
 
     const iceParameters = await mediasoupService.restartTransportIce(socketId, transportId);
-    console.log(`🔄 ICE restart for ${socketId}`);
+    logger.debug(`🔄 ICE restart for ${socketId}`);
     res.json({ success: true, iceParameters });
   } catch (error) {
-    console.error('❌ ICE restart failed:', error);
+    logger.error('❌ ICE restart failed:', error);
     res.status(500).json({ error: error.message });
   }
 });

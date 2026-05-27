@@ -21,6 +21,7 @@
 const express = require('express');
 const { authenticateAdmin, authenticateToken } = require('../middleware/auth');
 
+const logger = require('../bootstrap/logger').child({ svc: 'moderation-ai' });
 module.exports = function moderationAIRoutes() {
   const router = express.Router();
 
@@ -120,7 +121,7 @@ module.exports = function moderationAIRoutes() {
                 userUnbanned = true;
               }
             } catch (e) {
-              console.error('moderation-ai/reverse: unban failed:', e.message);
+              logger.error('moderation-ai/reverse: unban failed:', e.message);
             }
           }
         }
@@ -322,7 +323,7 @@ module.exports = function moderationAIRoutes() {
         events,
       });
     } catch (e) {
-      console.error('moderation-ai/me/export error:', e);
+      logger.error('moderation-ai/me/export error:', e);
       res.status(500).json({ error: e.message });
     }
   });

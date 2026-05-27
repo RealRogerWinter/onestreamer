@@ -1,6 +1,7 @@
 const UserInventoryRepository = require('../database/repository/UserInventoryRepository');
 const ItemTransactionRepository = require('../database/repository/ItemTransactionRepository');
 
+const logger = require('../bootstrap/logger').child({ svc: 'InventoryService' });
 class InventoryService {
     constructor(itemService, buffDebuffService = null, deps = {}) {
         this.itemService = itemService;
@@ -102,12 +103,12 @@ class InventoryService {
     }
 
     async useItem(userId, itemId, streamId = null) {
-        console.log(`📦 INVENTORY: useItem called - userId: ${userId}, itemId: ${itemId}, streamId: ${streamId}`);
+        logger.debug(`📦 INVENTORY: useItem called - userId: ${userId}, itemId: ${itemId}, streamId: ${streamId}`);
         const inventoryItem = await this.getInventoryItem(userId, itemId);
-        console.log(`📦 INVENTORY: inventoryItem result:`, inventoryItem);
+        logger.debug(`📦 INVENTORY: inventoryItem result:`, inventoryItem);
         
         if (!inventoryItem) {
-            console.error(`❌ INVENTORY: Item ${itemId} not found for user ${userId}`);
+            logger.error(`❌ INVENTORY: Item ${itemId} not found for user ${userId}`);
             throw new Error('Item not in inventory');
         }
         
@@ -130,30 +131,30 @@ class InventoryService {
             
             if (this.streamService && this.sessionService) {
                 const currentStreamerSocketId = this.streamService.getCurrentStreamer();
-                console.log(`🔍 INVENTORY DEBUG: Current streamer socket ID: "${currentStreamerSocketId}"`);
-                console.log(`🔍 INVENTORY DEBUG: ViewbotService available: ${!!this.viewbotService}`);
-                console.log(`🔍 INVENTORY DEBUG: Starting viewbot targeting logic...`);
+                logger.debug(`🔍 INVENTORY DEBUG: Current streamer socket ID: "${currentStreamerSocketId}"`);
+                logger.debug(`🔍 INVENTORY DEBUG: ViewbotService available: ${!!this.viewbotService}`);
+                logger.debug(`🔍 INVENTORY DEBUG: Starting viewbot targeting logic...`);
                 
                 if (currentStreamerSocketId) {
                     const streamerSession = this.sessionService.getSessionBySocketId(currentStreamerSocketId);
-                    console.log(`🔍 INVENTORY DEBUG: Streamer session found: ${!!streamerSession}`);
+                    logger.debug(`🔍 INVENTORY DEBUG: Streamer session found: ${!!streamerSession}`);
                     
                     if (streamerSession && streamerSession.userId) {
                         // Apply to any streamer, including anonymous/viewbot users with negative IDs
                         targetUserId = streamerSession.userId;
                         if (targetUserId < 0) {
-                            console.log(`🎭 INVENTORY: Applying ${item.item_type} "${item.display_name}" to anonymous/viewbot streamer (synthetic ID ${targetUserId})`);
+                            logger.debug(`🎭 INVENTORY: Applying ${item.item_type} "${item.display_name}" to anonymous/viewbot streamer (synthetic ID ${targetUserId})`);
                         } else {
-                            console.log(`🎭 INVENTORY: Applying ${item.item_type} "${item.display_name}" to current streamer (user ${targetUserId})`);
+                            logger.debug(`🎭 INVENTORY: Applying ${item.item_type} "${item.display_name}" to current streamer (user ${targetUserId})`);
                         }
                     } else {
-                        console.log(`🎭 INVENTORY: No session found for streamer, applying to self (user ${userId})`)
+                        logger.debug(`🎭 INVENTORY: No session found for streamer, applying to self (user ${userId})`)
                     }
                 } else {
-                    console.log(`🎭 INVENTORY: No active streamer, applying to self (user ${userId})`);
+                    logger.debug(`🎭 INVENTORY: No active streamer, applying to self (user ${userId})`);
                 }
             } else {
-                console.log(`🎭 INVENTORY: Stream/Session services not available, applying to self (user ${userId})`);
+                logger.debug(`🎭 INVENTORY: Stream/Session services not available, applying to self (user ${userId})`);
             }
             
             try {
@@ -165,7 +166,7 @@ class InventoryService {
                     true // skipCooldownValidation - we handle cooldown ourselves
                 );
             } catch (buffError) {
-                console.error(`❌ INVENTORY: Error applying ${item.item_type}:`, buffError);
+                logger.error(`❌ INVENTORY: Error applying ${item.item_type}:`, buffError);
                 // Don't fail the entire operation if buff application fails
                 throw buffError; // Re-throw so the user knows the buff failed
             }

@@ -7,6 +7,7 @@
 const { spawn } = require('child_process');
 const EventEmitter = require('events');
 
+const logger = require('../bootstrap/logger').child({ svc: 'StreamInterceptorService' });
 class StreamInterceptorService extends EventEmitter {
     constructor(mediasoupService, plainTransportService) {
         super();
@@ -21,7 +22,7 @@ class StreamInterceptorService extends EventEmitter {
             ? 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe'
             : '/usr/bin/gst-launch-1.0'; // Full path on Linux
         
-        console.log('🎬 STREAM INTERCEPTOR: Service initialized');
+        logger.debug('🎬 STREAM INTERCEPTOR: Service initialized');
     }
 
     /**
@@ -35,11 +36,11 @@ class StreamInterceptorService extends EventEmitter {
      * Intercept a stream and route through external processor
      */
     async interceptStream(streamId, effectType, options = {}) {
-        console.log(`🎬 INTERCEPTOR: Starting interception for stream ${streamId} with effect ${effectType}`);
+        logger.debug(`🎬 INTERCEPTOR: Starting interception for stream ${streamId} with effect ${effectType}`);
         
         // Check if MediaSoup router is available
         if (!this.mediasoupService || !this.mediasoupService.router) {
-            console.error(`❌ INTERCEPTOR: MediaSoup router not available`);
+            logger.error(`❌ INTERCEPTOR: MediaSoup router not available`);
             throw new Error('MediaSoup router not initialized');
         }
         
@@ -70,7 +71,7 @@ class StreamInterceptorService extends EventEmitter {
                 options
             });
             
-            console.log(`✅ INTERCEPTOR: Stream ${streamId} successfully intercepted with ${effectType}`);
+            logger.debug(`✅ INTERCEPTOR: Stream ${streamId} successfully intercepted with ${effectType}`);
             
             // Auto-remove after duration
             if (options.duration) {
@@ -80,7 +81,7 @@ class StreamInterceptorService extends EventEmitter {
             return true;
             
         } catch (error) {
-            console.error(`❌ INTERCEPTOR: Failed to intercept stream ${streamId}:`, error);
+            logger.error(`❌ INTERCEPTOR: Failed to intercept stream ${streamId}:`, error);
             throw error;
         }
     }
@@ -92,12 +93,12 @@ class StreamInterceptorService extends EventEmitter {
         const botId = `extract_${streamId}_${Date.now()}`;
         try {
             const result = await this.plainTransportService.createPlainTransport(botId);
-            console.log(`✅ INTERCEPTOR: Extraction transport created:`, result);
+            logger.debug(`✅ INTERCEPTOR: Extraction transport created:`, result);
             // Store the botId with the result so we can use it later
             result.botId = botId;
             return result;
         } catch (error) {
-            console.error(`❌ INTERCEPTOR: Failed to create extraction transport:`, error);
+            logger.error(`❌ INTERCEPTOR: Failed to create extraction transport:`, error);
             throw error;
         }
     }
@@ -109,12 +110,12 @@ class StreamInterceptorService extends EventEmitter {
         const botId = `inject_${streamId}_${Date.now()}`;
         try {
             const result = await this.plainTransportService.createPlainTransport(botId);
-            console.log(`✅ INTERCEPTOR: Injection transport created:`, result);
+            logger.debug(`✅ INTERCEPTOR: Injection transport created:`, result);
             // Store the botId with the result so we can use it later
             result.botId = botId;
             return result;
         } catch (error) {
-            console.error(`❌ INTERCEPTOR: Failed to create injection transport:`, error);
+            logger.error(`❌ INTERCEPTOR: Failed to create injection transport:`, error);
             throw error;
         }
     }
@@ -123,13 +124,13 @@ class StreamInterceptorService extends EventEmitter {
      * Start external processor (GStreamer for potato effect)
      */
     async startProcessor(effectType, extractPorts, injectPorts, options) {
-        console.log(`🎬 INTERCEPTOR: Starting ${effectType} processor`);
+        logger.debug(`🎬 INTERCEPTOR: Starting ${effectType} processor`);
         
         // Check if GStreamer exists
         const fs = require('fs');
         if (!fs.existsSync(this.gstreamerPath)) {
-            console.error(`❌ INTERCEPTOR: GStreamer not found at ${this.gstreamerPath}`);
-            console.log(`⚠️ INTERCEPTOR: Install GStreamer or update path in StreamInterceptorService`);
+            logger.error(`❌ INTERCEPTOR: GStreamer not found at ${this.gstreamerPath}`);
+            logger.debug(`⚠️ INTERCEPTOR: Install GStreamer or update path in StreamInterceptorService`);
             // For now, throw error - in production, could fallback to FFmpeg
             throw new Error('GStreamer not installed');
         }
@@ -150,7 +151,7 @@ class StreamInterceptorService extends EventEmitter {
                 pipeline = this.buildGenericPipeline(extractPorts, injectPorts, options);
         }
         
-        console.log(`🎬 INTERCEPTOR: Pipeline command: gst-launch-1.0 ${pipeline.join(' ')}`);
+        logger.debug(`🎬 INTERCEPTOR: Pipeline command: gst-launch-1.0 ${pipeline.join(' ')}`);
         
         // Windows requires special handling for paths with spaces
         const fullCommand = `"${this.gstreamerPath}" ${pipeline.join(' ')}`;
@@ -161,28 +162,28 @@ class StreamInterceptorService extends EventEmitter {
         });
         
         process.on('error', (error) => {
-            console.error(`❌ INTERCEPTOR: Processor spawn error:`, error);
+            logger.error(`❌ INTERCEPTOR: Processor spawn error:`, error);
             if (error.code === 'ENOENT') {
-                console.error(`❌ INTERCEPTOR: GStreamer executable not found`);
+                logger.error(`❌ INTERCEPTOR: GStreamer executable not found`);
             }
         });
         
         process.stderr.on('data', (data) => {
             const message = data.toString();
             if (message.includes('ERROR') || message.includes('erroneous pipeline') || message.includes('syntax error')) {
-                console.error(`❌ INTERCEPTOR: GStreamer pipeline failed:`, message);
+                logger.error(`❌ INTERCEPTOR: GStreamer pipeline failed:`, message);
                 // Kill the process if pipeline has syntax errors
                 if (message.includes('erroneous pipeline') || message.includes('syntax error')) {
                     process.kill();
                     throw new Error(`GStreamer pipeline syntax error: ${message}`);
                 }
             } else if (message.includes('WARNING')) {
-                console.warn(`⚠️ INTERCEPTOR: GStreamer warning:`, message);
+                logger.warn(`⚠️ INTERCEPTOR: GStreamer warning:`, message);
             }
         });
         
         process.stdout.on('data', (data) => {
-            console.log(`📺 INTERCEPTOR: GStreamer output:`, data.toString());
+            logger.debug(`📺 INTERCEPTOR: GStreamer output:`, data.toString());
         });
         
         return process;
@@ -310,7 +311,7 @@ class StreamInterceptorService extends EventEmitter {
      * Connect original producer to extraction transport
      */
     async connectProducerToExtraction(streamId, extractPorts) {
-        console.log(`🔗 INTERCEPTOR: Connecting producer to extraction transport`);
+        logger.debug(`🔗 INTERCEPTOR: Connecting producer to extraction transport`);
         
         // Get the current streamer's producers
         const producers = this.mediasoupService.producers.get(streamId);
@@ -337,7 +338,7 @@ class StreamInterceptorService extends EventEmitter {
                 
                 // Create video consumer on plain transport to extract RTP
                 if (videoProducer && !videoProducer.closed && extractPorts.transportId) {
-                    console.log(`📹 INTERCEPTOR: Creating plain consumer for video extraction`);
+                    logger.debug(`📹 INTERCEPTOR: Creating plain consumer for video extraction`);
                     
                     // Get the plain transport
                     const transport = await this.getTransportById(extractPorts.transportId);
@@ -350,13 +351,13 @@ class StreamInterceptorService extends EventEmitter {
                         });
                         
                         consumers.video = videoConsumer;
-                        console.log(`✅ INTERCEPTOR: Video consumer created for extraction: ${videoConsumer.id}`);
+                        logger.debug(`✅ INTERCEPTOR: Video consumer created for extraction: ${videoConsumer.id}`);
                     }
                 }
                 
                 // Create audio consumer on plain transport to extract RTP
                 if (audioProducer && !audioProducer.closed && extractPorts.audioTransportId) {
-                    console.log(`🎤 INTERCEPTOR: Creating plain consumer for audio extraction`);
+                    logger.debug(`🎤 INTERCEPTOR: Creating plain consumer for audio extraction`);
                     
                     // Get the plain transport
                     const transport = await this.getTransportById(extractPorts.audioTransportId);
@@ -369,7 +370,7 @@ class StreamInterceptorService extends EventEmitter {
                         });
                         
                         consumers.audio = audioConsumer;
-                        console.log(`✅ INTERCEPTOR: Audio consumer created for extraction: ${audioConsumer.id}`);
+                        logger.debug(`✅ INTERCEPTOR: Audio consumer created for extraction: ${audioConsumer.id}`);
                     }
                 }
                 
@@ -385,7 +386,7 @@ class StreamInterceptorService extends EventEmitter {
                 
                 // Create video consumer
                 if (videoProducer && !videoProducer.closed && transports.video) {
-                    console.log(`📹 INTERCEPTOR: Creating plain consumer for video extraction on existing transport`);
+                    logger.debug(`📹 INTERCEPTOR: Creating plain consumer for video extraction on existing transport`);
                     
                     // First, connect the transport to tell it where to send RTP (to GStreamer)
                     if (!transports.video.appData.connected) {
@@ -395,7 +396,7 @@ class StreamInterceptorService extends EventEmitter {
                             rtcpPort: extractPorts.videoRtcp
                         });
                         transports.video.appData.connected = true;
-                        console.log(`🔗 INTERCEPTOR: Video extraction transport connected to GStreamer port ${extractPorts.video}`);
+                        logger.debug(`🔗 INTERCEPTOR: Video extraction transport connected to GStreamer port ${extractPorts.video}`);
                     }
                     
                     const videoConsumer = await transports.video.consume({
@@ -404,12 +405,12 @@ class StreamInterceptorService extends EventEmitter {
                         paused: false
                     });
                     consumers.video = videoConsumer;
-                    console.log(`✅ INTERCEPTOR: Video consumer created: ${videoConsumer.id}`);
+                    logger.debug(`✅ INTERCEPTOR: Video consumer created: ${videoConsumer.id}`);
                 }
                 
                 // Create audio consumer
                 if (audioProducer && !audioProducer.closed && transports.audio) {
-                    console.log(`🎤 INTERCEPTOR: Creating plain consumer for audio extraction on existing transport`);
+                    logger.debug(`🎤 INTERCEPTOR: Creating plain consumer for audio extraction on existing transport`);
                     
                     // First, connect the transport to tell it where to send RTP (to GStreamer)
                     if (!transports.audio.appData.connected) {
@@ -419,7 +420,7 @@ class StreamInterceptorService extends EventEmitter {
                             rtcpPort: extractPorts.audioRtcp
                         });
                         transports.audio.appData.connected = true;
-                        console.log(`🔗 INTERCEPTOR: Audio extraction transport connected to GStreamer port ${extractPorts.audio}`);
+                        logger.debug(`🔗 INTERCEPTOR: Audio extraction transport connected to GStreamer port ${extractPorts.audio}`);
                     }
                     
                     const audioConsumer = await transports.audio.consume({
@@ -428,7 +429,7 @@ class StreamInterceptorService extends EventEmitter {
                         paused: false
                     });
                     consumers.audio = audioConsumer;
-                    console.log(`✅ INTERCEPTOR: Audio consumer created: ${audioConsumer.id}`);
+                    logger.debug(`✅ INTERCEPTOR: Audio consumer created: ${audioConsumer.id}`);
                 }
                 
                 // Store consumers
@@ -436,10 +437,10 @@ class StreamInterceptorService extends EventEmitter {
                 this.extractionConsumers.set(streamId, consumers);
             }
             
-            console.log(`✅ INTERCEPTOR: Producer connected to extraction ports - Video: ${extractPorts.video}, Audio: ${extractPorts.audio}`);
+            logger.debug(`✅ INTERCEPTOR: Producer connected to extraction ports - Video: ${extractPorts.video}, Audio: ${extractPorts.audio}`);
             return true;
         } catch (error) {
-            console.error(`❌ INTERCEPTOR: Failed to connect producers:`, error);
+            logger.error(`❌ INTERCEPTOR: Failed to connect producers:`, error);
             throw error;
         }
     }
@@ -472,7 +473,7 @@ class StreamInterceptorService extends EventEmitter {
      * Switch viewers to processed stream
      */
     async switchViewersToProcessed(streamId, injectPorts) {
-        console.log(`🔄 INTERCEPTOR: Switching viewers to processed stream`);
+        logger.debug(`🔄 INTERCEPTOR: Switching viewers to processed stream`);
         
         try {
             // Use the botId that was stored when creating the injection transport
@@ -506,11 +507,11 @@ class StreamInterceptorService extends EventEmitter {
                 timestamp: Date.now()
             });
             
-            console.log(`✅ INTERCEPTOR: Viewers can now consume from processed stream`);
+            logger.debug(`✅ INTERCEPTOR: Viewers can now consume from processed stream`);
             return true;
             
         } catch (error) {
-            console.error(`❌ INTERCEPTOR: Failed to switch viewers:`, error);
+            logger.error(`❌ INTERCEPTOR: Failed to switch viewers:`, error);
             throw error;
         }
     }
@@ -519,11 +520,11 @@ class StreamInterceptorService extends EventEmitter {
      * Stop stream interception and restore normal flow
      */
     async stopInterception(streamId) {
-        console.log(`🛑 INTERCEPTOR: Stopping interception for stream ${streamId}`);
+        logger.debug(`🛑 INTERCEPTOR: Stopping interception for stream ${streamId}`);
         
         const intercept = this.activeIntercepts.get(streamId);
         if (!intercept) {
-            console.warn(`⚠️ INTERCEPTOR: No active interception for stream ${streamId}`);
+            logger.warn(`⚠️ INTERCEPTOR: No active interception for stream ${streamId}`);
             return false;
         }
         
@@ -531,7 +532,7 @@ class StreamInterceptorService extends EventEmitter {
             // Kill processor
             if (intercept.processor && !intercept.processor.killed) {
                 intercept.processor.kill();
-                console.log(`🛑 INTERCEPTOR: GStreamer process killed`);
+                logger.debug(`🛑 INTERCEPTOR: GStreamer process killed`);
             }
             
             // Clean up extraction consumers
@@ -540,7 +541,7 @@ class StreamInterceptorService extends EventEmitter {
                 if (consumers.video) consumers.video.close();
                 if (consumers.audio) consumers.audio.close();
                 this.extractionConsumers.delete(streamId);
-                console.log(`🛑 INTERCEPTOR: Extraction consumers closed`);
+                logger.debug(`🛑 INTERCEPTOR: Extraction consumers closed`);
             }
             
             // Clean up injection producers
@@ -553,7 +554,7 @@ class StreamInterceptorService extends EventEmitter {
                     this.plainTransportService.plainProducers.delete(botId);
                 }
                 this.injectionProducers.delete(streamId);
-                console.log(`🛑 INTERCEPTOR: Injection producers closed`);
+                logger.debug(`🛑 INTERCEPTOR: Injection producers closed`);
             }
             
             // Clean up transports
@@ -567,11 +568,11 @@ class StreamInterceptorService extends EventEmitter {
             
             this.activeIntercepts.delete(streamId);
             
-            console.log(`✅ INTERCEPTOR: Interception stopped for stream ${streamId}`);
+            logger.debug(`✅ INTERCEPTOR: Interception stopped for stream ${streamId}`);
             return true;
             
         } catch (error) {
-            console.error(`❌ INTERCEPTOR: Failed to stop interception:`, error);
+            logger.error(`❌ INTERCEPTOR: Failed to stop interception:`, error);
             return false;
         }
     }
@@ -596,7 +597,7 @@ class StreamInterceptorService extends EventEmitter {
      * Clean up all interceptions
      */
     async cleanup() {
-        console.log('🧹 INTERCEPTOR: Cleaning up all interceptions');
+        logger.debug('🧹 INTERCEPTOR: Cleaning up all interceptions');
         
         for (const streamId of this.activeIntercepts.keys()) {
             await this.stopInterception(streamId);

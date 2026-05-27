@@ -8,6 +8,7 @@
 const { runAsync, getAsync, allAsync } = require('../database/database');
 const b2Storage = require('./B2StorageService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'RecordingCleanupScheduler' });
 class RecordingCleanupScheduler {
     constructor(config = {}) {
         this.checkIntervalMs = config.checkIntervalMs || 60 * 60 * 1000; // Check every hour
@@ -24,7 +25,7 @@ class RecordingCleanupScheduler {
         // closes the matching gap in the **database** cleanup.
         this.retryWindowMs = config.retryWindowMs ?? (24 * 60 * 60 * 1000);
 
-        console.log(`[CleanupScheduler] Initialized (retryWindowMs=${this.retryWindowMs})`);
+        logger.debug(`[CleanupScheduler] Initialized (retryWindowMs=${this.retryWindowMs})`);
     }
 
     /**
@@ -39,7 +40,7 @@ class RecordingCleanupScheduler {
             this.runCleanup();
         }, this.checkIntervalMs);
 
-        console.log('[CleanupScheduler] Started');
+        logger.debug('[CleanupScheduler] Started');
     }
 
     /**
@@ -54,7 +55,7 @@ class RecordingCleanupScheduler {
             const days = parseInt(setting?.value || '7');
             return Math.max(1, Math.min(7, days)); // Clamp to 1-7 days
         } catch (error) {
-            console.error('[CleanupScheduler] Error getting retention setting:', error.message);
+            logger.error('[CleanupScheduler] Error getting retention setting:', error.message);
             return 7; // Default to 7 days
         }
     }
@@ -73,7 +74,7 @@ class RecordingCleanupScheduler {
             // retention + retry_window.
             const extendedCutoff = cutoffTime - this.retryWindowMs;
 
-            console.log(`[CleanupScheduler] Running cleanup - retention: ${retentionDays} days, cutoff: ${new Date(cutoffTime).toISOString()}, extendedCutoff: ${new Date(extendedCutoff).toISOString()}`);
+            logger.debug(`[CleanupScheduler] Running cleanup - retention: ${retentionDays} days, cutoff: ${new Date(cutoffTime).toISOString()}, extendedCutoff: ${new Date(extendedCutoff).toISOString()}`);
 
             // Find expired sessions. The `(b2_file_id IS NOT NULL OR
             // start_time < ?)` guard protects un-uploaded sessions from
@@ -94,7 +95,7 @@ class RecordingCleanupScheduler {
                 return;
             }
 
-            console.log(`[CleanupScheduler] Found ${expiredSessions.length} expired session(s) to delete`);
+            logger.debug(`[CleanupScheduler] Found ${expiredSessions.length} expired session(s) to delete`);
 
             let deletedCount = 0;
             let errorCount = 0;
@@ -104,15 +105,15 @@ class RecordingCleanupScheduler {
                     await this.deleteSession(session);
                     deletedCount++;
                 } catch (error) {
-                    console.error(`[CleanupScheduler] Error deleting session ${session.session_id}:`, error.message);
+                    logger.error(`[CleanupScheduler] Error deleting session ${session.session_id}:`, error.message);
                     errorCount++;
                 }
             }
 
-            console.log(`[CleanupScheduler] Cleanup complete - deleted: ${deletedCount}, errors: ${errorCount}`);
+            logger.debug(`[CleanupScheduler] Cleanup complete - deleted: ${deletedCount}, errors: ${errorCount}`);
 
         } catch (error) {
-            console.error('[CleanupScheduler] Error running cleanup:', error.message);
+            logger.error('[CleanupScheduler] Error running cleanup:', error.message);
         }
     }
 
@@ -121,13 +122,13 @@ class RecordingCleanupScheduler {
      * @param {object} session - Session record from database
      */
     async deleteSession(session) {
-        console.log(`[CleanupScheduler] Deleting session ${session.session_id}`);
+        logger.debug(`[CleanupScheduler] Deleting session ${session.session_id}`);
 
         // Delete from B2 if uploaded
         if (session.b2_file_name && b2Storage.isEnabled()) {
             const result = await b2Storage.deleteFile(session.b2_file_name);
             if (!result.success) {
-                console.warn(`[CleanupScheduler] Could not delete B2 file: ${result.error}`);
+                logger.warn(`[CleanupScheduler] Could not delete B2 file: ${result.error}`);
             }
         }
 
@@ -137,7 +138,7 @@ class RecordingCleanupScheduler {
         // Delete session record
         await runAsync('DELETE FROM recording_sessions WHERE session_id = ?', [session.session_id]);
 
-        console.log(`[CleanupScheduler] Deleted session ${session.session_id}`);
+        logger.debug(`[CleanupScheduler] Deleted session ${session.session_id}`);
     }
 
     /**
@@ -156,7 +157,7 @@ class RecordingCleanupScheduler {
             await this.deleteSession(session);
             return { success: true };
         } catch (error) {
-            console.error(`[CleanupScheduler] Error deleting session ${sessionId}:`, error.message);
+            logger.error(`[CleanupScheduler] Error deleting session ${sessionId}:`, error.message);
             return { success: false, error: error.message };
         }
     }
@@ -218,10 +219,10 @@ class RecordingCleanupScheduler {
                 ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
             `, [clampedDays.toString(), clampedDays.toString()]);
 
-            console.log(`[CleanupScheduler] Retention set to ${clampedDays} days`);
+            logger.debug(`[CleanupScheduler] Retention set to ${clampedDays} days`);
             return { success: true, retentionDays: clampedDays };
         } catch (error) {
-            console.error('[CleanupScheduler] Error setting retention:', error.message);
+            logger.error('[CleanupScheduler] Error setting retention:', error.message);
             return { success: false, error: error.message };
         }
     }
@@ -234,7 +235,7 @@ class RecordingCleanupScheduler {
             clearInterval(this.checkInterval);
             this.checkInterval = null;
         }
-        console.log('[CleanupScheduler] Stopped');
+        logger.debug('[CleanupScheduler] Stopped');
     }
 }
 

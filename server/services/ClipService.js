@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const ProfanityFilterService = require('./ProfanityFilterService');
 const ClipRepository = require('../database/repository/ClipRepository');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ClipService' });
 /**
  * ClipService - Business logic for clip management
  * Updated to work with continuous room recording model
@@ -76,7 +77,7 @@ class ClipService {
       }
     }
 
-    console.log(`🧹 CLIPS: Cleaned rate limit caches (users: ${this.userRateLimitCache.size}, ips: ${this.ipRateLimitCache.size})`);
+    logger.debug(`🧹 CLIPS: Cleaned rate limit caches (users: ${this.userRateLimitCache.size}, ips: ${this.ipRateLimitCache.size})`);
   }
 
   /**
@@ -148,8 +149,8 @@ class ClipService {
     const endTime = Math.min(Date.now(), clippableRange.end);
     const startTime = endTime - durationMs;
 
-    console.log(`✂️ CLIP CREATE: clippableRange = ${JSON.stringify(clippableRange)}`);
-    console.log(`✂️ CLIP CREATE: Calculated clip range: ${startTime} to ${endTime}`);
+    logger.debug(`✂️ CLIP CREATE: clippableRange = ${JSON.stringify(clippableRange)}`);
+    logger.debug(`✂️ CLIP CREATE: Calculated clip range: ${startTime} to ${endTime}`);
 
     // Ensure we have enough recording
     if (startTime < clippableRange.start) {
@@ -158,9 +159,9 @@ class ClipService {
     }
 
     // Find segments needed for this clip
-    console.log(`✂️ CLIP CREATE: Calling findSegmentsForClip(${startTime}, ${endTime})`);
+    logger.debug(`✂️ CLIP CREATE: Calling findSegmentsForClip(${startTime}, ${endTime})`);
     const segmentInfo = await this.continuousRecordingService.findSegmentsForClip(startTime, endTime);
-    console.log(`✂️ CLIP CREATE: Found ${segmentInfo.segments?.length || 0} segments`);
+    logger.debug(`✂️ CLIP CREATE: Found ${segmentInfo.segments?.length || 0} segments`);
 
     if (!segmentInfo.segments || segmentInfo.segments.length === 0) {
       throw new Error('Could not find recording segments for the requested time range');
@@ -192,7 +193,7 @@ class ClipService {
     const chatStartTime = clipCreationTime - durationMs;
 
     this.captureChatForClip(clipId, chatStartTime, chatEndTime).catch(err => {
-      console.error(`⚠️ CLIPS: Failed to capture chat for clip ${clipId}:`, err.message);
+      logger.error(`⚠️ CLIPS: Failed to capture chat for clip ${clipId}:`, err.message);
     });
 
     // Queue for processing with segment info
@@ -209,7 +210,7 @@ class ClipService {
     // Increment rate limit counters
     this.incrementRateLimits(userId, ipAddress);
 
-    console.log(`✂️ CLIPS: Created clip ${clipId} (${durationSeconds}s) from ${segmentInfo.segments.length} segments`);
+    logger.debug(`✂️ CLIPS: Created clip ${clipId} (${durationSeconds}s) from ${segmentInfo.segments.length} segments`);
 
     return {
       clipId,
@@ -442,7 +443,7 @@ class ClipService {
       await txRepo.deleteClipById(clipId);
     });
 
-    console.log(`🗑️ CLIPS: Deleted clip ${clipId}`);
+    logger.debug(`🗑️ CLIPS: Deleted clip ${clipId}`);
     return true;
   }
 
@@ -476,10 +477,10 @@ class ClipService {
 
     if (status === 'ready') {
       await this.clipRepository.setClipReady(clipId, { filePath, thumbnailPath, fileSize });
-      console.log(`✅ CLIPS: Clip ${clipId} ready`);
+      logger.debug(`✅ CLIPS: Clip ${clipId} ready`);
     } else if (status === 'failed') {
       await this.clipRepository.setClipFailed(clipId);
-      console.error(`❌ CLIPS: Clip ${clipId} failed: ${error}`);
+      logger.error(`❌ CLIPS: Clip ${clipId} failed: ${error}`);
     }
   }
 
@@ -642,7 +643,7 @@ class ClipService {
   async captureChatForClip(clipId, startTimeMs, endTimeMs) {
     const contextMs = 30000; // 30 seconds of context before clip starts
 
-    console.log(`💬 CLIPS: Capturing chat for clip ${clipId} from ${new Date(startTimeMs).toISOString()} to ${new Date(endTimeMs).toISOString()}`);
+    logger.debug(`💬 CLIPS: Capturing chat for clip ${clipId} from ${new Date(startTimeMs).toISOString()} to ${new Date(endTimeMs).toISOString()}`);
 
     try {
       // Fetch chat from chat service API
@@ -660,12 +661,12 @@ class ClipService {
       });
 
       if (!response.data.success || !response.data.messages || response.data.messages.length === 0) {
-        console.log(`💬 CLIPS: No chat messages found for clip ${clipId}`);
+        logger.debug(`💬 CLIPS: No chat messages found for clip ${clipId}`);
         return { captured: 0 };
       }
 
       const messages = response.data.messages;
-      console.log(`💬 CLIPS: Found ${messages.length} chat messages for clip ${clipId}`);
+      logger.debug(`💬 CLIPS: Found ${messages.length} chat messages for clip ${clipId}`);
 
       // Insert messages with relative timestamps
       let insertedCount = 0;
@@ -687,14 +688,14 @@ class ClipService {
 
           insertedCount++;
         } catch (err) {
-          console.error(`💬 CLIPS: Error inserting chat message:`, err.message);
+          logger.error(`💬 CLIPS: Error inserting chat message:`, err.message);
         }
       }
 
-      console.log(`💬 CLIPS: Captured ${insertedCount} chat messages for clip ${clipId}`);
+      logger.debug(`💬 CLIPS: Captured ${insertedCount} chat messages for clip ${clipId}`);
       return { captured: insertedCount };
     } catch (err) {
-      console.error(`💬 CLIPS: Error fetching chat from chat service:`, err.message);
+      logger.error(`💬 CLIPS: Error fetching chat from chat service:`, err.message);
       return { captured: 0, error: err.message };
     }
   }

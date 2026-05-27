@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'items' });
+
 const router = express.Router();
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 const DrawingService = require('../services/DrawingService');
@@ -18,8 +21,8 @@ const itemUseService = new ItemUseService();
 // Debug middleware for all item routes
 router.use((req, res, next) => {
     if (req.path.includes('/inventory/use/')) {
-        console.log(`🔴🔴🔴 FART DEBUG MIDDLEWARE: ${req.method} ${req.path}`);
-        console.log(`🔴🔴🔴 FART DEBUG: Full URL: ${req.originalUrl}`);
+        logger.debug(`🔴🔴🔴 FART DEBUG MIDDLEWARE: ${req.method} ${req.path}`);
+        logger.debug(`🔴🔴🔴 FART DEBUG: Full URL: ${req.originalUrl}`);
     }
     next();
 });
@@ -39,7 +42,7 @@ router.get('/items', async (req, res) => {
         
         res.json(items);
     } catch (error) {
-        console.error('Error fetching items:', error);
+        logger.error('Error fetching items:', error);
         res.status(500).json({ error: 'Failed to fetch items' });
     }
 });
@@ -51,7 +54,7 @@ router.get('/items/categories/list', async (req, res) => {
         const categories = await itemService.getAllCategories();
         res.json(categories);
     } catch (error) {
-        console.error('Error fetching categories:', error);
+        logger.error('Error fetching categories:', error);
         res.status(500).json({ error: 'Failed to fetch categories' });
     }
 });
@@ -67,7 +70,7 @@ router.get('/items/:id', async (req, res) => {
         
         res.json(item);
     } catch (error) {
-        console.error('Error fetching item:', error);
+        logger.error('Error fetching item:', error);
         res.status(500).json({ error: 'Failed to fetch item' });
     }
 });
@@ -78,7 +81,7 @@ router.post('/items', authenticateAdmin, async (req, res) => {
         const item = await itemService.createItem(req.body);
         res.status(201).json(item);
     } catch (error) {
-        console.error('Error creating item:', error);
+        logger.error('Error creating item:', error);
         res.status(500).json({ error: 'Failed to create item' });
     }
 });
@@ -89,7 +92,7 @@ router.put('/items/:id', authenticateAdmin, async (req, res) => {
         const item = await itemService.updateItem(req.params.id, req.body);
         res.json(item);
     } catch (error) {
-        console.error('Error updating item:', error);
+        logger.error('Error updating item:', error);
         res.status(500).json({ error: 'Failed to update item' });
     }
 });
@@ -100,7 +103,7 @@ router.delete('/items/:id', authenticateAdmin, async (req, res) => {
         await itemService.deleteItem(req.params.id);
         res.json({ success: true });
     } catch (error) {
-        console.error('Error deleting item:', error);
+        logger.error('Error deleting item:', error);
         res.status(500).json({ error: 'Failed to delete item' });
     }
 });
@@ -113,19 +116,19 @@ router.get('/inventory', authenticateToken, async (req, res) => {
         const inventory = await inventoryService.getUserInventory(userId);
         res.json(inventory);
     } catch (error) {
-        console.error('Error fetching inventory:', error);
+        logger.error('Error fetching inventory:', error);
         res.status(500).json({ error: 'Failed to fetch inventory' });
     }
 });
 
 router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
-    console.log(`🚨🚨🚨 FART DEBUG: Request received at /inventory/use/${req.params.itemId}`);
-    console.log(`🚨🚨🚨 FART DEBUG: User: ${req.user?.username || 'unknown'}, Method: ${req.method}`);
-    console.log(`🚨🚨🚨 FART DEBUG: Headers:`, req.headers);
-    console.log(`🚀 ITEMS: ===== ITEM USAGE REQUEST RECEIVED =====`);
+    logger.debug(`🚨🚨🚨 FART DEBUG: Request received at /inventory/use/${req.params.itemId}`);
+    logger.debug(`🚨🚨🚨 FART DEBUG: User: ${req.user?.username || 'unknown'}, Method: ${req.method}`);
+    logger.debug(`🚨🚨🚨 FART DEBUG: Headers:`, req.headers);
+    logger.debug(`🚀 ITEMS: ===== ITEM USAGE REQUEST RECEIVED =====`);
     const userId = req.user.userId || req.user.id;
-    console.log(`🚀 ITEMS: Starting item usage for item ID ${req.params.itemId} by user ${userId} (${req.user.username})`);
-    console.log(`🚀 ITEMS: User: ${req.user.username}`);
+    logger.debug(`🚀 ITEMS: Starting item usage for item ID ${req.params.itemId} by user ${userId} (${req.user.username})`);
+    logger.debug(`🚀 ITEMS: User: ${req.user.username}`);
     try {
         const result = await itemUseService.useItem({
             user: req.user,
@@ -190,7 +193,7 @@ router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
 
         return res.status(result.status || 200).json(result.body);
     } catch (error) {
-        console.error('Error using item:', error);
+        logger.error('Error using item:', error);
 
         if (error.message.includes('cooldown')) {
             return res.status(429).json({ error: error.message });
@@ -243,7 +246,7 @@ router.post('/inventory/drawing-start', authenticateToken, async (req, res) => {
             remainingQuantity: result.remainingQuantity
         });
     } catch (error) {
-        console.error('Error starting drawing:', error);
+        logger.error('Error starting drawing:', error);
 
         if (error.message && error.message.includes('cooldown')) {
             return res.status(429).json({ error: error.message });
@@ -302,7 +305,7 @@ router.post('/inventory/throw', authenticateToken, async (req, res) => {
             remainingQuantity: result.remainingQuantity
         });
     } catch (error) {
-        console.error('Error throwing item:', error);
+        logger.error('Error throwing item:', error);
 
         if (error.message && error.message.includes('cooldown')) {
             return res.status(429).json({ error: error.message });
@@ -330,7 +333,7 @@ router.get('/inventory/cooldowns', authenticateToken, async (req, res) => {
         
         res.json(response);
     } catch (error) {
-        console.error('Error fetching cooldowns:', error);
+        logger.error('Error fetching cooldowns:', error);
         res.status(500).json({ error: 'Failed to fetch cooldowns' });
     }
 });
@@ -356,7 +359,7 @@ router.get('/cooldown/status', async (req, res) => {
             individualCooldownSeconds: takeoverService.individualCooldownSeconds
         };
         
-        console.log('🔍 COOLDOWN STATUS DEBUG:', debugInfo);
+        logger.debug('🔍 COOLDOWN STATUS DEBUG:', debugInfo);
         
         res.json({
             globalCooldown: globalCooldownInfo,
@@ -366,7 +369,7 @@ router.get('/cooldown/status', async (req, res) => {
             version: "debug-enhanced"
         });
     } catch (error) {
-        console.error('Error fetching cooldown status:', error);
+        logger.error('Error fetching cooldown status:', error);
         res.status(500).json({ error: 'Failed to fetch cooldown status' });
     }
 });
@@ -378,7 +381,7 @@ router.get('/inventory/value', authenticateToken, async (req, res) => {
         const value = await inventoryService.getUserInventoryValue(userId);
         res.json(value);
     } catch (error) {
-        console.error('Error fetching inventory value:', error);
+        logger.error('Error fetching inventory value:', error);
         res.status(500).json({ error: 'Failed to fetch inventory value' });
     }
 });
@@ -390,7 +393,7 @@ router.get('/shop', async (req, res) => {
         const items = await shopService.getShopItems();
         res.json(items);
     } catch (error) {
-        console.error('Error fetching shop items:', error);
+        logger.error('Error fetching shop items:', error);
         res.status(500).json({ error: 'Failed to fetch shop items' });
     }
 });
@@ -425,7 +428,7 @@ router.post('/shop/purchase', authenticateToken, async (req, res) => {
         
         res.json(result);
     } catch (error) {
-        console.error('Error purchasing item:', error);
+        logger.error('Error purchasing item:', error);
         
         if (error.message.includes('Insufficient points')) {
             return res.status(402).json({ error: error.message });
@@ -465,7 +468,7 @@ router.post('/shop/sell', authenticateToken, async (req, res) => {
         
         res.json(result);
     } catch (error) {
-        console.error('Error selling item:', error);
+        logger.error('Error selling item:', error);
         res.status(500).json({ error: error.message || 'Failed to sell item' });
     }
 });
@@ -476,7 +479,7 @@ router.get('/shop/featured', async (req, res) => {
         const items = await shopService.getFeaturedItems();
         res.json(items);
     } catch (error) {
-        console.error('Error fetching featured items:', error);
+        logger.error('Error fetching featured items:', error);
         res.status(500).json({ error: 'Failed to fetch featured items' });
     }
 });
@@ -487,7 +490,7 @@ router.get('/shop/discounted', async (req, res) => {
         const items = await shopService.getDiscountedItems();
         res.json(items);
     } catch (error) {
-        console.error('Error fetching discounted items:', error);
+        logger.error('Error fetching discounted items:', error);
         res.status(500).json({ error: 'Failed to fetch discounted items' });
     }
 });
@@ -522,7 +525,7 @@ router.post('/admin/items/grant', authenticateAdmin, async (req, res) => {
         
         res.json(result);
     } catch (error) {
-        console.error('Error granting items:', error);
+        logger.error('Error granting items:', error);
         res.status(500).json({ error: 'Failed to grant items' });
     }
 });
@@ -533,7 +536,7 @@ router.get('/admin/items/stats', authenticateAdmin, async (req, res) => {
         const stats = await itemService.getItemStats();
         res.json(stats);
     } catch (error) {
-        console.error('Error fetching item stats:', error);
+        logger.error('Error fetching item stats:', error);
         res.status(500).json({ error: 'Failed to fetch item stats' });
     }
 });
@@ -544,7 +547,7 @@ router.get('/admin/shop/stats', authenticateAdmin, async (req, res) => {
         const stats = await shopService.getShopStatistics();
         res.json(stats);
     } catch (error) {
-        console.error('Error fetching shop stats:', error);
+        logger.error('Error fetching shop stats:', error);
         res.status(500).json({ error: 'Failed to fetch shop stats' });
     }
 });
@@ -555,7 +558,7 @@ router.get('/admin/user/:userId/inventory', authenticateAdmin, async (req, res) 
         const inventory = await inventoryService.getUserInventory(req.params.userId);
         res.json(inventory);
     } catch (error) {
-        console.error('Error fetching user inventory:', error);
+        logger.error('Error fetching user inventory:', error);
         res.status(500).json({ error: 'Failed to fetch user inventory' });
     }
 });
@@ -566,7 +569,7 @@ router.delete('/admin/user/:userId/inventory', authenticateAdmin, async (req, re
         const result = await inventoryService.clearUserInventory(req.params.userId);
         res.json(result);
     } catch (error) {
-        console.error('Error clearing user inventory:', error);
+        logger.error('Error clearing user inventory:', error);
         res.status(500).json({ error: 'Failed to clear user inventory' });
     }
 });
@@ -578,7 +581,7 @@ router.get('/admin/shop', authenticateAdmin, async (req, res) => {
         const items = await shopService.getAllShopItems();
         res.json(items);
     } catch (error) {
-        console.error('Error fetching admin shop items:', error);
+        logger.error('Error fetching admin shop items:', error);
         res.status(500).json({ error: 'Failed to fetch shop items' });
     }
 });
@@ -599,7 +602,7 @@ router.post('/admin/shop', authenticateAdmin, async (req, res) => {
         });
         res.status(201).json(shopItem);
     } catch (error) {
-        console.error('Error adding item to shop:', error);
+        logger.error('Error adding item to shop:', error);
         res.status(500).json({ error: 'Failed to add item to shop' });
     }
 });
@@ -610,7 +613,7 @@ router.put('/admin/shop/:shopItemId', authenticateAdmin, async (req, res) => {
         const shopItem = await shopService.updateShopItem(req.params.shopItemId, req.body);
         res.json(shopItem);
     } catch (error) {
-        console.error('Error updating shop item:', error);
+        logger.error('Error updating shop item:', error);
         res.status(500).json({ error: 'Failed to update shop item' });
     }
 });
@@ -621,7 +624,7 @@ router.delete('/admin/shop/:shopItemId', authenticateAdmin, async (req, res) => 
         await shopService.removeItemFromShop(req.params.shopItemId);
         res.json({ success: true });
     } catch (error) {
-        console.error('Error removing item from shop:', error);
+        logger.error('Error removing item from shop:', error);
         res.status(500).json({ error: 'Failed to remove item from shop' });
     }
 });
@@ -633,7 +636,7 @@ router.get('/admin/items', authenticateAdmin, async (req, res) => {
         const items = await itemService.getAllItems();
         res.json(items);
     } catch (error) {
-        console.error('Error fetching admin items:', error);
+        logger.error('Error fetching admin items:', error);
         res.status(500).json({ error: 'Failed to fetch items' });
     }
 });
@@ -644,7 +647,7 @@ router.post('/admin/items', authenticateAdmin, async (req, res) => {
         const item = await itemService.createItem(req.body);
         res.status(201).json(item);
     } catch (error) {
-        console.error('Error creating admin item:', error);
+        logger.error('Error creating admin item:', error);
         res.status(500).json({ error: 'Failed to create item' });
     }
 });
@@ -660,7 +663,7 @@ router.get('/admin/items/:id', authenticateAdmin, async (req, res) => {
         
         res.json(item);
     } catch (error) {
-        console.error('Error fetching admin item:', error);
+        logger.error('Error fetching admin item:', error);
         res.status(500).json({ error: 'Failed to fetch item' });
     }
 });
@@ -671,7 +674,7 @@ router.put('/admin/items/:id', authenticateAdmin, async (req, res) => {
         const item = await itemService.updateItem(req.params.id, req.body);
         res.json(item);
     } catch (error) {
-        console.error('Error updating admin item:', error);
+        logger.error('Error updating admin item:', error);
         res.status(500).json({ error: 'Failed to update item' });
     }
 });
@@ -682,7 +685,7 @@ router.delete('/admin/items/:id', authenticateAdmin, async (req, res) => {
         await itemService.deleteItem(req.params.id);
         res.json({ success: true });
     } catch (error) {
-        console.error('Error deleting admin item:', error);
+        logger.error('Error deleting admin item:', error);
         res.status(500).json({ error: 'Failed to delete item' });
     }
 });
@@ -696,7 +699,7 @@ router.post('/admin/cooldowns/reset', authenticateAdmin, async (req, res) => {
         // Reset item usage cooldowns for the admin user
         const count = await itemService.resetUserItemCooldowns(userId);
         
-        console.log(`🔄 ADMIN: User ${userId} reset ${count} item cooldowns`);
+        logger.debug(`🔄 ADMIN: User ${userId} reset ${count} item cooldowns`);
         
         res.json({ 
             success: true, 
@@ -704,14 +707,14 @@ router.post('/admin/cooldowns/reset', authenticateAdmin, async (req, res) => {
             itemsAffected: count
         });
     } catch (error) {
-        console.error('Error resetting user item cooldowns:', error);
+        logger.error('Error resetting user item cooldowns:', error);
         res.status(500).json({ error: 'Failed to reset cooldowns' });
     }
 });
 
 // Summon Bot endpoint - handles the actual bot creation after user provides details
 router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res) => {
-    console.log(`🤖 SUMMON BOT: Request received for item ${req.params.itemId} by user ${req.user.username}`);
+    logger.debug(`🤖 SUMMON BOT: Request received for item ${req.params.itemId} by user ${req.user.username}`);
     
     try {
         const userId = req.user.userId || req.user.id;
@@ -733,14 +736,14 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
         // Validate bot name
         const nameValidation = profanityFilter.validateBotName(botName);
         if (!nameValidation.isValid) {
-            console.log(`🚫 SUMMON BOT: Name validation failed: ${nameValidation.error}`);
+            logger.debug(`🚫 SUMMON BOT: Name validation failed: ${nameValidation.error}`);
             return res.status(400).json({ error: nameValidation.error });
         }
         
         // Validate personality prompt
         const promptValidation = profanityFilter.validatePersonalityPrompt(personalityPrompt);
         if (!promptValidation.isValid) {
-            console.log(`🚫 SUMMON BOT: Prompt validation failed: ${promptValidation.error}`);
+            logger.debug(`🚫 SUMMON BOT: Prompt validation failed: ${promptValidation.error}`);
             return res.status(400).json({ error: promptValidation.error });
         }
         
@@ -781,7 +784,7 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
             null // streamId
         );
         
-        console.log(`✅ SUMMON BOT: Bot "${botName}" created successfully by ${req.user.username}`);
+        logger.debug(`✅ SUMMON BOT: Bot "${botName}" created successfully by ${req.user.username}`);
         
         // Send a chat notification with all details
         let durationText;
@@ -797,13 +800,13 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
             `⏱️ Duration: ${durationText}\n` +
             `💭 Personality: "${personalityPrompt.trim()}"`;
         
-        console.log(`📤 SUMMON BOT: Attempting to send chat message: "${chatMessage}"`);
+        logger.debug(`📤 SUMMON BOT: Attempting to send chat message: "${chatMessage}"`);
         
         try {
             const messageResult = await sendSystemMessage(chatMessage, '🤖 StreamBot');
-            console.log(`✅ SUMMON BOT: Chat message sent successfully:`, messageResult);
+            logger.debug(`✅ SUMMON BOT: Chat message sent successfully:`, messageResult);
         } catch (msgError) {
-            console.error(`❌ SUMMON BOT: Failed to send chat message:`, msgError);
+            logger.error(`❌ SUMMON BOT: Failed to send chat message:`, msgError);
         }
         
         // Also emit socket message for real-time notification
@@ -828,7 +831,7 @@ router.post('/inventory/summon-bot/:itemId', authenticateToken, async (req, res)
         });
         
     } catch (error) {
-        console.error('❌ SUMMON BOT: Error creating bot:', error);
+        logger.error('❌ SUMMON BOT: Error creating bot:', error);
         res.status(500).json({ error: 'Failed to summon bot' });
     }
 });

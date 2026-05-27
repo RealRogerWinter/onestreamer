@@ -10,6 +10,7 @@ const b2Storage = require('./B2StorageService');
 const path = require('path');
 const fs = require('fs');
 
+const logger = require('../bootstrap/logger').child({ svc: 'RecordingUploadScheduler' });
 class RecordingUploadScheduler {
     constructor(config = {}) {
         this.localBufferHours = config.localBufferHours || 2;
@@ -18,7 +19,7 @@ class RecordingUploadScheduler {
         this.isProcessing = false;
         this.checkInterval = null;
 
-        console.log(`[UploadScheduler] Initialized with ${this.localBufferHours}h local buffer`);
+        logger.debug(`[UploadScheduler] Initialized with ${this.localBufferHours}h local buffer`);
     }
 
     /**
@@ -26,7 +27,7 @@ class RecordingUploadScheduler {
      */
     start() {
         if (!b2Storage.isEnabled()) {
-            console.log('[UploadScheduler] B2 storage not configured, scheduler disabled');
+            logger.debug('[UploadScheduler] B2 storage not configured, scheduler disabled');
             return;
         }
 
@@ -38,7 +39,7 @@ class RecordingUploadScheduler {
             this.processPendingUploads();
         }, this.checkIntervalMs);
 
-        console.log('[UploadScheduler] Started');
+        logger.debug('[UploadScheduler] Started');
     }
 
     /**
@@ -57,13 +58,13 @@ class RecordingUploadScheduler {
                 if (session.end_time) {
                     const scheduledTime = session.end_time + (this.localBufferHours * 60 * 60 * 1000);
                     this.uploadQueue.set(session.session_id, scheduledTime);
-                    console.log(`[UploadScheduler] Queued session ${session.session_id} for upload at ${new Date(scheduledTime).toISOString()}`);
+                    logger.debug(`[UploadScheduler] Queued session ${session.session_id} for upload at ${new Date(scheduledTime).toISOString()}`);
                 }
             }
 
-            console.log(`[UploadScheduler] Loaded ${sessions.length} pending uploads from database`);
+            logger.debug(`[UploadScheduler] Loaded ${sessions.length} pending uploads from database`);
         } catch (error) {
-            console.error('[UploadScheduler] Error loading pending uploads:', error.message);
+            logger.error('[UploadScheduler] Error loading pending uploads:', error.message);
         }
     }
 
@@ -74,14 +75,14 @@ class RecordingUploadScheduler {
      */
     scheduleUpload(sessionId, endTime) {
         if (!b2Storage.isEnabled()) {
-            console.log(`[UploadScheduler] B2 not configured, skipping upload for ${sessionId}`);
+            logger.debug(`[UploadScheduler] B2 not configured, skipping upload for ${sessionId}`);
             return;
         }
 
         const scheduledTime = endTime + (this.localBufferHours * 60 * 60 * 1000);
         this.uploadQueue.set(sessionId, scheduledTime);
 
-        console.log(`[UploadScheduler] Scheduled ${sessionId} for upload at ${new Date(scheduledTime).toISOString()}`);
+        logger.debug(`[UploadScheduler] Scheduled ${sessionId} for upload at ${new Date(scheduledTime).toISOString()}`);
     }
 
     /**
@@ -99,22 +100,22 @@ class RecordingUploadScheduler {
 
             for (const [sessionId, scheduledTime] of this.uploadQueue) {
                 if (scheduledTime <= now) {
-                    console.log(`[UploadScheduler] Processing upload for session ${sessionId}`);
+                    logger.debug(`[UploadScheduler] Processing upload for session ${sessionId}`);
 
                     const result = await this.uploadSession(sessionId);
 
                     if (result.success) {
                         this.uploadQueue.delete(sessionId);
-                        console.log(`[UploadScheduler] Successfully uploaded session ${sessionId}`);
+                        logger.debug(`[UploadScheduler] Successfully uploaded session ${sessionId}`);
                     } else {
                         // Retry in 30 minutes
                         this.uploadQueue.set(sessionId, now + 30 * 60 * 1000);
-                        console.error(`[UploadScheduler] Failed to upload ${sessionId}, will retry: ${result.error}`);
+                        logger.error(`[UploadScheduler] Failed to upload ${sessionId}, will retry: ${result.error}`);
                     }
                 }
             }
         } catch (error) {
-            console.error('[UploadScheduler] Error processing uploads:', error.message);
+            logger.error('[UploadScheduler] Error processing uploads:', error.message);
         } finally {
             this.isProcessing = false;
         }
@@ -135,7 +136,7 @@ class RecordingUploadScheduler {
             }
 
             if (session.b2_file_id) {
-                console.log(`[UploadScheduler] Session ${sessionId} already uploaded`);
+                logger.debug(`[UploadScheduler] Session ${sessionId} already uploaded`);
                 return { success: true };
             }
 
@@ -192,7 +193,7 @@ class RecordingUploadScheduler {
                 return { success: false, error: result.error };
             }
         } catch (error) {
-            console.error(`[UploadScheduler] Error uploading session ${sessionId}:`, error.message);
+            logger.error(`[UploadScheduler] Error uploading session ${sessionId}:`, error.message);
             return { success: false, error: error.message };
         }
     }
@@ -205,10 +206,10 @@ class RecordingUploadScheduler {
         try {
             if (fs.existsSync(localPath)) {
                 fs.rmSync(localPath, { recursive: true, force: true });
-                console.log(`[UploadScheduler] Cleaned up local files: ${localPath}`);
+                logger.debug(`[UploadScheduler] Cleaned up local files: ${localPath}`);
             }
         } catch (error) {
-            console.error(`[UploadScheduler] Error cleaning up local files:`, error.message);
+            logger.error(`[UploadScheduler] Error cleaning up local files:`, error.message);
         }
     }
 
@@ -244,7 +245,7 @@ class RecordingUploadScheduler {
             clearInterval(this.checkInterval);
             this.checkInterval = null;
         }
-        console.log('[UploadScheduler] Stopped');
+        logger.debug('[UploadScheduler] Stopped');
     }
 }
 

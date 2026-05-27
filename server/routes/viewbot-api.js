@@ -2,6 +2,7 @@ const express = require('express');
 const ViewBotDatabaseService = require('../services/ViewBotDatabaseService');
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 
+const logger = require('../bootstrap/logger').child({ svc: 'viewbot-api' });
 // Create router factory function that accepts service instances
 module.exports = function(viewBotClientService) {
   const router = express.Router();
@@ -35,7 +36,7 @@ router.get('/viewbots', async (req, res) => {
     
     res.json(enhancedBots);
   } catch (error) {
-    console.error('Failed to fetch viewbots:', error);
+    logger.error('Failed to fetch viewbots:', error);
     res.status(500).json({ error: 'Failed to fetch viewbots' });
   }
 });
@@ -62,7 +63,7 @@ router.get('/viewbots/:id', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Failed to fetch viewbot:', error);
+    logger.error('Failed to fetch viewbot:', error);
     res.status(500).json({ error: 'Failed to fetch viewbot' });
   }
 });
@@ -114,7 +115,7 @@ router.post('/viewbots', async (req, res) => {
       created: true 
     });
   } catch (error) {
-    console.error('Failed to create viewbot:', error);
+    logger.error('Failed to create viewbot:', error);
     res.status(500).json({ error: 'Failed to create viewbot' });
   }
 });
@@ -152,7 +153,7 @@ router.patch('/viewbots/:id', async (req, res) => {
     
     res.json(updatedViewBot);
   } catch (error) {
-    console.error('Failed to update viewbot:', error);
+    logger.error('Failed to update viewbot:', error);
     res.status(500).json({ error: 'Failed to update viewbot' });
   }
 });
@@ -174,7 +175,7 @@ router.delete('/viewbots/:id', async (req, res) => {
     
     res.status(204).send();
   } catch (error) {
-    console.error('Failed to delete viewbot:', error);
+    logger.error('Failed to delete viewbot:', error);
     res.status(500).json({ error: 'Failed to delete viewbot' });
   }
 });
@@ -198,7 +199,7 @@ router.post('/viewbots/:id/start', async (req, res) => {
     await viewBotClientService.startBotStreaming(viewBot.botId);
     res.json({ success: true, message: 'ViewBot started' });
   } catch (error) {
-    console.error('Failed to start viewbot:', error);
+    logger.error('Failed to start viewbot:', error);
     res.status(500).json({ error: 'Failed to start viewbot' });
   }
 });
@@ -209,7 +210,7 @@ router.post('/viewbots/:id/stop', async (req, res) => {
     await viewBotClientService.stopBotStreaming(req.params.id);
     res.json({ success: true, message: 'ViewBot stopped' });
   } catch (error) {
-    console.error('Failed to stop viewbot:', error);
+    logger.error('Failed to stop viewbot:', error);
     res.status(500).json({ error: 'Failed to stop viewbot' });
   }
 });
@@ -226,7 +227,7 @@ router.get('/viewbots/:id/metrics', async (req, res) => {
     const metrics = client.getMetrics();
     res.json(metrics);
   } catch (error) {
-    console.error('Failed to get viewbot metrics:', error);
+    logger.error('Failed to get viewbot metrics:', error);
     res.status(500).json({ error: 'Failed to get viewbot metrics' });
   }
 });
@@ -262,7 +263,7 @@ router.post('/viewbots/bulk/start', async (req, res) => {
     
     res.json({ results });
   } catch (error) {
-    console.error('Failed to bulk start viewbots:', error);
+    logger.error('Failed to bulk start viewbots:', error);
     res.status(500).json({ error: 'Failed to bulk start viewbots' });
   }
 });
@@ -288,7 +289,7 @@ router.post('/viewbots/bulk/stop', async (req, res) => {
     
     res.json({ results });
   } catch (error) {
-    console.error('Failed to bulk stop viewbots:', error);
+    logger.error('Failed to bulk stop viewbots:', error);
     res.status(500).json({ error: 'Failed to bulk stop viewbots' });
   }
 });
@@ -299,7 +300,7 @@ router.get('/rotation-settings', async (req, res) => {
     const settings = viewBotClientService.getRotationSettings();
     res.json(settings);
   } catch (error) {
-    console.error('Failed to fetch rotation settings:', error);
+    logger.error('Failed to fetch rotation settings:', error);
     res.status(500).json({ error: 'Failed to fetch rotation settings' });
   }
 });
@@ -322,7 +323,7 @@ router.post('/rotation-settings', async (req, res) => {
       settings: viewBotClientService.getRotationSettings() 
     });
   } catch (error) {
-    console.error('Failed to update rotation settings:', error);
+    logger.error('Failed to update rotation settings:', error);
     res.status(500).json({ error: 'Failed to update rotation settings' });
   }
 });
@@ -333,7 +334,7 @@ router.get('/viewbot-templates', async (req, res) => {
     const templates = await viewBotDatabaseService.getTemplates();
     res.json(templates);
   } catch (error) {
-    console.error('Failed to fetch templates:', error);
+    logger.error('Failed to fetch templates:', error);
     res.status(500).json({ error: 'Failed to fetch templates' });
   }
 });
@@ -343,7 +344,7 @@ router.post('/viewbot-templates', async (req, res) => {
     const template = await viewBotDatabaseService.createTemplate(req.body);
     res.status(201).json(template);
   } catch (error) {
-    console.error('Failed to create template:', error);
+    logger.error('Failed to create template:', error);
     res.status(500).json({ error: 'Failed to create template' });
   }
 });
@@ -353,7 +354,7 @@ router.delete('/viewbot-templates/:id', async (req, res) => {
     await viewBotDatabaseService.deleteTemplate(req.params.id);
     res.status(204).send();
   } catch (error) {
-    console.error('Failed to delete template:', error);
+    logger.error('Failed to delete template:', error);
     res.status(500).json({ error: 'Failed to delete template' });
   }
 });

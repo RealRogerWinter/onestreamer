@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'soundfx' });
+
 const router = express.Router();
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 const multer = require('multer');
@@ -28,7 +31,7 @@ router.get('/voices', (req, res) => {
         const voices = soundFxService.getAvailableVoices();
         res.json(voices);
     } catch (error) {
-        console.error('Error fetching TTS voices:', error);
+        logger.error('Error fetching TTS voices:', error);
         res.status(500).json({ error: 'Failed to fetch voices' });
     }
 });
@@ -57,7 +60,7 @@ router.post('/tts', authenticateToken, async (req, res) => {
             queueStatus: soundFxService.getTTSQueueStatus()
         });
     } catch (error) {
-        console.error('Error queueing TTS:', error);
+        logger.error('Error queueing TTS:', error);
         res.status(400).json({ error: error.message || 'Failed to queue TTS' });
     }
 });
@@ -69,7 +72,7 @@ router.get('/tts/queue', authenticateToken, (req, res) => {
         const status = soundFxService.getTTSQueueStatus();
         res.json(status);
     } catch (error) {
-        console.error('Error fetching TTS queue status:', error);
+        logger.error('Error fetching TTS queue status:', error);
         res.status(500).json({ error: 'Failed to fetch queue status' });
     }
 });
@@ -81,7 +84,7 @@ router.delete('/tts/queue', authenticateAdmin, (req, res) => {
         const cleared = soundFxService.clearTTSQueue();
         res.json({ success: true, cleared });
     } catch (error) {
-        console.error('Error clearing TTS queue:', error);
+        logger.error('Error clearing TTS queue:', error);
         res.status(500).json({ error: 'Failed to clear queue' });
     }
 });
@@ -104,7 +107,7 @@ router.post('/upload', authenticateAdmin, upload.single('audio'), async (req, re
             file: result
         });
     } catch (error) {
-        console.error('Error uploading audio file:', error);
+        logger.error('Error uploading audio file:', error);
         res.status(400).json({ error: error.message || 'Failed to upload file' });
     }
 });
@@ -116,7 +119,7 @@ router.get('/sounds', async (req, res) => {
         const sounds = await soundFxService.getAvailableSounds();
         res.json(sounds);
     } catch (error) {
-        console.error('Error fetching sounds:', error);
+        logger.error('Error fetching sounds:', error);
         res.status(500).json({ error: 'Failed to fetch sounds' });
     }
 });
@@ -143,7 +146,7 @@ router.post('/play', authenticateToken, async (req, res) => {
             effect
         });
     } catch (error) {
-        console.error('Error playing audio file:', error);
+        logger.error('Error playing audio file:', error);
         res.status(400).json({ error: error.message || 'Failed to play audio' });
     }
 });
@@ -160,7 +163,7 @@ router.post('/stop/:effectId', authenticateToken, (req, res) => {
 
         res.json({ success: true });
     } catch (error) {
-        console.error('Error stopping effect:', error);
+        logger.error('Error stopping effect:', error);
         res.status(500).json({ error: 'Failed to stop effect' });
     }
 });
@@ -172,7 +175,7 @@ router.post('/stop-all', authenticateAdmin, (req, res) => {
         const count = soundFxService.stopAllEffects();
         res.json({ success: true, stopped: count });
     } catch (error) {
-        console.error('Error stopping all effects:', error);
+        logger.error('Error stopping all effects:', error);
         res.status(500).json({ error: 'Failed to stop effects' });
     }
 });
@@ -211,7 +214,7 @@ router.get('/proxy/soundboard', async (req, res) => {
         // Stream the audio to the client
         response.data.pipe(res);
     } catch (error) {
-        console.error('Error proxying soundboard audio:', error.message);
+        logger.error('Error proxying soundboard audio:', error.message);
         res.status(500).json({ error: 'Failed to fetch audio' });
     }
 });
@@ -223,7 +226,7 @@ router.get('/active', (req, res) => {
         const effects = soundFxService.getActiveEffects();
         res.json(effects);
     } catch (error) {
-        console.error('Error fetching active effects:', error);
+        logger.error('Error fetching active effects:', error);
         res.status(500).json({ error: 'Failed to fetch active effects' });
     }
 });
@@ -263,7 +266,7 @@ router.get('/files/:fileName', async (req, res) => {
         const stream = require('fs').createReadStream(filePath);
         stream.pipe(res);
     } catch (error) {
-        console.error('Error serving audio file:', error);
+        logger.error('Error serving audio file:', error);
         res.status(500).json({ error: 'Failed to serve audio file' });
     }
 });
@@ -345,7 +348,7 @@ router.post('/item/soundboard', authenticateToken, async (req, res) => {
             queueStatus: soundFxService.getSoundboardQueueStatus()
         });
     } catch (error) {
-        console.error('Error using soundboard item:', error);
+        logger.error('Error using soundboard item:', error);
         res.status(500).json({ error: error.message || 'Failed to use soundboard item' });
     }
 });
@@ -357,7 +360,7 @@ router.get('/soundboard/queue', authenticateToken, (req, res) => {
         const status = soundFxService.getSoundboardQueueStatus();
         res.json(status);
     } catch (error) {
-        console.error('Error fetching soundboard queue status:', error);
+        logger.error('Error fetching soundboard queue status:', error);
         res.status(500).json({ error: 'Failed to fetch queue status' });
     }
 });
@@ -369,7 +372,7 @@ router.delete('/soundboard/queue', authenticateAdmin, (req, res) => {
         const cleared = soundFxService.clearSoundboardQueue();
         res.json({ success: true, cleared });
     } catch (error) {
-        console.error('Error clearing soundboard queue:', error);
+        logger.error('Error clearing soundboard queue:', error);
         res.status(500).json({ error: 'Failed to clear queue' });
     }
 });
@@ -453,7 +456,7 @@ router.post('/item/tts', authenticateToken, async (req, res) => {
             queueStatus: soundFxService.getTTSQueueStatus()
         });
     } catch (error) {
-        console.error('Error using TTS item:', error);
+        logger.error('Error using TTS item:', error);
         res.status(500).json({ error: error.message || 'Failed to use TTS item' });
     }
 });

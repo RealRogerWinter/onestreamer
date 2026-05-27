@@ -15,6 +15,7 @@ const fs = require('fs');
 const EventEmitter = require('events');
 const applyPragmas = require('../database/applyPragmas');
 
+const logger = require('../bootstrap/logger').child({ svc: 'WhitelistService' });
 const PLATFORMS = ['twitch', 'kick'];
 const MODES = ['off', 'blacklist', 'whitelist'];
 const CCL_BLOCK_DEFAULT = ['SexualThemes', 'ViolentGraphic', 'DrugsIntoxication'];
@@ -36,7 +37,7 @@ class WhitelistService extends EventEmitter {
     this._cache = null;
     this._cacheAt = 0;
 
-    console.log('🛡️  WhitelistService created');
+    logger.debug('🛡️  WhitelistService created');
   }
 
   async initialize() {
@@ -47,7 +48,7 @@ class WhitelistService extends EventEmitter {
     } else {
       this.db = await this._openDb();
       await applyPragmas(this.db).catch((e) => {
-        console.warn('⚠️  WhitelistService: applyPragmas failed, continuing with defaults:', e.message);
+        logger.warn('⚠️  WhitelistService: applyPragmas failed, continuing with defaults:', e.message);
       });
     }
 
@@ -55,7 +56,7 @@ class WhitelistService extends EventEmitter {
     await this._loadSeedIfEmpty();
     await this._refreshCache();
     this.initialized = true;
-    console.log('✅ WhitelistService initialized');
+    logger.debug('✅ WhitelistService initialized');
   }
 
   _openDb() {
@@ -92,7 +93,7 @@ class WhitelistService extends EventEmitter {
     if (row && row.n > 0) return;
 
     if (!fs.existsSync(this.seedPath)) {
-      console.warn(`⚠️  WhitelistService: seed file not found at ${this.seedPath}; skipping seed`);
+      logger.warn(`⚠️  WhitelistService: seed file not found at ${this.seedPath}; skipping seed`);
       return;
     }
 
@@ -143,7 +144,7 @@ class WhitelistService extends EventEmitter {
       ['seed', 'seed_loaded', `Seed file ${path.basename(this.seedPath)}`]
     );
 
-    console.log('✅ WhitelistService: seed data loaded');
+    logger.debug('✅ WhitelistService: seed data loaded');
   }
 
   async _insertEntry(platform, entry_type, value, list, isEvergreen, riskFlag, notes) {
@@ -454,7 +455,7 @@ class WhitelistService extends EventEmitter {
       // background. Mutations always force-refresh, so this only matters when
       // an external writer touched the DB.
       this._refreshCache().catch((e) =>
-        console.warn('⚠️  WhitelistService: background cache refresh failed:', e.message)
+        logger.warn('⚠️  WhitelistService: background cache refresh failed:', e.message)
       );
     }
   }

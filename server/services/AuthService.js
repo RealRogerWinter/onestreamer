@@ -6,22 +6,23 @@ const AccountService = require('./AccountService');
 const EmailService = require('./EmailService');
 const requireEnv = require('../config/requireEnv');
 
+const logger = require('../bootstrap/logger').child({ svc: 'AuthService' });
 const JWT_SECRET = requireEnv('JWT_SECRET');
 
 class AuthService {
     constructor() {
-        console.log('🔐 AUTH: Initializing AuthService...');
+        logger.debug('🔐 AUTH: Initializing AuthService...');
         this.accountService = new AccountService();
         this._emailService = null; // Lazy load EmailService
         this.jwtSecret = JWT_SECRET;
         this.jwtExpiry = '24h';
         this.initializePassport();
-        console.log('🔐 AUTH: AuthService initialized');
+        logger.debug('🔐 AUTH: AuthService initialized');
     }
     
     get emailService() {
         if (!this._emailService) {
-            console.log('🔐 AUTH: Lazy loading EmailService...');
+            logger.debug('🔐 AUTH: Lazy loading EmailService...');
             this._emailService = new EmailService();
         }
         return this._emailService;
@@ -109,10 +110,10 @@ class AuthService {
     verifyToken(token) {
         try {
             const decoded = jwt.verify(token, this.jwtSecret);
-            console.log('✅ Token verified successfully for user ID:', decoded.id);
+            logger.debug('✅ Token verified successfully for user ID:', decoded.id);
             return decoded;
         } catch (error) {
-            console.log('❌ Token verification failed:', error.message);
+            logger.debug('❌ Token verification failed:', error.message);
             return null;
         }
     }
@@ -145,9 +146,9 @@ class AuthService {
             // Send verification email
             try {
                 await this.emailService.sendVerificationEmail(email, username, user.verificationToken);
-                console.log(`📧 AUTH: Verification email sent to ${email}`);
+                logger.debug(`📧 AUTH: Verification email sent to ${email}`);
             } catch (emailError) {
-                console.error('📧 AUTH: Failed to send verification email:', emailError);
+                logger.error('📧 AUTH: Failed to send verification email:', emailError);
                 // Don't fail the signup process if email fails
             }
             
@@ -262,9 +263,9 @@ class AuthService {
             if (user) {
                 try {
                     await this.emailService.sendPasswordResetEmail(email, user.username, resetToken);
-                    console.log(`📧 AUTH: Password reset email sent to ${email}`);
+                    logger.debug(`📧 AUTH: Password reset email sent to ${email}`);
                 } catch (emailError) {
-                    console.error('📧 AUTH: Failed to send password reset email:', emailError);
+                    logger.error('📧 AUTH: Failed to send password reset email:', emailError);
                     // Don't fail the process if email fails
                 }
             }
@@ -298,10 +299,10 @@ class AuthService {
         // Send verification email
         try {
             await this.emailService.sendVerificationEmail(user.email, user.username, newToken);
-            console.log(`📧 AUTH: Resent verification email to ${user.email}`);
+            logger.debug(`📧 AUTH: Resent verification email to ${user.email}`);
             return newToken;
         } catch (emailError) {
-            console.error('📧 AUTH: Failed to resend verification email:', emailError);
+            logger.error('📧 AUTH: Failed to resend verification email:', emailError);
             throw new Error('Failed to send verification email');
         }
     }
@@ -309,7 +310,7 @@ class AuthService {
     async requestAccountDeletion(userId) {
         const user = await this.accountService.getUserById(userId);
         
-        console.log('🔍 DELETION REQUEST - User data:', {
+        logger.debug('🔍 DELETION REQUEST - User data:', {
             id: user?.id,
             username: user?.username,
             email: user?.email,
@@ -334,16 +335,16 @@ class AuthService {
         await this.accountService.requestDeletion(userId, deletionToken, tokenExpires);
 
         // Send confirmation email
-        console.log('📧 DELETION EMAIL - Attempting to send to:', user.email);
+        logger.debug('📧 DELETION EMAIL - Attempting to send to:', user.email);
         try {
             await this.emailService.sendAccountDeletionEmail(
                 user.email, 
                 user.username, 
                 deletionToken
             );
-            console.log('📧 DELETION EMAIL - Successfully sent to:', user.email);
+            logger.debug('📧 DELETION EMAIL - Successfully sent to:', user.email);
         } catch (emailError) {
-            console.error('📧 DELETION EMAIL - Failed to send to:', user.email, 'Error:', emailError);
+            logger.error('📧 DELETION EMAIL - Failed to send to:', user.email, 'Error:', emailError);
             throw new Error('Failed to send confirmation email. Please try again.');
         }
 
@@ -404,7 +405,7 @@ class AuthService {
                 error: 'Failed to restore account' 
             };
         } catch (error) {
-            console.error('Account restoration error:', error);
+            logger.error('Account restoration error:', error);
             return { 
                 success: false, 
                 error: error.message || 'Failed to restore account' 
@@ -414,7 +415,7 @@ class AuthService {
 
     async completeOAuthRegistration(oauthData, username) {
         try {
-            console.log('CompleteOAuthRegistration called with:', {
+            logger.debug('CompleteOAuthRegistration called with:', {
                 email: oauthData.email,
                 oauthProvider: oauthData.oauthProvider,
                 oauthId: oauthData.oauthId,
@@ -424,7 +425,7 @@ class AuthService {
             // Check if email already exists
             const existingEmailUser = await this.accountService.getUserByEmail(oauthData.email);
             if (existingEmailUser) {
-                console.log('Existing user found:', {
+                logger.debug('Existing user found:', {
                     id: existingEmailUser.id,
                     email: existingEmailUser.email,
                     oauthProvider: existingEmailUser.oauthProvider,
@@ -436,7 +437,7 @@ class AuthService {
                 if (existingEmailUser.oauthProvider === oauthData.oauthProvider && 
                     existingEmailUser.oauthId === oauthData.oauthId) {
                     // User already exists with this OAuth account, just log them in
-                    console.log('User already exists with same OAuth, logging them in');
+                    logger.debug('User already exists with same OAuth, logging them in');
                     const token = this.generateToken(existingEmailUser);
                     const refreshToken = this.generateRefreshToken(existingEmailUser);
                     
@@ -455,7 +456,7 @@ class AuthService {
                     };
                 } else if (!existingEmailUser.oauthProvider && existingEmailUser.password) {
                     // User exists with password auth, we can link OAuth to existing account
-                    console.log('Linking OAuth to existing password-based account');
+                    logger.debug('Linking OAuth to existing password-based account');
                     
                     // Update the existing user with OAuth information
                     await this.accountService.linkOAuthToUser(
@@ -482,7 +483,7 @@ class AuthService {
                     };
                 } else {
                     // Email exists but with different OAuth provider
-                    console.log('Email exists with different OAuth provider');
+                    logger.debug('Email exists with different OAuth provider');
                     throw new Error(`An account with this email already exists using ${existingEmailUser.oauthProvider || 'email/password'} authentication. Please login with your existing account method.`);
                 }
             }
@@ -525,7 +526,7 @@ class AuthService {
                 refreshToken
             };
         } catch (error) {
-            console.error('OAuth registration completion error:', error);
+            logger.error('OAuth registration completion error:', error);
             throw error;
         }
     }

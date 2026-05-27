@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'streambot' });
+
 const router = express.Router();
 const { authenticateAdmin } = require('../middleware/auth');
 
@@ -12,7 +15,7 @@ router.get('/settings', async (req, res) => {
         const settings = await streamBotService.getSettings();
         res.json(settings);
     } catch (error) {
-        console.error('Error fetching StreamBot settings:', error);
+        logger.error('Error fetching StreamBot settings:', error);
         res.status(500).json({ error: 'Failed to fetch settings' });
     }
 });
@@ -39,7 +42,7 @@ router.put('/settings', async (req, res) => {
         const settings = await streamBotService.getSettings();
         res.json(settings);
     } catch (error) {
-        console.error('Error updating StreamBot settings:', error);
+        logger.error('Error updating StreamBot settings:', error);
         res.status(500).json({ error: 'Failed to update settings' });
     }
 });
@@ -51,7 +54,7 @@ router.post('/toggle', async (req, res) => {
         const enabled = await streamBotService.toggleEnabled();
         res.json({ enabled });
     } catch (error) {
-        console.error('Error toggling StreamBot:', error);
+        logger.error('Error toggling StreamBot:', error);
         res.status(500).json({ error: 'Failed to toggle StreamBot' });
     }
 });
@@ -63,7 +66,7 @@ router.get('/messages', async (req, res) => {
         const messages = await streamBotService.getMessages();
         res.json(messages);
     } catch (error) {
-        console.error('Error fetching StreamBot messages:', error);
+        logger.error('Error fetching StreamBot messages:', error);
         res.status(500).json({ error: 'Failed to fetch messages' });
     }
 });
@@ -80,7 +83,7 @@ router.get('/messages/:id', async (req, res) => {
         
         res.json(message);
     } catch (error) {
-        console.error('Error fetching StreamBot message:', error);
+        logger.error('Error fetching StreamBot message:', error);
         res.status(500).json({ error: 'Failed to fetch message' });
     }
 });
@@ -98,7 +101,7 @@ router.post('/messages', async (req, res) => {
         const newMessage = await streamBotService.createMessage(message, order_index);
         res.json(newMessage);
     } catch (error) {
-        console.error('Error creating StreamBot message:', error);
+        logger.error('Error creating StreamBot message:', error);
         res.status(500).json({ error: 'Failed to create message' });
     }
 });
@@ -119,7 +122,7 @@ router.put('/messages/:id', async (req, res) => {
         const updatedMessage = await streamBotService.getMessage(req.params.id);
         res.json(updatedMessage);
     } catch (error) {
-        console.error('Error updating StreamBot message:', error);
+        logger.error('Error updating StreamBot message:', error);
         res.status(500).json({ error: 'Failed to update message' });
     }
 });
@@ -131,7 +134,7 @@ router.delete('/messages/:id', async (req, res) => {
         await streamBotService.deleteMessage(req.params.id);
         res.json({ success: true });
     } catch (error) {
-        console.error('Error deleting StreamBot message:', error);
+        logger.error('Error deleting StreamBot message:', error);
         res.status(500).json({ error: 'Failed to delete message' });
     }
 });
@@ -145,7 +148,7 @@ router.post('/messages/:id/toggle', async (req, res) => {
         const message = await streamBotService.getMessage(req.params.id);
         res.json(message);
     } catch (error) {
-        console.error('Error toggling StreamBot message:', error);
+        logger.error('Error toggling StreamBot message:', error);
         res.status(500).json({ error: 'Failed to toggle message' });
     }
 });
@@ -165,7 +168,7 @@ router.post('/messages/reorder', async (req, res) => {
         const messages = await streamBotService.getMessages();
         res.json(messages);
     } catch (error) {
-        console.error('Error reordering StreamBot messages:', error);
+        logger.error('Error reordering StreamBot messages:', error);
         res.status(500).json({ error: 'Failed to reorder messages' });
     }
 });
@@ -186,7 +189,7 @@ router.post('/test', async (req, res) => {
 
         res.json({ success: true });
     } catch (error) {
-        console.error('Error sending test StreamBot message:', error);
+        logger.error('Error sending test StreamBot message:', error);
         res.status(500).json({ error: 'Failed to send test message' });
     }
 });
@@ -202,7 +205,7 @@ router.get('/auto-summon/settings', async (req, res) => {
         const settings = await streamBotService.getAutoSummonSettings();
         res.json(settings);
     } catch (error) {
-        console.error('Error fetching auto-summon settings:', error);
+        logger.error('Error fetching auto-summon settings:', error);
         res.status(500).json({ error: 'Failed to fetch auto-summon settings' });
     }
 });
@@ -244,7 +247,7 @@ router.put('/auto-summon/settings', async (req, res) => {
         const newSettings = await streamBotService.getAutoSummonSettings();
         res.json(newSettings);
     } catch (error) {
-        console.error('Error updating auto-summon settings:', error);
+        logger.error('Error updating auto-summon settings:', error);
         res.status(500).json({ error: 'Failed to update auto-summon settings' });
     }
 });
@@ -256,7 +259,7 @@ router.post('/auto-summon/toggle', async (req, res) => {
         const enabled = await streamBotService.toggleAutoSummon();
         res.json({ enabled });
     } catch (error) {
-        console.error('Error toggling auto-summon:', error);
+        logger.error('Error toggling auto-summon:', error);
         res.status(500).json({ error: 'Failed to toggle auto-summon' });
     }
 });
@@ -268,7 +271,7 @@ router.post('/auto-summon/trigger', async (req, res) => {
         await streamBotService.triggerManualAutoSummon();
         res.json({ success: true, message: 'Auto-summon triggered successfully' });
     } catch (error) {
-        console.error('Error triggering auto-summon:', error);
+        logger.error('Error triggering auto-summon:', error);
         res.status(500).json({ error: 'Failed to trigger auto-summon' });
     }
 });
@@ -281,7 +284,7 @@ router.get('/auto-summon/history', async (req, res) => {
         const history = await streamBotService.getAutoSummonedBotHistory(limit);
         res.json(history);
     } catch (error) {
-        console.error('Error fetching auto-summon history:', error);
+        logger.error('Error fetching auto-summon history:', error);
         res.status(500).json({ error: 'Failed to fetch auto-summon history' });
     }
 });
@@ -293,7 +296,7 @@ router.post('/auto-summon/preview-character', async (req, res) => {
         const character = await streamBotService.generateWhimsicalCharacter();
         res.json(character);
     } catch (error) {
-        console.error('Error generating preview character:', error);
+        logger.error('Error generating preview character:', error);
         res.status(500).json({ error: 'Failed to generate character preview' });
     }
 });

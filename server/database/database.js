@@ -2,8 +2,8 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcrypt');
 const applyPragmas = require('./applyPragmas');
-const logger = require('../bootstrap/logger');
 
+const logger = require('../bootstrap/logger').child({ svc: 'database' });
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
 
 const db = new sqlite3.Database(dbPath, (err) => {
@@ -105,19 +105,19 @@ function initializeDatabase() {
         // Add new columns if they don't exist (migration)
         db.run(`ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
-                console.error('Error adding is_admin column:', err);
+                logger.error('Error adding is_admin column:', err);
             }
         });
 
         db.run(`ALTER TABLE users ADD COLUMN is_banned BOOLEAN DEFAULT 0`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
-                console.error('Error adding is_banned column:', err);
+                logger.error('Error adding is_banned column:', err);
             }
         });
 
         db.run(`ALTER TABLE users ADD COLUMN is_moderator BOOLEAN DEFAULT 0`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
-                console.error('Error adding is_moderator column:', err);
+                logger.error('Error adding is_moderator column:', err);
             }
         });
 
@@ -128,14 +128,14 @@ function initializeDatabase() {
         // column" which we ignore.
         db.run(`ALTER TABLE user_stats DROP COLUMN points`, (err) => {
             if (err && !err.message.includes('no such column')) {
-                console.error('Error dropping legacy points column:', err);
+                logger.error('Error dropping legacy points column:', err);
             }
         });
 
         // Add chat_color column to user_stats if it doesn't exist (migration)
         db.run(`ALTER TABLE user_stats ADD COLUMN chat_color TEXT DEFAULT NULL`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
-                console.error('Error adding chat_color column:', err);
+                logger.error('Error adding chat_color column:', err);
             }
         });
 
@@ -256,19 +256,19 @@ function initializeDatabase() {
         // Add new columns to items table for buff/debuff properties
         db.run(`ALTER TABLE items ADD COLUMN duration_seconds INTEGER DEFAULT 0`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
-                console.error('Error adding duration_seconds column:', err);
+                logger.error('Error adding duration_seconds column:', err);
             }
         });
 
         db.run(`ALTER TABLE items ADD COLUMN effect_data TEXT`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
-                console.error('Error adding effect_data column:', err);
+                logger.error('Error adding effect_data column:', err);
             }
         });
 
         db.run(`ALTER TABLE items ADD COLUMN stack_behavior TEXT DEFAULT 'replace'`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
-                console.error('Error adding stack_behavior column:', err);
+                logger.error('Error adding stack_behavior column:', err);
             }
         });
 
@@ -325,7 +325,7 @@ function initializeDatabase() {
         // Add new columns to existing table if they don't exist
         db.all("PRAGMA table_info(chatbot_message_history)", (err, columns) => {
             if (err) {
-                console.error('Error checking table structure:', err);
+                logger.error('Error checking table structure:', err);
                 return;
             }
             
@@ -333,32 +333,32 @@ function initializeDatabase() {
             
             if (!columnNames.includes('exact_prompt')) {
                 db.run(`ALTER TABLE chatbot_message_history ADD COLUMN exact_prompt TEXT`, (err) => {
-                    if (err) console.error('Error adding exact_prompt column:', err);
-                    else console.log('Added exact_prompt column to chatbot_message_history');
+                    if (err) logger.error('Error adding exact_prompt column:', err);
+                    else logger.debug('Added exact_prompt column to chatbot_message_history');
                 });
             }
             
             // Add message_type column for MovieBot logging
             if (!columnNames.includes('message_type')) {
                 db.run(`ALTER TABLE chatbot_message_history ADD COLUMN message_type TEXT DEFAULT 'chat'`, (err) => {
-                    if (err) console.error('Error adding message_type column:', err);
-                    else console.log('Added message_type column to chatbot_message_history');
+                    if (err) logger.error('Error adding message_type column:', err);
+                    else logger.debug('Added message_type column to chatbot_message_history');
                 });
             }
             
             // Add content column for MovieBot logging (alias for message)
             if (!columnNames.includes('content')) {
                 db.run(`ALTER TABLE chatbot_message_history ADD COLUMN content TEXT`, (err) => {
-                    if (err) console.error('Error adding content column:', err);
-                    else console.log('Added content column to chatbot_message_history');
+                    if (err) logger.error('Error adding content column:', err);
+                    else logger.debug('Added content column to chatbot_message_history');
                 });
             }
             
             // Add metadata column for MovieBot logging
             if (!columnNames.includes('metadata')) {
                 db.run(`ALTER TABLE chatbot_message_history ADD COLUMN metadata TEXT`, (err) => {
-                    if (err) console.error('Error adding metadata column:', err);
-                    else console.log('Added metadata column to chatbot_message_history');
+                    if (err) logger.error('Error adding metadata column:', err);
+                    else logger.debug('Added metadata column to chatbot_message_history');
                 });
             }
         });
@@ -366,7 +366,7 @@ function initializeDatabase() {
         // Add llm_model column to chatbot_config if it doesn't exist
         db.all("PRAGMA table_info(chatbot_config)", (err, columns) => {
             if (err) {
-                console.error('Error checking chatbot_config structure:', err);
+                logger.error('Error checking chatbot_config structure:', err);
                 return;
             }
             
@@ -374,8 +374,8 @@ function initializeDatabase() {
             
             if (!columnNames.includes('llm_model')) {
                 db.run(`ALTER TABLE chatbot_config ADD COLUMN llm_model TEXT DEFAULT 'mistral'`, (err) => {
-                    if (err) console.error('Error adding llm_model column:', err);
-                    else console.log('Added llm_model column to chatbot_config');
+                    if (err) logger.error('Error adding llm_model column:', err);
+                    else logger.debug('Added llm_model column to chatbot_config');
                 });
             }
         });
@@ -383,7 +383,7 @@ function initializeDatabase() {
         // Add missing columns to chatbots table
         db.all("PRAGMA table_info(chatbots)", (err, columns) => {
             if (err) {
-                console.error('Error checking chatbots structure:', err);
+                logger.error('Error checking chatbots structure:', err);
                 return;
             }
             
@@ -393,9 +393,9 @@ function initializeDatabase() {
             if (!columnNames.includes('use_assigned_name')) {
                 db.run(`ALTER TABLE chatbots ADD COLUMN use_assigned_name BOOLEAN DEFAULT 1`, (err) => {
                     if (err && !err.message.includes('duplicate column')) {
-                        console.error('Error adding use_assigned_name column:', err);
+                        logger.error('Error adding use_assigned_name column:', err);
                     } else if (!err) {
-                        console.log('Added use_assigned_name column to chatbots');
+                        logger.debug('Added use_assigned_name column to chatbots');
                     }
                 });
             }
@@ -404,9 +404,9 @@ function initializeDatabase() {
             if (!columnNames.includes('llm_model')) {
                 db.run(`ALTER TABLE chatbots ADD COLUMN llm_model TEXT`, (err) => {
                     if (err && !err.message.includes('duplicate column')) {
-                        console.error('Error adding llm_model column to chatbots:', err);
+                        logger.error('Error adding llm_model column to chatbots:', err);
                     } else if (!err) {
-                        console.log('Added llm_model column to chatbots');
+                        logger.debug('Added llm_model column to chatbots');
                     }
                 });
             }
@@ -415,9 +415,9 @@ function initializeDatabase() {
             if (!columnNames.includes('moviebot_enabled')) {
                 db.run(`ALTER TABLE chatbots ADD COLUMN moviebot_enabled BOOLEAN DEFAULT 0`, (err) => {
                     if (err && !err.message.includes('duplicate column')) {
-                        console.error('Error adding moviebot_enabled column to chatbots:', err);
+                        logger.error('Error adding moviebot_enabled column to chatbots:', err);
                     } else if (!err) {
-                        console.log('Added moviebot_enabled column to chatbots');
+                        logger.debug('Added moviebot_enabled column to chatbots');
                     }
                 });
             }
@@ -426,9 +426,9 @@ function initializeDatabase() {
             if (!columnNames.includes('vision_bot_enabled')) {
                 db.run(`ALTER TABLE chatbots ADD COLUMN vision_bot_enabled BOOLEAN DEFAULT 0`, (err) => {
                     if (err && !err.message.includes('duplicate column')) {
-                        console.error('Error adding vision_bot_enabled column to chatbots:', err);
+                        logger.error('Error adding vision_bot_enabled column to chatbots:', err);
                     } else if (!err) {
-                        console.log('Added vision_bot_enabled column to chatbots');
+                        logger.debug('Added vision_bot_enabled column to chatbots');
                     }
                 });
             }
@@ -484,9 +484,9 @@ function initializeDatabase() {
             if (!colNames.includes('vision_audit_optout')) {
                 db.run(`ALTER TABLE users ADD COLUMN vision_audit_optout BOOLEAN DEFAULT 0`, (e) => {
                     if (e && !e.message.includes('duplicate column')) {
-                        console.error('Error adding vision_audit_optout to users:', e);
+                        logger.error('Error adding vision_audit_optout to users:', e);
                     } else if (!e) {
-                        console.log('Added vision_audit_optout column to users');
+                        logger.debug('Added vision_audit_optout column to users');
                     }
                 });
             }
@@ -637,7 +637,7 @@ function initializeDatabase() {
         db.run(`ALTER TABLE recordings ADD COLUMN session_id TEXT`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
                 if (!err.message.includes('no such table')) {
-                    console.error('Note: session_id column migration:', err.message);
+                    logger.error('Note: session_id column migration:', err.message);
                 }
             }
         });
@@ -645,7 +645,7 @@ function initializeDatabase() {
         db.run(`ALTER TABLE recordings ADD COLUMN user_id INTEGER`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
                 if (!err.message.includes('no such table')) {
-                    console.error('Note: user_id column migration:', err.message);
+                    logger.error('Note: user_id column migration:', err.message);
                 }
             }
         });
@@ -653,7 +653,7 @@ function initializeDatabase() {
         db.run(`ALTER TABLE recording_events ADD COLUMN user_id INTEGER`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
                 if (!err.message.includes('no such table')) {
-                    console.error('Note: recording_events user_id column migration:', err.message);
+                    logger.error('Note: recording_events user_id column migration:', err.message);
                 }
             }
         });
@@ -675,22 +675,22 @@ function initializeDatabase() {
         setTimeout(() => {
             db.run(`CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status)`, (err) => {
                 if (err && !err.message.includes('already exists')) {
-                    console.error('Index creation note:', err.message);
+                    logger.error('Index creation note:', err.message);
                 }
             });
             db.run(`CREATE INDEX IF NOT EXISTS idx_recordings_session ON recordings(session_id)`, (err) => {
                 if (err && !err.message.includes('already exists')) {
-                    console.error('Index creation note:', err.message);
+                    logger.error('Index creation note:', err.message);
                 }
             });
             db.run(`CREATE INDEX IF NOT EXISTS idx_recordings_user ON recordings(user_id)`, (err) => {
                 if (err && !err.message.includes('already exists')) {
-                    console.error('Index creation note:', err.message);
+                    logger.error('Index creation note:', err.message);
                 }
             });
             db.run(`CREATE INDEX IF NOT EXISTS idx_recording_events_recording ON recording_events(recording_id)`, (err) => {
                 if (err && !err.message.includes('already exists')) {
-                    console.error('Index creation note:', err.message);
+                    logger.error('Index creation note:', err.message);
                 }
             });
         }, 1000);
@@ -700,12 +700,12 @@ function initializeDatabase() {
             try {
                 const viewbotMigration = require('../migrations/setup-viewbot-tables');
                 viewbotMigration.setupViewBotTables().then(() => {
-                    console.log('✅ ViewBot tables initialized');
+                    logger.debug('✅ ViewBot tables initialized');
                 }).catch((err) => {
-                    console.error('❌ ViewBot tables initialization failed:', err.message);
+                    logger.error('❌ ViewBot tables initialization failed:', err.message);
                 });
             } catch (err) {
-                console.error('❌ ViewBot migration module not found:', err.message);
+                logger.error('❌ ViewBot migration module not found:', err.message);
             }
         }, 1500);
 
@@ -780,7 +780,7 @@ function initializeDatabase() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_session_chat_time ON session_chat_messages(session_id, relative_time_ms)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_session_chat_absolute ON session_chat_messages(session_id, absolute_time_ms)`);
 
-        console.log('Admin Recording Review tables initialized');
+        logger.debug('Admin Recording Review tables initialized');
 
         // ============================================
         // Game System Tables
@@ -867,7 +867,7 @@ function initializeDatabase() {
         db.run(`CREATE INDEX IF NOT EXISTS idx_game_player_sessions_session ON game_player_sessions(session_id)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_game_player_sessions_user ON game_player_sessions(user_id)`);
 
-        console.log('Database tables initialized (including game system)');
+        logger.debug('Database tables initialized (including game system)');
     });
 }
 

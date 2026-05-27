@@ -6,6 +6,7 @@
 const MediasoupService = require('./MediasoupService');
 const LiveKitService = require('./LiveKitService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'WebRTCAdapter' });
 class WebRTCAdapter {
   constructor() {
     this.config = require('../config/webrtc.config');
@@ -30,25 +31,25 @@ class WebRTCAdapter {
       return;
     }
 
-    console.log(`🎬 WebRTC Adapter: Initializing with ${this.backendType.toUpperCase()} backend`);
+    logger.debug(`🎬 WebRTC Adapter: Initializing with ${this.backendType.toUpperCase()} backend`);
 
     try {
       if (this.backendType === 'livekit') {
         await this.backend.initialize();
-        console.log('✅ WebRTC Adapter: LiveKit backend ready');
+        logger.debug('✅ WebRTC Adapter: LiveKit backend ready');
       } else {
         // For MediaSoup, call its initialize method
         await this.backend.initialize();
-        console.log('✅ WebRTC Adapter: MediaSoup backend ready');
+        logger.debug('✅ WebRTC Adapter: MediaSoup backend ready');
       }
 
       this.initialized = true;
     } catch (error) {
-      console.error(`❌ WebRTC Adapter: Failed to initialize ${this.backendType}:`, error);
+      logger.error(`❌ WebRTC Adapter: Failed to initialize ${this.backendType}:`, error);
       
       // If LiveKit fails, fall back to MediaSoup
       if (this.backendType === 'livekit') {
-        console.log('⚠️ WebRTC Adapter: Falling back to MediaSoup');
+        logger.debug('⚠️ WebRTC Adapter: Falling back to MediaSoup');
         this.backendType = 'mediasoup';
         this.backend = new MediasoupService();
         await this.backend.initialize();
@@ -286,8 +287,8 @@ class WebRTCAdapter {
 
     // This would typically update a config file or environment variable
     process.env.WEBRTC_BACKEND = backend;
-    console.log(`📝 WebRTC Adapter: Backend configuration changed to ${backend}`);
-    console.log('⚠️  Server restart required for changes to take effect');
+    logger.debug(`📝 WebRTC Adapter: Backend configuration changed to ${backend}`);
+    logger.debug('⚠️  Server restart required for changes to take effect');
 
     return {
       backend: backend,

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
 
+const logger = require('../bootstrap/logger').child({ svc: 'FileCompressionService' });
 class FileCompressionService {
   constructor(database) {
     this.db = database.db;
@@ -89,7 +90,7 @@ class FileCompressionService {
   }
   
   async addToCompressionQueue(recordingId, inputPath, options = {}) {
-    console.log(`🗜️ COMPRESSION: Adding recording ${recordingId} to compression queue`);
+    logger.debug(`🗜️ COMPRESSION: Adding recording ${recordingId} to compression queue`);
     
     try {
       const profile = options.profile || 'balanced';
@@ -126,7 +127,7 @@ class FileCompressionService {
       // Update recording status in database
       await this.updateCompressionStatus(recordingId, 'queued');
       
-      console.log(`✅ COMPRESSION: Recording ${recordingId} added to queue (${this.compressionQueue.size} in queue)`);
+      logger.debug(`✅ COMPRESSION: Recording ${recordingId} added to queue (${this.compressionQueue.size} in queue)`);
       
       // Start processing if not already running
       if (!this.isProcessing) {
@@ -136,7 +137,7 @@ class FileCompressionService {
       return { success: true, queuePosition: this.compressionQueue.size };
       
     } catch (error) {
-      console.error('❌ COMPRESSION: Failed to add to queue:', error);
+      logger.error('❌ COMPRESSION: Failed to add to queue:', error);
       return { success: false, error: error.message };
     }
   }
@@ -165,7 +166,7 @@ class FileCompressionService {
         return;
       }
       
-      console.log(`🎬 COMPRESSION: Starting compression for ${nextTask.id}`);
+      logger.debug(`🎬 COMPRESSION: Starting compression for ${nextTask.id}`);
       
       // Move task to active compressions
       this.compressionQueue.delete(nextTask.id);
@@ -180,7 +181,7 @@ class FileCompressionService {
       const result = await this.compressFile(nextTask);
       
       if (result.success) {
-        console.log(`✅ COMPRESSION: Completed compression for ${nextTask.id}`);
+        logger.debug(`✅ COMPRESSION: Completed compression for ${nextTask.id}`);
         nextTask.status = 'completed';
         nextTask.completedAt = new Date();
         nextTask.outputPath = result.outputPath;
@@ -199,14 +200,14 @@ class FileCompressionService {
         }
         
       } else {
-        console.error(`❌ COMPRESSION: Failed compression for ${nextTask.id}:`, result.error);
+        logger.error(`❌ COMPRESSION: Failed compression for ${nextTask.id}:`, result.error);
         nextTask.status = 'failed';
         nextTask.error = result.error;
         nextTask.retries++;
         
         // Retry if under max retries
         if (nextTask.retries < nextTask.maxRetries) {
-          console.log(`🔄 COMPRESSION: Retrying ${nextTask.id} (attempt ${nextTask.retries + 1})`);
+          logger.debug(`🔄 COMPRESSION: Retrying ${nextTask.id} (attempt ${nextTask.retries + 1})`);
           nextTask.status = 'queued';
           this.compressionQueue.set(nextTask.id, nextTask);
         } else {
@@ -218,7 +219,7 @@ class FileCompressionService {
       this.activeCompressions.delete(nextTask.id);
       
     } catch (error) {
-      console.error('❌ COMPRESSION: Error processing queue:', error);
+      logger.error('❌ COMPRESSION: Error processing queue:', error);
     }
     
     this.isProcessing = false;
@@ -257,7 +258,7 @@ class FileCompressionService {
         `${inputName}_compressed.${profile.container}`
       );
       
-      console.log(`🗜️ COMPRESSION: Compressing ${inputPath} -> ${outputPath}`);
+      logger.debug(`🗜️ COMPRESSION: Compressing ${inputPath} -> ${outputPath}`);
       
       return new Promise((resolve, reject) => {
         let ffmpegCommand = ffmpeg(inputPath);
@@ -301,13 +302,13 @@ class FileCompressionService {
         ffmpegCommand.on('progress', (progress) => {
           task.progress = progress.percent || 0;
           if (progress.percent && progress.percent > 0) {
-            console.log(`📊 COMPRESSION: ${task.id} progress: ${Math.round(progress.percent)}%`);
+            logger.debug(`📊 COMPRESSION: ${task.id} progress: ${Math.round(progress.percent)}%`);
           }
         });
         
         // Error handling
         ffmpegCommand.on('error', (err) => {
-          console.error(`❌ COMPRESSION: FFmpeg error for ${task.id}:`, err);
+          logger.error(`❌ COMPRESSION: FFmpeg error for ${task.id}:`, err);
           resolve({ 
             success: false, 
             error: err.message 
@@ -321,8 +322,8 @@ class FileCompressionService {
               const outputStats = fs.statSync(outputPath);
               const compressionRatio = ((inputStats.size - outputStats.size) / inputStats.size * 100).toFixed(2);
               
-              console.log(`🎉 COMPRESSION: ${task.id} completed successfully`);
-              console.log(`📊 COMPRESSION: Size reduction: ${compressionRatio}% (${this.formatFileSize(inputStats.size)} -> ${this.formatFileSize(outputStats.size)})`);
+              logger.debug(`🎉 COMPRESSION: ${task.id} completed successfully`);
+              logger.debug(`📊 COMPRESSION: Size reduction: ${compressionRatio}% (${this.formatFileSize(inputStats.size)} -> ${this.formatFileSize(outputStats.size)})`);
               
               resolve({
                 success: true,
@@ -350,14 +351,14 @@ class FileCompressionService {
       });
       
     } catch (error) {
-      console.error('❌ COMPRESSION: Error in compressFile:', error);
+      logger.error('❌ COMPRESSION: Error in compressFile:', error);
       return { success: false, error: error.message };
     }
   }
   
   async generateThumbnail(recordingId, videoPath) {
     try {
-      console.log(`🖼️ COMPRESSION: Generating thumbnail for ${recordingId}`);
+      logger.debug(`🖼️ COMPRESSION: Generating thumbnail for ${recordingId}`);
       
       const thumbnailDir = path.join(__dirname, '../../recordings/thumbnails');
       if (!fs.existsSync(thumbnailDir)) {
@@ -375,17 +376,17 @@ class FileCompressionService {
             size: '320x180'
           })
           .on('end', () => {
-            console.log(`✅ COMPRESSION: Thumbnail generated for ${recordingId}`);
+            logger.debug(`✅ COMPRESSION: Thumbnail generated for ${recordingId}`);
             resolve({ success: true, thumbnailPath: thumbnailPath });
           })
           .on('error', (err) => {
-            console.error(`❌ COMPRESSION: Failed to generate thumbnail for ${recordingId}:`, err);
+            logger.error(`❌ COMPRESSION: Failed to generate thumbnail for ${recordingId}:`, err);
             resolve({ success: false, error: err.message });
           });
       });
       
     } catch (error) {
-      console.error('❌ COMPRESSION: Error generating thumbnail:', error);
+      logger.error('❌ COMPRESSION: Error generating thumbnail:', error);
       return { success: false, error: error.message };
     }
   }
@@ -408,7 +409,7 @@ class FileCompressionService {
       ]);
       
     } catch (error) {
-      console.error('❌ COMPRESSION: Failed to update compression status:', error);
+      logger.error('❌ COMPRESSION: Failed to update compression status:', error);
     }
   }
   
@@ -423,7 +424,7 @@ class FileCompressionService {
       return {};
       
     } catch (error) {
-      console.error('❌ COMPRESSION: Failed to get recording metadata:', error);
+      logger.error('❌ COMPRESSION: Failed to get recording metadata:', error);
       return {};
     }
   }
@@ -481,7 +482,7 @@ class FileCompressionService {
       return { success: false, error: 'Compression task not found' };
       
     } catch (error) {
-      console.error('❌ COMPRESSION: Failed to cancel compression:', error);
+      logger.error('❌ COMPRESSION: Failed to cancel compression:', error);
       return { success: false, error: error.message };
     }
   }

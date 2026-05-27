@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'buffs' });
+
 const router = express.Router();
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 
@@ -45,7 +48,7 @@ router.get('/user/:userId', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting user buffs:', error);
+        logger.error('Error getting user buffs:', error);
         res.status(500).json({ error: 'Failed to get user buffs' });
     }
 });
@@ -66,7 +69,7 @@ router.get('/streamer/current', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting current streamer buffs:', error);
+        logger.error('Error getting current streamer buffs:', error);
         res.status(500).json({ error: 'Failed to get current streamer buffs' });
     }
 });
@@ -77,10 +80,10 @@ router.post('/apply', authenticateToken, async (req, res) => {
         let { targetUserId, itemId } = req.body;
         const appliedByUserId = req.user.id;
 
-        console.log(`🔍 BUFF DEBUG: HTTP /api/buffs/apply called`);
-        console.log(`🔍 BUFF DEBUG: Request body: ${JSON.stringify(req.body)}`);
-        console.log(`🔍 BUFF DEBUG: targetUserId type: ${typeof targetUserId}, value: "${targetUserId}"`);
-        console.log(`🔍 BUFF DEBUG: appliedByUserId: ${appliedByUserId}`);
+        logger.debug(`🔍 BUFF DEBUG: HTTP /api/buffs/apply called`);
+        logger.debug(`🔍 BUFF DEBUG: Request body: ${JSON.stringify(req.body)}`);
+        logger.debug(`🔍 BUFF DEBUG: targetUserId type: ${typeof targetUserId}, value: "${targetUserId}"`);
+        logger.debug(`🔍 BUFF DEBUG: appliedByUserId: ${appliedByUserId}`);
 
         if (!targetUserId || !itemId) {
             return res.status(400).json({ error: 'Target user ID and item ID are required' });
@@ -98,21 +101,21 @@ router.post('/apply', authenticateToken, async (req, res) => {
         // Debug current streamer info
         if (streamService) {
             const currentStreamer = streamService.getCurrentStreamer();
-            console.log(`🔍 BUFF DEBUG: Current streamer socket ID: "${currentStreamer}"`);
+            logger.debug(`🔍 BUFF DEBUG: Current streamer socket ID: "${currentStreamer}"`);
             if (currentStreamer && viewbotService) {
                 const isViewbot = viewbotService.isViewbotStream(currentStreamer);
-                console.log(`🔍 BUFF DEBUG: Is current streamer a viewbot? ${isViewbot}`);
+                logger.debug(`🔍 BUFF DEBUG: Is current streamer a viewbot? ${isViewbot}`);
             }
         }
         
-        console.log(`🔍 BUFF DEBUG: Checking if targetUserId "${targetUserId}" is viewbot stream...`);
+        logger.debug(`🔍 BUFF DEBUG: Checking if targetUserId "${targetUserId}" is viewbot stream...`);
         const isTargetViewbot = viewbotService && viewbotService.isViewbotStream(targetUserId);
-        console.log(`🔍 BUFF DEBUG: Is targetUserId a viewbot stream? ${isTargetViewbot}`);
+        logger.debug(`🔍 BUFF DEBUG: Is targetUserId a viewbot stream? ${isTargetViewbot}`);
         
         if (isTargetViewbot) {
             const syntheticUserId = sessionService ? sessionService.getUserIdBySocketId(targetUserId) : null;
             if (syntheticUserId) {
-                console.log(`🎭 BUFF HTTP: Translating viewbot ${targetUserId} to synthetic user ${syntheticUserId}`);
+                logger.debug(`🎭 BUFF HTTP: Translating viewbot ${targetUserId} to synthetic user ${syntheticUserId}`);
                 targetUserId = syntheticUserId;
             } else {
                 return res.status(400).json({ error: 'Viewbot target not properly initialized for buff system' });
@@ -120,33 +123,33 @@ router.post('/apply', authenticateToken, async (req, res) => {
         } else if (streamService && viewbotService && sessionService) {
             // Additional check: If client sent current streamer's user ID and current streamer is a viewbot
             const currentStreamer = streamService.getCurrentStreamer();
-            console.log(`🔍 BUFF DEBUG: Checking if targetUserId matches current streamer scenario...`);
-            console.log(`🔍 BUFF DEBUG: Current streamer: "${currentStreamer}"`);
+            logger.debug(`🔍 BUFF DEBUG: Checking if targetUserId matches current streamer scenario...`);
+            logger.debug(`🔍 BUFF DEBUG: Current streamer: "${currentStreamer}"`);
             
             if (currentStreamer && viewbotService.isViewbotStream(currentStreamer)) {
-                console.log(`🔍 BUFF DEBUG: Current streamer is a viewbot`);
+                logger.debug(`🔍 BUFF DEBUG: Current streamer is a viewbot`);
                 
                 // Check if the targetUserId might be the current streamer's user ID
                 const currentStreamerUserId = sessionService.getUserIdBySocketId(currentStreamer);
-                console.log(`🔍 BUFF DEBUG: Current streamer user ID: ${currentStreamerUserId}`);
-                console.log(`🔍 BUFF DEBUG: Target user ID: ${targetUserId} (type: ${typeof targetUserId})`);
+                logger.debug(`🔍 BUFF DEBUG: Current streamer user ID: ${currentStreamerUserId}`);
+                logger.debug(`🔍 BUFF DEBUG: Target user ID: ${targetUserId} (type: ${typeof targetUserId})`);
                 
                 // Convert targetUserId to number for comparison if it's a string
                 const targetUserIdNum = typeof targetUserId === 'string' ? parseInt(targetUserId, 10) : targetUserId;
                 
                 if (currentStreamerUserId && (targetUserIdNum === Math.abs(currentStreamerUserId))) {
-                    console.log(`🎯 BUFF DEBUG: MATCH! Client sent current streamer user ID, translating to viewbot`);
-                    console.log(`🎭 BUFF HTTP: Converting user ID ${targetUserId} to viewbot synthetic user ${currentStreamerUserId}`);
+                    logger.debug(`🎯 BUFF DEBUG: MATCH! Client sent current streamer user ID, translating to viewbot`);
+                    logger.debug(`🎭 BUFF HTTP: Converting user ID ${targetUserId} to viewbot synthetic user ${currentStreamerUserId}`);
                     targetUserId = currentStreamerUserId; // This should be the negative synthetic user ID
                 } else {
-                    console.log(`🔍 BUFF DEBUG: No match - not a current-streamer-is-viewbot scenario`);
+                    logger.debug(`🔍 BUFF DEBUG: No match - not a current-streamer-is-viewbot scenario`);
                 }
             } else {
-                console.log(`🔍 BUFF DEBUG: Current streamer is not a viewbot or doesn't exist`);
+                logger.debug(`🔍 BUFF DEBUG: Current streamer is not a viewbot or doesn't exist`);
             }
         }
 
-        console.log(`🎯 BUFF DEBUG: Final targetUserId after all processing: ${targetUserId} (type: ${typeof targetUserId})`);
+        logger.debug(`🎯 BUFF DEBUG: Final targetUserId after all processing: ${targetUserId} (type: ${typeof targetUserId})`);
 
         // Check if user owns the item
         const inventoryItem = await inventoryService.getInventoryItem(appliedByUserId, itemId);
@@ -172,7 +175,7 @@ router.post('/apply', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error applying buff/debuff:', error);
+        logger.error('Error applying buff/debuff:', error);
         
         // Provide more specific error messages
         if (error.message.includes('cooldown')) {
@@ -222,7 +225,7 @@ router.delete('/:buffId', authenticateToken, async (req, res) => {
         }
 
     } catch (error) {
-        console.error('Error removing buff:', error);
+        logger.error('Error removing buff:', error);
         res.status(500).json({ error: 'Failed to remove buff' });
     }
 });
@@ -261,7 +264,7 @@ router.get('/items/available', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting available buff/debuff items:', error);
+        logger.error('Error getting available buff/debuff items:', error);
         res.status(500).json({ error: 'Failed to get available items' });
     }
 });
@@ -285,7 +288,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting buff statistics:', error);
+        logger.error('Error getting buff statistics:', error);
         res.status(500).json({ error: 'Failed to get buff statistics' });
     }
 });
@@ -311,7 +314,7 @@ router.post('/apply-to-streamer', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error applying buff to current streamer:', error);
+        logger.error('Error applying buff to current streamer:', error);
         res.status(500).json({ error: 'Failed to apply buff to current streamer' });
     }
 });
@@ -347,7 +350,7 @@ router.get('/cooldowns/:userId', authenticateToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting buff cooldowns:', error);
+        logger.error('Error getting buff cooldowns:', error);
         res.status(500).json({ error: 'Failed to get buff cooldowns' });
     }
 });

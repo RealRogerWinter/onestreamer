@@ -7,6 +7,7 @@ const dgram = require('dgram');
 const { Transform } = require('stream');
 const { spawn } = require('child_process');
 
+const logger = require('../bootstrap/logger').child({ svc: 'MpegTsDemuxerService' });
 class MpegTsDemuxerService {
   constructor() {
     this.activeDemuxers = new Map(); // botId -> demuxer process
@@ -20,7 +21,7 @@ class MpegTsDemuxerService {
    * This maintains perfect A/V sync by processing a single multiplexed stream
    */
   async startMpegTsDemuxer(botId, videoRtpPort, audioRtpPort) {
-    console.log(`📡 DEMUX: Starting MPEG-TS demuxer for ${botId}`);
+    logger.debug(`📡 DEMUX: Starting MPEG-TS demuxer for ${botId}`);
     
     const tsPort = this.allocateTsPort();
     
@@ -28,7 +29,7 @@ class MpegTsDemuxerService {
     const tsReceiver = dgram.createSocket('udp4');
     
     tsReceiver.on('error', (err) => {
-      console.error(`❌ DEMUX: UDP receiver error for ${botId}:`, err);
+      logger.error(`❌ DEMUX: UDP receiver error for ${botId}:`, err);
       this.cleanup(botId);
     });
     
@@ -47,7 +48,7 @@ class MpegTsDemuxerService {
         if (err) {
           reject(err);
         } else {
-          console.log(`✅ DEMUX: TS receiver listening on port ${tsPort}`);
+          logger.debug(`✅ DEMUX: TS receiver listening on port ${tsPort}`);
           resolve();
         }
       });
@@ -68,7 +69,7 @@ class MpegTsDemuxerService {
    * This maintains synchronization by processing a single stream
    */
   startFFmpegDemuxer(botId, tsPort, videoRtpPort, audioRtpPort) {
-    console.log(`🎬 DEMUX: Starting FFmpeg demuxer for ${botId}`);
+    logger.debug(`🎬 DEMUX: Starting FFmpeg demuxer for ${botId}`);
     
     // FFmpeg command to receive MPEG-TS and output synchronized RTP
     const ffmpegArgs = [
@@ -100,19 +101,19 @@ class MpegTsDemuxerService {
     demuxer.stderr.on('data', (data) => {
       const output = data.toString();
       if (output.includes('error') || output.includes('Error')) {
-        console.error(`❌ DEMUX: FFmpeg error for ${botId}:`, output);
+        logger.error(`❌ DEMUX: FFmpeg error for ${botId}:`, output);
       } else if (output.includes('start:')) {
-        console.log(`✅ DEMUX: Synchronized demuxing active for ${botId}`);
+        logger.debug(`✅ DEMUX: Synchronized demuxing active for ${botId}`);
       }
     });
     
     demuxer.on('close', (code) => {
-      console.log(`🛑 DEMUX: FFmpeg demuxer exited for ${botId} with code ${code}`);
+      logger.debug(`🛑 DEMUX: FFmpeg demuxer exited for ${botId} with code ${code}`);
       this.cleanup(botId);
     });
     
     this.activeDemuxers.set(botId, demuxer);
-    console.log(`✅ DEMUX: Demuxer started for ${botId}`);
+    logger.debug(`✅ DEMUX: Demuxer started for ${botId}`);
   }
 
   /**
@@ -126,7 +127,7 @@ class MpegTsDemuxerService {
       throw new Error(`No TS port allocated for ${botId}`);
     }
     
-    console.log(`🎬 MUXED: Creating MPEG-TS stream for ${botId} on port ${tsPort}`);
+    logger.debug(`🎬 MUXED: Creating MPEG-TS stream for ${botId} on port ${tsPort}`);
     
     // FFmpeg command to create perfectly synchronized MPEG-TS
     const ffmpegArgs = [
@@ -179,7 +180,7 @@ class MpegTsDemuxerService {
    * Cleanup resources
    */
   cleanup(botId) {
-    console.log(`🧹 DEMUX: Cleaning up resources for ${botId}`);
+    logger.debug(`🧹 DEMUX: Cleaning up resources for ${botId}`);
     
     // Stop demuxer
     const demuxer = this.activeDemuxers.get(botId);
@@ -195,7 +196,7 @@ class MpegTsDemuxerService {
       this.tsReceivers.delete(botId);
     }
     
-    console.log(`✅ DEMUX: Cleanup complete for ${botId}`);
+    logger.debug(`✅ DEMUX: Cleanup complete for ${botId}`);
   }
 
   /**

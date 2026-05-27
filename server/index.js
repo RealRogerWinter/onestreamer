@@ -200,6 +200,12 @@ app.use(compression({
 
 app.use(cors());
 
+// ADR-0020 §4: per-request trace ID propagation. Runs before any route
+// handler so every downstream logger.X(...) call gets the `traceId`
+// binding via the AsyncLocalStorage mixin in bootstrap/logger.js.
+const { expressMiddleware: traceContextMiddleware } = require('./bootstrap/trace-context');
+app.use(traceContextMiddleware);
+
 // Add security headers to prevent XSS attacks
 app.use((req, res, next) => {
   // Content Security Policy - prevents inline scripts and limits sources

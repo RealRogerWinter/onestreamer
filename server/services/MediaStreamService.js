@@ -3,6 +3,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const fs = require('fs');
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'MediaStreamService' });
 class MediaStreamService {
   constructor() {
     this.activeStreamer = null;
@@ -19,12 +20,12 @@ class MediaStreamService {
   ensureHLSDirectory() {
     if (!fs.existsSync(this.hlsPath)) {
       fs.mkdirSync(this.hlsPath, { recursive: true });
-      console.log('📁 Created HLS directory:', this.hlsPath);
+      logger.debug('📁 Created HLS directory:', this.hlsPath);
     }
   }
 
   async startIngestion(streamerId, offer) {
-    console.log('🎥 MEDIA: Starting WebRTC ingestion for streamer:', streamerId);
+    logger.debug('🎥 MEDIA: Starting WebRTC ingestion for streamer:', streamerId);
     
     // Clean up existing stream
     this.stopIngestion();
@@ -42,14 +43,14 @@ class MediaStreamService {
 
     // Handle incoming media stream
     this.peerConnection.ontrack = (event) => {
-      console.log('📺 MEDIA: Received media track:', event.track.kind);
+      logger.debug('📺 MEDIA: Received media track:', event.track.kind);
       if (event.streams && event.streams[0]) {
         this.handleIncomingStream(event.streams[0]);
       }
     };
 
     this.peerConnection.onconnectionstatechange = () => {
-      console.log('🔗 MEDIA: WebRTC connection state:', this.peerConnection.connectionState);
+      logger.debug('🔗 MEDIA: WebRTC connection state:', this.peerConnection.connectionState);
       if (this.peerConnection.connectionState === 'failed' || 
           this.peerConnection.connectionState === 'disconnected') {
         this.stopIngestion();
@@ -64,11 +65,11 @@ class MediaStreamService {
       const answer = await this.peerConnection.createAnswer();
       await this.peerConnection.setLocalDescription(answer);
       
-      console.log('✅ MEDIA: WebRTC handshake completed');
+      logger.debug('✅ MEDIA: WebRTC handshake completed');
       return { success: true, answer: answer, streamId: this.streamId };
       
     } catch (error) {
-      console.error('❌ MEDIA: WebRTC setup failed:', error);
+      logger.error('❌ MEDIA: WebRTC setup failed:', error);
       this.stopIngestion();
       return { success: false, error: error.message };
     }
@@ -78,15 +79,15 @@ class MediaStreamService {
     if (this.peerConnection && candidate) {
       try {
         await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        console.log('🧊 MEDIA: Added ICE candidate');
+        logger.debug('🧊 MEDIA: Added ICE candidate');
       } catch (error) {
-        console.error('❌ MEDIA: Failed to add ICE candidate:', error);
+        logger.error('❌ MEDIA: Failed to add ICE candidate:', error);
       }
     }
   }
 
   handleIncomingStream(stream) {
-    console.log('🎬 MEDIA: Processing incoming stream for HLS conversion');
+    logger.debug('🎬 MEDIA: Processing incoming stream for HLS conversion');
     
     // Create media source that can be fed to FFmpeg
     this.mediaSource = new nonstandard.RTCAudioSink(stream.getAudioTracks()[0]);
@@ -101,7 +102,7 @@ class MediaStreamService {
   }
 
   startFFmpegHLS(videoSink) {
-    console.log('🔄 MEDIA: Starting FFmpeg HLS conversion');
+    logger.debug('🔄 MEDIA: Starting FFmpeg HLS conversion');
     
     const hlsOutputPath = path.join(this.hlsPath, `${this.streamId}.m3u8`);
     const segmentPath = path.join(this.hlsPath, `${this.streamId}_segment_%03d.ts`);
@@ -127,14 +128,14 @@ class MediaStreamService {
           '-hls_segment_filename', segmentPath
         ])
         .on('start', (commandLine) => {
-          console.log('🚀 MEDIA: FFmpeg started:', commandLine);
+          logger.debug('🚀 MEDIA: FFmpeg started:', commandLine);
         })
         .on('error', (err) => {
-          console.error('❌ MEDIA: FFmpeg error:', err);
+          logger.error('❌ MEDIA: FFmpeg error:', err);
           this.stopIngestion();
         })
         .on('end', () => {
-          console.log('🏁 MEDIA: FFmpeg process ended');
+          logger.debug('🏁 MEDIA: FFmpeg process ended');
         })
         .run();
 
@@ -144,13 +145,13 @@ class MediaStreamService {
       this.createTestHLSStream();
       
     } catch (error) {
-      console.error('❌ MEDIA: Failed to start FFmpeg:', error);
+      logger.error('❌ MEDIA: Failed to start FFmpeg:', error);
     }
   }
 
   // Temporary method to create a test HLS stream
   createTestHLSStream() {
-    console.log('📺 MEDIA: Creating test HLS stream');
+    logger.debug('📺 MEDIA: Creating test HLS stream');
     
     const m3u8Content = `#EXTM3U
 #EXT-X-VERSION:3
@@ -166,11 +167,11 @@ ${this.streamId}_segment_002.ts`;
     const hlsFilePath = path.join(this.hlsPath, `${this.streamId}.m3u8`);
     fs.writeFileSync(hlsFilePath, m3u8Content);
     
-    console.log('✅ MEDIA: Test HLS manifest created:', hlsFilePath);
+    logger.debug('✅ MEDIA: Test HLS manifest created:', hlsFilePath);
   }
 
   stopIngestion() {
-    console.log('🛑 MEDIA: Stopping stream ingestion');
+    logger.debug('🛑 MEDIA: Stopping stream ingestion');
     
     if (this.ffmpegProcess) {
       this.ffmpegProcess.kill('SIGTERM');
@@ -203,9 +204,9 @@ ${this.streamId}_segment_002.ts`;
           fs.unlinkSync(path.join(this.hlsPath, file));
         }
       });
-      console.log('🧹 MEDIA: Cleaned up HLS files for stream:', this.streamId);
+      logger.debug('🧹 MEDIA: Cleaned up HLS files for stream:', this.streamId);
     } catch (error) {
-      console.warn('⚠️ MEDIA: Failed to cleanup HLS files:', error);
+      logger.warn('⚠️ MEDIA: Failed to cleanup HLS files:', error);
     }
   }
 

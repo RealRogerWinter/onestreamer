@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
+const logger = require('../bootstrap/logger').child({ svc: 'B2StorageService' });
 class B2StorageService {
     constructor() {
         this.keyId = process.env.B2_APPLICATION_KEY_ID;
@@ -22,7 +23,7 @@ class B2StorageService {
         this.endpoint = process.env.B2_ENDPOINT;
 
         if (!this.keyId || !this.applicationKey || !this.bucketName) {
-            console.warn('[B2Storage] Missing B2 credentials - service will be disabled');
+            logger.warn('[B2Storage] Missing B2 credentials - service will be disabled');
             this.enabled = false;
             return;
         }
@@ -40,7 +41,7 @@ class B2StorageService {
             forcePathStyle: true
         });
 
-        console.log(`[B2Storage] Initialized with bucket: ${this.bucketName}`);
+        logger.debug(`[B2Storage] Initialized with bucket: ${this.bucketName}`);
     }
 
     /**
@@ -73,7 +74,7 @@ class B2StorageService {
                 return resolve({ success: false, error: 'No segment files found' });
             }
 
-            console.log(`[B2Storage] Concatenating ${segmentFiles.length} segments to ${outputPath}`);
+            logger.debug(`[B2Storage] Concatenating ${segmentFiles.length} segments to ${outputPath}`);
 
             // Create concat file list
             const concatListPath = path.join(segmentsDir, 'concat_list.txt');
@@ -105,10 +106,10 @@ class B2StorageService {
 
                 if (code === 0 && fs.existsSync(outputPath)) {
                     const stats = fs.statSync(outputPath);
-                    console.log(`[B2Storage] Concatenation complete: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+                    logger.debug(`[B2Storage] Concatenation complete: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
                     resolve({ success: true, fileSize: stats.size });
                 } else {
-                    console.error(`[B2Storage] FFmpeg failed with code ${code}`);
+                    logger.error(`[B2Storage] FFmpeg failed with code ${code}`);
                     resolve({ success: false, error: stderr.slice(-500) });
                 }
             });
@@ -140,7 +141,7 @@ class B2StorageService {
             const fileName = `recordings/${sessionId}.mp4`;
             const fileStream = fs.createReadStream(localPath);
 
-            console.log(`[B2Storage] Uploading ${fileName} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+            logger.debug(`[B2Storage] Uploading ${fileName} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
 
             const command = new PutObjectCommand({
                 Bucket: this.bucketName,
@@ -159,7 +160,7 @@ class B2StorageService {
 
             const result = await this.s3Client.send(command);
 
-            console.log(`[B2Storage] Upload complete: ${fileName}`);
+            logger.debug(`[B2Storage] Upload complete: ${fileName}`);
 
             return {
                 success: true,
@@ -168,7 +169,7 @@ class B2StorageService {
                 fileSize: stats.size
             };
         } catch (error) {
-            console.error(`[B2Storage] Upload failed:`, error.message);
+            logger.error(`[B2Storage] Upload failed:`, error.message);
             return { success: false, error: error.message };
         }
     }
@@ -202,7 +203,7 @@ class B2StorageService {
                 expiresAt: expiresAt
             };
         } catch (error) {
-            console.error(`[B2Storage] Failed to generate signed URL:`, error.message);
+            logger.error(`[B2Storage] Failed to generate signed URL:`, error.message);
             return { success: false, error: error.message };
         }
     }
@@ -250,11 +251,11 @@ class B2StorageService {
             });
 
             await this.s3Client.send(command);
-            console.log(`[B2Storage] Deleted: ${fileName}`);
+            logger.debug(`[B2Storage] Deleted: ${fileName}`);
 
             return { success: true };
         } catch (error) {
-            console.error(`[B2Storage] Delete failed:`, error.message);
+            logger.error(`[B2Storage] Delete failed:`, error.message);
             return { success: false, error: error.message };
         }
     }
@@ -304,7 +305,7 @@ class B2StorageService {
 
         try {
             // Step 1: Concatenate segments to MP4
-            console.log(`[B2Storage] Processing session ${sessionId}`);
+            logger.debug(`[B2Storage] Processing session ${sessionId}`);
             const concatResult = await this.concatenateSegments(segmentsDir, outputPath);
 
             if (!concatResult.success) {
@@ -318,7 +319,7 @@ class B2StorageService {
             try {
                 fs.unlinkSync(outputPath);
             } catch (e) {
-                console.warn(`[B2Storage] Failed to clean up temp file: ${e.message}`);
+                logger.warn(`[B2Storage] Failed to clean up temp file: ${e.message}`);
             }
 
             if (!uploadResult.success) {
@@ -339,7 +340,7 @@ class B2StorageService {
                 }
             } catch (e) {}
 
-            console.error(`[B2Storage] Process and upload failed:`, error.message);
+            logger.error(`[B2Storage] Process and upload failed:`, error.message);
             return { success: false, error: error.message };
         }
     }

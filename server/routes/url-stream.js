@@ -8,6 +8,7 @@ const express = require('express');
 const URLStreamDatabaseService = require('../services/URLStreamDatabaseService');
 const KickRandomService = require('../services/KickRandomService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'url-stream' });
 /**
  * Create URL stream router
  * @param {ViewBotURLService} viewBotURLService - The URL viewbot service
@@ -20,7 +21,7 @@ module.exports = function(viewBotURLService, healthService = null) {
 
   // Initialize database
   dbService.initialize().catch(err => {
-    console.error('Failed to initialize URL stream database:', err);
+    logger.error('Failed to initialize URL stream database:', err);
   });
 
   // ==================== STREAM MANAGEMENT ====================
@@ -42,13 +43,13 @@ module.exports = function(viewBotURLService, healthService = null) {
       const kickMatch = url.match(/kick\.com\/([^\/\?]+)/i);
       if (kickMatch) {
         kickUsername = kickMatch[1];
-        console.log(`🟢 URL STREAM: Detected Kick URL for channel: ${kickUsername}`);
+        logger.debug(`🟢 URL STREAM: Detected Kick URL for channel: ${kickUsername}`);
 
         // Fetch the authenticated HLS playback URL from Kick
         try {
           const playbackInfo = await kickService.getPlaybackUrl(kickUsername);
           if (playbackInfo && playbackInfo.playback_url) {
-            console.log(`🟢 URL STREAM: Got Kick playback URL for ${kickUsername}`);
+            logger.debug(`🟢 URL STREAM: Got Kick playback URL for ${kickUsername}`);
             url = playbackInfo.playback_url;  // Use the HLS URL instead
           } else {
             return res.status(400).json({
@@ -56,7 +57,7 @@ module.exports = function(viewBotURLService, healthService = null) {
             });
           }
         } catch (kickErr) {
-          console.error(`❌ URL STREAM: Failed to get Kick playback URL:`, kickErr.message);
+          logger.error(`❌ URL STREAM: Failed to get Kick playback URL:`, kickErr.message);
           return res.status(400).json({
             error: `Failed to connect to Kick channel ${kickUsername}: ${kickErr.message}`
           });
@@ -96,7 +97,7 @@ module.exports = function(viewBotURLService, healthService = null) {
           quality: quality || 'best'
         });
       } catch (dbErr) {
-        console.error('Failed to save URL stream to database:', dbErr);
+        logger.error('Failed to save URL stream to database:', dbErr);
         // Continue anyway - stream is running
       }
 
@@ -109,7 +110,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       });
 
     } catch (error) {
-      console.error('Error starting URL stream:', error);
+      logger.error('Error starting URL stream:', error);
       res.status(500).json({ error: 'Failed to start URL stream' });
     }
   });
@@ -135,7 +136,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       });
 
     } catch (error) {
-      console.error('Error getting URL streams:', error);
+      logger.error('Error getting URL streams:', error);
       res.status(500).json({ error: 'Failed to get streams' });
     }
   });
@@ -159,7 +160,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       res.json(result);
 
     } catch (error) {
-      console.error('Error validating URL:', error);
+      logger.error('Error validating URL:', error);
       res.status(500).json({ error: 'Failed to validate URL' });
     }
   });
@@ -178,7 +179,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       res.json(history);
 
     } catch (error) {
-      console.error('Error getting URL stream history:', error);
+      logger.error('Error getting URL stream history:', error);
       res.status(500).json({ error: 'Failed to get history' });
     }
   });
@@ -207,7 +208,7 @@ module.exports = function(viewBotURLService, healthService = null) {
         }
       });
     } catch (error) {
-      console.error('Error getting adaptive config:', error);
+      logger.error('Error getting adaptive config:', error);
       res.status(500).json({ error: 'Failed to get adaptive config' });
     }
   });
@@ -261,7 +262,7 @@ module.exports = function(viewBotURLService, healthService = null) {
         updated: Object.keys(updates)
       });
     } catch (error) {
-      console.error('Error updating adaptive config:', error);
+      logger.error('Error updating adaptive config:', error);
       res.status(500).json({ error: 'Failed to update adaptive config' });
     }
   });
@@ -311,7 +312,7 @@ module.exports = function(viewBotURLService, healthService = null) {
         probeNote: props.probeNote || null
       });
     } catch (error) {
-      console.error('Error probing stream:', error);
+      logger.error('Error probing stream:', error);
       res.status(500).json({
         error: 'Failed to probe stream',
         details: error.message
@@ -335,7 +336,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       res.json(logs);
 
     } catch (error) {
-      console.error('Error getting URL stream logs:', error);
+      logger.error('Error getting URL stream logs:', error);
       res.status(500).json({ error: 'Failed to get logs' });
     }
   });
@@ -351,7 +352,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       const presets = await dbService.getAllPresets();
       res.json(presets);
     } catch (error) {
-      console.error('Error getting presets:', error);
+      logger.error('Error getting presets:', error);
       res.status(500).json({ error: 'Failed to get presets' });
     }
   });
@@ -380,7 +381,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       res.json({ success: true, id: result.id });
 
     } catch (error) {
-      console.error('Error creating preset:', error);
+      logger.error('Error creating preset:', error);
       res.status(500).json({ error: 'Failed to create preset' });
     }
   });
@@ -422,7 +423,7 @@ module.exports = function(viewBotURLService, healthService = null) {
           autoReconnect: preset.auto_reconnect
         });
       } catch (dbErr) {
-        console.error('Failed to save URL stream to database:', dbErr);
+        logger.error('Failed to save URL stream to database:', dbErr);
       }
 
       res.json({
@@ -433,7 +434,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       });
 
     } catch (error) {
-      console.error('Error starting preset:', error);
+      logger.error('Error starting preset:', error);
       res.status(500).json({ error: 'Failed to start preset' });
     }
   });
@@ -447,7 +448,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       await dbService.deletePreset(req.params.id);
       res.json({ success: true });
     } catch (error) {
-      console.error('Error deleting preset:', error);
+      logger.error('Error deleting preset:', error);
       res.status(500).json({ error: 'Failed to delete preset' });
     }
   });
@@ -463,7 +464,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       const tools = await viewBotURLService.testTools();
       res.json(tools);
     } catch (error) {
-      console.error('Error checking tools:', error);
+      logger.error('Error checking tools:', error);
       res.status(500).json({ error: 'Failed to check tools' });
     }
   });
@@ -477,7 +478,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       await viewBotURLService.stopAllURLStreams();
       res.json({ success: true });
     } catch (error) {
-      console.error('Error stopping all streams:', error);
+      logger.error('Error stopping all streams:', error);
       res.status(500).json({ error: 'Failed to stop all streams' });
     }
   });
@@ -503,13 +504,13 @@ module.exports = function(viewBotURLService, healthService = null) {
         await dbService.updateURLStreamStatus(urlId, 'stopped', 'manual_stop');
         await dbService.addLog(urlId, 'stopped', 'URL stream stopped manually');
       } catch (dbErr) {
-        console.error('Failed to update URL stream in database:', dbErr);
+        logger.error('Failed to update URL stream in database:', dbErr);
       }
 
       res.json({ success: true });
 
     } catch (error) {
-      console.error('Error stopping URL stream:', error);
+      logger.error('Error stopping URL stream:', error);
       res.status(500).json({ error: 'Failed to stop URL stream' });
     }
   });
@@ -549,7 +550,7 @@ module.exports = function(viewBotURLService, healthService = null) {
       });
 
     } catch (error) {
-      console.error('Error getting URL stream status:', error);
+      logger.error('Error getting URL stream status:', error);
       res.status(500).json({ error: 'Failed to get stream status' });
     }
   });

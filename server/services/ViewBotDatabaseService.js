@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const ViewBotRepository = require('../database/repository/ViewBotRepository');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotDatabaseService' });
 /**
  * ViewBot Database Service
  * Handles all database operations for ViewBot persistence
@@ -39,18 +40,18 @@ class ViewBotDatabaseService {
 
             if (!tableExists) {
                 // Run migration only if tables don't exist
-                console.log('📦 VIEWBOT DB: Tables not found, running migration...');
+                logger.debug('📦 VIEWBOT DB: Tables not found, running migration...');
                 const migration = require('../migrations/setup-viewbot-tables');
                 await migration.setupViewBotTables();
             } else {
-                console.log('✓ VIEWBOT DB: Tables already exist, skipping migration');
+                logger.debug('✓ VIEWBOT DB: Tables already exist, skipping migration');
             }
             
             this.initialized = true;
-            console.log('✅ VIEWBOT DB: ViewBot Database Service initialized');
+            logger.debug('✅ VIEWBOT DB: ViewBot Database Service initialized');
             return true;
         } catch (error) {
-            console.error('❌ VIEWBOT DB: Failed to initialize ViewBot Database Service:', error);
+            logger.error('❌ VIEWBOT DB: Failed to initialize ViewBot Database Service:', error);
             throw error;
         }
     }
@@ -84,10 +85,10 @@ class ViewBotDatabaseService {
                 timeAllotment,
             });
 
-            console.log(`💾 VIEWBOT DB: Saved ViewBot ${botId} to database`);
+            logger.debug(`💾 VIEWBOT DB: Saved ViewBot ${botId} to database`);
             return { success: true, id: result.id };
         } catch (error) {
-            console.error(`❌ VIEWBOT DB: Failed to save ViewBot ${botData.botId}:`, error);
+            logger.error(`❌ VIEWBOT DB: Failed to save ViewBot ${botData.botId}:`, error);
             throw error;
         }
     }
@@ -120,7 +121,7 @@ class ViewBotDatabaseService {
                 usageCount: row.usage_count
             };
         } catch (error) {
-            console.error(`❌ VIEWBOT DB: Failed to load ViewBot ${botId}:`, error);
+            logger.error(`❌ VIEWBOT DB: Failed to load ViewBot ${botId}:`, error);
             throw error;
         }
     }
@@ -149,7 +150,7 @@ class ViewBotDatabaseService {
                 usageCount: row.usage_count
             }));
         } catch (error) {
-            console.error('❌ VIEWBOT DB: Failed to load ViewBots:', error);
+            logger.error('❌ VIEWBOT DB: Failed to load ViewBots:', error);
             throw error;
         }
     }
@@ -164,13 +165,13 @@ class ViewBotDatabaseService {
             const result = await this.repo.deleteByBotId(botId);
 
             if (result.changes > 0) {
-                console.log(`🗑️ VIEWBOT DB: Deleted ViewBot ${botId} from database`);
+                logger.debug(`🗑️ VIEWBOT DB: Deleted ViewBot ${botId} from database`);
                 return { success: true };
             } else {
                 return { success: false, message: 'ViewBot not found' };
             }
         } catch (error) {
-            console.error(`❌ VIEWBOT DB: Failed to delete ViewBot ${botId}:`, error);
+            logger.error(`❌ VIEWBOT DB: Failed to delete ViewBot ${botId}:`, error);
             throw error;
         }
     }
@@ -185,14 +186,14 @@ class ViewBotDatabaseService {
             const result = await this.repo.setEnabledByBotId(botId, 0);
 
             if (result.changes > 0) {
-                console.log(`🚫 VIEWBOT DB: Disabled ViewBot ${botId}`);
+                logger.debug(`🚫 VIEWBOT DB: Disabled ViewBot ${botId}`);
                 return true;
             } else {
-                console.log(`⚠️ VIEWBOT DB: ViewBot ${botId} not found`);
+                logger.debug(`⚠️ VIEWBOT DB: ViewBot ${botId} not found`);
                 return false;
             }
         } catch (error) {
-            console.error(`❌ VIEWBOT DB: Failed to disable ViewBot ${botId}:`, error);
+            logger.error(`❌ VIEWBOT DB: Failed to disable ViewBot ${botId}:`, error);
             throw error;
         }
     }
@@ -207,14 +208,14 @@ class ViewBotDatabaseService {
             const result = await this.repo.setEnabledByBotId(botId, 1);
 
             if (result.changes > 0) {
-                console.log(`✅ VIEWBOT DB: Enabled ViewBot ${botId}`);
+                logger.debug(`✅ VIEWBOT DB: Enabled ViewBot ${botId}`);
                 return true;
             } else {
-                console.log(`⚠️ VIEWBOT DB: ViewBot ${botId} not found`);
+                logger.debug(`⚠️ VIEWBOT DB: ViewBot ${botId} not found`);
                 return false;
             }
         } catch (error) {
-            console.error(`❌ VIEWBOT DB: Failed to enable ViewBot ${botId}:`, error);
+            logger.error(`❌ VIEWBOT DB: Failed to enable ViewBot ${botId}:`, error);
             throw error;
         }
     }
@@ -228,9 +229,9 @@ class ViewBotDatabaseService {
         try {
             await this.repo.incrementUsageCount(botId);
 
-            console.log(`📊 VIEWBOT DB: Updated usage count for ViewBot ${botId}`);
+            logger.debug(`📊 VIEWBOT DB: Updated usage count for ViewBot ${botId}`);
         } catch (error) {
-            console.error(`❌ VIEWBOT DB: Failed to update usage for ViewBot ${botId}:`, error);
+            logger.error(`❌ VIEWBOT DB: Failed to update usage for ViewBot ${botId}:`, error);
         }
     }
 
@@ -244,13 +245,13 @@ class ViewBotDatabaseService {
             const result = await this.repo.updateName(botId, name);
 
             if (result.changes > 0) {
-                console.log(`📝 VIEWBOT DB: Updated name for ViewBot ${botId} to "${name}"`);
+                logger.debug(`📝 VIEWBOT DB: Updated name for ViewBot ${botId} to "${name}"`);
                 return { success: true };
             } else {
                 return { success: false, message: 'ViewBot not found' };
             }
         } catch (error) {
-            console.error(`❌ VIEWBOT DB: Failed to update name for ViewBot ${botId}:`, error);
+            logger.error(`❌ VIEWBOT DB: Failed to update name for ViewBot ${botId}:`, error);
             throw error;
         }
     }
@@ -282,10 +283,10 @@ class ViewBotDatabaseService {
                 rotationCheckIntervalMax,
             });
 
-            console.log('💾 VIEWBOT DB: Saved ViewBot system state');
+            logger.debug('💾 VIEWBOT DB: Saved ViewBot system state');
             return { success: true };
         } catch (error) {
-            console.error('❌ VIEWBOT DB: Failed to save system state:', error);
+            logger.error('❌ VIEWBOT DB: Failed to save system state:', error);
             throw error;
         }
     }
@@ -300,7 +301,7 @@ class ViewBotDatabaseService {
             const row = await this.repo.getSystemState();
 
             if (!row) {
-                console.log('📊 VIEWBOT DB: No system state found, returning defaults');
+                logger.debug('📊 VIEWBOT DB: No system state found, returning defaults');
                 // Return default state if none exists
                 return {
                     rotationEnabled: false,
@@ -313,7 +314,7 @@ class ViewBotDatabaseService {
                 };
             }
             
-            console.log('📊 VIEWBOT DB: Raw database row:', row);
+            logger.debug('📊 VIEWBOT DB: Raw database row:', row);
             
             const state = {
                 rotationEnabled: Boolean(row.rotation_enabled),
@@ -326,10 +327,10 @@ class ViewBotDatabaseService {
                 updatedAt: row.updated_at
             };
             
-            console.log('📊 VIEWBOT DB: Returning state:', state);
+            logger.debug('📊 VIEWBOT DB: Returning state:', state);
             return state;
         } catch (error) {
-            console.error('❌ VIEWBOT DB: Failed to load system state:', error);
+            logger.error('❌ VIEWBOT DB: Failed to load system state:', error);
             // Return default state on error
             return {
                 rotationEnabled: false,
@@ -368,14 +369,14 @@ class ViewBotDatabaseService {
                 metadataJson: JSON.stringify(metadata),
             });
 
-            console.log(`🎬 VIEWBOT DB: Started session ${sessionId} for ViewBot ${botId}`);
+            logger.debug(`🎬 VIEWBOT DB: Started session ${sessionId} for ViewBot ${botId}`);
             
             // Update usage count
             await this.updateViewBotUsage(botId);
             
             return { success: true, sessionId, id: result.id };
         } catch (error) {
-            console.error(`❌ VIEWBOT DB: Failed to start session for ViewBot ${sessionData.botId}:`, error);
+            logger.error(`❌ VIEWBOT DB: Failed to start session for ViewBot ${sessionData.botId}:`, error);
             throw error;
         }
     }
@@ -403,10 +404,10 @@ class ViewBotDatabaseService {
                 errorMessage,
             });
 
-            console.log(`🏁 VIEWBOT DB: Ended session ${sessionId}`);
+            logger.debug(`🏁 VIEWBOT DB: Ended session ${sessionId}`);
             return { success: true };
         } catch (error) {
-            console.error(`❌ VIEWBOT DB: Failed to end session ${sessionId}:`, error);
+            logger.error(`❌ VIEWBOT DB: Failed to end session ${sessionId}:`, error);
             throw error;
         }
     }
@@ -438,10 +439,10 @@ class ViewBotDatabaseService {
                 metadataJson: JSON.stringify(metadata),
             });
 
-            console.log(`🔄 VIEWBOT DB: Recorded rotation: ${fromBotId} → ${toBotId} (${reason})`);
+            logger.debug(`🔄 VIEWBOT DB: Recorded rotation: ${fromBotId} → ${toBotId} (${reason})`);
             return { success: true };
         } catch (error) {
-            console.error('❌ VIEWBOT DB: Failed to record rotation:', error);
+            logger.error('❌ VIEWBOT DB: Failed to record rotation:', error);
         }
     }
 
@@ -464,7 +465,7 @@ class ViewBotDatabaseService {
             // Get the viewbot database ID
             const viewbot = await this.loadViewBot(botId);
             if (!viewbot) {
-                console.warn(`⚠️ VIEWBOT DB: ViewBot ${botId} not found, skipping metric recording`);
+                logger.warn(`⚠️ VIEWBOT DB: ViewBot ${botId} not found, skipping metric recording`);
                 return { success: false };
             }
 
@@ -480,7 +481,7 @@ class ViewBotDatabaseService {
 
             return { success: true };
         } catch (error) {
-            console.error('❌ VIEWBOT DB: Failed to record metric:', error);
+            logger.error('❌ VIEWBOT DB: Failed to record metric:', error);
         }
     }
 
@@ -538,7 +539,7 @@ class ViewBotDatabaseService {
                 generatedAt: new Date().toISOString()
             };
         } catch (error) {
-            console.error('❌ VIEWBOT DB: Failed to get analytics:', error);
+            logger.error('❌ VIEWBOT DB: Failed to get analytics:', error);
             throw error;
         }
     }
@@ -554,7 +555,7 @@ class ViewBotDatabaseService {
             const rotationsResult = await this.repo.cleanupOldRotations(retentionDays);
             const metricsResult = await this.repo.cleanupOldMetrics(retentionDays);
 
-            console.log(`🧹 VIEWBOT DB: Cleanup completed - removed ${sessionsResult.changes} sessions, ${rotationsResult.changes} rotations, ${metricsResult.changes} metrics`);
+            logger.debug(`🧹 VIEWBOT DB: Cleanup completed - removed ${sessionsResult.changes} sessions, ${rotationsResult.changes} rotations, ${metricsResult.changes} metrics`);
             
             return {
                 success: true,
@@ -563,7 +564,7 @@ class ViewBotDatabaseService {
                 metricsRemoved: metricsResult.changes
             };
         } catch (error) {
-            console.error('❌ VIEWBOT DB: Failed to cleanup old data:', error);
+            logger.error('❌ VIEWBOT DB: Failed to cleanup old data:', error);
             throw error;
         }
     }

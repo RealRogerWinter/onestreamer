@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
 
+const logger = require('../bootstrap/logger').child({ svc: 'RecordingStorageService' });
 const readdir = promisify(fs.readdir);
 const stat = promisify(fs.stat);
 const unlink = promisify(fs.unlink);
@@ -42,13 +43,13 @@ class RecordingStorageService {
   }
   
   async initializeStorage() {
-    console.log('📁 STORAGE: Initializing recording storage directories...');
+    logger.debug('📁 STORAGE: Initializing recording storage directories...');
     
     try {
       // Create all required directories
       for (const [name, dirPath] of Object.entries(this.storagePaths)) {
         await this.ensureDirectory(dirPath);
-        console.log(`📁 STORAGE: ${name} directory ready: ${dirPath}`);
+        logger.debug(`📁 STORAGE: ${name} directory ready: ${dirPath}`);
       }
       
       // Create .gitkeep files to preserve empty directories in version control
@@ -59,10 +60,10 @@ class RecordingStorageService {
         }
       }
       
-      console.log('✅ STORAGE: Storage initialization completed');
+      logger.debug('✅ STORAGE: Storage initialization completed');
       
     } catch (error) {
-      console.error('❌ STORAGE: Failed to initialize storage:', error);
+      logger.error('❌ STORAGE: Failed to initialize storage:', error);
       throw error;
     }
   }
@@ -78,7 +79,7 @@ class RecordingStorageService {
   }
   
   async moveRecording(recordingId, fromStatus, toStatus) {
-    console.log(`📦 STORAGE: Moving recording ${recordingId} from ${fromStatus} to ${toStatus}`);
+    logger.debug(`📦 STORAGE: Moving recording ${recordingId} from ${fromStatus} to ${toStatus}`);
     
     try {
       // Get recording info from database
@@ -110,18 +111,18 @@ class RecordingStorageService {
       // Update database
       await this.updateRecordingFilePath(recordingId, newFilePath, toStatus);
       
-      console.log(`✅ STORAGE: Moved recording ${recordingId} to ${toStatus}`);
+      logger.debug(`✅ STORAGE: Moved recording ${recordingId} to ${toStatus}`);
       
       return { success: true, newPath: newFilePath };
       
     } catch (error) {
-      console.error(`❌ STORAGE: Failed to move recording ${recordingId}:`, error);
+      logger.error(`❌ STORAGE: Failed to move recording ${recordingId}:`, error);
       return { success: false, error: error.message };
     }
   }
   
   async archiveRecording(recordingId) {
-    console.log(`🗄️ STORAGE: Archiving recording ${recordingId}`);
+    logger.debug(`🗄️ STORAGE: Archiving recording ${recordingId}`);
     
     try {
       const result = await this.moveRecording(recordingId, 'completed', 'archived');
@@ -136,13 +137,13 @@ class RecordingStorageService {
       return result;
       
     } catch (error) {
-      console.error(`❌ STORAGE: Failed to archive recording:`, error);
+      logger.error(`❌ STORAGE: Failed to archive recording:`, error);
       return { success: false, error: error.message };
     }
   }
   
   async deleteRecording(recordingId, userId = 'system') {
-    console.log(`🗑️ STORAGE: Deleting recording ${recordingId}`);
+    logger.debug(`🗑️ STORAGE: Deleting recording ${recordingId}`);
     
     try {
       // Get recording info
@@ -154,20 +155,20 @@ class RecordingStorageService {
       // Delete main file
       if (recording.file_path && fs.existsSync(recording.file_path)) {
         await unlink(recording.file_path);
-        console.log(`🗑️ STORAGE: Deleted file: ${recording.file_path}`);
+        logger.debug(`🗑️ STORAGE: Deleted file: ${recording.file_path}`);
       }
       
       // Delete thumbnail if exists
       if (recording.thumbnail_path && fs.existsSync(recording.thumbnail_path)) {
         await unlink(recording.thumbnail_path);
-        console.log(`🗑️ STORAGE: Deleted thumbnail: ${recording.thumbnail_path}`);
+        logger.debug(`🗑️ STORAGE: Deleted thumbnail: ${recording.thumbnail_path}`);
       }
       
       // Delete metadata file if exists
       const metadataPath = path.join(this.storagePaths.metadata, `${recordingId}.json`);
       if (fs.existsSync(metadataPath)) {
         await unlink(metadataPath);
-        console.log(`🗑️ STORAGE: Deleted metadata: ${metadataPath}`);
+        logger.debug(`🗑️ STORAGE: Deleted metadata: ${metadataPath}`);
       }
       
       // Log deletion event before removing from database
@@ -181,25 +182,25 @@ class RecordingStorageService {
       // Remove from database
       await this.removeRecordingFromDatabase(recordingId);
       
-      console.log(`✅ STORAGE: Recording ${recordingId} deleted completely`);
+      logger.debug(`✅ STORAGE: Recording ${recordingId} deleted completely`);
       
       return { success: true };
       
     } catch (error) {
-      console.error(`❌ STORAGE: Failed to delete recording:`, error);
+      logger.error(`❌ STORAGE: Failed to delete recording:`, error);
       return { success: false, error: error.message };
     }
   }
   
   async cleanupOldRecordings() {
-    console.log('🧹 STORAGE: Starting cleanup of old recordings...');
+    logger.debug('🧹 STORAGE: Starting cleanup of old recordings...');
     
     try {
       let cleanedCount = 0;
       let archivedCount = 0;
       
       if (!this.config.autoCleanupEnabled) {
-        console.log('⏭️ STORAGE: Auto cleanup is disabled');
+        logger.debug('⏭️ STORAGE: Auto cleanup is disabled');
         return { success: true, cleanedCount: 0, archivedCount: 0 };
       }
       
@@ -242,7 +243,7 @@ class RecordingStorageService {
       // Cleanup orphaned files
       const orphanedCount = await this.cleanupOrphanedFiles();
       
-      console.log(`✅ STORAGE: Cleanup completed - Deleted: ${cleanedCount}, Archived: ${archivedCount}, Orphaned: ${orphanedCount}`);
+      logger.debug(`✅ STORAGE: Cleanup completed - Deleted: ${cleanedCount}, Archived: ${archivedCount}, Orphaned: ${orphanedCount}`);
       
       return { 
         success: true, 
@@ -252,13 +253,13 @@ class RecordingStorageService {
       };
       
     } catch (error) {
-      console.error('❌ STORAGE: Failed to cleanup old recordings:', error);
+      logger.error('❌ STORAGE: Failed to cleanup old recordings:', error);
       return { success: false, error: error.message };
     }
   }
   
   async cleanupOrphanedFiles() {
-    console.log('🔍 STORAGE: Checking for orphaned files...');
+    logger.debug('🔍 STORAGE: Checking for orphaned files...');
     
     try {
       let orphanedCount = 0;
@@ -286,7 +287,7 @@ class RecordingStorageService {
               const fileAge = Date.now() - fileStats.mtime.getTime();
               
               if (fileAge > 60 * 60 * 1000) { // 1 hour
-                console.log(`🗑️ STORAGE: Removing orphaned file: ${filePath}`);
+                logger.debug(`🗑️ STORAGE: Removing orphaned file: ${filePath}`);
                 await unlink(filePath);
                 orphanedCount++;
               }
@@ -294,20 +295,20 @@ class RecordingStorageService {
           }
           
         } catch (error) {
-          console.error(`❌ STORAGE: Error checking directory ${dirName}:`, error);
+          logger.error(`❌ STORAGE: Error checking directory ${dirName}:`, error);
         }
       }
       
       return orphanedCount;
       
     } catch (error) {
-      console.error('❌ STORAGE: Failed to cleanup orphaned files:', error);
+      logger.error('❌ STORAGE: Failed to cleanup orphaned files:', error);
       return 0;
     }
   }
   
   async getStorageStatistics() {
-    console.log('📊 STORAGE: Calculating storage statistics...');
+    logger.debug('📊 STORAGE: Calculating storage statistics...');
     
     try {
       const stats = {
@@ -362,7 +363,7 @@ class RecordingStorageService {
       return stats;
       
     } catch (error) {
-      console.error('❌ STORAGE: Failed to calculate storage statistics:', error);
+      logger.error('❌ STORAGE: Failed to calculate storage statistics:', error);
       return null;
     }
   }
@@ -386,7 +387,7 @@ class RecordingStorageService {
           }
         } catch (error) {
           // Skip files that can't be accessed
-          console.warn(`⚠️ STORAGE: Cannot access file ${file}:`, error.message);
+          logger.warn(`⚠️ STORAGE: Cannot access file ${file}:`, error.message);
         }
       }
       
@@ -397,7 +398,7 @@ class RecordingStorageService {
       };
       
     } catch (error) {
-      console.error(`❌ STORAGE: Failed to get directory stats for ${dirPath}:`, error);
+      logger.error(`❌ STORAGE: Failed to get directory stats for ${dirPath}:`, error);
       return { fileCount: 0, totalSize: 0, formattedSize: '0 B' };
     }
   }
@@ -408,11 +409,11 @@ class RecordingStorageService {
       const metadataContent = JSON.stringify(metadata, null, 2);
       fs.writeFileSync(metadataPath, metadataContent);
       
-      console.log(`💾 STORAGE: Saved metadata for recording ${recordingId}`);
+      logger.debug(`💾 STORAGE: Saved metadata for recording ${recordingId}`);
       return { success: true, path: metadataPath };
       
     } catch (error) {
-      console.error(`❌ STORAGE: Failed to save metadata for ${recordingId}:`, error);
+      logger.error(`❌ STORAGE: Failed to save metadata for ${recordingId}:`, error);
       return { success: false, error: error.message };
     }
   }
@@ -431,7 +432,7 @@ class RecordingStorageService {
       return { success: true, metadata };
       
     } catch (error) {
-      console.error(`❌ STORAGE: Failed to load metadata for ${recordingId}:`, error);
+      logger.error(`❌ STORAGE: Failed to load metadata for ${recordingId}:`, error);
       return { success: false, error: error.message };
     }
   }
@@ -441,12 +442,12 @@ class RecordingStorageService {
     setInterval(() => {
       if (this.config.autoCleanupEnabled) {
         this.cleanupOldRecordings().catch(error => {
-          console.error('❌ STORAGE: Periodic cleanup failed:', error);
+          logger.error('❌ STORAGE: Periodic cleanup failed:', error);
         });
       }
     }, 6 * 60 * 60 * 1000);
     
-    console.log('⏰ STORAGE: Periodic cleanup scheduled every 6 hours');
+    logger.debug('⏰ STORAGE: Periodic cleanup scheduled every 6 hours');
   }
   
   async getRecording(recordingId) {
@@ -454,7 +455,7 @@ class RecordingStorageService {
       const query = 'SELECT * FROM recordings WHERE id = ?';
       return await this.getAsync(query, [recordingId]);
     } catch (error) {
-      console.error(`❌ STORAGE: Failed to get recording ${recordingId}:`, error);
+      logger.error(`❌ STORAGE: Failed to get recording ${recordingId}:`, error);
       return null;
     }
   }
@@ -469,7 +470,7 @@ class RecordingStorageService {
       
       await this.runAsync(query, [filePath, status, recordingId]);
     } catch (error) {
-      console.error(`❌ STORAGE: Failed to update recording file path:`, error);
+      logger.error(`❌ STORAGE: Failed to update recording file path:`, error);
     }
   }
   
@@ -477,7 +478,7 @@ class RecordingStorageService {
     try {
       await this.runAsync('DELETE FROM recordings WHERE id = ?', [recordingId]);
     } catch (error) {
-      console.error(`❌ STORAGE: Failed to remove recording from database:`, error);
+      logger.error(`❌ STORAGE: Failed to remove recording from database:`, error);
     }
   }
   
@@ -497,7 +498,7 @@ class RecordingStorageService {
       ]);
       
     } catch (error) {
-      console.error('❌ STORAGE: Failed to log storage event:', error);
+      logger.error('❌ STORAGE: Failed to log storage event:', error);
     }
   }
   
@@ -510,7 +511,7 @@ class RecordingStorageService {
   
   updateConfig(newConfig) {
     this.config = { ...this.config, ...newConfig };
-    console.log('⚙️ STORAGE: Configuration updated:', this.config);
+    logger.debug('⚙️ STORAGE: Configuration updated:', this.config);
   }
   
   getConfig() {

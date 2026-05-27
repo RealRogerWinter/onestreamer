@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'StreamService' });
+
 class StreamService {
   constructor() {
     this.currentStreamer = null;
@@ -98,7 +100,7 @@ class StreamService {
     if (!hasActiveStream && global.mediasoupService) {
       const mediasoupStreamer = global.mediasoupService.currentStreamer;
       if (mediasoupStreamer) {
-        console.log(`⚠️ STREAM: Using MediaSoup fallback for stream status (found: ${mediasoupStreamer})`);
+        logger.debug(`⚠️ STREAM: Using MediaSoup fallback for stream status (found: ${mediasoupStreamer})`);
         hasActiveStream = true;
         streamerId = mediasoupStreamer;
       }

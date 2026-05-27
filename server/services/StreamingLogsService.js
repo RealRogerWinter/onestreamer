@@ -1,6 +1,7 @@
 const { db, runAsync, getAsync, allAsync } = require('../database/database');
 const { v4: uuidv4 } = require('uuid');
 
+const logger = require('../bootstrap/logger').child({ svc: 'StreamingLogsService' });
 class StreamingLogsService {
   constructor() {
     this.activeSessions = new Map(); // Map of streamerId to session data
@@ -24,10 +25,10 @@ class StreamingLogsService {
         WHERE ended_at IS NULL
       `, [endedAt, endedAt]);
 
-      console.log(`🧹 STREAMING LOGS: Cleaned up orphaned sessions on startup`);
+      logger.debug(`🧹 STREAMING LOGS: Cleaned up orphaned sessions on startup`);
       return { success: true };
     } catch (error) {
-      console.error('❌ STREAMING LOGS: Failed to cleanup orphaned sessions:', error);
+      logger.error('❌ STREAMING LOGS: Failed to cleanup orphaned sessions:', error);
       return { success: false, error: error.message };
     }
   }
@@ -40,7 +41,7 @@ class StreamingLogsService {
       // Check if there's already an active session for this streamer
       const existingSession = this.activeSessions.get(streamerId);
       if (existingSession) {
-        console.log(`⚠️ STREAMING LOGS: Session already exists for ${streamerId}, skipping duplicate`);
+        logger.debug(`⚠️ STREAMING LOGS: Session already exists for ${streamerId}, skipping duplicate`);
         return { success: true, sessionId: existingSession.sessionId, duplicate: true };
       }
 
@@ -61,11 +62,11 @@ class StreamingLogsService {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [sessionId, streamerId, streamerName, userId, ipAddress, userAgent, streamType, isViewbot ? 1 : 0, startedAt]);
 
-      console.log(`📝 STREAMING LOGS: Session started for ${streamerName || streamerId} (${ipAddress}) - ViewBot: ${isViewbot}`);
+      logger.debug(`📝 STREAMING LOGS: Session started for ${streamerName || streamerId} (${ipAddress}) - ViewBot: ${isViewbot}`);
 
       return { success: true, sessionId };
     } catch (error) {
-      console.error('❌ STREAMING LOGS: Failed to start session:', error);
+      logger.error('❌ STREAMING LOGS: Failed to start session:', error);
       return { success: false, error: error.message };
     }
   }
@@ -81,7 +82,7 @@ class StreamingLogsService {
       if (!session) {
         // Fallback: Try to end session directly in DB even if not in memory
         // This handles edge cases like rapid reconnects or missed events
-        console.log(`⚠️ STREAMING LOGS: No in-memory session for ${streamerId}, trying DB fallback`);
+        logger.debug(`⚠️ STREAMING LOGS: No in-memory session for ${streamerId}, trying DB fallback`);
 
         const result = await runAsync(`
           UPDATE streaming_logs
@@ -91,7 +92,7 @@ class StreamingLogsService {
           WHERE streamer_id = ? AND ended_at IS NULL
         `, [endedAt, endedAt, disconnectReason, streamerId]);
 
-        console.log(`📝 STREAMING LOGS: DB fallback completed for ${streamerId}`);
+        logger.debug(`📝 STREAMING LOGS: DB fallback completed for ${streamerId}`);
         return { success: true, duration: 0, fallback: true };
       }
 
@@ -113,11 +114,11 @@ class StreamingLogsService {
       // Remove from active sessions
       this.activeSessions.delete(streamerId);
 
-      console.log(`📝 STREAMING LOGS: Session ended for ${streamerId} - Duration: ${duration}s`);
+      logger.debug(`📝 STREAMING LOGS: Session ended for ${streamerId} - Duration: ${duration}s`);
 
       return { success: true, duration };
     } catch (error) {
-      console.error('❌ STREAMING LOGS: Failed to end session:', error);
+      logger.error('❌ STREAMING LOGS: Failed to end session:', error);
       return { success: false, error: error.message };
     }
   }
@@ -141,7 +142,7 @@ class StreamingLogsService {
         `, [viewerCount, session.sessionId]);
       }
     } catch (error) {
-      console.error('❌ STREAMING LOGS: Failed to update viewer peak:', error);
+      logger.error('❌ STREAMING LOGS: Failed to update viewer peak:', error);
     }
   }
 
@@ -156,9 +157,9 @@ class StreamingLogsService {
         WHERE ip_address = ? AND ended_at IS NULL
       `, [ipAddress]);
       
-      console.log(`📝 STREAMING LOGS: Marked active sessions from ${ipAddress} as banned`);
+      logger.debug(`📝 STREAMING LOGS: Marked active sessions from ${ipAddress} as banned`);
     } catch (error) {
-      console.error('❌ STREAMING LOGS: Failed to mark session as banned:', error);
+      logger.error('❌ STREAMING LOGS: Failed to mark session as banned:', error);
     }
   }
 
@@ -273,7 +274,7 @@ class StreamingLogsService {
         active: this.activeSessions.size
       };
     } catch (error) {
-      console.error('❌ STREAMING LOGS: Failed to get logs:', error);
+      logger.error('❌ STREAMING LOGS: Failed to get logs:', error);
       return {
         success: false,
         error: error.message,
@@ -307,7 +308,7 @@ class StreamingLogsService {
         stats
       };
     } catch (error) {
-      console.error('❌ STREAMING LOGS: Failed to get stats:', error);
+      logger.error('❌ STREAMING LOGS: Failed to get stats:', error);
       return {
         success: false,
         error: error.message,
@@ -329,11 +330,11 @@ class StreamingLogsService {
         WHERE started_at < ? AND is_viewbot = 1
       `, [cutoffDate.toISOString()]);
       
-      console.log(`🧹 STREAMING LOGS: Cleaned up old viewbot logs older than ${daysToKeep} days`);
+      logger.debug(`🧹 STREAMING LOGS: Cleaned up old viewbot logs older than ${daysToKeep} days`);
       
       return { success: true };
     } catch (error) {
-      console.error('❌ STREAMING LOGS: Failed to cleanup old logs:', error);
+      logger.error('❌ STREAMING LOGS: Failed to cleanup old logs:', error);
       return { success: false, error: error.message };
     }
   }

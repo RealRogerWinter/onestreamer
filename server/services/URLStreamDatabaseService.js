@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const applyPragmas = require('../database/applyPragmas');
 
+const logger = require('../bootstrap/logger').child({ svc: 'URLStreamDatabaseService' });
 class URLStreamDatabaseService {
   constructor() {
     this.db = null;
@@ -16,7 +17,7 @@ class URLStreamDatabaseService {
     this.schemaPath = path.join(__dirname, '..', 'database', 'url-stream-schema.sql');
     this.initialized = false;
 
-    console.log('📦 URLStreamDatabaseService created');
+    logger.debug('📦 URLStreamDatabaseService created');
   }
 
   /**
@@ -28,12 +29,12 @@ class URLStreamDatabaseService {
     return new Promise((resolve, reject) => {
       this.db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
-          console.error('❌ Error opening database:', err);
+          logger.error('❌ Error opening database:', err);
           reject(err);
           return;
         }
 
-        console.log('✅ URLStreamDatabaseService connected to database');
+        logger.debug('✅ URLStreamDatabaseService connected to database');
 
         // Per-connection PRAGMAs don't propagate from the main handle.
         applyPragmas(this.db)
@@ -64,11 +65,11 @@ class URLStreamDatabaseService {
           for (const statement of statements) {
             this.db.run(statement + ';', (err) => {
               if (err) {
-                console.error('Schema error:', err.message);
+                logger.error('Schema error:', err.message);
               }
             });
           }
-          console.log('✅ URL stream schema initialized');
+          logger.debug('✅ URL stream schema initialized');
           resolve();
         });
       } else {
@@ -432,7 +433,7 @@ class URLStreamDatabaseService {
           if (err) {
             reject(err);
           } else {
-            console.log(`🗑️ Cleaned up URL stream logs older than ${daysOld} days`);
+            logger.debug(`🗑️ Cleaned up URL stream logs older than ${daysOld} days`);
             resolve();
           }
         }

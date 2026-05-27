@@ -13,6 +13,7 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const { spawn } = require('child_process');
 
+const logger = require('../bootstrap/logger').child({ svc: 'WebRTCViewBot' });
 class WebRTCViewBot {
   constructor(botId, videoFile, serverUrl = 'https://onestreamer.live') {
     this.botId = botId;
@@ -24,7 +25,7 @@ class WebRTCViewBot {
     this.socket = null;
     this.xvfbProcess = null;
     
-    console.log(`🌐 WebRTCViewBot ${botId}: Initialized with video ${videoFile}`);
+    logger.debug(`🌐 WebRTCViewBot ${botId}: Initialized with video ${videoFile}`);
   }
 
   /**
@@ -32,7 +33,7 @@ class WebRTCViewBot {
    */
   async initialize() {
     try {
-      console.log(`🚀 WebRTCViewBot ${this.botId}: Launching headless browser...`);
+      logger.debug(`🚀 WebRTCViewBot ${this.botId}: Launching headless browser...`);
       
       // Try to find chromium executable
       const possiblePaths = [
@@ -47,7 +48,7 @@ class WebRTCViewBot {
       for (const path of possiblePaths) {
         if (fs.existsSync(path)) {
           executablePath = path;
-          console.log(`📌 Found Chrome/Chromium at: ${path}`);
+          logger.debug(`📌 Found Chrome/Chromium at: ${path}`);
           break;
         }
       }
@@ -66,7 +67,7 @@ class WebRTCViewBot {
         
         if (xvfbRunning) {
           process.env.DISPLAY = ':99';
-          console.log(`✅ Using existing Xvfb on display :99`);
+          logger.debug(`✅ Using existing Xvfb on display :99`);
         }
       }
       
@@ -108,22 +109,22 @@ class WebRTCViewBot {
       
       // Enable console logging from the page
       this.page.on('console', msg => {
-        console.log(`📟 WebRTCViewBot ${this.botId} [Browser]:`, msg.text());
+        logger.debug(`📟 WebRTCViewBot ${this.botId} [Browser]:`, msg.text());
       });
       
       this.page.on('pageerror', error => {
-        console.error(`❌ WebRTCViewBot ${this.botId} [Browser Error]:`, error.message);
+        logger.error(`❌ WebRTCViewBot ${this.botId} [Browser Error]:`, error.message);
       });
       
       // Navigate to the viewbot streaming page
       const streamUrl = `${this.serverUrl}/viewbot-stream.html?botId=${this.botId}`;
-      console.log(`📺 WebRTCViewBot ${this.botId}: Navigating to ${streamUrl}`);
+      logger.debug(`📺 WebRTCViewBot ${this.botId}: Navigating to ${streamUrl}`);
       await this.page.goto(streamUrl, { waitUntil: 'networkidle2' });
       
-      console.log(`✅ WebRTCViewBot ${this.botId}: Browser initialized`);
+      logger.debug(`✅ WebRTCViewBot ${this.botId}: Browser initialized`);
       
     } catch (error) {
-      console.error(`❌ WebRTCViewBot ${this.botId}: Failed to initialize:`, error);
+      logger.error(`❌ WebRTCViewBot ${this.botId}: Failed to initialize:`, error);
       throw error;
     }
   }
@@ -133,12 +134,12 @@ class WebRTCViewBot {
    */
   async startStreaming() {
     if (this.isStreaming) {
-      console.log(`⚠️ WebRTCViewBot ${this.botId}: Already streaming`);
+      logger.debug(`⚠️ WebRTCViewBot ${this.botId}: Already streaming`);
       return;
     }
     
     try {
-      console.log(`🎬 WebRTCViewBot ${this.botId}: Starting stream with video ${this.videoFile}`);
+      logger.debug(`🎬 WebRTCViewBot ${this.botId}: Starting stream with video ${this.videoFile}`);
       
       // Inject the video file path and start streaming
       const result = await this.page.evaluate(async (videoPath, botId) => {
@@ -152,13 +153,13 @@ class WebRTCViewBot {
       
       if (result.success) {
         this.isStreaming = true;
-        console.log(`✅ WebRTCViewBot ${this.botId}: Streaming started successfully`);
+        logger.debug(`✅ WebRTCViewBot ${this.botId}: Streaming started successfully`);
       } else {
         throw new Error(result.error || 'Failed to start stream');
       }
       
     } catch (error) {
-      console.error(`❌ WebRTCViewBot ${this.botId}: Failed to start streaming:`, error);
+      logger.error(`❌ WebRTCViewBot ${this.botId}: Failed to start streaming:`, error);
       throw error;
     }
   }
@@ -168,12 +169,12 @@ class WebRTCViewBot {
    */
   async stopStreaming() {
     if (!this.isStreaming) {
-      console.log(`⚠️ WebRTCViewBot ${this.botId}: Not streaming`);
+      logger.debug(`⚠️ WebRTCViewBot ${this.botId}: Not streaming`);
       return;
     }
     
     try {
-      console.log(`⏹️ WebRTCViewBot ${this.botId}: Stopping stream...`);
+      logger.debug(`⏹️ WebRTCViewBot ${this.botId}: Stopping stream...`);
       
       // Stop streaming in the browser
       await this.page.evaluate(async () => {
@@ -183,10 +184,10 @@ class WebRTCViewBot {
       });
       
       this.isStreaming = false;
-      console.log(`✅ WebRTCViewBot ${this.botId}: Stream stopped`);
+      logger.debug(`✅ WebRTCViewBot ${this.botId}: Stream stopped`);
       
     } catch (error) {
-      console.error(`❌ WebRTCViewBot ${this.botId}: Error stopping stream:`, error);
+      logger.error(`❌ WebRTCViewBot ${this.botId}: Error stopping stream:`, error);
     }
   }
 
@@ -194,7 +195,7 @@ class WebRTCViewBot {
    * Clean up and close browser
    */
   async cleanup() {
-    console.log(`🧹 WebRTCViewBot ${this.botId}: Cleaning up...`);
+    logger.debug(`🧹 WebRTCViewBot ${this.botId}: Cleaning up...`);
     
     if (this.isStreaming) {
       await this.stopStreaming();
@@ -210,7 +211,7 @@ class WebRTCViewBot {
       this.browser = null;
     }
     
-    console.log(`✅ WebRTCViewBot ${this.botId}: Cleaned up`);
+    logger.debug(`✅ WebRTCViewBot ${this.botId}: Cleaned up`);
   }
 
   /**

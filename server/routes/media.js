@@ -30,6 +30,9 @@
 //   - database is required directly (singleton module).
 
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'media' });
+
 const router = express.Router();
 
 const database = require('../database/database');
@@ -93,7 +96,7 @@ router.get('/stream/active', authenticateAdmin, async (req, res) => {
               });
             });
           } catch (dbError) {
-            console.log('Could not fetch username from database:', dbError.message);
+            logger.debug('Could not fetch username from database:', dbError.message);
           }
         }
       }
@@ -113,7 +116,7 @@ router.get('/stream/active', authenticateAdmin, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error fetching active stream:', error);
+    logger.error('Error fetching active stream:', error);
     res.status(500).json({ error: 'Failed to fetch active stream' });
   }
 });
@@ -132,7 +135,7 @@ router.post('/media/start-ingestion', async (req, res) => {
     const result = await mediaStreamService.startIngestion(streamerId);
     res.json(result);
   } catch (error) {
-    console.error('Media ingestion start failed:', error);
+    logger.error('Media ingestion start failed:', error);
     res.status(500).json({ error: 'Failed to start media ingestion' });
   }
 });

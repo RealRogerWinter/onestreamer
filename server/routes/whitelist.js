@@ -10,6 +10,7 @@
 const express = require('express');
 const { authenticateAdmin } = require('../middleware/auth');
 
+const logger = require('../bootstrap/logger').child({ svc: 'whitelist' });
 module.exports = function whitelistRoutes() {
   const router = express.Router();
 
@@ -58,7 +59,7 @@ module.exports = function whitelistRoutes() {
       }
       res.json({ config: cfg.config, entries });
     } catch (e) {
-      console.error('whitelist/config error:', e);
+      logger.error('whitelist/config error:', e);
       res.status(500).json({ error: e.message });
     }
   });

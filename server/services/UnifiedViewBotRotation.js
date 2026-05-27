@@ -9,6 +9,7 @@
 const simpleViewBotRotationInstance = require('./SimpleViewBotRotation');
 const WebRTCViewBotRotation = require('./WebRTCViewBotRotation');
 
+const logger = require('../bootstrap/logger').child({ svc: 'UnifiedViewBotRotation' });
 class UnifiedViewBotRotation {
   constructor(io, streamService, mediasoupService, livekitService, streamNotifier = null, deps = {}) {
     this.io = io;
@@ -44,7 +45,7 @@ class UnifiedViewBotRotation {
     this.videoFiles = [];
     this.isRotating = false;
 
-    console.log(`🎮 UnifiedViewBotRotation: Initialized with ${this.backendType} backend`);
+    logger.debug(`🎮 UnifiedViewBotRotation: Initialized with ${this.backendType} backend`);
   }
   
   /**
@@ -52,7 +53,7 @@ class UnifiedViewBotRotation {
    */
   async initialize(videoFiles) {
     this.videoFiles = videoFiles;
-    console.log(`📦 UnifiedViewBotRotation: Loading ${videoFiles.length} video files`);
+    logger.debug(`📦 UnifiedViewBotRotation: Loading ${videoFiles.length} video files`);
     
     // Initialize Plain RTP rotation (existing system - use singleton)
     if (!this.plainRtpRotation) {
@@ -77,7 +78,7 @@ class UnifiedViewBotRotation {
     this.mode = 'plainrtp';
     await this.setMode(this.mode);
     
-    console.log('✅ UnifiedViewBotRotation: Both systems initialized');
+    logger.debug('✅ UnifiedViewBotRotation: Both systems initialized');
   }
   
   /**
@@ -88,7 +89,7 @@ class UnifiedViewBotRotation {
       throw new Error(`Invalid mode: ${mode}. Must be 'plainrtp' or 'webrtc'`);
     }
     
-    console.log(`🔄 UnifiedViewBotRotation: Switching to ${mode} mode`);
+    logger.debug(`🔄 UnifiedViewBotRotation: Switching to ${mode} mode`);
     
     // Stop current rotation
     if (this.activeRotation) {
@@ -99,10 +100,10 @@ class UnifiedViewBotRotation {
     if (mode === 'plainrtp' && this.webRtcRotation) {
       this.webRtcRotation.settings.enabled = false;
       await this.webRtcRotation.stopRotation();
-      console.log('🛑 WebRTC rotation disabled');
+      logger.debug('🛑 WebRTC rotation disabled');
     } else if (mode === 'webrtc' && this.plainRtpRotation) {
       // Disable plain RTP if switching to WebRTC
-      console.log('🛑 Plain RTP rotation disabled');
+      logger.debug('🛑 Plain RTP rotation disabled');
     }
 
     // Switch mode
@@ -111,10 +112,10 @@ class UnifiedViewBotRotation {
     if (mode === 'webrtc') {
       this.activeRotation = this.webRtcRotation;
       this.webRtcRotation.settings.enabled = true;
-      console.log('📱 Using WebRTC viewbots (mobile compatible)');
+      logger.debug('📱 Using WebRTC viewbots (mobile compatible)');
     } else {
       this.activeRotation = this.plainRtpRotation;
-      console.log('🖥️ Using Plain RTP viewbots (desktop only)');
+      logger.debug('🖥️ Using Plain RTP viewbots (desktop only)');
     }
     
     // Restart rotation if it was running
@@ -142,7 +143,7 @@ class UnifiedViewBotRotation {
    * Start rotation
    */
   async startRotation() {
-    console.log(`🎬 UnifiedViewBotRotation: Starting rotation in ${this.mode} mode`);
+    logger.debug(`🎬 UnifiedViewBotRotation: Starting rotation in ${this.mode} mode`);
 
     if (!this.activeRotation) {
       throw new Error('Rotation system not initialized');
@@ -157,7 +158,7 @@ class UnifiedViewBotRotation {
    * Stop rotation
    */
   async stopRotation() {
-    console.log('⏹️ UnifiedViewBotRotation: Stopping rotation');
+    logger.debug('⏹️ UnifiedViewBotRotation: Stopping rotation');
 
     this.isRotating = false;
     this._stopWatchdog();
@@ -309,11 +310,11 @@ class UnifiedViewBotRotation {
     const mobileClientCount = clientStats.mobile || 0;
     const desktopClientCount = clientStats.desktop || 0;
     
-    console.log(`📊 Client stats - Mobile: ${mobileClientCount}, Desktop: ${desktopClientCount}`);
+    logger.debug(`📊 Client stats - Mobile: ${mobileClientCount}, Desktop: ${desktopClientCount}`);
     
     // If we have mobile clients and currently in Plain RTP mode, switch to WebRTC
     if (mobileClientCount > 0 && this.mode === 'plainrtp') {
-      console.log('📱 Mobile clients detected, switching to WebRTC mode');
+      logger.debug('📱 Mobile clients detected, switching to WebRTC mode');
       await this.setMode('webrtc');
       return true;
     }
@@ -321,7 +322,7 @@ class UnifiedViewBotRotation {
     // If only desktop clients and currently in WebRTC mode, optionally switch to Plain RTP
     // to save resources (optional optimization)
     if (mobileClientCount === 0 && desktopClientCount > 0 && this.mode === 'webrtc') {
-      console.log('🖥️ Only desktop clients, could switch to Plain RTP to save resources');
+      logger.debug('🖥️ Only desktop clients, could switch to Plain RTP to save resources');
       // Uncomment to enable auto-switch to Plain RTP:
       // await this.setMode('plainrtp');
       // return true;
@@ -334,7 +335,7 @@ class UnifiedViewBotRotation {
    * Cleanup
    */
   async shutdown() {
-    console.log('🛑 UnifiedViewBotRotation: Shutting down');
+    logger.debug('🛑 UnifiedViewBotRotation: Shutting down');
 
     // stopRotation() clears the watchdog; this is the canonical teardown
     // path. The explicit _stopWatchdog() below is defensive in case

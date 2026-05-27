@@ -1,3 +1,5 @@
+const logger = require('../../bootstrap/logger').child({ svc: 'GameBroadcaster' });
+
 /**
  * GameBroadcaster - Handles broadcasting game state updates to clients
  */
@@ -235,7 +237,7 @@ class GameBroadcaster {
             const sockets = await this.io.in(this.GAME_ROOM).fetchSockets();
             return sockets.length;
         } catch (error) {
-            console.error('[GameBroadcaster] Error getting room size:', error);
+            logger.error('[GameBroadcaster] Error getting room size:', error);
             return 0;
         }
     }

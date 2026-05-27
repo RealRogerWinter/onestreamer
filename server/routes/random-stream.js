@@ -6,6 +6,7 @@
 
 const express = require('express');
 
+const logger = require('../bootstrap/logger').child({ svc: 'random-stream' });
 /**
  * Create random stream router
  * @param {RandomStreamRotationService} rotationService - The rotation service
@@ -24,7 +25,7 @@ module.exports = function(rotationService) {
       const status = rotationService.getStatus();
       res.json(status);
     } catch (error) {
-      console.error('Error getting random stream status:', error);
+      logger.error('Error getting random stream status:', error);
       res.status(500).json({ error: 'Failed to get status' });
     }
   });
@@ -50,7 +51,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error starting random stream rotation:', error);
+      logger.error('Error starting random stream rotation:', error);
       res.status(500).json({ error: error.message || 'Failed to start rotation' });
     }
   });
@@ -73,7 +74,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error stopping random stream rotation:', error);
+      logger.error('Error stopping random stream rotation:', error);
       res.status(500).json({ error: 'Failed to stop rotation' });
     }
   });
@@ -105,7 +106,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error forcing rotation:', error);
+      logger.error('Error forcing rotation:', error);
       res.status(500).json({ error: 'Failed to rotate' });
     }
   });
@@ -136,7 +137,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error extending rotation:', error);
+      logger.error('Error extending rotation:', error);
       res.status(500).json({ error: 'Failed to extend rotation' });
     }
   });
@@ -150,7 +151,7 @@ module.exports = function(rotationService) {
       const status = rotationService.getExtendCooldownStatus();
       res.json(status);
     } catch (error) {
-      console.error('Error getting extend cooldown:', error);
+      logger.error('Error getting extend cooldown:', error);
       res.status(500).json({ error: 'Failed to get cooldown status' });
     }
   });
@@ -179,7 +180,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error admin extending rotation:', error);
+      logger.error('Error admin extending rotation:', error);
       res.status(500).json({ error: 'Failed to extend rotation' });
     }
   });
@@ -210,7 +211,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error reducing rotation:', error);
+      logger.error('Error reducing rotation:', error);
       res.status(500).json({ error: 'Failed to reduce rotation' });
     }
   });
@@ -239,7 +240,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error admin reducing rotation:', error);
+      logger.error('Error admin reducing rotation:', error);
       res.status(500).json({ error: 'Failed to reduce rotation' });
     }
   });
@@ -266,7 +267,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error locking rotation:', error);
+      logger.error('Error locking rotation:', error);
       res.status(500).json({ error: 'Failed to lock rotation' });
     }
   });
@@ -294,7 +295,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error unlocking rotation:', error);
+      logger.error('Error unlocking rotation:', error);
       res.status(500).json({ error: 'Failed to unlock rotation' });
     }
   });
@@ -308,7 +309,7 @@ module.exports = function(rotationService) {
       const status = rotationService.getLockStatus();
       res.json(status);
     } catch (error) {
-      console.error('Error getting lock status:', error);
+      logger.error('Error getting lock status:', error);
       res.status(500).json({ error: 'Failed to get lock status' });
     }
   });
@@ -324,7 +325,7 @@ module.exports = function(rotationService) {
       const status = rotationService.getStatus();
       res.json(status.settings);
     } catch (error) {
-      console.error('Error getting settings:', error);
+      logger.error('Error getting settings:', error);
       res.status(500).json({ error: 'Failed to get settings' });
     }
   });
@@ -387,7 +388,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error updating settings:', error);
+      logger.error('Error updating settings:', error);
       res.status(500).json({ error: 'Failed to update settings' });
     }
   });
@@ -403,7 +404,7 @@ module.exports = function(rotationService) {
       const history = rotationService.getHistory();
       res.json(history);
     } catch (error) {
-      console.error('Error getting history:', error);
+      logger.error('Error getting history:', error);
       res.status(500).json({ error: 'Failed to get history' });
     }
   });
@@ -417,7 +418,7 @@ module.exports = function(rotationService) {
       rotationService.clearStats();
       res.json({ success: true, message: 'History cleared' });
     } catch (error) {
-      console.error('Error clearing history:', error);
+      logger.error('Error clearing history:', error);
       res.status(500).json({ error: 'Failed to clear history' });
     }
   });
@@ -465,7 +466,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error testing find streamer:', error);
+      logger.error('Error testing find streamer:', error);
       res.status(500).json({ error: error.message || 'Failed to find streamer' });
     }
   });
@@ -495,7 +496,7 @@ module.exports = function(rotationService) {
       });
 
     } catch (error) {
-      console.error('Error testing find Kick streamer:', error);
+      logger.error('Error testing find Kick streamer:', error);
       res.status(500).json({ error: error.message || 'Failed to find Kick streamer' });
     }
   });
@@ -509,7 +510,7 @@ module.exports = function(rotationService) {
       const name = rotationService.generateAnimalName();
       res.json({ name });
     } catch (error) {
-      console.error('Error generating name:', error);
+      logger.error('Error generating name:', error);
       res.status(500).json({ error: 'Failed to generate name' });
     }
   });
@@ -551,7 +552,7 @@ module.exports = function(rotationService) {
         }
       });
     } catch (error) {
-      console.error('Error getting current channel:', error);
+      logger.error('Error getting current channel:', error);
       res.status(500).json({ error: 'Failed to get current channel' });
     }
   });

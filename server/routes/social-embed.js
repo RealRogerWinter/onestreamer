@@ -56,6 +56,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 
+const logger = require('../bootstrap/logger').child({ svc: 'social-embed' });
 const BLOG_INDEX_PATH = '/var/www/html/blog/index.html';
 const BLOG_DIR = '/var/www/html/blog';
 const STRAPI_BASE = 'http://127.0.0.1:1337';
@@ -279,7 +280,7 @@ module.exports = function mountSocialEmbedRoutes(app, deps) {
       res.setHeader('Content-Type', 'text/html');
       res.send(html);
     } catch (error) {
-      console.error(`❌ Error generating blog meta tags for ${slug}:`, error);
+      logger.error(`❌ Error generating blog meta tags for ${slug}:`, error);
       // On error, fall back to serving the normal blog page
       res.sendFile(path.join(BLOG_DIR, 'index.html'));
     }
@@ -305,7 +306,7 @@ module.exports = function mountSocialEmbedRoutes(app, deps) {
       res.setHeader('Content-Type', 'text/html');
       res.send(html);
     } catch (error) {
-      console.error(`❌ Error generating clip meta tags for ${clipId}:`, error);
+      logger.error(`❌ Error generating clip meta tags for ${clipId}:`, error);
       res.sendFile(clientBuildIndexPath);
     }
   });

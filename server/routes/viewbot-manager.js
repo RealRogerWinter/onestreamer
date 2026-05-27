@@ -5,6 +5,9 @@
  */
 
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'viewbot-manager' });
+
 const router = express.Router();
 
 // This will be initialized by the server
@@ -15,7 +18,7 @@ let viewBotManager = null;
  */
 function initializeRoutes(manager) {
   viewBotManager = manager;
-  console.log('✅ ViewBot Manager routes initialized');
+  logger.debug('✅ ViewBot Manager routes initialized');
   return router;
 }
 
@@ -34,7 +37,7 @@ router.get('/status', async (req, res) => {
     res.json(status);
     
   } catch (error) {
-    console.error('❌ Failed to get viewbot status:', error);
+    logger.error('❌ Failed to get viewbot status:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -67,7 +70,7 @@ router.post('/toggle-mode', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Failed to toggle viewbot mode:', error);
+    logger.error('❌ Failed to toggle viewbot mode:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -100,7 +103,7 @@ router.post('/create', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Failed to create viewbot:', error);
+    logger.error('❌ Failed to create viewbot:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -127,7 +130,7 @@ router.post('/start/:botId', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Failed to start viewbot:', error);
+    logger.error('❌ Failed to start viewbot:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -154,7 +157,7 @@ router.post('/stop/:botId', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Failed to stop viewbot:', error);
+    logger.error('❌ Failed to stop viewbot:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -181,7 +184,7 @@ router.delete('/:botId', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Failed to destroy viewbot:', error);
+    logger.error('❌ Failed to destroy viewbot:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -205,7 +208,7 @@ router.post('/rotation/start', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Failed to start rotation:', error);
+    logger.error('❌ Failed to start rotation:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -229,7 +232,7 @@ router.post('/rotation/stop', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Failed to stop rotation:', error);
+    logger.error('❌ Failed to stop rotation:', error);
     res.status(500).json({ error: error.message });
   }
 });

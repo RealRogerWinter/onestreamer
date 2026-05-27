@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'chatbots' });
+
 const router = express.Router();
 const { authenticateToken, authenticateAdmin } = require('../middleware/auth');
 const database = require('../database/database');
@@ -11,9 +14,9 @@ function initializeChatBotRoutes(service) {
     
     // Auto-initialize bots after routes are set up
     setTimeout(() => {
-        console.log('🤖 ROUTES: Auto-initializing ChatBot service...');
+        logger.debug('🤖 ROUTES: Auto-initializing ChatBot service...');
         chatBotService.initialize().catch(err => {
-            console.error('❌ ROUTES: Failed to auto-initialize ChatBots:', err);
+            logger.error('❌ ROUTES: Failed to auto-initialize ChatBots:', err);
         });
     }, 3000);
 }
@@ -24,7 +27,7 @@ router.get('/', authenticateAdmin, async (req, res) => {
         const bots = await chatBotService.getAllBots();
         res.json(bots);
     } catch (error) {
-        console.error('Error fetching chatbots:', error);
+        logger.error('Error fetching chatbots:', error);
         res.status(500).json({ error: 'Failed to fetch chatbots' });
     }
 });
@@ -35,7 +38,7 @@ router.get('/config', authenticateAdmin, async (req, res) => {
         const config = await database.getAsync('SELECT * FROM chatbot_config WHERE id = 1');
         res.json(config || { global_prompt: '', updated_at: null });
     } catch (error) {
-        console.error('Error fetching global config:', error);
+        logger.error('Error fetching global config:', error);
         res.status(500).json({ error: 'Failed to fetch global configuration' });
     }
 });
@@ -62,7 +65,7 @@ router.put('/config', authenticateAdmin, async (req, res) => {
         const config = await database.getAsync('SELECT * FROM chatbot_config WHERE id = 1');
         res.json(config);
     } catch (error) {
-        console.error('Error updating global config:', error);
+        logger.error('Error updating global config:', error);
         res.status(500).json({ error: 'Failed to update global configuration' });
     }
 });
@@ -78,7 +81,7 @@ router.get('/models', authenticateAdmin, async (req, res) => {
             current: currentModel
         });
     } catch (error) {
-        console.error('Error fetching available models:', error);
+        logger.error('Error fetching available models:', error);
         res.status(500).json({ error: 'Failed to fetch available models' });
     }
 });
@@ -95,7 +98,7 @@ router.put('/models', authenticateAdmin, async (req, res) => {
         const result = await chatBotService.llmService.switchModel(model);
         res.json(result);
     } catch (error) {
-        console.error('Error switching model:', error);
+        logger.error('Error switching model:', error);
         res.status(500).json({ error: 'Failed to switch model' });
     }
 });
@@ -110,7 +113,7 @@ router.get('/llm-status', authenticateAdmin, async (req, res) => {
             host: chatBotService.llmService.ollama.config.host
         });
     } catch (error) {
-        console.error('Error checking LLM status:', error);
+        logger.error('Error checking LLM status:', error);
         res.status(500).json({ error: 'Failed to check LLM status' });
     }
 });
@@ -121,7 +124,7 @@ router.post('/', authenticateAdmin, async (req, res) => {
         const bot = await chatBotService.createBot(req.body);
         res.status(201).json(bot);
     } catch (error) {
-        console.error('Error creating chatbot:', error);
+        logger.error('Error creating chatbot:', error);
         res.status(500).json({ error: 'Failed to create chatbot' });
     }
 });
@@ -132,7 +135,7 @@ router.put('/:id', authenticateAdmin, async (req, res) => {
         const bot = await chatBotService.updateBot(req.params.id, req.body);
         res.json(bot);
     } catch (error) {
-        console.error('Error updating chatbot:', error);
+        logger.error('Error updating chatbot:', error);
         res.status(500).json({ error: 'Failed to update chatbot' });
     }
 });
@@ -143,7 +146,7 @@ router.delete('/:id', authenticateAdmin, async (req, res) => {
         await chatBotService.deleteBot(req.params.id);
         res.json({ success: true });
     } catch (error) {
-        console.error('Error deleting chatbot:', error);
+        logger.error('Error deleting chatbot:', error);
         res.status(500).json({ error: 'Failed to delete chatbot' });
     }
 });
@@ -154,7 +157,7 @@ router.post('/:id/toggle', authenticateAdmin, async (req, res) => {
         const bot = await chatBotService.toggleBot(req.params.id);
         res.json(bot);
     } catch (error) {
-        console.error('Error toggling chatbot:', error);
+        logger.error('Error toggling chatbot:', error);
         res.status(500).json({ error: 'Failed to toggle chatbot' });
     }
 });
@@ -165,25 +168,25 @@ router.post('/all/enable', authenticateAdmin, async (req, res) => {
         const result = await chatBotService.enableAllBots();
         res.json(result);
     } catch (error) {
-        console.error('Error enabling all chatbots:', error);
+        logger.error('Error enabling all chatbots:', error);
         res.status(500).json({ error: 'Failed to enable all chatbots' });
     }
 });
 
 // Disable all chatbots
 router.post('/all/disable', authenticateAdmin, async (req, res) => {
-    console.log('🔴 API: Disable all chatbots endpoint called');
-    console.log('🔴 API: Request user:', req.user);
-    console.log('🔴 API: Request headers:', req.headers);
+    logger.debug('🔴 API: Disable all chatbots endpoint called');
+    logger.debug('🔴 API: Request user:', req.user);
+    logger.debug('🔴 API: Request headers:', req.headers);
     
     try {
-        console.log('🔴 API: Calling chatBotService.disableAllBots()...');
+        logger.debug('🔴 API: Calling chatBotService.disableAllBots()...');
         const result = await chatBotService.disableAllBots();
-        console.log('🔴 API: disableAllBots result:', result);
+        logger.debug('🔴 API: disableAllBots result:', result);
         res.json(result);
     } catch (error) {
-        console.error('🔴 API: Error disabling all chatbots:', error);
-        console.error('🔴 API: Error stack:', error.stack);
+        logger.error('🔴 API: Error disabling all chatbots:', error);
+        logger.error('🔴 API: Error stack:', error.stack);
         res.status(500).json({ error: 'Failed to disable all chatbots' });
     }
 });
@@ -194,7 +197,7 @@ router.post('/:id/test', authenticateAdmin, async (req, res) => {
         const result = await chatBotService.testBot(req.params.id);
         res.json(result);
     } catch (error) {
-        console.error('Error testing chatbot:', error);
+        logger.error('Error testing chatbot:', error);
         res.status(500).json({ error: 'Failed to test chatbot' });
     }
 });
@@ -206,7 +209,7 @@ router.post('/:id/send', authenticateAdmin, async (req, res) => {
         const result = await chatBotService.sendManualMessage(req.params.id, message);
         res.json(result);
     } catch (error) {
-        console.error('Error sending manual message:', error);
+        logger.error('Error sending manual message:', error);
         res.status(500).json({ error: 'Failed to send message' });
     }
 });
@@ -217,7 +220,7 @@ router.get('/sessions', authenticateAdmin, async (req, res) => {
         const sessions = await chatBotService.getActiveSessions();
         res.json(sessions);
     } catch (error) {
-        console.error('Error fetching sessions:', error);
+        logger.error('Error fetching sessions:', error);
         res.status(500).json({ error: 'Failed to fetch sessions' });
     }
 });
@@ -229,7 +232,7 @@ router.get('/:id/history', authenticateAdmin, async (req, res) => {
         const history = await chatBotService.getMessageHistory(req.params.id, limit);
         res.json(history);
     } catch (error) {
-        console.error('Error fetching message history:', error);
+        logger.error('Error fetching message history:', error);
         res.status(500).json({ error: 'Failed to fetch message history' });
     }
 });
@@ -270,7 +273,7 @@ router.post('/:id/extend-time', authenticateAdmin, async (req, res) => {
             message: `Extended bot time by ${additionalMinutes} minutes`
         });
     } catch (error) {
-        console.error('Error extending bot time:', error);
+        logger.error('Error extending bot time:', error);
         res.status(500).json({ error: 'Failed to extend bot time' });
     }
 });

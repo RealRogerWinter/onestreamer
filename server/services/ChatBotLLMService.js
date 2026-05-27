@@ -1,6 +1,7 @@
 const { Ollama } = require('ollama');
 const database = require('../database/database');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ChatBotLLMService' });
 // Typed errors so callers (VisionBotService) can distinguish "Groq is over
 // quota, back off" from "Groq is unreachable, skip this cycle". A plain
 // generic error couldn't carry the rate-limit metadata.
@@ -281,13 +282,13 @@ class ChatBotLLMService {
             // Use database module directly
             const db = database.db;
             if (!db) {
-                console.log('⚠️ ChatBotLLMService: Database not ready for Groq config');
+                logger.debug('⚠️ ChatBotLLMService: Database not ready for Groq config');
                 return;
             }
             
             db.get(`SELECT * FROM groq_config WHERE id = 1`, (err, row) => {
                 if (err) {
-                    console.error('❌ ChatBotLLMService: Error loading Groq config:', err);
+                    logger.error('❌ ChatBotLLMService: Error loading Groq config:', err);
                     return;
                 }
                 
@@ -297,16 +298,16 @@ class ChatBotLLMService {
                     this.groqModel = row.model || 'llama-3.1-8b-instant';
                     
                     if (this.groqEnabled && this.groqApiKey) {
-                        console.log('✅ ChatBotLLMService: Groq API enabled from database');
+                        logger.debug('✅ ChatBotLLMService: Groq API enabled from database');
                     } else {
-                        console.log('📝 ChatBotLLMService: Groq API disabled or no API key');
+                        logger.debug('📝 ChatBotLLMService: Groq API disabled or no API key');
                     }
                 } else {
-                    console.log('📝 ChatBotLLMService: No Groq config found in database');
+                    logger.debug('📝 ChatBotLLMService: No Groq config found in database');
                 }
             });
         } catch (error) {
-            console.error('❌ ChatBotLLMService: Error loading Groq config:', error);
+            logger.error('❌ ChatBotLLMService: Error loading Groq config:', error);
         }
     }
     
@@ -314,7 +315,7 @@ class ChatBotLLMService {
         try {
             const db = database.db;
             if (!db) {
-                console.log('⚠️ ChatBotLLMService: Database not ready, cannot save Groq config');
+                logger.debug('⚠️ ChatBotLLMService: Database not ready, cannot save Groq config');
                 return;
             }
             
@@ -329,13 +330,13 @@ class ChatBotLLMService {
                 this.groqModel
             ], (err) => {
                 if (err) {
-                    console.error('❌ ChatBotLLMService: Error saving Groq config:', err);
+                    logger.error('❌ ChatBotLLMService: Error saving Groq config:', err);
                 } else {
-                    console.log('💾 ChatBotLLMService: Groq config saved to database');
+                    logger.debug('💾 ChatBotLLMService: Groq config saved to database');
                 }
             });
         } catch (error) {
-            console.error('❌ ChatBotLLMService: Error saving Groq config:', error);
+            logger.error('❌ ChatBotLLMService: Error saving Groq config:', error);
         }
     }
 
@@ -348,10 +349,10 @@ class ChatBotLLMService {
                 this.isAvailable = models.some(m => m.name.includes(this.model));
                 
                 if (!this.isAvailable) {
-                    console.log(`⚠️ ChatBot LLM: Model ${this.model} not found. Available models:`, models.map(m => m.name));
-                    console.log(`💡 ChatBot LLM: To install, run: ollama pull ${this.model}`);
+                    logger.debug(`⚠️ ChatBot LLM: Model ${this.model} not found. Available models:`, models.map(m => m.name));
+                    logger.debug(`💡 ChatBot LLM: To install, run: ollama pull ${this.model}`);
                 } else {
-                    console.log(`✅ ChatBot LLM: Connected to Ollama with model ${this.model}`);
+                    logger.debug(`✅ ChatBot LLM: Connected to Ollama with model ${this.model}`);
                 }
                 
                 // Pre-cache available models
@@ -364,8 +365,8 @@ class ChatBotLLMService {
                 }
             }
         } catch (error) {
-            console.log('⚠️ ChatBot LLM: Ollama not available. Using fallback responses.');
-            console.log('💡 To enable AI responses, install Ollama from https://ollama.ai');
+            logger.debug('⚠️ ChatBot LLM: Ollama not available. Using fallback responses.');
+            logger.debug('💡 To enable AI responses, install Ollama from https://ollama.ai');
             this.isAvailable = false;
         }
     }
@@ -377,7 +378,7 @@ class ChatBotLLMService {
         // Check if Groq is enabled for MovieBot responses
         if (this.groqEnabled && this.groqApiKey) {
             try {
-                console.log('🚀 Using Groq API for MovieBot response');
+                logger.debug('🚀 Using Groq API for MovieBot response');
                 const result = await this.callGroqAPI(systemPrompt, userPrompt);
                 return {
                     message: this.cleanResponse(result.message),
@@ -386,7 +387,7 @@ class ChatBotLLMService {
                     responseTime: result.responseTime
                 };
             } catch (error) {
-                console.error('❌ Groq API failed, falling back to Ollama:', error.message);
+                logger.error('❌ Groq API failed, falling back to Ollama:', error.message);
                 // Fall back to Ollama if Groq fails
             }
         }
@@ -405,7 +406,7 @@ class ChatBotLLMService {
         const modelAvailable = await this.isModelAvailable(modelToUse);
         
         if (!modelAvailable) {
-            console.log(`⚠️ Model ${modelToUse} not available, using fallback responses`);
+            logger.debug(`⚠️ Model ${modelToUse} not available, using fallback responses`);
             const fallbackMessage = this.getFallbackResponse(context);
             return {
                 message: fallbackMessage,
@@ -418,7 +419,7 @@ class ChatBotLLMService {
         // Check concurrent requests for this model
         const activeCount = this.activeRequests.get(modelToUse) || 0;
         if (activeCount >= this.MAX_CONCURRENT_PER_MODEL) {
-            console.log(`⚠️ Model ${modelToUse} has ${activeCount} active requests, queueing...`);
+            logger.debug(`⚠️ Model ${modelToUse} has ${activeCount} active requests, queueing...`);
             return this.queueRequest(modelToUse, systemPrompt, userPrompt, personality, modelConfig, exactPrompt);
         }
 
@@ -461,7 +462,7 @@ class ChatBotLLMService {
                 responseTime: response.eval_count ? response.eval_duration / 1000000 : null // Convert to ms
             };
         } catch (error) {
-            console.error(`ChatBot LLM generation error for model ${modelToUse}:`, error.message);
+            logger.error(`ChatBot LLM generation error for model ${modelToUse}:`, error.message);
             const fallbackMessage = this.getFallbackResponse(context);
             return {
                 message: fallbackMessage,
@@ -486,7 +487,7 @@ class ChatBotLLMService {
         // Check if Groq is enabled for chatbot responses
         if (this.groqEnabled && this.groqApiKey) {
             try {
-                console.log('🚀 Using Groq API for chatbot response');
+                logger.debug('🚀 Using Groq API for chatbot response');
                 const result = await this.callGroqAPI(systemPrompt, userPrompt);
                 return {
                     message: this.cleanResponse(result.message),
@@ -495,7 +496,7 @@ class ChatBotLLMService {
                     responseTime: result.responseTime
                 };
             } catch (error) {
-                console.error('❌ Groq API failed, falling back to Ollama:', error.message);
+                logger.error('❌ Groq API failed, falling back to Ollama:', error.message);
                 // Fall back to Ollama if Groq fails
             }
         }
@@ -514,7 +515,7 @@ class ChatBotLLMService {
         const modelAvailable = await this.isModelAvailable(modelToUse);
         
         if (!modelAvailable) {
-            console.log(`⚠️ Model ${modelToUse} not available, using fallback responses`);
+            logger.debug(`⚠️ Model ${modelToUse} not available, using fallback responses`);
             const fallbackMessage = this.getFallbackResponse(context);
             return {
                 message: fallbackMessage,
@@ -527,7 +528,7 @@ class ChatBotLLMService {
         // Check concurrent requests for this model
         const activeCount = this.activeRequests.get(modelToUse) || 0;
         if (activeCount >= this.MAX_CONCURRENT_PER_MODEL) {
-            console.log(`⚠️ Model ${modelToUse} has ${activeCount} active requests, queueing...`);
+            logger.debug(`⚠️ Model ${modelToUse} has ${activeCount} active requests, queueing...`);
             return this.queueRequest(modelToUse, systemPrompt, userPrompt, personality, modelConfig, exactPrompt);
         }
 
@@ -570,7 +571,7 @@ class ChatBotLLMService {
                 responseTime: response.eval_count ? response.eval_duration / 1000000 : null // Convert to ms
             };
         } catch (error) {
-            console.error(`ChatBot LLM generation error for model ${modelToUse}:`, error.message);
+            logger.error(`ChatBot LLM generation error for model ${modelToUse}:`, error.message);
             const fallbackMessage = this.getFallbackResponse(context);
             return {
                 message: fallbackMessage,
@@ -601,7 +602,7 @@ class ChatBotLLMService {
                 timestamp: Date.now()
             });
             
-            console.log(`📋 Queued request for model ${modelToUse}. Queue length: ${this.requestQueue.length}`);
+            logger.debug(`📋 Queued request for model ${modelToUse}. Queue length: ${this.requestQueue.length}`);
         });
     }
 
@@ -707,10 +708,10 @@ class ChatBotLLMService {
             this.globalPrompt = config?.global_prompt || '';
             if (config?.llm_model) {
                 this.model = config.llm_model;
-                console.log(`🤖 LLM: Loaded model from config: ${this.model}`);
+                logger.debug(`🤖 LLM: Loaded model from config: ${this.model}`);
             }
         } catch (error) {
-            console.error('Failed to load LLM configuration:', error);
+            logger.error('Failed to load LLM configuration:', error);
             this.globalPrompt = 'You are participating in a live stream chat. Be friendly, engaging, and keep responses concise (under 100 characters). Avoid repeating what others have said. Do not use quotes, asterisks for actions, or roleplay formatting.';
         }
     }
@@ -720,7 +721,7 @@ class ChatBotLLMService {
             const config = await database.getAsync('SELECT global_prompt FROM chatbot_config WHERE id = 1');
             this.globalPrompt = config?.global_prompt || '';
         } catch (error) {
-            console.error('Failed to load global prompt:', error);
+            logger.error('Failed to load global prompt:', error);
             this.globalPrompt = 'You are participating in a live stream chat. Be friendly, engaging, and keep responses concise (under 100 characters). Avoid repeating what others have said. Do not use quotes, asterisks for actions, or roleplay formatting.';
         }
     }
@@ -1053,7 +1054,7 @@ class ChatBotLLMService {
                 return available;
             }
         } catch (error) {
-            console.log(`⚠️ Error checking model ${modelName} availability:`, error.message);
+            logger.debug(`⚠️ Error checking model ${modelName} availability:`, error.message);
         }
         return false;
     }
@@ -1081,7 +1082,7 @@ class ChatBotLLMService {
 
     async switchModel(newModel) {
         try {
-            console.log(`🤖 LLM: Switching from ${this.model} to ${newModel}`);
+            logger.debug(`🤖 LLM: Switching from ${this.model} to ${newModel}`);
             
             // Update the database
             await database.runAsync(
@@ -1095,7 +1096,7 @@ class ChatBotLLMService {
             // Re-check availability with the new model
             await this.checkAvailability();
             
-            console.log(`🤖 LLM: Model switched to ${newModel}, available: ${this.isAvailable}`);
+            logger.debug(`🤖 LLM: Model switched to ${newModel}, available: ${this.isAvailable}`);
             
             return {
                 success: true,
@@ -1103,7 +1104,7 @@ class ChatBotLLMService {
                 available: this.isAvailable
             };
         } catch (error) {
-            console.error('Error switching model:', error);
+            logger.error('Error switching model:', error);
             throw error;
         }
     }
@@ -1140,19 +1141,19 @@ class ChatBotLLMService {
             this.groqApiKey = apiKey;
         }
         if (!this.groqApiKey) {
-            console.error('❌ Groq API key not provided');
+            logger.error('❌ Groq API key not provided');
             return false;
         }
         this.groqEnabled = true;
         this.saveGroqConfig(); // Save to database
-        console.log('✅ Groq API enabled for ALL chatbot responses');
+        logger.debug('✅ Groq API enabled for ALL chatbot responses');
         return true;
     }
     
     disableGroq() {
         this.groqEnabled = false;
         this.saveGroqConfig(); // Save to database
-        console.log('✅ Groq API disabled, using local Ollama');
+        logger.debug('✅ Groq API disabled, using local Ollama');
         return true;
     }
     
@@ -1165,7 +1166,7 @@ class ChatBotLLMService {
             this.groqModel = model;
         }
         this.saveGroqConfig();
-        console.log(`✅ Groq settings updated: enabled=${enabled}, hasKey=${!!this.groqApiKey}, model=${this.groqModel}`);
+        logger.debug(`✅ Groq settings updated: enabled=${enabled}, hasKey=${!!this.groqApiKey}, model=${this.groqModel}`);
         return {
             enabled: this.groqEnabled,
             hasApiKey: !!this.groqApiKey,
@@ -1217,7 +1218,7 @@ class ChatBotLLMService {
             const data = await response.json();
             const responseTime = Date.now() - startTime;
 
-            console.log(`⚡ Groq response in ${responseTime}ms`);
+            logger.debug(`⚡ Groq response in ${responseTime}ms`);
 
             return {
                 message: data.choices[0].message.content,
@@ -1225,7 +1226,7 @@ class ChatBotLLMService {
                 responseTime: responseTime
             };
         } catch (error) {
-            console.error('❌ Groq API call failed:', error);
+            logger.error('❌ Groq API call failed:', error);
             throw error;
         }
     }
@@ -1266,7 +1267,7 @@ class ChatBotLLMService {
             const data = await response.json();
             const responseTime = Date.now() - startTime;
 
-            console.log(`⚡ Groq (${model}) response in ${responseTime}ms`);
+            logger.debug(`⚡ Groq (${model}) response in ${responseTime}ms`);
 
             return {
                 message: data.choices[0].message.content,
@@ -1274,7 +1275,7 @@ class ChatBotLLMService {
                 responseTime: responseTime
             };
         } catch (error) {
-            console.error(`❌ Groq API call failed (${model}):`, error);
+            logger.error(`❌ Groq API call failed (${model}):`, error);
             throw error;
         }
     }
@@ -1334,7 +1335,7 @@ class ChatBotLLMService {
         } catch (fetchErr) {
             // Authorization header is in the fetch options object but isn't on
             // the error itself; only log message + name to be safe.
-            console.error(`❌ Groq vision call (${visionModel}) network error:`, fetchErr.name, fetchErr.message);
+            logger.error(`❌ Groq vision call (${visionModel}) network error:`, fetchErr.name, fetchErr.message);
             throw new GroqUnavailableError(`Groq fetch failed: ${fetchErr.message}`, { model: visionModel, cause: fetchErr });
         }
 
@@ -1364,7 +1365,7 @@ class ChatBotLLMService {
         if (!message) {
             throw new GroqUnavailableError('Groq returned empty content', { status: response.status, model: visionModel });
         }
-        console.log(`⚡ Groq vision (${visionModel}) response in ${responseTime}ms`);
+        logger.debug(`⚡ Groq vision (${visionModel}) response in ${responseTime}ms`);
         return {
             message,
             model: visionModel,

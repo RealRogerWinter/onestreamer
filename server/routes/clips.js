@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'clips' });
+
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
@@ -31,7 +34,7 @@ router.get('/status', optionalAuth, async (req, res) => {
       rateLimit
     });
   } catch (error) {
-    console.error('Error getting clipping status:', error);
+    logger.error('Error getting clipping status:', error);
     res.status(500).json({ error: 'Failed to get status' });
   }
 });
@@ -59,7 +62,7 @@ router.get('/', optionalAuth, async (req, res) => {
       ...result
     });
   } catch (error) {
-    console.error('Error listing clips:', error);
+    logger.error('Error listing clips:', error);
     res.status(500).json({ error: 'Failed to fetch clips' });
   }
 });
@@ -86,7 +89,7 @@ router.get('/:clipId', optionalAuth, async (req, res) => {
 
     // Record view (async, don't wait)
     clipService.recordView(clipId, req.user?.id || req.user?.userId, req.ip).catch(err => {
-      console.error('Error recording view:', err);
+      logger.error('Error recording view:', err);
     });
 
     res.json({
@@ -94,7 +97,7 @@ router.get('/:clipId', optionalAuth, async (req, res) => {
       clip
     });
   } catch (error) {
-    console.error('Error fetching clip:', error);
+    logger.error('Error fetching clip:', error);
     res.status(500).json({ error: 'Failed to fetch clip' });
   }
 });
@@ -128,7 +131,7 @@ router.get('/:clipId/chat', optionalAuth, async (req, res) => {
       count: messages.length
     });
   } catch (error) {
-    console.error('Error fetching clip chat:', error);
+    logger.error('Error fetching clip chat:', error);
     res.status(500).json({ error: 'Failed to fetch clip chat' });
   }
 });
@@ -162,7 +165,7 @@ router.get('/:clipId/stream', optionalAuth, async (req, res) => {
     const clipPath = clipStorageService.getClipPath(clipId);
 
     if (!fs.existsSync(clipPath)) {
-      console.error(`Clip file not found: ${clipPath}`);
+      logger.error(`Clip file not found: ${clipPath}`);
       return res.status(404).json({ error: 'Clip file not found' });
     }
 
@@ -200,7 +203,7 @@ router.get('/:clipId/stream', optionalAuth, async (req, res) => {
       fs.createReadStream(clipPath).pipe(res);
     }
   } catch (error) {
-    console.error('Error streaming clip:', error);
+    logger.error('Error streaming clip:', error);
     res.status(500).json({ error: 'Failed to stream clip' });
   }
 });
@@ -232,7 +235,7 @@ router.get('/:clipId/thumbnail', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
     fs.createReadStream(thumbnailPath).pipe(res);
   } catch (error) {
-    console.error('Error fetching thumbnail:', error);
+    logger.error('Error fetching thumbnail:', error);
     res.status(500).json({ error: 'Failed to fetch thumbnail' });
   }
 });
@@ -256,7 +259,7 @@ router.get('/user/:userId', optionalAuth, async (req, res) => {
       clips
     });
   } catch (error) {
-    console.error('Error fetching user clips:', error);
+    logger.error('Error fetching user clips:', error);
     res.status(500).json({ error: 'Failed to fetch clips' });
   }
 });
@@ -279,7 +282,7 @@ router.get('/my/all', authenticateToken, async (req, res) => {
       clips
     });
   } catch (error) {
-    console.error('Error fetching user clips:', error);
+    logger.error('Error fetching user clips:', error);
     res.status(500).json({ error: 'Failed to fetch clips' });
   }
 });
@@ -315,7 +318,7 @@ router.post('/', authenticateToken, async (req, res) => {
       ...result
     });
   } catch (error) {
-    console.error('Error creating clip:', error);
+    logger.error('Error creating clip:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -364,7 +367,7 @@ router.post('/live', optionalAuth, async (req, res) => {
       rateLimit
     });
   } catch (error) {
-    console.error('Error creating live clip:', error);
+    logger.error('Error creating live clip:', error);
 
     // Return 429 for rate limit errors
     const statusCode = error.message.includes('wait') ||
@@ -392,7 +395,7 @@ router.patch('/:clipId', authenticateToken, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error updating clip:', error);
+    logger.error('Error updating clip:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -414,7 +417,7 @@ router.delete('/:clipId', authenticateToken, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting clip:', error);
+    logger.error('Error deleting clip:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -439,7 +442,7 @@ router.get('/admin/stats', authenticateAdmin, async (req, res) => {
       processorStatus
     });
   } catch (error) {
-    console.error('Error fetching clip stats:', error);
+    logger.error('Error fetching clip stats:', error);
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
@@ -461,7 +464,7 @@ router.get('/admin/queue', authenticateAdmin, async (req, res) => {
       status
     });
   } catch (error) {
-    console.error('Error fetching queue:', error);
+    logger.error('Error fetching queue:', error);
     res.status(500).json({ error: 'Failed to fetch queue' });
   }
 });
@@ -487,7 +490,7 @@ router.get('/admin/all', authenticateAdmin, async (req, res) => {
       ...result
     });
   } catch (error) {
-    console.error('Error listing all clips:', error);
+    logger.error('Error listing all clips:', error);
     res.status(500).json({ error: 'Failed to fetch clips' });
   }
 });
@@ -505,7 +508,7 @@ router.delete('/admin/:clipId', authenticateAdmin, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting clip:', error);
+    logger.error('Error deleting clip:', error);
     res.status(400).json({ error: error.message });
   }
 });

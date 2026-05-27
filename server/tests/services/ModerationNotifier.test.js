@@ -11,6 +11,14 @@
 //   - botOutputDropped(): emits 'moderation-bot-output-dropped' to admin room.
 //   - MODERATION_EVENT_DECISIONS set is the authoritative enum mirror.
 
+// PR 12.3 (ADR-0020): see ModerationService.test.js for the pattern.
+jest.mock('../../bootstrap/logger', () => {
+  const m = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), fatal: jest.fn(), trace: jest.fn() };
+  m.child = jest.fn(() => m);
+  return m;
+});
+const logger = require('../../bootstrap/logger');
+
 const ModerationNotifier = require('../../services/ModerationNotifier');
 
 function makeIo() {
@@ -54,7 +62,7 @@ describe('ModerationNotifier', () => {
     test('suppresses emit when event missing', () => {
       const io = makeIo();
       const n = new ModerationNotifier(io);
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      logger.warn.mockClear(); const warnSpy = logger.warn;
       n.eventCreated({});
       n.eventCreated();
       expect(io._adminRoom.emit).not.toHaveBeenCalled();
@@ -65,7 +73,7 @@ describe('ModerationNotifier', () => {
     test('suppresses emit when event lacks final_decision', () => {
       const io = makeIo();
       const n = new ModerationNotifier(io);
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      logger.warn.mockClear(); const warnSpy = logger.warn;
       n.eventCreated({ event: { id: 1 } });
       expect(io._adminRoom.emit).not.toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalled();
@@ -75,7 +83,7 @@ describe('ModerationNotifier', () => {
     test('warns on unknown final_decision but still emits (forward-compat)', () => {
       const io = makeIo();
       const n = new ModerationNotifier(io);
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      logger.warn.mockClear(); const warnSpy = logger.warn;
       const event = { id: 1, final_decision: 'unknown_future_decision' };
       n.eventCreated({ event });
       expect(io._adminRoom.emit).toHaveBeenCalledWith('moderation-event-created', { event });
@@ -98,7 +106,7 @@ describe('ModerationNotifier', () => {
     test('suppresses emit when event or action missing', () => {
       const io = makeIo();
       const n = new ModerationNotifier(io);
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      logger.warn.mockClear(); const warnSpy = logger.warn;
       n.actionTaken({ event: { id: 1 } });
       n.actionTaken({ action: { kind: 'ban' } });
       n.actionTaken({});
@@ -143,7 +151,7 @@ describe('ModerationNotifier', () => {
     test('suppresses emit when socketId or event missing', () => {
       const io = makeIo();
       const n = new ModerationNotifier(io);
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      logger.warn.mockClear(); const warnSpy = logger.warn;
       n.streamerBanner({ event: { id: 1 } });
       n.streamerBanner({ socketId: 'sock_1' });
       expect(io._socketRoom.emit).not.toHaveBeenCalled();

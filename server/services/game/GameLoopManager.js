@@ -1,3 +1,5 @@
+const logger = require('../../bootstrap/logger').child({ svc: 'GameLoopManager' });
+
 /**
  * GameLoopManager - Handles the server-side game loop
  * Runs at 20 ticks per second for smooth gameplay
@@ -20,7 +22,7 @@ class GameLoopManager {
 
     start() {
         if (this.isRunning) {
-            console.log('[GameLoop] Already running');
+            logger.debug('[GameLoop] Already running');
             return;
         }
 
@@ -40,7 +42,7 @@ class GameLoopManager {
                 this.tickCount++;
                 this.tickCallback(deltaTime, this.tickCount);
             } catch (error) {
-                console.error('[GameLoop] Error in tick callback:', error);
+                logger.error('[GameLoop] Error in tick callback:', error);
             }
 
             // Track tick performance
@@ -52,11 +54,11 @@ class GameLoopManager {
 
             // Warn if tick took too long
             if (tickDuration > this.tickInterval * 0.8) {
-                console.warn(`[GameLoop] Tick ${this.tickCount} took ${tickDuration.toFixed(2)}ms (budget: ${this.tickInterval}ms)`);
+                logger.warn(`[GameLoop] Tick ${this.tickCount} took ${tickDuration.toFixed(2)}ms (budget: ${this.tickInterval}ms)`);
             }
         }, this.tickInterval);
 
-        console.log(`[GameLoop] Started at ${this.tickRate} ticks/second`);
+        logger.debug(`[GameLoop] Started at ${this.tickRate} ticks/second`);
     }
 
     stop() {
@@ -70,7 +72,7 @@ class GameLoopManager {
             this.intervalId = null;
         }
 
-        console.log(`[GameLoop] Stopped after ${this.tickCount} ticks`);
+        logger.debug(`[GameLoop] Stopped after ${this.tickCount} ticks`);
     }
 
     getTickRate() {

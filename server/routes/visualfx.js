@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'visualfx' });
+
 const router = express.Router();
 
 // Get all available visual effects
@@ -13,7 +16,7 @@ router.get('/effects', async (req, res) => {
       totalEffects: effects.length
     });
   } catch (error) {
-    console.error('❌ VISUALFX API: Error getting effects:', error);
+    logger.error('❌ VISUALFX API: Error getting effects:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -51,7 +54,7 @@ router.get('/active/:streamId?', async (req, res) => {
       count: activeEffects.length
     });
   } catch (error) {
-    console.error('❌ VISUALFX API: Error getting active effects:', error);
+    logger.error('❌ VISUALFX API: Error getting active effects:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -115,7 +118,7 @@ router.post('/apply', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('❌ VISUALFX API: Error applying effect:', error);
+    logger.error('❌ VISUALFX API: Error applying effect:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -165,7 +168,7 @@ router.delete('/remove/:effectInstanceId', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ VISUALFX API: Error removing effect:', error);
+    logger.error('❌ VISUALFX API: Error removing effect:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -215,7 +218,7 @@ router.delete('/clear/:streamId?', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ VISUALFX API: Error clearing effects:', error);
+    logger.error('❌ VISUALFX API: Error clearing effects:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -235,7 +238,7 @@ router.get('/stats', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('❌ VISUALFX API: Error getting stats:', error);
+    logger.error('❌ VISUALFX API: Error getting stats:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -264,7 +267,7 @@ router.get('/effect/:effectId', async (req, res) => {
       effect: effect
     });
   } catch (error) {
-    console.error('❌ VISUALFX API: Error getting effect details:', error);
+    logger.error('❌ VISUALFX API: Error getting effect details:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -360,7 +363,7 @@ router.post('/preset/:presetName', async (req, res) => {
             });
           }
         } catch (error) {
-          console.error(`❌ VISUALFX: Error applying preset effect ${effectConfig.effectId}:`, error);
+          logger.error(`❌ VISUALFX: Error applying preset effect ${effectConfig.effectId}:`, error);
         }
       }, effectConfig.delay);
     }
@@ -374,7 +377,7 @@ router.post('/preset/:presetName', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ VISUALFX API: Error applying preset:', error);
+    logger.error('❌ VISUALFX API: Error applying preset:', error);
     res.status(500).json({
       success: false,
       error: error.message

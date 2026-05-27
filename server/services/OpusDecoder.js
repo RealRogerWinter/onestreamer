@@ -3,6 +3,7 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'OpusDecoder' });
 class OpusDecoder extends EventEmitter {
     constructor() {
         super();
@@ -16,7 +17,7 @@ class OpusDecoder extends EventEmitter {
             fs.mkdirSync(this.tempDir, { recursive: true });
         }
         
-        console.log(`🎵 OpusDecoder: Initialized with temp dir: ${this.tempDir}`);
+        logger.debug(`🎵 OpusDecoder: Initialized with temp dir: ${this.tempDir}`);
     }
     
     createOpusStreamFromRtp(payloads) {
@@ -36,7 +37,7 @@ class OpusDecoder extends EventEmitter {
         // Combine all payloads
         const combinedPayloads = Buffer.concat(payloads);
         
-        console.log(`🎵 OpusDecoder: Created Opus stream - header: ${opusHeader.length}, data: ${combinedPayloads.length}`);
+        logger.debug(`🎵 OpusDecoder: Created Opus stream - header: ${opusHeader.length}, data: ${combinedPayloads.length}`);
         
         return Buffer.concat([opusHeader, combinedPayloads]);
     }
@@ -58,7 +59,7 @@ class OpusDecoder extends EventEmitter {
                     outputFile
                 ];
                 
-                console.log(`🎵 OpusDecoder: Running FFmpeg: ${ffmpegArgs.join(' ')}`);
+                logger.debug(`🎵 OpusDecoder: Running FFmpeg: ${ffmpegArgs.join(' ')}`);
                 const ffmpeg = spawn('ffmpeg', ffmpegArgs);
                 
                 let stderr = '';
@@ -69,7 +70,7 @@ class OpusDecoder extends EventEmitter {
                 ffmpeg.on('close', (code) => {
                     if (code === 0 && fs.existsSync(outputFile)) {
                         const pcmData = fs.readFileSync(outputFile);
-                        console.log(`🎵 OpusDecoder: Successfully decoded ${pcmData.length} bytes of PCM`);
+                        logger.debug(`🎵 OpusDecoder: Successfully decoded ${pcmData.length} bytes of PCM`);
                         
                         // Clean up temp file
                         try {
@@ -80,14 +81,14 @@ class OpusDecoder extends EventEmitter {
                         
                         resolve(pcmData);
                     } else {
-                        console.error(`🎵 OpusDecoder: FFmpeg failed with code ${code}`);
-                        console.error(`🎵 OpusDecoder: FFmpeg stderr:`, stderr);
+                        logger.error(`🎵 OpusDecoder: FFmpeg failed with code ${code}`);
+                        logger.error(`🎵 OpusDecoder: FFmpeg stderr:`, stderr);
                         reject(new Error(`FFmpeg failed with code ${code}: ${stderr}`));
                     }
                 });
                 
                 ffmpeg.on('error', (error) => {
-                    console.error(`🎵 OpusDecoder: FFmpeg process error:`, error);
+                    logger.error(`🎵 OpusDecoder: FFmpeg process error:`, error);
                     reject(error);
                 });
                 
@@ -101,7 +102,7 @@ class OpusDecoder extends EventEmitter {
         // Process RTP Opus payloads by creating proper Opus frames
         
         try {
-            console.log(`🎵 OpusDecoder: Processing ${payloads.length} RTP payloads`);
+            logger.debug(`🎵 OpusDecoder: Processing ${payloads.length} RTP payloads`);
             
             // Create proper Opus stream from RTP payloads
             const opusStream = this.createOpusStreamFromRtp(payloads);
@@ -111,7 +112,7 @@ class OpusDecoder extends EventEmitter {
             const inputFile = path.join(this.tempDir, `rtp_opus_${this.sessionId}_${this.chunkIndex}.opus`);
             fs.writeFileSync(inputFile, opusStream);
             
-            console.log(`🎵 OpusDecoder: Created Opus file: ${inputFile} (${opusStream.length} bytes)`);
+            logger.debug(`🎵 OpusDecoder: Created Opus file: ${inputFile} (${opusStream.length} bytes)`);
             
             // Decode the Opus file to PCM
             const pcm = await this.decodeOpusFile(inputFile);
@@ -126,7 +127,7 @@ class OpusDecoder extends EventEmitter {
             return pcm;
             
         } catch (error) {
-            console.error('🎵 OpusDecoder: Failed to decode Opus payloads:', error);
+            logger.error('🎵 OpusDecoder: Failed to decode Opus payloads:', error);
             
             // Return minimal PCM data (not full silence)
             return Buffer.alloc(32000); // 1 second of silence at 16kHz mono
@@ -134,7 +135,7 @@ class OpusDecoder extends EventEmitter {
     }
     
     cleanup() {
-        console.log(`🧹 OpusDecoder: Cleaning up session ${this.sessionId}`);
+        logger.debug(`🧹 OpusDecoder: Cleaning up session ${this.sessionId}`);
         
         // Stop any running FFmpeg process
         if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
@@ -151,9 +152,9 @@ class OpusDecoder extends EventEmitter {
                     cleanedCount++;
                 }
             });
-            console.log(`🧹 OpusDecoder: Cleaned up ${cleanedCount} temp files`);
+            logger.debug(`🧹 OpusDecoder: Cleaned up ${cleanedCount} temp files`);
         } catch (e) {
-            console.error(`🧹 OpusDecoder: Cleanup error:`, e);
+            logger.error(`🧹 OpusDecoder: Cleanup error:`, e);
         }
     }
 }

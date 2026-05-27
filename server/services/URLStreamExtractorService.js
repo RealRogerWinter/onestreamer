@@ -8,6 +8,7 @@
 const { spawn, execSync } = require('child_process');
 const EventEmitter = require('events');
 
+const logger = require('../bootstrap/logger').child({ svc: 'URLStreamExtractorService' });
 class URLStreamExtractorService extends EventEmitter {
   constructor() {
     super();
@@ -42,7 +43,7 @@ class URLStreamExtractorService extends EventEmitter {
         const stats = fs.statSync(this.youtubeCookiesPath);
         if (stats.size > 100) { // More than just header
           this.hasYoutubeCookies = true;
-          console.log('🍪 YouTube cookies file found');
+          logger.debug('🍪 YouTube cookies file found');
         }
       }
     } catch (e) {
@@ -53,7 +54,7 @@ class URLStreamExtractorService extends EventEmitter {
     this.streamInfoCache = new Map();
     this.cacheTTL = 5 * 60 * 1000;
 
-    console.log('🔗 URLStreamExtractorService initialized');
+    logger.debug('🔗 URLStreamExtractorService initialized');
   }
 
   /**
@@ -94,7 +95,7 @@ class URLStreamExtractorService extends EventEmitter {
         return { success: true, platform, qualities, tool: 'streamlink' };
       }
     } catch (err) {
-      console.log(`⚠️ Streamlink quality check failed for ${url}:`, err.message);
+      logger.debug(`⚠️ Streamlink quality check failed for ${url}:`, err.message);
     }
 
     try {
@@ -104,7 +105,7 @@ class URLStreamExtractorService extends EventEmitter {
         return { success: true, platform, qualities, tool: 'yt-dlp' };
       }
     } catch (err) {
-      console.log(`⚠️ yt-dlp quality check failed for ${url}:`, err.message);
+      logger.debug(`⚠️ yt-dlp quality check failed for ${url}:`, err.message);
     }
 
     return { success: false, platform, qualities: [], error: 'No streams found' };
@@ -226,7 +227,7 @@ class URLStreamExtractorService extends EventEmitter {
     // Check if this is a direct HLS URL (e.g., from Kick API)
     // These are always valid and live
     if (url.includes('.m3u8') || url.includes('playback.live-video.net')) {
-      console.log(`📡 Direct HLS URL detected, assuming valid and live`);
+      logger.debug(`📡 Direct HLS URL detected, assuming valid and live`);
       result.valid = true;
       result.isLive = true;
       result.title = 'Live Stream';
@@ -387,7 +388,7 @@ class URLStreamExtractorService extends EventEmitter {
     // Check if this is a direct HLS URL (e.g., from Kick API)
     // These can be passed directly to FFmpeg without streamlink
     if (url.includes('.m3u8') || url.includes('playback.live-video.net')) {
-      console.log(`📡 Using direct HLS URL (no streamlink needed): ${url.substring(0, 80)}...`);
+      logger.debug(`📡 Using direct HLS URL (no streamlink needed): ${url.substring(0, 80)}...`);
       return {
         success: true,
         streamUrl: url,
@@ -407,7 +408,7 @@ class URLStreamExtractorService extends EventEmitter {
     if (platform === 'twitch') {
       try {
         const m3u8 = await this._getYtdlpURL(url, quality);
-        console.log(`📡 Twitch m3u8 resolved via yt-dlp (direct HLS to FFmpeg)`);
+        logger.debug(`📡 Twitch m3u8 resolved via yt-dlp (direct HLS to FFmpeg)`);
         return {
           success: true,
           streamUrl: m3u8,
@@ -418,7 +419,7 @@ class URLStreamExtractorService extends EventEmitter {
           isHLS: true
         };
       } catch (err) {
-        console.warn(`⚠️ Twitch yt-dlp m3u8 resolution failed: ${err.message}`);
+        logger.warn(`⚠️ Twitch yt-dlp m3u8 resolution failed: ${err.message}`);
         throw new Error(`Failed to resolve Twitch stream URL: ${err.message}`);
       }
     }
@@ -426,7 +427,7 @@ class URLStreamExtractorService extends EventEmitter {
     // Other live streaming platforms MUST use pipe mode - direct URLs have expiring tokens
     const liveStreamingPlatforms = ['youtube', 'kick', 'facebook'];
     if (liveStreamingPlatforms.includes(platform)) {
-      console.log(`📡 Using pipe mode for ${platform} (auth tokens expire quickly)`);
+      logger.debug(`📡 Using pipe mode for ${platform} (auth tokens expire quickly)`);
       return {
         success: true,
         streamUrl: url,
@@ -449,7 +450,7 @@ class URLStreamExtractorService extends EventEmitter {
         pipeMode: false // Direct URL mode
       };
     } catch (err) {
-      console.log(`⚠️ Streamlink URL extraction failed:`, err.message);
+      logger.debug(`⚠️ Streamlink URL extraction failed:`, err.message);
     }
 
     try {
@@ -463,7 +464,7 @@ class URLStreamExtractorService extends EventEmitter {
         pipeMode: false
       };
     } catch (err) {
-      console.log(`⚠️ yt-dlp URL extraction failed:`, err.message);
+      logger.debug(`⚠️ yt-dlp URL extraction failed:`, err.message);
     }
 
     // Fallback: Use pipe mode (streamlink outputs to stdout)
@@ -566,7 +567,7 @@ class URLStreamExtractorService extends EventEmitter {
    */
   createStreamPipe(url, quality = 'best') {
     const platform = this.detectPlatform(url);
-    console.log(`🔄 Creating stream pipe for ${url} at quality ${quality} (platform: ${platform})`);
+    logger.debug(`🔄 Creating stream pipe for ${url} at quality ${quality} (platform: ${platform})`);
 
     // Use yt-dlp for YouTube - streamlink has login issues with YouTube
     if (platform === 'youtube') {
@@ -581,7 +582,7 @@ class URLStreamExtractorService extends EventEmitter {
    * Create streamlink pipe process
    */
   _createStreamlinkPipe(url, quality) {
-    console.log(`📺 Using streamlink for ${url}`);
+    logger.debug(`📺 Using streamlink for ${url}`);
 
     const process = spawn(this.streamlinkPath, [
       '--stdout',
@@ -595,7 +596,7 @@ class URLStreamExtractorService extends EventEmitter {
     process.stderr.on('data', (data) => {
       const msg = data.toString();
       if (msg.includes('error') || msg.includes('Error')) {
-        console.error(`❌ Streamlink error: ${msg}`);
+        logger.error(`❌ Streamlink error: ${msg}`);
       }
     });
 
@@ -606,7 +607,7 @@ class URLStreamExtractorService extends EventEmitter {
    * Create yt-dlp pipe process (better for YouTube)
    */
   _createYtdlpPipe(url, quality) {
-    console.log(`📺 Using yt-dlp for ${url}`);
+    logger.debug(`📺 Using yt-dlp for ${url}`);
 
     const platform = this.detectPlatform(url);
 
@@ -652,12 +653,12 @@ class URLStreamExtractorService extends EventEmitter {
     // Add YouTube cookies if available (helps bypass bot detection)
     if (platform === 'youtube' && this.hasYoutubeCookies) {
       args.push('--cookies', this.youtubeCookiesPath);
-      console.log('🍪 Using YouTube cookies for authentication');
+      logger.debug('🍪 Using YouTube cookies for authentication');
     }
 
     args.push(url);
 
-    console.log(`📺 yt-dlp args: ${args.join(' ')}`);
+    logger.debug(`📺 yt-dlp args: ${args.join(' ')}`);
 
     const process = spawn(this.ytdlpPath, args, {
       stdio: ['ignore', 'pipe', 'pipe']
@@ -666,10 +667,10 @@ class URLStreamExtractorService extends EventEmitter {
     process.stderr.on('data', (data) => {
       const msg = data.toString();
       if (msg.includes('ERROR') || msg.includes('error:')) {
-        console.error(`❌ yt-dlp error: ${msg}`);
+        logger.error(`❌ yt-dlp error: ${msg}`);
       } else if (msg.includes('[download]') && !msg.includes('ETA')) {
         // Log download progress occasionally (skip ETA spam)
-        console.log(`📥 yt-dlp: ${msg.trim()}`);
+        logger.debug(`📥 yt-dlp: ${msg.trim()}`);
       }
     });
 
@@ -689,14 +690,14 @@ class URLStreamExtractorService extends EventEmitter {
       execSync(`${this.streamlinkPath} --version`, { timeout: 5000 });
       results.streamlink = true;
     } catch (e) {
-      console.warn('⚠️ streamlink not available');
+      logger.warn('⚠️ streamlink not available');
     }
 
     try {
       execSync(`${this.ytdlpPath} --version`, { timeout: 5000 });
       results.ytdlp = true;
     } catch (e) {
-      console.warn('⚠️ yt-dlp not available');
+      logger.warn('⚠️ yt-dlp not available');
     }
 
     return results;
@@ -707,7 +708,7 @@ class URLStreamExtractorService extends EventEmitter {
    */
   clearCache() {
     this.streamInfoCache.clear();
-    console.log('🗑️ Stream info cache cleared');
+    logger.debug('🗑️ Stream info cache cleared');
   }
 }
 

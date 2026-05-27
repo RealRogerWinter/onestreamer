@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ProcessManager' });
 /**
  * Centralized Process Manager for ViewBot GStreamer processes
  *
@@ -27,7 +28,7 @@ class ProcessManager {
     // Lock to prevent concurrent operations
     this.operationLock = false;
 
-    console.log('🔧 ProcessManager: Initialized centralized process management');
+    logger.debug('🔧 ProcessManager: Initialized centralized process management');
   }
 
   /**
@@ -42,7 +43,7 @@ class ProcessManager {
     const processes = this.activeProcesses.get(botId);
     processes[type] = { pid, comm: this._readComm(pid) };
 
-    console.log(`📝 ProcessManager: Registered ${type} process ${pid} for bot ${botId}`);
+    logger.debug(`📝 ProcessManager: Registered ${type} process ${pid} for bot ${botId}`);
   }
 
 
@@ -54,11 +55,11 @@ class ProcessManager {
   async killBotProcesses(botId) {
     const processes = this.activeProcesses.get(botId);
     if (!processes) {
-      console.log(`⚠️ ProcessManager: No processes registered for bot ${botId}`);
+      logger.debug(`⚠️ ProcessManager: No processes registered for bot ${botId}`);
       return;
     }
 
-    console.log(`🔫 ProcessManager: Killing all processes for bot ${botId}`);
+    logger.debug(`🔫 ProcessManager: Killing all processes for bot ${botId}`);
 
     for (const [type, entry] of Object.entries(processes)) {
       // entry may be the legacy bare-number shape OR the new { pid, comm }
@@ -68,11 +69,11 @@ class ProcessManager {
       if (pid) {
         try {
           // Use process group kill on Linux
-          console.log(`   Killing ${type} process group -${pid}`);
+          logger.debug(`   Killing ${type} process group -${pid}`);
           execSync(`kill -9 -${pid}`, { stdio: 'ignore' });
         } catch (error) {
           // Process might already be dead
-          console.log(`   Process ${pid} already terminated`);
+          logger.debug(`   Process ${pid} already terminated`);
         }
       }
     }
@@ -85,7 +86,7 @@ class ProcessManager {
    * Kill ALL GStreamer processes system-wide (nuclear option)
    */
   async killAllGStreamerProcesses() {
-    console.log('☢️ ProcessManager: NUCLEAR CLEANUP - Killing ALL GStreamer processes');
+    logger.debug('☢️ ProcessManager: NUCLEAR CLEANUP - Killing ALL GStreamer processes');
 
     try {
       // Kill all gst-launch processes
@@ -111,11 +112,11 @@ class ProcessManager {
     this.operationLock = true;
 
     try {
-      console.log(`🎬 ProcessManager: Preparing for bot ${botId} to stream`);
+      logger.debug(`🎬 ProcessManager: Preparing for bot ${botId} to stream`);
 
       // If another bot is streaming, kill it first
       if (this.currentStreamingBot && this.currentStreamingBot !== botId) {
-        console.log(`⚠️ ProcessManager: Bot ${this.currentStreamingBot} is currently streaming, killing it first`);
+        logger.debug(`⚠️ ProcessManager: Bot ${this.currentStreamingBot} is currently streaming, killing it first`);
         await this.killBotProcesses(this.currentStreamingBot);
       }
 
@@ -128,7 +129,7 @@ class ProcessManager {
       // Set as current streaming bot
       this.currentStreamingBot = botId;
 
-      console.log(`✅ ProcessManager: Bot ${botId} is now clear to stream`);
+      logger.debug(`✅ ProcessManager: Bot ${botId} is now clear to stream`);
     } finally {
       this.operationLock = false;
     }
@@ -138,7 +139,7 @@ class ProcessManager {
    * Clean up after a bot stops streaming
    */
   async onBotStopped(botId) {
-    console.log(`🛑 ProcessManager: Bot ${botId} stopped streaming`);
+    logger.debug(`🛑 ProcessManager: Bot ${botId} stopped streaming`);
 
     // Kill any remaining processes
     await this.killBotProcesses(botId);
@@ -259,7 +260,7 @@ class ProcessManager {
     // a correctness clarification than a real race — but the guard makes
     // the invariant explicit.
     if (this._reaping) {
-      console.log('🧹 ProcessManager.reapAll: already in progress, skipping concurrent call');
+      logger.debug('🧹 ProcessManager.reapAll: already in progress, skipping concurrent call');
       return { tracked: 0, alreadyDead: 0, gracefullyExited: 0, sigKilled: 0, pidReuseSkipped: 0, skipped: 'concurrent' };
     }
     this._reaping = true;
@@ -292,11 +293,11 @@ class ProcessManager {
     summary.tracked = targets.length;
 
     if (targets.length === 0) {
-      console.log('🧹 ProcessManager.reapAll: nothing to reap');
+      logger.debug('🧹 ProcessManager.reapAll: nothing to reap');
       return summary;
     }
 
-    console.log(`🧹 ProcessManager.reapAll: reaping ${targets.length} tracked PIDs (graceMs=${graceMs})`);
+    logger.debug(`🧹 ProcessManager.reapAll: reaping ${targets.length} tracked PIDs (graceMs=${graceMs})`);
 
     // Phase 1: SIGTERM the live ones — with the same comm-snapshot
     // PID-reuse defense applied to BOTH signals (review feedback on PR 8.3).
@@ -312,7 +313,7 @@ class ProcessManager {
       if (t.comm !== null) {
         const currentComm = readComm(t.pid);
         if (currentComm !== null && currentComm !== t.comm) {
-          console.warn(
+          logger.warn(
             `🛡️ ProcessManager.reapAll: skipping SIGTERM of PID ${t.pid} (bot=${t.botId}, type=${t.type}) — comm drifted from '${t.comm}' to '${currentComm}', PID likely reused`
           );
           summary.pidReuseSkipped++;
@@ -349,7 +350,7 @@ class ProcessManager {
       if (t.comm !== null) {
         const currentComm = readComm(t.pid);
         if (currentComm !== null && currentComm !== t.comm) {
-          console.warn(
+          logger.warn(
             `🛡️ ProcessManager.reapAll: skipping SIGKILL of PID ${t.pid} (bot=${t.botId}, type=${t.type}) — comm drifted from '${t.comm}' to '${currentComm}', PID likely reused`
           );
           summary.pidReuseSkipped++;
@@ -364,7 +365,7 @@ class ProcessManager {
     this.activeProcesses.clear();
     this.currentStreamingBot = null;
 
-    console.log(
+    logger.debug(
       `🧹 ProcessManager.reapAll: done — ${summary.gracefullyExited} graceful, ${summary.sigKilled} SIGKILLed, ${summary.alreadyDead} already-dead, ${summary.pidReuseSkipped} PID-reuse-skipped (of ${summary.tracked} tracked)`
     );
     return summary;

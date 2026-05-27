@@ -2,6 +2,7 @@ const EventEmitter = require('events');
 const https = require('https');
 const axios = require('axios');
 
+const logger = require('../bootstrap/logger').child({ svc: 'StreamBotService' });
 class StreamBotService extends EventEmitter {
     constructor(database) {
         super();
@@ -253,7 +254,7 @@ class StreamBotService extends EventEmitter {
     async initialize() {
         if (this.isInitialized) return;
 
-        console.log('🤖 Initializing StreamBot Service...');
+        logger.debug('🤖 Initializing StreamBot Service...');
 
         // Start the periodic message system
         await this.startPeriodicMessages();
@@ -262,18 +263,18 @@ class StreamBotService extends EventEmitter {
         await this.startAutoSummon();
 
         this.isInitialized = true;
-        console.log('✅ StreamBot Service initialized');
+        logger.debug('✅ StreamBot Service initialized');
     }
 
     // Service setters for dependency injection
     setChatBotService(chatBotService) {
         this.chatBotService = chatBotService;
-        console.log('🤖 StreamBot: ChatBotService reference set');
+        logger.debug('🤖 StreamBot: ChatBotService reference set');
     }
 
     setChatBotLLMService(chatBotLLMService) {
         this.chatBotLLMService = chatBotLLMService;
-        console.log('🤖 StreamBot: ChatBotLLMService reference set');
+        logger.debug('🤖 StreamBot: ChatBotLLMService reference set');
     }
 
     async startPeriodicMessages() {
@@ -286,11 +287,11 @@ class StreamBotService extends EventEmitter {
         const settings = await this.getSettings();
         
         if (!settings || !settings.enabled) {
-            console.log('🤖 StreamBot periodic messages are disabled');
+            logger.debug('🤖 StreamBot periodic messages are disabled');
             return;
         }
 
-        console.log(`🤖 Starting StreamBot periodic messages (interval: ${settings.interval_minutes} minutes)`);
+        logger.debug(`🤖 Starting StreamBot periodic messages (interval: ${settings.interval_minutes} minutes)`);
         
         // Send a message immediately if it's been long enough
         const lastSent = settings.last_sent_at ? new Date(settings.last_sent_at) : null;
@@ -319,7 +320,7 @@ class StreamBotService extends EventEmitter {
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
-            console.log('🤖 StreamBot periodic messages stopped');
+            logger.debug('🤖 StreamBot periodic messages stopped');
         }
     }
 
@@ -344,10 +345,10 @@ class StreamBotService extends EventEmitter {
             );
 
             if (response.data.success) {
-                console.log('📨 StreamBot message sent to chat service successfully');
+                logger.debug('📨 StreamBot message sent to chat service successfully');
             }
         } catch (error) {
-            console.error('❌ Failed to send StreamBot message to chat:', error.message);
+            logger.error('❌ Failed to send StreamBot message to chat:', error.message);
             // Also emit locally as fallback
             this.emit('sendMessage', message);
         }
@@ -361,7 +362,7 @@ class StreamBotService extends EventEmitter {
             // Get enabled messages ordered by order_index
             const messages = await this.getEnabledMessages();
             if (messages.length === 0) {
-                console.log('🤖 No enabled StreamBot messages to send');
+                logger.debug('🤖 No enabled StreamBot messages to send');
                 return;
             }
 
@@ -376,7 +377,7 @@ class StreamBotService extends EventEmitter {
             // Send message to chat service via HTTP
             await this.sendToChatService(message.message);
             
-            console.log(`🤖 StreamBot sent message ${currentIndex + 1}/${messages.length}: "${message.message.substring(0, 50)}..."`);
+            logger.debug(`🤖 StreamBot sent message ${currentIndex + 1}/${messages.length}: "${message.message.substring(0, 50)}..."`);
 
             // Update the index and last sent time
             const nextIndex = (currentIndex + 1) % messages.length;
@@ -386,7 +387,7 @@ class StreamBotService extends EventEmitter {
             });
 
         } catch (error) {
-            console.error('❌ Error sending StreamBot message:', error);
+            logger.error('❌ Error sending StreamBot message:', error);
         }
     }
 
@@ -585,12 +586,12 @@ class StreamBotService extends EventEmitter {
         const settings = await this.getAutoSummonSettings();
 
         if (!settings || !settings.enabled) {
-            console.log('🤖 StreamBot: Auto-summon is disabled');
+            logger.debug('🤖 StreamBot: Auto-summon is disabled');
             return;
         }
 
         const intervalMs = settings.interval_minutes * 60 * 1000;
-        console.log(`🤖 StreamBot: Starting auto-summon system (interval: ${settings.interval_minutes} minutes)`);
+        logger.debug(`🤖 StreamBot: Starting auto-summon system (interval: ${settings.interval_minutes} minutes)`);
 
         // Check if we should summon immediately (based on last summon time)
         const lastSummoned = settings.last_summoned_at ? new Date(settings.last_summoned_at) : null;
@@ -612,7 +613,7 @@ class StreamBotService extends EventEmitter {
             // Calculate remaining time until next summon
             const remainingMs = intervalMs - msSinceLastSummon;
             const remainingMinutes = Math.round(remainingMs / 1000 / 60);
-            console.log(`🤖 StreamBot: Next auto-summon in ${remainingMinutes} minutes`);
+            logger.debug(`🤖 StreamBot: Next auto-summon in ${remainingMinutes} minutes`);
 
             // Set a timeout for the remaining time, then start regular interval
             this.autoSummonTimeoutId = setTimeout(async () => {
@@ -631,33 +632,33 @@ class StreamBotService extends EventEmitter {
             clearInterval(this.autoSummonIntervalId);
             this.autoSummonIntervalId = null;
         }
-        console.log('🤖 StreamBot: Auto-summon stopped');
+        logger.debug('🤖 StreamBot: Auto-summon stopped');
     }
 
     async autoSummonBot() {
         try {
             const settings = await this.getAutoSummonSettings();
             if (!settings || !settings.enabled) {
-                console.log('🤖 StreamBot: Auto-summon disabled, skipping');
+                logger.debug('🤖 StreamBot: Auto-summon disabled, skipping');
                 return;
             }
 
             // Check if services are available
             if (!this.chatBotService) {
-                console.error('❌ StreamBot: ChatBotService not available for auto-summon');
+                logger.error('❌ StreamBot: ChatBotService not available for auto-summon');
                 return;
             }
 
-            console.log('🎭 StreamBot: Generating character pair via Groq...');
+            logger.debug('🎭 StreamBot: Generating character pair via Groq...');
 
             // Generate a pair of opposing characters using Groq
             const pair = await this.generateCharacterPair();
             if (!pair || !pair.positive || !pair.negative) {
-                console.error('❌ StreamBot: Failed to generate character pair');
+                logger.error('❌ StreamBot: Failed to generate character pair');
                 return;
             }
 
-            console.log(`🎭 StreamBot: Generated pair - ${pair.positive.name} (positive) & ${pair.negative.name} (negative)`);
+            logger.debug(`🎭 StreamBot: Generated pair - ${pair.positive.name} (positive) & ${pair.negative.name} (negative)`);
 
             // Create the positive bot
             const positiveBot = await this.chatBotService.createTemporaryBot({
@@ -697,10 +698,10 @@ class StreamBotService extends EventEmitter {
             const announcement = `👥 Two new viewers just joined! Welcome ${pair.positive.name} and ${pair.negative.name} to the chat!`;
             await this.sendToChatService(announcement);
 
-            console.log(`✅ StreamBot: Auto-summoned pair ${pair.positive.name} & ${pair.negative.name} successfully!`);
+            logger.debug(`✅ StreamBot: Auto-summoned pair ${pair.positive.name} & ${pair.negative.name} successfully!`);
 
         } catch (error) {
-            console.error('❌ StreamBot: Error in auto-summon:', error);
+            logger.error('❌ StreamBot: Error in auto-summon:', error);
         }
     }
 
@@ -708,13 +709,13 @@ class StreamBotService extends EventEmitter {
         try {
             // Check if LLM service is available with Groq
             if (!this.chatBotLLMService) {
-                console.log('⚠️ StreamBot: LLM service not available, using fallback character');
+                logger.debug('⚠️ StreamBot: LLM service not available, using fallback character');
                 return this.generateFallbackCharacter();
             }
 
             const groqStatus = this.chatBotLLMService.getGroqStatus();
             if (!groqStatus.enabled || !groqStatus.hasApiKey) {
-                console.log('⚠️ StreamBot: Groq not available, using fallback character');
+                logger.debug('⚠️ StreamBot: Groq not available, using fallback character');
                 return this.generateFallbackCharacter();
             }
 
@@ -752,7 +753,7 @@ Respond in EXACTLY this JSON format (no other text):
             const result = await this.chatBotLLMService.callGroqAPI(systemPrompt, generationPrompt);
 
             if (!result || !result.message) {
-                console.error('❌ StreamBot: Empty response from Groq');
+                logger.error('❌ StreamBot: Empty response from Groq');
                 return this.generateFallbackCharacter();
             }
 
@@ -768,13 +769,13 @@ Respond in EXACTLY this JSON format (no other text):
                 }
                 character = JSON.parse(cleanedResponse.trim());
             } catch (parseError) {
-                console.error('❌ StreamBot: Failed to parse Groq response:', result.message);
+                logger.error('❌ StreamBot: Failed to parse Groq response:', result.message);
                 return this.generateFallbackCharacter();
             }
 
             // Validate the response
             if (!character.name || !character.personality) {
-                console.error('❌ StreamBot: Invalid character structure from Groq');
+                logger.error('❌ StreamBot: Invalid character structure from Groq');
                 return this.generateFallbackCharacter();
             }
 
@@ -786,7 +787,7 @@ Respond in EXACTLY this JSON format (no other text):
             return character;
 
         } catch (error) {
-            console.error('❌ StreamBot: Error generating character via Groq:', error);
+            logger.error('❌ StreamBot: Error generating character via Groq:', error);
             return this.generateFallbackCharacter();
         }
     }
@@ -876,13 +877,13 @@ Respond in EXACTLY this JSON format (no other text):
         try {
             // Check if LLM service is available with Groq
             if (!this.chatBotLLMService) {
-                console.log('⚠️ StreamBot: LLM service not available, using fallback pair');
+                logger.debug('⚠️ StreamBot: LLM service not available, using fallback pair');
                 return this.generateFallbackPair();
             }
 
             const groqStatus = this.chatBotLLMService.getGroqStatus();
             if (!groqStatus.enabled || !groqStatus.hasApiKey) {
-                console.log('⚠️ StreamBot: Groq not available, using fallback pair');
+                logger.debug('⚠️ StreamBot: Groq not available, using fallback pair');
                 return this.generateFallbackPair();
             }
 
@@ -957,11 +958,11 @@ Respond only with valid JSON, no markdown.`;
             );
 
             if (!result || !result.message) {
-                console.error('❌ StreamBot: Empty response from Groq for pair');
+                logger.error('❌ StreamBot: Empty response from Groq for pair');
                 return this.generateFallbackPair();
             }
 
-            console.log(`🎭 StreamBot: Generated characters using ${result.model}`);
+            logger.debug(`🎭 StreamBot: Generated characters using ${result.model}`);
 
             // Parse the JSON response
             let pair;
@@ -974,13 +975,13 @@ Respond only with valid JSON, no markdown.`;
                 }
                 pair = JSON.parse(cleanedResponse.trim());
             } catch (parseError) {
-                console.error('❌ StreamBot: Failed to parse Groq pair response:', result.message);
+                logger.error('❌ StreamBot: Failed to parse Groq pair response:', result.message);
                 return this.generateFallbackPair();
             }
 
             // Validate the response
             if (!pair.positive || !pair.negative || !pair.positive.name || !pair.negative.name) {
-                console.error('❌ StreamBot: Invalid pair structure from Groq');
+                logger.error('❌ StreamBot: Invalid pair structure from Groq');
                 return this.generateFallbackPair();
             }
 
@@ -993,12 +994,12 @@ Respond only with valid JSON, no markdown.`;
             pair.negative.personality = pair.negative.personality.substring(0, 200);
             pair.negative.generatedPrompt = generationPrompt;
 
-            console.log(`✨ StreamBot: Created contrasting pair - "${pair.positive.name}" vs "${pair.negative.name}"`);
+            logger.debug(`✨ StreamBot: Created contrasting pair - "${pair.positive.name}" vs "${pair.negative.name}"`);
 
             return pair;
 
         } catch (error) {
-            console.error('❌ StreamBot: Error generating character pair via Groq:', error);
+            logger.error('❌ StreamBot: Error generating character pair via Groq:', error);
             return this.generateFallbackPair();
         }
     }
@@ -1095,7 +1096,7 @@ Respond only with valid JSON, no markdown.`;
 
     async triggerManualAutoSummon() {
         // Force an immediate auto-summon (for testing/manual trigger)
-        console.log('🎭 StreamBot: Manual auto-summon triggered');
+        logger.debug('🎭 StreamBot: Manual auto-summon triggered');
         return await this.autoSummonBot();
     }
 }

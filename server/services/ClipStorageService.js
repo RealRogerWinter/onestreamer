@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ClipStorageService' });
 /**
  * ClipStorageService - Manages file storage for clips
  * Handles directory structure, file paths, and cleanup
@@ -21,16 +22,16 @@ class ClipStorageService {
    * Initialize storage directories
    */
   initialize() {
-    console.log('📁 CLIPS: Initializing clip storage directories...');
+    logger.debug('📁 CLIPS: Initializing clip storage directories...');
 
     Object.entries(this.storagePaths).forEach(([name, dir]) => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
-        console.log(`📁 CLIPS: Created directory: ${dir}`);
+        logger.debug(`📁 CLIPS: Created directory: ${dir}`);
       }
     });
 
-    console.log('✅ CLIPS: Storage directories initialized');
+    logger.debug('✅ CLIPS: Storage directories initialized');
   }
 
   /**
@@ -106,13 +107,13 @@ class ClipStorageService {
     if (fs.existsSync(clipPath)) {
       fs.unlinkSync(clipPath);
       result.video = true;
-      console.log(`🗑️ CLIPS: Deleted video for clip ${clipId}`);
+      logger.debug(`🗑️ CLIPS: Deleted video for clip ${clipId}`);
     }
 
     if (fs.existsSync(thumbPath)) {
       fs.unlinkSync(thumbPath);
       result.thumbnail = true;
-      console.log(`🗑️ CLIPS: Deleted thumbnail for clip ${clipId}`);
+      logger.debug(`🗑️ CLIPS: Deleted thumbnail for clip ${clipId}`);
     }
 
     return result;
@@ -142,10 +143,10 @@ class ClipStorageService {
       }
 
       if (deletedCount > 0) {
-        console.log(`🧹 CLIPS: Cleaned up ${deletedCount} temp files`);
+        logger.debug(`🧹 CLIPS: Cleaned up ${deletedCount} temp files`);
       }
     } catch (error) {
-      console.error('❌ CLIPS: Error cleaning up temp files:', error);
+      logger.error('❌ CLIPS: Error cleaning up temp files:', error);
     }
 
     return deletedCount;
@@ -193,7 +194,7 @@ class ClipStorageService {
       stats.total.size = stats.videos.size + stats.thumbnails.size + stats.temp.size;
 
     } catch (error) {
-      console.error('❌ CLIPS: Error getting storage stats:', error);
+      logger.error('❌ CLIPS: Error getting storage stats:', error);
     }
 
     return stats;

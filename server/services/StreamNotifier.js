@@ -1,3 +1,6 @@
+const logger = require('../bootstrap/logger').child({ svc: 'StreamNotifier' });
+const { getTraceId } = require('../bootstrap/trace-context');
+
 // server/services/StreamNotifier.js
 //
 // Single emission chokepoint for the server's `stream-ended` socket event.
@@ -73,15 +76,22 @@ class StreamNotifier {
     const { reason, excludeSocket, ...extras } = opts;
 
     if (!reason) {
-      console.warn('⚠️ STREAM_NOTIFIER: streamEnded() called without `reason` — emit suppressed');
+      logger.warn('⚠️ STREAM_NOTIFIER: streamEnded() called without `reason` — emit suppressed');
       return;
     }
 
     if (!StreamNotifier.REASONS.has(reason)) {
-      console.warn(`⚠️ STREAM_NOTIFIER: unknown stream-ended reason "${reason}" — REASONS set is out of date`);
+      logger.warn(`⚠️ STREAM_NOTIFIER: unknown stream-ended reason "${reason}" — REASONS set is out of date`);
     }
 
-    const payload = { reason, ...extras };
+    // ADR-0020 §4: tag the chokepoint emit with the request-scoped
+    // trace ID so a production grep correlates HTTP route → logs →
+    // socket emit. Conditional spread keeps the key absent (not
+    // present-as-undefined) when emitted from a non-request scope
+    // (background scheduler, etc.) — preserves exact-equality test
+    // assertions and avoids cluttering the payload with `null`s.
+    const _traceId = getTraceId();
+    const payload = { reason, ...extras, ...(_traceId !== undefined && { _traceId }) };
 
     if (excludeSocket) {
       excludeSocket.broadcast.emit('stream-ended', payload);

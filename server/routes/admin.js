@@ -1,4 +1,7 @@
 const express = require('express');
+
+const logger = require('../bootstrap/logger').child({ svc: 'admin' });
+
 const router = express.Router();
 const { authenticateAdmin, authenticateModerator } = require('../middleware/auth');
 const { db, getAsync, allAsync, runAsync } = require('../database/database');
@@ -16,7 +19,7 @@ router.get('/users', authenticateAdmin, async (req, res) => {
         const users = await userRepository.listForAdmin({ search });
         res.json(users);
     } catch (error) {
-        console.error('Error fetching users:', error);
+        logger.error('Error fetching users:', error);
         res.status(500).json({ error: 'Failed to fetch users' });
     }
 });
@@ -37,7 +40,7 @@ router.post('/users/:userId/promote-admin', authenticateAdmin, async (req, res) 
 
         res.json({ message: 'User promoted to admin successfully', userId });
     } catch (error) {
-        console.error('Error promoting user to admin:', error);
+        logger.error('Error promoting user to admin:', error);
         res.status(500).json({ error: 'Failed to promote user to admin' });
     }
 });
@@ -63,7 +66,7 @@ router.post('/users/:userId/demote-admin', authenticateAdmin, async (req, res) =
 
         res.json({ message: 'User demoted from admin successfully', userId });
     } catch (error) {
-        console.error('Error demoting user from admin:', error);
+        logger.error('Error demoting user from admin:', error);
         res.status(500).json({ error: 'Failed to demote user from admin' });
     }
 });
@@ -84,7 +87,7 @@ router.post('/users/:userId/promote-moderator', authenticateAdmin, async (req, r
 
         res.json({ message: 'User promoted to moderator successfully', userId });
     } catch (error) {
-        console.error('Error promoting user to moderator:', error);
+        logger.error('Error promoting user to moderator:', error);
         res.status(500).json({ error: 'Failed to promote user to moderator' });
     }
 });
@@ -105,7 +108,7 @@ router.post('/users/:userId/demote-moderator', authenticateAdmin, async (req, re
 
         res.json({ message: 'User demoted from moderator successfully', userId });
     } catch (error) {
-        console.error('Error demoting user from moderator:', error);
+        logger.error('Error demoting user from moderator:', error);
         res.status(500).json({ error: 'Failed to demote user from moderator' });
     }
 });
@@ -131,7 +134,7 @@ router.post('/users/:userId/ban', authenticateAdmin, async (req, res) => {
 
         res.json({ message: 'User banned successfully', userId });
     } catch (error) {
-        console.error('Error banning user:', error);
+        logger.error('Error banning user:', error);
         res.status(500).json({ error: 'Failed to ban user' });
     }
 });
@@ -152,7 +155,7 @@ router.post('/users/:userId/unban', authenticateAdmin, async (req, res) => {
 
         res.json({ message: 'User unbanned successfully', userId });
     } catch (error) {
-        console.error('Error unbanning user:', error);
+        logger.error('Error unbanning user:', error);
         res.status(500).json({ error: 'Failed to unban user' });
     }
 });
@@ -178,7 +181,7 @@ router.delete('/users/:userId', authenticateAdmin, async (req, res) => {
 
         res.json({ message: 'User deleted successfully', userId });
     } catch (error) {
-        console.error('Error deleting user:', error);
+        logger.error('Error deleting user:', error);
         res.status(500).json({ error: 'Failed to delete user' });
     }
 });
@@ -200,7 +203,7 @@ router.get('/internal/user/:userId/status', async (req, res) => {
             isBanned: user.is_banned === 1
         });
     } catch (error) {
-        console.error('Error fetching user status:', error);
+        logger.error('Error fetching user status:', error);
         res.status(500).json({ error: 'Failed to fetch user status' });
     }
 });
@@ -214,7 +217,7 @@ router.get('/ip-bans', authenticateModerator, async (req, res) => {
         `);
         res.json(ipBans);
     } catch (error) {
-        console.error('Error fetching IP bans:', error);
+        logger.error('Error fetching IP bans:', error);
         res.status(500).json({ error: 'Failed to fetch IP bans' });
     }
 });
@@ -240,7 +243,7 @@ router.post('/ip-bans', authenticateModerator, async (req, res) => {
 
         res.json({ message: 'IP address banned successfully' });
     } catch (error) {
-        console.error('Error banning IP:', error);
+        logger.error('Error banning IP:', error);
         res.status(500).json({ error: 'Failed to ban IP address' });
     }
 });
@@ -257,7 +260,7 @@ router.delete('/ip-bans/:id', authenticateModerator, async (req, res) => {
 
         res.json({ message: 'IP ban removed successfully' });
     } catch (error) {
-        console.error('Error removing IP ban:', error);
+        logger.error('Error removing IP ban:', error);
         res.status(500).json({ error: 'Failed to remove IP ban' });
     }
 });

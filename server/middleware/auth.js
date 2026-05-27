@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const AuthService = require('../services/AuthService');
 const AccountService = require('../services/AccountService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'auth' });
 const authService = new AuthService();
 
 const authenticateToken = async (req, res, next) => {
@@ -40,7 +41,7 @@ const authenticateToken = async (req, res, next) => {
             return res.status(403).json({ error: 'Account is banned' });
         }
     } catch (err) {
-        console.error('Authentication check error:', err);
+        logger.error('Authentication check error:', err);
         // Continue with request if check fails
     }
 
@@ -52,7 +53,7 @@ const authenticateAdmin = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    console.log('🔐 Admin auth check - Token present:', !!token);
+    logger.debug('🔐 Admin auth check - Token present:', !!token);
 
     if (!token) {
         return res.status(401).json({ error: 'Access token required' });
@@ -60,7 +61,7 @@ const authenticateAdmin = async (req, res, next) => {
 
     const decoded = authService.verifyToken(token);
     
-    console.log('🔐 Admin auth - Token decoded:', !!decoded, decoded?.userId || decoded?.id);
+    logger.debug('🔐 Admin auth - Token decoded:', !!decoded, decoded?.userId || decoded?.id);
     
     if (!decoded) {
         return res.status(403).json({ error: 'Invalid or expired token' });
@@ -71,14 +72,14 @@ const authenticateAdmin = async (req, res, next) => {
         const accountService = new AccountService();
         const userRecord = await accountService.getUserById(decoded.userId || decoded.id);
         
-        console.log('🔐 Admin auth - User found:', !!userRecord, 'Is admin:', userRecord?.is_admin);
+        logger.debug('🔐 Admin auth - User found:', !!userRecord, 'Is admin:', userRecord?.is_admin);
         
         if (!userRecord) {
             return res.status(403).json({ error: 'User not found' });
         }
         
         if (!userRecord.is_admin) {
-            console.log('🔐 Admin auth - User is not admin:', userRecord.username);
+            logger.debug('🔐 Admin auth - User is not admin:', userRecord.username);
             return res.status(403).json({ error: 'Admin access required' });
         }
 
@@ -86,12 +87,12 @@ const authenticateAdmin = async (req, res, next) => {
             return res.status(403).json({ error: 'Account is banned' });
         }
         
-        console.log('🔐 Admin auth - Access granted for:', userRecord.username);
+        logger.debug('🔐 Admin auth - Access granted for:', userRecord.username);
         req.user = decoded;
         req.userRecord = userRecord;
         next();
     } catch (err) {
-        console.error('Admin authentication error:', err);
+        logger.error('Admin authentication error:', err);
         return res.status(500).json({ error: 'Authentication failed' });
     }
 };
@@ -100,7 +101,7 @@ const authenticateModerator = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    console.log('🔐 Moderator auth check - Token present:', !!token);
+    logger.debug('🔐 Moderator auth check - Token present:', !!token);
 
     if (!token) {
         return res.status(401).json({ error: 'Access token required' });
@@ -108,7 +109,7 @@ const authenticateModerator = async (req, res, next) => {
 
     const decoded = authService.verifyToken(token);
     
-    console.log('🔐 Moderator auth - Token decoded:', !!decoded, decoded?.id);
+    logger.debug('🔐 Moderator auth - Token decoded:', !!decoded, decoded?.id);
     
     if (!decoded) {
         return res.status(403).json({ error: 'Invalid or expired token' });
@@ -119,14 +120,14 @@ const authenticateModerator = async (req, res, next) => {
         const accountService = new AccountService();
         const userRecord = await accountService.getUserById(decoded.id);
         
-        console.log('🔐 Moderator auth - User found:', !!userRecord, 'Is moderator:', userRecord?.is_moderator, 'Is admin:', userRecord?.is_admin);
+        logger.debug('🔐 Moderator auth - User found:', !!userRecord, 'Is moderator:', userRecord?.is_moderator, 'Is admin:', userRecord?.is_admin);
         
         if (!userRecord) {
             return res.status(403).json({ error: 'User not found' });
         }
         
         if (!userRecord.is_moderator && !userRecord.is_admin) {
-            console.log('🔐 Moderator auth - User is not moderator or admin:', userRecord.username);
+            logger.debug('🔐 Moderator auth - User is not moderator or admin:', userRecord.username);
             return res.status(403).json({ error: 'Moderator access required' });
         }
 
@@ -134,12 +135,12 @@ const authenticateModerator = async (req, res, next) => {
             return res.status(403).json({ error: 'Account is banned' });
         }
         
-        console.log('🔐 Moderator auth - Access granted for:', userRecord.username);
+        logger.debug('🔐 Moderator auth - Access granted for:', userRecord.username);
         req.user = decoded;
         req.userRecord = userRecord;
         next();
     } catch (err) {
-        console.error('Moderator authentication error:', err);
+        logger.error('Moderator authentication error:', err);
         return res.status(500).json({ error: 'Authentication failed' });
     }
 };

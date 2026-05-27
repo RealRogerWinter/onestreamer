@@ -10,6 +10,7 @@ const WorldManager = require('./WorldManager');
 const CollisionManager = require('./CollisionManager');
 const GameBroadcaster = require('./GameBroadcaster');
 
+const logger = require('../../bootstrap/logger').child({ svc: 'GameService' });
 class GameService extends EventEmitter {
     constructor(io, db) {
         super();
@@ -48,7 +49,7 @@ class GameService extends EventEmitter {
         };
         this.lastEnemySpawn = 0;
 
-        console.log('[GameService] Initialized');
+        logger.debug('[GameService] Initialized');
     }
 
     /**
@@ -57,10 +58,10 @@ class GameService extends EventEmitter {
     async initialize() {
         try {
             await this.worldManager.loadWorld();
-            console.log('[GameService] World loaded successfully');
+            logger.debug('[GameService] World loaded successfully');
             this.emit('initialized');
         } catch (error) {
-            console.error('[GameService] Initialization error:', error);
+            logger.error('[GameService] Initialization error:', error);
             throw error;
         }
     }
@@ -70,7 +71,7 @@ class GameService extends EventEmitter {
      */
     async start(adminUserId = null) {
         if (this.isActive) {
-            console.log('[GameService] Game already active');
+            logger.debug('[GameService] Game already active');
             return { success: false, error: 'Game already active' };
         }
 
@@ -94,12 +95,12 @@ class GameService extends EventEmitter {
             // Broadcast game started
             this.broadcaster.broadcastGameStarted(adminUserId);
 
-            console.log(`[GameService] Game started by user ${adminUserId}`);
+            logger.debug(`[GameService] Game started by user ${adminUserId}`);
             this.emit('game-started', { sessionId: this.currentSessionId, startedBy: adminUserId });
 
             return { success: true, sessionId: this.currentSessionId };
         } catch (error) {
-            console.error('[GameService] Error starting game:', error);
+            logger.error('[GameService] Error starting game:', error);
             return { success: false, error: error.message };
         }
     }
@@ -142,12 +143,12 @@ class GameService extends EventEmitter {
             const sessionId = this.currentSessionId;
             this.currentSessionId = null;
 
-            console.log(`[GameService] Game stopped by user ${adminUserId}`);
+            logger.debug(`[GameService] Game stopped by user ${adminUserId}`);
             this.emit('game-stopped', { sessionId, endedBy: adminUserId });
 
             return { success: true };
         } catch (error) {
-            console.error('[GameService] Error stopping game:', error);
+            logger.error('[GameService] Error stopping game:', error);
             return { success: false, error: error.message };
         }
     }
@@ -211,7 +212,7 @@ class GameService extends EventEmitter {
 
             // Debug: Log enemy count every 100 ticks (5 seconds)
             if (tickCount % 100 === 0) {
-                console.log('[GameService] Tick', tickCount, '- Players:', this.playerManager.getPlayerCount(), 'Enemies:', this.enemyManager.getEnemyCount());
+                logger.debug('[GameService] Tick', tickCount, '- Players:', this.playerManager.getPlayerCount(), 'Enemies:', this.enemyManager.getEnemyCount());
             }
 
             // 10. Broadcast state delta (every tick)
@@ -238,7 +239,7 @@ class GameService extends EventEmitter {
                 this.peakPlayers = currentCount;
             }
         } catch (error) {
-            console.error('[GameService] Error in tick:', error);
+            logger.error('[GameService] Error in tick:', error);
         }
     }
 
@@ -294,7 +295,7 @@ class GameService extends EventEmitter {
         await this.recordPlayerSession(userId);
         this.totalPlayers++;
 
-        console.log(`[GameService] Player joined: ${userData.username} (${userId})`);
+        logger.debug(`[GameService] Player joined: ${userData.username} (${userId})`);
         this.emit('player-joined', { player, userId });
 
         return player;
@@ -324,7 +325,7 @@ class GameService extends EventEmitter {
         // Broadcast player left
         this.broadcaster.broadcastPlayerLeft(userId);
 
-        console.log(`[GameService] Player left: ${userId}`);
+        logger.debug(`[GameService] Player left: ${userId}`);
         this.emit('player-left', { userId });
     }
 
@@ -371,22 +372,22 @@ class GameService extends EventEmitter {
      * Handle player attack
      */
     handlePlayerAttack(userId) {
-        console.log('[GameService] Player attack triggered by:', userId);
+        logger.debug('[GameService] Player attack triggered by:', userId);
         const player = this.playerManager.getPlayer(userId);
         if (!player) {
-            console.log('[GameService] Player not found for attack');
+            logger.debug('[GameService] Player not found for attack');
             return;
         }
 
         // Check attack cooldown
         if (!this.playerManager.canAttack(userId)) {
-            console.log('[GameService] Attack on cooldown');
+            logger.debug('[GameService] Attack on cooldown');
             return;
         }
 
         // Mark as attacked
         this.playerManager.markAttacked(userId);
-        console.log('[GameService] Attack executed, checking for enemies');
+        logger.debug('[GameService] Attack executed, checking for enemies');
 
         // Check for enemies in attack range
         const enemies = this.enemyManager.getAllEnemies();
@@ -506,11 +507,11 @@ class GameService extends EventEmitter {
         if (this.enemyManager.getEnemyCount() >= this.enemySpawnConfig.maxEnemies) return;
         if (this.playerManager.getPlayerCount() === 0) return; // No players, no enemies
 
-        console.log('[GameService] Spawning enemy...');
+        logger.debug('[GameService] Spawning enemy...');
         // Spawn a slime enemy
         const enemy = this.spawnEnemy('slime');
         if (enemy) {
-            console.log('[GameService] Enemy spawned:', enemy.id, 'at', enemy.x, enemy.y);
+            logger.debug('[GameService] Enemy spawned:', enemy.id, 'at', enemy.x, enemy.y);
             this.lastEnemySpawn = now;
         }
     }
@@ -610,7 +611,7 @@ class GameService extends EventEmitter {
      */
     getFullState() {
         const enemies = this.enemyManager.getAllEnemiesState();
-        console.log('[GameService] getFullState - enemies:', enemies.length, enemies);
+        logger.debug('[GameService] getFullState - enemies:', enemies.length, enemies);
         return {
             players: this.playerManager.getAllPlayersState(),
             world: this.worldManager.getFullState(),
@@ -684,7 +685,7 @@ class GameService extends EventEmitter {
             `, [startedBy]);
             return result.id;
         } catch (error) {
-            console.error('[GameService] Error creating game session:', error);
+            logger.error('[GameService] Error creating game session:', error);
             return Date.now();
         }
     }
@@ -705,7 +706,7 @@ class GameService extends EventEmitter {
                 WHERE id = ?
             `, [endedBy, this.peakPlayers, this.totalPlayers, this.currentSessionId]);
         } catch (error) {
-            console.error('[GameService] Error ending game session:', error);
+            logger.error('[GameService] Error ending game session:', error);
         }
     }
 
@@ -721,7 +722,7 @@ class GameService extends EventEmitter {
                 VALUES (?, ?, datetime('now'))
             `, [this.currentSessionId, userId]);
         } catch (error) {
-            console.error('[GameService] Error recording player session:', error);
+            logger.error('[GameService] Error recording player session:', error);
         }
     }
 }

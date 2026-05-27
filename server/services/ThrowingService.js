@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'ThrowingService' });
+
 // server/services/ThrowingService.js
 //
 // Stateless orchestrator for the throw-item flow extracted from
@@ -45,7 +47,7 @@ class ThrowingService {
      */
     async startThrow({ user, body, services, io, sessionService, sendSystemMessage, buffNotifier }) {
         const userId = user.userId || user.id;
-        console.log(`🎯 THROW ENDPOINT HIT: User ${user.username} throwing item`, body);
+        logger.debug(`🎯 THROW ENDPOINT HIT: User ${user.username} throwing item`, body);
 
         const { x, y, item, username } = body || {};
 
@@ -67,11 +69,11 @@ class ThrowingService {
 
         // Check if there's an active stream (required for throwing items)
         if (!streamStatus.hasActiveStream) {
-            console.log(`❌ THROW: No active stream to throw item at`);
+            logger.debug(`❌ THROW: No active stream to throw item at`);
             return { ok: false, kind: 'no-active-stream' };
         }
 
-        console.log(`🎯 THROW DEBUG: Throwing item ${item.name} for user ${user.username}`);
+        logger.debug(`🎯 THROW DEBUG: Throwing item ${item.name} for user ${user.username}`);
 
         let result;
         try {
@@ -82,7 +84,7 @@ class ThrowingService {
                 streamId
             );
         } catch (error) {
-            console.error('Error throwing item:', error);
+            logger.error('Error throwing item:', error);
             if (error.message && error.message.includes('cooldown')) {
                 return { ok: false, kind: 'cooldown', message: error.message };
             }
@@ -97,7 +99,7 @@ class ThrowingService {
             // For buff/debuff items like smoke_bomb, apply the buff first to get duration
             let buffDuration = null;
             if (isBuffDebuffItem) {
-                console.log(`🎯 THROW: Item ${fullItem.name} is a buff/debuff, applying after throw`);
+                logger.debug(`🎯 THROW: Item ${fullItem.name} is a buff/debuff, applying after throw`);
 
                 if (buffDebuffService) {
                     // Get the current streamer to determine target
@@ -109,7 +111,7 @@ class ThrowingService {
                     if (!currentStreamerSocketId && mediasoupService) {
                         currentStreamerSocketId = mediasoupService.getCurrentStreamer();
                         if (currentStreamerSocketId) {
-                            console.log(`🎯 THROW: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                            logger.debug(`🎯 THROW: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
                         }
                     }
 
@@ -119,7 +121,7 @@ class ThrowingService {
                         const session = sessionService.getSessionBySocketId(currentStreamerSocketId);
                         if (session && session.userId) {
                             targetUserId = session.userId;
-                            console.log(`🎯 THROW: Found current streamer userId: ${targetUserId}`);
+                            logger.debug(`🎯 THROW: Found current streamer userId: ${targetUserId}`);
                         }
                     }
 
@@ -133,16 +135,16 @@ class ThrowingService {
                                 true, // Skip cooldown validation since we already consumed the item
                                 streamId
                             );
-                            console.log(`🎯 THROW: Applied ${fullItem.display_name} buff/debuff to streamer after throw`);
+                            logger.debug(`🎯 THROW: Applied ${fullItem.display_name} buff/debuff to streamer after throw`);
                             result.buffResult = buffResult;
 
                             // Get the buff duration for the effect
                             if (fullItem.duration_seconds) {
                                 buffDuration = fullItem.duration_seconds;
-                                console.log(`🎯 THROW: Buff duration is ${buffDuration} seconds`);
+                                logger.debug(`🎯 THROW: Buff duration is ${buffDuration} seconds`);
                             }
                         } catch (buffError) {
-                            console.error('Error applying buff/debuff after throw:', buffError);
+                            logger.error('Error applying buff/debuff after throw:', buffError);
                         }
                     }
                 }
@@ -158,7 +160,7 @@ class ThrowingService {
             if (buffDuration) {
                 effectParams.buffDuration = buffDuration;
                 effectParams.triggeredByThrow = true;
-                console.log(`🎯 THROW: Passing buff duration ${buffDuration}s to effect`);
+                logger.debug(`🎯 THROW: Passing buff duration ${buffDuration}s to effect`);
             }
 
             const effect = await canvasFxService.triggerItemEffectAtPosition(
@@ -173,7 +175,7 @@ class ThrowingService {
                 return { ok: false, kind: 'effect-failed' };
             }
 
-            console.log(`🎯 ITEMS: ${user.username} threw ${item.displayName} at (${x}, ${y})`);
+            logger.debug(`🎯 ITEMS: ${user.username} threw ${item.displayName} at (${x}, ${y})`);
 
             // Send configurable StreamBot chat message
             const interactionConfig = canvasFxService.getInteractionConfig({ name: item.name });
@@ -198,7 +200,7 @@ class ThrowingService {
                 });
 
                 if (isInteractiveItem) {
-                    console.log(`🔇 THROW: Flagged interactive item for notification suppression: ${item.display_name}`);
+                    logger.debug(`🔇 THROW: Flagged interactive item for notification suppression: ${item.display_name}`);
                 }
 
                 // Specific inventory update for the user
@@ -233,7 +235,7 @@ class ThrowingService {
                 remainingQuantity: result.remainingQuantity
             };
         } catch (error) {
-            console.error('Error throwing item:', error);
+            logger.error('Error throwing item:', error);
 
             // If the error occurred after consuming the item, we might need to refund it
             // For now, we'll just return the error - this should be rare
