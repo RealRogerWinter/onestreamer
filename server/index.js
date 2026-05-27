@@ -14,13 +14,15 @@
 // 15B.1 PR description.
 //
 //   [extracted] initializeRedis              → bootstrap/redis.js     (15B.2.b — landed)
-//   557–582     getActiveVisualEffects       → services/VisualFxService.js (15B.2.b)
-//   587–623     startVisualEffectSync        → services/VisualFxService.js (15B.2.b)
+//   [deleted]   getActiveVisualEffects       → dead code (no callers) (15B.2.c)
+//   [deleted]   startVisualEffectSync        → dead code (no callers) (15B.2.c)
 //   [extracted] broadcastGlobalCooldown      → services/StreamOrchestration.js (15B.2.a — landed)
 //   [extracted] cleanupViewbotUsername       → services/viewbot/UsernameCache.js (15B.2.b — landed)
 //   [extracted] generateViewbotUsername      → services/viewbot/UsernameCache.js (15B.2.b — landed)
-//   919–1014    getStreamerDisplayName       → services/UserService.js OR keep in index.js
-//                                              with header (lazy-service closure — see audit)
+//   [residual]  getStreamerDisplayName       → stays inline (15B.2.c maintainer
+//                                              call — lazy-service closure
+//                                              prevents clean extraction; see
+//                                              section header at the inline site)
 //   [extracted] enrichStreamStatus           → services/StreamOrchestration.js (15B.2.a — landed)
 //   [extracted] verifyAndEmitStreamReady     → services/StreamOrchestration.js (15B.2.a — landed)
 //
@@ -617,77 +619,17 @@ app.locals.usingAdapter = usingAdapter;
 // it for server/routes/media.js (used by /api/livekit/token).
 app.locals.generateTurnCredentials = generateTurnCredentials;
 
-// Visual Effects Synchronization System
-// Get all active visual effects that should be applied to the stream
-async function getActiveVisualEffects() {
-  try {
-    // Get ALL active buffs with visual effects
-    const visualEffectBuffs = await database.allAsync(`
-      SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data,
-             ab.user_id, ab.remaining_seconds, ab.item_id, ab.buff_type
-      FROM active_buffs ab
-      JOIN items i ON ab.item_id = i.id
-      WHERE ab.is_active = 1 
-        AND ab.remaining_seconds > 0
-        AND i.name IN (
-          'smoke_bomb', 'pixelate', 'emboss', 'thermal_vision', 'rotate_90',
-          'potato', 'upside_down', 'mirror', 'invert_colors', 'darkness',
-          'overexposed', 'glitch_bomb', 'motion_blur', 'freeze_frame',
-          'spotlight', 'disco_ball', 'confetti_cannon', 'rainbow_effect',
-          'stream_reducer'
-        )
-      ORDER BY ab.applied_at DESC
-    `);
-    
-    return visualEffectBuffs || [];
-  } catch (error) {
-    logger.error({ err: error }, '❌ Error getting active visual effects');
-    return [];
-  }
-}
-
-// Periodically sync visual effects with active buffs
-let visualEffectSyncInterval = null;
-
-function startVisualEffectSync() {
-  if (visualEffectSyncInterval) {
-    clearInterval(visualEffectSyncInterval);
-  }
-  
-  visualEffectSyncInterval = setInterval(async () => {
-    try {
-      const currentStreamer = streamService.getCurrentStreamer();
-      if (!currentStreamer) return;
-      
-      const activeVisualEffects = await getActiveVisualEffects();
-      if (activeVisualEffects.length > 0) {
-        // Only log periodically to avoid spam
-        if (Math.random() < 0.1) { // 10% chance to log
-          logger.info(`🔄 VISUAL FX SYNC: ${activeVisualEffects.length} active effects in sync`);
-        }
-        
-        // Broadcast current visual effects state
-        io.emit('visual-effects-sync-pulse', {
-          effects: activeVisualEffects.map(buff => ({
-            effectId: buff.item_name,
-            itemName: buff.item_name,
-            displayName: buff.display_name,
-            remainingSeconds: buff.remaining_seconds,
-            effectData: buff.effect_data
-          })),
-          streamId: currentStreamer,
-          timestamp: Date.now()
-        });
-      }
-    } catch (error) {
-      logger.error({ err: error }, '❌ VISUAL FX SYNC: Error in periodic sync');
-    }
-  }, 5000); // Sync every 5 seconds
-  
-  logger.info('🔄 VISUAL FX SYNC: Started periodic synchronization');
-}
-
-// Sync will be started after server initialization
+// Phase 15B.2.c — getActiveVisualEffects + startVisualEffectSync deleted as
+// dead code. Discovered during the extraction prep: startVisualEffectSync()
+// has zero callers (verified by `grep -rn "startVisualEffectSync" server/
+// client/ chat-service/`). getActiveVisualEffects was only called from
+// inside startVisualEffectSync. The only remaining references are two
+// commented-out blocks in sockets/MediaSoupHandler.js:306 and sockets/
+// StreamHandler.js:159 (visual-effects-sync-pulse paths disabled to debug
+// rotate_90). The "Sync will be started after server initialization"
+// comment lines below those helpers also no-op'd because the boot code
+// never invoked the function. Removed rather than extracted — the truest
+// "state unification" for an unreachable broadcast pulse is no pulse.
 
 // When a buff is applied, ensure visual effects are triggered for all viewers
 buffDebuffService.on('buff-applied', async (buffData) => {
@@ -925,7 +867,22 @@ const generateViewbotUsername = _usernameCache.generate;
 app.locals.viewbotUsernameCache = viewbotUsernameCache;
 app.locals.viewbotSocketIds = viewbotSocketIds;
 
-// Helper function to get streamer display name
+// =========================================================================
+// HELPER: getStreamerDisplayName — Phase 15B residual (kept inline by 15B.2.c).
+// Resolves the human-readable streamer name from one of four sources
+// depending on the stream type (random-rotation URL stream, ViewBotURLService
+// URL stream, viewbot socket, or session/authenticated user). Closes over
+// THREE lazy-init services (`global.randomStreamRotationService`,
+// `global.viewBotURLService`, `viewbotService`) — all assigned inside
+// `startServer()` → `bootstrap/start-streaming-backend.js`. The PR-15B.1
+// closure audit predicted that extracting this would force the destination
+// service to accept those three deps via setters OR force lazy init to move
+// earlier (both larger surgeries than 15B.2.b's scope). 15B.2.c's
+// maintainer-defer call: stays inline with this section header so a future
+// reader sees the residual and the reason. If a Phase 16 ever opens with
+// scope to wire those lazy services into a UserService surface, this is
+// the natural follow-up — but it's NOT Phase 15 scope.
+// =========================================================================
 const getStreamerDisplayName = async (streamerId) => {
   if (!streamerId) return null;
 
