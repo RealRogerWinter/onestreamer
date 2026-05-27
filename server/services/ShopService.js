@@ -1,13 +1,17 @@
 const { runAsync, getAsync, allAsync } = require('../database/database');
 const UserRepository = require('../database/repository/UserRepository');
+const ShopRepository = require('../database/repository/ShopRepository');
+const ItemTransactionRepository = require('../database/repository/ItemTransactionRepository');
 
 class ShopService {
-    constructor(itemService, inventoryService, accountService, io = null) {
+    constructor(itemService, inventoryService, accountService, io = null, deps = {}) {
         this.itemService = itemService;
         this.inventoryService = inventoryService;
         this.accountService = accountService;
         this.io = io;
-        this.userRepository = new UserRepository({ getAsync, runAsync, allAsync });
+        this.userRepository = deps.userRepository || new UserRepository({ getAsync, runAsync, allAsync });
+        this.shopRepository = deps.shopRepository || new ShopRepository();
+        this.itemTransactionRepository = deps.itemTransactionRepository || new ItemTransactionRepository();
         this.initializeShop();
     }
 
@@ -41,33 +45,7 @@ class ShopService {
     }
 
     async getShopItems() {
-        const shopItems = await allAsync(
-            `SELECT 
-                si.id as shop_id,
-                si.price,
-                si.discount_percentage,
-                si.is_featured,
-                si.stock_limit,
-                si.available_from,
-                si.available_until,
-                i.id as item_id,
-                i.name,
-                i.display_name,
-                i.emoji,
-                i.description,
-                i.item_type,
-                i.category,
-                i.rarity,
-                i.cooldown_seconds,
-                i.max_stack
-             FROM shop_items si
-             JOIN items i ON si.item_id = i.id
-             WHERE i.is_active = 1 
-               AND i.is_purchasable = 1
-               AND (si.available_from IS NULL OR datetime(si.available_from) <= datetime('now'))
-               AND (si.available_until IS NULL OR datetime(si.available_until) > datetime('now'))
-             ORDER BY si.is_featured DESC, i.rarity DESC, i.name`
-        );
+        const shopItems = await this.shopRepository.findActiveItemsForCustomer();
 
         return shopItems.map(item => ({
             ...item,
@@ -77,29 +55,7 @@ class ShopService {
 
     async getAllShopItems() {
         // Admin version - returns ALL shop items without availability filters
-        const shopItems = await allAsync(
-            `SELECT 
-                si.id as shop_item_id,
-                si.price,
-                si.discount_percentage,
-                si.is_featured,
-                si.stock_limit as stock,
-                si.available_from,
-                si.available_until,
-                i.id as item_id,
-                i.name,
-                i.display_name,
-                i.emoji,
-                i.description,
-                i.item_type,
-                i.category,
-                i.rarity,
-                i.cooldown_seconds,
-                i.max_stack
-             FROM shop_items si
-             JOIN items i ON si.item_id = i.id
-             ORDER BY si.is_featured DESC, i.rarity DESC, i.name`
-        );
+        const shopItems = await this.shopRepository.findAllItemsForAdmin();
 
         return shopItems.map(item => ({
             ...item,
@@ -134,10 +90,7 @@ class ShopService {
             available_until = null
         } = options;
 
-        const existing = await getAsync(
-            'SELECT id FROM shop_items WHERE item_id = ?',
-            [itemId]
-        );
+        const existing = await this.shopRepository.findShopItemIdByItemId(itemId);
 
         if (existing) {
             return await this.updateShopItem(existing.id, { price, ...options });
@@ -188,13 +141,7 @@ class ShopService {
             throw new Error('User not found');
         }
 
-        const shopItem = await getAsync(
-            `SELECT si.*, i.max_stack, i.display_name 
-             FROM shop_items si
-             JOIN items i ON si.item_id = i.id
-             WHERE si.item_id = ? AND i.is_purchasable = 1`,
-            [itemId]
-        );
+        const shopItem = await this.shopRepository.findItemForPurchase(itemId);
 
         if (!shopItem) {
             throw new Error('Item not available in shop');
@@ -233,12 +180,15 @@ class ShopService {
 
         await this.inventoryService.addItemToInventory(userId, itemId, quantity);
 
-        await runAsync(
-            `INSERT INTO item_transactions 
-             (user_id, item_id, transaction_type, quantity, price_per_item, total_cost, points_before, points_after)
-             VALUES (?, ?, 'purchase', ?, ?, ?, ?, ?)`,
-            [userId, itemId, quantity, finalPrice, totalCost, currentBalance, newBalance]
-        );
+        await this.itemTransactionRepository.insertPurchase({
+            userId,
+            itemId,
+            quantity,
+            pricePerItem: finalPrice,
+            totalCost,
+            pointsBefore: currentBalance,
+            pointsAfter: newBalance,
+        });
 
         if (shopItem.stock_limit !== 0) {
             await runAsync(
@@ -300,12 +250,15 @@ class ShopService {
             { itemId, quantity, pricePerItem: sellPrice }
         );
 
-        await runAsync(
-            `INSERT INTO item_transactions 
-             (user_id, item_id, transaction_type, quantity, price_per_item, total_cost, points_before, points_after)
-             VALUES (?, ?, 'sell', ?, ?, ?, ?, ?)`,
-            [userId, itemId, quantity, sellPrice, totalEarnings, currentBalance, newBalance]
-        );
+        await this.itemTransactionRepository.insertSell({
+            userId,
+            itemId,
+            quantity,
+            pricePerItem: sellPrice,
+            totalCost: totalEarnings,
+            pointsBefore: currentBalance,
+            pointsAfter: newBalance,
+        });
 
         // Emit socket event for real-time update
         if (this.io) {
@@ -330,77 +283,20 @@ class ShopService {
     }
 
     async getFeaturedItems() {
-        return await allAsync(
-            `SELECT 
-                si.*,
-                i.name,
-                i.display_name,
-                i.emoji,
-                i.description,
-                i.rarity
-             FROM shop_items si
-             JOIN items i ON si.item_id = i.id
-             WHERE si.is_featured = 1 AND i.is_active = 1
-             ORDER BY i.rarity DESC`
-        );
+        return await this.shopRepository.findFeaturedItems();
     }
 
     async getDiscountedItems() {
-        return await allAsync(
-            `SELECT 
-                si.*,
-                i.name,
-                i.display_name,
-                i.emoji,
-                i.description,
-                i.rarity
-             FROM shop_items si
-             JOIN items i ON si.item_id = i.id
-             WHERE si.discount_percentage > 0 AND i.is_active = 1
-             ORDER BY si.discount_percentage DESC`
-        );
+        return await this.shopRepository.findDiscountedItems();
     }
 
     async getUserTransactionHistory(userId, limit = 20) {
-        return await allAsync(
-            `SELECT 
-                it.*,
-                i.name,
-                i.display_name,
-                i.emoji
-             FROM item_transactions it
-             JOIN items i ON it.item_id = i.id
-             WHERE it.user_id = ?
-             ORDER BY it.created_at DESC
-             LIMIT ?`,
-            [userId, limit]
-        );
+        return await this.itemTransactionRepository.findHistoryForUser(userId, limit);
     }
 
     async getShopStatistics() {
-        const stats = await getAsync(
-            `SELECT 
-                COUNT(DISTINCT user_id) as unique_buyers,
-                COUNT(*) as total_transactions,
-                SUM(CASE WHEN transaction_type = 'purchase' THEN total_cost ELSE 0 END) as total_revenue,
-                SUM(CASE WHEN transaction_type = 'sell' THEN total_cost ELSE 0 END) as total_buyback
-             FROM item_transactions
-             WHERE transaction_type IN ('purchase', 'sell')`
-        );
-
-        const popularItems = await allAsync(
-            `SELECT 
-                i.display_name,
-                i.emoji,
-                COUNT(*) as purchase_count,
-                SUM(it.quantity) as total_quantity
-             FROM item_transactions it
-             JOIN items i ON it.item_id = i.id
-             WHERE it.transaction_type = 'purchase'
-             GROUP BY it.item_id
-             ORDER BY purchase_count DESC
-             LIMIT 10`
-        );
+        const stats = await this.itemTransactionRepository.aggregateForShop();
+        const popularItems = await this.itemTransactionRepository.findPopularItems(10);
 
         return {
             ...stats,

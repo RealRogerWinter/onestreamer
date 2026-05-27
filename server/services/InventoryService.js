@@ -1,5 +1,5 @@
-const { runAsync } = require('../database/database');
 const UserInventoryRepository = require('../database/repository/UserInventoryRepository');
+const ItemTransactionRepository = require('../database/repository/ItemTransactionRepository');
 
 class InventoryService {
     constructor(itemService, buffDebuffService = null, deps = {}) {
@@ -12,6 +12,7 @@ class InventoryService {
         // shape as BuffDebuffService / ContinuousRecordingService /
         // AccountService.
         this.userInventoryRepository = deps.userInventoryRepository || new UserInventoryRepository();
+        this.itemTransactionRepository = deps.itemTransactionRepository || new ItemTransactionRepository();
     }
 
     // Set buff-debuff service dependency after initialization if needed
@@ -241,12 +242,11 @@ class InventoryService {
         
         const item = await this.itemService.getItemById(itemId);
         
-        await runAsync(
-            `INSERT INTO item_transactions 
-             (user_id, item_id, transaction_type, quantity, price_per_item, total_cost)
-             VALUES (?, ?, 'admin_grant', ?, 0, 0)`,
-            [userId, itemId, result.added]
-        );
+        await this.itemTransactionRepository.insertAdminGrant({
+            userId,
+            itemId,
+            quantity: result.added,
+        });
         
         return {
             success: true,
