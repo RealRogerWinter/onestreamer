@@ -516,6 +516,8 @@ const {
   viewerCountNotifier,
   // PR 3.3: buff/inventory event-cluster chokepoint.
   buffNotifier,
+  // PR-M1 (ADR-0013): AI-moderation event chokepoint.
+  moderationNotifier,
   // PR 4.2: deferred-work registry.
   lifecycleManager,
 } = services;
@@ -4889,6 +4891,38 @@ async function startServer() {
     const whitelistRoutes = require('./routes/whitelist');
     app.use('/api/whitelist', whitelistRoutes());
     console.log('✅ WHITELIST: API routes mounted at /api/whitelist');
+
+    // PR-M1 (ADR-0013): AI-moderation pipeline. Inline init because
+    // initialize() is async — applies the schema, verifies seed integrity
+    // (fails closed on SHA-256 mismatch), upserts the embedded core word
+    // list into moderation_terms, loads the enabled-terms cache, and
+    // subscribes to transcriptionService's `transcription-chunk` event.
+    // PR-M1 is log-only: hits land in moderation_events with
+    // final_decision='admin_review' and emit via moderationNotifier; M3
+    // wires enforcement actions and the AI_MODERATION_ENFORCE env flag.
+    const ModerationService = require('./services/ModerationService');
+    let moderationService = new ModerationService({
+      database,
+      transcriptionService,
+      moderationNotifier,
+      streamService,
+      failClosed: process.env.AI_MODERATION_FAIL_CLOSED !== 'false',
+    });
+    try {
+      await moderationService.initialize();
+      app.locals.moderationService = moderationService;
+      global.moderationService = moderationService;
+    } catch (e) {
+      console.error('❌ ModerationService failed to initialize:', e.message);
+      if (process.env.AI_MODERATION_REQUIRE_SERVICE === 'true') {
+        throw e;
+      }
+      // Default (M1): continue without it. The transcription pipeline is
+      // unaffected — ModerationService just never subscribes. Operators
+      // flip AI_MODERATION_REQUIRE_SERVICE=true once the service is
+      // production-ready (PR-M6).
+      moderationService = null;
+    }
 
     if (!livekitService) {
       // ── MediaSoup branch orchestration ────────────────────────────────

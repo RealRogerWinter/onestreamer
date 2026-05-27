@@ -46,6 +46,7 @@ jest.mock('../../services/MediasoupPlainTransportService', () => class { constru
 jest.mock('../../services/StreamNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamNotifier'; } });
 jest.mock('../../services/ViewerCountNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'ViewerCountNotifier'; } });
 jest.mock('../../services/BuffNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'BuffNotifier'; } });
+jest.mock('../../services/ModerationNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'ModerationNotifier'; } });
 
 // PR-I2 additions
 jest.mock('../../services/StreamInterceptorService', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamInterceptorService'; } });
@@ -177,6 +178,7 @@ const MediasoupPlainTransportService = require('../../services/MediasoupPlainTra
 const StreamNotifier = require('../../services/StreamNotifier');
 const ViewerCountNotifier = require('../../services/ViewerCountNotifier');
 const BuffNotifier = require('../../services/BuffNotifier');
+const ModerationNotifier = require('../../services/ModerationNotifier');
 
 // PR-I2 additions
 const StreamInterceptorService = require('../../services/StreamInterceptorService');
@@ -223,7 +225,7 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 39 expected keys (no more, no less)', () => {
+  test('returns all 40 expected keys (no more, no less)', () => {
     const { services } = createServices(buildDeps());
 
     const expectedKeys = [
@@ -236,6 +238,8 @@ describe('server/bootstrap/services factory', () => {
       'viewerCountNotifier',
       // PR 3.3
       'buffNotifier',
+      // PR-M1
+      'moderationNotifier',
       'takeoverService',
       'testStreamService',
       'mediaStreamService',
@@ -277,7 +281,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(39);
+    expect(expectedKeys).toHaveLength(40);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -302,6 +306,8 @@ describe('server/bootstrap/services factory', () => {
     expect(s.streamNotifier).toBeInstanceOf(StreamNotifier);
     expect(s.viewerCountNotifier).toBeInstanceOf(ViewerCountNotifier);
     expect(s.buffNotifier).toBeInstanceOf(BuffNotifier);
+    // PR-M1
+    expect(s.moderationNotifier).toBeInstanceOf(ModerationNotifier);
     // PR-I2
     expect(s.streamInterceptorService).toBeInstanceOf(StreamInterceptorService);
     expect(s.visualFxService).toBeInstanceOf(VisualFxService);

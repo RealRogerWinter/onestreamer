@@ -111,6 +111,7 @@ const MediasoupPlainTransportService = require('../services/MediasoupPlainTransp
 const StreamNotifier = require('../services/StreamNotifier');
 const ViewerCountNotifier = require('../services/ViewerCountNotifier');
 const BuffNotifier = require('../services/BuffNotifier');
+const ModerationNotifier = require('../services/ModerationNotifier');
 
 // PR-I2 additions
 const StreamInterceptorService = require('../services/StreamInterceptorService');
@@ -197,6 +198,17 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   // per-calling-socket (errors). Constructed BEFORE buffDebuffService so
   // the latter can take it via its options bag.
   const buffNotifier = new BuffNotifier(io);
+
+  // PR-M1 (ADR-0013): single chokepoint for AI-moderation socket events
+  // (`moderation-event-created`, `moderation-action-taken`,
+  // `moderation-streamer-banner`, `moderation-bot-output-dropped`). Admin-
+  // facing emits go to the `'admin'` room; the streamer-banner emit targets
+  // the banned streamer's socket by id, set by ModerationActionArbiter
+  // (PR-M3). Constructed here for symmetry with the other three notifiers;
+  // ModerationService itself is constructed inline in server/index.js
+  // because its initialize() is async (verifies seed integrity, applies
+  // schema, upserts terms, subscribes to transcription-chunk events).
+  const moderationNotifier = new ModerationNotifier(io);
 
   // Depends on redisClient + sessionService.
   const takeoverService = new TakeoverService(redisClient, sessionService);
@@ -354,6 +366,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     streamNotifier,
     viewerCountNotifier,
     buffNotifier,
+    moderationNotifier,
     takeoverService,
     testStreamService,
     mediaStreamService,
