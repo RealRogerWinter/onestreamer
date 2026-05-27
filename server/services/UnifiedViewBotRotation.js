@@ -10,7 +10,7 @@ const simpleViewBotRotationInstance = require('./SimpleViewBotRotation');
 const WebRTCViewBotRotation = require('./WebRTCViewBotRotation');
 
 class UnifiedViewBotRotation {
-  constructor(io, streamService, mediasoupService, livekitService, streamNotifier = null) {
+  constructor(io, streamService, mediasoupService, livekitService, streamNotifier = null, deps = {}) {
     this.io = io;
     this.streamService = streamService;
     this.mediasoupService = mediasoupService;
@@ -18,24 +18,32 @@ class UnifiedViewBotRotation {
     // PR 3.1: thread the StreamNotifier into WebRTCViewBotRotation so its
     // `stream-ended` emit goes through the chokepoint.
     this.streamNotifier = streamNotifier;
-    
+
+    // PR 8.2 (Phase 8 — see ADR-0016): watchdog dep overrides. Tests inject
+    // a smaller `watchdogCheckMs`, a controllable `now`, and a spyable
+    // `watchdogLogger`. Production uses the defaults.
+    this.watchdogCheckMs = deps.watchdogCheckMs ?? 30000;
+    this.watchdogLogger = deps.watchdogLogger ?? console;
+    this.watchdogNow = deps.now ?? (() => Date.now());
+    this.watchdogInterval = null;
+
     // Detect which backend to use
     const useAdapter = process.env.USE_WEBRTC_ADAPTER === 'true';
     const backend = process.env.WEBRTC_BACKEND || 'mediasoup';
     this.backendType = (useAdapter && backend === 'livekit') ? 'livekit' : 'mediasoup';
-    
+
     // Current mode - default to plainrtp since WebRTC viewbots have GStreamer issues
     this.mode = 'plainrtp'; // 'plainrtp' or 'webrtc'
-    
+
     // Rotation instances
     this.plainRtpRotation = null;
     this.webRtcRotation = null;
     this.activeRotation = null;
-    
+
     // Shared state
     this.videoFiles = [];
     this.isRotating = false;
-    
+
     console.log(`🎮 UnifiedViewBotRotation: Initialized with ${this.backendType} backend`);
   }
   
@@ -135,26 +143,108 @@ class UnifiedViewBotRotation {
    */
   async startRotation() {
     console.log(`🎬 UnifiedViewBotRotation: Starting rotation in ${this.mode} mode`);
-    
+
     if (!this.activeRotation) {
       throw new Error('Rotation system not initialized');
     }
-    
+
     this.isRotating = true;
+    this._startWatchdog();
     await this.activeRotation.startRotation();
   }
-  
+
   /**
    * Stop rotation
    */
   async stopRotation() {
     console.log('⏹️ UnifiedViewBotRotation: Stopping rotation');
-    
+
     this.isRotating = false;
-    
+    this._stopWatchdog();
+
     if (this.activeRotation) {
       await this.activeRotation.stopRotation();
     }
+  }
+
+  /**
+   * PR 8.2 — start the tick-loop watchdog (see ADR-0016). Observability
+   * only; the watchdog never restarts the rotation itself. A pm2 (or
+   * equivalent) supervisor is the recovery agent, with the watchdog log
+   * line being the trigger that wakes a human.
+   */
+  _startWatchdog() {
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval);
+    }
+    this.watchdogInterval = setInterval(() => this._checkRotationHealth(), this.watchdogCheckMs);
+  }
+
+  /**
+   * PR 8.2 — stop the watchdog when rotation is stopped.
+   */
+  _stopWatchdog() {
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval);
+      this.watchdogInterval = null;
+    }
+  }
+
+  /**
+   * PR 8.2 — single watchdog check. Fires `level:error` log line if the
+   * active sub-rotation has not ticked within `maxRotationInterval * 2`.
+   * The threshold tolerates one missed schedule (jitter, brief await
+   * stall) while catching an unhandled-exception-broken tick chain.
+   */
+  _checkRotationHealth() {
+    if (!this.isRotating || !this.activeRotation) {
+      return;
+    }
+    const lastTickAt = this.activeRotation.lastTickAt;
+    if (lastTickAt === null || lastTickAt === undefined) {
+      // Rotation just started; first tick hasn't recorded yet.
+      return;
+    }
+    const maxInterval = this.activeRotation.settings?.maxRotationInterval ?? 180000;
+    const threshold = maxInterval * 2;
+    const sinceMs = this.watchdogNow() - lastTickAt;
+
+    if (sinceMs > threshold) {
+      const context = {
+        level: 'error',
+        event: 'viewbot-rotation-stalled',
+        mode: this.mode,
+        backend: this.backendType,
+        sinceLastTickMs: sinceMs,
+        thresholdMs: threshold,
+        maxRotationIntervalMs: maxInterval,
+        isRotating: this.isRotating,
+        // Hint to the operator: when the loop is wedged because a real
+        // streamer is on, this flag separates "code bug" from "blocked
+        // by design". See runbook viewbot-fleet-misbehaving.md.
+        realStreamerActive: this._isAnyRealStreamerActive(),
+      };
+      this.watchdogLogger.error(
+        `[ViewBotRotation Watchdog] rotation has not ticked in ${sinceMs}ms (threshold ${threshold}ms)`,
+        context
+      );
+    }
+  }
+
+  /**
+   * Helper for the watchdog: is a real streamer (or URL stream) currently
+   * active? The sub-rotations have their own checks; we delegate to the
+   * plain-RTP rotation's helper which already covers both cases.
+   */
+  _isAnyRealStreamerActive() {
+    try {
+      if (this.plainRtpRotation && typeof this.plainRtpRotation.isRealStreamerActive === 'function') {
+        return this.plainRtpRotation.isRealStreamerActive();
+      }
+    } catch (_err) {
+      // Defensive: don't let an exception in the helper break the watchdog log.
+    }
+    return false;
   }
   
   /**
@@ -245,8 +335,12 @@ class UnifiedViewBotRotation {
    */
   async shutdown() {
     console.log('🛑 UnifiedViewBotRotation: Shutting down');
-    
+
+    // stopRotation() clears the watchdog; this is the canonical teardown
+    // path. The explicit _stopWatchdog() below is defensive in case
+    // stopRotation throws partway.
     await this.stopRotation();
+    this._stopWatchdog();
     
     if (this.plainRtpRotation) {
       await this.plainRtpRotation.shutdown();

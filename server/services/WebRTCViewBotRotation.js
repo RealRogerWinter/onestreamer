@@ -21,6 +21,12 @@ class WebRTCViewBotRotation {
     this.rotationTimer = null;
     this.videoFiles = [];
     this.currentVideoIndex = 0;
+
+    // PR 8.2 (Phase 8 — see ADR-0016): observability hook for the watchdog
+    // owned by UnifiedViewBotRotation. Updated at the entry of every
+    // `rotateToNextBot()` invocation; the watchdog reads it to detect a
+    // stalled tick chain.
+    this.lastTickAt = null;
     
     // Settings matching existing rotation system
     this.settings = {
@@ -121,6 +127,10 @@ class WebRTCViewBotRotation {
    * Rotate to next viewbot
    */
   async rotateToNextBot() {
+    // PR 8.2: record tick attempt BEFORE any early-return guards. The
+    // watchdog (in UnifiedViewBotRotation) reads this to detect a stalled
+    // chain; see ADR-0016.
+    this.lastTickAt = Date.now();
     console.log('🔄 Rotating to next WebRTC viewbot');
     
     // Emit stream-ending event for smooth transition

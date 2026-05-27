@@ -23,6 +23,12 @@ class SimpleViewBotRotation {
     this.streamService = null; // Reference to StreamService for real streamer protection
     this.urlViewBotService = null; // Reference to ViewBotURLService for URL stream protection
 
+    // PR 8.2 (Phase 8 — see ADR-0016): observability hook for the watchdog
+    // owned by UnifiedViewBotRotation. Updated at the entry of every
+    // `rotateToNextBot()` invocation; the watchdog reads it to detect a
+    // stalled tick chain.
+    this.lastTickAt = null;
+
     // Bot pool - these should be loaded from config/database
     this.availableBots = [];
 
@@ -175,6 +181,11 @@ class SimpleViewBotRotation {
    * Rotate to the next viewbot
    */
   async rotateToNextBot() {
+    // PR 8.2: record tick attempt BEFORE the early-return guards so the
+    // watchdog also detects "blocked-by-real-streamer" wedges (where the
+    // loop returns without scheduling the next tick). The watchdog
+    // distinguishes wedge causes via its rotation-state context.
+    this.lastTickAt = Date.now();
     console.log('🔄 Rotating to next viewbot');
 
     // Check if random rotation is active - it takes priority
