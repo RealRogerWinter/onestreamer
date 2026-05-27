@@ -817,7 +817,7 @@ function initializeDatabase() {
     });
 }
 
-function runAsync(sql, params = []) {
+function runAsyncSqlite3(sql, params = []) {
     return new Promise((resolve, reject) => {
         db.run(sql, params, function(err) {
             if (err) reject(err);
@@ -826,7 +826,7 @@ function runAsync(sql, params = []) {
     });
 }
 
-function getAsync(sql, params = []) {
+function getAsyncSqlite3(sql, params = []) {
     return new Promise((resolve, reject) => {
         db.get(sql, params, (err, row) => {
             if (err) reject(err);
@@ -835,7 +835,7 @@ function getAsync(sql, params = []) {
     });
 }
 
-function allAsync(sql, params = []) {
+function allAsyncSqlite3(sql, params = []) {
     return new Promise((resolve, reject) => {
         db.all(sql, params, (err, rows) => {
             if (err) reject(err);
@@ -844,9 +844,56 @@ function allAsync(sql, params = []) {
     });
 }
 
+// ============================================================================
+// ADR-0014: better-sqlite3 adapter behind USE_BETTER_SQLITE3 env flag.
+//
+// When the flag is true, runAsync/getAsync/allAsync are backed by a
+// better-sqlite3 connection (with prepared-statement cache) opened against
+// the same database file. The sqlite3 `db` handle stays open and exported
+// for legacy consumers that call db.run/.get/.all/.serialize directly
+// (routes/admin.js, routes/auth.js, several services + migrations).
+//
+// SQLite supports multiple connections to the same WAL'd file from the
+// same process; both backends see each other's commits through WAL.
+// busy_timeout=5000 on both handles bounds SQLITE_BUSY surfacing.
+//
+// Default is OFF — flipping it on is the operator's call, per the brief's
+// "the cutover is reversible without code revert" requirement.
+// ============================================================================
+
+let runAsync = runAsyncSqlite3;
+let getAsync = getAsyncSqlite3;
+let allAsync = allAsyncSqlite3;
+let betterAdapter = null;
+
+if (process.env.USE_BETTER_SQLITE3 === 'true') {
+    try {
+        const { createBetterSqlite3Adapter } = require('./database-better');
+        betterAdapter = createBetterSqlite3Adapter(dbPath, { tuneForLargeReads: true });
+        runAsync = betterAdapter.runAsync;
+        getAsync = betterAdapter.getAsync;
+        allAsync = betterAdapter.allAsync;
+        logger.info(
+            { walActive: betterAdapter.walActive, dbPath },
+            'better-sqlite3 adapter active (USE_BETTER_SQLITE3=true)'
+        );
+    } catch (e) {
+        logger.error(
+            { err: e },
+            'better-sqlite3 adapter failed to load; falling back to sqlite3'
+        );
+        // Leave runAsync/getAsync/allAsync pointing at the sqlite3 impls.
+    }
+}
+
 module.exports = {
     db,
     runAsync,
     getAsync,
-    allAsync
+    allAsync,
+    // Test-only handle for the adapter, when active. Gated on NODE_ENV so
+    // production code physically can't reach the adapter's raw Database
+    // (which exposes .exec/.transaction/.backup outside the wrappers).
+    // Returns null in production OR when the env flag is off.
+    _betterAdapter: () => (process.env.NODE_ENV === 'test' ? betterAdapter : null),
 };

@@ -37,3 +37,4 @@ What would have prevented this. Could be code, monitoring, runbook update, etc.
 | [`recording-upload-failed.md`](recording-upload-failed.md) | Recording segments not appearing in B2. |
 | [`viewbot-fleet-misbehaving.md`](viewbot-fleet-misbehaving.md) | Viewbot rotation hung, leaking processes, or stuck on one channel. |
 | [`secret-rotation.md`](secret-rotation.md) | Procedure for rotating any of the project's credentials. |
+| [`better-sqlite3-rebuild.md`](better-sqlite3-rebuild.md) | better-sqlite3 native binding fails to load (NODE_MODULE_VERSION mismatch on Ubuntu-patched Node 18). |
