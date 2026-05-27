@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const ProfanityFilterService = require('./ProfanityFilterService');
+const ClipRepository = require('../database/repository/ClipRepository');
 
 /**
  * ClipService - Business logic for clip management
@@ -15,6 +16,20 @@ class ClipService {
     this.runAsync = database.runAsync;
     this.getAsync = database.getAsync;
     this.allAsync = database.allAsync;
+    // PR 7.1 (ADR-0015): atomic-wrap helper for multi-statement writes.
+    // recordView + deleteClip use it; the per-clip JOIN reads that stay
+    // inline don't need it.
+    this.withTransaction = database.withTransaction;
+    // PR 10.2 (Phase 10): pure-SQL wrapper for clips / clip_views /
+    // clip_chat_messages. The 3 cross-table JOINs against `users`
+    // (getClip / listClips / getUserClips) intentionally stay inline
+    // per the single-domain-repo convention (see ClipRepository's
+    // class JSDoc).
+    this.clipRepository = new ClipRepository({
+      getAsync: this.getAsync,
+      runAsync: this.runAsync,
+      allAsync: this.allAsync,
+    });
     this.storageService = clipStorageService;
     this.processorService = clipProcessorService;
     this.continuousRecordingService = continuousRecordingService;
@@ -158,16 +173,17 @@ class ClipService {
     const recordingId = segmentInfo.segments[0].sessionId;
 
     // Insert clip record with processing status
-    await this.runAsync(`
-      INSERT INTO clips (
-        clip_id, recording_id, user_id, streamer_user_id, title, description,
-        start_time_ms, end_time_ms, duration_ms, status
-      ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'processing')
-    `, [
-      clipId, recordingId, userId,
-      title.trim(), description.trim(),
-      startTime, endTime, durationMs
-    ]);
+    await this.clipRepository.insertClip({
+      clipId,
+      recordingId,
+      userId,
+      streamerUserId: null,
+      title: title.trim(),
+      description: description.trim(),
+      startMs: startTime,
+      endMs: endTime,
+      durationMs,
+    });
 
     // Capture chat messages for clip creation time (not recording time)
     // We use current time because chat is ephemeral and recording timestamps may be old
@@ -224,17 +240,20 @@ class ClipService {
     // Generate clip ID
     const clipId = uuidv4();
 
-    // Insert clip record
-    await this.runAsync(`
-      INSERT INTO clips (
-        clip_id, recording_id, user_id, title, description,
-        start_time_ms, end_time_ms, duration_ms, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'processing')
-    `, [
-      clipId, recordingPath, userId,
-      title.trim(), description.trim(),
-      startMs, endMs, durationMs
-    ]);
+    // Insert clip record (streamer_user_id defaults to NULL via the repo;
+    // the legacy SQL here omitted that column entirely, which the repo's
+    // explicit NULL preserves at the row level).
+    await this.clipRepository.insertClip({
+      clipId,
+      recordingId: recordingPath,
+      userId,
+      streamerUserId: null,
+      title: title.trim(),
+      description: description.trim(),
+      startMs,
+      endMs,
+      durationMs,
+    });
 
     // Queue for processing
     if (this.processorService) {
@@ -252,7 +271,10 @@ class ClipService {
   }
 
   /**
-   * Get clip by ID
+   * Get clip by ID. **Inline by design** (PR 10.2 / Phase 10): the
+   * `LEFT JOIN users` is a presentation-layer enrichment (creator
+   * username for display); cross-table queries stay in the service
+   * per the single-domain repository convention.
    */
   async getClip(clipId) {
     return await this.getAsync(`
@@ -266,7 +288,11 @@ class ClipService {
   }
 
   /**
-   * List clips with pagination and optional search
+   * List clips with pagination and optional search. **Inline by design**
+   * (PR 10.2 / Phase 10): the SELECT does a `LEFT JOIN users` for the
+   * creator-username field, and the matching `COUNT(*)` runs against
+   * the same dynamic WHERE — keeping the WHERE-builder colocated with
+   * both queries beats duplicating it across the service and a repo.
    */
   async listClips(options = {}) {
     const {
@@ -334,7 +360,9 @@ class ClipService {
   }
 
   /**
-   * Get user's clips
+   * Get user's clips. **Inline by design** (PR 10.2 / Phase 10): same
+   * reason as `getClip` / `listClips` — the `LEFT JOIN users` is a
+   * presentation-layer enrichment.
    */
   async getUserClips(userId, options = {}) {
     const { publicOnly = false, limit = 50 } = options;
@@ -362,8 +390,7 @@ class ClipService {
     if (clip.user_id !== userId) throw new Error('Not authorized');
 
     const allowedFields = ['title', 'description', 'is_public'];
-    const setClauses = [];
-    const params = [];
+    const fieldValues = {};
 
     for (const [key, value] of Object.entries(updates)) {
       if (allowedFields.includes(key) && value !== undefined) {
@@ -384,17 +411,13 @@ class ClipService {
             throw new Error(descValidation.error);
           }
         }
-        setClauses.push(`${key} = ?`);
-        params.push(key === 'is_public' ? (value ? 1 : 0) : value);
+        fieldValues[key] = key === 'is_public' ? (value ? 1 : 0) : value;
       }
     }
 
-    if (setClauses.length === 0) return false;
+    if (Object.keys(fieldValues).length === 0) return false;
 
-    setClauses.push('updated_at = CURRENT_TIMESTAMP');
-    params.push(clipId);
-
-    await this.runAsync(`UPDATE clips SET ${setClauses.join(', ')} WHERE clip_id = ?`, params);
+    await this.clipRepository.updateClipFields(clipId, fieldValues);
     return true;
   }
 
@@ -407,8 +430,17 @@ class ClipService {
     if (!isAdmin && clip.user_id !== userId) throw new Error('Not authorized');
 
     this.storageService.deleteClip(clipId);
-    await this.runAsync('DELETE FROM clip_views WHERE clip_id = ?', [clipId]);
-    await this.runAsync('DELETE FROM clips WHERE clip_id = ?', [clipId]);
+
+    // PR 10.2 / ADR-0015: the legacy code ran the two DELETEs as
+    // back-to-back fire-and-await runAsync calls. If the process
+    // crashed between them, clip_views rows could orphan against a
+    // deleted clip row, or vice-versa. Wrap both in a withTransaction
+    // scope so the deletion is observably all-or-nothing.
+    await this.withTransaction(async (tx) => {
+      const txRepo = new ClipRepository(tx);
+      await txRepo.deleteViewsByClipId(clipId);
+      await txRepo.deleteClipById(clipId);
+    });
 
     console.log(`🗑️ CLIPS: Deleted clip ${clipId}`);
     return true;
@@ -418,17 +450,21 @@ class ClipService {
    * Record a view
    */
   async recordView(clipId, userId = null, ipAddress = null) {
-    const recentView = await this.getAsync(`
-      SELECT id FROM clip_views
-      WHERE clip_id = ? AND (user_id = ? OR ip_address = ?)
-        AND viewed_at > datetime('now', '-1 hour')
-      LIMIT 1
-    `, [clipId, userId, ipAddress]);
+    const recentView = await this.clipRepository.findRecentView({ clipId, userId, ipAddress });
 
     if (!recentView) {
-      await this.runAsync(`INSERT INTO clip_views (clip_id, user_id, ip_address) VALUES (?, ?, ?)`,
-        [clipId, userId, ipAddress]);
-      await this.runAsync(`UPDATE clips SET view_count = view_count + 1 WHERE clip_id = ?`, [clipId]);
+      // PR 10.2 / ADR-0015: the legacy code ran the audit-log INSERT
+      // and the view_count UPDATE as back-to-back un-wrapped calls. A
+      // crash between them produces a clip_views row without the
+      // matching counter bump (or vice-versa). Wrap both in a
+      // withTransaction scope so the audit and the counter commit
+      // together. view_count is bumped via the PR 5.1 / ADR-0013a
+      // atomic-counter shape (`view_count = view_count + 1`).
+      await this.withTransaction(async (tx) => {
+        const txRepo = new ClipRepository(tx);
+        await txRepo.insertView({ clipId, userId, ipAddress });
+        await txRepo.incrementViewCount(clipId);
+      });
     }
   }
 
@@ -439,15 +475,10 @@ class ClipService {
     const { status, filePath, thumbnailPath, fileSize, error } = data;
 
     if (status === 'ready') {
-      await this.runAsync(`
-        UPDATE clips SET
-          status = 'ready', file_path = ?, thumbnail_path = ?, file_size = ?,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE clip_id = ?
-      `, [filePath, thumbnailPath, fileSize, clipId]);
+      await this.clipRepository.setClipReady(clipId, { filePath, thumbnailPath, fileSize });
       console.log(`✅ CLIPS: Clip ${clipId} ready`);
     } else if (status === 'failed') {
-      await this.runAsync(`UPDATE clips SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE clip_id = ?`, [clipId]);
+      await this.clipRepository.setClipFailed(clipId);
       console.error(`❌ CLIPS: Clip ${clipId} failed: ${error}`);
     }
   }
@@ -593,15 +624,7 @@ class ClipService {
    * Get statistics
    */
   async getStats() {
-    const stats = await this.getAsync(`
-      SELECT
-        COUNT(*) as total_clips,
-        SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) as ready_clips,
-        SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing_clips,
-        SUM(view_count) as total_views,
-        SUM(file_size) as total_size
-      FROM clips
-    `);
+    const stats = await this.clipRepository.getStats();
 
     return {
       ...stats,
@@ -654,10 +677,13 @@ class ClipService {
           // Frontend will show these immediately when clip starts
           const relativeTimeMs = msg.isContext ? -(startTimeMs - msgTimeMs) : Math.max(0, msgTimeMs - startTimeMs);
 
-          await this.runAsync(`
-            INSERT INTO clip_chat_messages (clip_id, username, message, relative_time_ms, original_timestamp)
-            VALUES (?, ?, ?, ?, ?)
-          `, [clipId, msg.username, msg.message, relativeTimeMs, msg.timestamp]);
+          await this.clipRepository.insertClipChatMessage({
+            clipId,
+            username: msg.username,
+            message: msg.message,
+            relativeTimeMs,
+            originalTimestamp: msg.timestamp,
+          });
 
           insertedCount++;
         } catch (err) {
@@ -679,13 +705,7 @@ class ClipService {
    * @returns {Array} Chat messages with relative timestamps
    */
   async getClipChat(clipId) {
-    const messages = await this.allAsync(`
-      SELECT username, message, relative_time_ms, original_timestamp
-      FROM clip_chat_messages
-      WHERE clip_id = ?
-      ORDER BY relative_time_ms ASC
-    `, [clipId]);
-
+    const messages = await this.clipRepository.listChatByClip(clipId);
     return messages || [];
   }
 
@@ -695,9 +715,7 @@ class ClipService {
    * @returns {number} Number of chat messages
    */
   async getClipChatCount(clipId) {
-    const result = await this.getAsync(`
-      SELECT COUNT(*) as count FROM clip_chat_messages WHERE clip_id = ?
-    `, [clipId]);
+    const result = await this.clipRepository.countChatByClip(clipId);
     return result?.count || 0;
   }
 }
