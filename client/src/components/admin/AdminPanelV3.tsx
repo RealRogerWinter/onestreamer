@@ -5,6 +5,7 @@ import ConnectionMonitor from '../ConnectionMonitor';
 import ViewBotTab from './ViewBotTab';
 import URLStreamManagement from '../URLStreamManagement';
 import WhitelistManagement from './WhitelistManagement';
+import AIModerationManagement from './AIModerationManagement';
 import ItemManagement from './ItemManagement';
 import ChatBotManagement from './ChatBotManagement';
 import RecordingManagement from './RecordingManagement';
@@ -61,6 +62,7 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
     { id: 'transcriptions', label: 'Transcriptions', icon: '🎙️', category: 'Media' },
     { id: 'emojis', label: 'Emoji Manager', icon: '😊', category: 'Content' },
     { id: 'moderation', label: 'Chat Moderation', icon: '🛡️', category: 'Moderation' },
+    { id: 'ai-moderation', label: 'AI Moderation', icon: '🤖', category: 'Moderation' },
     { id: 'ipbans', label: 'IP Ban Management', icon: '🚫', category: 'Moderation' },
     { id: 'streaminglogs', label: 'Streaming Logs', icon: '📊', category: 'Monitoring' },
     { id: 'tutorial', label: 'Tutorial Editor', icon: '📚', category: 'Content' },
@@ -218,6 +220,8 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
         return <URLStreamManagement makeApiCall={makeApiCall} addLog={addLog} />;
       case 'whitelist':
         return <WhitelistManagement makeApiCall={makeApiCall} addLog={addLog} />;
+      case 'ai-moderation':
+        return <AIModerationManagement makeApiCall={makeApiCall} />;
       case 'items':
         return <ItemManagement addLog={addLog} />;
       case 'chatbots':

@@ -4951,6 +4951,13 @@ async function startServer() {
       chatBotService.setModerationService(moderationService);
     }
 
+    // PR-M5 (ADR-0013): mount the admin API surface. Handlers themselves
+    // return 503 when the underlying moderationService is unset, so this is
+    // safe to mount unconditionally (matches the PR-W5 whitelist pattern).
+    const moderationAIRoutes = require('./routes/moderation-ai');
+    app.use('/api/moderation-ai', moderationAIRoutes());
+    console.log('✅ MODERATION-AI: API routes mounted at /api/moderation-ai');
+
     if (!livekitService) {
       // ── MediaSoup branch orchestration ────────────────────────────────
       // Initialize URL Stream ViewBot Service for MediaSoup backend
