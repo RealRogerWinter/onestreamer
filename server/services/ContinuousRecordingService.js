@@ -4,6 +4,7 @@ const fs = require('fs');
 const EventEmitter = require('events');
 const { runAsync, getAsync, allAsync } = require('../database/database');
 const UserRepository = require('../database/repository/UserRepository');
+const ContinuousRecordingRepository = require('../database/repository/ContinuousRecordingRepository');
 
 /**
  * ContinuousRecordingService - Manages continuous room composite recording using LiveKit Egress
@@ -52,6 +53,12 @@ class ContinuousRecordingService extends EventEmitter {
 
     // Repository for users-table reads
     this.userRepository = new UserRepository({ getAsync, runAsync, allAsync });
+
+    // PR 6.3: ContinuousRecordingRepository wraps the 10 inline SQL
+    // calls against recording_sessions + recording_stream_segments.
+    // Two cross-table reads (url_streams, streaming_logs) stay
+    // inline below — they belong to other domains.
+    this.recordingRepository = new ContinuousRecordingRepository({ getAsync, runAsync, allAsync });
 
     // Initialize
     this.initialize();
@@ -121,17 +128,12 @@ class ContinuousRecordingService extends EventEmitter {
       }
 
       // Use INSERT OR IGNORE to avoid creating duplicates for the same day's recording
-      await runAsync(`
-        INSERT OR IGNORE INTO recording_sessions
-        (session_id, streamer_identity, streamer_user_id, streamer_username, start_time, status, local_path, created_at)
-        VALUES (?, ?, ?, ?, ?, 'recording', ?, CURRENT_TIMESTAMP)
-      `, [sessionId, streamerIdentity, streamerUserId, streamerUsername, startTime, localPath]);
+      await this.recordingRepository.insertSessionIfMissing({
+        sessionId, streamerIdentity, streamerUserId, streamerUsername, startTime, localPath,
+      });
 
       // Update the session to recording status (in case it was marked as ended)
-      await runAsync(`
-        UPDATE recording_sessions SET status = 'recording', updated_at = CURRENT_TIMESTAMP
-        WHERE session_id = ?
-      `, [sessionId]);
+      await this.recordingRepository.setSessionRecording(sessionId);
 
       console.log(`📝 SESSION DB: Recording session ${sessionId} active for streamer ${streamerUsername || streamerIdentity || 'room'}`);
       return { success: true };
@@ -151,11 +153,9 @@ class ContinuousRecordingService extends EventEmitter {
 
       // Don't mark as completed - session represents the whole day's recording
       // Just update the segment count and duration
-      await runAsync(`
-        UPDATE recording_sessions
-        SET end_time = ?, duration_ms = ?, segment_count = segment_count + ?, updated_at = CURRENT_TIMESTAMP
-        WHERE session_id = ?
-      `, [endTime, durationMs, segmentCount, sessionId]);
+      await this.recordingRepository.updateSessionEnd(sessionId, {
+        endTime, durationMs, segmentCount,
+      });
 
       console.log(`📝 SESSION DB: Updated session ${sessionId} - duration: ${Math.floor(durationMs / 1000)}s, added ${segmentCount} segments`);
       return { success: true };
@@ -170,7 +170,7 @@ class ContinuousRecordingService extends EventEmitter {
    */
   async getSessionStartTime(sessionId) {
     try {
-      const session = await getAsync('SELECT start_time FROM recording_sessions WHERE session_id = ?', [sessionId]);
+      const session = await this.recordingRepository.getSessionStartTime(sessionId);
       return session ? session.start_time : Date.now();
     } catch (error) {
       return Date.now();
@@ -182,7 +182,7 @@ class ContinuousRecordingService extends EventEmitter {
    */
   async getSessionRecord(sessionId) {
     try {
-      return await getAsync('SELECT * FROM recording_sessions WHERE session_id = ?', [sessionId]);
+      return await this.recordingRepository.getSessionById(sessionId);
     } catch (error) {
       console.error('❌ SESSION DB: Failed to get session record:', error.message);
       return null;
@@ -257,42 +257,7 @@ class ContinuousRecordingService extends EventEmitter {
    */
   async getSessionRecords(options = {}) {
     try {
-      let sql = 'SELECT * FROM recording_sessions WHERE 1=1';
-      const params = [];
-
-      if (options.status) {
-        sql += ' AND status = ?';
-        params.push(options.status);
-      }
-
-      if (options.streamerIdentity) {
-        sql += ' AND streamer_identity = ?';
-        params.push(options.streamerIdentity);
-      }
-
-      if (options.fromTime) {
-        sql += ' AND start_time >= ?';
-        params.push(options.fromTime);
-      }
-
-      if (options.toTime) {
-        sql += ' AND start_time <= ?';
-        params.push(options.toTime);
-      }
-
-      sql += ' ORDER BY start_time DESC';
-
-      if (options.limit) {
-        sql += ' LIMIT ?';
-        params.push(options.limit);
-      }
-
-      if (options.offset) {
-        sql += ' OFFSET ?';
-        params.push(options.offset);
-      }
-
-      return await allAsync(sql, params);
+      return await this.recordingRepository.listSessions(options);
     } catch (error) {
       console.error('❌ SESSION DB: Failed to get session records:', error.message);
       return [];
@@ -577,19 +542,15 @@ class ContinuousRecordingService extends EventEmitter {
     try {
       const now = Date.now();
 
-      const result = await runAsync(`
-        INSERT INTO recording_stream_segments
-        (session_id, stream_identity, stream_type, display_name, platform, source_url, started_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `, [
+      const result = await this.recordingRepository.insertStreamSegment({
         sessionId,
-        streamInfo.identity,
-        streamInfo.type,
-        streamInfo.displayName,
-        streamInfo.platform,
-        streamInfo.sourceUrl,
-        now
-      ]);
+        streamIdentity: streamInfo.identity,
+        streamType: streamInfo.type,
+        displayName: streamInfo.displayName,
+        platform: streamInfo.platform,
+        sourceUrl: streamInfo.sourceUrl,
+        startedAt: now,
+      });
 
       console.log(`📝 STREAM TRACKING: Started segment for ${streamInfo.type} "${streamInfo.displayName}" at ${new Date(now).toISOString()}`);
 
@@ -608,11 +569,7 @@ class ContinuousRecordingService extends EventEmitter {
 
     try {
       const now = Date.now();
-      await runAsync(`
-        UPDATE recording_stream_segments
-        SET ended_at = ?
-        WHERE id = ? AND ended_at IS NULL
-      `, [now, segmentId]);
+      await this.recordingRepository.endStreamSegment(segmentId, now);
 
       console.log(`📝 STREAM TRACKING: Ended segment ID ${segmentId} at ${new Date(now).toISOString()}`);
     } catch (error) {
@@ -628,11 +585,7 @@ class ContinuousRecordingService extends EventEmitter {
 
     try {
       const now = Date.now();
-      await runAsync(`
-        UPDATE recording_stream_segments
-        SET ended_at = ?
-        WHERE session_id = ? AND ended_at IS NULL
-      `, [now, sessionId]);
+      await this.recordingRepository.endAllOpenSegments(sessionId, now);
 
       console.log(`📝 STREAM TRACKING: Ended all open segments for session ${sessionId}`);
     } catch (error) {
@@ -1411,9 +1364,7 @@ class ContinuousRecordingService extends EventEmitter {
       // next tick, never shrink it within this tick.
       let pendingSessionIds = new Set();
       try {
-        const pendingRows = await allAsync(
-          `SELECT session_id FROM recording_sessions WHERE b2_file_id IS NULL`
-        );
+        const pendingRows = await this.recordingRepository.listSessionsPendingUpload();
         pendingSessionIds = new Set(pendingRows.map((r) => r.session_id));
       } catch (dbError) {
         // Fail-closed: if the DB lookup fails, do NOT delete anything
