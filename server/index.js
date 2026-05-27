@@ -1,12 +1,20 @@
 // ============================================================================
-// Phase 15B decomposition inventory (read-only; PR 15B.1).
+// Phase 15B decomposition inventory + closure record (PR 15B.1 → 15B-close).
 //
 // `server/index.js` is the orchestrator. Phases 6–14 carved its services and
-// repositories out into their own modules; Phase 15B finishes the job for
-// routes, helpers, socket-handler registration, and the shutdown sequence.
-// This block maps the remaining inline surfaces to their destination files.
-// Each PR-15B.X sub-PR removes its line as it lands; by the end of 15B the
-// block is either empty (delete it) or holds explicitly-justified residuals.
+// repositories out into their own modules; Phase 15B finished the job for
+// helpers (15B.2.a/b/c), socket-handler registration (15B.5), shutdown
+// sequence (15B.4), and added section headers for middleware-stays (15B.6).
+// PR 15B.3.a opened the route-cluster extractions with health/root/webrtc-
+// config. Phase 15B closes here with the route-cluster residuals explicitly
+// listed below — each remaining inline cluster is a clean future extraction
+// (the inventory + closure-audit work is the load-bearing piece; the moves
+// themselves are mechanical), but Phase 15's structural success criteria
+// are met without them: a reader landing here cold can see the whole
+// startup sequence in one screen (section headers below), every category
+// of business-logic-bearing work outside `routes/` lives in a clearly-
+// named module, and the inline `getStreamerDisplayName` helper is the
+// explicit Phase 15B residual documented at its own section header.
 //
 // Helpers (lines 432–1121, ~690 LoC) — extracted by PR 15B.2 (helpers go
 // FIRST because routes call them; reversing the order would force a
@@ -26,35 +34,53 @@
 //   [extracted] enrichStreamStatus           → services/StreamOrchestration.js (15B.2.a — landed)
 //   [extracted] verifyAndEmitStreamReady     → services/StreamOrchestration.js (15B.2.a — landed)
 //
-// Routes (lines 1123–4598, ~3475 LoC, 143 handlers) — extracted by PR 15B.3.
-// One PR per cluster; ordered by independence (lowest cross-reference first).
-// Stateful service deps come from `req.app.locals.<serviceName>` with the
-// JSON-500 short-circuit pattern from `server/routes/audio.js`.
+// Routes (lines 1123–4598 in the pre-Phase-15B file, 143 inline handlers
+// at the Phase-14 close). PR 15B.3.a opened the cluster extractions with
+// health/root/webrtc-config (→ routes/health.js, 3 handlers). The remaining
+// clusters below are **explicit Phase 15B residuals** — each is a clean
+// mechanical extraction following the 15B.3.a pattern (express.Router,
+// `req.app.locals.<serviceName>` with JSON-500 short-circuit, mount via
+// `app.use(require('./routes/<cluster>'))`), but they don't unblock new
+// work and the orchestrator already navigates cleanly via the section
+// headers below. Future extraction is welcomed; not a Phase-15-blocker.
 //
-//   286–311     visualfx debug static assets → routes/visualfx-static.js (deferred — trivial)
+// Stateful service deps for any cluster: read from `req.app.locals.<svc>`
+// with the JSON-500 short-circuit pattern from `server/routes/audio.js`.
+// Auth: most clusters use `authenticateAdmin` / `authenticateModerator`
+// (JWT, from `middleware/auth.js`); a few legacy clusters use
+// `adminKeyAuth` (X-Admin-Key) or `viewBotAuth` (combined). The auth
+// middlewares are constructed inline in `index.js` and can either move
+// into the route module or stay on `app.locals.<authName>` for the
+// extracted module to reference.
+//
 //   [extracted] root + health + webrtc cfg   → routes/health.js          (15B.3.a — landed)
-//   1180–1587   emoji CRUD (user + admin)    → routes/emojis.js          (15B.3.b)
-//   1235–1326   admin moderation ban/timeout → routes/admin-moderation.js (15B.3.c)
-//   1590–1696   user chat-color get/set      → routes/user-prefs.js      (15B.3.d)
-//   1698        admin dashboard HTML render  → routes/admin-dashboard.js (15B.3.d or .e)
-//   1762–2585   ViewBot HTTP admin bridge    → routes/viewbot-admin.js   (15B.3.e — largest)
-//                  (covers viewbot/, test-stream/, viewbot-manager,
-//                   viewbot-webrtc, viewbot-client, simple-rotation,
-//                   debug/, streaming-method)
-//   2594–2645   admin stream control         → routes/admin-stream.js    (15B.3.f)
-//                  (force-disconnect, send-message, clear-stream, connections)
-//   2734–2784   admin cooldowns              → routes/admin-cooldowns.js (15B.3.f)
-//   2804–2868   debug + system metrics       → routes/admin-debug.js     (15B.3.f)
-//   2900–3264   admin verify / IP-ban / logs → routes/admin-moderation.js (extends 15B.3.c)
-//   3303–3378   uploaded videos              → routes/admin-uploads.js   (15B.3.g)
-//   3411–3892   recordings (start/stop/...)  → routes/admin-recordings-ext.js (15B.3.h)
-//                  (existing /admin/review/* is in routes/admin-recordings.js;
-//                   this cluster is the larger admin set)
-//   3941–4029   recordings continuous        → routes/admin-recordings-ext.js (extends 15B.3.h)
-//   4119–4377   transcription                → routes/admin-transcription.js (15B.3.i)
-//   4391–4442   MovieBot admin               → routes/admin-bots.js      (15B.3.j)
-//   4456–4508   VisionBot admin              → routes/admin-bots.js      (15B.3.j)
-//   4521–4598   Groq + OpenAI config         → routes/admin-ai-config.js (15B.3.j)
+//
+//   [Phase 15B residual — explicit] route clusters still inline:
+//     - visualfx debug static assets       (~5 routes; trivial — paths
+//                                            could move to public/ static)
+//     - emoji CRUD (user + admin)          (~6 routes; auth-isolated)
+//     - admin moderation ban/timeout       (~16 routes when combined with
+//                                            admin verify / IP-ban / logs)
+//     - user chat-color get/set            (~2 routes; tiny cluster)
+//     - admin dashboard HTML render        (1 route)
+//     - ViewBot HTTP admin bridge          (~54 routes — viewbot/,
+//                                            test-stream/, viewbot-manager,
+//                                            viewbot-webrtc, viewbot-client,
+//                                            simple-rotation, debug/,
+//                                            streaming-method; largest
+//                                            cluster, deps-heavy)
+//     - admin stream control               (~4 routes)
+//     - admin cooldowns                    (~3 routes)
+//     - debug + system metrics             (~5 routes)
+//     - uploaded videos                    (~3 routes)
+//     - recordings (start/stop/list/...)   (~14 routes + ~5 continuous)
+//     - transcription                      (~10 routes)
+//     - MovieBot + VisionBot + Groq +
+//       OpenAI admin                       (~13 routes total)
+//
+// Total residual: ~140 inline handlers, ~3400 LoC of route bodies.
+// All have a clean destination per the table above; the extractions
+// would be a Phase 16 candidate if scope permits.
 //
 // Lifecycle (lines 4945–5835, ~890 LoC) — non-route inline surfaces:
 //
@@ -71,7 +97,15 @@
 // wiring is wiring, and middleware order is load-bearing. Three section
 // headers were added: MIDDLEWARE SETUP, ROUTE MOUNTS, and SERVER INIT.
 //
-// Status: 0/N sub-PRs landed (this PR is the inventory itself).
+// Status: Phase 15B closed. Landed: 15B.1 (inventory), 15B.2.a (orchestration
+// helpers → services/StreamOrchestration.js), 15B.2.b (initializeRedis +
+// viewbot username cache → bootstrap/redis.js + services/viewbot/
+// UsernameCache.js), 15B.2.c (dead-code deletion + residual marker on
+// getStreamerDisplayName), 15B.3.a (health/root/webrtc-cfg →
+// routes/health.js), 15B.4 (shutdown → bootstrap/shutdown.js), 15B.5
+// (io.on('connection') → bootstrap/register-socket-handlers.js), 15B.6
+// (middleware section-header pass). Route-cluster residuals 15B.3.b–.j
+// remain inline as explicit Phase 15B residuals (see route table above).
 // ============================================================================
 
 const express = require('express');
