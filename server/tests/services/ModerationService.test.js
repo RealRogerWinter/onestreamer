@@ -435,6 +435,147 @@ describe('ModerationService Stage 2 integration', () => {
   });
 });
 
+describe('ModerationService Stage 3 + ActionArbiter integration', () => {
+  function makeStage3Stub(overrides = {}) {
+    return {
+      isReady: jest.fn(() => true),
+      isDegraded: jest.fn(() => false),
+      classify: jest.fn(async () => ({
+        flagged: true,
+        categories: { hate: true },
+        scores: { hate: 0.95 },
+        model: 'omni-stub',
+        latency_ms: 30,
+      })),
+      ...overrides,
+    };
+  }
+  function makeArbiterStub(overrides = {}) {
+    return {
+      arbitrate: jest.fn(async () => ({
+        final_decision: 'auto_ban',
+        action_taken: 'banned:1;rotation=rotated',
+      })),
+      ...overrides,
+    };
+  }
+
+  test('Stage 3 not called when Stage 2 risk_level < 3', async () => {
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => ({
+        risk_level: 2,
+        categories: ['hate_speech'],
+        explanation: 'borderline',
+        model: 'stub',
+        latency_ms: 10,
+      })),
+    });
+    const stage3 = makeStage3Stub();
+    const arbiter = makeArbiterStub();
+    const { svc, wrapper } = await buildService({ stage2, stage3, actionArbiter: arbiter });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_low', text: 'faggot' });
+    expect(stage3.classify).not.toHaveBeenCalled();
+    expect(arbiter.arbitrate).not.toHaveBeenCalled();
+    const row = await wrapper.getAsync('SELECT final_decision FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.final_decision).toBe('admin_review');
+  });
+
+  test('Stage 3 called on Stage 2 risk_level=3; agreement triggers arbiter', async () => {
+    const stage2 = makeStage2Stub();
+    const stage3 = makeStage3Stub();
+    const arbiter = makeArbiterStub();
+    const { svc, wrapper } = await buildService({ stage2, stage3, actionArbiter: arbiter });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_b', text: 'faggot' });
+    expect(stage3.classify).toHaveBeenCalledTimes(1);
+    expect(arbiter.arbitrate).toHaveBeenCalledTimes(1);
+    const row = await wrapper.getAsync('SELECT * FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.final_decision).toBe('auto_ban');
+    expect(row.action_taken).toMatch(/banned/);
+    const stage3Json = JSON.parse(row.stage3_verdict_json);
+    expect(stage3Json.flagged).toBe(true);
+  });
+
+  test('Stage 3 disagrees with Stage 2 → admin_review, no arbiter', async () => {
+    const stage2 = makeStage2Stub();
+    const stage3 = makeStage3Stub({
+      classify: jest.fn(async () => ({
+        flagged: false,
+        categories: {},
+        scores: { hate: 0.1 },
+        model: 'omni-stub',
+        latency_ms: 30,
+      })),
+    });
+    const arbiter = makeArbiterStub();
+    const { svc, wrapper } = await buildService({ stage2, stage3, actionArbiter: arbiter });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_dis', text: 'faggot' });
+    expect(arbiter.arbitrate).not.toHaveBeenCalled();
+    const row = await wrapper.getAsync('SELECT final_decision, action_taken FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.final_decision).toBe('admin_review');
+    expect(row.action_taken).toMatch(/stage3_disagreed/);
+  });
+
+  test('Stage 3 degraded → final_decision deferred_degraded', async () => {
+    const stage2 = makeStage2Stub();
+    const stage3 = makeStage3Stub({
+      classify: jest.fn(async () => ({ degraded: true, reason: 'breaker_open' })),
+    });
+    const arbiter = makeArbiterStub();
+    const { svc, wrapper } = await buildService({ stage2, stage3, actionArbiter: arbiter });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_deg', text: 'faggot' });
+    expect(arbiter.arbitrate).not.toHaveBeenCalled();
+    const row = await wrapper.getAsync('SELECT final_decision FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.final_decision).toBe('deferred_degraded');
+  });
+
+  test('Stage 3 not ready → admin_review, no arbiter', async () => {
+    const stage2 = makeStage2Stub();
+    const stage3 = makeStage3Stub({ isReady: jest.fn(() => false) });
+    const arbiter = makeArbiterStub();
+    const { svc, wrapper } = await buildService({ stage2, stage3, actionArbiter: arbiter });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_nor', text: 'faggot' });
+    expect(stage3.classify).not.toHaveBeenCalled();
+    expect(arbiter.arbitrate).not.toHaveBeenCalled();
+    const row = await wrapper.getAsync('SELECT final_decision, action_taken FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.final_decision).toBe('admin_review');
+    expect(row.action_taken).toMatch(/stage3_not_called/);
+  });
+
+  test('Stage 3 per-streamer quota gates calls after threshold', async () => {
+    const stage2 = makeStage2Stub();
+    const stage3 = makeStage3Stub();
+    const arbiter = makeArbiterStub();
+    const { svc } = await buildService({
+      stage2, stage3, actionArbiter: arbiter,
+      stage3QuotaPerHour: 2,
+    });
+    await svc.initialize();
+    // First two chunks call Stage 3; the third should hit the quota and skip.
+    await svc.handleTranscriptChunk({ streamerId: 'sock_q', text: 'faggot 1' });
+    await svc.handleTranscriptChunk({ streamerId: 'sock_q', text: 'faggot 2' });
+    await svc.handleTranscriptChunk({ streamerId: 'sock_q', text: 'faggot 3' });
+    expect(stage3.classify).toHaveBeenCalledTimes(2);
+  });
+
+  test('setActionArbiter replaces the previously-injected arbiter', async () => {
+    const stage2 = makeStage2Stub();
+    const stage3 = makeStage3Stub();
+    const a1 = makeArbiterStub();
+    const a2 = makeArbiterStub();
+    const { svc } = await buildService({ stage2, stage3, actionArbiter: a1 });
+    await svc.initialize();
+    svc.setActionArbiter(a2);
+    await svc.handleTranscriptChunk({ streamerId: 'sock_r', text: 'faggot' });
+    expect(a1.arbitrate).not.toHaveBeenCalled();
+    expect(a2.arbitrate).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ModerationService.getEvents / getEvent', () => {
   test('getEvents returns rows in reverse-chronological order (newest first)', async () => {
     const { svc, wrapper } = await buildService();

@@ -49,9 +49,17 @@ class ModerationService extends EventEmitter {
    * @param {object} [deps.stage2]          ModerationStage2 instance. If absent
    *                                        or its isReady() returns false,
    *                                        Stage 2 is skipped (M1 log-only).
+   * @param {object} [deps.stage3]          ModerationStage3 instance. If absent
+   *                                        or its isReady() returns false,
+   *                                        the 2-of-2 cross-check downgrades
+   *                                        to admin_review.
+   * @param {object} [deps.actionArbiter]   ModerationActionArbiter instance.
+   *                                        If absent, no enforcement runs
+   *                                        even on 2-of-2 HIGH agreement.
    * @param {number} [deps.contextWindowMs] How much surrounding context to
    *                                        retain per streamer for Stage 2.
    *                                        Default 60000 (60s).
+   * @param {number} [deps.stage3QuotaPerHour=20] Per-streamer Stage 3 calls/hr cap.
    * @param {string} [deps.seedPath]        Override embedded seed file path (tests).
    * @param {string} [deps.seedHashPath]    Override SHA-256 sibling file path (tests).
    * @param {string} [deps.schemaPath]      Override schema file path (tests).
@@ -66,7 +74,10 @@ class ModerationService extends EventEmitter {
       moderationNotifier,
       streamService,
       stage2 = null,
+      stage3 = null,
+      actionArbiter = null,
       contextWindowMs = 60_000,
+      stage3QuotaPerHour = 20,
       seedPath = DEFAULT_SEED_PATH,
       seedHashPath = DEFAULT_SEED_HASH_PATH,
       schemaPath = DEFAULT_SCHEMA_PATH,
@@ -83,7 +94,13 @@ class ModerationService extends EventEmitter {
     this.moderationNotifier = moderationNotifier;
     this.streamService = streamService;
     this.stage2 = stage2;
+    this.stage3 = stage3;
+    this.actionArbiter = actionArbiter;
     this.contextWindowMs = contextWindowMs;
+    this.stage3QuotaPerHour = stage3QuotaPerHour;
+    // Per-streamer rolling window of recent Stage 3 call timestamps (ms).
+    // Trimmed on each access so memory stays bounded.
+    this._stage3CallsByStreamer = new Map();
     this.seedPath = seedPath;
     this.seedHashPath = seedHashPath;
     this.schemaPath = schemaPath;
@@ -287,6 +304,24 @@ class ModerationService extends EventEmitter {
     await this._loadTermsCache();
   }
 
+  /**
+   * Late-inject the ActionArbiter. The arbiter depends on
+   * RandomStreamRotationService, which is constructed in server/index.js
+   * AFTER ModerationService — both the MediaSoup and the LiveKit branches
+   * call this setter once their rotation service is wired. Calling more
+   * than once is allowed and is treated as a replacement (the most-recent
+   * arbiter wins) so a backend that swaps rotation strategies mid-process
+   * doesn't end up with a stale arbiter wired to a torn-down rotation
+   * service.
+   */
+  setActionArbiter(arbiter) {
+    this.actionArbiter = arbiter || null;
+  }
+
+  setStage3(stage3) {
+    this.stage3 = stage3 || null;
+  }
+
   // ── Event subscription ─────────────────────────────────────────────────
 
   _subscribeToTranscriptionChunks() {
@@ -390,14 +425,13 @@ class ModerationService extends EventEmitter {
 
     // Stage 2's verdict shape: success → {risk_level, categories,
     // explanation, model, latency_ms, raw}; degraded → {degraded: true,
-    // reason}; error → {error, raw_status, raw_body}. M2 stays log-only:
-    // even a clean risk_level=3 verdict produces 'admin_review' here. M3
-    // wires the action arbiter that translates risk_level + Stage 3
-    // agreement → auto_ban / auto_skip.
+    // reason}; error → {error, raw_status, raw_body}.
     let finalDecision = 'admin_review';
     let stage2VerdictJson = null;
     let stage2RiskLevel = null;
     let stage2CategoriesJson = null;
+    let stage3VerdictJson = null;
+    let actionTaken = null;
     const mlModels = { stage1: 'embedded-v1' };
 
     if (stage2Result) {
@@ -420,6 +454,64 @@ class ModerationService extends EventEmitter {
         stage2RiskLevel = stage2Result.risk_level;
         stage2CategoriesJson = JSON.stringify(stage2Result.categories);
         mlModels.stage2 = stage2Result.model;
+
+        // Stage 3 cross-check: ONLY fires when Stage 2 returned risk_level=3
+        // and Stage 3 is wired + ready + the per-streamer quota allows it.
+        // Auto-action requires 2-of-2 HIGH agreement (Stage 3 flagged on at
+        // least one of the relevant categories). Disagreement downgrades to
+        // admin_review per ADR-0013's bias-mitigation requirement.
+        if (stage2Result.risk_level === 3) {
+          const stage3Result = await this._maybeCallStage3({
+            streamerId,
+            text: chunk.text,
+            surroundingContext,
+          });
+          if (stage3Result) {
+            stage3VerdictJson = JSON.stringify(stage3Result);
+            if (stage3Result.degraded) {
+              finalDecision = 'deferred_degraded';
+            } else if (stage3Result.error) {
+              // Stage 3 transport failure on a risk=3 Stage 2 verdict —
+              // don't auto-act, route to admin to be safe.
+              finalDecision = 'admin_review';
+            } else {
+              mlModels.stage3 = stage3Result.model;
+              if (stage3Result.flagged === true) {
+                // Both stages agree: this is the only path that may produce
+                // auto_ban / auto_skip. Hand off to the action arbiter,
+                // which itself checks AI_MODERATION_ENFORCE and the
+                // stale-session invariant.
+                if (this.actionArbiter) {
+                  const arb = await this.actionArbiter.arbitrate({
+                    id: null, // event id not known until after insert; arbiter doesn't need it for the action itself, only logging.
+                    stream_session_id: String(streamGeneration),
+                    streamer_id: chunk.streamerId || null,
+                    stream_type: streamType,
+                    external_platform: chunk.externalPlatform || null,
+                    external_login: chunk.externalLogin || null,
+                    external_user_id: chunk.externalUserId || null,
+                  });
+                  finalDecision = arb.final_decision;
+                  actionTaken = arb.action_taken;
+                } else {
+                  finalDecision = 'admin_review';
+                  actionTaken = 'no_action_arbiter';
+                }
+              } else {
+                // Stage 3 disagrees with Stage 2: 1-of-2 not enough.
+                finalDecision = 'admin_review';
+                actionTaken = 'stage3_disagreed';
+              }
+            }
+          }
+          // else: stage3Result === null means we didn't call it (no
+          // wire, not ready, or over quota). final_decision stays at
+          // its post-Stage-2 default which is admin_review. We tag the
+          // action_taken so admins can see why we didn't escalate.
+          if (!stage3Result) {
+            actionTaken = actionTaken || 'stage3_not_called';
+          }
+        }
       }
     }
 
@@ -435,8 +527,9 @@ class ModerationService extends EventEmitter {
       stage2_verdict_json: stage2VerdictJson,
       stage2_risk_level: stage2RiskLevel,
       stage2_categories_json: stage2CategoriesJson,
+      stage3_verdict_json: stage3VerdictJson,
       final_decision: finalDecision,
-      action_taken: null,
+      action_taken: actionTaken,
       actor: 'system',
       automated_decision: 1,
       legal_basis: null,
@@ -449,6 +542,38 @@ class ModerationService extends EventEmitter {
       this.emit('event-created', event);
     }
     return event;
+  }
+
+  /**
+   * Call Stage 3 if it's wired, ready, and within the per-streamer hourly
+   * quota. Returns the Stage 3 result object or null if skipped.
+   */
+  async _maybeCallStage3({ streamerId, text, surroundingContext }) {
+    if (!this.stage3 || !this.stage3.isReady()) return null;
+
+    const now = Date.now();
+    const oneHourAgo = now - 60 * 60 * 1000;
+    let calls = this._stage3CallsByStreamer.get(streamerId);
+    if (!calls) {
+      calls = [];
+      this._stage3CallsByStreamer.set(streamerId, calls);
+    }
+    while (calls.length > 0 && calls[0] < oneHourAgo) calls.shift();
+    if (calls.length >= this.stage3QuotaPerHour) {
+      // Over quota — return a sentinel that ModerationService can treat
+      // the same as Stage 3 not being wired: no auto-action, admin_review.
+      return null;
+    }
+    calls.push(now);
+
+    try {
+      return await this.stage3.classify({
+        text: (surroundingContext ? `${surroundingContext}\n\n` : '') + text,
+      });
+    } catch (err) {
+      console.error('❌ ModerationService: Stage 3 threw:', err);
+      return { error: 'stage3_threw', raw_status: null, raw_body: null };
+    }
   }
 
   _pushContext(streamerId, text) {
@@ -490,10 +615,11 @@ class ModerationService extends EventEmitter {
              transcript_chunk_id, transcript_excerpt, surrounding_context,
              matched_terms_json, stage1_hit,
              stage2_verdict_json, stage2_risk_level, stage2_categories_json,
+             stage3_verdict_json,
              final_decision, action_taken, actor,
              automated_decision, legal_basis, redress_url,
              ml_model_versions_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           row.stream_session_id,
           row.streamer_id,
@@ -506,6 +632,7 @@ class ModerationService extends EventEmitter {
           row.stage2_verdict_json || null,
           row.stage2_risk_level == null ? null : row.stage2_risk_level,
           row.stage2_categories_json || null,
+          row.stage3_verdict_json || null,
           row.final_decision,
           row.action_taken,
           row.actor,
@@ -529,7 +656,9 @@ class ModerationService extends EventEmitter {
         stage2_verdict_json: row.stage2_verdict_json || null,
         stage2_risk_level: row.stage2_risk_level == null ? null : row.stage2_risk_level,
         stage2_categories_json: row.stage2_categories_json || null,
+        stage3_verdict_json: row.stage3_verdict_json || null,
         final_decision: row.final_decision,
+        action_taken: row.action_taken,
         actor: row.actor,
         created_at: new Date().toISOString(),
       };

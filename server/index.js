@@ -4902,11 +4902,20 @@ async function startServer() {
     // env flag; M2 stays log-only.
     const ModerationService = require('./services/ModerationService');
     const ModerationStage2 = require('./services/ModerationStage2');
+    const ModerationStage3 = require('./services/ModerationStage3');
     const moderationStage2 = new ModerationStage2({
       // GROQ_API_KEY is read from process.env by default. Override via
       // `MODERATION_GROQ_API_KEY` if ops want a separate quota from MovieBot.
       apiKey: process.env.MODERATION_GROQ_API_KEY || process.env.GROQ_API_KEY || null,
       model: process.env.MODERATION_GROQ_MODEL || undefined,
+    });
+    // PR-M3: Stage 3 is the free OpenAI omni-moderation cross-check. Optional —
+    // when OPENAI_API_KEY is absent the service runs without it and high-risk
+    // events route to admin_review (no auto-action). The action arbiter is
+    // injected LATER via setActionArbiter() — after RandomStreamRotationService
+    // is built in the MediaSoup or LiveKit branch below.
+    const moderationStage3 = new ModerationStage3({
+      apiKey: process.env.OPENAI_API_KEY || null,
     });
     let moderationService = new ModerationService({
       database,
@@ -4914,6 +4923,7 @@ async function startServer() {
       moderationNotifier,
       streamService,
       stage2: moderationStage2,
+      stage3: moderationStage3,
       failClosed: process.env.AI_MODERATION_FAIL_CLOSED !== 'false',
     });
     try {
@@ -4993,6 +5003,28 @@ async function startServer() {
       if (whitelistService) randomStreamRotationService.setWhitelistService(whitelistService);
       global.randomStreamRotationService = randomStreamRotationService;
       console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized (MediaSoup backend)');
+
+      // PR-M3: wire the AI moderation ActionArbiter now that the rotation
+      // service is built. The arbiter is what turns a 2-of-2 HIGH agreement
+      // verdict into an actual ban/skip + rotation. Behind the
+      // AI_MODERATION_ENFORCE env flag (default false in M3, flipped true in
+      // M6) — when false, the arbiter still runs the stale-session check
+      // but downgrades all verdicts to admin_review.
+      if (moderationService) {
+        const ModerationActionArbiter = require('./services/ModerationActionArbiter');
+        const userRepositoryInstance = new UserRepository(database);
+        const actionArbiter = new ModerationActionArbiter({
+          userRepository: userRepositoryInstance,
+          sessionService,
+          streamService,
+          randomStreamRotationService,
+          whitelistService,
+          moderationNotifier,
+          enforce: process.env.AI_MODERATION_ENFORCE === 'true',
+        });
+        moderationService.setActionArbiter(actionArbiter);
+        app.locals.moderationActionArbiter = actionArbiter;
+      }
 
       // PR-W4: drift enforcer. Polls the active relay every drift_check_seconds
       // and stops it if the streamer drifted out of policy mid-broadcast.
@@ -5096,6 +5128,26 @@ async function startServer() {
       if (whitelistService) randomStreamRotationService.setWhitelistService(whitelistService);
       global.randomStreamRotationService = randomStreamRotationService;
       console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized');
+
+      // PR-M3: wire the AI moderation ActionArbiter (LiveKit branch). Same
+      // contract as the MediaSoup branch above — once rotation is built we
+      // hand it to the arbiter so 2-of-2 HIGH verdicts can produce real
+      // bans + rotations (when AI_MODERATION_ENFORCE=true).
+      if (moderationService) {
+        const ModerationActionArbiter = require('./services/ModerationActionArbiter');
+        const userRepositoryInstance = new UserRepository(database);
+        const actionArbiter = new ModerationActionArbiter({
+          userRepository: userRepositoryInstance,
+          sessionService,
+          streamService,
+          randomStreamRotationService,
+          whitelistService,
+          moderationNotifier,
+          enforce: process.env.AI_MODERATION_ENFORCE === 'true',
+        });
+        moderationService.setActionArbiter(actionArbiter);
+        app.locals.moderationActionArbiter = actionArbiter;
+      }
 
       // PR-W4: drift enforcer (LiveKit branch).
       if (whitelistService) {
