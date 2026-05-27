@@ -67,6 +67,8 @@
 //                  (10 routes; transcription/{start,stop/:id,timed,instant,
 //                   config,status} + /api/transcription{,s}/*; lazy
 //                   transcriptionService via getter)
+//   [extracted] MovieBot/VisionBot/Groq/      → routes/admin-ai.js        (15B.3.j — landed)
+//               OpenAI admin                   (14 routes; both bot services eager)
 //
 //   [Phase 15B residual — explicit] route clusters still inline:
 //     - visualfx debug static assets       (~5 routes; trivial — paths
@@ -80,10 +82,8 @@
 //     - admin cooldowns                    (~3 routes)
 //     - debug + system metrics             (~5 routes)
 //     - uploaded videos                    (~3 routes)
-//     - MovieBot + VisionBot + Groq +
-//       OpenAI admin                       (~13 routes total)
 //
-// Total residual: ~56 inline handlers (down from ~140 at Phase-15-start), ~1700 LoC of route bodies.
+// Total residual: ~42 inline handlers (down from ~140 at Phase-15-start), ~1500 LoC of route bodies.
 // All have a clean destination per the table above; further extractions
 // would be a Phase 16 candidate if scope permits.
 //
