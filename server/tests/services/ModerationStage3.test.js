@@ -34,10 +34,12 @@ describe('ModerationStage3 contract', () => {
     expect(r).toEqual({ degraded: true, reason: 'no_api_key' });
   });
 
-  test('classify returns error on empty text', async () => {
+  test('classify returns error on empty input (no text and no image)', async () => {
     const s3 = new ModerationStage3({ apiKey: 'k' });
     const r = await s3.classify({ text: '' });
-    expect(r.error).toBe('empty_text');
+    // Renamed from 'empty_text' in OmniImageMod PR 1 — the new signature
+    // accepts text OR image, so the rejection covers both being absent.
+    expect(r.error).toBe('empty_input');
   });
 });
 
