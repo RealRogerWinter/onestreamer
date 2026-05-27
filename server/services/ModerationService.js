@@ -354,11 +354,30 @@ class ModerationService extends EventEmitter {
    */
   async handleTranscriptChunk(chunk) {
     if (this._stopped) return null;
-    if (!chunk || typeof chunk.text !== 'string' || chunk.text.length === 0) return null;
+    if (!chunk) return null;
+
+    // TranscriptionService emits `transcription-chunk` with TWO different
+    // payload shapes depending on which backend produced the audio:
+    //   - MediaSoup path (`startTimedTranscription` MediaSoup branch,
+    //     TranscriptionService.js around line 1061): `{ ..., text }`.
+    //   - LiveKit path (URL-relay streams, line 997): `{ ..., transcription }`.
+    // The cross-cutting bug: production URL relays go through LiveKit and
+    // therefore emit `{transcription}` — a strict `chunk.text` read would
+    // silently drop every URL-relay chunk and leave the relay unmoderated.
+    // Read either field and normalize down to a single `text` property so
+    // the rest of the pipeline doesn't have to care. The follow-up that
+    // unifies the emit shape in TranscriptionService itself is tracked
+    // separately (see CHANGELOG for this PR); the defensive read here is
+    // load-bearing in the meantime.
+    const text = (typeof chunk.text === 'string' && chunk.text)
+      || (typeof chunk.transcription === 'string' && chunk.transcription)
+      || null;
+    if (!text) return null;
+    const normalizedChunk = chunk.text === text ? chunk : { ...chunk, text };
     const streamerId = chunk.streamerId || 'unknown';
 
     const prev = this._streamerChains.get(streamerId) || Promise.resolve();
-    const next = prev.then(() => this._processChunk(chunk).catch((err) => {
+    const next = prev.then(() => this._processChunk(normalizedChunk).catch((err) => {
       console.error('❌ ModerationService: chunk processing failed:', err);
       return null;
     }));

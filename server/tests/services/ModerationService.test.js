@@ -249,6 +249,52 @@ describe('ModerationService.handleTranscriptChunk', () => {
     expect(rows).toHaveLength(0);
   });
 
+  // Regression: TranscriptionService's two backend branches emit
+  // `transcription-chunk` with different payload shapes — MediaSoup uses
+  // `{text}` and LiveKit (URL-relay) uses `{transcription}`. Before the
+  // hotfix, production URL relays went unmoderated because
+  // handleTranscriptChunk strictly read `chunk.text`. The defensive read
+  // unifies both shapes down to one normalized `text` field.
+  test('regression: LiveKit-shape {transcription} is processed identically to {text}', async () => {
+    const { svc, moderationNotifier, wrapper } = await buildService();
+    await svc.initialize();
+    const result = await svc.handleTranscriptChunk({
+      sessionId: 'sess_lk',
+      streamerId: 'sock_lk',
+      // LiveKit path uses `transcription`, not `text` — see
+      // server/services/TranscriptionService.js around line 997.
+      transcription: 'i would never say faggot but he did',
+      isComplete: true,
+    });
+    expect(result).not.toBeNull();
+    expect(result.final_decision).toBe('admin_review');
+    expect(moderationNotifier.eventCreated).toHaveBeenCalledTimes(1);
+    const row = await wrapper.getAsync('SELECT * FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.transcript_excerpt).toContain('faggot');
+  });
+
+  test('regression: empty {transcription} string is rejected like empty {text}', async () => {
+    const { svc, moderationNotifier } = await buildService();
+    await svc.initialize();
+    const r1 = await svc.handleTranscriptChunk({ streamerId: 'sock_e1', transcription: '' });
+    expect(r1).toBeNull();
+    const r2 = await svc.handleTranscriptChunk({ streamerId: 'sock_e2', text: '' });
+    expect(r2).toBeNull();
+    expect(moderationNotifier.eventCreated).not.toHaveBeenCalled();
+  });
+
+  test('regression: when both {text} and {transcription} are present, prefer text', async () => {
+    const { svc, wrapper } = await buildService();
+    await svc.initialize();
+    await svc.handleTranscriptChunk({
+      streamerId: 'sock_both',
+      text: 'faggot from text field',
+      transcription: 'kike from transcription field',
+    });
+    const row = await wrapper.getAsync('SELECT * FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.transcript_excerpt).toBe('faggot from text field');
+  });
+
   test('Stage 1 hit writes a moderation_events row with admin_review decision', async () => {
     const { svc, moderationNotifier, wrapper } = await buildService();
     await svc.initialize();
