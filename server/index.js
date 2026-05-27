@@ -5075,6 +5075,18 @@ async function startServer() {
       chatBotService.setModerationService(moderationService);
     }
 
+    // OmniImageMod PR 3 (ADR-0021): wire the image-moderation gate into
+    // VisionBotService. VisionBotService is built by the bootstrap factory
+    // (no moderation dep at construction time, since ModerationService's
+    // async init isn't done yet); the setter here injects the now-ready
+    // service so _runCycle can call handleVisionFrame on every frame
+    // capture. No-op if moderationService failed to init or the method
+    // doesn't exist (older VisionBot builds).
+    if (moderationService && services.visionBotService
+        && typeof services.visionBotService.setModerationService === 'function') {
+      services.visionBotService.setModerationService(moderationService);
+    }
+
     // PR-M5 (ADR-0013): mount the admin API surface. Handlers themselves
     // return 503 when the underlying moderationService is unset, so this is
     // safe to mount unconditionally (matches the PR-W5 whitelist pattern).

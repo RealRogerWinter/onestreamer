@@ -269,6 +269,96 @@ describe('VisionBotService', () => {
         expect(deps.chatBotService.generateVisionCommentForBot).toHaveBeenCalledTimes(2);
     });
 
+    // OmniImageMod PR 3 (ADR-0021)
+    describe('image-moderation gate', () => {
+        test('halts cycle on auto_ban — no bot dispatch fires', async () => {
+            const handleVisionFrame = jest.fn(async () => ({
+                final_decision: 'auto_ban',
+                action_taken: 'banned:42;rotation=ok',
+            }));
+            bot.setModerationService({ handleVisionFrame });
+            await bot._runCycle('x', new Date(), 'sess-mod-banned');
+            jest.runAllTimers();
+            await Promise.resolve();
+            expect(handleVisionFrame).toHaveBeenCalledTimes(1);
+            expect(deps.chatBotService.generateVisionCommentForBot).not.toHaveBeenCalled();
+            expect(bot.stats.cycles_dropped.moderated).toBe(1);
+        });
+
+        test('halts cycle on auto_skip (url-relay block)', async () => {
+            const handleVisionFrame = jest.fn(async () => ({
+                final_decision: 'auto_skip',
+                action_taken: 'blocked:twitch:foo',
+            }));
+            bot.setModerationService({ handleVisionFrame });
+            await bot._runCycle('x', new Date(), 'sess-mod-skip');
+            jest.runAllTimers();
+            await Promise.resolve();
+            expect(deps.chatBotService.generateVisionCommentForBot).not.toHaveBeenCalled();
+            expect(bot.stats.cycles_dropped.moderated).toBe(1);
+        });
+
+        test('continues to dispatch on clean (null result)', async () => {
+            const handleVisionFrame = jest.fn(async () => null);
+            bot.setModerationService({ handleVisionFrame });
+            bot.config.max_bots_per_cycle = 1;
+            await bot._runCycle('x', new Date(), 'sess-mod-clean');
+            jest.runAllTimers();
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(handleVisionFrame).toHaveBeenCalledTimes(1);
+            expect(deps.chatBotService.generateVisionCommentForBot).toHaveBeenCalledTimes(1);
+        });
+
+        test('continues to dispatch on admin_review (enforce=off path)', async () => {
+            const handleVisionFrame = jest.fn(async () => ({
+                final_decision: 'admin_review',
+                action_taken: null,
+            }));
+            bot.setModerationService({ handleVisionFrame });
+            bot.config.max_bots_per_cycle = 1;
+            await bot._runCycle('x', new Date(), 'sess-mod-review');
+            jest.runAllTimers();
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(deps.chatBotService.generateVisionCommentForBot).toHaveBeenCalledTimes(1);
+        });
+
+        test('fail-open: gate that throws does NOT silence the bot', async () => {
+            const handleVisionFrame = jest.fn(async () => { throw new Error('moderation crashed'); });
+            bot.setModerationService({ handleVisionFrame });
+            bot.config.max_bots_per_cycle = 1;
+            await bot._runCycle('x', new Date(), 'sess-mod-throw');
+            jest.runAllTimers();
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(deps.chatBotService.generateVisionCommentForBot).toHaveBeenCalledTimes(1);
+        });
+
+        test('passes streamerId, sessionId, endTime, transcription into the gate', async () => {
+            const handleVisionFrame = jest.fn(async () => null);
+            bot.setModerationService({ handleVisionFrame });
+            const endTime = new Date();
+            await bot._runCycle('spoken', endTime, 'sess-args');
+            expect(handleVisionFrame).toHaveBeenCalledWith(expect.objectContaining({
+                streamerId: 'streamer-1',
+                sessionId: 'sess-args',
+                endTime,
+                transcription: 'spoken',
+            }));
+        });
+
+        test('skipped when moderationService is not wired (no setter call)', async () => {
+            // Default fixture has no moderationService — gate is a no-op.
+            bot.config.max_bots_per_cycle = 1;
+            await bot._runCycle('x', new Date(), 'sess-no-mod');
+            jest.runAllTimers();
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(deps.chatBotService.generateVisionCommentForBot).toHaveBeenCalledTimes(1);
+        });
+    });
+
     test('records groq 429 in cycles_dropped and bumps consecutive_failures', async () => {
         const e = new Error('rate limit');
         e.name = 'GroqRateLimitError';

@@ -48,6 +48,7 @@ class VisionBotService extends TranscriptionDrivenBotService {
         frameCaptureService,
         streamService,
         continuousRecordingService,
+        moderationService = null,
     }) {
         super({
             botName: 'VisionBotService',
@@ -64,6 +65,11 @@ class VisionBotService extends TranscriptionDrivenBotService {
         this.frameCaptureService = frameCaptureService;
         this.streamService = streamService;
         this.continuousRecordingService = continuousRecordingService;
+        // OmniImageMod PR 3 (ADR-0021): optional moderation gate. When wired
+        // and enabled, every captured frame goes through omni-moderation
+        // before the bot dispatch fires. Service is null in test setups
+        // and in production deployments that don't have OPENAI_API_KEY.
+        this.moderationService = moderationService;
 
         this.defaultPromptTemplate = DEFAULT_VISION_PROMPT;
 
@@ -86,6 +92,16 @@ class VisionBotService extends TranscriptionDrivenBotService {
         setTimeout(() => this.loadConfigFromDatabase(), 100);
 
         logger.debug('🔍 VisionBotService: Initialized');
+    }
+
+    // OmniImageMod PR 3: late-injection setter for ModerationService.
+    // ModerationService is constructed inline in server/index.js AFTER the
+    // bootstrap factory builds VisionBotService (because Moderation init is
+    // async — runs schema apply, seed verification, etc. inside an
+    // initialize() that the factory can't await). The setter is called
+    // from server/index.js after moderationService.initialize() resolves.
+    setModerationService(moderationService) {
+        this.moderationService = moderationService;
     }
 
     // ── Base-class hooks ───────────────────────────────────────────────
@@ -244,6 +260,31 @@ class VisionBotService extends TranscriptionDrivenBotService {
         if (!frame) {
             this._recordSkip('no_frame');
             return;
+        }
+
+        // OmniImageMod PR 3 (ADR-0021): image-moderation gate. Runs BEFORE
+        // the bot dispatch setTimeouts are scheduled — so a flag halts the
+        // cycle and no chat message is posted. This costs ~0.5–2s of
+        // latency per cycle (OpenAI moderation RTT) but is required to
+        // prevent the bot from commenting on content that's about to get
+        // the streamer banned. Fail-open: if the gate throws, the cycle
+        // continues (a bug in moderation must not silence the bot).
+        if (this.moderationService && typeof this.moderationService.handleVisionFrame === 'function') {
+            try {
+                const modResult = await this.moderationService.handleVisionFrame({
+                    streamerId: this.currentStreamerId,
+                    frame,
+                    sessionId,
+                    endTime,
+                    transcription,
+                });
+                if (modResult && (modResult.final_decision === 'auto_ban' || modResult.final_decision === 'auto_skip')) {
+                    this._recordSkip('moderated');
+                    return;
+                }
+            } catch (err) {
+                logger.warn(`⚠️ VisionBotService: image-moderation gate threw: ${err && err.message}`);
+            }
         }
 
         const bots = await this._getEnabledBots();

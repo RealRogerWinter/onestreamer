@@ -264,6 +264,80 @@ module.exports = function moderationAIRoutes() {
     }
   });
 
+  // ── Image moderation config (OmniImageMod PR 3, ADR-0021) ───────────────
+  // GET /image-config returns the current image-moderation toggle, the
+  // enabled category list, and the banned-frame retention setting (days).
+  // POST /image-config updates the same. Server-side validation: drops
+  // text-only omni categories (sexual/minors, hate, etc. — image inputs
+  // cannot trigger them) and clamps retention to [1, 365].
+  router.get('/image-config', authenticateAdmin, async (req, res) => {
+    const s = svcOr503(req, res);
+    if (!s) return;
+    try {
+      const cfg = await s.getImageModerationConfig();
+      res.json(cfg);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.post('/image-config', authenticateAdmin, async (req, res) => {
+    const s = svcOr503(req, res);
+    if (!s) return;
+    const body = req.body || {};
+    // enabled: optional boolean. categories: optional array. retention: optional number.
+    if ('enabled' in body && typeof body.enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+    if ('categories' in body && !Array.isArray(body.categories)) {
+      return res.status(400).json({ error: 'categories must be an array' });
+    }
+    if ('frame_retention_days' in body && !Number.isFinite(body.frame_retention_days)) {
+      return res.status(400).json({ error: 'frame_retention_days must be a number' });
+    }
+    try {
+      const r = await s.setImageModerationConfig({
+        enabled: body.enabled,
+        categories: body.categories,
+        frame_retention_days: body.frame_retention_days,
+      }, actor(req));
+      const cfg = await s.getImageModerationConfig();
+      res.json({ ...r, ...cfg });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /events/:id/frame streams the audit JPEG for an image-source
+  // moderation event. JWT-protected (authenticateAdmin). Returns 404 if
+  // the event is not source='image' or the image_path has been purged
+  // past retention.
+  router.get('/events/:id/frame', authenticateAdmin, async (req, res) => {
+    const s = svcOr503(req, res);
+    if (!s) return;
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: 'event id must be a number' });
+    }
+    try {
+      const row = await s.database.getAsync(
+        'SELECT source, image_path FROM moderation_events WHERE id = ?', [id]
+      );
+      if (!row || row.source !== 'image' || !row.image_path) {
+        return res.status(404).json({ error: 'no image for this event' });
+      }
+      const fs = require('fs');
+      if (!fs.existsSync(row.image_path)) {
+        return res.status(404).json({ error: 'image purged past retention' });
+      }
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'private, max-age=60');
+      fs.createReadStream(row.image_path).pipe(res);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── GDPR data subject access (PR-M6) ───────────────────────────────────
   // Any authenticated user (not just admins) can fetch the moderation
   // events that name them. Implements GDPR Article 15 (right of access)
