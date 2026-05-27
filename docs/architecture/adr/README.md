@@ -60,6 +60,8 @@ What else we looked at and why we did not pick it.
 | 0016 | [Tick-loop watchdog pattern (observability only)](0016-tick-loop-watchdog-observability-only.md) | accepted |
 | 0017 | [MediaSoup/LiveKit branch alignment plan](0017-mediasoup-livekit-alignment-plan.md) | accepted |
 | 0018 | [VisionBot — multi-modal screenshot commentary](0018-visionbot-screenshot-comments.md) | accepted |
+| 0019 | [ViewBotClientService decomposition outcome](0019-viewbot-instance-extraction.md) | accepted |
+| 0020 | [Namespaced logging with pino](0020-namespaced-logging-with-pino.md) | accepted |
 
 ### Note on the 0013a slug
 
