@@ -67,9 +67,10 @@
 //   4600–4863   io.on('connection', ...)     → bootstrap/register-       (15B.5)
 //               socket-handler registration    socket-handlers.js
 //
-// Middleware (lines 188–374, ~186 LoC) — stays in index.js with section
-// headers (15B.6); pure `app.use(...)` wiring is wiring, and middleware
-// order is load-bearing.
+// Middleware (lines 188–374 pre-Phase-15B) — stays in index.js with section
+// headers per locked decision #7 (15B.6 — landed); pure `app.use(...)`
+// wiring is wiring, and middleware order is load-bearing. Three section
+// headers were added: MIDDLEWARE SETUP, ROUTE MOUNTS, and SERVER INIT.
 //
 // Status: 0/N sub-PRs landed (this PR is the inventory itself).
 // ============================================================================
@@ -151,6 +152,13 @@ const { runAsync, getAsync, allAsync } = database;
 const UserRepository = require('./database/repository/UserRepository');
 const userRepository = new UserRepository({ getAsync, runAsync, allAsync });
 
+// =========================================================================
+// SERVER INIT (Phase 15B.6 — express + http/https server objects)
+//   Express app instance, HTTP server, and (optional) HTTPS server are
+//   wired here. The HTTPS-cert load lives in startServer() (lifecycle —
+//   see 15B.4); the server objects themselves are module-scope because
+//   shutdown() (also lifecycle) needs to close them at exit time.
+// =========================================================================
 const app = express();
 
 // Create both HTTP and HTTPS servers
@@ -259,6 +267,17 @@ const PORT = process.env.PORT || 8080;
 // first review pass caught a duplicate inline path that survived the
 // initial extraction.
 const CLIENT_BUILD_INDEX_PATH = path.join(__dirname, '..', 'client', 'build', 'index.html');
+
+// =========================================================================
+// MIDDLEWARE SETUP (Phase 15B.6 — order matters; do not reorder without
+// reading the relevant ADRs first)
+//   - compression  → cors  → trace-context (ADR-0020) → security headers
+//   - express.json / urlencoded → static (public, uploads/{emojis,avatars})
+//   - session (express-session)  →  passport.initialize()
+// Routes mount BELOW this block. Body-parsing and CORS must precede every
+// route mount; static must precede any route that could shadow the static
+// file paths; session + passport must precede any route that reads req.user.
+// =========================================================================
 
 // Compression middleware for better performance
 const compression = require('compression');
@@ -408,6 +427,15 @@ app.use(passport.initialize());
 // Note: Not using passport.session() as we're using JWT tokens
 
 // Auth routes
+// =========================================================================
+// ROUTE MOUNTS (Phase 15B.6 — top-of-tree first, /api/* fanout follows)
+//   /auth/*, /api/moderation/*  → identity-adjacent
+//   /api/admin/* (key gate)  →  /api/admin/* (JWT)
+//   /api/<feature>/* fanout — each route module is in server/routes/
+//   /admin/review/*  → recording-review surface
+//   /api/internal/*  → app.locals-bag (chat-bonus, etc.)
+// =========================================================================
+
 app.use('/auth', authRoutes);
 
 // Moderation routes
