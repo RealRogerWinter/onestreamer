@@ -126,8 +126,21 @@ jest.mock('livekit-server-sdk', () => ({
   SegmentedFileProtocol: { HLS_PROTOCOL: 'hls' },
 }));
 
+// PR 12.2 (ADR-0020) migrated the service from `console.*` to a namespaced
+// pino child logger. The cleanup-aborted assertion now targets `logger.error`
+// instead of the previous `console.error` spy.
+jest.mock('../../bootstrap/logger', () => {
+  const mock = {
+    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
+    error: jest.fn(), fatal: jest.fn(), trace: jest.fn(),
+  };
+  mock.child = jest.fn(() => mock);
+  return mock;
+});
+
 const fs = require('fs');
 const dbMock = require('../../database/database');
+const logger = require('../../bootstrap/logger');
 const ContinuousRecordingService = require('../../services/ContinuousRecordingService');
 
 function makeOldSessionDir(sessionId, msAgo) {
@@ -308,7 +321,7 @@ describe('ContinuousRecordingService.cleanupOldRecordings — b2_file_id gate (P
     await service.cleanupOldRecordings();
 
     expect(fs.rmSync).not.toHaveBeenCalled();
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
+    expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('Cleanup aborted'),
       expect.any(Error)
     );

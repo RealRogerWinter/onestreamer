@@ -4,6 +4,8 @@ const { v4: uuidv4 } = require('uuid');
 const ffmpeg = require('fluent-ffmpeg');
 const { spawn } = require('child_process');
 
+const logger = require('../bootstrap/logger').child({ svc: 'RecordingService' });
+
 class RecordingService {
   constructor(database, mediasoupService, storageService) {
     this.database = database;
@@ -55,17 +57,17 @@ class RecordingService {
       }
     };
     
-    console.log('📁 RECORDING: Initializing recording directories...');
+    logger.debug('📁 RECORDING: Initializing recording directories...');
     this.initializeDirectories();
     this.setupStreamSwitchListeners();
-    console.log('🎯 RECORDING: Setting up stream switch listeners');
+    logger.debug('🎯 RECORDING: Setting up stream switch listeners');
   }
   
   initializeDirectories() {
     Object.values(this.storagePaths).forEach(dir => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
-        console.log(`📁 RECORDING: Created directory: ${dir}`);
+        logger.debug(`📁 RECORDING: Created directory: ${dir}`);
       }
     });
   }
@@ -76,14 +78,14 @@ class RecordingService {
   }
   
   async handleStreamStart(streamerId) {
-    console.log(`🎬 RECORDING: Stream started for ${streamerId}`);
+    logger.debug(`🎬 RECORDING: Stream started for ${streamerId}`);
     
     if (this.continuousRecordingState.enabled) {
-      console.log(`🔄 RECORDING: Continuous recording is enabled, handling stream switch`);
+      logger.debug(`🔄 RECORDING: Continuous recording is enabled, handling stream switch`);
       
       // If there's an active recording, it means we're switching streams
       if (this.continuousRecordingState.currentRecording) {
-        console.log(`🔄 RECORDING: Stream switch detected from previous to ${streamerId}`);
+        logger.debug(`🔄 RECORDING: Stream switch detected from previous to ${streamerId}`);
         this.continuousRecordingState.streamSwitches++;
         
         // Stop the current recording segment
@@ -91,60 +93,60 @@ class RecordingService {
       }
       
       // Start a new recording segment for the new stream (producers are ready)
-      console.log(`🎬 RECORDING: Starting continuous recording segment for ${streamerId}`);
+      logger.debug(`🎬 RECORDING: Starting continuous recording segment for ${streamerId}`);
       const result = await this.startRecording(streamerId, this.continuousRecordingState.quality, 'continuous');
       
       if (result.success) {
         this.continuousRecordingState.currentRecording = result.recordingId;
-        console.log(`✅ RECORDING: Continuous recording segment started: ${result.recordingId}`);
+        logger.debug(`✅ RECORDING: Continuous recording segment started: ${result.recordingId}`);
       } else {
-        console.error(`❌ RECORDING: Failed to start continuous recording segment: ${result.error}`);
+        logger.error(`❌ RECORDING: Failed to start continuous recording segment: ${result.error}`);
         // Retry after a delay
         setTimeout(async () => {
-          console.log(`🔄 RECORDING: Retrying continuous recording start for ${streamerId}`);
+          logger.debug(`🔄 RECORDING: Retrying continuous recording start for ${streamerId}`);
           const retryResult = await this.startRecording(streamerId, this.continuousRecordingState.quality, 'continuous');
           if (retryResult.success) {
             this.continuousRecordingState.currentRecording = retryResult.recordingId;
-            console.log(`✅ RECORDING: Continuous recording started on retry: ${retryResult.recordingId}`);
+            logger.debug(`✅ RECORDING: Continuous recording started on retry: ${retryResult.recordingId}`);
           }
         }, 3000);
       }
     } else {
-      console.log(`⏸️ RECORDING: Continuous recording not enabled, skipping stream start for ${streamerId}`);
+      logger.debug(`⏸️ RECORDING: Continuous recording not enabled, skipping stream start for ${streamerId}`);
     }
   }
   
   async handleStreamEnd(streamerId) {
-    console.log(`🔚 RECORDING: Stream ended for ${streamerId}`);
+    logger.debug(`🔚 RECORDING: Stream ended for ${streamerId}`);
     
     if (this.continuousRecordingState.enabled && this.continuousRecordingState.currentRecording) {
-      console.log(`🔄 RECORDING: Stream ended for ${streamerId}, stopping recording segment`);
+      logger.debug(`🔄 RECORDING: Stream ended for ${streamerId}, stopping recording segment`);
       await this.stopRecording(this.continuousRecordingState.currentRecording);
       this.continuousRecordingState.currentRecording = null;
     }
   }
   
   async startRecording(streamerId, quality = '720p', mode = 'manual') {
-    console.log(`🎬 RECORDING: Starting recording for streamer: ${streamerId}`);
+    logger.debug(`🎬 RECORDING: Starting recording for streamer: ${streamerId}`);
     const recordingId = uuidv4();
     
     try {
       // Verify stream is active
-      console.log(`🔍 RECORDING: Checking stream status for recording:`);
+      logger.debug(`🔍 RECORDING: Checking stream status for recording:`);
       const currentStreamer = this.mediasoupService.getCurrentStreamer();
       if (!currentStreamer || currentStreamer !== streamerId) {
-        console.log(`❌ RECORDING: Streamer mismatch - requested: ${streamerId}, current: ${currentStreamer}`);
+        logger.debug(`❌ RECORDING: Streamer mismatch - requested: ${streamerId}, current: ${currentStreamer}`);
         return { success: false, error: 'Streamer is not currently streaming' };
       }
       
       // Check if producers exist
       const producerMap = this.mediasoupService.producers.get(currentStreamer);
       if (!producerMap || producerMap.size === 0) {
-        console.log(`❌ RECORDING: No producers available for ${streamerId}`);
+        logger.debug(`❌ RECORDING: No producers available for ${streamerId}`);
         return { success: false, error: 'No producers available for recording' };
       }
       
-      console.log(`✅ RECORDING: Found ${producerMap.size} producers for ${streamerId}`);
+      logger.debug(`✅ RECORDING: Found ${producerMap.size} producers for ${streamerId}`);
       
       // Create recording session
       const recordingSession = {
@@ -204,7 +206,7 @@ class RecordingService {
         filePath: recordingSession.filePath 
       });
       
-      console.log(`✅ RECORDING: Started recording ${recordingId} for ${streamerId}`);
+      logger.debug(`✅ RECORDING: Started recording ${recordingId} for ${streamerId}`);
       
       return {
         success: true,
@@ -215,13 +217,13 @@ class RecordingService {
       };
       
     } catch (error) {
-      console.error('❌ RECORDING: Failed to start recording:', error);
+      logger.error('❌ RECORDING: Failed to start recording:', error);
       return { success: false, error: error.message };
     }
   }
   
   async stopRecording(recordingId, userId = 'system') {
-    console.log(`🛑 RECORDING: Stopping recording: ${recordingId}`);
+    logger.debug(`🛑 RECORDING: Stopping recording: ${recordingId}`);
     
     try {
       const recordingSession = this.activeRecordings.get(recordingId);
@@ -260,7 +262,7 @@ class RecordingService {
         
         fs.renameSync(recordingSession.filePath, completedPath);
         recordingSession.filePath = completedPath;
-        console.log(`📁 RECORDING: Moved to completed: ${completedPath}`);
+        logger.debug(`📁 RECORDING: Moved to completed: ${completedPath}`);
       }
       
       recordingSession.status = 'completed';
@@ -281,7 +283,7 @@ class RecordingService {
       // Trigger post-processing (compression)
       this.triggerPostProcessing(recordingSession);
       
-      console.log(`✅ RECORDING: Stopped recording ${recordingId}`);
+      logger.debug(`✅ RECORDING: Stopped recording ${recordingId}`);
       
       return {
         success: true,
@@ -291,14 +293,14 @@ class RecordingService {
       };
       
     } catch (error) {
-      console.error('❌ RECORDING: Failed to stop recording:', error);
+      logger.error('❌ RECORDING: Failed to stop recording:', error);
       return { success: false, error: error.message };
     }
   }
   
   async createPlainTransports() {
     try {
-      console.log(`📡 RECORDING: Creating plain transports for recording`);
+      logger.debug(`📡 RECORDING: Creating plain transports for recording`);
       
       const router = this.mediasoupService.router;
       if (!router) {
@@ -329,13 +331,13 @@ class RecordingService {
           rtcpPort: ffmpegPorts.video + 1
         });
         
-        console.log(`📡 RECORDING: Video transport created and connected:`);
-        console.log(`   Transport ID: ${videoTransport.id}`);
-        console.log(`   Destination: 127.0.0.1:${ffmpegPorts.video}`);
+        logger.debug(`📡 RECORDING: Video transport created and connected:`);
+        logger.debug(`   Transport ID: ${videoTransport.id}`);
+        logger.debug(`   Destination: 127.0.0.1:${ffmpegPorts.video}`);
         
         transports.set('video', videoTransport);
       } catch (error) {
-        console.error(`❌ RECORDING: Failed to create video transport:`, error);
+        logger.error(`❌ RECORDING: Failed to create video transport:`, error);
       }
       
       // Create audio transport
@@ -356,13 +358,13 @@ class RecordingService {
           rtcpPort: ffmpegPorts.audio + 1
         });
         
-        console.log(`📡 RECORDING: Audio transport created and connected:`);
-        console.log(`   Transport ID: ${audioTransport.id}`);
-        console.log(`   Destination: 127.0.0.1:${ffmpegPorts.audio}`);
+        logger.debug(`📡 RECORDING: Audio transport created and connected:`);
+        logger.debug(`   Transport ID: ${audioTransport.id}`);
+        logger.debug(`   Destination: 127.0.0.1:${ffmpegPorts.audio}`);
         
         transports.set('audio', audioTransport);
       } catch (error) {
-        console.error(`❌ RECORDING: Failed to create audio transport:`, error);
+        logger.error(`❌ RECORDING: Failed to create audio transport:`, error);
       }
       
       if (transports.size === 0) {
@@ -375,14 +377,14 @@ class RecordingService {
       return { success: true, transports };
       
     } catch (error) {
-      console.error(`❌ RECORDING: Failed to create plain transports:`, error);
+      logger.error(`❌ RECORDING: Failed to create plain transports:`, error);
       return { success: false, error: error.message };
     }
   }
   
   async createConsumers(recordingSession) {
     try {
-      console.log(`👥 RECORDING: Creating consumers for recording ${recordingSession.id}`);
+      logger.debug(`👥 RECORDING: Creating consumers for recording ${recordingSession.id}`);
       
       const currentStreamer = this.mediasoupService.getCurrentStreamer();
       const producerMap = this.mediasoupService.producers.get(currentStreamer);
@@ -399,11 +401,11 @@ class RecordingService {
         try {
           const transport = transports.get(kind);
           if (!transport) {
-            console.error(`❌ RECORDING: No transport available for ${kind}`);
+            logger.error(`❌ RECORDING: No transport available for ${kind}`);
             continue;
           }
           
-          console.log(`🎬 RECORDING: Creating ${kind} consumer from producer ${producer.id}`);
+          logger.debug(`🎬 RECORDING: Creating ${kind} consumer from producer ${producer.id}`);
           
           // For plain transport, we need to provide basic RTP capabilities
           const rtpCapabilities = {
@@ -436,7 +438,7 @@ class RecordingService {
           // Resume the consumer to start receiving media
           await consumer.resume();
           
-          console.log(`📊 RECORDING: ${kind} consumer created:`, {
+          logger.debug(`📊 RECORDING: ${kind} consumer created:`, {
             id: consumer.id,
             kind: consumer.kind,
             paused: consumer.paused,
@@ -447,26 +449,26 @@ class RecordingService {
           });
           
           consumer.on('transportclose', () => {
-            console.log(`🔒 RECORDING: Transport closed for ${kind} consumer in recording ${recordingSession.id}`);
+            logger.debug(`🔒 RECORDING: Transport closed for ${kind} consumer in recording ${recordingSession.id}`);
           });
           
           consumer.on('producerclose', () => {
-            console.log(`🔒 RECORDING: Producer closed for ${kind} in recording ${recordingSession.id}`);
+            logger.debug(`🔒 RECORDING: Producer closed for ${kind} in recording ${recordingSession.id}`);
           });
           
           consumer.on('producerpause', () => {
-            console.log(`⏸️ RECORDING: Producer paused for ${kind} in recording ${recordingSession.id}`);
+            logger.debug(`⏸️ RECORDING: Producer paused for ${kind} in recording ${recordingSession.id}`);
           });
           
           consumer.on('producerresume', () => {
-            console.log(`▶️ RECORDING: Producer resumed for ${kind} in recording ${recordingSession.id}`);
+            logger.debug(`▶️ RECORDING: Producer resumed for ${kind} in recording ${recordingSession.id}`);
           });
           
           consumers.set(kind, consumer);
-          console.log(`✅ RECORDING: Created and resumed ${kind} consumer for recording ${recordingSession.id}`);
+          logger.debug(`✅ RECORDING: Created and resumed ${kind} consumer for recording ${recordingSession.id}`);
           
         } catch (error) {
-          console.error(`❌ RECORDING: Failed to create ${kind} consumer:`, error);
+          logger.error(`❌ RECORDING: Failed to create ${kind} consumer:`, error);
         }
       }
       
@@ -474,18 +476,18 @@ class RecordingService {
         return { success: false, error: 'Failed to create any consumers' };
       }
       
-      console.log(`✅ RECORDING: Successfully created ${consumers.size} consumers for recording`);
+      logger.debug(`✅ RECORDING: Successfully created ${consumers.size} consumers for recording`);
       return { success: true };
       
     } catch (error) {
-      console.error('❌ RECORDING: Failed to create consumers:', error);
+      logger.error('❌ RECORDING: Failed to create consumers:', error);
       return { success: false, error: error.message };
     }
   }
   
   async startFFmpegRecording(recordingSession) {
     try {
-      console.log(`🎬 RECORDING: Starting FFmpeg for recording ${recordingSession.id}`);
+      logger.debug(`🎬 RECORDING: Starting FFmpeg for recording ${recordingSession.id}`);
       
       const profile = recordingSession.profile;
       const filePath = recordingSession.filePath;
@@ -503,9 +505,9 @@ class RecordingService {
       // Get the FFmpeg listening ports from transports
       const ffmpegPorts = transports.ffmpegPorts || { video: 5004, audio: 5006 };
       
-      console.log(`🔧 RECORDING: FFmpeg will listen on ports:`);
-      console.log(`   Video: ${ffmpegPorts.video}`);
-      console.log(`   Audio: ${ffmpegPorts.audio}`);
+      logger.debug(`🔧 RECORDING: FFmpeg will listen on ports:`);
+      logger.debug(`   Video: ${ffmpegPorts.video}`);
+      logger.debug(`   Audio: ${ffmpegPorts.audio}`);
       
       // Build FFmpeg command with direct UDP inputs
       const ffmpegArgs = [];
@@ -516,7 +518,7 @@ class RecordingService {
         const payloadType = videoCodec.payloadType;
         const ssrc = videoRtpParams.encodings[0].ssrc;
         
-        console.log(`📹 RECORDING: Video - Codec: ${videoCodec.mimeType}, PT: ${payloadType}, SSRC: ${ssrc}`);
+        logger.debug(`📹 RECORDING: Video - Codec: ${videoCodec.mimeType}, PT: ${payloadType}, SSRC: ${ssrc}`);
         
         // Create SDP for video
         const videoSdp = `v=0
@@ -544,7 +546,7 @@ a=rtpmap:${payloadType} ${videoCodec.mimeType.replace('video/', '').toUpperCase(
         const payloadType = audioCodec.payloadType;
         const ssrc = audioRtpParams.encodings[0].ssrc;
         
-        console.log(`🎵 RECORDING: Audio - Codec: ${audioCodec.mimeType}, PT: ${payloadType}, SSRC: ${ssrc}`);
+        logger.debug(`🎵 RECORDING: Audio - Codec: ${audioCodec.mimeType}, PT: ${payloadType}, SSRC: ${ssrc}`);
         
         // Create separate SDP for audio
         const audioSdp = `v=0
@@ -577,27 +579,27 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
         filePath
       );
       
-      console.log(`🚀 RECORDING: Starting FFmpeg with args:`, ffmpegArgs.join(' '));
+      logger.debug(`🚀 RECORDING: Starting FFmpeg with args:`, ffmpegArgs.join(' '));
       
       const ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
       
       ffmpegProcess.stdout.on('data', (data) => {
-        console.log(`📹 FFmpeg stdout: ${data}`);
+        logger.debug(`📹 FFmpeg stdout: ${data}`);
       });
       
       ffmpegProcess.stderr.on('data', (data) => {
         const message = data.toString();
         // Log all FFmpeg output for debugging
-        console.log(`📹 FFmpeg: ${message}`);
+        logger.debug(`📹 FFmpeg: ${message}`);
       });
       
       ffmpegProcess.on('error', (error) => {
-        console.error(`❌ RECORDING: FFmpeg error for ${recordingSession.id}:`, error);
+        logger.error(`❌ RECORDING: FFmpeg error for ${recordingSession.id}:`, error);
         recordingSession.status = 'failed';
       });
       
       ffmpegProcess.on('close', (code) => {
-        console.log(`🏁 RECORDING: FFmpeg closed for ${recordingSession.id} with code ${code}`);
+        logger.debug(`🏁 RECORDING: FFmpeg closed for ${recordingSession.id} with code ${code}`);
         // Cleanup SDP files
         const tempFiles = fs.readdirSync(this.storagePaths.temp);
         tempFiles.forEach(file => {
@@ -613,13 +615,13 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
       return { success: true, process: ffmpegProcess };
       
     } catch (error) {
-      console.error('❌ RECORDING: Failed to start FFmpeg:', error);
+      logger.error('❌ RECORDING: Failed to start FFmpeg:', error);
       return { success: false, error: error.message };
     }
   }
   
   async cleanupRecordingSession(recordingSession) {
-    console.log(`🧹 RECORDING: Cleaning up recording session ${recordingSession.id}`);
+    logger.debug(`🧹 RECORDING: Cleaning up recording session ${recordingSession.id}`);
     
     try {
       // Close consumers
@@ -643,13 +645,13 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
       }
       
     } catch (error) {
-      console.error('❌ RECORDING: Error during cleanup:', error);
+      logger.error('❌ RECORDING: Error during cleanup:', error);
     }
   }
   
   // Continuous recording methods
   async enableContinuousRecording(quality = '720p') {
-    console.log(`🔄 RECORDING: Enabling continuous recording mode (${quality})`);
+    logger.debug(`🔄 RECORDING: Enabling continuous recording mode (${quality})`);
     
     this.continuousRecordingState.enabled = true;
     this.continuousRecordingState.quality = quality;
@@ -659,12 +661,12 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
     // If there's already an active stream, start recording immediately
     const currentStreamer = this.mediasoupService?.getCurrentStreamer();
     if (currentStreamer) {
-      console.log(`🔍 RECORDING: Checking for active stream to record:`);
-      console.log(`   Current streamer: ${currentStreamer}`);
-      console.log(`   Has producers: ${this.mediasoupService.producers.has(currentStreamer)}`);
+      logger.debug(`🔍 RECORDING: Checking for active stream to record:`);
+      logger.debug(`   Current streamer: ${currentStreamer}`);
+      logger.debug(`   Has producers: ${this.mediasoupService.producers.has(currentStreamer)}`);
       
       if (this.mediasoupService.producers.has(currentStreamer)) {
-        console.log(`🎬 RECORDING: Active stream detected for ${currentStreamer}, starting continuous recording`);
+        logger.debug(`🎬 RECORDING: Active stream detected for ${currentStreamer}, starting continuous recording`);
         await this.handleStreamStart(currentStreamer);
       }
     }
@@ -677,7 +679,7 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
   }
   
   async disableContinuousRecording() {
-    console.log(`🛑 RECORDING: Disabling continuous recording mode`);
+    logger.debug(`🛑 RECORDING: Disabling continuous recording mode`);
     
     // Stop current recording if active
     if (this.continuousRecordingState.currentRecording) {
@@ -722,7 +724,7 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
       ]);
       
     } catch (error) {
-      console.error('❌ RECORDING: Failed to save to database:', error);
+      logger.error('❌ RECORDING: Failed to save to database:', error);
     }
   }
   
@@ -751,7 +753,7 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
       ]);
       
     } catch (error) {
-      console.error('❌ RECORDING: Failed to update database:', error);
+      logger.error('❌ RECORDING: Failed to update database:', error);
     }
   }
   
@@ -771,7 +773,7 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
       ]);
       
     } catch (error) {
-      console.error('❌ RECORDING: Failed to log event:', error);
+      logger.error('❌ RECORDING: Failed to log event:', error);
     }
   }
   
@@ -790,7 +792,7 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
       return recordings;
       
     } catch (error) {
-      console.error('❌ RECORDING: Failed to get recordings list:', error);
+      logger.error('❌ RECORDING: Failed to get recordings list:', error);
       return [];
     }
   }
@@ -823,7 +825,7 @@ a=rtpmap:${payloadType} ${audioCodec.mimeType.includes('opus') ? `opus/${audioCo
   }
   
   triggerPostProcessing(recordingSession) {
-    console.log(`🔄 RECORDING: Triggering post-processing for ${recordingSession.id}`);
+    logger.debug(`🔄 RECORDING: Triggering post-processing for ${recordingSession.id}`);
     // This would trigger compression service if needed
     // For now, recordings go directly to completed folder
   }

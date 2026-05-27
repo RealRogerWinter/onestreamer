@@ -22,6 +22,8 @@ const puppeteer = require('puppeteer');
 const processManager = require('../ProcessManager');
 const stateManager = require('../ViewBotStateManager');
 
+const logger = require('../../bootstrap/logger').child({ svc: 'ViewBotInstance' });
+
 /**
  * Individual ViewBot instance that acts as a streaming client
  */
@@ -72,7 +74,7 @@ class ViewBotInstance {
     this.mediaGenerator = null;
     this.ffmpegProcess = null;
     
-    console.log(`🤖 ViewBot ${this.botId} initialized`);
+    logger.debug(`🤖 ViewBot ${this.botId} initialized`);
   }
 
   /**
@@ -89,11 +91,11 @@ class ViewBotInstance {
       
       // Update the serverUrl if it's different
       if (this.serverUrl !== correctServerUrl) {
-        console.log(`🔄 ViewBot ${this.botId}: Updating server URL from ${this.serverUrl} to ${correctServerUrl}`);
+        logger.debug(`🔄 ViewBot ${this.botId}: Updating server URL from ${this.serverUrl} to ${correctServerUrl}`);
         this.serverUrl = correctServerUrl;
       }
       
-      console.log(`🔌 ViewBot ${this.botId}: Connecting to server ${this.serverUrl}`);
+      logger.debug(`🔌 ViewBot ${this.botId}: Connecting to server ${this.serverUrl}`);
       
       // For HTTPS connections with self-signed certificates, we need a custom agent
       const https = require('https');
@@ -122,7 +124,7 @@ class ViewBotInstance {
       
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          console.error(`❌ ViewBot ${this.botId}: Connection timeout after 10 seconds to ${this.serverUrl}`);
+          logger.error(`❌ ViewBot ${this.botId}: Connection timeout after 10 seconds to ${this.serverUrl}`);
           reject(new Error('Connection timeout'));
         }, 10000);
         
@@ -133,16 +135,16 @@ class ViewBotInstance {
           if (this.lastError && (this.lastError.includes('Socket') || this.lastError.includes('Connection'))) {
             this.lastError = null;
           }
-          console.log(`✅ ViewBot ${this.botId}: Connected to server`);
-          console.log(`📡 ViewBot ${this.botId}: My socket ID is: ${this.socket.id}`);
-          console.log(`📡 ViewBot ${this.botId}: Socket connected: ${this.socket.connected}`);
+          logger.debug(`✅ ViewBot ${this.botId}: Connected to server`);
+          logger.debug(`📡 ViewBot ${this.botId}: My socket ID is: ${this.socket.id}`);
+          logger.debug(`📡 ViewBot ${this.botId}: Socket connected: ${this.socket.connected}`);
           resolve();
         });
         
         this.socket.on('connect_error', (error) => {
           clearTimeout(timeout);
-          console.error(`❌ ViewBot ${this.botId}: Connection error:`, error.message, error.type);
-          console.error(`❌ ViewBot ${this.botId}: Failed to connect to ${this.serverUrl}`);
+          logger.error(`❌ ViewBot ${this.botId}: Connection error:`, error.message, error.type);
+          logger.error(`❌ ViewBot ${this.botId}: Failed to connect to ${this.serverUrl}`);
           reject(error);
         });
       });
@@ -156,13 +158,13 @@ class ViewBotInstance {
       
       // For ViewBots, we don't need Puppeteer setup anymore
       // FFmpeg processes will be created when streaming starts
-      console.log(`✅ ViewBot ${this.botId}: Ready for FFmpeg-based streaming`);
+      logger.debug(`✅ ViewBot ${this.botId}: Ready for FFmpeg-based streaming`);
       
-      console.log(`✅ ViewBot ${this.botId}: Initialization complete`);
+      logger.debug(`✅ ViewBot ${this.botId}: Initialization complete`);
       
     } catch (error) {
       this.lastError = error.message;
-      console.error(`❌ ViewBot ${this.botId}: Initialization failed:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Initialization failed:`, error);
       throw error;
     }
   }
@@ -171,23 +173,23 @@ class ViewBotInstance {
    * Sets up socket event handlers
    */
   setupSocketHandlers() {
-    console.log(`🔧 ViewBot ${this.botId}: Setting up socket handlers, socket ID: ${this.socket.id}, connected: ${this.socket.connected}`);
+    logger.debug(`🔧 ViewBot ${this.botId}: Setting up socket handlers, socket ID: ${this.socket.id}, connected: ${this.socket.connected}`);
     
     this.socket.on('disconnect', () => {
-      console.log(`🔌 ViewBot ${this.botId}: Disconnected from server`);
+      logger.debug(`🔌 ViewBot ${this.botId}: Disconnected from server`);
       this.isConnected = false;
       this.streaming = false;
     });
 
     this.socket.on('error', (error) => {
-      console.error(`❌ ViewBot ${this.botId}: Socket error:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Socket error:`, error);
       this.lastError = error.message || 'Socket error';
     });
 
     // CRITICAL: Set up streaming-approved handler with detailed logging
     this.socket.on('streaming-approved', () => {
-      console.log(`🎉🎉🎉 ViewBot ${this.botId}: RECEIVED streaming-approved event!`);
-      console.log(`📡 ViewBot ${this.botId}: Socket ID: ${this.socket.id}, Connected: ${this.socket.connected}`);
+      logger.debug(`🎉🎉🎉 ViewBot ${this.botId}: RECEIVED streaming-approved event!`);
+      logger.debug(`📡 ViewBot ${this.botId}: Socket ID: ${this.socket.id}, Connected: ${this.socket.connected}`);
       
       // Clear approval timeout if it exists
       if (this.approvalTimeout) {
@@ -203,7 +205,7 @@ class ViewBotInstance {
       if (this.parentService) {
         this.parentService.currentLiveBot = this.botId;
         this.parentService.currentLiveBotSetTime = Date.now();
-        console.log(`✅ ViewBot ${this.botId}: Updated parent service - now tracked as currentLiveBot`);
+        logger.debug(`✅ ViewBot ${this.botId}: Updated parent service - now tracked as currentLiveBot`);
       }
       
       // Start rotation check timer now that we're approved
@@ -211,7 +213,7 @@ class ViewBotInstance {
       
       // Initialize media pipeline
       this.onStreamingApproved().catch(error => {
-        console.error(`❌ ViewBot ${this.botId}: Failed to handle streaming approval:`, error);
+        logger.error(`❌ ViewBot ${this.botId}: Failed to handle streaming approval:`, error);
         this.streaming = false; // Reset streaming flag on error
         this.isStartingStream = false; // Clear the starting flag
       });
@@ -219,7 +221,7 @@ class ViewBotInstance {
     
     // Handle streaming approval with acknowledgment (for debugging)
     this.socket.on('streaming-approved-ack', (data, callback) => {
-      console.log(`🔔 ViewBot ${this.botId}: Received streaming-approved-ack, sending acknowledgment`);
+      logger.debug(`🔔 ViewBot ${this.botId}: Received streaming-approved-ack, sending acknowledgment`);
       if (callback) {
         callback(true); // Send acknowledgment back to server
       }
@@ -227,7 +229,7 @@ class ViewBotInstance {
     
     // Alternative ViewBot streaming approval event
     this.socket.on('viewbot-stream-approved', (data) => {
-      console.log(`🎯 ViewBot ${this.botId}: Received viewbot-stream-approved!`);
+      logger.debug(`🎯 ViewBot ${this.botId}: Received viewbot-stream-approved!`);
       
       // Clear approval timeout if it exists
       if (this.approvalTimeout) {
@@ -243,7 +245,7 @@ class ViewBotInstance {
       if (this.parentService) {
         this.parentService.currentLiveBot = this.botId;
         this.parentService.currentLiveBotSetTime = Date.now();
-        console.log(`✅ ViewBot ${this.botId}: Updated parent service - now tracked as currentLiveBot`);
+        logger.debug(`✅ ViewBot ${this.botId}: Updated parent service - now tracked as currentLiveBot`);
       }
       
       // Start rotation check timer now that we're approved
@@ -251,7 +253,7 @@ class ViewBotInstance {
       
       // Initialize media pipeline
       this.onStreamingApproved().catch(error => {
-        console.error(`❌ ViewBot ${this.botId}: Failed to handle streaming approval:`, error);
+        logger.error(`❌ ViewBot ${this.botId}: Failed to handle streaming approval:`, error);
         this.streaming = false;
       });
     });
@@ -259,36 +261,36 @@ class ViewBotInstance {
     // Debug: Log all events received
     this.socket.onAny((eventName, ...args) => {
       if (eventName !== 'stream-status' && eventName !== 'viewer-count' && !eventName.includes('buff')) {
-        console.log(`🔔 ViewBot ${this.botId}: Received event '${eventName}'`);
+        logger.debug(`🔔 ViewBot ${this.botId}: Received event '${eventName}'`);
       }
     });
 
     // Handle takeover denial
     this.socket.on('takeover-denied', (data) => {
-      console.log(`❌ ViewBot ${this.botId}: Takeover denied:`, data.reason);
+      logger.debug(`❌ ViewBot ${this.botId}: Takeover denied:`, data.reason);
       this.lastError = `Takeover denied: ${data.reason}`;
       this.streaming = false;
     });
 
     // Handle takeover by another streamer
     this.socket.on('stream-takeover', (data) => {
-      console.log(`📢 ViewBot ${this.botId}: Stream taken over by ${data.newStreamerId}`);
+      logger.debug(`📢 ViewBot ${this.botId}: Stream taken over by ${data.newStreamerId}`);
       this.streaming = false;
     });
 
     // Handle stream end notifications
     this.socket.on('stream-ended', () => {
-      console.log(`📺 ViewBot ${this.botId}: Stream ended notification received`);
+      logger.debug(`📺 ViewBot ${this.botId}: Stream ended notification received`);
       this.streaming = false;
     });
     
     this.socket.on('streamer-disconnected', () => {
-      console.log(`📺 ViewBot ${this.botId}: Streamer disconnected notification received`);
+      logger.debug(`📺 ViewBot ${this.botId}: Streamer disconnected notification received`);
     });
 
     // Handle viewer requests (ViewBot acting as streamer)
     this.socket.on('viewer-requesting-stream', (data) => {
-      console.log(`👀 ViewBot ${this.botId}: Viewer ${data.viewerId} requesting stream`);
+      logger.debug(`👀 ViewBot ${this.botId}: Viewer ${data.viewerId} requesting stream`);
       this.handleViewerRequest(data.viewerId);
     });
   }
@@ -309,7 +311,7 @@ class ViewBotInstance {
         const status = await response.json();
         
         if (status.isLive && status.streamerId === this.socket?.id) {
-          console.log(`✅ ViewBot ${this.botId}: Confirmed as active streamer via polling!`);
+          logger.debug(`✅ ViewBot ${this.botId}: Confirmed as active streamer via polling!`);
           clearInterval(pollInterval);
           
           // Clear timeout if exists
@@ -323,7 +325,7 @@ class ViewBotInstance {
           this.isStartingStream = false; // Clear the starting flag
           this.startRotationCheckTimer();
           this.onStreamingApproved().catch(error => {
-            console.error(`❌ ViewBot ${this.botId}: Failed to start media pipeline:`, error);
+            logger.error(`❌ ViewBot ${this.botId}: Failed to start media pipeline:`, error);
             this.streaming = false;
           });
           
@@ -334,7 +336,7 @@ class ViewBotInstance {
       }
       
       if (pollCount >= maxPolls) {
-        console.log(`⏰ ViewBot ${this.botId}: Polling timeout - NOT auto-approving to prevent multiple streams`);
+        logger.debug(`⏰ ViewBot ${this.botId}: Polling timeout - NOT auto-approving to prevent multiple streams`);
         clearInterval(pollInterval);
         
         // DON'T automatically start - this causes multiple bots to stream
@@ -343,7 +345,7 @@ class ViewBotInstance {
         this.streaming = false;
         
         // If this was the intended bot to stream, rotation system will retry
-        console.log(`⚠️ ViewBot ${this.botId}: Stream request timed out without approval`);
+        logger.debug(`⚠️ ViewBot ${this.botId}: Stream request timed out without approval`);
       }
     }, 100);
   }
@@ -352,15 +354,15 @@ class ViewBotInstance {
    * Called when server approves streaming - start producing media
    */
   async onStreamingApproved() {
-    console.log(`🎬 ViewBot ${this.botId}: Now officially streaming, starting media production`);
-    console.log(`🎬 ViewBot ${this.botId}: Socket connected: ${this.isConnected}, Socket ID: ${this.socket?.id}`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Now officially streaming, starting media production`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Socket connected: ${this.isConnected}, Socket ID: ${this.socket?.id}`);
     
     // Clear any previous errors on successful streaming approval
     this.lastError = null;
     
     // Use state manager for tracking but still create real media streams
     if (stateManager.simplifiedMode) {
-      console.log(`🎯 ViewBot ${this.botId}: Using state manager with real media pipeline`);
+      logger.debug(`🎯 ViewBot ${this.botId}: Using state manager with real media pipeline`);
       
       // Register with state manager
       stateManager.registerBot(this.botId);
@@ -375,10 +377,10 @@ class ViewBotInstance {
     try {
       // Original media pipeline code (currently failing)
       if (this.config.contentType === 'videoFile' && this.config.videoFile) {
-        console.log(`🎬 ViewBot ${this.botId}: Starting GStreamer video pipeline: ${this.config.videoFile}`);
+        logger.debug(`🎬 ViewBot ${this.botId}: Starting GStreamer video pipeline: ${this.config.videoFile}`);
         await this.startGStreamerVideoFileStreaming();
       } else {
-        console.log(`🎬 ViewBot ${this.botId}: Content type ${this.config.contentType} - starting media generation`);
+        logger.debug(`🎬 ViewBot ${this.botId}: Content type ${this.config.contentType} - starting media generation`);
         await this.initializeMediaGeneration();
       }
       
@@ -386,17 +388,17 @@ class ViewBotInstance {
       this.streaming = true;
       this.isStartingStream = false; // Clear the starting flag
       
-      console.log(`✅ ViewBot ${this.botId}: Media pipeline active, streaming to MediaSoup`);
+      logger.debug(`✅ ViewBot ${this.botId}: Media pipeline active, streaming to MediaSoup`);
       
       // CRITICAL: Start rotation timer for this bot
       this.startRotationCheckTimer();
-      console.log(`🔄 ViewBot ${this.botId}: Started rotation check timer`);
+      logger.debug(`🔄 ViewBot ${this.botId}: Started rotation check timer`);
       
       // Notify viewers immediately
       this.notifyViewersOfReadyStream();
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to start media streaming:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to start media streaming:`, error);
       this.lastError = error.message;
       
       // CRITICAL FIX: Keep streaming=true to prevent presence system from restarting every 30s
@@ -404,11 +406,11 @@ class ViewBotInstance {
       this.streaming = true;
       this.isStartingStream = false;
       
-      console.log(`⚠️ ViewBot ${this.botId}: Maintaining streaming=true despite media pipeline error to preserve rotation system`);
+      logger.debug(`⚠️ ViewBot ${this.botId}: Maintaining streaming=true despite media pipeline error to preserve rotation system`);
       
       // CRITICAL: Start rotation timer even if media pipeline failed
       this.startRotationCheckTimer();
-      console.log(`🔄 ViewBot ${this.botId}: Started rotation check timer (despite media error)`);
+      logger.debug(`🔄 ViewBot ${this.botId}: Started rotation check timer (despite media error)`);
       
       // Still notify viewers that stream is ready (even if degraded)
       this.notifyViewersOfReadyStream();
@@ -428,7 +430,7 @@ class ViewBotInstance {
    * Sets up WebRTC transport for ViewBot to send media to MediaSoup
    */
   async setupWebRTCTransport() {
-    console.log(`📡 ViewBot ${this.botId}: Setting up WebRTC send transport...`);
+    logger.debug(`📡 ViewBot ${this.botId}: Setting up WebRTC send transport...`);
     
     try {
       // Request MediaSoup RTP capabilities (same as browser clients)
@@ -442,7 +444,7 @@ class ViewBotInstance {
         });
       });
       
-      console.log(`✅ ViewBot ${this.botId}: Got RTP capabilities from server`);
+      logger.debug(`✅ ViewBot ${this.botId}: Got RTP capabilities from server`);
       
       // Create WebRTC send transport (same as browser clients)
       const transportInfo = await new Promise((resolve, reject) => {
@@ -455,16 +457,16 @@ class ViewBotInstance {
         });
       });
       
-      console.log(`✅ ViewBot ${this.botId}: WebRTC send transport created`);
+      logger.debug(`✅ ViewBot ${this.botId}: WebRTC send transport created`);
       
       // Store transport info for later use
       this.transportInfo = transportInfo;
       this.rtpCapabilities = rtpCapabilities;
       
-      console.log(`📡 ViewBot ${this.botId}: WebRTC transport setup complete`);
+      logger.debug(`📡 ViewBot ${this.botId}: WebRTC transport setup complete`);
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: WebRTC transport setup failed:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: WebRTC transport setup failed:`, error);
       throw error;
     }
   }
@@ -473,17 +475,17 @@ class ViewBotInstance {
    * Starts FFmpeg media generation and streaming to MediaSoup
    */
   async startFFmpegMediaGeneration() {
-    console.log(`🎬 ViewBot ${this.botId}: Starting FFmpeg media generation...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting FFmpeg media generation...`);
     
     try {
       // This method is now only called for FFmpeg (GStreamer is handled in onStreamingApproved)
       if (this.config.contentType === 'videoFile' && this.config.videoFile) {
         // Use single FFmpeg process for video files (better A/V sync)
-        console.log(`🎬 ViewBot ${this.botId}: Using combined FFmpeg for video file with A/V sync`);
+        logger.debug(`🎬 ViewBot ${this.botId}: Using combined FFmpeg for video file with A/V sync`);
         await this.startCombinedFFmpegGeneration();
       } else {
         // For test patterns, use separate processes (no sync issues with generated content)
-        console.log(`🎬 ViewBot ${this.botId}: Using separate FFmpeg processes for test pattern`);
+        logger.debug(`🎬 ViewBot ${this.botId}: Using separate FFmpeg processes for test pattern`);
         // Generate test pattern video with FFmpeg
         await this.startFFmpegVideoGeneration();
         
@@ -491,10 +493,10 @@ class ViewBotInstance {
         await this.startFFmpegAudioGeneration();
       }
       
-      console.log(`✅ ViewBot ${this.botId}: FFmpeg media generation started`);
+      logger.debug(`✅ ViewBot ${this.botId}: FFmpeg media generation started`);
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: FFmpeg media generation failed:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: FFmpeg media generation failed:`, error);
       throw error;
     }
   }
@@ -504,17 +506,17 @@ class ViewBotInstance {
    * Now uses synchronized output approach for perfect A/V sync
    */
   async startCombinedFFmpegGeneration() {
-    console.log(`🎬 ViewBot ${this.botId}: Starting synchronized FFmpeg for video file streaming...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting synchronized FFmpeg for video file streaming...`);
     
     // Check if we should use the new multiplexed approach
     const useMuxedStream = this.config.useMuxedStream === true; // Default to false for stability
     
     if (useMuxedStream) {
-      console.log(`🎬 ViewBot ${this.botId}: Using MULTIPLEXED stream for perfect A/V sync`);
+      logger.debug(`🎬 ViewBot ${this.botId}: Using MULTIPLEXED stream for perfect A/V sync`);
       try {
         return await this.startMultiplexedFFmpegGeneration();
       } catch (error) {
-        console.error(`❌ ViewBot ${this.botId}: Multiplexed stream failed, falling back to standard approach:`, error.message);
+        logger.error(`❌ ViewBot ${this.botId}: Multiplexed stream failed, falling back to standard approach:`, error.message);
         // Continue with standard approach below
       }
     }
@@ -528,7 +530,7 @@ class ViewBotInstance {
     const audioRtpParams = this.createAudioRtpParameters();
     
     // Create MediaSoup producers for both
-    console.log(`📡 ViewBot ${this.botId}: Creating MediaSoup producers...`);
+    logger.debug(`📡 ViewBot ${this.botId}: Creating MediaSoup producers...`);
     await Promise.all([
       this.createWebRTCProducer('video', videoRtpParams),
       this.createWebRTCProducer('audio', audioRtpParams)
@@ -585,12 +587,12 @@ class ViewBotInstance {
       `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.audioRtpPort}`
     ];
     
-    console.log(`🎬 ViewBot ${this.botId}: Starting combined FFmpeg process...`);
-    console.log(`🎬 ViewBot ${this.botId}: Video RTP port: ${this.videoRtpPort}, Audio RTP port: ${this.audioRtpPort}`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting combined FFmpeg process...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Video RTP port: ${this.videoRtpPort}, Audio RTP port: ${this.audioRtpPort}`);
     
     try {
       this.combinedFFmpeg = spawn(this.parentService?.ffmpegPath || 'ffmpeg', ffmpegArgs);
-      console.log(`🎬 ViewBot ${this.botId}: Combined FFmpeg process PID: ${this.combinedFFmpeg.pid}`);
+      logger.debug(`🎬 ViewBot ${this.botId}: Combined FFmpeg process PID: ${this.combinedFFmpeg.pid}`);
       
       // Set up handlers
       this.setupFFmpegHandlers(this.combinedFFmpeg, 'combined');
@@ -606,7 +608,7 @@ class ViewBotInstance {
       throw error;
     }
     
-    console.log(`✅ ViewBot ${this.botId}: Combined FFmpeg process started with A/V sync`);
+    logger.debug(`✅ ViewBot ${this.botId}: Combined FFmpeg process started with A/V sync`);
   }
 
   /**
@@ -615,17 +617,17 @@ class ViewBotInstance {
    * Now supports PlainTransport with RTCP synchronization
    */
   async startMultiplexedFFmpegGeneration() {
-    console.log(`🎬 ViewBot ${this.botId}: Starting MULTIPLEXED FFmpeg stream...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting MULTIPLEXED FFmpeg stream...`);
     
     // Check if we should use PlainTransport for better sync
     const usePlainTransport = this.config.usePlainTransport === true; // Default to false for stability
     
     if (usePlainTransport) {
-      console.log(`🎬 ViewBot ${this.botId}: Using PlainTransport with RTCP synchronization`);
+      logger.debug(`🎬 ViewBot ${this.botId}: Using PlainTransport with RTCP synchronization`);
       try {
         return await this.startPlainTransportFFmpegGeneration();
       } catch (error) {
-        console.error(`❌ ViewBot ${this.botId}: PlainTransport failed, falling back to standard approach:`, error.message);
+        logger.error(`❌ ViewBot ${this.botId}: PlainTransport failed, falling back to standard approach:`, error.message);
         // Continue with standard approach below
       }
     }
@@ -639,7 +641,7 @@ class ViewBotInstance {
     const audioRtpParams = this.createAudioRtpParameters();
     
     // Create MediaSoup producers for both
-    console.log(`📡 ViewBot ${this.botId}: Creating MediaSoup producers for multiplexed stream...`);
+    logger.debug(`📡 ViewBot ${this.botId}: Creating MediaSoup producers for multiplexed stream...`);
     await Promise.all([
       this.createWebRTCProducer('video', videoRtpParams),
       this.createWebRTCProducer('audio', audioRtpParams)
@@ -737,43 +739,43 @@ class ViewBotInstance {
       `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.audioRtpPort}`
     ];
     
-    console.log(`🎬 ViewBot ${this.botId}: Using filter_complex for synchronized output`);
-    console.log(`🎬 ViewBot ${this.botId}: Video RTP port: ${this.videoRtpPort}, Audio RTP port: ${this.audioRtpPort}`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Using filter_complex for synchronized output`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Video RTP port: ${this.videoRtpPort}, Audio RTP port: ${this.audioRtpPort}`);
     
     try {
       this.combinedFFmpeg = spawn(this.parentService?.ffmpegPath || 'ffmpeg', syncedArgs);
-      console.log(`🎬 ViewBot ${this.botId}: Multiplexed FFmpeg process PID: ${this.combinedFFmpeg.pid}`);
+      logger.debug(`🎬 ViewBot ${this.botId}: Multiplexed FFmpeg process PID: ${this.combinedFFmpeg.pid}`);
       
       // Enhanced error handling for multiplexed stream
       this.combinedFFmpeg.stderr.on('data', (data) => {
         const output = data.toString();
         if (output.includes('error') || output.includes('Error')) {
-          console.error(`❌ ViewBot ${this.botId}: FFmpeg error:`, output);
+          logger.error(`❌ ViewBot ${this.botId}: FFmpeg error:`, output);
         } else if (output.includes('Muxing overhead') || output.includes('video:') || output.includes('audio:')) {
-          console.log(`✅ ViewBot ${this.botId}: Stream synchronized and running`);
+          logger.debug(`✅ ViewBot ${this.botId}: Stream synchronized and running`);
         } else if (output.includes('frame=')) {
           // Log progress occasionally
           if (Math.random() < 0.01) {
             const frameMatch = output.match(/frame=\s*(\d+)/);
             if (frameMatch) {
-              console.log(`📊 ViewBot ${this.botId}: Multiplexed stream progress - frame ${frameMatch[1]}`);
+              logger.debug(`📊 ViewBot ${this.botId}: Multiplexed stream progress - frame ${frameMatch[1]}`);
             }
           }
         }
       });
       
       this.combinedFFmpeg.on('close', (code) => {
-        console.log(`🛑 ViewBot ${this.botId}: Multiplexed FFmpeg process exited with code ${code}`);
+        logger.debug(`🛑 ViewBot ${this.botId}: Multiplexed FFmpeg process exited with code ${code}`);
         
         // Handle video end when FFmpeg exits normally for video files
         if (code === 0 && this.config.contentType === 'videoFile' && this.streaming && !this.handlingVideoEnd) {
-          console.log(`🎬 ViewBot ${this.botId}: Video file reached end (FFmpeg exit code 0)`);
+          logger.debug(`🎬 ViewBot ${this.botId}: Video file reached end (FFmpeg exit code 0)`);
           this.handleVideoEnd();
         }
       });
       
       this.combinedFFmpeg.on('error', (error) => {
-        console.error(`❌ ViewBot ${this.botId}: FFmpeg process error:`, error);
+        logger.error(`❌ ViewBot ${this.botId}: FFmpeg process error:`, error);
       });
       
       // Store references for cleanup
@@ -787,7 +789,7 @@ class ViewBotInstance {
       throw error;
     }
     
-    console.log(`✅ ViewBot ${this.botId}: Multiplexed FFmpeg stream started with PERFECT A/V sync`);
+    logger.debug(`✅ ViewBot ${this.botId}: Multiplexed FFmpeg stream started with PERFECT A/V sync`);
   }
 
   /**
@@ -795,14 +797,14 @@ class ViewBotInstance {
    * This provides the best possible A/V sync with proper timestamp coordination
    */
   async startPlainTransportFFmpegGeneration() {
-    console.log(`🎬 ViewBot ${this.botId}: Starting PlainTransport FFmpeg stream with RTCP sync...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting PlainTransport FFmpeg stream with RTCP sync...`);
     
     const width = this.config.width || 1280;
     const height = this.config.height || 720;
     const frameRate = this.config.frameRate || 30;
     
     // Request PlainTransport creation from server
-    console.log(`📡 ViewBot ${this.botId}: Requesting PlainTransport creation...`);
+    logger.debug(`📡 ViewBot ${this.botId}: Requesting PlainTransport creation...`);
     
     const transportResult = await new Promise((resolve, reject) => {
       // Set a timeout in case the server doesn't support this event
@@ -822,21 +824,21 @@ class ViewBotInstance {
         }
       });
     }).catch(error => {
-      console.error(`❌ ViewBot ${this.botId}: PlainTransport not available:`, error.message);
+      logger.error(`❌ ViewBot ${this.botId}: PlainTransport not available:`, error.message);
       throw error;
     });
     
     if (!transportResult.success) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to create PlainTransport`);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to create PlainTransport`);
       // Fallback to regular approach
       return this.startMultiplexedFFmpegGeneration();
     }
     
     const { videoRtpPort, videoRtcpPort, audioRtpPort, audioRtcpPort } = transportResult;
     
-    console.log(`✅ ViewBot ${this.botId}: PlainTransport created`);
-    console.log(`   Video RTP: ${videoRtpPort}, RTCP: ${videoRtcpPort}`);
-    console.log(`   Audio RTP: ${audioRtpPort}, RTCP: ${audioRtcpPort}`);
+    logger.debug(`✅ ViewBot ${this.botId}: PlainTransport created`);
+    logger.debug(`   Video RTP: ${videoRtpPort}, RTCP: ${videoRtcpPort}`);
+    logger.debug(`   Audio RTP: ${audioRtpPort}, RTCP: ${audioRtcpPort}`);
     
     // Store ports for FFmpeg
     this.videoRtpPort = videoRtpPort;
@@ -887,35 +889,35 @@ class ViewBotInstance {
       `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${audioRtpPort}?rtcpport=${audioRtcpPort}`
     ];
     
-    console.log(`🎬 ViewBot ${this.botId}: Starting FFmpeg with RTCP synchronization...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting FFmpeg with RTCP synchronization...`);
     
     try {
       this.combinedFFmpeg = spawn(this.parentService?.ffmpegPath || 'ffmpeg', ffmpegArgs);
-      console.log(`🎬 ViewBot ${this.botId}: PlainTransport FFmpeg process PID: ${this.combinedFFmpeg.pid}`);
+      logger.debug(`🎬 ViewBot ${this.botId}: PlainTransport FFmpeg process PID: ${this.combinedFFmpeg.pid}`);
       
       // Enhanced monitoring for RTCP sync
       this.combinedFFmpeg.stderr.on('data', (data) => {
         const output = data.toString();
         if (output.includes('error') || output.includes('Error')) {
-          console.error(`❌ ViewBot ${this.botId}: FFmpeg error:`, output);
+          logger.error(`❌ ViewBot ${this.botId}: FFmpeg error:`, output);
         } else if (output.includes('RTCP')) {
-          console.log(`🔄 ViewBot ${this.botId}: RTCP sync active`);
+          logger.debug(`🔄 ViewBot ${this.botId}: RTCP sync active`);
         } else if (output.includes('frame=')) {
           if (Math.random() < 0.01) {
             const frameMatch = output.match(/frame=\s*(\d+)/);
             if (frameMatch) {
-              console.log(`📊 ViewBot ${this.botId}: PlainTransport stream - frame ${frameMatch[1]} (RTCP synced)`);
+              logger.debug(`📊 ViewBot ${this.botId}: PlainTransport stream - frame ${frameMatch[1]} (RTCP synced)`);
             }
           }
         }
       });
       
       this.combinedFFmpeg.on('close', (code) => {
-        console.log(`🛑 ViewBot ${this.botId}: PlainTransport FFmpeg exited with code ${code}`);
+        logger.debug(`🛑 ViewBot ${this.botId}: PlainTransport FFmpeg exited with code ${code}`);
         
         // Handle video end when FFmpeg exits normally for video files
         if (code === 0 && this.config.contentType === 'videoFile' && this.streaming && !this.handlingVideoEnd) {
-          console.log(`🎬 ViewBot ${this.botId}: Video file reached end (FFmpeg exit code 0)`);
+          logger.debug(`🎬 ViewBot ${this.botId}: Video file reached end (FFmpeg exit code 0)`);
           this.handleVideoEnd();
         }
       });
@@ -932,7 +934,7 @@ class ViewBotInstance {
       throw error;
     }
     
-    console.log(`✅ ViewBot ${this.botId}: PlainTransport FFmpeg started with PERFECT RTCP sync`);
+    logger.debug(`✅ ViewBot ${this.botId}: PlainTransport FFmpeg started with PERFECT RTCP sync`);
   }
 
   /**
@@ -1023,28 +1025,28 @@ class ViewBotInstance {
   async startGStreamerVideoFileStreaming() {
     // CRITICAL: Prevent multiple calls
     if (this.gstreamerStarting || this.gstreamerVideoProcess || this.gstreamerAudioProcess) {
-      console.log(`⚠️ ViewBot ${this.botId}: GStreamer already starting/running - skipping duplicate call`);
-      console.log(`   Starting: ${this.gstreamerStarting}, Video PID: ${this.gstreamerVideoProcess?.pid}, Audio PID: ${this.gstreamerAudioProcess?.pid}`);
+      logger.debug(`⚠️ ViewBot ${this.botId}: GStreamer already starting/running - skipping duplicate call`);
+      logger.debug(`   Starting: ${this.gstreamerStarting}, Video PID: ${this.gstreamerVideoProcess?.pid}, Audio PID: ${this.gstreamerAudioProcess?.pid}`);
       return;
     }
     this.gstreamerStarting = true;
     
-    console.log(`🎬 ViewBot ${this.botId}: Starting GStreamer-based video file streaming (ENHANCED)`);
-    console.log(`📂 Video file: ${this.config.videoFile}`);
-    console.log(`🔍 STACK TRACE:`, new Error().stack.split('\n').slice(1, 5).join('\n'));
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting GStreamer-based video file streaming (ENHANCED)`);
+    logger.debug(`📂 Video file: ${this.config.videoFile}`);
+    logger.debug(`🔍 STACK TRACE:`, new Error().stack.split('\n').slice(1, 5).join('\n'));
     
     const { width = 1280, height = 720, frameRate = 30 } = this.config;
-    console.log(`📐 Resolution: ${width}x${height} @ ${frameRate}fps`);
+    logger.debug(`📐 Resolution: ${width}x${height} @ ${frameRate}fps`);
     
     // Check file exists first
     if (!fs.existsSync(this.config.videoFile)) {
-      console.error(`❌ ViewBot ${this.botId}: Video file not found: ${this.config.videoFile}`);
+      logger.error(`❌ ViewBot ${this.botId}: Video file not found: ${this.config.videoFile}`);
       throw new Error(`Video file not found: ${this.config.videoFile}`);
     }
     
     // Get file info
     const stats = fs.statSync(this.config.videoFile);
-    console.log(`📊 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+    logger.debug(`📊 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
     
     // Get video duration using ffprobe for fallback timer
     await this.getVideoDuration(this.config.videoFile);
@@ -1053,7 +1055,7 @@ class ViewBotInstance {
     const videoSSRC = 11111111;
     const audioSSRC = 22222222;
     
-    console.log(`🔑 Using SSRCs - Video: ${videoSSRC}, Audio: ${audioSSRC}`);
+    logger.debug(`🔑 Using SSRCs - Video: ${videoSSRC}, Audio: ${audioSSRC}`);
     
     // Create RTP parameters with the EXACT SSRCs we'll use
     const videoRtpParams = {
@@ -1092,8 +1094,8 @@ class ViewBotInstance {
     };
     
     // Create MediaSoup producers using socket events
-    console.log(`📡 ViewBot ${this.botId}: Creating MediaSoup PlainTransport producers...`);
-    console.log(`   Step 1: Creating video producer...`);
+    logger.debug(`📡 ViewBot ${this.botId}: Creating MediaSoup PlainTransport producers...`);
+    logger.debug(`   Step 1: Creating video producer...`);
     
     // Store SSRCs for use in GStreamer
     this.videoSSRC = videoSSRC;
@@ -1101,55 +1103,55 @@ class ViewBotInstance {
     
     try {
       await this.createWebRTCProducer('video', videoRtpParams);
-      console.log(`   ✅ Video producer created`);
+      logger.debug(`   ✅ Video producer created`);
     } catch (err) {
-      console.error(`   ❌ Failed to create video producer:`, err.message);
+      logger.error(`   ❌ Failed to create video producer:`, err.message);
       throw err;
     }
     
     try {
-      console.log(`   Step 2: Creating audio producer...`);
+      logger.debug(`   Step 2: Creating audio producer...`);
       await this.createWebRTCProducer('audio', audioRtpParams);
-      console.log(`   ✅ Audio producer created`);
+      logger.debug(`   ✅ Audio producer created`);
     } catch (err) {
-      console.error(`   ❌ Failed to create audio producer:`, err.message);
+      logger.error(`   ❌ Failed to create audio producer:`, err.message);
       throw err;
     }
     
     // Wait for transports to be ready
-    console.log(`⏳ Waiting for transports to be ready...`);
+    logger.debug(`⏳ Waiting for transports to be ready...`);
     await new Promise(resolve => setTimeout(resolve, 1500));
     
     if (!this.videoRtpPort || !this.audioRtpPort) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to get RTP ports from server`);
-      console.error(`   Video port: ${this.videoRtpPort}, Audio port: ${this.audioRtpPort}`);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to get RTP ports from server`);
+      logger.error(`   Video port: ${this.videoRtpPort}, Audio port: ${this.audioRtpPort}`);
       throw new Error('Failed to get RTP ports from server');
     }
     
-    console.log(`✅ ViewBot ${this.botId}: MediaSoup PlainTransport ready`);
-    console.log(`   Video: RTP port ${this.videoRtpPort}, SSRC ${videoSSRC}`);
-    console.log(`   Audio: RTP port ${this.audioRtpPort}, SSRC ${audioSSRC}`);
+    logger.debug(`✅ ViewBot ${this.botId}: MediaSoup PlainTransport ready`);
+    logger.debug(`   Video: RTP port ${this.videoRtpPort}, SSRC ${videoSSRC}`);
+    logger.debug(`   Audio: RTP port ${this.audioRtpPort}, SSRC ${audioSSRC}`);
     
     try {
       // IMPORTANT: Use forward slashes for Windows paths in GStreamer
       const videoFile = this.config.videoFile.replace(/\\/g, '/');
-      console.log(`📁 Converted path for GStreamer: ${videoFile}`);
+      logger.debug(`📁 Converted path for GStreamer: ${videoFile}`);
       
       // Start separate pipelines without rtpbin
-      console.log(`🚀 Starting GStreamer pipelines...`);
+      logger.debug(`🚀 Starting GStreamer pipelines...`);
       await this.startDirectRTPPipelines(videoFile, width, height, frameRate);
       
       // Mark as using GStreamer
       this.useGStreamer = true;
       
-      console.log(`✅ ViewBot ${this.botId}: GStreamer streaming started successfully`);
+      logger.debug(`✅ ViewBot ${this.botId}: GStreamer streaming started successfully`);
       
       // Clear the starting flag
       this.gstreamerStarting = false;
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: GStreamer launch failed:`, error.message);
-      console.error(`   Full error:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: GStreamer launch failed:`, error.message);
+      logger.error(`   Full error:`, error);
       
       // Clear the starting flag
       this.gstreamerStarting = false;
@@ -1158,7 +1160,7 @@ class ViewBotInstance {
       this.cleanupGStreamerProcesses();
       
       // Fallback to FFmpeg if GStreamer fails
-      console.log(`⚠️ ViewBot ${this.botId}: Falling back to FFmpeg method`);
+      logger.debug(`⚠️ ViewBot ${this.botId}: Falling back to FFmpeg method`);
       this.config.useGStreamer = false;
       
       if (typeof this.startFFmpegVideoFileStreaming === 'function') {
@@ -1223,13 +1225,13 @@ class ViewBotInstance {
       ? 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe'
       : 'gst-launch-1.0';
     
-    console.log(`🎥 ViewBot ${this.botId}: Starting video pipeline (no rtpbin)`);
-    console.log(`🎥 ViewBot ${this.botId}: GStreamer path: ${gstreamerPath}`);
-    console.log(`🎥 ViewBot ${this.botId}: Video file: ${videoFile}`);
-    console.log(`🎥 ViewBot ${this.botId}: Pipeline args count: ${videoPipeline.length}`);
+    logger.debug(`🎥 ViewBot ${this.botId}: Starting video pipeline (no rtpbin)`);
+    logger.debug(`🎥 ViewBot ${this.botId}: GStreamer path: ${gstreamerPath}`);
+    logger.debug(`🎥 ViewBot ${this.botId}: Video file: ${videoFile}`);
+    logger.debug(`🎥 ViewBot ${this.botId}: Pipeline args count: ${videoPipeline.length}`);
     
     // Debug: Log the actual command being run
-    console.log(`🎥 ViewBot ${this.botId}: Full command: ${gstreamerPath} ${videoPipeline.join(' ')}`);
+    logger.debug(`🎥 ViewBot ${this.botId}: Full command: ${gstreamerPath} ${videoPipeline.join(' ')}`);
     
     // CRITICAL: Ensure clean state before starting
     await processManager.prepareForStreaming(this.botId);
@@ -1244,16 +1246,16 @@ class ViewBotInstance {
     
     // Check if process started
     if (!this.gstreamerVideoProcess || !this.gstreamerVideoProcess.pid) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to spawn video process`);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to spawn video process`);
       throw new Error('Failed to spawn GStreamer video process');
     }
     
-    console.log(`🎥 ViewBot ${this.botId}: Video process started, PID: ${this.gstreamerVideoProcess.pid}`);
+    logger.debug(`🎥 ViewBot ${this.botId}: Video process started, PID: ${this.gstreamerVideoProcess.pid}`);
     
     // Register with ProcessManager
     processManager.registerProcess(this.botId, 'video', this.gstreamerVideoProcess.pid);
     
-    console.log(`🔊 ViewBot ${this.botId}: Starting audio pipeline (no rtpbin)`);
+    logger.debug(`🔊 ViewBot ${this.botId}: Starting audio pipeline (no rtpbin)`);
     
     // Only use shell: true on Windows, it breaks argument parsing on Linux
     this.gstreamerAudioProcess = spawn(gstreamerPath, audioPipeline, {
@@ -1265,14 +1267,14 @@ class ViewBotInstance {
     
     // Check if process started
     if (!this.gstreamerAudioProcess || !this.gstreamerAudioProcess.pid) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to spawn audio process`);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to spawn audio process`);
       throw new Error('Failed to spawn GStreamer audio process');
     }
     
     // Register with ProcessManager
     processManager.registerProcess(this.botId, 'audio', this.gstreamerAudioProcess.pid);
     
-    console.log(`🔊 ViewBot ${this.botId}: Audio process started, PID: ${this.gstreamerAudioProcess.pid}`);
+    logger.debug(`🔊 ViewBot ${this.botId}: Audio process started, PID: ${this.gstreamerAudioProcess.pid}`);
     
     // Set up duration-based failsafe rotation
     await this.setupDurationBasedRotation(videoFile);
@@ -1290,46 +1292,46 @@ class ViewBotInstance {
       
       // Log first few messages for debugging
       if (!videoStarted) {
-        console.log(`📹 ViewBot ${this.botId}: Video stderr: ${output.substring(0, 200)}`);
+        logger.debug(`📹 ViewBot ${this.botId}: Video stderr: ${output.substring(0, 200)}`);
       }
       
       if (output.includes('ERROR')) {
         videoError = output.substring(0, 200);
-        console.error(`❌ ViewBot ${this.botId}: Video pipeline error`);
-        console.error(output);
+        logger.error(`❌ ViewBot ${this.botId}: Video pipeline error`);
+        logger.error(output);
       } else if (output.includes('PLAYING') || output.includes('Setting pipeline to PLAYING')) {
         if (!videoStarted) {
           videoStarted = true;
-          console.log(`▶️ ViewBot ${this.botId}: Video pipeline playing`);
+          logger.debug(`▶️ ViewBot ${this.botId}: Video pipeline playing`);
         }
       } else if (output.includes('EOS') || output.includes('end-of-stream') || 
                  output.includes('Got EOS from element') || output.includes('Posting EOS') ||
                  output.includes('EOS received') || output.includes('Execution ended')) {
         if (!videoEOS) {
           videoEOS = true;
-          console.log(`🏁 ViewBot ${this.botId}: Video EOS detected - cleaning up first!`);
-          console.log(`   EOS Message: ${output.substring(0, 100)}`);
+          logger.debug(`🏁 ViewBot ${this.botId}: Video EOS detected - cleaning up first!`);
+          logger.debug(`   EOS Message: ${output.substring(0, 100)}`);
           
           // First cleanup the processes to ensure resources are freed
-          console.log(`🧹 ViewBot ${this.botId}: Cleaning up GStreamer processes immediately`);
+          logger.debug(`🧹 ViewBot ${this.botId}: Cleaning up GStreamer processes immediately`);
           this.cleanupGStreamerProcesses();
           
           // Then trigger video end handling after cleanup to avoid conflicts
           setTimeout(() => {
             if (!this.stopping && !this.handlingVideoEnd) {
-              console.log(`🔄 ViewBot ${this.botId}: Triggering rotation after cleanup`);
+              logger.debug(`🔄 ViewBot ${this.botId}: Triggering rotation after cleanup`);
               this.handleVideoEnd();
             }
           }, 200); // Small delay to ensure cleanup completes
         }
       } else if (output.includes('Setting pipeline to NULL')) {
-        console.log(`🔧 ViewBot ${this.botId}: Video pipeline shutting down`);
+        logger.debug(`🔧 ViewBot ${this.botId}: Video pipeline shutting down`);
       } else if (output.includes('Setting pipeline')) {
-        console.log(`🔧 ViewBot ${this.botId}: Video pipeline state change`);
+        logger.debug(`🔧 ViewBot ${this.botId}: Video pipeline state change`);
       } else if (output.includes('caps = video/')) {
-        console.log(`📹 ViewBot ${this.botId}: Video stream detected`);
+        logger.debug(`📹 ViewBot ${this.botId}: Video stream detected`);
       } else if (output.includes('Freeing pipeline')) {
-        console.log(`🧹 ViewBot ${this.botId}: Video pipeline freed`);
+        logger.debug(`🧹 ViewBot ${this.botId}: Video pipeline freed`);
       }
     });
     
@@ -1339,14 +1341,14 @@ class ViewBotInstance {
       
       // Log for debugging
       if (!videoStarted) {
-        console.log(`📹 ViewBot ${this.botId}: Video stdout: ${output.substring(0, 200)}`);
+        logger.debug(`📹 ViewBot ${this.botId}: Video stdout: ${output.substring(0, 200)}`);
       }
       
       if (output.includes('Setting pipeline') || output.includes('PLAYING')) {
-        console.log(`🔧 ViewBot ${this.botId}: Video pipeline state: ${output.trim()}`);
+        logger.debug(`🔧 ViewBot ${this.botId}: Video pipeline state: ${output.trim()}`);
         if (!videoStarted && (output.includes('PLAYING') || output.includes('Pipeline is PREROLLED'))) {
           videoStarted = true;
-          console.log(`▶️ ViewBot ${this.botId}: Video pipeline playing (from stdout)`);
+          logger.debug(`▶️ ViewBot ${this.botId}: Video pipeline playing (from stdout)`);
         }
       }
     });
@@ -1357,18 +1359,18 @@ class ViewBotInstance {
       
       if (output.includes('ERROR')) {
         audioError = output.substring(0, 200);
-        console.error(`❌ ViewBot ${this.botId}: Audio pipeline error`);
-        console.error(output);
+        logger.error(`❌ ViewBot ${this.botId}: Audio pipeline error`);
+        logger.error(output);
       } else if (output.includes('PLAYING') || output.includes('Setting pipeline to PLAYING')) {
         if (!audioStarted) {
           audioStarted = true;
-          console.log(`▶️ ViewBot ${this.botId}: Audio pipeline playing`);
+          logger.debug(`▶️ ViewBot ${this.botId}: Audio pipeline playing`);
         }
       } else if (output.includes('EOS')) {
         audioEOS = true;
-        console.log(`🏁 ViewBot ${this.botId}: Audio EOS received - complete playback!`);
+        logger.debug(`🏁 ViewBot ${this.botId}: Audio EOS received - complete playback!`);
       } else if (output.includes('caps = audio/')) {
-        console.log(`🔊 ViewBot ${this.botId}: Audio stream detected`);
+        logger.debug(`🔊 ViewBot ${this.botId}: Audio stream detected`);
       }
     });
     
@@ -1378,44 +1380,44 @@ class ViewBotInstance {
       
       // Log for debugging
       if (!audioStarted) {
-        console.log(`🔊 ViewBot ${this.botId}: Audio stdout: ${output.substring(0, 200)}`);
+        logger.debug(`🔊 ViewBot ${this.botId}: Audio stdout: ${output.substring(0, 200)}`);
       }
       
       if (output.includes('Setting pipeline') || output.includes('PLAYING')) {
-        console.log(`🔧 ViewBot ${this.botId}: Audio pipeline state: ${output.trim()}`);
+        logger.debug(`🔧 ViewBot ${this.botId}: Audio pipeline state: ${output.trim()}`);
         if (!audioStarted && (output.includes('PLAYING') || output.includes('Pipeline is PREROLLED'))) {
           audioStarted = true;
-          console.log(`▶️ ViewBot ${this.botId}: Audio pipeline playing (from stdout)`);
+          logger.debug(`▶️ ViewBot ${this.botId}: Audio pipeline playing (from stdout)`);
         }
       }
     });
     
     this.gstreamerVideoProcess.on('error', (error) => {
-      console.error(`❌ ViewBot ${this.botId}: Failed to start video pipeline:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to start video pipeline:`, error);
       throw error;
     });
     
     this.gstreamerAudioProcess.on('error', (error) => {
-      console.error(`❌ ViewBot ${this.botId}: Failed to start audio pipeline:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to start audio pipeline:`, error);
       // Audio failure is not critical, continue
     });
     
     this.gstreamerVideoProcess.on('exit', (code, signal) => {
-      console.log(`🛑 ViewBot ${this.botId}: Video pipeline exited (code: ${code})`);
+      logger.debug(`🛑 ViewBot ${this.botId}: Video pipeline exited (code: ${code})`);
       
       if (videoEOS) {
-        console.log(`   ✅ Video played to completion`);
+        logger.debug(`   ✅ Video played to completion`);
       } else if (code === 0) {
-        console.log(`   ✅ Video pipeline completed normally`);
+        logger.debug(`   ✅ Video pipeline completed normally`);
       } else if (videoError) {
-        console.error(`   ❌ Video error: ${videoError}`);
+        logger.error(`   ❌ Video error: ${videoError}`);
       }
       
       this.gstreamerVideoProcess = null;
       
       // Handle video end - trigger rotation after ensuring cleanup
       if (!this.stopping && !this.handlingVideoEnd && (videoEOS || code === 0)) {
-        console.log(`🎬 ViewBot ${this.botId}: Video file reached end (GStreamer EOS: ${videoEOS}, Exit code: ${code})`);
+        logger.debug(`🎬 ViewBot ${this.botId}: Video file reached end (GStreamer EOS: ${videoEOS}, Exit code: ${code})`);
         // Ensure cleanup then trigger rotation
         setTimeout(() => {
           if (!this.stopping && !this.handlingVideoEnd) {
@@ -1426,14 +1428,14 @@ class ViewBotInstance {
     });
     
     this.gstreamerAudioProcess.on('exit', (code, signal) => {
-      console.log(`🛑 ViewBot ${this.botId}: Audio pipeline exited (code: ${code})`);
+      logger.debug(`🛑 ViewBot ${this.botId}: Audio pipeline exited (code: ${code})`);
       
       if (audioEOS) {
-        console.log(`   ✅ Audio played to completion`);
+        logger.debug(`   ✅ Audio played to completion`);
       } else if (code === 0) {
-        console.log(`   ✅ Audio pipeline completed normally`);
+        logger.debug(`   ✅ Audio pipeline completed normally`);
       } else if (audioError) {
-        console.error(`   ❌ Audio error: ${audioError}`);
+        logger.error(`   ❌ Audio error: ${audioError}`);
       }
       
       this.gstreamerAudioProcess = null;
@@ -1453,25 +1455,25 @@ class ViewBotInstance {
         
         // If processes are running with PIDs, consider them started even without PLAYING message
         if (videoRunning || audioRunning) {
-          console.log(`⚠️ ViewBot ${this.botId}: Processes running without PLAYING confirmation (Video PID: ${this.gstreamerVideoProcess?.pid}, Audio PID: ${this.gstreamerAudioProcess?.pid})`);
+          logger.debug(`⚠️ ViewBot ${this.botId}: Processes running without PLAYING confirmation (Video PID: ${this.gstreamerVideoProcess?.pid}, Audio PID: ${this.gstreamerAudioProcess?.pid})`);
           videoStarted = videoStarted || videoRunning;
           audioStarted = audioStarted || audioRunning;
           resolve();
         } else if (!videoStarted && !audioStarted) {
           const error = new Error('GStreamer pipelines failed to start');
-          console.error(`❌ ViewBot ${this.botId}: ${error.message}`);
+          logger.error(`❌ ViewBot ${this.botId}: ${error.message}`);
           
           if (videoError) {
-            console.error(`   Video error: ${videoError}`);
+            logger.error(`   Video error: ${videoError}`);
           }
           if (audioError) {
-            console.error(`   Audio error: ${audioError}`);
+            logger.error(`   Audio error: ${audioError}`);
           }
           
           this.cleanupGStreamerProcesses();
           reject(error);
         } else {
-          console.log(`⚠️ ViewBot ${this.botId}: Partial start (Video: ${videoStarted}, Audio: ${audioStarted})`);
+          logger.debug(`⚠️ ViewBot ${this.botId}: Partial start (Video: ${videoStarted}, Audio: ${audioStarted})`);
           resolve();
         }
       }, 15000);
@@ -1480,7 +1482,7 @@ class ViewBotInstance {
         if (videoStarted || audioStarted) {
           clearTimeout(timeout);
           clearInterval(checkInterval);
-          console.log(`✅ ViewBot ${this.botId}: Pipelines started (Video: ${videoStarted}, Audio: ${audioStarted})`);
+          logger.debug(`✅ ViewBot ${this.botId}: Pipelines started (Video: ${videoStarted}, Audio: ${audioStarted})`);
           resolve();
         }
       }, 100);
@@ -1507,12 +1509,12 @@ class ViewBotInstance {
         // Add 5 second buffer for processing delays
         const rotationDelay = (durationSeconds + 5) * 1000;
         
-        console.log(`⏰ ViewBot ${this.botId}: Video duration is ${durationSeconds}s, setting failsafe rotation timer for ${rotationDelay}ms`);
+        logger.debug(`⏰ ViewBot ${this.botId}: Video duration is ${durationSeconds}s, setting failsafe rotation timer for ${rotationDelay}ms`);
         
         this.videoDurationTimer = setTimeout(() => {
-          console.log(`⚠️ ViewBot ${this.botId}: Duration-based failsafe triggered - video should have ended by now`);
+          logger.debug(`⚠️ ViewBot ${this.botId}: Duration-based failsafe triggered - video should have ended by now`);
           if (!this.handlingVideoEnd && this.streaming) {
-            console.log(`🆘 ViewBot ${this.botId}: EOS not detected, forcing cleanup then rotation`);
+            logger.debug(`🆘 ViewBot ${this.botId}: EOS not detected, forcing cleanup then rotation`);
             
             // First force cleanup to free resources
             this.cleanupGStreamerProcesses();
@@ -1526,16 +1528,16 @@ class ViewBotInstance {
           }
         }, rotationDelay);
       } else {
-        console.warn(`⚠️ ViewBot ${this.botId}: Could not determine video duration for failsafe`);
+        logger.warn(`⚠️ ViewBot ${this.botId}: Could not determine video duration for failsafe`);
       }
     } catch (error) {
-      console.warn(`⚠️ ViewBot ${this.botId}: Failed to set up duration-based rotation:`, error.message);
+      logger.warn(`⚠️ ViewBot ${this.botId}: Failed to set up duration-based rotation:`, error.message);
     }
   }
   
   cleanupGStreamerProcesses() {
-    console.log(`🧹🧹🧹 CLEANUP CALLED - ViewBot ${this.botId}: Cleaning up GStreamer processes...`);
-    console.log(`   📊 Current process references:`, {
+    logger.debug(`🧹🧹🧹 CLEANUP CALLED - ViewBot ${this.botId}: Cleaning up GStreamer processes...`);
+    logger.debug(`   📊 Current process references:`, {
       video: this.gstreamerVideoProcess ? `PID ${this.gstreamerVideoProcess.pid}` : 'NULL',
       audio: this.gstreamerAudioProcess ? `PID ${this.gstreamerAudioProcess.pid}` : 'NULL',
       gstreamer: this.gstreamerProcess ? `PID ${this.gstreamerProcess.pid}` : 'NULL'
@@ -1566,7 +1568,7 @@ class ViewBotInstance {
     const killProcess = (proc, name) => {
       if (proc && proc.pid) {
         const pid = proc.pid;
-        console.log(`   💀💀💀 KILLING ${name} process group (PID: ${pid})`);
+        logger.debug(`   💀💀💀 KILLING ${name} process group (PID: ${pid})`);
         
         try {
           // CRITICAL: Use negative PID to kill entire process group on Linux
@@ -1576,34 +1578,34 @@ class ViewBotInstance {
             const { execSync } = require('child_process');
             try {
               // Use pkill to kill all processes in the process group
-              console.log(`   🔫 Executing: kill -9 -${pid} (kill process group)`);
+              logger.debug(`   🔫 Executing: kill -9 -${pid} (kill process group)`);
               execSync(`kill -9 -${pid}`, { stdio: 'ignore' });
-              console.log(`   ✅✅✅ ${name} process group KILLED (PID: -${pid})`);
+              logger.debug(`   ✅✅✅ ${name} process group KILLED (PID: -${pid})`);
             } catch (killError) {
               // If group kill fails, try to kill the single process
-              console.log(`   ⚠️ Group kill failed, trying single process kill`);
+              logger.debug(`   ⚠️ Group kill failed, trying single process kill`);
               try {
                 proc.kill('SIGKILL');
-                console.log(`   ✅ ${name} single process killed (PID: ${pid})`);
+                logger.debug(`   ✅ ${name} single process killed (PID: ${pid})`);
               } catch (e) {
-                console.log(`   ❌ Failed to kill ${name}: ${e.message}`);
+                logger.debug(`   ❌ Failed to kill ${name}: ${e.message}`);
               }
             }
           } else {
             // On Windows, just kill the process normally
             proc.kill('SIGKILL');
-            console.log(`   ✅ ${name} process killed (PID: ${pid})`);
+            logger.debug(`   ✅ ${name} process killed (PID: ${pid})`);
           }
         } catch (error) {
           // Process might already be dead
           if (error.code !== 'ESRCH') {
-            console.log(`   ❌❌❌ ERROR killing ${name}: ${error.message}`);
+            logger.debug(`   ❌❌❌ ERROR killing ${name}: ${error.message}`);
           } else {
-            console.log(`   ⚠️ ${name} process already dead (ESRCH)`);
+            logger.debug(`   ⚠️ ${name} process already dead (ESRCH)`);
           }
         }
       } else {
-        console.log(`   ⚠️⚠️⚠️ No ${name} process reference to kill!`);
+        logger.debug(`   ⚠️⚠️⚠️ No ${name} process reference to kill!`);
       }
     };
     
@@ -1620,9 +1622,9 @@ class ViewBotInstance {
     this.gstreamerProcess = null;
     // CRITICAL: Clear the starting flag to allow future starts
     this.gstreamerStarting = false;
-    console.log(`   🧹 Process references and flags cleared`);
+    logger.debug(`   🧹 Process references and flags cleared`);
     
-    console.log(`   ✅ Cleanup completed - all processes killed`);
+    logger.debug(`   ✅ Cleanup completed - all processes killed`);
   }
   
   /**
@@ -1634,7 +1636,7 @@ class ViewBotInstance {
       clearInterval(this.pipelineHealthCheckTimer);
     }
     
-    console.log(`🏥 ViewBot ${this.botId}: Starting pipeline health monitoring`);
+    logger.debug(`🏥 ViewBot ${this.botId}: Starting pipeline health monitoring`);
     
     // Initial health check after 10 seconds
     setTimeout(() => this.checkPipelineHealth(), 10000);
@@ -1662,13 +1664,13 @@ class ViewBotInstance {
     const audioAlive = this.isProcessAlive(audioPid);
     
     if (!videoAlive && !audioAlive) {
-      console.error(`💀 ViewBot ${this.botId}: Both pipelines are dead!`);
+      logger.error(`💀 ViewBot ${this.botId}: Both pipelines are dead!`);
       this.handlePipelineCrash('both');
     } else if (!videoAlive) {
-      console.error(`💀 ViewBot ${this.botId}: Video pipeline is dead (PID ${videoPid})`);
+      logger.error(`💀 ViewBot ${this.botId}: Video pipeline is dead (PID ${videoPid})`);
       this.handlePipelineCrash('video');
     } else if (!audioAlive) {
-      console.error(`💀 ViewBot ${this.botId}: Audio pipeline is dead (PID ${audioPid})`);
+      logger.error(`💀 ViewBot ${this.botId}: Audio pipeline is dead (PID ${audioPid})`);
       this.handlePipelineCrash('audio');
     } else {
       // Both alive, check for stuck pipelines
@@ -1712,11 +1714,11 @@ class ViewBotInstance {
     
     // If more than 10 seconds without activity, pipeline might be stuck
     if (timeDiff > 10000) {
-      console.warn(`⚠️ ViewBot ${this.botId}: No pipeline activity for ${timeDiff/1000}s`);
+      logger.warn(`⚠️ ViewBot ${this.botId}: No pipeline activity for ${timeDiff/1000}s`);
       
       // Check if we should recover
       if (timeDiff > 15000) {
-        console.error(`🔄 ViewBot ${this.botId}: Pipelines appear stuck, recovering...`);
+        logger.error(`🔄 ViewBot ${this.botId}: Pipelines appear stuck, recovering...`);
         this.handlePipelineCrash('stuck');
       }
     }
@@ -1728,7 +1730,7 @@ class ViewBotInstance {
   async handlePipelineCrash(type) {
     // Prevent multiple recovery attempts
     if (this.recovering || this.stopping || this.handlingVideoEnd) {
-      console.log(`🔄 ViewBot ${this.botId}: Recovery blocked (recovering=${this.recovering}, stopping=${this.stopping})`);
+      logger.debug(`🔄 ViewBot ${this.botId}: Recovery blocked (recovering=${this.recovering}, stopping=${this.stopping})`);
       return;
     }
     
@@ -1736,7 +1738,7 @@ class ViewBotInstance {
     const now = Date.now();
     const timeSinceLastRecovery = now - (this.pipelineHealth?.lastRecovery || 0);
     if (timeSinceLastRecovery < 5000) {
-      console.log(`⏳ ViewBot ${this.botId}: Delaying recovery (only ${timeSinceLastRecovery}ms since last)`);
+      logger.debug(`⏳ ViewBot ${this.botId}: Delaying recovery (only ${timeSinceLastRecovery}ms since last)`);
       return;
     }
     
@@ -1747,11 +1749,11 @@ class ViewBotInstance {
       this.pipelineHealth.lastRecovery = now;
     }
     
-    console.log(`🚨 ViewBot ${this.botId}: Pipeline crash detected (${type}), attempt ${this.recoveryAttempts}/3`);
+    logger.debug(`🚨 ViewBot ${this.botId}: Pipeline crash detected (${type}), attempt ${this.recoveryAttempts}/3`);
     
     // If too many recovery attempts or consecutive failures, rotate to next video
     if (this.recoveryAttempts > 3 || (this.pipelineHealth?.consecutiveFailures > 5)) {
-      console.error(`❌ ViewBot ${this.botId}: Too many failures, forcing rotation`);
+      logger.error(`❌ ViewBot ${this.botId}: Too many failures, forcing rotation`);
       this.recoveryAttempts = 0;
       this.recovering = false;
       
@@ -1766,29 +1768,29 @@ class ViewBotInstance {
     
     try {
       // Kill all processes forcefully first
-      console.log(`🛑 ViewBot ${this.botId}: Force stopping all pipelines...`);
+      logger.debug(`🛑 ViewBot ${this.botId}: Force stopping all pipelines...`);
       await this.killAllProcesses();
       
       // Wait for processes to die
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Clean up resources
-      console.log(`🧹 ViewBot ${this.botId}: Cleaning up resources...`);
+      logger.debug(`🧹 ViewBot ${this.botId}: Cleaning up resources...`);
       this.cleanupGStreamerProcesses();
       
       // Check if we should still recover
       if (this.stopping || this.handlingVideoEnd) {
-        console.log(`🚫 ViewBot ${this.botId}: Aborting recovery - bot is stopping`);
+        logger.debug(`🚫 ViewBot ${this.botId}: Aborting recovery - bot is stopping`);
         this.recovering = false;
         return;
       }
       
       // Restart pipelines with exponential backoff
       const backoffDelay = Math.min(1000 * Math.pow(1.5, this.recoveryAttempts - 1), 10000);
-      console.log(`⏰ ViewBot ${this.botId}: Waiting ${backoffDelay/1000}s before restart...`);
+      logger.debug(`⏰ ViewBot ${this.botId}: Waiting ${backoffDelay/1000}s before restart...`);
       await new Promise(resolve => setTimeout(resolve, backoffDelay));
       
-      console.log(`🔄 ViewBot ${this.botId}: Restarting pipelines...`);
+      logger.debug(`🔄 ViewBot ${this.botId}: Restarting pipelines...`);
       
       if (this.config.videoFile) {
         const { width = 1280, height = 720, frameRate = 30 } = this.config;
@@ -1805,14 +1807,14 @@ class ViewBotInstance {
         // Start health monitoring again
         this.startPipelineHealthCheck();
         
-        console.log(`✅ ViewBot ${this.botId}: Pipeline recovery successful`);
+        logger.debug(`✅ ViewBot ${this.botId}: Pipeline recovery successful`);
       }
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Pipeline recovery failed:`, error.message);
+      logger.error(`❌ ViewBot ${this.botId}: Pipeline recovery failed:`, error.message);
       
       // Exponential backoff for retries
       const retryDelay = Math.min(3000 * Math.pow(2, this.recoveryAttempts - 1), 30000);
-      console.log(`⏰ ViewBot ${this.botId}: Retrying recovery in ${retryDelay/1000}s`);
+      logger.debug(`⏰ ViewBot ${this.botId}: Retrying recovery in ${retryDelay/1000}s`);
       
       this.recoveryTimer = setTimeout(() => {
         this.recovering = false;
@@ -1836,7 +1838,7 @@ class ViewBotInstance {
     for (const { proc, name } of processes) {
       if (proc && proc.pid) {
         try {
-          console.log(`💀 Killing ${name} process (PID: ${proc.pid})`);
+          logger.debug(`💀 Killing ${name} process (PID: ${proc.pid})`);
           proc.kill('SIGKILL');
         } catch (error) {
           // Process might already be dead
@@ -1860,7 +1862,7 @@ class ViewBotInstance {
   }
 
   async startFFmpegVideoGeneration() {
-    console.log(`📹 ViewBot ${this.botId}: Starting FFmpeg video generation...`);
+    logger.debug(`📹 ViewBot ${this.botId}: Starting FFmpeg video generation...`);
     
     const width = this.config.width || 1280;
     const height = this.config.height || 720;
@@ -1871,7 +1873,7 @@ class ViewBotInstance {
     const rtpParameters = this.createVideoRtpParameters();
     
     // Create MediaSoup plain transport and producer BEFORE starting FFmpeg
-    console.log(`📡 ViewBot ${this.botId}: Creating MediaSoup video producer first...`);
+    logger.debug(`📡 ViewBot ${this.botId}: Creating MediaSoup video producer first...`);
     await this.createWebRTCProducer('video', rtpParameters);
     
     // Wait a moment for the transport to be ready
@@ -1885,9 +1887,9 @@ class ViewBotInstance {
     // Now start FFmpeg to send RTP data to the waiting transport
     const ffmpegArgs = this.createVideoFFmpegArgs(width, height, frameRate, pattern);
     
-    console.log(`🎬 ViewBot ${this.botId}: Starting FFmpeg video process...`);
-    console.log(`🎬 ViewBot ${this.botId}: FFmpeg will send video RTP to port ${this.videoRtpPort}`);
-    console.log(`🎬 ViewBot ${this.botId}: FFmpeg video args:`, ffmpegArgs.join(' '));
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting FFmpeg video process...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: FFmpeg will send video RTP to port ${this.videoRtpPort}`);
+    logger.debug(`🎬 ViewBot ${this.botId}: FFmpeg video args:`, ffmpegArgs.join(' '));
     
     // Start FFmpeg process
     try {
@@ -1903,21 +1905,21 @@ class ViewBotInstance {
       });
       
       this.videoFFmpeg.on('error', (error) => {
-        console.error(`❌ ViewBot ${this.botId}: FFmpeg video error:`, error);
+        logger.error(`❌ ViewBot ${this.botId}: FFmpeg video error:`, error);
         throw error;
       });
       
       this.videoFFmpeg.on('close', (code) => {
-        console.log(`🛑 ViewBot ${this.botId}: FFmpeg video process exited with code ${code}`);
+        logger.debug(`🛑 ViewBot ${this.botId}: FFmpeg video process exited with code ${code}`);
         this.videoFFmpeg = null;
       });
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to start FFmpeg video:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to start FFmpeg video:`, error);
       throw error;
     }
     
-    console.log(`✅ ViewBot ${this.botId}: FFmpeg video generation started on port ${this.videoRtpPort}`);
+    logger.debug(`✅ ViewBot ${this.botId}: FFmpeg video generation started on port ${this.videoRtpPort}`);
   }
   
   async startGStreamerAudioPipeline(videoFile) {
@@ -1948,7 +1950,7 @@ class ViewBotInstance {
       ? 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe'
       : 'gst-launch-1.0';
     
-    console.log(`🔊 ViewBot ${this.botId}: Starting GStreamer audio pipeline on port ${this.audioRtpPort}`);
+    logger.debug(`🔊 ViewBot ${this.botId}: Starting GStreamer audio pipeline on port ${this.audioRtpPort}`);
     
     this.gstreamerAudioProcess = spawn(gstreamerPath, audioPipeline, {
       windowsHide: true,
@@ -1959,22 +1961,22 @@ class ViewBotInstance {
     this.gstreamerAudioProcess.stderr.on('data', (data) => {
       const output = data.toString();
       if (output.includes('ERROR')) {
-        console.error(`❌ ViewBot ${this.botId}: GStreamer audio error:`, output);
+        logger.error(`❌ ViewBot ${this.botId}: GStreamer audio error:`, output);
       } else if (output.includes('PLAYING')) {
-        console.log(`▶️ ViewBot ${this.botId}: GStreamer audio pipeline playing`);
+        logger.debug(`▶️ ViewBot ${this.botId}: GStreamer audio pipeline playing`);
       }
     });
     
     this.gstreamerAudioProcess.on('error', (error) => {
-      console.error(`❌ ViewBot ${this.botId}: Failed to start GStreamer audio:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to start GStreamer audio:`, error);
       // Audio failure is not critical
-      console.warn(`⚠️ ViewBot ${this.botId}: Continuing without audio`);
+      logger.warn(`⚠️ ViewBot ${this.botId}: Continuing without audio`);
     });
     
     // Wait for pipeline to start (don't fail if audio doesn't work)
     await new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        console.warn(`⚠️ ViewBot ${this.botId}: Audio pipeline timeout, continuing`);
+        logger.warn(`⚠️ ViewBot ${this.botId}: Audio pipeline timeout, continuing`);
         resolve();
       }, 3000);
       
@@ -1996,7 +1998,7 @@ class ViewBotInstance {
    * Starts FFmpeg video generation and creates MediaSoup video producer
    */
   async startFFmpegVideoGeneration() {
-    console.log(`📹 ViewBot ${this.botId}: Starting FFmpeg video generation...`);
+    logger.debug(`📹 ViewBot ${this.botId}: Starting FFmpeg video generation...`);
     
     const width = this.config.width || 1280;
     const height = this.config.height || 720;
@@ -2007,7 +2009,7 @@ class ViewBotInstance {
     const rtpParameters = this.createVideoRtpParameters();
     
     // Create MediaSoup plain transport and producer BEFORE starting FFmpeg
-    console.log(`📡 ViewBot ${this.botId}: Creating MediaSoup video producer first...`);
+    logger.debug(`📡 ViewBot ${this.botId}: Creating MediaSoup video producer first...`);
     await this.createWebRTCProducer('video', rtpParameters);
     
     // Wait a moment for the transport to be ready
@@ -2021,46 +2023,46 @@ class ViewBotInstance {
     // Now start FFmpeg to send RTP data to the waiting transport
     const ffmpegArgs = this.createVideoFFmpegArgs(width, height, frameRate, pattern);
     
-    console.log(`🎬 ViewBot ${this.botId}: Starting FFmpeg video process...`);
-    console.log(`🎬 ViewBot ${this.botId}: FFmpeg will send video RTP to port ${this.videoRtpPort}`);
-    console.log(`🎬 ViewBot ${this.botId}: FFmpeg video args:`, ffmpegArgs.join(' '));
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting FFmpeg video process...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: FFmpeg will send video RTP to port ${this.videoRtpPort}`);
+    logger.debug(`🎬 ViewBot ${this.botId}: FFmpeg video args:`, ffmpegArgs.join(' '));
     
     // Start FFmpeg process
     try {
-      console.log(`🎬 ViewBot ${this.botId}: Spawning FFmpeg video process...`);
+      logger.debug(`🎬 ViewBot ${this.botId}: Spawning FFmpeg video process...`);
       this.videoFFmpeg = spawn(this.parentService?.ffmpegPath || 'ffmpeg', ffmpegArgs);
       
-      console.log(`🎬 ViewBot ${this.botId}: FFmpeg video process PID: ${this.videoFFmpeg.pid}`);
+      logger.debug(`🎬 ViewBot ${this.botId}: FFmpeg video process PID: ${this.videoFFmpeg.pid}`);
       
       // Set up FFmpeg event handlers
       this.setupFFmpegHandlers(this.videoFFmpeg, 'video');
       
     } catch (error) {
       if (error.code === 'ENOENT') {
-        console.error(`❌ ViewBot ${this.botId}: FFmpeg not found. Please install FFmpeg to enable ViewBot streaming.`);
-        console.error(`📋 ViewBot ${this.botId}: Installation instructions:`);
-        console.error(`   Windows: Download from https://ffmpeg.org/download.html and add to PATH`);
-        console.error(`   Or run: winget install ffmpeg`);
-        console.error(`   Or use Chocolatey: choco install ffmpeg`);
+        logger.error(`❌ ViewBot ${this.botId}: FFmpeg not found. Please install FFmpeg to enable ViewBot streaming.`);
+        logger.error(`📋 ViewBot ${this.botId}: Installation instructions:`);
+        logger.error(`   Windows: Download from https://ffmpeg.org/download.html and add to PATH`);
+        logger.error(`   Or run: winget install ffmpeg`);
+        logger.error(`   Or use Chocolatey: choco install ffmpeg`);
         throw new Error('FFmpeg not installed. ViewBot requires FFmpeg for media generation.');
       }
       throw error;
     }
     
-    console.log(`✅ ViewBot ${this.botId}: FFmpeg video generation started on port ${this.videoRtpPort}`);
+    logger.debug(`✅ ViewBot ${this.botId}: FFmpeg video generation started on port ${this.videoRtpPort}`);
   }
 
   /**
    * Starts FFmpeg audio generation and creates MediaSoup audio producer
    */
   async startFFmpegAudioGeneration() {
-    console.log(`🎤 ViewBot ${this.botId}: Starting FFmpeg audio generation...`);
+    logger.debug(`🎤 ViewBot ${this.botId}: Starting FFmpeg audio generation...`);
     
     // Create RTP parameters for audio FIRST
     const rtpParameters = this.createAudioRtpParameters();
     
     // Create MediaSoup plain transport and producer BEFORE starting FFmpeg
-    console.log(`📡 ViewBot ${this.botId}: Creating MediaSoup audio producer first...`);
+    logger.debug(`📡 ViewBot ${this.botId}: Creating MediaSoup audio producer first...`);
     await this.createWebRTCProducer('audio', rtpParameters);
     
     // Wait a moment for the transport to be ready
@@ -2074,9 +2076,9 @@ class ViewBotInstance {
     // Now start FFmpeg to send RTP data to the waiting transport
     const ffmpegArgs = this.createAudioFFmpegArgs();
     
-    console.log(`🎬 ViewBot ${this.botId}: Starting FFmpeg audio process...`);
-    console.log(`🎬 ViewBot ${this.botId}: FFmpeg will send audio RTP to port ${this.audioRtpPort}`);
-    console.log(`🎬 ViewBot ${this.botId}: FFmpeg audio args:`, ffmpegArgs.join(' '));
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting FFmpeg audio process...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: FFmpeg will send audio RTP to port ${this.audioRtpPort}`);
+    logger.debug(`🎬 ViewBot ${this.botId}: FFmpeg audio args:`, ffmpegArgs.join(' '));
     
     // Start FFmpeg process
     try {
@@ -2087,13 +2089,13 @@ class ViewBotInstance {
       
     } catch (error) {
       if (error.code === 'ENOENT') {
-        console.error(`❌ ViewBot ${this.botId}: FFmpeg not found for audio generation.`);
+        logger.error(`❌ ViewBot ${this.botId}: FFmpeg not found for audio generation.`);
         throw new Error('FFmpeg not installed. ViewBot requires FFmpeg for media generation.');
       }
       throw error;
     }
     
-    console.log(`✅ ViewBot ${this.botId}: FFmpeg audio generation started on port ${this.audioRtpPort}`);
+    logger.debug(`✅ ViewBot ${this.botId}: FFmpeg audio generation started on port ${this.audioRtpPort}`);
   }
 
   /**
@@ -2108,21 +2110,21 @@ class ViewBotInstance {
     let inputArgs = [];
     
     if (this.config.contentType === 'videoFile' && this.config.videoFile) {
-      console.log(`🎬 ViewBot ${this.botId}: Using video file input: ${this.config.videoFile}`);
-      console.log(`🎬 ViewBot ${this.botId}: ContentType is: "${this.config.contentType}"`);
-      console.log(`🎬 ViewBot ${this.botId}: Video file path: "${this.config.videoFile}"`);
+      logger.debug(`🎬 ViewBot ${this.botId}: Using video file input: ${this.config.videoFile}`);
+      logger.debug(`🎬 ViewBot ${this.botId}: ContentType is: "${this.config.contentType}"`);
+      logger.debug(`🎬 ViewBot ${this.botId}: Video file path: "${this.config.videoFile}"`);
       
       // Check if file exists and is actually a file (not a directory)
       const path = require('path');
       
       if (!fs.existsSync(this.config.videoFile)) {
-        console.error(`❌ ViewBot ${this.botId}: Video file does not exist: ${this.config.videoFile}`);
+        logger.error(`❌ ViewBot ${this.botId}: Video file does not exist: ${this.config.videoFile}`);
         throw new Error(`Video file not found: ${this.config.videoFile}`);
       }
       
       const stats = fs.statSync(this.config.videoFile);
       if (stats.isDirectory()) {
-        console.error(`❌ ViewBot ${this.botId}: Path is a directory, not a file: ${this.config.videoFile}`);
+        logger.error(`❌ ViewBot ${this.botId}: Path is a directory, not a file: ${this.config.videoFile}`);
         throw new Error(`Path is a directory, not a video file: ${this.config.videoFile}`);
       }
       
@@ -2130,12 +2132,12 @@ class ViewBotInstance {
       const ext = path.extname(this.config.videoFile).toLowerCase();
       const validExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.3gp', '.ogv', '.ts'];
       if (!validExtensions.includes(ext)) {
-        console.warn(`⚠️ ViewBot ${this.botId}: File does not have a recognized video extension: ${ext}`);
-        console.warn(`⚠️ ViewBot ${this.botId}: Supported extensions: ${validExtensions.join(', ')}`);
-        console.warn(`⚠️ ViewBot ${this.botId}: Attempting to process anyway...`);
+        logger.warn(`⚠️ ViewBot ${this.botId}: File does not have a recognized video extension: ${ext}`);
+        logger.warn(`⚠️ ViewBot ${this.botId}: Supported extensions: ${validExtensions.join(', ')}`);
+        logger.warn(`⚠️ ViewBot ${this.botId}: Attempting to process anyway...`);
       }
       
-      console.log(`✅ ViewBot ${this.botId}: Video file exists and will be used for streaming`);
+      logger.debug(`✅ ViewBot ${this.botId}: Video file exists and will be used for streaming`);
       
       inputArgs = [
         // No loop - allow video to end naturally
@@ -2205,15 +2207,15 @@ class ViewBotInstance {
       `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.videoRtpPort}`
     ];
     
-    console.log(`🎬 ViewBot ${this.botId}: Video FFmpeg command: ffmpeg ${args.join(' ')}`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Video FFmpeg command: ffmpeg ${args.join(' ')}`);
     
     // Debug the actual input configuration
-    console.log(`🔍 ViewBot ${this.botId}: Video config debug:`);
-    console.log(`  - contentType: "${this.config.contentType}"`);
-    console.log(`  - videoFile: "${this.config.videoFile}"`);
-    console.log(`  - using video file input: ${this.config.contentType === 'videoFile' && this.config.videoFile}`);
-    console.log(`  - input args: [${inputArgs.join(', ')}]`);
-    console.log(`  - target RTP port: ${this.videoRtpPort}`);
+    logger.debug(`🔍 ViewBot ${this.botId}: Video config debug:`);
+    logger.debug(`  - contentType: "${this.config.contentType}"`);
+    logger.debug(`  - videoFile: "${this.config.videoFile}"`);
+    logger.debug(`  - using video file input: ${this.config.contentType === 'videoFile' && this.config.videoFile}`);
+    logger.debug(`  - input args: [${inputArgs.join(', ')}]`);
+    logger.debug(`  - target RTP port: ${this.videoRtpPort}`);
     
     return args;
   }
@@ -2255,7 +2257,7 @@ class ViewBotInstance {
       `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.videoRtpPort}`
     ];
     
-    console.log(`🎬 ViewBot ${this.botId}: Using H.264 codec for video`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Using H.264 codec for video`);
     return args;
   }
 
@@ -2274,25 +2276,25 @@ class ViewBotInstance {
     let inputArgs = [];
     
     if (this.config.contentType === 'videoFile' && this.config.videoFile) {
-      console.log(`🎤 ViewBot ${this.botId}: Extracting audio from video file: ${this.config.videoFile}`);
-      console.log(`🎤 ViewBot ${this.botId}: ContentType is: "${this.config.contentType}"`);
-      console.log(`🎤 ViewBot ${this.botId}: Video file path: "${this.config.videoFile}"`);
+      logger.debug(`🎤 ViewBot ${this.botId}: Extracting audio from video file: ${this.config.videoFile}`);
+      logger.debug(`🎤 ViewBot ${this.botId}: ContentType is: "${this.config.contentType}"`);
+      logger.debug(`🎤 ViewBot ${this.botId}: Video file path: "${this.config.videoFile}"`);
       
       // Check if file exists and is actually a file (not a directory)
       const path = require('path');
       
       if (!fs.existsSync(this.config.videoFile)) {
-        console.error(`❌ ViewBot ${this.botId}: Video file does not exist: ${this.config.videoFile}`);
+        logger.error(`❌ ViewBot ${this.botId}: Video file does not exist: ${this.config.videoFile}`);
         throw new Error(`Video file not found: ${this.config.videoFile}`);
       }
       
       const stats = fs.statSync(this.config.videoFile);
       if (stats.isDirectory()) {
-        console.error(`❌ ViewBot ${this.botId}: Path is a directory, not a file: ${this.config.videoFile}`);
+        logger.error(`❌ ViewBot ${this.botId}: Path is a directory, not a file: ${this.config.videoFile}`);
         throw new Error(`Path is a directory, not a video file: ${this.config.videoFile}`);
       }
       
-      console.log(`✅ ViewBot ${this.botId}: Video file exists, audio will be extracted`);
+      logger.debug(`✅ ViewBot ${this.botId}: Video file exists, audio will be extracted`);
       
       inputArgs = [
         // No loop - allow video to end naturally
@@ -2326,7 +2328,7 @@ class ViewBotInstance {
       `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.audioRtpPort}`
     ];
     
-    console.log(`🎤 ViewBot ${this.botId}: Audio FFmpeg command: ffmpeg ${args.join(' ')}`);
+    logger.debug(`🎤 ViewBot ${this.botId}: Audio FFmpeg command: ffmpeg ${args.join(' ')}`);
     return args;
   }
 
@@ -2404,28 +2406,28 @@ class ViewBotInstance {
    */
   setupFFmpegHandlers(ffmpegProcess, kind) {
     ffmpegProcess.on('error', (error) => {
-      console.error(`❌ ViewBot ${this.botId}: FFmpeg ${kind} error:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: FFmpeg ${kind} error:`, error);
       this.lastError = `FFmpeg ${kind} error: ${error.message}`;
     });
 
     ffmpegProcess.stderr.on('data', (data) => {
       const output = data.toString();
       if (output.includes('error') || output.includes('Error')) {
-        console.error(`❌ ViewBot ${this.botId}: FFmpeg ${kind} stderr:`, output);
+        logger.error(`❌ ViewBot ${this.botId}: FFmpeg ${kind} stderr:`, output);
       } else if (output.includes('frame=')) {
         // Occasionally log frame info for video
         if (kind === 'video' && Math.random() < 0.01) {
-          console.log(`🎬 ViewBot ${this.botId}: FFmpeg video progress:`, output.trim().split('\n').pop());
+          logger.debug(`🎬 ViewBot ${this.botId}: FFmpeg video progress:`, output.trim().split('\n').pop());
         }
       }
     });
 
     ffmpegProcess.on('close', (code) => {
-      console.log(`🛑 ViewBot ${this.botId}: FFmpeg ${kind} process exited with code ${code}`);
+      logger.debug(`🛑 ViewBot ${this.botId}: FFmpeg ${kind} process exited with code ${code}`);
       
       // Handle video end when FFmpeg exits normally for video files
       if (kind === 'video' && code === 0 && this.config.contentType === 'videoFile' && this.streaming && !this.handlingVideoEnd) {
-        console.log(`🎬 ViewBot ${this.botId}: Video file reached end (FFmpeg ${kind} exit)`);
+        logger.debug(`🎬 ViewBot ${this.botId}: Video file reached end (FFmpeg ${kind} exit)`);
         this.handleVideoEnd();
       }
     });
@@ -2435,7 +2437,7 @@ class ViewBotInstance {
    * Creates MediaSoup plain RTP transport and producer for FFmpeg RTP stream
    */
   async createWebRTCProducer(kind, rtpParameters) {
-    console.log(`📡 ViewBot ${this.botId}: Creating plain RTP transport for ${kind}...`);
+    logger.debug(`📡 ViewBot ${this.botId}: Creating plain RTP transport for ${kind}...`);
     
     return new Promise((resolve, reject) => {
       // Request server to create plain RTP transport that will listen for FFmpeg RTP data
@@ -2448,8 +2450,8 @@ class ViewBotInstance {
       // Listen for producer creation confirmation
       const handleProducerCreated = (data) => {
         if (data.botId === this.botId && data.kind === kind) {
-          console.log(`✅ ViewBot ${this.botId}: Plain RTP ${kind} producer created:`, data.producerId);
-          console.log(`📡 ViewBot ${this.botId}: Server allocated port ${data.rtpPort} for ${kind} RTP`);
+          logger.debug(`✅ ViewBot ${this.botId}: Plain RTP ${kind} producer created:`, data.producerId);
+          logger.debug(`📡 ViewBot ${this.botId}: Server allocated port ${data.rtpPort} for ${kind} RTP`);
           
           // Store the allocated port for FFmpeg
           if (kind === 'video') {
@@ -2468,7 +2470,7 @@ class ViewBotInstance {
       
       const handleProducerError = (data) => {
         if (data.botId === this.botId && data.kind === kind) {
-          console.error(`❌ ViewBot ${this.botId}: Plain RTP ${kind} producer creation failed:`, data.error);
+          logger.error(`❌ ViewBot ${this.botId}: Plain RTP ${kind} producer creation failed:`, data.error);
           // CRITICAL FIX: Check if socket still exists before removing listeners
           if (this.socket) {
             this.socket.off('viewbot-producer-error', handleProducerError);
@@ -2497,7 +2499,7 @@ class ViewBotInstance {
    * Handles viewer requests for stream
    */
   handleViewerRequest(viewerId) {
-    console.log(`🤝 ViewBot ${this.botId}: Handling stream request from viewer ${viewerId}`);
+    logger.debug(`🤝 ViewBot ${this.botId}: Handling stream request from viewer ${viewerId}`);
     
     // For ViewBots, we send a special offer that tells the viewer what kind of content to generate
     const offer = {
@@ -2516,14 +2518,14 @@ class ViewBotInstance {
       });
     }
     
-    console.log(`📤 ViewBot ${this.botId}: Sent ViewBot offer to viewer ${viewerId}`);
+    logger.debug(`📤 ViewBot ${this.botId}: Sent ViewBot offer to viewer ${viewerId}`);
   }
 
   /**
    * Initializes media generation based on configuration
    */
   async initializeMediaGeneration() {
-    console.log(`🎬 ViewBot ${this.botId}: Initializing media generation (${this.config.contentType})`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Initializing media generation (${this.config.contentType})`);
     
     switch (this.config.contentType) {
       case 'testPattern':
@@ -2534,7 +2536,7 @@ class ViewBotInstance {
         break;
       case 'videoFile':
         // NEW: Skip old video file streaming - use RTP streaming instead
-        console.log(`📹 ViewBot ${this.botId}: Video file streaming handled by RTP system, skipping old method`);
+        logger.debug(`📹 ViewBot ${this.botId}: Video file streaming handled by RTP system, skipping old method`);
         break;
       case 'webCam':
         await this.initializeWebCamCapture();
@@ -2551,7 +2553,7 @@ class ViewBotInstance {
    * Initializes test pattern generation (similar to TestStreamGenerator)
    */
   async initializeTestPatternGeneration() {
-    console.log(`🎨 ViewBot ${this.botId}: Setting up test pattern generation`);
+    logger.debug(`🎨 ViewBot ${this.botId}: Setting up test pattern generation`);
     
     // Launch a headless browser for canvas-based generation
     this.browser = await puppeteer.launch({
@@ -2576,7 +2578,7 @@ class ViewBotInstance {
     // Wait for canvas to be ready
     await this.page.waitForSelector('#media-canvas');
     
-    console.log(`✅ ViewBot ${this.botId}: Test pattern generation ready`);
+    logger.debug(`✅ ViewBot ${this.botId}: Test pattern generation ready`);
   }
 
   /**
@@ -2798,7 +2800,7 @@ class ViewBotInstance {
       throw new Error(`Video file not found: ${this.config.videoFile}`);
     }
     
-    console.log(`🎬 ViewBot ${this.botId}: Setting up video file streaming from ${this.config.videoFile}`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Setting up video file streaming from ${this.config.videoFile}`);
     
     // Use FFmpeg to stream the video file
     const ffmpegArgs = [
@@ -2818,7 +2820,7 @@ class ViewBotInstance {
     this.ffmpegProcess = spawn(this.parentService?.ffmpegPath || 'ffmpeg', ffmpegArgs);
     
     this.ffmpegProcess.on('error', (error) => {
-      console.error(`❌ ViewBot ${this.botId}: FFmpeg error:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: FFmpeg error:`, error);
       this.lastError = `FFmpeg error: ${error.message}`;
     });
     
@@ -2826,11 +2828,11 @@ class ViewBotInstance {
       // Log FFmpeg output for debugging
       const output = data.toString();
       if (output.includes('error') || output.includes('Error')) {
-        console.error(`❌ ViewBot ${this.botId}: FFmpeg stderr:`, output);
+        logger.error(`❌ ViewBot ${this.botId}: FFmpeg stderr:`, output);
       }
     });
     
-    console.log(`✅ ViewBot ${this.botId}: Video file streaming initialized`);
+    logger.debug(`✅ ViewBot ${this.botId}: Video file streaming initialized`);
   }
 
   /**
@@ -2851,17 +2853,17 @@ class ViewBotInstance {
    * Starts streaming to the server
    */
   async startStreaming() {
-    console.log(`🎬 ViewBot ${this.botId}: Starting streaming process...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting streaming process...`);
     
     if (this.streaming) {
-      console.log(`⚠️ ViewBot ${this.botId}: Already streaming, aborting start`);
+      logger.debug(`⚠️ ViewBot ${this.botId}: Already streaming, aborting start`);
       return { success: false, message: 'Already streaming' };
     }
     
     // CRITICAL: Check if another bot is already streaming
     const parentService = this.getParentService();
     if (parentService && parentService.currentLiveBot && parentService.currentLiveBot !== this.botId) {
-      console.log(`❌❌❌ ViewBot ${this.botId}: BLOCKED - Another bot is already streaming: ${parentService.currentLiveBot}`);
+      logger.debug(`❌❌❌ ViewBot ${this.botId}: BLOCKED - Another bot is already streaming: ${parentService.currentLiveBot}`);
       return { success: false, message: `Another bot is already streaming: ${parentService.currentLiveBot}` };
     }
     
@@ -2869,13 +2871,13 @@ class ViewBotInstance {
     this.isStartingStream = true;
 
     if (!this.isConnected) {
-      console.log(`❌ ViewBot ${this.botId}: Not connected to server, cannot start streaming`);
-      console.log(`💡 ViewBot ${this.botId}: Socket connection status: ${this.socket ? 'exists' : 'missing'}`);
+      logger.debug(`❌ ViewBot ${this.botId}: Not connected to server, cannot start streaming`);
+      logger.debug(`💡 ViewBot ${this.botId}: Socket connection status: ${this.socket ? 'exists' : 'missing'}`);
       this.isStartingStream = false;
       return { success: false, message: 'Not connected to server' };
     }
     
-    console.log(`✅ ViewBot ${this.botId}: Pre-flight checks passed, proceeding with stream start`);
+    logger.debug(`✅ ViewBot ${this.botId}: Pre-flight checks passed, proceeding with stream start`);
     
     // CRITICAL: Reset the handlingVideoEnd flag when starting a new stream
     // This ensures the bot can properly handle the next video end
@@ -2883,37 +2885,37 @@ class ViewBotInstance {
     
     // SAFETY CHECK: Double-check real streamer protection before attempting to stream
     if (this.parentService && this.parentService.realStreamerActive) {
-      console.log(`🚫 ViewBot ${this.botId}: Cannot start - real streamer is active (safety check)`);
+      logger.debug(`🚫 ViewBot ${this.botId}: Cannot start - real streamer is active (safety check)`);
       this.isStartingStream = false; // Clear the flag
       return { success: false, message: 'Real streamer is active - ViewBot cannot start' };
     }
 
     try {
-      console.log(`🎬 ViewBot ${this.botId}: Starting stream (${this.config.contentType})...`);
+      logger.debug(`🎬 ViewBot ${this.botId}: Starting stream (${this.config.contentType})...`);
       
       // Initialize media generation for content types that need it
       if (this.config.contentType === 'testPattern' || this.config.contentType === 'customText') {
-        console.log(`🎨 ViewBot ${this.botId}: Initializing media generation for ${this.config.contentType}`);
+        logger.debug(`🎨 ViewBot ${this.botId}: Initializing media generation for ${this.config.contentType}`);
         await this.initializeMediaGeneration();
       } else {
-        console.log(`🎬 ViewBot ${this.botId}: Skipping media generation for ${this.config.contentType}, using synthetic producers`);
+        logger.debug(`🎬 ViewBot ${this.botId}: Skipping media generation for ${this.config.contentType}, using synthetic producers`);
       }
       
       // IMPORTANT: Use the same event flow as real users to trigger takeover logic
       // This will go through the takeover service and properly notify viewers
       if (this.socket) {
         // Log socket state before emitting
-        console.log(`📡 ViewBot ${this.botId}: Socket state before request-to-stream:`);
-        console.log(`   - Socket ID: ${this.socket.id}`);
-        console.log(`   - Connected: ${this.socket.connected}`);
-        console.log(`   - Transport: ${this.socket.io?.engine?.transport?.name || 'unknown'}`);
+        logger.debug(`📡 ViewBot ${this.botId}: Socket state before request-to-stream:`);
+        logger.debug(`   - Socket ID: ${this.socket.id}`);
+        logger.debug(`   - Connected: ${this.socket.connected}`);
+        logger.debug(`   - Transport: ${this.socket.io?.engine?.transport?.name || 'unknown'}`);
         
         // Add a small delay to ensure socket is fully ready
         await new Promise(resolve => setTimeout(resolve, 100));
         
         // Double-check connection before emitting
         if (!this.socket.connected) {
-          console.error(`❌ ViewBot ${this.botId}: Socket not connected, cannot request streaming`);
+          logger.error(`❌ ViewBot ${this.botId}: Socket not connected, cannot request streaming`);
           throw new Error('Socket not connected');
         }
         
@@ -2927,16 +2929,16 @@ class ViewBotInstance {
           useNewViewBotSystem: true // Flag to indicate using ViewBotClientService
         };
         
-        console.log(`📨 ViewBot ${this.botId}: Emitting request-to-stream from socket ${this.socket.id}`);
-        console.log(`📨 ViewBot ${this.botId}: Request data:`, JSON.stringify(requestData));
+        logger.debug(`📨 ViewBot ${this.botId}: Emitting request-to-stream from socket ${this.socket.id}`);
+        logger.debug(`📨 ViewBot ${this.botId}: Request data:`, JSON.stringify(requestData));
         
         this.socket.emit('request-to-stream', requestData, (ack) => {
           if (ack) {
-            console.log(`✅ ViewBot ${this.botId}: Server acknowledged request-to-stream`);
+            logger.debug(`✅ ViewBot ${this.botId}: Server acknowledged request-to-stream`);
           }
         });
         
-        console.log(`📨 ViewBot ${this.botId}: Emitted request-to-stream, waiting for server approval...`);
+        logger.debug(`📨 ViewBot ${this.botId}: Emitted request-to-stream, waiting for server approval...`);
       }
       
       // REDESIGNED: Since Socket.IO events are broken, use polling to check approval
@@ -2961,20 +2963,20 @@ class ViewBotInstance {
           
           if (sessionResult.success) {
             this.currentSessionId = sessionResult.sessionId;
-            console.log(`💾 ViewBot ${this.botId}: Started database session ${this.currentSessionId}`);
+            logger.debug(`💾 ViewBot ${this.botId}: Started database session ${this.currentSessionId}`);
           }
         } catch (dbError) {
-          console.error(`⚠️ ViewBot ${this.botId}: Failed to start database session:`, dbError);
+          logger.error(`⚠️ ViewBot ${this.botId}: Failed to start database session:`, dbError);
         }
       }
       
       // Wait for streaming approval with timeout
       const approvalTimeout = setTimeout(() => {
         if (!this.streaming) {
-          console.error(`⏰ ViewBot ${this.botId}: Timeout waiting for streaming-approved after 5 seconds`);
-          console.error(`📡 ViewBot ${this.botId}: Socket state at timeout:`);
-          console.error(`   - Socket ID: ${this.socket?.id}`);
-          console.error(`   - Connected: ${this.socket?.connected}`);
+          logger.error(`⏰ ViewBot ${this.botId}: Timeout waiting for streaming-approved after 5 seconds`);
+          logger.error(`📡 ViewBot ${this.botId}: Socket state at timeout:`);
+          logger.error(`   - Socket ID: ${this.socket?.id}`);
+          logger.error(`   - Connected: ${this.socket?.connected}`);
           this.lastError = 'Timeout waiting for streaming approval';
         }
       }, 5000);
@@ -2982,7 +2984,7 @@ class ViewBotInstance {
       // Store timeout so we can clear it when approved
       this.approvalTimeout = approvalTimeout;
       
-      console.log(`✅ ViewBot ${this.botId}: Streaming request sent via request-to-stream`);
+      logger.debug(`✅ ViewBot ${this.botId}: Streaming request sent via request-to-stream`);
       
       return {
         success: true,
@@ -2992,7 +2994,7 @@ class ViewBotInstance {
       };
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to start streaming:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to start streaming:`, error);
       this.lastError = error.message;
       this.isStartingStream = false; // Clear the flag on error
       return {
@@ -3065,7 +3067,7 @@ class ViewBotInstance {
     await processManager.onBotStopped(this.botId);
 
     try {
-      console.log(`⏹️ ViewBot ${this.botId}: Stopping stream...`);
+      logger.debug(`⏹️ ViewBot ${this.botId}: Stopping stream...`);
       
       // Emit 'stop-stream' event
       if (this.socket && this.isConnected) {
@@ -3094,7 +3096,7 @@ class ViewBotInstance {
       if (this.videoEndTimer) {
         clearTimeout(this.videoEndTimer);
         this.videoEndTimer = null;
-        console.log(`⏱️ ViewBot ${this.botId}: Cleared video end timer`);
+        logger.debug(`⏱️ ViewBot ${this.botId}: Cleared video end timer`);
       }
       
       const duration = this.startTime ? Date.now() - this.startTime : 0;
@@ -3107,11 +3109,11 @@ class ViewBotInstance {
             duration,
             status: 'completed'
           });
-          console.log(`💾 ViewBot ${this.botId}: Ended database session ${this.currentSessionId}`);
+          logger.debug(`💾 ViewBot ${this.botId}: Ended database session ${this.currentSessionId}`);
           this.currentSessionId = null;
           this.sessionStartTime = null;
         } catch (dbError) {
-          console.error(`⚠️ ViewBot ${this.botId}: Failed to end database session:`, dbError);
+          logger.error(`⚠️ ViewBot ${this.botId}: Failed to end database session:`, dbError);
         }
       }
       
@@ -3124,7 +3126,7 @@ class ViewBotInstance {
       // CRITICAL: Clear the GStreamer starting flag to allow next bot to start
       this.gstreamerStarting = false;
       
-      console.log(`✅ ViewBot ${this.botId}: Streaming stopped (duration: ${duration}ms)`);
+      logger.debug(`✅ ViewBot ${this.botId}: Streaming stopped (duration: ${duration}ms)`);
       
       return {
         success: true,
@@ -3133,7 +3135,7 @@ class ViewBotInstance {
       };
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to stop streaming:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to stop streaming:`, error);
       this.lastError = error.message;
       return {
         success: false,
@@ -3160,13 +3162,13 @@ class ViewBotInstance {
           newConfig.timeAllotment = newConfig.streamDuration * 60 * 1000; // Convert minutes to milliseconds
           this.timeAllotment = newConfig.timeAllotment;
           this.timeRemaining = this.timeAllotment; // Reset time remaining
-          console.log(`⏱️ ViewBot ${this.botId}: Updated time allotment to ${newConfig.streamDuration} minutes`);
+          logger.debug(`⏱️ ViewBot ${this.botId}: Updated time allotment to ${newConfig.streamDuration} minutes`);
         } else {
           // If duration is 0, remove time allotment (infinite streaming)
           newConfig.timeAllotment = null;
           this.timeAllotment = this.generateRandomTimeAllotment(); // Use random time for rotation
           this.timeRemaining = this.timeAllotment;
-          console.log(`⏱️ ViewBot ${this.botId}: Set to infinite streaming (using random rotation time)`);
+          logger.debug(`⏱️ ViewBot ${this.botId}: Set to infinite streaming (using random rotation time)`);
         }
       }
       
@@ -3192,7 +3194,7 @@ class ViewBotInstance {
       };
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to update config:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to update config:`, error);
       this.lastError = error.message;
       return {
         success: false,
@@ -3205,21 +3207,21 @@ class ViewBotInstance {
    * Cleans up media generation resources
    */
   async cleanupMediaGeneration() {
-    console.log(`🧹 ViewBot ${this.botId}: Cleaning up media generation processes...`);
+    logger.debug(`🧹 ViewBot ${this.botId}: Cleaning up media generation processes...`);
     
     // Clean up Puppeteer resources first (if they exist)
     if (this.page) {
-      console.log(`🌐 ViewBot ${this.botId}: Closing Puppeteer page`);
+      logger.debug(`🌐 ViewBot ${this.botId}: Closing Puppeteer page`);
       try {
         await this.page.close();
       } catch (error) {
-        console.warn(`⚠️ ViewBot ${this.botId}: Error closing page:`, error.message);
+        logger.warn(`⚠️ ViewBot ${this.botId}: Error closing page:`, error.message);
       }
       this.page = null;
     }
     
     if (this.browser) {
-      console.log(`🌐 ViewBot ${this.botId}: Closing Puppeteer browser`);
+      logger.debug(`🌐 ViewBot ${this.botId}: Closing Puppeteer browser`);
       try {
         // Get all pages and close them first
         const pages = await this.browser.pages();
@@ -3233,14 +3235,14 @@ class ViewBotInstance {
           this.browser.process().kill('SIGKILL');
         }
       } catch (error) {
-        console.warn(`⚠️ ViewBot ${this.botId}: Error closing browser:`, error.message);
+        logger.warn(`⚠️ ViewBot ${this.botId}: Error closing browser:`, error.message);
         // Force kill the browser process if normal close failed
         try {
           if (this.browser.process() && !this.browser.process().killed) {
             this.browser.process().kill('SIGKILL');
           }
         } catch (killError) {
-          console.warn(`⚠️ ViewBot ${this.botId}: Could not force kill browser:`, killError.message);
+          logger.warn(`⚠️ ViewBot ${this.botId}: Could not force kill browser:`, killError.message);
         }
       }
       this.browser = null;
@@ -3248,13 +3250,13 @@ class ViewBotInstance {
     
     // Clean up GStreamer processes if they exist
     if (this.gstreamerVideoProcess && !this.gstreamerVideoProcess.killed) {
-      console.log(`🛑 ViewBot ${this.botId}: Killing GStreamer video process`);
+      logger.debug(`🛑 ViewBot ${this.botId}: Killing GStreamer video process`);
       this.gstreamerVideoProcess.kill('SIGTERM');
       this.gstreamerVideoProcess = null;
     }
     
     if (this.gstreamerAudioProcess && !this.gstreamerAudioProcess.killed) {
-      console.log(`🛑 ViewBot ${this.botId}: Killing GStreamer audio process`);
+      logger.debug(`🛑 ViewBot ${this.botId}: Killing GStreamer audio process`);
       this.gstreamerAudioProcess.kill('SIGTERM');
       this.gstreamerAudioProcess = null;
     }
@@ -3262,7 +3264,7 @@ class ViewBotInstance {
     // Original cleanup for single process with aggressive killing
     if (this.gstreamerProcess) {
       const pid = this.gstreamerProcess.pid;
-      console.log(`🛑 ViewBot ${this.botId}: Killing GStreamer process (PID: ${pid})`);
+      logger.debug(`🛑 ViewBot ${this.botId}: Killing GStreamer process (PID: ${pid})`);
       
       try {
         // First try SIGTERM
@@ -3271,7 +3273,7 @@ class ViewBotInstance {
         // Set timeout for SIGKILL if process doesn't die
         setTimeout(() => {
           if (this.gstreamerProcess && !this.gstreamerProcess.killed) {
-            console.log(`⚠️ ViewBot ${this.botId}: Force killing GStreamer with SIGKILL`);
+            logger.debug(`⚠️ ViewBot ${this.botId}: Force killing GStreamer with SIGKILL`);
             this.gstreamerProcess.kill('SIGKILL');
             // Also try to kill the process group
             try {
@@ -3282,7 +3284,7 @@ class ViewBotInstance {
           }
         }, 2000);
       } catch (error) {
-        console.log(`⚠️ ViewBot ${this.botId}: Error killing GStreamer:`, error.message);
+        logger.debug(`⚠️ ViewBot ${this.botId}: Error killing GStreamer:`, error.message);
       }
       
       this.gstreamerProcess = null;
@@ -3300,7 +3302,7 @@ class ViewBotInstance {
     
     // Clean up combined FFmpeg process if exists
     if (this.combinedFFmpeg && !this.combinedFFmpeg.killed) {
-      console.log(`🛑 ViewBot ${this.botId}: Killing combined FFmpeg process`);
+      logger.debug(`🛑 ViewBot ${this.botId}: Killing combined FFmpeg process`);
       this.combinedFFmpeg.kill('SIGTERM');
       this.combinedFFmpeg = null;
       this.videoFFmpeg = null;
@@ -3308,14 +3310,14 @@ class ViewBotInstance {
     } else {
       // Clean up video FFmpeg process
       if (this.videoFFmpeg && !this.videoFFmpeg.killed) {
-        console.log(`🛑 ViewBot ${this.botId}: Killing video FFmpeg process`);
+        logger.debug(`🛑 ViewBot ${this.botId}: Killing video FFmpeg process`);
         this.videoFFmpeg.kill('SIGTERM');
         this.videoFFmpeg = null;
       }
       
       // Clean up audio FFmpeg process (only if it's different from video)
       if (this.audioFFmpeg && this.audioFFmpeg !== this.videoFFmpeg && !this.audioFFmpeg.killed) {
-        console.log(`🛑 ViewBot ${this.botId}: Killing audio FFmpeg process`);
+        logger.debug(`🛑 ViewBot ${this.botId}: Killing audio FFmpeg process`);
         this.audioFFmpeg.kill('SIGTERM');
         this.audioFFmpeg = null;
       }
@@ -3323,7 +3325,7 @@ class ViewBotInstance {
     
     // Clean up legacy FFmpeg process (for backward compatibility)
     if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
-      console.log(`🛑 ViewBot ${this.botId}: Killing legacy FFmpeg process`);
+      logger.debug(`🛑 ViewBot ${this.botId}: Killing legacy FFmpeg process`);
       this.ffmpegProcess.kill('SIGTERM');
       this.ffmpegProcess = null;
     }
@@ -3339,14 +3341,14 @@ class ViewBotInstance {
       this.browser = null;
     }
     
-    console.log(`✅ ViewBot ${this.botId}: Media generation cleanup complete`);
+    logger.debug(`✅ ViewBot ${this.botId}: Media generation cleanup complete`);
   }
 
   /**
    * Destroys the bot and cleans up all resources
    */
   async destroy() {
-    console.log(`🗑️ ViewBot ${this.botId}: Destroying bot...`);
+    logger.debug(`🗑️ ViewBot ${this.botId}: Destroying bot...`);
     
     try {
       // Stop streaming if active
@@ -3363,10 +3365,10 @@ class ViewBotInstance {
       
       this.isConnected = false;
       
-      console.log(`✅ ViewBot ${this.botId}: Destroyed successfully`);
+      logger.debug(`✅ ViewBot ${this.botId}: Destroyed successfully`);
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Error during destruction:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Error during destruction:`, error);
       this.lastError = error.message;
       throw error;
     }
@@ -3424,18 +3426,18 @@ class ViewBotInstance {
       
       const fs = require('fs');
       if (!fs.existsSync(videoPath)) {
-        console.error(`❌ ViewBot ${this.botId}: Video not found: ${videoPath}`);
+        logger.error(`❌ ViewBot ${this.botId}: Video not found: ${videoPath}`);
         return;
       }
       
-      console.log(`🎥 ViewBot ${this.botId}: Playing video: ${videoPath}`);
+      logger.debug(`🎥 ViewBot ${this.botId}: Playing video: ${videoPath}`);
       
       // For now, just log that we're "playing" the video
       // The important part is that we're registered as a streamer
       this.videoPlaying = true;
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to start video:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to start video:`, error);
       this.lastError = error.message;
     }
   }
@@ -3446,12 +3448,12 @@ class ViewBotInstance {
    */
   notifyViewersOfReadyStream() {
     if (!this.socket) {
-      console.error(`❌ ViewBot ${this.botId}: Cannot notify viewers - no socket connection`);
+      logger.error(`❌ ViewBot ${this.botId}: Cannot notify viewers - no socket connection`);
       return;
     }
 
     try {
-      console.log(`📺 ViewBot ${this.botId}: Notifying viewers that stream is ready...`);
+      logger.debug(`📺 ViewBot ${this.botId}: Notifying viewers that stream is ready...`);
       
       // Emit a custom event to trigger stream switching
       if (this.socket) {
@@ -3462,10 +3464,10 @@ class ViewBotInstance {
         });
       }
       
-      console.log(`✅ ViewBot ${this.botId}: Stream ready notification sent to server`);
+      logger.debug(`✅ ViewBot ${this.botId}: Stream ready notification sent to server`);
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to notify viewers:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to notify viewers:`, error);
     }
   }
 
@@ -3479,7 +3481,7 @@ class ViewBotInstance {
     // Check if rotation is enabled through the parent service
     const parentService = this.getParentService();
     if (!parentService || !parentService.rotationEnabled) {
-      console.log(`⏸️ ViewBot ${this.botId}: Rotation disabled - no checks will be performed`);
+      logger.debug(`⏸️ ViewBot ${this.botId}: Rotation disabled - no checks will be performed`);
       return;
     }
     
@@ -3501,7 +3503,7 @@ class ViewBotInstance {
     // Random interval between min and max
     const interval = Math.floor(Math.random() * (maxInterval - minInterval + 1)) + minInterval;
     
-    console.log(`⏱️ ViewBot ${this.botId}: Next rotation check in ${interval/1000} seconds (using ${minInterval/1000}-${maxInterval/1000}s range)`);
+    logger.debug(`⏱️ ViewBot ${this.botId}: Next rotation check in ${interval/1000} seconds (using ${minInterval/1000}-${maxInterval/1000}s range)`);
     
     this.rotationCheckTimer = setTimeout(() => {
       this.performRotationCheck();
@@ -3516,7 +3518,7 @@ class ViewBotInstance {
     
     // Safety checks
     if (!parentService || !parentService.rotationEnabled || !this.streaming) {
-      console.log(`🚫 ViewBot ${this.botId}: Rotation check skipped - conditions not met`);
+      logger.debug(`🚫 ViewBot ${this.botId}: Rotation check skipped - conditions not met`);
       return;
     }
     
@@ -3525,13 +3527,13 @@ class ViewBotInstance {
     
     // Roll the dice
     const roll = Math.random();
-    console.log(`🎲 ViewBot ${this.botId}: Rotation check - rolled ${(roll * 100).toFixed(2)}% vs ${(rotationProbability * 100).toFixed(2)}% threshold`);
+    logger.debug(`🎲 ViewBot ${this.botId}: Rotation check - rolled ${(roll * 100).toFixed(2)}% vs ${(rotationProbability * 100).toFixed(2)}% threshold`);
     
     if (roll < rotationProbability) {
-      console.log(`✅ ViewBot ${this.botId}: Rotation triggered! Requesting rotation...`);
+      logger.debug(`✅ ViewBot ${this.botId}: Rotation triggered! Requesting rotation...`);
       this.requestRotation();
     } else {
-      console.log(`⏭️ ViewBot ${this.botId}: No rotation this time, scheduling next check`);
+      logger.debug(`⏭️ ViewBot ${this.botId}: No rotation this time, scheduling next check`);
       this.scheduleNextRotationCheck();
     }
   }
@@ -3543,7 +3545,7 @@ class ViewBotInstance {
     if (this.rotationCheckTimer) {
       clearTimeout(this.rotationCheckTimer);
       this.rotationCheckTimer = null;
-      console.log(`⏹️ ViewBot ${this.botId}: Stopped rotation check timer`);
+      logger.debug(`⏹️ ViewBot ${this.botId}: Stopped rotation check timer`);
     }
   }
   
@@ -3554,7 +3556,7 @@ class ViewBotInstance {
     // Bot now uses parent service values directly, just log the update
     const parentService = this.getParentService();
     if (parentService) {
-      console.log(`🎲 ViewBot ${this.botId}: Parent service rotation probability updated to ${(parentService.rotationProbability * 100).toFixed(1)}%`);
+      logger.debug(`🎲 ViewBot ${this.botId}: Parent service rotation probability updated to ${(parentService.rotationProbability * 100).toFixed(1)}%`);
     }
   }
   
@@ -3565,7 +3567,7 @@ class ViewBotInstance {
     // Bot now uses parent service values directly, restart timer with new intervals
     const parentService = this.getParentService();
     if (parentService) {
-      console.log(`⏱️ ViewBot ${this.botId}: Parent service rotation interval updated to ${parentService.rotationCheckIntervalMin/1000}-${parentService.rotationCheckIntervalMax/1000} seconds`);
+      logger.debug(`⏱️ ViewBot ${this.botId}: Parent service rotation interval updated to ${parentService.rotationCheckIntervalMin/1000}-${parentService.rotationCheckIntervalMax/1000} seconds`);
     }
     
     // If currently streaming, restart the rotation timer with new interval from parent
@@ -3609,28 +3611,28 @@ class ViewBotInstance {
     // Check if rotation is enabled before requesting rotation
     const parentService = this.getParentService();
     if (!parentService || !parentService.rotationEnabled) {
-      console.log(`🚫 ViewBot ${this.botId}: Rotation request ignored - rotation system disabled, continuing to stream`);
+      logger.debug(`🚫 ViewBot ${this.botId}: Rotation request ignored - rotation system disabled, continuing to stream`);
       return;
     }
     
     // Use the queue system to prevent race conditions
-    console.log(`🔄 ViewBot ${this.botId}: Probability check passed, queueing rotation request`);
+    logger.debug(`🔄 ViewBot ${this.botId}: Probability check passed, queueing rotation request`);
     
     if (parentService && parentService.queueRotationRequest) {
       // Queue the rotation request instead of calling directly
       const result = parentService.queueRotationRequest(this.botId, 'probability-triggered');
       
       if (result.success) {
-        console.log(`✅ ViewBot ${this.botId}: Rotation request queued successfully`);
+        logger.debug(`✅ ViewBot ${this.botId}: Rotation request queued successfully`);
       } else {
-        console.log(`⚠️ ViewBot ${this.botId}: Rotation request rejected: ${result.message}`);
+        logger.debug(`⚠️ ViewBot ${this.botId}: Rotation request rejected: ${result.message}`);
         // Schedule next check if request was rejected
         if (this.streaming) {
           this.scheduleNextRotationCheck();
         }
       }
     } else {
-      console.error(`❌ ViewBot ${this.botId}: Cannot queue rotation - parent service handler not available`);
+      logger.error(`❌ ViewBot ${this.botId}: Cannot queue rotation - parent service handler not available`);
       // Continue streaming and schedule next check
       if (this.streaming) {
         this.scheduleNextRotationCheck();
@@ -3658,24 +3660,24 @@ class ViewBotInstance {
       ffprobe.on('close', (code) => {
         if (code === 0 && duration) {
           const durationSeconds = parseFloat(duration.trim());
-          console.log(`⏱️ ViewBot ${this.botId}: Video duration: ${durationSeconds} seconds`);
+          logger.debug(`⏱️ ViewBot ${this.botId}: Video duration: ${durationSeconds} seconds`);
           this.videoDuration = durationSeconds;
           
           // Set up a fallback timer for video end
           if (durationSeconds > 0 && !isNaN(durationSeconds)) {
             this.videoEndTimer = setTimeout(() => {
-              console.log(`⏰ ViewBot ${this.botId}: Video duration timer expired, triggering rotation`);
+              logger.debug(`⏰ ViewBot ${this.botId}: Video duration timer expired, triggering rotation`);
               this.handleVideoEnd();
             }, (durationSeconds * 1000) + 2000); // Add 2 second buffer
           }
         } else {
-          console.warn(`⚠️ ViewBot ${this.botId}: Could not determine video duration`);
+          logger.warn(`⚠️ ViewBot ${this.botId}: Could not determine video duration`);
         }
         resolve();
       });
       
       ffprobe.on('error', (error) => {
-        console.error(`❌ ViewBot ${this.botId}: ffprobe error:`, error);
+        logger.error(`❌ ViewBot ${this.botId}: ffprobe error:`, error);
         resolve();
       });
     });
@@ -3687,15 +3689,15 @@ class ViewBotInstance {
   async handleVideoEnd() {
     // Prevent multiple calls
     if (this.handlingVideoEnd || this.stopping) {
-      console.log(`⚠️ ViewBot ${this.botId}: Already handling video end or stopping`);
+      logger.debug(`⚠️ ViewBot ${this.botId}: Already handling video end or stopping`);
       return;
     }
     this.handlingVideoEnd = true;
     
-    console.log(`🎬 ViewBot ${this.botId}: Video file has ended - triggering rotation`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Video file has ended - triggering rotation`);
     
     // First, clean up all running processes to prevent crashes
-    console.log(`🧹 ViewBot ${this.botId}: Cleaning up before rotation...`);
+    logger.debug(`🧹 ViewBot ${this.botId}: Cleaning up before rotation...`);
     
     // Clear all timers
     if (this.videoEndTimer) {
@@ -3727,10 +3729,10 @@ class ViewBotInstance {
     
     const parentService = this.getParentService();
     if (parentService && parentService.handleVideoEnd) {
-      console.log(`🔄 ViewBot ${this.botId}: Requesting rotation from parent service`);
+      logger.debug(`🔄 ViewBot ${this.botId}: Requesting rotation from parent service`);
       parentService.handleVideoEnd(this.botId);
     } else {
-      console.warn(`⚠️ ViewBot ${this.botId}: No parent service, attempting direct rotation`);
+      logger.warn(`⚠️ ViewBot ${this.botId}: No parent service, attempting direct rotation`);
       // Try to trigger rotation directly
       if (parentService && parentService.requestRotation) {
         parentService.requestRotation();

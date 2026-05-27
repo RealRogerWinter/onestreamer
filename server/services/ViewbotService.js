@@ -5,6 +5,8 @@ const fs = require('fs');
 const ViewBotWebRTCService = require('./ViewBotWebRTCService');
 const ViewBotLiveKitService = require('./ViewBotLiveKitService');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ViewbotService' });
+
 class ViewbotService {
   constructor(mediasoupService, livekitService) {
     this.mediasoupService = mediasoupService;
@@ -36,12 +38,12 @@ class ViewbotService {
       // Use LiveKit ViewBot service
       this.webrtcService = new ViewBotLiveKitService(livekitService);
       this.backendType = 'livekit';
-      console.log('🤖 VIEWBOT: Using LiveKit backend for ViewBots');
+      logger.debug('🤖 VIEWBOT: Using LiveKit backend for ViewBots');
     } else {
       // Use MediaSoup ViewBot service (default)
       this.webrtcService = new ViewBotWebRTCService(mediasoupService);
       this.backendType = 'mediasoup';
-      console.log('🤖 VIEWBOT: Using MediaSoup backend for ViewBots');
+      logger.debug('🤖 VIEWBOT: Using MediaSoup backend for ViewBots');
     }
     
     this.useWebRTC = true; // Use WebRTC mode for proper integration
@@ -55,7 +57,7 @@ class ViewbotService {
    */
   updateViewbotConfig(newConfig) {
     if (newConfig) {
-      console.log('🎨 VIEWBOT: Updating configuration with:', newConfig);
+      logger.debug('🎨 VIEWBOT: Updating configuration with:', newConfig);
       
       // Map ViewBotClientService config to ViewbotService format
       const mappedConfig = {
@@ -81,7 +83,7 @@ class ViewbotService {
       }
 
       this.viewbotConfig = { ...this.viewbotConfig, ...mappedConfig };
-      console.log('✅ VIEWBOT: Configuration updated to:', this.viewbotConfig);
+      logger.debug('✅ VIEWBOT: Configuration updated to:', this.viewbotConfig);
     }
   }
 
@@ -105,7 +107,7 @@ class ViewbotService {
       
       if (this.useWebRTC) {
         // Use WebRTC ViewBot service for proper A/V sync
-        console.log('🤖 VIEWBOT: Starting WebRTC ViewBot...');
+        logger.debug('🤖 VIEWBOT: Starting WebRTC ViewBot...');
         
         // Map content types to WebRTC patterns
         const pattern = this.mapContentToPattern(this.viewbotConfig.content);
@@ -150,7 +152,7 @@ class ViewbotService {
       this.isViewbotActive = true;
       this.streamStartTime = Date.now();
       
-      console.log(`🤖 VIEWBOT: Started viewbot stream ${this.viewbotStreamId} (${this.useWebRTC ? 'WebRTC' : 'HLS'})`);
+      logger.debug(`🤖 VIEWBOT: Started viewbot stream ${this.viewbotStreamId} (${this.useWebRTC ? 'WebRTC' : 'HLS'})`);
       
       return {
         success: true,
@@ -162,7 +164,7 @@ class ViewbotService {
         mode: this.useWebRTC ? 'webrtc' : 'hls'
       };
     } catch (error) {
-      console.error('❌ VIEWBOT: Failed to start viewbot:', error);
+      logger.error('❌ VIEWBOT: Failed to start viewbot:', error);
       this.cleanup();
       return { success: false, message: error.message };
     }
@@ -186,7 +188,7 @@ class ViewbotService {
 
   async createViewbotProducer() {
     try {
-      console.log('🤖 VIEWBOT: Creating MediaSoup producer for viewbot as normal streamer...');
+      logger.debug('🤖 VIEWBOT: Creating MediaSoup producer for viewbot as normal streamer...');
       
       // Check if MediaSoup is available
       if (!this.mediasoupService) {
@@ -194,40 +196,40 @@ class ViewbotService {
       }
 
       // Step 1: Create transport like a normal user
-      console.log('📡 VIEWBOT: Creating WebRTC transport...');
+      logger.debug('📡 VIEWBOT: Creating WebRTC transport...');
       const transportOptions = await this.mediasoupService.createWebRtcTransport(this.viewbotStreamId);
-      console.log('✅ VIEWBOT: Transport created:', transportOptions.id);
+      logger.debug('✅ VIEWBOT: Transport created:', transportOptions.id);
 
       // Step 2: Connect transport with proper DTLS parameters
-      console.log('🔗 VIEWBOT: Connecting transport...');
+      logger.debug('🔗 VIEWBOT: Connecting transport...');
       // Get the actual DTLS parameters from the transport
       const dtlsParameters = transportOptions.dtlsParameters;
       
       if (dtlsParameters) {
         await this.mediasoupService.connectTransport(this.viewbotStreamId, dtlsParameters);
-        console.log('✅ VIEWBOT: Transport connected with valid DTLS parameters');
+        logger.debug('✅ VIEWBOT: Transport connected with valid DTLS parameters');
       } else {
-        console.log('⚠️ VIEWBOT: No DTLS parameters available, skipping connection');
+        logger.debug('⚠️ VIEWBOT: No DTLS parameters available, skipping connection');
       }
 
       // Step 3: Create producers for video and audio
-      console.log('🎬 VIEWBOT: Creating video producer...');
+      logger.debug('🎬 VIEWBOT: Creating video producer...');
       const videoRtpParameters = this.generateVideoRtpParameters();
       const videoProducer = await this.mediasoupService.createProducer(
         this.viewbotStreamId, 
         videoRtpParameters, 
         'video'
       );
-      console.log('✅ VIEWBOT: Video producer created:', videoProducer.id);
+      logger.debug('✅ VIEWBOT: Video producer created:', videoProducer.id);
 
-      console.log('🎤 VIEWBOT: Creating audio producer...');
+      logger.debug('🎤 VIEWBOT: Creating audio producer...');
       const audioRtpParameters = this.generateAudioRtpParameters();
       const audioProducer = await this.mediasoupService.createProducer(
         this.viewbotStreamId,
         audioRtpParameters,
         'audio'
       );
-      console.log('✅ VIEWBOT: Audio producer created:', audioProducer.id);
+      logger.debug('✅ VIEWBOT: Audio producer created:', audioProducer.id);
 
       // Step 4: Start generating synthetic media (simulation)
       await this.startServerSideVideoGenerator();
@@ -244,7 +246,7 @@ class ViewbotService {
       };
 
     } catch (error) {
-      console.error('❌ VIEWBOT: Failed to create MediaSoup producer:', error);
+      logger.error('❌ VIEWBOT: Failed to create MediaSoup producer:', error);
       return {
         success: false,
         error: error.message
@@ -253,14 +255,14 @@ class ViewbotService {
   }
 
   async startServerSideVideoGenerator() {
-    console.log('🎨 VIEWBOT: Starting server-side video frame generator...');
+    logger.debug('🎨 VIEWBOT: Starting server-side video frame generator...');
     
     // Create a simple frame generation loop
     this.frameGenerator = setInterval(() => {
       this.generateVideoFrame();
     }, 1000 / this.viewbotConfig.frameRate);
     
-    console.log(`🎨 VIEWBOT: Video generator running at ${this.viewbotConfig.frameRate} FPS`);
+    logger.debug(`🎨 VIEWBOT: Video generator running at ${this.viewbotConfig.frameRate} FPS`);
   }
 
   generateVideoFrame() {
@@ -284,7 +286,7 @@ class ViewbotService {
     // In a real implementation, this would generate actual video frame data
     // For now, we log the frame generation for debugging
     if (frameData.frameNumber % (this.viewbotConfig.frameRate * 5) === 0) {
-      console.log(`🎨 VIEWBOT: Generated frame ${frameData.frameNumber} (${frameData.content.substring(0, 50)}...)`);
+      logger.debug(`🎨 VIEWBOT: Generated frame ${frameData.frameNumber} (${frameData.content.substring(0, 50)}...)`);
     }
 
     return frameData;
@@ -309,13 +311,13 @@ class ViewbotService {
 
   async createSyntheticMediaStream() {
     try {
-      console.log('🎬 VIEWBOT: Creating synthetic media stream...');
+      logger.debug('🎬 VIEWBOT: Creating synthetic media stream...');
 
       // Check if FFmpeg is available
       const ffmpegAvailable = await this.checkFFmpegAvailability();
       
       if (!ffmpegAvailable) {
-        console.log('⚠️ VIEWBOT: FFmpeg not available, using simulated stream');
+        logger.debug('⚠️ VIEWBOT: FFmpeg not available, using simulated stream');
         return await this.createSimulatedStream();
       }
 
@@ -350,7 +352,7 @@ class ViewbotService {
         'pipe:1'
       ];
 
-      console.log('🎬 VIEWBOT: Starting FFmpeg with args:', ffmpegArgs.join(' '));
+      logger.debug('🎬 VIEWBOT: Starting FFmpeg with args:', ffmpegArgs.join(' '));
 
       this.viewbotProcess = spawn(this.ffmpegPath || 'ffmpeg', ffmpegArgs, {
         stdio: ['pipe', 'pipe', 'pipe']
@@ -359,23 +361,23 @@ class ViewbotService {
       this.viewbotProcess.stdout.on('data', (data) => {
         // Stream data would be processed here for MediaSoup
         // For now, we simulate the stream generation
-        console.log(`📊 VIEWBOT: Generated ${data.length} bytes of media data`);
+        logger.debug(`📊 VIEWBOT: Generated ${data.length} bytes of media data`);
       });
 
       this.viewbotProcess.stderr.on('data', (data) => {
-        console.log(`🎬 VIEWBOT: FFmpeg: ${data}`);
+        logger.debug(`🎬 VIEWBOT: FFmpeg: ${data}`);
       });
 
       this.viewbotProcess.on('close', (code) => {
-        console.log(`🎬 VIEWBOT: FFmpeg process closed with code ${code}`);
+        logger.debug(`🎬 VIEWBOT: FFmpeg process closed with code ${code}`);
         if (code !== 0 && this.isViewbotActive) {
-          console.error('❌ VIEWBOT: FFmpeg process failed');
+          logger.error('❌ VIEWBOT: FFmpeg process failed');
           this.cleanup();
         }
       });
 
       this.viewbotProcess.on('error', (error) => {
-        console.error('❌ VIEWBOT: FFmpeg process error:', error);
+        logger.error('❌ VIEWBOT: FFmpeg process error:', error);
         this.cleanup();
       });
 
@@ -393,7 +395,7 @@ class ViewbotService {
       return { success: true };
 
     } catch (error) {
-      console.error('❌ VIEWBOT: Failed to create synthetic media stream:', error);
+      logger.error('❌ VIEWBOT: Failed to create synthetic media stream:', error);
       return { success: false, error: error.message };
     }
   }
@@ -421,13 +423,13 @@ class ViewbotService {
   }
 
   async createSimulatedStream() {
-    console.log('🎭 VIEWBOT: Creating simulated media stream (no FFmpeg)');
+    logger.debug('🎭 VIEWBOT: Creating simulated media stream (no FFmpeg)');
     
     // Create a simulation timer that generates fake data
     this.simulationTimer = setInterval(() => {
       if (this.isViewbotActive) {
         const frameData = this.generateSimulatedFrameData();
-        console.log(`🎭 VIEWBOT: Simulated frame generated: ${frameData.timestamp}`);
+        logger.debug(`🎭 VIEWBOT: Simulated frame generated: ${frameData.timestamp}`);
       }
     }, 1000 / this.viewbotConfig.frameRate);
     
@@ -646,7 +648,7 @@ class ViewbotService {
         streamId: stoppedStreamId
       };
     } catch (error) {
-      console.error('❌ VIEWBOT: Error stopping viewbot:', error);
+      logger.error('❌ VIEWBOT: Error stopping viewbot:', error);
       return {
         success: false,
         message: 'Error stopping viewbot: ' + error.message
@@ -661,7 +663,7 @@ class ViewbotService {
   }
 
   async cleanup() {
-    console.log('🧹 VIEWBOT: Cleaning up viewbot resources...');
+    logger.debug('🧹 VIEWBOT: Cleaning up viewbot resources...');
     
     this.isViewbotActive = false;
     
@@ -669,7 +671,7 @@ class ViewbotService {
     if (this.simulationTimer) {
       clearInterval(this.simulationTimer);
       this.simulationTimer = null;
-      console.log('⏹️ VIEWBOT: Simulation timer stopped');
+      logger.debug('⏹️ VIEWBOT: Simulation timer stopped');
     }
     
     // Stop FFmpeg process
@@ -681,7 +683,7 @@ class ViewbotService {
         await new Promise((resolve) => {
           const timeout = setTimeout(() => {
             if (!this.viewbotProcess.killed) {
-              console.log('🔪 VIEWBOT: Force killing FFmpeg process');
+              logger.debug('🔪 VIEWBOT: Force killing FFmpeg process');
               this.viewbotProcess.kill('SIGKILL');
             }
             resolve(true);
@@ -693,7 +695,7 @@ class ViewbotService {
           });
         });
       } catch (error) {
-        console.warn('⚠️ VIEWBOT: Error stopping FFmpeg process:', error);
+        logger.warn('⚠️ VIEWBOT: Error stopping FFmpeg process:', error);
       }
       
       this.viewbotProcess = null;
@@ -703,9 +705,9 @@ class ViewbotService {
     if (this.viewbotStreamId && this.mediasoupService) {
       try {
         await this.mediasoupService.cleanupSocketResources(this.viewbotStreamId);
-        console.log('✅ VIEWBOT: MediaSoup resources cleaned up');
+        logger.debug('✅ VIEWBOT: MediaSoup resources cleaned up');
       } catch (error) {
-        console.warn('⚠️ VIEWBOT: Error cleaning up MediaSoup resources:', error);
+        logger.warn('⚠️ VIEWBOT: Error cleaning up MediaSoup resources:', error);
       }
     }
     
@@ -714,7 +716,7 @@ class ViewbotService {
       try {
         fs.unlinkSync(this.pipelinePath);
       } catch (error) {
-        console.warn('⚠️ VIEWBOT: Error removing pipeline file:', error);
+        logger.warn('⚠️ VIEWBOT: Error removing pipeline file:', error);
       }
     }
     
@@ -724,7 +726,7 @@ class ViewbotService {
     this.pipelinePath = null;
     this.currentViewbots.clear();
     
-    console.log('✅ VIEWBOT: Cleanup completed');
+    logger.debug('✅ VIEWBOT: Cleanup completed');
   }
 
   getViewbotStatus() {
@@ -860,7 +862,7 @@ class ViewbotService {
 
       this.currentViewbots.add(viewbotId);
       
-      console.log(`🤖 VIEWBOT: Spawned additional viewbot ${viewbotId}`);
+      logger.debug(`🤖 VIEWBOT: Spawned additional viewbot ${viewbotId}`);
       
       return {
         success: true,
@@ -869,7 +871,7 @@ class ViewbotService {
         config: viewbotConfig
       };
     } catch (error) {
-      console.error('❌ VIEWBOT: Failed to spawn additional viewbot:', error);
+      logger.error('❌ VIEWBOT: Failed to spawn additional viewbot:', error);
       this.currentViewbots.delete(viewbotId);
       return { success: false, message: error.message };
     }
@@ -891,12 +893,12 @@ class ViewbotService {
 
   // Takeover handling
   async handleTakeover(newStreamerId) {
-    console.log(`🔄 VIEWBOT: Handling takeover by ${newStreamerId}`);
+    logger.debug(`🔄 VIEWBOT: Handling takeover by ${newStreamerId}`);
     
     if (this.isViewbotActive) {
       // Gracefully stop viewbot when taken over
       await this.stopViewbot();
-      console.log('🔄 VIEWBOT: Viewbot stopped due to takeover');
+      logger.debug('🔄 VIEWBOT: Viewbot stopped due to takeover');
     }
     
     return { success: true, message: 'Viewbot gracefully handled takeover' };
@@ -923,24 +925,24 @@ class ViewbotService {
    * This method is called by ViewBotClientService when a video ends
    */
   handleVideoEnd(botId) {
-    console.log(`🎬 ViewbotService: Handling video end for bot ${botId}`);
+    logger.debug(`🎬 ViewbotService: Handling video end for bot ${botId}`);
     
     // Always trigger rotation on video end - rotation is enabled by default
-    console.log(`🔄 ViewbotService: Triggering rotation after video end for ${botId}`);
+    logger.debug(`🔄 ViewbotService: Triggering rotation after video end for ${botId}`);
     
     // Use ViewBotClientService's rotation mechanism directly
     if (this.viewBotClientService && this.viewBotClientService.handleRotation) {
-      console.log(`📤 ViewbotService: Delegating rotation to ViewBotClientService`);
+      logger.debug(`📤 ViewbotService: Delegating rotation to ViewBotClientService`);
       this.viewBotClientService.handleRotation(botId);
     } else {
       // Fallback: stop current bot and start another
-      console.log(`🔀 ViewbotService: Using fallback rotation mechanism`);
+      logger.debug(`🔀 ViewbotService: Using fallback rotation mechanism`);
       
       if (this.viewBotClientService) {
         // Stop the current bot
         const bot = this.viewBotClientService.bots.get(botId);
         if (bot) {
-          console.log(`🛑 ViewbotService: Stopping bot ${botId}`);
+          logger.debug(`🛑 ViewbotService: Stopping bot ${botId}`);
           bot.stopStreaming();
         }
         
@@ -951,10 +953,10 @@ class ViewbotService {
           
           if (availableBots.length > 0) {
             const randomBot = availableBots[Math.floor(Math.random() * availableBots.length)];
-            console.log(`🎲 ViewbotService: Starting random bot ${randomBot.botId} for rotation`);
+            logger.debug(`🎲 ViewbotService: Starting random bot ${randomBot.botId} for rotation`);
             randomBot.requestToStream();
           } else {
-            console.log(`⚠️ ViewbotService: No available bots for rotation`);
+            logger.debug(`⚠️ ViewbotService: No available bots for rotation`);
           }
         }, 2000);
       }
@@ -972,10 +974,10 @@ class ViewbotService {
     
     if (availableBots.length > 0) {
       const randomBot = availableBots[Math.floor(Math.random() * availableBots.length)];
-      console.log(`🎲 ViewbotService: Starting random bot ${randomBot.botId} for rotation`);
+      logger.debug(`🎲 ViewbotService: Starting random bot ${randomBot.botId} for rotation`);
       randomBot.requestToStream();
     } else {
-      console.log(`⚠️ ViewbotService: No available bots for rotation`);
+      logger.debug(`⚠️ ViewbotService: No available bots for rotation`);
     }
   }
 }

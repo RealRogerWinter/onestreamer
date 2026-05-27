@@ -6,6 +6,8 @@ const { spawn } = require('child_process');
 const { PassThrough } = require('stream');
 const os = require('os');
 
+const logger = require('../bootstrap/logger').child({ svc: 'VisualFxService' });
+
 class VisualFxService extends EventEmitter {
     constructor(mediasoupService = null, buffDebuffService = null, streamInterceptorService = null) {
         super();
@@ -48,7 +50,7 @@ class VisualFxService extends EventEmitter {
         // Start resource monitoring
         this.startResourceMonitoring();
         
-        console.log('🎬 VISUALFX: Service initialized');
+        logger.debug('🎬 VISUALFX: Service initialized');
     }
     
     setDependencies(mediasoupService, buffDebuffService, streamService = null, io = null, sessionService = null, streamInterceptorService = null) {
@@ -58,16 +60,16 @@ class VisualFxService extends EventEmitter {
         this.io = io;
         this.sessionService = sessionService;
         this.streamInterceptorService = streamInterceptorService;
-        console.log(`🎬 VISUALFX: Dependencies set - io: ${!!io}, sessionService: ${!!sessionService}`);
-        console.log(`🎬 VISUALFX: Socket.io instance:`, this.io ? `Connected (${this.io.engine?.clientsCount || 0} clients)` : 'NOT SET');
-        console.log(`🎬 VISUALFX: Socket.io object type:`, typeof this.io);
-        console.log(`🎬 VISUALFX: Socket.io has emit method:`, typeof this.io?.emit);
+        logger.debug(`🎬 VISUALFX: Dependencies set - io: ${!!io}, sessionService: ${!!sessionService}`);
+        logger.debug(`🎬 VISUALFX: Socket.io instance:`, this.io ? `Connected (${this.io.engine?.clientsCount || 0} clients)` : 'NOT SET');
+        logger.debug(`🎬 VISUALFX: Socket.io object type:`, typeof this.io);
+        logger.debug(`🎬 VISUALFX: Socket.io has emit method:`, typeof this.io?.emit);
         
         // Hook into buff service events if available
         if (this.buffDebuffService) {
-            console.log(`🎬 VISUALFX: Setting up buff-applied event listener`);
-            console.log(`🎬 VISUALFX: BuffDebuffService instance:`, this.buffDebuffService ? 'SET' : 'NOT SET');
-            console.log(`🎬 VISUALFX: BuffDebuffService is EventEmitter:`, this.buffDebuffService instanceof require('events').EventEmitter);
+            logger.debug(`🎬 VISUALFX: Setting up buff-applied event listener`);
+            logger.debug(`🎬 VISUALFX: BuffDebuffService instance:`, this.buffDebuffService ? 'SET' : 'NOT SET');
+            logger.debug(`🎬 VISUALFX: BuffDebuffService is EventEmitter:`, this.buffDebuffService instanceof require('events').EventEmitter);
             
             // Remove any existing listeners first to prevent duplicates
             this.buffDebuffService.removeAllListeners('buff-applied');
@@ -84,18 +86,18 @@ class VisualFxService extends EventEmitter {
             const buffAppliedListeners = this.buffDebuffService.listeners('buff-applied');
             const buffExpiredListeners = this.buffDebuffService.listeners('buff-expired');
             
-            console.log(`✅ VISUALFX: Event listeners registered:`);
-            console.log(`   - buff-applied: ${buffAppliedListeners.length} listener(s)`);
-            console.log(`   - buff-expired: ${buffExpiredListeners.length} listener(s)`);
+            logger.debug(`✅ VISUALFX: Event listeners registered:`);
+            logger.debug(`   - buff-applied: ${buffAppliedListeners.length} listener(s)`);
+            logger.debug(`   - buff-expired: ${buffExpiredListeners.length} listener(s)`);
             
             // Test the connection with a ping
-            console.log(`🔧 VISUALFX: Testing buff service connection...`);
+            logger.debug(`🔧 VISUALFX: Testing buff service connection...`);
             this.buffDebuffService.once('test-visualfx-ping', () => {
-                console.log(`✅ VISUALFX: Buff service connection verified!`);
+                logger.debug(`✅ VISUALFX: Buff service connection verified!`);
             });
             this.buffDebuffService.emit('test-visualfx-ping');
         } else {
-            console.log(`⚠️ VISUALFX: No BuffDebuffService provided!`);
+            logger.debug(`⚠️ VISUALFX: No BuffDebuffService provided!`);
         }
     }
     
@@ -541,7 +543,7 @@ class VisualFxService extends EventEmitter {
             priority: 3
         });
         
-        console.log(`🎬 VISUALFX: Registered ${this.effectRegistry.size} effects`);
+        logger.debug(`🎬 VISUALFX: Registered ${this.effectRegistry.size} effects`);
     }
     
     registerEffect(effectId, config) {
@@ -553,18 +555,18 @@ class VisualFxService extends EventEmitter {
     }
     
     async applyEffect(streamId, effectId, options = {}) {
-        console.log(`🎬 VISUALFX: Applying effect ${effectId} to stream ${streamId}`);
+        logger.debug(`🎬 VISUALFX: Applying effect ${effectId} to stream ${streamId}`);
         
         // Check if effect exists
         const effectConfig = this.effectRegistry.get(effectId);
         if (!effectConfig) {
-            console.error(`❌ VISUALFX: Effect ${effectId} not found in registry`);
+            logger.error(`❌ VISUALFX: Effect ${effectId} not found in registry`);
             return null; // Return null instead of throwing to prevent crashes
         }
         
         // Check resource limits
         if (!this.checkResourceAvailability()) {
-            console.warn('⚠️ VISUALFX: Resource limit reached, queuing effect');
+            logger.warn('⚠️ VISUALFX: Resource limit reached, queuing effect');
             this.queueEffect(streamId, effectId, options);
             return null;
         }
@@ -577,7 +579,7 @@ class VisualFxService extends EventEmitter {
         // Check max effects per stream
         const streamEffects = this.activeEffects.get(streamId);
         if (streamEffects.size >= this.config.maxEffectsPerStream) {
-            console.warn(`⚠️ VISUALFX: Max effects reached for stream ${streamId}`);
+            logger.warn(`⚠️ VISUALFX: Max effects reached for stream ${streamId}`);
             return null;
         }
         
@@ -605,7 +607,7 @@ class VisualFxService extends EventEmitter {
                                   false; // DISABLED: Stream interception causing instability
             
             if (useInterception) {
-                console.log(`🎬 VISUALFX: Attempting stream interception for ${effectId}`);
+                logger.debug(`🎬 VISUALFX: Attempting stream interception for ${effectId}`);
                 
                 try {
                     // Map effect to interceptor type
@@ -647,11 +649,11 @@ class VisualFxService extends EventEmitter {
                     
                     // Apply via stream interception
                     await this.streamInterceptorService.interceptStream(streamId, interceptType, interceptOptions);
-                    console.log(`✅ VISUALFX: Stream interception successful for ${effectId}`);
+                    logger.debug(`✅ VISUALFX: Stream interception successful for ${effectId}`);
                     
                 } catch (interceptError) {
-                    console.error(`⚠️ VISUALFX: Stream interception failed for ${effectId}:`, interceptError.message);
-                    console.log(`🔄 VISUALFX: Falling back to safe methods for ${effectId}`);
+                    logger.error(`⚠️ VISUALFX: Stream interception failed for ${effectId}:`, interceptError.message);
+                    logger.debug(`🔄 VISUALFX: Falling back to safe methods for ${effectId}`);
                     
                     // Always use safe fallback methods
                     try {
@@ -663,11 +665,11 @@ class VisualFxService extends EventEmitter {
                                 await this.applySafeResolutionEffect(streamId, effectConfig.parameters);
                                 break;
                             default:
-                                console.log(`📡 VISUALFX: Effect ${effectId} will be client-side only`);
+                                logger.debug(`📡 VISUALFX: Effect ${effectId} will be client-side only`);
                                 break;
                         }
                     } catch (fallbackError) {
-                        console.error(`⚠️ VISUALFX: Safe fallback also failed:`, fallbackError.message);
+                        logger.error(`⚠️ VISUALFX: Safe fallback also failed:`, fallbackError.message);
                     }
                 }
                 
@@ -736,22 +738,22 @@ class VisualFxService extends EventEmitter {
                     streamId: streamId,
                     effectConfig: effectConfig
                 };
-                console.log(`🎬 VISUALFX: Emitting visual-effect-applied event:`, eventData);
-                console.log(`🎬 VISUALFX: Socket.IO engine clients: ${this.io.engine?.clientsCount || 0}`);
-                console.log(`🎬 VISUALFX: Socket.IO connected: ${!!this.io.sockets}`);
+                logger.debug(`🎬 VISUALFX: Emitting visual-effect-applied event:`, eventData);
+                logger.debug(`🎬 VISUALFX: Socket.IO engine clients: ${this.io.engine?.clientsCount || 0}`);
+                logger.debug(`🎬 VISUALFX: Socket.IO connected: ${!!this.io.sockets}`);
                 this.io.emit('visual-effect-applied', eventData);
-                console.log(`📡 VISUALFX: Emitted visual-effect-applied for ${effectId}`);
+                logger.debug(`📡 VISUALFX: Emitted visual-effect-applied for ${effectId}`);
             } else {
-                console.log(`⚠️ VISUALFX: Cannot emit visual-effect-applied - io not available`);
-                console.log(`⚠️ VISUALFX: this.io is: ${this.io}`);
-                console.log(`⚠️ VISUALFX: typeof this.io: ${typeof this.io}`);
+                logger.debug(`⚠️ VISUALFX: Cannot emit visual-effect-applied - io not available`);
+                logger.debug(`⚠️ VISUALFX: this.io is: ${this.io}`);
+                logger.debug(`⚠️ VISUALFX: typeof this.io: ${typeof this.io}`);
             }
             
-            console.log(`✅ VISUALFX: Effect ${effectId} applied successfully`);
+            logger.debug(`✅ VISUALFX: Effect ${effectId} applied successfully`);
             return effect;
             
         } catch (error) {
-            console.error(`❌ VISUALFX: Failed to apply effect ${effectId}:`, error.message);
+            logger.error(`❌ VISUALFX: Failed to apply effect ${effectId}:`, error.message);
             streamEffects.delete(effect);
             this.resourceMonitor.activeEffectCount--;
             // Don't throw - return null to prevent crashes
@@ -760,28 +762,28 @@ class VisualFxService extends EventEmitter {
     }
     
     async applyResolutionEffect(streamId, parameters) {
-        console.log(`📹 VISUALFX: Applying resolution effect to stream ${streamId}`);
-        console.log(`📹 VISUALFX: Parameters:`, parameters);
-        console.log(`📹 VISUALFX: IMPORTANT: Resolution effects are client-side only to prevent stream disruption`);
+        logger.debug(`📹 VISUALFX: Applying resolution effect to stream ${streamId}`);
+        logger.debug(`📹 VISUALFX: Parameters:`, parameters);
+        logger.debug(`📹 VISUALFX: IMPORTANT: Resolution effects are client-side only to prevent stream disruption`);
         
         // DO NOT MODIFY MEDIASOUP CONSUMERS/LAYERS - This can cause stream instability
         // Resolution effects should be purely visual on the client side
         
         if (this.mediasoupService) {
-            console.log(`📹 VISUALFX: MediaSoup service available but NOT modifying consumers`);
+            logger.debug(`📹 VISUALFX: MediaSoup service available but NOT modifying consumers`);
         }
         
         // The visual effect will be handled client-side through the 'visual-effect-applied' event
-        console.log(`✅ VISUALFX: Resolution effect configured for client-side visual feedback only`);
-        console.log(`📡 VISUALFX: Clients will apply visual degradation without disrupting the stream`);
+        logger.debug(`✅ VISUALFX: Resolution effect configured for client-side visual feedback only`);
+        logger.debug(`📡 VISUALFX: Clients will apply visual degradation without disrupting the stream`);
         
         // Return success - the effect is "applied" (as a client-side visual only)
         return;
     }
     
     async applySafeBitrateEffect(streamId, parameters) {
-        console.log(`🥔 VISUALFX: Applying SAFE bitrate effect to stream ${streamId}`);
-        console.log(`🥔 VISUALFX: Using consumer priority and layer control only`);
+        logger.debug(`🥔 VISUALFX: Applying SAFE bitrate effect to stream ${streamId}`);
+        logger.debug(`🥔 VISUALFX: Using consumer priority and layer control only`);
         
         try {
             // Get all consumers for this stream
@@ -791,7 +793,7 @@ class VisualFxService extends EventEmitter {
             for (const [socketId, consumers] of allConsumers) {
                 // Check if consumers is iterable (Map or Array)
                 if (!consumers || typeof consumers[Symbol.iterator] !== 'function') {
-                    console.log(`⚠️ Skipping non-iterable consumers for socket ${socketId}`);
+                    logger.debug(`⚠️ Skipping non-iterable consumers for socket ${socketId}`);
                     continue;
                 }
                 
@@ -801,7 +803,7 @@ class VisualFxService extends EventEmitter {
                             // Set lowest priority
                             if (consumer.setPriority) {
                                 await consumer.setPriority(255);
-                                console.log(`✅ Set consumer ${consumerId} to priority 255`);
+                                logger.debug(`✅ Set consumer ${consumerId} to priority 255`);
                             }
                             
                             // Try to use preferred layers for simulcast
@@ -811,7 +813,7 @@ class VisualFxService extends EventEmitter {
                                         spatialLayer: 0,
                                         temporalLayer: 0
                                     });
-                                    console.log(`✅ Set consumer ${consumerId} to lowest layers`);
+                                    logger.debug(`✅ Set consumer ${consumerId} to lowest layers`);
                                 } catch (e) {
                                     // Not a simulcast stream, that's ok
                                 }
@@ -819,38 +821,38 @@ class VisualFxService extends EventEmitter {
                             
                             consumerCount++;
                         } catch (err) {
-                            console.warn(`⚠️ Failed to apply safe effect to consumer ${consumerId}:`, err.message);
+                            logger.warn(`⚠️ Failed to apply safe effect to consumer ${consumerId}:`, err.message);
                         }
                     }
                 }
             }
             
-            console.log(`✅ VISUALFX: Safe bitrate effect applied to ${consumerCount} consumers`);
+            logger.debug(`✅ VISUALFX: Safe bitrate effect applied to ${consumerCount} consumers`);
             
         } catch (error) {
-            console.error(`❌ VISUALFX: Failed to apply safe bitrate effect:`, error);
+            logger.error(`❌ VISUALFX: Failed to apply safe bitrate effect:`, error);
         }
     }
     
     async applySafeResolutionEffect(streamId, parameters) {
-        console.log(`📹 VISUALFX: Applying SAFE resolution effect to stream ${streamId}`);
-        console.log(`📹 VISUALFX: Using consumer layer control only`);
+        logger.debug(`📹 VISUALFX: Applying SAFE resolution effect to stream ${streamId}`);
+        logger.debug(`📹 VISUALFX: Using consumer layer control only`);
         
         // Similar to bitrate but focus on spatial layers
         await this.applySafeBitrateEffect(streamId, parameters);
     }
     
     async applyBitrateEffect(streamId, parameters) {
-        console.log(`🥔 VISUALFX: Applying POTATO QUALITY effect to stream ${streamId}`);
-        console.log(`🥔 VISUALFX: Parameters:`, parameters);
+        logger.debug(`🥔 VISUALFX: Applying POTATO QUALITY effect to stream ${streamId}`);
+        logger.debug(`🥔 VISUALFX: Parameters:`, parameters);
         
         if (!this.mediasoupService) {
-            console.error('❌ VISUALFX: MediaSoup service not available');
-            console.log('🥔 VISUALFX: Effect will be client-side only');
+            logger.error('❌ VISUALFX: MediaSoup service not available');
+            logger.debug('🥔 VISUALFX: Effect will be client-side only');
             return;
         }
         
-        console.log(`🥔 VISUALFX: Using MediaSoup best practices for quality degradation`);
+        logger.debug(`🥔 VISUALFX: Using MediaSoup best practices for quality degradation`);
         
         try {
             const targetBitrate = parameters.videoBitrate || 30000;
@@ -879,7 +881,7 @@ class VisualFxService extends EventEmitter {
                             // Priority 255 = lowest, gets bandwidth last
                             if (consumer.setPriority) {
                                 await consumer.setPriority(255);
-                                console.log(`🥔 VISUALFX: Set consumer ${consumerId} to priority 255 (lowest)`);
+                                logger.debug(`🥔 VISUALFX: Set consumer ${consumerId} to priority 255 (lowest)`);
                             }
                             
                             // BEST PRACTICE 2: Use setPreferredLayers for simulcast streams
@@ -890,7 +892,7 @@ class VisualFxService extends EventEmitter {
                                     spatialLayer: 0,    // Lowest spatial layer (quarter resolution)
                                     temporalLayer: 0    // Lowest temporal layer (reduced framerate)
                                 });
-                                console.log(`🥔 VISUALFX: Consumer ${consumerId} set to layers S0:T0 (lowest quality)`);
+                                logger.debug(`🥔 VISUALFX: Consumer ${consumerId} set to layers S0:T0 (lowest quality)`);
                                 simulcastConsumerCount++;
                                 
                                 // Request keyframe for immediate effect
@@ -899,7 +901,7 @@ class VisualFxService extends EventEmitter {
                                 }
                             } catch (e) {
                                 // Consumer doesn't support simulcast - this is fine
-                                console.log(`🥔 VISUALFX: Consumer ${consumerId} is not simulcast (single stream)`);
+                                logger.debug(`🥔 VISUALFX: Consumer ${consumerId} is not simulcast (single stream)`);
                             }
                             
                             videoConsumerCount++;
@@ -907,22 +909,22 @@ class VisualFxService extends EventEmitter {
                             // Audio priority adjustment
                             if (consumer.setPriority) {
                                 await consumer.setPriority(255);
-                                console.log(`🥔 VISUALFX: Set audio consumer ${consumerId} to lowest priority`);
+                                logger.debug(`🥔 VISUALFX: Set audio consumer ${consumerId} to lowest priority`);
                             }
                             audioConsumerCount++;
                         }
                     } catch (err) {
-                        console.warn(`⚠️ VISUALFX: Failed to degrade consumer ${consumerId}:`, err.message);
+                        logger.warn(`⚠️ VISUALFX: Failed to degrade consumer ${consumerId}:`, err.message);
                     }
                 }
             }
             
-            console.log(`✅ VISUALFX: POTATO EFFECT APPLIED!`);
-            console.log(`   - Video consumers affected: ${videoConsumerCount}`);
-            console.log(`   - Simulcast consumers switched to low quality: ${simulcastConsumerCount}`);
-            console.log(`   - Audio consumers affected: ${audioConsumerCount}`);
-            console.log(`   - All consumers set to priority 255 (lowest)`);
-            console.log(`   - Target bitrate: ${targetBitrate} bps`);
+            logger.debug(`✅ VISUALFX: POTATO EFFECT APPLIED!`);
+            logger.debug(`   - Video consumers affected: ${videoConsumerCount}`);
+            logger.debug(`   - Simulcast consumers switched to low quality: ${simulcastConsumerCount}`);
+            logger.debug(`   - Audio consumers affected: ${audioConsumerCount}`);
+            logger.debug(`   - All consumers set to priority 255 (lowest)`);
+            logger.debug(`   - Target bitrate: ${targetBitrate} bps`);
             
             // Store the effect parameters for new viewers
             this.activeBitrateLimit = {
@@ -933,65 +935,65 @@ class VisualFxService extends EventEmitter {
             };
             
         } catch (error) {
-            console.error(`❌ VISUALFX: Failed to apply bitrate effect:`, error);
+            logger.error(`❌ VISUALFX: Failed to apply bitrate effect:`, error);
             throw error;
         }
     }
     
     async applyFramerateEffect(streamId, parameters) {
-        console.log(`⏱️ VISUALFX: Applying framerate effect to stream ${streamId}`);
-        console.log(`⏱️ VISUALFX: Parameters:`, parameters);
-        console.log(`⏱️ VISUALFX: IMPORTANT: Framerate effects are client-side only to prevent stream disruption`);
+        logger.debug(`⏱️ VISUALFX: Applying framerate effect to stream ${streamId}`);
+        logger.debug(`⏱️ VISUALFX: Parameters:`, parameters);
+        logger.debug(`⏱️ VISUALFX: IMPORTANT: Framerate effects are client-side only to prevent stream disruption`);
         
         // DO NOT MODIFY MEDIASOUP PRODUCERS - This can cause stream instability
         // Framerate effects should be purely visual on the client side
         
         if (this.mediasoupService) {
-            console.log(`⏱️ VISUALFX: MediaSoup service available but NOT modifying producers`);
+            logger.debug(`⏱️ VISUALFX: MediaSoup service available but NOT modifying producers`);
         }
         
         // The visual effect will be handled client-side through the 'visual-effect-applied' event
-        console.log(`✅ VISUALFX: Framerate effect configured for client-side visual feedback only`);
-        console.log(`📡 VISUALFX: Clients will apply visual degradation without disrupting the stream`);
+        logger.debug(`✅ VISUALFX: Framerate effect configured for client-side visual feedback only`);
+        logger.debug(`📡 VISUALFX: Clients will apply visual degradation without disrupting the stream`);
         
         // Return success - the effect is "applied" (as a client-side visual only)
         return;
     }
     
     async applyPacketLossEffect(streamId, parameters) {
-        console.log(`📡 VISUALFX: Applying packet loss effect to stream ${streamId}`);
-        console.log(`📡 VISUALFX: Parameters:`, parameters);
-        console.log(`📡 VISUALFX: IMPORTANT: Packet loss effects are client-side only to prevent stream disruption`);
+        logger.debug(`📡 VISUALFX: Applying packet loss effect to stream ${streamId}`);
+        logger.debug(`📡 VISUALFX: Parameters:`, parameters);
+        logger.debug(`📡 VISUALFX: IMPORTANT: Packet loss effects are client-side only to prevent stream disruption`);
         
         // DO NOT INTERCEPT RTP PACKETS - This can cause stream instability
         // Packet loss effects should be purely visual on the client side
         
         // The visual effect will be handled client-side through the 'visual-effect-applied' event
-        console.log(`✅ VISUALFX: Packet loss effect configured for client-side visual feedback only`);
-        console.log(`📡 VISUALFX: Clients will apply visual simulation without disrupting actual packets`);
+        logger.debug(`✅ VISUALFX: Packet loss effect configured for client-side visual feedback only`);
+        logger.debug(`📡 VISUALFX: Clients will apply visual simulation without disrupting actual packets`);
         
         // Return success - the effect is "applied" (as a client-side visual only)
         return;
     }
     
     async applyJitterEffect(streamId, parameters) {
-        console.log(`〰️ VISUALFX: Applying jitter effect to stream ${streamId}`);
-        console.log(`〰️ VISUALFX: Parameters:`, parameters);
-        console.log(`〰️ VISUALFX: IMPORTANT: Jitter effects are client-side only to prevent stream disruption`);
+        logger.debug(`〰️ VISUALFX: Applying jitter effect to stream ${streamId}`);
+        logger.debug(`〰️ VISUALFX: Parameters:`, parameters);
+        logger.debug(`〰️ VISUALFX: IMPORTANT: Jitter effects are client-side only to prevent stream disruption`);
         
         // DO NOT INTERCEPT RTP PACKETS - This can cause stream instability
         // Jitter effects should be purely visual on the client side
         
         // The visual effect will be handled client-side through the 'visual-effect-applied' event
-        console.log(`✅ VISUALFX: Jitter effect configured for client-side visual feedback only`);
-        console.log(`📡 VISUALFX: Clients will apply visual simulation without disrupting actual timing`);
+        logger.debug(`✅ VISUALFX: Jitter effect configured for client-side visual feedback only`);
+        logger.debug(`📡 VISUALFX: Clients will apply visual simulation without disrupting actual timing`);
         
         // Return success - the effect is "applied" (as a client-side visual only)
         return;
     }
     
     async applyFilterEffect(streamId, parameters) {
-        console.log(`🎬 VISUALFX: Applying filter effect to stream ${streamId}:`, parameters.filter);
+        logger.debug(`🎬 VISUALFX: Applying filter effect to stream ${streamId}:`, parameters.filter);
         
         // Create or update FFmpeg processing pipeline for visual filters
         await this.createProcessingPipeline(streamId, {
@@ -1006,12 +1008,12 @@ class VisualFxService extends EventEmitter {
 
     async interceptMediaSoupConsumers(streamId, videoFilter) {
         if (!this.mediasoupService) {
-            console.warn(`⚠️ VISUALFX: No MediaSoup service available for stream interception`);
+            logger.warn(`⚠️ VISUALFX: No MediaSoup service available for stream interception`);
             return;
         }
 
         const consumers = this.getStreamConsumers(streamId);
-        console.log(`🎬 VISUALFX: Found ${consumers.length} consumers for stream ${streamId}`);
+        logger.debug(`🎬 VISUALFX: Found ${consumers.length} consumers for stream ${streamId}`);
 
         for (const consumer of consumers) {
             if (consumer.kind === 'video') {
@@ -1023,17 +1025,17 @@ class VisualFxService extends EventEmitter {
                     // 3. Process through FFmpeg
                     // 4. Re-encode and create new consumer
                     
-                    console.log(`🎬 VISUALFX: Intercepting video consumer ${consumer.id} for filter: ${videoFilter}`);
+                    logger.debug(`🎬 VISUALFX: Intercepting video consumer ${consumer.id} for filter: ${videoFilter}`);
                     
                     // Mark consumer as processed
                     if (!consumer._visualFxProcessed) {
                         consumer._visualFxProcessed = true;
                         consumer._visualFxFilter = videoFilter;
-                        console.log(`✅ VISUALFX: Consumer ${consumer.id} marked for processing`);
+                        logger.debug(`✅ VISUALFX: Consumer ${consumer.id} marked for processing`);
                     }
                     
                 } catch (error) {
-                    console.error(`❌ VISUALFX: Failed to intercept consumer ${consumer.id}:`, error);
+                    logger.error(`❌ VISUALFX: Failed to intercept consumer ${consumer.id}:`, error);
                 }
             }
         }
@@ -1066,39 +1068,39 @@ class VisualFxService extends EventEmitter {
     }
     
     async applyFreezeEffect(streamId, parameters) {
-        console.log(`🧊 VISUALFX: Applying freeze effect to stream ${streamId}`);
-        console.log(`🧊 VISUALFX: Parameters:`, parameters);
-        console.log(`🧊 VISUALFX: IMPORTANT: Freeze effects are client-side only to prevent stream disruption`);
+        logger.debug(`🧊 VISUALFX: Applying freeze effect to stream ${streamId}`);
+        logger.debug(`🧊 VISUALFX: Parameters:`, parameters);
+        logger.debug(`🧊 VISUALFX: IMPORTANT: Freeze effects are client-side only to prevent stream disruption`);
         
         // DO NOT PAUSE/RESUME PRODUCERS - This causes stream instability and disconnections
         // Freeze effects should be purely visual on the client side
         
         // The visual effect will be handled client-side through the 'visual-effect-applied' event
-        console.log(`✅ VISUALFX: Freeze effect configured for client-side visual feedback only`);
-        console.log(`📡 VISUALFX: Clients will simulate freeze without disrupting the actual stream`);
+        logger.debug(`✅ VISUALFX: Freeze effect configured for client-side visual feedback only`);
+        logger.debug(`📡 VISUALFX: Clients will simulate freeze without disrupting the actual stream`);
         
         // Return success - the effect is "applied" (as a client-side visual only)
         return;
     }
     
     async applyStutterEffect(streamId, parameters) {
-        console.log(`⚡ VISUALFX: Applying stutter effect to stream ${streamId}`);
-        console.log(`⚡ VISUALFX: Parameters:`, parameters);
-        console.log(`⚡ VISUALFX: IMPORTANT: Stutter effects are client-side only to prevent stream disruption`);
+        logger.debug(`⚡ VISUALFX: Applying stutter effect to stream ${streamId}`);
+        logger.debug(`⚡ VISUALFX: Parameters:`, parameters);
+        logger.debug(`⚡ VISUALFX: IMPORTANT: Stutter effects are client-side only to prevent stream disruption`);
         
         // DO NOT PAUSE/RESUME PRODUCERS - This causes stream instability and disconnections
         // Stutter effects should be purely visual on the client side
         
         // The visual effect will be handled client-side through the 'visual-effect-applied' event
-        console.log(`✅ VISUALFX: Stutter effect configured for client-side visual feedback only`);
-        console.log(`📡 VISUALFX: Clients will simulate stutter without disrupting the actual stream`);
+        logger.debug(`✅ VISUALFX: Stutter effect configured for client-side visual feedback only`);
+        logger.debug(`📡 VISUALFX: Clients will simulate stutter without disrupting the actual stream`);
         
         // Return success - the effect is "applied" (as a client-side visual only)
         return;
     }
     
     async applyResizeEffect(streamId, parameters) {
-        console.log(`📉 VISUALFX: Applying resize effect to stream ${streamId}`, parameters);
+        logger.debug(`📉 VISUALFX: Applying resize effect to stream ${streamId}`, parameters);
         
         // This is a client-side effect - the actual resizing will be handled by the frontend
         // We just need to emit the effect to trigger the client-side CSS transform
@@ -1107,11 +1109,11 @@ class VisualFxService extends EventEmitter {
         // which sends 'visual-effect-applied' with the effect configuration
         // For resize effects, applyToAllViewers=true ensures it affects all viewers, not just the streamer
         
-        console.log(`📉 VISUALFX: Resize effect configured - client will handle DOM manipulation FOR ALL VIEWERS`);
+        logger.debug(`📉 VISUALFX: Resize effect configured - client will handle DOM manipulation FOR ALL VIEWERS`);
     }
     
     async createProcessingPipeline(streamId, options) {
-        console.log(`🎬 VISUALFX: Creating processing pipeline for stream ${streamId}`, options);
+        logger.debug(`🎬 VISUALFX: Creating processing pipeline for stream ${streamId}`, options);
         
         // Check if pipeline already exists
         if (this.processingPipelines.has(streamId)) {
@@ -1144,10 +1146,10 @@ class VisualFxService extends EventEmitter {
             // Store pipeline
             this.processingPipelines.set(streamId, pipeline);
             
-            console.log(`✅ VISUALFX: Processing pipeline created for stream ${streamId}`);
+            logger.debug(`✅ VISUALFX: Processing pipeline created for stream ${streamId}`);
             
         } catch (error) {
-            console.error(`❌ VISUALFX: Failed to create processing pipeline:`, error);
+            logger.error(`❌ VISUALFX: Failed to create processing pipeline:`, error);
             throw error;
         }
     }
@@ -1194,7 +1196,7 @@ class VisualFxService extends EventEmitter {
             'pipe:1'                // Output to stdout
         );
         
-        console.log(`🎬 VISUALFX: FFmpeg args for ${streamId}:`, ffmpegArgs);
+        logger.debug(`🎬 VISUALFX: FFmpeg args for ${streamId}:`, ffmpegArgs);
         
         // Spawn FFmpeg process
         const ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
@@ -1212,28 +1214,28 @@ class VisualFxService extends EventEmitter {
             const message = data.toString();
             if (message.includes('frame=')) {
                 // Normal frame processing info
-                console.log(`🎬 VISUALFX: Processing ${streamId}: ${message.trim()}`);
+                logger.debug(`🎬 VISUALFX: Processing ${streamId}: ${message.trim()}`);
             } else if (message.includes('error') || message.includes('Error')) {
-                console.error(`❌ VISUALFX: FFmpeg error for ${streamId}: ${message}`);
+                logger.error(`❌ VISUALFX: FFmpeg error for ${streamId}: ${message}`);
                 pipeline.stats.errors++;
             }
         });
         
         // Handle process exit
         ffmpegProcess.on('close', (code) => {
-            console.log(`🎬 VISUALFX: FFmpeg process for ${streamId} exited with code ${code}`);
+            logger.debug(`🎬 VISUALFX: FFmpeg process for ${streamId} exited with code ${code}`);
             pipeline.isActive = false;
         });
         
         // Handle process errors
         ffmpegProcess.on('error', (error) => {
-            console.error(`❌ VISUALFX: FFmpeg process error for ${streamId}:`, error);
+            logger.error(`❌ VISUALFX: FFmpeg process error for ${streamId}:`, error);
             pipeline.isActive = false;
             pipeline.stats.errors++;
         });
         
         pipeline.isActive = true;
-        console.log(`🎬 VISUALFX: FFmpeg pipeline initialized for ${streamId}`);
+        logger.debug(`🎬 VISUALFX: FFmpeg pipeline initialized for ${streamId}`);
     }
     
     async updateProcessingPipeline(streamId, options) {
@@ -1248,7 +1250,7 @@ class VisualFxService extends EventEmitter {
             pipeline.filters.audio = options.audio;
         }
         
-        console.log(`🔄 VISUALFX: Updated processing pipeline for stream ${streamId}`);
+        logger.debug(`🔄 VISUALFX: Updated processing pipeline for stream ${streamId}`);
     }
     
     async removeEffect(streamId, effectInstanceId) {
@@ -1258,7 +1260,7 @@ class VisualFxService extends EventEmitter {
         const effect = Array.from(streamEffects).find(e => e.id === effectInstanceId);
         if (!effect) return;
         
-        console.log(`🎬 VISUALFX: Removing effect ${effect.effectId} from stream ${streamId}`);
+        logger.debug(`🎬 VISUALFX: Removing effect ${effect.effectId} from stream ${streamId}`);
         
         // Check if this effect is using stream interception
         if (this.streamInterceptorService) {
@@ -1268,7 +1270,7 @@ class VisualFxService extends EventEmitter {
             );
             
             if (hasInterception) {
-                console.log(`🎬 VISUALFX: Stopping stream interception for ${effect.effectId}`);
+                logger.debug(`🎬 VISUALFX: Stopping stream interception for ${effect.effectId}`);
                 await this.streamInterceptorService.stopInterception(streamId);
             }
         }
@@ -1324,13 +1326,13 @@ class VisualFxService extends EventEmitter {
                     applyToAllViewers: true // Remove effects from all viewers
                 };
                 this.io.emit('visual-effect-removed', removalData);
-                console.log(`📡 VISUALFX: Emitted visual-effect-removed for ${effect.effectId}`, removalData);
+                logger.debug(`📡 VISUALFX: Emitted visual-effect-removed for ${effect.effectId}`, removalData);
             }
             
-            console.log(`✅ VISUALFX: Effect ${effect.effectId} removed successfully`);
+            logger.debug(`✅ VISUALFX: Effect ${effect.effectId} removed successfully`);
             
         } catch (error) {
-            console.error(`❌ VISUALFX: Failed to remove effect:`, error);
+            logger.error(`❌ VISUALFX: Failed to remove effect:`, error);
         }
     }
     
@@ -1345,13 +1347,13 @@ class VisualFxService extends EventEmitter {
                     temporalLayer: 2
                 });
             } catch (error) {
-                console.error(`❌ VISUALFX: Failed to reset resolution:`, error);
+                logger.error(`❌ VISUALFX: Failed to reset resolution:`, error);
             }
         }
     }
     
     async resetBitrate(streamId) {
-        console.log(`🥔 VISUALFX: Resetting quality for all consumers`);
+        logger.debug(`🥔 VISUALFX: Resetting quality for all consumers`);
         
         try {
             let resetCount = 0;
@@ -1363,7 +1365,7 @@ class VisualFxService extends EventEmitter {
                         // Reset priority to normal
                         if (consumer.setPriority) {
                             await consumer.setPriority(1); // Normal priority
-                            console.log(`🥔 VISUALFX: Reset consumer ${consumerId} to normal priority`);
+                            logger.debug(`🥔 VISUALFX: Reset consumer ${consumerId} to normal priority`);
                         }
                         
                         // Try to reset layers to max quality (if simulcast)
@@ -1373,14 +1375,14 @@ class VisualFxService extends EventEmitter {
                                     spatialLayer: 2,
                                     temporalLayer: 2
                                 });
-                                console.log(`🥔 VISUALFX: Reset consumer ${consumerId} to max quality layers`);
+                                logger.debug(`🥔 VISUALFX: Reset consumer ${consumerId} to max quality layers`);
                             } catch (e) {
                                 // Not simulcast, ignore
                             }
                             resetCount++;
                         }
                     } catch (err) {
-                        console.warn(`⚠️ VISUALFX: Failed to reset consumer ${consumerId}:`, err.message);
+                        logger.warn(`⚠️ VISUALFX: Failed to reset consumer ${consumerId}:`, err.message);
                     }
                 }
             }
@@ -1388,9 +1390,9 @@ class VisualFxService extends EventEmitter {
             // Clear the stored limit
             this.activeBitrateLimit = null;
             
-            console.log(`✅ VISUALFX: Reset bitrate for ${resetCount} viewer transports`);
+            logger.debug(`✅ VISUALFX: Reset bitrate for ${resetCount} viewer transports`);
         } catch (error) {
-            console.error(`❌ VISUALFX: Failed to reset bitrate:`, error);
+            logger.error(`❌ VISUALFX: Failed to reset bitrate:`, error);
         }
     }
     
@@ -1401,7 +1403,7 @@ class VisualFxService extends EventEmitter {
         if (interceptor) {
             interceptor.active = false;
             this.rtpInterceptors.delete(interceptorId);
-            console.log(`🎬 VISUALFX: Removed RTP interceptor ${type} for stream ${streamId}`);
+            logger.debug(`🎬 VISUALFX: Removed RTP interceptor ${type} for stream ${streamId}`);
         }
     }
     
@@ -1429,22 +1431,22 @@ class VisualFxService extends EventEmitter {
                 pipeline.outputStream.destroy();
             }
         } catch (err) {
-            console.error(`⚠️ VISUALFX: Error cleaning up pipeline:`, err.message);
+            logger.error(`⚠️ VISUALFX: Error cleaning up pipeline:`, err.message);
         }
         
         this.processingPipelines.delete(streamId);
-        console.log(`🎬 VISUALFX: Removed processing pipeline for stream ${streamId}`);
+        logger.debug(`🎬 VISUALFX: Removed processing pipeline for stream ${streamId}`);
     }
     
     async removeResizeEffect(streamId) {
-        console.log(`📉 VISUALFX: Removing resize effect from stream ${streamId}`);
+        logger.debug(`📉 VISUALFX: Removing resize effect from stream ${streamId}`);
         
         // Resize effects are client-side, so we just need to emit the removal
         // The actual cleanup happens via the 'visual-effect-removed' socket event
         // which is sent from the main removeEffect method
         // For resize effects, applyToAllViewers=true ensures removal affects all viewers
         
-        console.log(`📉 VISUALFX: Resize effect removal configured - client will handle DOM reset FOR ALL VIEWERS`);
+        logger.debug(`📉 VISUALFX: Resize effect removal configured - client will handle DOM reset FOR ALL VIEWERS`);
     }
     
     // Helper methods to get MediaSoup objects
@@ -1522,7 +1524,7 @@ class VisualFxService extends EventEmitter {
                     queuedEffect.options
                 );
             } catch (error) {
-                console.error('❌ VISUALFX: Failed to process queued effect:', error);
+                logger.error('❌ VISUALFX: Failed to process queued effect:', error);
             }
             
             // Continue processing queue
@@ -1554,11 +1556,11 @@ class VisualFxService extends EventEmitter {
         const timeSinceLastCleanup = now - this.resourceMonitor.lastCleanup;
         
         if (cpuPercent > this.config.cpuThreshold && timeSinceLastCleanup > this.resourceMonitor.cleanupInterval) {
-            console.warn(`⚠️ VISUALFX: High CPU usage detected (${cpuPercent.toFixed(1)}%), cleaning up old effects`);
+            logger.warn(`⚠️ VISUALFX: High CPU usage detected (${cpuPercent.toFixed(1)}%), cleaning up old effects`);
             this.cleanupOldEffects();
             this.resourceMonitor.lastCleanup = now;
         } else if (this.resourceMonitor.memoryUsage > this.config.memoryThreshold) {
-            console.warn(`⚠️ VISUALFX: High memory usage detected (${this.resourceMonitor.memoryUsage.toFixed(0)}MB), cleaning up`);
+            logger.warn(`⚠️ VISUALFX: High memory usage detected (${this.resourceMonitor.memoryUsage.toFixed(0)}MB), cleaning up`);
             this.cleanupOldEffects();
             this.resourceMonitor.lastCleanup = now;
         }
@@ -1571,7 +1573,7 @@ class VisualFxService extends EventEmitter {
         const effectsOk = this.resourceMonitor.activeEffectCount < this.resourceMonitor.maxConcurrentEffects;
         
         if (!cpuOk || !memoryOk || !effectsOk) {
-            console.log(`📊 VISUALFX: Resource check - CPU: ${this.resourceMonitor.cpuUsage.toFixed(1)}% (OK: ${cpuOk}), Memory: ${this.resourceMonitor.memoryUsage.toFixed(0)}MB (OK: ${memoryOk}), Effects: ${this.resourceMonitor.activeEffectCount}/${this.resourceMonitor.maxConcurrentEffects} (OK: ${effectsOk})`);
+            logger.debug(`📊 VISUALFX: Resource check - CPU: ${this.resourceMonitor.cpuUsage.toFixed(1)}% (OK: ${cpuOk}), Memory: ${this.resourceMonitor.memoryUsage.toFixed(0)}MB (OK: ${memoryOk}), Effects: ${this.resourceMonitor.activeEffectCount}/${this.resourceMonitor.maxConcurrentEffects} (OK: ${effectsOk})`);
         }
         
         return cpuOk && memoryOk && effectsOk;
@@ -1596,7 +1598,7 @@ class VisualFxService extends EventEmitter {
             // Remove effects in batch to avoid iterator issues
             for (const effectId of effectsToRemove) {
                 this.removeEffect(streamId, effectId).catch(err => {
-                    console.error(`⚠️ VISUALFX: Error removing expired effect:`, err.message);
+                    logger.error(`⚠️ VISUALFX: Error removing expired effect:`, err.message);
                 });
             }
         }
@@ -1617,29 +1619,29 @@ class VisualFxService extends EventEmitter {
         }
         
         if (cleanedCount > 0) {
-            console.log(`🧹 VISUALFX: Cleaned up ${cleanedCount} expired effects/pipelines`);
+            logger.debug(`🧹 VISUALFX: Cleaned up ${cleanedCount} expired effects/pipelines`);
         }
     }
     
     // Buff integration handlers
     async handleBuffApplied(buffData) {
-        console.log(`🎬 VISUALFX: ===== BUFF APPLIED EVENT RECEIVED =====`);
+        logger.debug(`🎬 VISUALFX: ===== BUFF APPLIED EVENT RECEIVED =====`);
         
         // Check if this is a resumed buff (streamer coming back online with active buff)
         if (buffData.isResumed) {
-            console.log(`🎬 VISUALFX: This is a RESUMED buff for ${buffData.item_name} - re-applying visual effect`);
+            logger.debug(`🎬 VISUALFX: This is a RESUMED buff for ${buffData.item_name} - re-applying visual effect`);
         }
         
-        console.log(`🥔 VISUALFX: handleBuffApplied called with buffData:`, {
+        logger.debug(`🥔 VISUALFX: handleBuffApplied called with buffData:`, {
             item_name: buffData.item_name,
             stream_id: buffData.stream_id,
             user_id: buffData.user_id,
             duration_seconds: buffData.duration_seconds,
             isResumed: buffData.isResumed || false
         });
-        console.log(`🥔 VISUALFX: CRITICAL DEBUG - io availability: ${!!this.io}`);
+        logger.debug(`🥔 VISUALFX: CRITICAL DEBUG - io availability: ${!!this.io}`);
         if (this.io) {
-            console.log(`🥔 VISUALFX: io.engine.clientsCount: ${this.io.engine?.clientsCount || 'unknown'}`);
+            logger.debug(`🥔 VISUALFX: io.engine.clientsCount: ${this.io.engine?.clientsCount || 'unknown'}`);
         }
         
         // Check if this buff should trigger a visual effect
@@ -1703,24 +1705,24 @@ class VisualFxService extends EventEmitter {
         };
         
         const effectId = effectMapping[buffData.item_name];
-        console.log(`🥔 VISUALFX: Mapped item_name '${buffData.item_name}' to effectId '${effectId}'`);
+        logger.debug(`🥔 VISUALFX: Mapped item_name '${buffData.item_name}' to effectId '${effectId}'`);
         
         if (effectId) {
             try {
                 // Get the current streamer's stream ID
                 let streamId = buffData.stream_id;
-                console.log(`🥔 VISUALFX: Initial streamId from buffData: ${streamId}`);
+                logger.debug(`🥔 VISUALFX: Initial streamId from buffData: ${streamId}`);
                 
                 // Primary approach: Always check if buff is for current streamer first
                 if (this.streamService && this.sessionService) {
                     const currentStreamerSocketId = this.streamService.getCurrentStreamer();
-                    console.log(`🥔 VISUALFX: Current streamer socketId: ${currentStreamerSocketId}`);
+                    logger.debug(`🥔 VISUALFX: Current streamer socketId: ${currentStreamerSocketId}`);
                     
                     if (currentStreamerSocketId) {
                         // Get the userId for the current streamer
                         const session = this.sessionService.getSessionBySocketId(currentStreamerSocketId);
                         if (session && session.userId) {
-                            console.log(`🥔 VISUALFX: Current streamer userId: ${session.userId}, buff userId: ${buffData.user_id}`);
+                            logger.debug(`🥔 VISUALFX: Current streamer userId: ${session.userId}, buff userId: ${buffData.user_id}`);
                             
                             // Check if the buff is for the current streamer (handle both positive and negative IDs for viewbots)
                             const streamerUserId = session.userId.toString();
@@ -1729,7 +1731,7 @@ class VisualFxService extends EventEmitter {
                             if (streamerUserId === buffUserId || 
                                 Math.abs(parseInt(streamerUserId)) === Math.abs(parseInt(buffUserId))) {
                                 streamId = currentStreamerSocketId;
-                                console.log(`🥔 VISUALFX: Buff is for current streamer, using socketId: ${streamId}`);
+                                logger.debug(`🥔 VISUALFX: Buff is for current streamer, using socketId: ${streamId}`);
                             }
                         }
                     }
@@ -1738,14 +1740,14 @@ class VisualFxService extends EventEmitter {
                 // Fallback approach: If streamId not set and not current streamer, try to find user's sockets
                 if (!streamId && this.sessionService) {
                     const userSockets = this.sessionService.getSocketsByUserId(buffData.user_id);
-                    console.log(`🥔 VISUALFX: Found ${userSockets ? userSockets.length : 0} sockets for user ${buffData.user_id}`);
+                    logger.debug(`🥔 VISUALFX: Found ${userSockets ? userSockets.length : 0} sockets for user ${buffData.user_id}`);
                     
                     if (userSockets && userSockets.length > 0) {
                         // Check if any of these sockets have an active transport (meaning they're streaming)
                         for (const socketId of userSockets) {
                             if (this.mediasoupService && this.mediasoupService.transports.has(socketId)) {
                                 streamId = socketId;
-                                console.log(`🥔 VISUALFX: Found active transport for socket ${socketId}, using as streamId`);
+                                logger.debug(`🥔 VISUALFX: Found active transport for socket ${socketId}, using as streamId`);
                                 break;
                             }
                         }
@@ -1753,27 +1755,27 @@ class VisualFxService extends EventEmitter {
                         // If no active transport found, use first socket as fallback
                         if (!streamId) {
                             streamId = userSockets[0];
-                            console.log(`🥔 VISUALFX: No active transport found, using first socket as streamId: ${streamId}`);
+                            logger.debug(`🥔 VISUALFX: No active transport found, using first socket as streamId: ${streamId}`);
                         }
                     }
                 }
                 
                 if (streamId) {
-                    console.log(`🥔 VISUALFX: Final streamId determined: ${streamId}`);
-                    console.log(`🥔 VISUALFX: StreamId type: ${typeof streamId}, length: ${streamId.length}`);
+                    logger.debug(`🥔 VISUALFX: Final streamId determined: ${streamId}`);
+                    logger.debug(`🥔 VISUALFX: StreamId type: ${typeof streamId}, length: ${streamId.length}`);
                     
                     // DEBUG: Check if this streamId exists in MediaSoup
                     if (this.mediasoupService && this.mediasoupService.transports) {
                         const hasTransport = this.mediasoupService.transports.has(streamId);
-                        console.log(`🔍 VISUALFX: DEBUG - StreamId "${streamId}" has transport: ${hasTransport}`);
-                        console.log(`🔍 VISUALFX: DEBUG - Available transport keys:`, Array.from(this.mediasoupService.transports.keys()));
+                        logger.debug(`🔍 VISUALFX: DEBUG - StreamId "${streamId}" has transport: ${hasTransport}`);
+                        logger.debug(`🔍 VISUALFX: DEBUG - Available transport keys:`, Array.from(this.mediasoupService.transports.keys()));
                         
                         // Check for similar keys
                         const similarKeys = Array.from(this.mediasoupService.transports.keys()).filter(key => 
                             key.includes(streamId) || streamId.includes(key)
                         );
                         if (similarKeys.length > 0) {
-                            console.log(`🔍 VISUALFX: DEBUG - Similar transport keys found:`, similarKeys);
+                            logger.debug(`🔍 VISUALFX: DEBUG - Similar transport keys found:`, similarKeys);
                         }
                     }
                     
@@ -1784,20 +1786,20 @@ class VisualFxService extends EventEmitter {
                             triggeredByBuff: true,
                             buffId: buffData.id
                         });
-                        console.log(`✅ VISUALFX: Successfully applied ${effectId} effect for buff ${buffData.item_name} to stream ${streamId}`);
+                        logger.debug(`✅ VISUALFX: Successfully applied ${effectId} effect for buff ${buffData.item_name} to stream ${streamId}`);
                     } catch (effectError) {
-                        console.error(`❌ VISUALFX: Effect application failed:`, effectError);
-                        console.error(`❌ VISUALFX: Error name: ${effectError.name}`);
-                        console.error(`❌ VISUALFX: Error message: ${effectError.message}`);
+                        logger.error(`❌ VISUALFX: Effect application failed:`, effectError);
+                        logger.error(`❌ VISUALFX: Error name: ${effectError.name}`);
+                        logger.error(`❌ VISUALFX: Error message: ${effectError.message}`);
                         
                         // Don't re-throw - let the buff work even if effect fails
-                        console.log(`⚠️ VISUALFX: Continuing without visual effect for ${buffData.item_name}`);
+                        logger.debug(`⚠️ VISUALFX: Continuing without visual effect for ${buffData.item_name}`);
                     }
                 } else {
-                    console.log(`⚠️ VISUALFX: Could not determine stream ID for buff ${buffData.item_name}, effect will be client-side only`);
+                    logger.debug(`⚠️ VISUALFX: Could not determine stream ID for buff ${buffData.item_name}, effect will be client-side only`);
                 }
             } catch (error) {
-                console.error('⚠️ VISUALFX: Error in handleBuffApplied, continuing without visual effect:', error);
+                logger.error('⚠️ VISUALFX: Error in handleBuffApplied, continuing without visual effect:', error);
                 // Don't re-throw - let the buff still work even if visual effect fails
             }
         }
@@ -1840,7 +1842,7 @@ class VisualFxService extends EventEmitter {
         const allActiveEffects = this.getActiveEffects();
         
         if (allActiveEffects.length > 0) {
-            console.log(`🔌 VISUALFX: Client ${socket.id} connected, sending ${allActiveEffects.length} active visual effects`);
+            logger.debug(`🔌 VISUALFX: Client ${socket.id} connected, sending ${allActiveEffects.length} active visual effects`);
             
             // Send each active effect to the new client
             allActiveEffects.forEach(effect => {
@@ -1857,17 +1859,17 @@ class VisualFxService extends EventEmitter {
                 
                 // Only send if there's still time remaining on the effect
                 if (eventData.duration > 0) {
-                    console.log(`📡 VISUALFX: Syncing active effect ${effect.effectId} to new client ${socket.id} (${eventData.duration}ms remaining)`);
+                    logger.debug(`📡 VISUALFX: Syncing active effect ${effect.effectId} to new client ${socket.id} (${eventData.duration}ms remaining)`);
                     socket.emit('visual-effect-applied', eventData);
                 }
             });
         } else {
-            console.log(`🔌 VISUALFX: Client ${socket.id} connected, no active visual effects to sync`);
+            logger.debug(`🔌 VISUALFX: Client ${socket.id} connected, no active visual effects to sync`);
         }
         
         // Handle effect sync requests
         socket.on('request-visual-effects-sync', () => {
-            console.log(`🔄 VISUALFX: Client ${socket.id} requested visual effects sync`);
+            logger.debug(`🔄 VISUALFX: Client ${socket.id} requested visual effects sync`);
             this.handleClientConnection(socket);
         });
     }

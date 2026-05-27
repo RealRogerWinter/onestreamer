@@ -8,6 +8,8 @@ const path = require('path');
 const fs = require('fs');
 const webrtcConfig = require('../config/webrtc.config');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotRotationService' });
+
 class ViewBotRotationService {
   constructor(serverUrl) {
     this.serverUrl = serverUrl || 'https://127.0.0.1:8443';
@@ -30,7 +32,7 @@ class ViewBotRotationService {
       cooldownDuration: 600000      // 10 minutes
     };
 
-    console.log(`🔄 ViewBotRotationService: Initialized (backend: ${this.backend})`);
+    logger.debug(`🔄 ViewBotRotationService: Initialized (backend: ${this.backend})`);
   }
 
   /**
@@ -38,7 +40,7 @@ class ViewBotRotationService {
    */
   setLiveKitService(livekitViewBotService) {
     this.livekitViewBotService = livekitViewBotService;
-    console.log('✅ LiveKit ViewBot service registered with ViewBotRotationService');
+    logger.debug('✅ LiveKit ViewBot service registered with ViewBotRotationService');
   }
 
   /**
@@ -48,14 +50,14 @@ class ViewBotRotationService {
    */
   setStreamNotifier(streamNotifier) {
     this.streamNotifier = streamNotifier;
-    console.log('✅ StreamNotifier registered with ViewBotRotationService');
+    logger.debug('✅ StreamNotifier registered with ViewBotRotationService');
   }
   
   /**
    * Initialize with media files
    */
   async initialize() {
-    console.log('📦 ViewBotRotationService: Loading media files...');
+    logger.debug('📦 ViewBotRotationService: Loading media files...');
     
     // Load ALL MP4 files from uploads
     const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -73,12 +75,12 @@ class ViewBotRotationService {
         });
       });
       
-      console.log(`📹 Found ${mp4Files.length} video files in uploads folder`);
+      logger.debug(`📹 Found ${mp4Files.length} video files in uploads folder`);
     }
     
     // Only use bots with real video files, no test patterns
     
-    console.log(`✅ ViewBotRotationService: Loaded ${this.bots.length} bots`);
+    logger.debug(`✅ ViewBotRotationService: Loaded ${this.bots.length} bots`);
     
     // Start rotation if enabled
     if (this.enabled) {
@@ -92,11 +94,11 @@ class ViewBotRotationService {
   async startRotation() {
     // CRITICAL: Check if random stream rotation is active - it has priority
     if (global.randomStreamRotationService && global.randomStreamRotationService.isEnabled) {
-      console.log('🛡️ ViewBotRotationService: Cannot start - Random stream rotation is active');
+      logger.debug('🛡️ ViewBotRotationService: Cannot start - Random stream rotation is active');
       return;
     }
 
-    console.log('🎬 ViewBotRotationService: Starting rotation...');
+    logger.debug('🎬 ViewBotRotationService: Starting rotation...');
     this.enabled = true;
 
     // Stop current bot if any
@@ -110,7 +112,7 @@ class ViewBotRotationService {
    * Stop rotation
    */
   async stopRotation() {
-    console.log('⏹️ ViewBotRotationService: Stopping rotation...');
+    logger.debug('⏹️ ViewBotRotationService: Stopping rotation...');
     this.enabled = false;
     
     // Clear rotation timer
@@ -129,38 +131,38 @@ class ViewBotRotationService {
   async rotateToNextBot() {
     // CRITICAL: Check if random stream rotation is active - it has priority
     if (global.randomStreamRotationService && global.randomStreamRotationService.isEnabled) {
-      console.log('🛡️ ViewBotRotationService: BLOCKED - Random stream rotation is active');
+      logger.debug('🛡️ ViewBotRotationService: BLOCKED - Random stream rotation is active');
       return;
     }
 
     // Prevent concurrent rotations
     if (this.isRotating) {
-      console.log('⚠️ ViewBotRotationService: Rotation already in progress, skipping...');
+      logger.debug('⚠️ ViewBotRotationService: Rotation already in progress, skipping...');
       return;
     }
 
     this.isRotating = true;
     const rotationStartTime = Date.now();
-    console.log('🔄 ViewBotRotationService: Rotating to next bot...');
-    console.log(`🔍 ViewBotRotationService: Current bot before rotation:`, this.currentBot?.id);
+    logger.debug('🔄 ViewBotRotationService: Rotating to next bot...');
+    logger.debug(`🔍 ViewBotRotationService: Current bot before rotation:`, this.currentBot?.id);
 
     try {
       // Stop current bot
       const stopStartTime = Date.now();
-      console.log('🔍 ViewBotRotationService: Stopping current bot...');
+      logger.debug('🔍 ViewBotRotationService: Stopping current bot...');
       await this.stopCurrentBot();
-      console.log(`🔍 ViewBotRotationService: Current bot stopped (took ${Date.now() - stopStartTime}ms)`);
+      logger.debug(`🔍 ViewBotRotationService: Current bot stopped (took ${Date.now() - stopStartTime}ms)`);
 
       // Add a small delay to ensure LiveKit fully removes the participant from the room
       // This prevents multiple viewbots being active simultaneously
       await new Promise(resolve => setTimeout(resolve, 500));
-      console.log('🔍 ViewBotRotationService: Cleanup delay completed');
+      logger.debug('🔍 ViewBotRotationService: Cleanup delay completed');
 
       // Select next bot
       const nextBot = this.selectNextBot();
 
       if (!nextBot) {
-        console.log('⚠️ No available bots (all on cooldown)');
+        logger.debug('⚠️ No available bots (all on cooldown)');
         this.scheduleNextRotation(30000);
         return;
       }
@@ -168,21 +170,21 @@ class ViewBotRotationService {
       // Start the bot
       const startBotTime = Date.now();
       await this.startBot(nextBot);
-      console.log(`⏱️ ViewBotRotationService: Bot started (took ${Date.now() - startBotTime}ms)`);
-      console.log(`⏱️ ViewBotRotationService: Total rotation time: ${Date.now() - rotationStartTime}ms`);
+      logger.debug(`⏱️ ViewBotRotationService: Bot started (took ${Date.now() - startBotTime}ms)`);
+      logger.debug(`⏱️ ViewBotRotationService: Total rotation time: ${Date.now() - rotationStartTime}ms`);
 
       // Schedule next rotation
       const interval = this.getRandomInterval();
       this.scheduleNextRotation(interval);
 
     } catch (error) {
-      console.error('❌ Rotation error:', error);
+      logger.error('❌ Rotation error:', error);
       // Retry in 30 seconds
       this.scheduleNextRotation(30000);
     } finally {
       // Always reset rotation flag
       this.isRotating = false;
-      console.log('✅ ViewBotRotationService: Rotation complete, flag reset');
+      logger.debug('✅ ViewBotRotationService: Rotation complete, flag reset');
     }
   }
   
@@ -195,7 +197,7 @@ class ViewBotRotationService {
     const availableBots = this.bots.filter(bot => {
       // Must have a media file
       if (!bot.mediaFile) {
-        console.log(`⚠️ Skipping ${bot.id} - no media file`);
+        logger.debug(`⚠️ Skipping ${bot.id} - no media file`);
         return false;
       }
       
@@ -215,8 +217,8 @@ class ViewBotRotationService {
    * Start a bot
    */
   async startBot(bot) {
-    console.log(`🚀 ViewBotRotationService: Starting ${bot.id} (backend: ${this.backend})`);
-    console.log(`🔍 ViewBotRotationService: Current bot before start:`, this.currentBot?.id);
+    logger.debug(`🚀 ViewBotRotationService: Starting ${bot.id} (backend: ${this.backend})`);
+    logger.debug(`🔍 ViewBotRotationService: Current bot before start:`, this.currentBot?.id);
 
     try {
       // Use LiveKit or MediaSoup based on backend
@@ -230,10 +232,10 @@ class ViewBotRotationService {
       this.currentBot = bot;
       this.cooldowns.set(bot.id, Date.now());
 
-      console.log(`✅ ViewBotRotationService: ${bot.id} is now streaming`);
+      logger.debug(`✅ ViewBotRotationService: ${bot.id} is now streaming`);
 
     } catch (error) {
-      console.error(`❌ Failed to start ${bot.id}:`, error);
+      logger.error(`❌ Failed to start ${bot.id}:`, error);
 
       // Cleanup on failure
       if (bot.client) {
@@ -249,7 +251,7 @@ class ViewBotRotationService {
    * Start LiveKit RTMP ingress bot
    */
   async startLiveKitBot(bot) {
-    console.log(`🎥 ViewBotRotationService: Starting LiveKit RTMP ingress bot ${bot.id}`);
+    logger.debug(`🎥 ViewBotRotationService: Starting LiveKit RTMP ingress bot ${bot.id}`);
 
     const result = await this.livekitViewBotService.createViewBot({
       videoFile: bot.mediaFile
@@ -260,22 +262,22 @@ class ViewBotRotationService {
     }
 
     this.livekitViewBotId = result.botId;
-    console.log(`✅ LiveKit viewbot created: ${this.livekitViewBotId}`);
+    logger.debug(`✅ LiveKit viewbot created: ${this.livekitViewBotId}`);
   }
 
   /**
    * Start MediaSoup socket-based bot
    */
   async startMediaSoupBot(bot) {
-    console.log(`🔍 ViewBotRotationService: Server URL:`, this.serverUrl);
+    logger.debug(`🔍 ViewBotRotationService: Server URL:`, this.serverUrl);
 
     // Create Socket.IO client for this bot
     bot.client = new ViewBotSocketClient(bot.id, this.serverUrl, bot.mediaFile);
 
     // Connect to server
-    console.log(`🔍 ViewBotRotationService: Connecting ${bot.id}...`);
+    logger.debug(`🔍 ViewBotRotationService: Connecting ${bot.id}...`);
     await bot.client.connect();
-    console.log(`🔍 ViewBotRotationService: ${bot.id} connected, starting stream...`);
+    logger.debug(`🔍 ViewBotRotationService: ${bot.id} connected, starting stream...`);
 
     // Start streaming
     await bot.client.startStreaming();
@@ -288,7 +290,7 @@ class ViewBotRotationService {
     if (!this.currentBot) return;
 
     const bot = this.currentBot;
-    console.log(`⏹️ ViewBotRotationService: Stopping ${bot.id} (backend: ${this.backend})...`);
+    logger.debug(`⏹️ ViewBotRotationService: Stopping ${bot.id} (backend: ${this.backend})...`);
 
     // Emit stream-ended event BEFORE stopping the bot.
     // PR 3.1: routed through StreamNotifier (chokepoint). The `global.io`
@@ -297,14 +299,14 @@ class ViewBotRotationService {
     // misses the setStreamNotifier setter, the emit still goes out
     // through the legacy access path rather than silently dropping.
     if (this.streamNotifier) {
-      console.log(`📢 ViewBotRotationService: Emitting stream-ended for ${bot.id}`);
+      logger.debug(`📢 ViewBotRotationService: Emitting stream-ended for ${bot.id}`);
       this.streamNotifier.streamEnded({
         reason: 'rotation',
         previousStreamer: bot.id,
         timestamp: Date.now(),
       });
     } else if (global.io) {
-      console.log(`📢 ViewBotRotationService: Emitting stream-ended for ${bot.id} (fallback via global.io)`);
+      logger.debug(`📢 ViewBotRotationService: Emitting stream-ended for ${bot.id} (fallback via global.io)`);
       global.io.emit('stream-ended', {
         reason: 'rotation',
         previousStreamer: bot.id,
@@ -318,7 +320,7 @@ class ViewBotRotationService {
         await this.livekitViewBotService.stopViewBot(this.livekitViewBotId);
         this.livekitViewBotId = null;
       } catch (error) {
-        console.error(`⚠️ Error stopping LiveKit viewbot ${bot.id}:`, error);
+        logger.error(`⚠️ Error stopping LiveKit viewbot ${bot.id}:`, error);
       }
     }
 
@@ -327,7 +329,7 @@ class ViewBotRotationService {
       try {
         await bot.client.stopStreaming();
       } catch (error) {
-        console.error(`⚠️ Error stopping ${bot.id}:`, error.message);
+        logger.error(`⚠️ Error stopping ${bot.id}:`, error.message);
       }
 
       // Always cleanup resources
@@ -336,7 +338,7 @@ class ViewBotRotationService {
     }
 
     this.currentBot = null;
-    console.log(`✅ ViewBotRotationService: ${bot.id} stopped and cleaned up`);
+    logger.debug(`✅ ViewBotRotationService: ${bot.id} stopped and cleaned up`);
   }
   
   /**
@@ -352,30 +354,30 @@ class ViewBotRotationService {
     if (roll < 0.5) {
       // 0.5% chance: ULTRA RARE - Very long interval (20-45 minutes)
       interval = 1200000 + Math.random() * 1500000; // 20-45 minutes
-      console.log(`🎲💎 ULTRA RARE: Extremely long interval rolled (0.5% chance)!`);
+      logger.debug(`🎲💎 ULTRA RARE: Extremely long interval rolled (0.5% chance)!`);
     } else if (roll < 2.5) {
       // 2% chance: > 10 minutes (10-20 minutes)
       interval = 600000 + Math.random() * 600000; // 10-20 minutes
-      console.log(`🎲 RARE: Super long interval rolled (2% chance)`);
+      logger.debug(`🎲 RARE: Super long interval rolled (2% chance)`);
     } else if (roll < 7.5) {
       // 5% chance total: > 6 minutes (6-10 minutes)
       interval = 360000 + Math.random() * 240000; // 6-10 minutes
-      console.log(`🎲 UNCOMMON: Long interval rolled (5% chance)`);
+      logger.debug(`🎲 UNCOMMON: Long interval rolled (5% chance)`);
     } else if (roll < 11.5) {
       // 4% chance: < 1 minute (15-60 seconds)
       interval = 15000 + Math.random() * 45000; // 15-60 seconds
-      console.log(`🎲 UNCOMMON: Short interval rolled (4% chance)`);
+      logger.debug(`🎲 UNCOMMON: Short interval rolled (4% chance)`);
     } else if (roll < 12) {
       // 0.5% chance: ULTRA RARE - Very short interval (5-15 seconds)
       interval = 5000 + Math.random() * 10000; // 5-15 seconds
-      console.log(`🎲💎 ULTRA RARE: Lightning fast rotation rolled (0.5% chance)!`);
+      logger.debug(`🎲💎 ULTRA RARE: Lightning fast rotation rolled (0.5% chance)!`);
     } else {
       // 88% chance: Normal range (1-6 minutes by default)
       interval = Math.floor(Math.random() * (maxRotationInterval - minRotationInterval)) + minRotationInterval;
-      console.log(`🎲 NORMAL: Standard interval rolled (88% chance)`);
+      logger.debug(`🎲 NORMAL: Standard interval rolled (88% chance)`);
     }
     
-    console.log(`⏱️ Next rotation in ${Math.round(interval / 1000)} seconds (${(interval / 60000).toFixed(1)} minutes)`);
+    logger.debug(`⏱️ Next rotation in ${Math.round(interval / 1000)} seconds (${(interval / 60000).toFixed(1)} minutes)`);
     return interval;
   }
   
@@ -391,7 +393,7 @@ class ViewBotRotationService {
 
     // CRITICAL: Don't schedule if random stream rotation is active
     if (global.randomStreamRotationService && global.randomStreamRotationService.isEnabled) {
-      console.log('🛡️ ViewBotRotationService: Not scheduling - Random stream rotation is active');
+      logger.debug('🛡️ ViewBotRotationService: Not scheduling - Random stream rotation is active');
       return;
     }
 
@@ -404,8 +406,8 @@ class ViewBotRotationService {
    * Force rotation
    */
   async forceRotation() {
-    console.log('🔄 ViewBotRotationService: forceRotation() called at', new Date().toISOString());
-    console.log('🔄 ViewBotRotationService: Forcing rotation...');
+    logger.debug('🔄 ViewBotRotationService: forceRotation() called at', new Date().toISOString());
+    logger.debug('🔄 ViewBotRotationService: Forcing rotation...');
     
     // Clear existing timer
     if (this.rotationTimer) {
@@ -441,14 +443,14 @@ class ViewBotRotationService {
    */
   updateSettings(newSettings) {
     this.settings = { ...this.settings, ...newSettings };
-    console.log('⚙️ Updated settings:', this.settings);
+    logger.debug('⚙️ Updated settings:', this.settings);
   }
   
   /**
    * Cleanup
    */
   async cleanup() {
-    console.log('🧹 ViewBotRotationService: Cleaning up...');
+    logger.debug('🧹 ViewBotRotationService: Cleaning up...');
     await this.stopRotation();
   }
 }

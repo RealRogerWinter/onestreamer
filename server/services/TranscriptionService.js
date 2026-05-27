@@ -6,6 +6,8 @@ const { v4: uuidv4 } = require('uuid');
 const AudioBufferService = require('./AudioBufferService');
 const TranscriptionAudioAdapter = require('./TranscriptionAudioAdapter');
 
+const logger = require('../bootstrap/logger').child({ svc: 'TranscriptionService' });
+
 class TranscriptionService extends EventEmitter {
     constructor(database, mediasoupService, recordingService = null) {
         super();
@@ -51,11 +53,11 @@ class TranscriptionService extends EventEmitter {
         // Ensure temp directory exists
         this.initializeDirectories();
         
-        console.log('🎙️ TRANSCRIPTION: Service initialized');
-        console.log(`   Platform: ${this.isWindows ? 'Windows' : 'Unix-like'}`);
-        console.log(`   Model: ${this.config.model}`);
-        console.log(`   Chunk duration: ${this.config.chunkDuration}ms`);
-        console.log(`   Backend: ${this.audioAdapter.backendType.toUpperCase()}`);
+        logger.debug('🎙️ TRANSCRIPTION: Service initialized');
+        logger.debug(`   Platform: ${this.isWindows ? 'Windows' : 'Unix-like'}`);
+        logger.debug(`   Model: ${this.config.model}`);
+        logger.debug(`   Chunk duration: ${this.config.chunkDuration}ms`);
+        logger.debug(`   Backend: ${this.audioAdapter.backendType.toUpperCase()}`);
         
         // Start periodic cleanup of old audio files
         this.startPeriodicCleanup(15); // Clean up every 15 minutes
@@ -73,7 +75,7 @@ class TranscriptionService extends EventEmitter {
     }
     
     async startTranscription(streamerId, options = {}) {
-        console.log(`🎙️ TRANSCRIPTION: Starting transcription for ${streamerId}`);
+        logger.debug(`🎙️ TRANSCRIPTION: Starting transcription for ${streamerId}`);
         
         const sessionId = uuidv4();
         
@@ -83,15 +85,15 @@ class TranscriptionService extends EventEmitter {
             let effectiveStreamerId = streamerId;
 
             if (!currentStreamer) {
-                console.error(`❌ TRANSCRIPTION: No active streamer found`);
+                logger.error(`❌ TRANSCRIPTION: No active streamer found`);
                 return { success: false, error: 'No active streamer found' };
             }
 
             // If provided streamerId doesn't match current streamer, use current streamer instead
             // This accommodates ViewBot streams and streamer transitions
             if (currentStreamer !== streamerId) {
-                console.log(`⚠️ TRANSCRIPTION: Streamer ID mismatch - requested: ${streamerId}, current: ${currentStreamer}`);
-                console.log(`🔄 TRANSCRIPTION: Using current active streamer: ${currentStreamer}`);
+                logger.debug(`⚠️ TRANSCRIPTION: Streamer ID mismatch - requested: ${streamerId}, current: ${currentStreamer}`);
+                logger.debug(`🔄 TRANSCRIPTION: Using current active streamer: ${currentStreamer}`);
                 effectiveStreamerId = currentStreamer;
             }
 
@@ -99,25 +101,25 @@ class TranscriptionService extends EventEmitter {
             const audioProducer = await this.audioAdapter.getAudioProducer(effectiveStreamerId);
 
             if (!audioProducer) {
-                console.error(`❌ TRANSCRIPTION: No audio producer found for ${effectiveStreamerId}`);
+                logger.error(`❌ TRANSCRIPTION: No audio producer found for ${effectiveStreamerId}`);
                 if (this.audioAdapter.isMediaSoup()) {
                     const producerMap = this.mediasoupService.producers.get(effectiveStreamerId);
-                    console.log(`   Available producers:`, producerMap ? Array.from(producerMap.keys()) : 'none');
+                    logger.debug(`   Available producers:`, producerMap ? Array.from(producerMap.keys()) : 'none');
                 } else {
-                    console.log(`   LiveKit: No participants with audio found in room`);
+                    logger.debug(`   LiveKit: No participants with audio found in room`);
                 }
                 return { success: false, error: 'No audio producer available' };
             }
 
-            console.log(`✅ TRANSCRIPTION: Found audio producer for ${effectiveStreamerId}`);
+            logger.debug(`✅ TRANSCRIPTION: Found audio producer for ${effectiveStreamerId}`);
             if (audioProducer.id) {
-                console.log(`   Producer ID: ${audioProducer.id}`);
+                logger.debug(`   Producer ID: ${audioProducer.id}`);
             }
             if (audioProducer.kind) {
-                console.log(`   Producer kind: ${audioProducer.kind}`);
+                logger.debug(`   Producer kind: ${audioProducer.kind}`);
             }
             if (audioProducer.paused !== undefined) {
-                console.log(`   Producer paused: ${audioProducer.paused}`);
+                logger.debug(`   Producer paused: ${audioProducer.paused}`);
             }
             
             // Create transcription session
@@ -177,10 +179,10 @@ class TranscriptionService extends EventEmitter {
 
             // Resume the consumer to start audio flow (MediaSoup only)
             if (this.audioAdapter.isMediaSoup() && session.consumer && typeof session.consumer.resume === 'function') {
-                console.log(`▶️ TRANSCRIPTION: Starting audio flow (MediaSoup)...`);
+                logger.debug(`▶️ TRANSCRIPTION: Starting audio flow (MediaSoup)...`);
                 await session.consumer.resume();
             } else if (this.audioAdapter.isLiveKit()) {
-                console.log(`▶️ TRANSCRIPTION: Audio capture active (LiveKit)...`);
+                logger.debug(`▶️ TRANSCRIPTION: Audio capture active (LiveKit)...`);
             }
             
             session.status = 'active';
@@ -191,8 +193,8 @@ class TranscriptionService extends EventEmitter {
                 session.recordingStartTime = Date.now();
                 session.recordingStartPosition = 0;
                 
-                console.log(`🔴 TRANSCRIPTION: Recording started!`);
-                console.log(`   Target duration: ${options.duration}s`);
+                logger.debug(`🔴 TRANSCRIPTION: Recording started!`);
+                logger.debug(`   Target duration: ${options.duration}s`);
                 
                 // Add extra time to compensate for any startup delays
                 // User starts counting when they click, so we need to capture from that moment
@@ -201,14 +203,14 @@ class TranscriptionService extends EventEmitter {
                 
                 // Set auto-stop timer for duration + buffer time
                 session.autoStopTimer = setTimeout(async () => {
-                    console.log(`⏰ TRANSCRIPTION: Stopping after ${totalRecordTime}s (includes ${extraTime}s buffer)`);
+                    logger.debug(`⏰ TRANSCRIPTION: Stopping after ${totalRecordTime}s (includes ${extraTime}s buffer)`);
 
                     // Wait a moment to ensure all audio is written
                     await new Promise(resolve => setTimeout(resolve, 500));
 
                     // For LiveKit RTC, finalize the WAV file before processing
                     if (this.audioAdapter.isLiveKit() && session.pcmFile) {
-                        console.log(`📝 TRANSCRIPTION: Finalizing LiveKit audio capture...`);
+                        logger.debug(`📝 TRANSCRIPTION: Finalizing LiveKit audio capture...`);
                         await this.audioAdapter.finalizeLiveKitCapture(session);
                     }
 
@@ -219,7 +221,7 @@ class TranscriptionService extends EventEmitter {
                     const stopResult = await this.stopTranscription(session.id);
 
                     if (stopResult.success) {
-                        console.log(`✅ TRANSCRIPTION: Timed session ${session.id} completed`);
+                        logger.debug(`✅ TRANSCRIPTION: Timed session ${session.id} completed`);
                         
                         // Emit completion event
                         this.emit('transcription-stopped', {
@@ -234,13 +236,13 @@ class TranscriptionService extends EventEmitter {
                     }
                 }, totalRecordTime * 1000);
                 
-                console.log(`⏲️ TRANSCRIPTION: Will record for ${totalRecordTime}s total`);
+                logger.debug(`⏲️ TRANSCRIPTION: Will record for ${totalRecordTime}s total`);
             } else {
                 // Start periodic transcription processing for continuous mode
                 this.startTranscriptionProcessing(session);
             }
             
-            console.log(`🎧 TRANSCRIPTION: Session ${sessionId} ready with audio buffer`);
+            logger.debug(`🎧 TRANSCRIPTION: Session ${sessionId} ready with audio buffer`);
             
             // Store session
             this.activeSessions.set(sessionId, session);
@@ -255,7 +257,7 @@ class TranscriptionService extends EventEmitter {
                 startTime: session.startTime
             });
             
-            console.log(`✅ TRANSCRIPTION: Started session ${sessionId} for ${effectiveStreamerId}`);
+            logger.debug(`✅ TRANSCRIPTION: Started session ${sessionId} for ${effectiveStreamerId}`);
             
             return {
                 success: true,
@@ -264,7 +266,7 @@ class TranscriptionService extends EventEmitter {
             };
             
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Failed to start:', error);
+            logger.error('❌ TRANSCRIPTION: Failed to start:', error);
             return { success: false, error: error.message };
         }
     }
@@ -272,12 +274,12 @@ class TranscriptionService extends EventEmitter {
     // Legacy MediaSoup-specific methods - now handled by TranscriptionAudioAdapter
     // These are kept for backward compatibility but are no longer used
     async createAudioTransport() {
-        console.warn('⚠️ TRANSCRIPTION: createAudioTransport() is deprecated, use TranscriptionAudioAdapter instead');
+        logger.warn('⚠️ TRANSCRIPTION: createAudioTransport() is deprecated, use TranscriptionAudioAdapter instead');
         return await this.audioAdapter.createMediaSoupAudioCapture('legacy', this.mediasoupService.getCurrentStreamer());
     }
 
     async createAudioConsumer(session, audioProducer) {
-        console.warn('⚠️ TRANSCRIPTION: createAudioConsumer() is deprecated, use TranscriptionAudioAdapter instead');
+        logger.warn('⚠️ TRANSCRIPTION: createAudioConsumer() is deprecated, use TranscriptionAudioAdapter instead');
         return { success: true, consumer: session.consumer };
     }
     
@@ -294,7 +296,7 @@ class TranscriptionService extends EventEmitter {
                 // Get current buffer duration
                 const bufferInfo = await this.audioBufferService.getBufferInfo(session.id);
                 if (!bufferInfo || !bufferInfo.duration) {
-                    console.log(`⚠️ TRANSCRIPTION: No buffer info available yet`);
+                    logger.debug(`⚠️ TRANSCRIPTION: No buffer info available yet`);
                     return;
                 }
                 
@@ -303,7 +305,7 @@ class TranscriptionService extends EventEmitter {
                 
                 // Only process if we have at least 5 seconds of new audio
                 if (newAudioDuration < session.processingInterval) {
-                    console.log(`⏳ TRANSCRIPTION: Waiting for more audio (${newAudioDuration.toFixed(1)}s available)`);
+                    logger.debug(`⏳ TRANSCRIPTION: Waiting for more audio (${newAudioDuration.toFixed(1)}s available)`);
                     return;
                 }
                 
@@ -319,8 +321,8 @@ class TranscriptionService extends EventEmitter {
                 if (extractResult.success) {
                     session.chunkCount++;
                     session.lastProcessedDuration += extractDuration; // Update last processed position
-                    console.log(`🎵 TRANSCRIPTION: Processing chunk ${session.chunkCount} (${extractResult.duration.toFixed(1)}s of new audio)`);
-                    console.log(`   Processed up to: ${session.lastProcessedDuration.toFixed(1)}s`);
+                    logger.debug(`🎵 TRANSCRIPTION: Processing chunk ${session.chunkCount} (${extractResult.duration.toFixed(1)}s of new audio)`);
+                    logger.debug(`   Processed up to: ${session.lastProcessedDuration.toFixed(1)}s`);
                     
                     // Transcribe the extracted audio
                     const transcription = await this.transcribeWithWhisperCpp(
@@ -334,7 +336,7 @@ class TranscriptionService extends EventEmitter {
                         session.totalTranscription += ' ' + transcription;
                         session.wordCount += transcription.split(/\s+/).length;
                         
-                        console.log(`📝 TRANSCRIPTION [${session.chunkCount}]: ${transcription.substring(0, 100)}...`);
+                        logger.debug(`📝 TRANSCRIPTION [${session.chunkCount}]: ${transcription.substring(0, 100)}...`);
                         
                         // Emit transcription event
                         this.emit('transcription-chunk', {
@@ -349,24 +351,24 @@ class TranscriptionService extends EventEmitter {
                         // Save to database
                         await this.saveTranscriptionChunk(session, transcription, session.chunkCount);
                     } else if (transcription && transcription.trim() === 'you') {
-                        console.log(`⚠️ TRANSCRIPTION: Ignoring 'you' hallucination from chunk ${session.chunkCount}`);
+                        logger.debug(`⚠️ TRANSCRIPTION: Ignoring 'you' hallucination from chunk ${session.chunkCount}`);
                     }
                     
                     // Clean up extracted audio file after successful transcription
                     try {
                         if (fs.existsSync(extractResult.audioPath)) {
                             fs.unlinkSync(extractResult.audioPath);
-                            console.log(`🧹 TRANSCRIPTION: Deleted processed audio file: ${path.basename(extractResult.audioPath)}`);
+                            logger.debug(`🧹 TRANSCRIPTION: Deleted processed audio file: ${path.basename(extractResult.audioPath)}`);
                         }
                     } catch (e) {
-                        console.error(`⚠️ TRANSCRIPTION: Failed to delete audio file:`, e.message);
+                        logger.error(`⚠️ TRANSCRIPTION: Failed to delete audio file:`, e.message);
                     }
                 } else {
-                    console.log(`⚠️ TRANSCRIPTION: Could not extract audio: ${extractResult.error}`);
+                    logger.debug(`⚠️ TRANSCRIPTION: Could not extract audio: ${extractResult.error}`);
                 }
                 
             } catch (error) {
-                console.error(`❌ TRANSCRIPTION: Error processing chunk:`, error);
+                logger.error(`❌ TRANSCRIPTION: Error processing chunk:`, error);
             } finally {
                 session.processingChunk = false;
             }
@@ -387,7 +389,7 @@ class TranscriptionService extends EventEmitter {
     async saveAsWav(audioBuffer, outputPath) {
         // If the buffer is raw Opus data, decode it first using FFmpeg
         if (this.isOpusData(audioBuffer)) {
-            console.log(`🎵 TRANSCRIPTION: Converting Opus to WAV using FFmpeg`);
+            logger.debug(`🎵 TRANSCRIPTION: Converting Opus to WAV using FFmpeg`);
             await this.convertOpusToWav(audioBuffer, outputPath);
         } else {
             // Assume PCM data - create WAV header
@@ -457,10 +459,10 @@ class TranscriptionService extends EventEmitter {
                     } catch (e) {}
                     
                     if (code === 0 && fs.existsSync(outputPath)) {
-                        console.log(`✅ TRANSCRIPTION: Converted Opus to WAV: ${outputPath}`);
+                        logger.debug(`✅ TRANSCRIPTION: Converted Opus to WAV: ${outputPath}`);
                         resolve();
                     } else {
-                        console.error(`❌ TRANSCRIPTION: FFmpeg failed: ${stderr}`);
+                        logger.error(`❌ TRANSCRIPTION: FFmpeg failed: ${stderr}`);
                         reject(new Error(`FFmpeg conversion failed: ${stderr}`));
                     }
                 });
@@ -503,7 +505,7 @@ class TranscriptionService extends EventEmitter {
                 args.push('-l', config.language);
             }
             
-            console.log(`🎙️ WHISPER: Running command: ${whisperExe} ${args.join(' ')}`);
+            logger.debug(`🎙️ WHISPER: Running command: ${whisperExe} ${args.join(' ')}`);
             const whisperProcess = spawn(whisperExe, args);
             
             let output = '';
@@ -512,7 +514,7 @@ class TranscriptionService extends EventEmitter {
             
             // Add timeout to kill hanging whisper process
             timeoutId = setTimeout(() => {
-                console.log('⚠️ WHISPER: Process timeout, killing...');
+                logger.debug('⚠️ WHISPER: Process timeout, killing...');
                 whisperProcess.kill('SIGTERM');
                 setTimeout(() => {
                     if (!whisperProcess.killed) {
@@ -537,7 +539,7 @@ class TranscriptionService extends EventEmitter {
                     const txtPath = audioPath + '.txt';
                     if (fs.existsSync(txtPath)) {
                         const transcription = fs.readFileSync(txtPath, 'utf8').trim();
-                        console.log(`✅ WHISPER: Transcription from file (${transcription.split(' ').length} words)`);
+                        logger.debug(`✅ WHISPER: Transcription from file (${transcription.split(' ').length} words)`);
                         fs.unlinkSync(txtPath);
                         resolve(transcription);
                     } else if (output.trim()) {
@@ -549,18 +551,18 @@ class TranscriptionService extends EventEmitter {
                             line.trim().length > 0
                         );
                         const transcription = transcriptionLines.join(' ').trim();
-                        console.log(`✅ WHISPER: Transcription from stdout (${transcription.split(' ').length} words)`);
+                        logger.debug(`✅ WHISPER: Transcription from stdout (${transcription.split(' ').length} words)`);
                         resolve(transcription);
                     } else {
-                        console.log('⚠️ WHISPER: No transcription output');
+                        logger.debug('⚠️ WHISPER: No transcription output');
                         resolve('');
                     }
                 } else if (code === -15 || code === 143) { // SIGTERM
-                    console.log('⚠️ WHISPER: Process timed out');
+                    logger.debug('⚠️ WHISPER: Process timed out');
                     resolve(''); // Return empty string on timeout
                 } else {
-                    console.error(`❌ WHISPER: Process exited with code ${code}`);
-                    console.error(`   stderr: ${stderr}`);
+                    logger.error(`❌ WHISPER: Process exited with code ${code}`);
+                    logger.error(`   stderr: ${stderr}`);
                     reject(new Error(`Whisper process exited with code ${code}`));
                 }
             });
@@ -576,25 +578,25 @@ class TranscriptionService extends EventEmitter {
     
     async transcribeWithNodeWhisper(audioPath, config) {
         // Use whisper.cpp on Windows
-        console.log('🎙️ TRANSCRIPTION: Using whisper.cpp for transcription');
-        console.log(`   Audio file: ${audioPath}`);
-        console.log(`   Model: ${config.model}`);
-        console.log(`   Language: ${config.language}`);
+        logger.debug('🎙️ TRANSCRIPTION: Using whisper.cpp for transcription');
+        logger.debug(`   Audio file: ${audioPath}`);
+        logger.debug(`   Model: ${config.model}`);
+        logger.debug(`   Language: ${config.language}`);
         
         try {
             // Use the same whisper.cpp method
             const result = await this.transcribeWithWhisperCpp(audioPath, config);
-            console.log(`📝 TRANSCRIPTION: Result: "${result}"`);
+            logger.debug(`📝 TRANSCRIPTION: Result: "${result}"`);
             return result;
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Whisper.cpp failed:', error);
+            logger.error('❌ TRANSCRIPTION: Whisper.cpp failed:', error);
             // Return empty string instead of demo text
             return '';
         }
     }
     
     async stopTranscription(sessionId) {
-        console.log(`🛑 TRANSCRIPTION: Stopping session ${sessionId}`);
+        logger.debug(`🛑 TRANSCRIPTION: Stopping session ${sessionId}`);
         
         const session = this.activeSessions.get(sessionId);
         if (!session) {
@@ -629,7 +631,7 @@ class TranscriptionService extends EventEmitter {
             transcription: session.totalTranscription || session.lastTranscription || ''
         });
         
-        console.log(`✅ TRANSCRIPTION: Stopped session ${sessionId}`);
+        logger.debug(`✅ TRANSCRIPTION: Stopped session ${sessionId}`);
         
         return {
             success: true,
@@ -641,24 +643,24 @@ class TranscriptionService extends EventEmitter {
     
     async cleanupSession(session) {
         try {
-            console.log(`🧹 TRANSCRIPTION: Cleaning up session ${session.id}`);
+            logger.debug(`🧹 TRANSCRIPTION: Cleaning up session ${session.id}`);
 
             // Clear auto-stop timer if it exists
             if (session.autoStopTimer) {
                 clearTimeout(session.autoStopTimer);
-                console.log(`✅ TRANSCRIPTION: Cleared auto-stop timer`);
+                logger.debug(`✅ TRANSCRIPTION: Cleared auto-stop timer`);
             }
 
             // Stop transcription processing interval
             if (session.transcriptionInterval) {
                 clearInterval(session.transcriptionInterval);
-                console.log(`✅ TRANSCRIPTION: Stopped transcription interval`);
+                logger.debug(`✅ TRANSCRIPTION: Stopped transcription interval`);
             }
 
             // Stop audio buffering
             if (this.audioBufferService) {
                 await this.audioBufferService.stopBuffering(session.id);
-                console.log(`✅ TRANSCRIPTION: Stopped audio buffering`);
+                logger.debug(`✅ TRANSCRIPTION: Stopped audio buffering`);
             }
 
             // Stop FFmpeg process if it exists (legacy)
@@ -669,7 +671,7 @@ class TranscriptionService extends EventEmitter {
             // Use adapter to cleanup audio capture resources
             if (this.audioAdapter) {
                 await this.audioAdapter.cleanup(session);
-                console.log(`✅ TRANSCRIPTION: Adapter cleanup completed`);
+                logger.debug(`✅ TRANSCRIPTION: Adapter cleanup completed`);
             } else {
                 // Fallback to direct cleanup (for backward compatibility)
                 // Close consumer
@@ -688,7 +690,7 @@ class TranscriptionService extends EventEmitter {
             }
 
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Error during cleanup:', error);
+            logger.error('❌ TRANSCRIPTION: Error during cleanup:', error);
         }
     }
     
@@ -714,7 +716,7 @@ class TranscriptionService extends EventEmitter {
             ]);
             
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Failed to save to database:', error);
+            logger.error('❌ TRANSCRIPTION: Failed to save to database:', error);
         }
     }
     
@@ -736,7 +738,7 @@ class TranscriptionService extends EventEmitter {
             ]);
             
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Failed to save chunk to database:', error);
+            logger.error('❌ TRANSCRIPTION: Failed to save chunk to database:', error);
         }
     }
     
@@ -761,7 +763,7 @@ class TranscriptionService extends EventEmitter {
             ]);
             
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Failed to update database:', error);
+            logger.error('❌ TRANSCRIPTION: Failed to update database:', error);
         }
     }
     
@@ -779,7 +781,7 @@ class TranscriptionService extends EventEmitter {
             return result;
             
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Failed to get transcription:', error);
+            logger.error('❌ TRANSCRIPTION: Failed to get transcription:', error);
             return null;
         }
     }
@@ -865,7 +867,7 @@ class TranscriptionService extends EventEmitter {
             };
             
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Failed to get history:', error);
+            logger.error('❌ TRANSCRIPTION: Failed to get history:', error);
             return {
                 transcriptions: [],
                 total: 0,
@@ -893,7 +895,7 @@ class TranscriptionService extends EventEmitter {
             };
             
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Failed to delete old transcriptions:', error);
+            logger.error('❌ TRANSCRIPTION: Failed to delete old transcriptions:', error);
             return {
                 success: false,
                 error: error.message
@@ -904,31 +906,31 @@ class TranscriptionService extends EventEmitter {
     // Configuration methods
     enableTranscription() {
         this.config.enableTranscription = true;
-        console.log('✅ TRANSCRIPTION: Enabled');
+        logger.debug('✅ TRANSCRIPTION: Enabled');
     }
     
     disableTranscription() {
         this.config.enableTranscription = false;
-        console.log('⏸️ TRANSCRIPTION: Disabled');
+        logger.debug('⏸️ TRANSCRIPTION: Disabled');
     }
     
     setModel(model) {
         const validModels = ['tiny', 'base', 'small', 'medium', 'large'];
         if (validModels.includes(model)) {
             this.config.model = model;
-            console.log(`✅ TRANSCRIPTION: Model set to ${model}`);
+            logger.debug(`✅ TRANSCRIPTION: Model set to ${model}`);
         } else {
-            console.error(`❌ TRANSCRIPTION: Invalid model ${model}`);
+            logger.error(`❌ TRANSCRIPTION: Invalid model ${model}`);
         }
     }
     
     setLanguage(language) {
         this.config.language = language;
-        console.log(`✅ TRANSCRIPTION: Language set to ${language || 'auto'}`);
+        logger.debug(`✅ TRANSCRIPTION: Language set to ${language || 'auto'}`);
     }
     
     async startTimedTranscription(streamerId, duration = 30, options = {}) {
-        console.log(`⏱️ TRANSCRIPTION: Starting timed transcription for ${streamerId} (${duration}s)`);
+        logger.debug(`⏱️ TRANSCRIPTION: Starting timed transcription for ${streamerId} (${duration}s)`);
         
         try {
             // Start a regular transcription session with timed flag
@@ -947,38 +949,38 @@ class TranscriptionService extends EventEmitter {
             
             if (session) {
                 // Timer is already set in startTranscription for timed recordings
-                console.log(`✅ TRANSCRIPTION: Timed session ${sessionId} is recording for ${duration}s`);
+                logger.debug(`✅ TRANSCRIPTION: Timed session ${sessionId} is recording for ${duration}s`);
             }
             
             return result;
             
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Failed to start timed transcription:', error);
+            logger.error('❌ TRANSCRIPTION: Failed to start timed transcription:', error);
             return { success: false, error: error.message };
         }
     }
     
     async processTimedRecording(session) {
         try {
-            console.log(`🎵 TRANSCRIPTION: Processing complete ${session.timedDuration}s recording`);
-            console.log(`🔍 TRANSCRIPTION: Backend check - isLiveKit: ${this.audioAdapter.isLiveKit()}, backendType: ${this.audioAdapter.backendType}`);
+            logger.debug(`🎵 TRANSCRIPTION: Processing complete ${session.timedDuration}s recording`);
+            logger.debug(`🔍 TRANSCRIPTION: Backend check - isLiveKit: ${this.audioAdapter.isLiveKit()}, backendType: ${this.audioAdapter.backendType}`);
 
             // For LiveKit RTC capture, WAV file is already finalized by cleanup
             // For MediaSoup, we need to extract from the buffer
             if (this.audioAdapter.isLiveKit()) {
-                console.log(`📝 TRANSCRIPTION: LiveKit RTC - using finalized WAV file`);
+                logger.debug(`📝 TRANSCRIPTION: LiveKit RTC - using finalized WAV file`);
 
                 // The WAV file should already exist (created during capture)
                 if (!session.bufferFile || !fs.existsSync(session.bufferFile)) {
-                    console.error(`❌ TRANSCRIPTION: WAV file not found: ${session.bufferFile}`);
+                    logger.error(`❌ TRANSCRIPTION: WAV file not found: ${session.bufferFile}`);
                     return;
                 }
 
                 const stats = fs.statSync(session.bufferFile);
-                console.log(`📊 TRANSCRIPTION: WAV file ready: ${stats.size} bytes`);
+                logger.debug(`📊 TRANSCRIPTION: WAV file ready: ${stats.size} bytes`);
 
                 // Transcribe directly from the WAV file
-                console.log(`🎙️ TRANSCRIPTION: Transcribing with Whisper...`);
+                logger.debug(`🎙️ TRANSCRIPTION: Transcribing with Whisper...`);
                 const transcription = await this.transcribeWithWhisperCpp(
                     session.bufferFile,
                     session.config
@@ -990,8 +992,8 @@ class TranscriptionService extends EventEmitter {
                     session.wordCount = transcription.split(/\s+/).length;
                     session.chunkCount = 1;
 
-                    console.log(`✅ TRANSCRIPTION: Complete transcription (${session.wordCount} words)`);
-                    console.log(`📝 TRANSCRIPTION: "${transcription.substring(0, 100)}${transcription.length > 100 ? '...' : ''}"`);
+                    logger.debug(`✅ TRANSCRIPTION: Complete transcription (${session.wordCount} words)`);
+                    logger.debug(`📝 TRANSCRIPTION: "${transcription.substring(0, 100)}${transcription.length > 100 ? '...' : ''}"`);
 
                     // Emit transcription event
                     this.emit('transcription-chunk', {
@@ -1002,19 +1004,19 @@ class TranscriptionService extends EventEmitter {
                         isComplete: true
                     });
                 } else {
-                    console.log(`⚠️ TRANSCRIPTION: No valid transcription produced`);
+                    logger.debug(`⚠️ TRANSCRIPTION: No valid transcription produced`);
                 }
 
                 return;
             }
 
             // MediaSoup path - use buffer service
-            console.log(`📝 TRANSCRIPTION: MediaSoup - extracting from buffer`);
+            logger.debug(`📝 TRANSCRIPTION: MediaSoup - extracting from buffer`);
 
             // Get current buffer info
             const bufferInfo = await this.audioBufferService.getBufferInfo(session.id);
             if (!bufferInfo) {
-                console.error(`❌ TRANSCRIPTION: No buffer info available`);
+                logger.error(`❌ TRANSCRIPTION: No buffer info available`);
                 return;
             }
 
@@ -1024,10 +1026,10 @@ class TranscriptionService extends EventEmitter {
             // We recorded extra time to ensure we capture everything
             const targetDuration = Math.min(recordingEndPosition, session.timedDuration);
 
-            console.log(`📊 TRANSCRIPTION: Extracting recording:`);
-            console.log(`   Buffer contains: ${recordingEndPosition.toFixed(1)}s total`);
-            console.log(`   Requested duration: ${session.timedDuration}s`);
-            console.log(`   Extracting first: ${targetDuration.toFixed(1)}s`);
+            logger.debug(`📊 TRANSCRIPTION: Extracting recording:`);
+            logger.debug(`   Buffer contains: ${recordingEndPosition.toFixed(1)}s total`);
+            logger.debug(`   Requested duration: ${session.timedDuration}s`);
+            logger.debug(`   Extracting first: ${targetDuration.toFixed(1)}s`);
 
             // Extract from the beginning of the recording
             const extractResult = await this.audioBufferService.extractAudioRange(
@@ -1037,11 +1039,11 @@ class TranscriptionService extends EventEmitter {
             );
 
             if (!extractResult.success) {
-                console.error(`❌ TRANSCRIPTION: Failed to extract audio: ${extractResult.error}`);
+                logger.error(`❌ TRANSCRIPTION: Failed to extract audio: ${extractResult.error}`);
                 return;
             }
 
-            console.log(`📝 TRANSCRIPTION: Transcribing ${extractResult.duration.toFixed(1)}s of audio...`);
+            logger.debug(`📝 TRANSCRIPTION: Transcribing ${extractResult.duration.toFixed(1)}s of audio...`);
 
             // Transcribe the entire recording
             const transcription = await this.transcribeWithWhisperCpp(
@@ -1055,7 +1057,7 @@ class TranscriptionService extends EventEmitter {
                 session.wordCount = transcription.split(/\s+/).length;
                 session.chunkCount = 1; // Single chunk for timed recording
 
-                console.log(`✅ TRANSCRIPTION: Complete transcription (${session.wordCount} words)`);
+                logger.debug(`✅ TRANSCRIPTION: Complete transcription (${session.wordCount} words)`);
                 
                 // Emit single transcription event with all text
                 this.emit('transcription-chunk', {
@@ -1071,23 +1073,23 @@ class TranscriptionService extends EventEmitter {
                 // Save to database
                 await this.saveTranscriptionChunk(session, transcription, 1);
             } else if (transcription && transcription.trim() === 'you') {
-                console.log(`⚠️ TRANSCRIPTION: Ignoring 'you' hallucination`);
+                logger.debug(`⚠️ TRANSCRIPTION: Ignoring 'you' hallucination`);
             } else {
-                console.log(`⚠️ TRANSCRIPTION: No speech detected in recording`);
+                logger.debug(`⚠️ TRANSCRIPTION: No speech detected in recording`);
             }
             
             // Clean up extracted audio file after successful transcription
             try {
                 if (fs.existsSync(extractResult.audioPath)) {
                     fs.unlinkSync(extractResult.audioPath);
-                    console.log(`🧹 TRANSCRIPTION: Deleted processed audio file: ${path.basename(extractResult.audioPath)}`);
+                    logger.debug(`🧹 TRANSCRIPTION: Deleted processed audio file: ${path.basename(extractResult.audioPath)}`);
                 }
             } catch (e) {
-                console.error(`⚠️ TRANSCRIPTION: Failed to delete audio file:`, e.message);
+                logger.error(`⚠️ TRANSCRIPTION: Failed to delete audio file:`, e.message);
             }
             
         } catch (error) {
-            console.error(`❌ TRANSCRIPTION: Error processing timed recording:`, error);
+            logger.error(`❌ TRANSCRIPTION: Error processing timed recording:`, error);
         }
     }
     
@@ -1100,7 +1102,7 @@ class TranscriptionService extends EventEmitter {
                 session.transport.close();
             }
         } catch (error) {
-            console.error('❌ TRANSCRIPTION: Error cleaning up instant session:', error);
+            logger.error('❌ TRANSCRIPTION: Error cleaning up instant session:', error);
         }
     }
     
@@ -1131,19 +1133,19 @@ class TranscriptionService extends EventEmitter {
                         try {
                             fs.unlinkSync(filePath);
                             deletedCount++;
-                            console.log(`🧹 TRANSCRIPTION: Deleted old audio file: ${file} (age: ${Math.round((Date.now() - stats.mtimeMs) / 60000)} minutes)`);
+                            logger.debug(`🧹 TRANSCRIPTION: Deleted old audio file: ${file} (age: ${Math.round((Date.now() - stats.mtimeMs) / 60000)} minutes)`);
                         } catch (e) {
-                            console.error(`⚠️ TRANSCRIPTION: Failed to delete ${file}:`, e.message);
+                            logger.error(`⚠️ TRANSCRIPTION: Failed to delete ${file}:`, e.message);
                         }
                     }
                 }
             } catch (error) {
-                console.error(`⚠️ TRANSCRIPTION: Error cleaning directory ${dir}:`, error.message);
+                logger.error(`⚠️ TRANSCRIPTION: Error cleaning directory ${dir}:`, error.message);
             }
         }
         
         if (deletedCount > 0) {
-            console.log(`✅ TRANSCRIPTION: Cleaned up ${deletedCount} old audio files`);
+            logger.debug(`✅ TRANSCRIPTION: Cleaned up ${deletedCount} old audio files`);
         }
         
         return { success: true, deletedCount };
@@ -1159,7 +1161,7 @@ class TranscriptionService extends EventEmitter {
         // Run initial cleanup
         this.cleanupOldAudioFiles(30);
         
-        console.log(`🧹 TRANSCRIPTION: Started periodic cleanup (every ${intervalMinutes} minutes)`);
+        logger.debug(`🧹 TRANSCRIPTION: Started periodic cleanup (every ${intervalMinutes} minutes)`);
     }
 }
 

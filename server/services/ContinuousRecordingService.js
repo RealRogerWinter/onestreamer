@@ -6,6 +6,8 @@ const { runAsync, getAsync, allAsync } = require('../database/database');
 const UserRepository = require('../database/repository/UserRepository');
 const ContinuousRecordingRepository = require('../database/repository/ContinuousRecordingRepository');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ContinuousRecordingService' });
+
 /**
  * ContinuousRecordingService - Manages continuous room composite recording using LiveKit Egress
  *
@@ -68,16 +70,16 @@ class ContinuousRecordingService extends EventEmitter {
    * Initialize the Egress client
    */
   initialize() {
-    console.log('🎥 CONTINUOUS RECORDING: Initializing with HLS segments...');
-    console.log(`   LiveKit Host: ${this.livekitHost}`);
-    console.log(`   Room: ${this.roomName}`);
-    console.log(`   Output: ${this.outputDir}`);
-    console.log(`   Segment Duration: ${this.segmentDuration}s`);
+    logger.debug('🎥 CONTINUOUS RECORDING: Initializing with HLS segments...');
+    logger.debug(`   LiveKit Host: ${this.livekitHost}`);
+    logger.debug(`   Room: ${this.roomName}`);
+    logger.debug(`   Output: ${this.outputDir}`);
+    logger.debug(`   Segment Duration: ${this.segmentDuration}s`);
 
     try {
       this.egressClient = new EgressClient(this.livekitHost, this.apiKey, this.apiSecret);
       this.roomServiceClient = new RoomServiceClient(this.livekitHost, this.apiKey, this.apiSecret);
-      console.log('✅ CONTINUOUS RECORDING: Egress and Room clients initialized');
+      logger.debug('✅ CONTINUOUS RECORDING: Egress and Room clients initialized');
 
       // Ensure output directory exists
       if (!fs.existsSync(this.outputDir)) {
@@ -89,14 +91,14 @@ class ContinuousRecordingService extends EventEmitter {
 
       // Clean up any stale egress jobs from previous server crashes/restarts
       this.cleanupStaleEgress().catch(err => {
-        console.error('❌ CONTINUOUS RECORDING: Initial cleanup failed:', err.message);
+        logger.error('❌ CONTINUOUS RECORDING: Initial cleanup failed:', err.message);
       });
 
       // Start auto-record polling (check every 5 seconds if room has participants)
       this.startAutoRecordPolling();
 
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Failed to initialize:', error);
+      logger.error('❌ CONTINUOUS RECORDING: Failed to initialize:', error);
     }
   }
 
@@ -135,10 +137,10 @@ class ContinuousRecordingService extends EventEmitter {
       // Update the session to recording status (in case it was marked as ended)
       await this.recordingRepository.setSessionRecording(sessionId);
 
-      console.log(`📝 SESSION DB: Recording session ${sessionId} active for streamer ${streamerUsername || streamerIdentity || 'room'}`);
+      logger.debug(`📝 SESSION DB: Recording session ${sessionId} active for streamer ${streamerUsername || streamerIdentity || 'room'}`);
       return { success: true };
     } catch (error) {
-      console.error('❌ SESSION DB: Failed to create session record:', error.message);
+      logger.error('❌ SESSION DB: Failed to create session record:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -157,10 +159,10 @@ class ContinuousRecordingService extends EventEmitter {
         endTime, durationMs, segmentCount,
       });
 
-      console.log(`📝 SESSION DB: Updated session ${sessionId} - duration: ${Math.floor(durationMs / 1000)}s, added ${segmentCount} segments`);
+      logger.debug(`📝 SESSION DB: Updated session ${sessionId} - duration: ${Math.floor(durationMs / 1000)}s, added ${segmentCount} segments`);
       return { success: true };
     } catch (error) {
-      console.error('❌ SESSION DB: Failed to update session record:', error.message);
+      logger.error('❌ SESSION DB: Failed to update session record:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -184,7 +186,7 @@ class ContinuousRecordingService extends EventEmitter {
     try {
       return await this.recordingRepository.getSessionById(sessionId);
     } catch (error) {
-      console.error('❌ SESSION DB: Failed to get session record:', error.message);
+      logger.error('❌ SESSION DB: Failed to get session record:', error.message);
       return null;
     }
   }
@@ -247,7 +249,7 @@ class ContinuousRecordingService extends EventEmitter {
 
       return masterPath;
     } catch (error) {
-      console.error('❌ Failed to generate master playlist:', error.message);
+      logger.error('❌ Failed to generate master playlist:', error.message);
       return null;
     }
   }
@@ -259,7 +261,7 @@ class ContinuousRecordingService extends EventEmitter {
     try {
       return await this.recordingRepository.listSessions(options);
     } catch (error) {
-      console.error('❌ SESSION DB: Failed to get session records:', error.message);
+      logger.error('❌ SESSION DB: Failed to get session records:', error.message);
       return [];
     }
   }
@@ -316,13 +318,13 @@ class ContinuousRecordingService extends EventEmitter {
       if (realStreamers.length > 0) {
         // Return the first real streamer found
         const streamer = realStreamers[0];
-        console.log(`🎯 CONTINUOUS RECORDING: Found real streamer: ${streamer.identity}`);
+        logger.debug(`🎯 CONTINUOUS RECORDING: Found real streamer: ${streamer.identity}`);
         return streamer.identity;
       }
 
       return null;
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Error finding real streamer:', error.message);
+      logger.error('❌ CONTINUOUS RECORDING: Error finding real streamer:', error.message);
       return null;
     }
   }
@@ -343,13 +345,13 @@ class ContinuousRecordingService extends EventEmitter {
 
       if (urlStreamers.length > 0) {
         const streamer = urlStreamers[0];
-        console.log(`🎯 CONTINUOUS RECORDING: Found URL stream publisher: ${streamer.identity}`);
+        logger.debug(`🎯 CONTINUOUS RECORDING: Found URL stream publisher: ${streamer.identity}`);
         return streamer.identity;
       }
 
       return null;
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Error finding URL stream publisher:', error.message);
+      logger.error('❌ CONTINUOUS RECORDING: Error finding URL stream publisher:', error.message);
       return null;
     }
   }
@@ -408,7 +410,7 @@ class ContinuousRecordingService extends EventEmitter {
 
       return null;
     } catch (error) {
-      console.error('Error extracting username from URL:', error.message);
+      logger.error('Error extracting username from URL:', error.message);
       return null;
     }
   }
@@ -528,7 +530,7 @@ class ContinuousRecordingService extends EventEmitter {
 
       return null;
     } catch (error) {
-      console.error('❌ STREAM TRACKING: Error getting current stream info:', error.message);
+      logger.error('❌ STREAM TRACKING: Error getting current stream info:', error.message);
       return null;
     }
   }
@@ -552,11 +554,11 @@ class ContinuousRecordingService extends EventEmitter {
         startedAt: now,
       });
 
-      console.log(`📝 STREAM TRACKING: Started segment for ${streamInfo.type} "${streamInfo.displayName}" at ${new Date(now).toISOString()}`);
+      logger.debug(`📝 STREAM TRACKING: Started segment for ${streamInfo.type} "${streamInfo.displayName}" at ${new Date(now).toISOString()}`);
 
       return result.lastID;
     } catch (error) {
-      console.error('❌ STREAM TRACKING: Failed to log segment start:', error.message);
+      logger.error('❌ STREAM TRACKING: Failed to log segment start:', error.message);
       return null;
     }
   }
@@ -571,9 +573,9 @@ class ContinuousRecordingService extends EventEmitter {
       const now = Date.now();
       await this.recordingRepository.endStreamSegment(segmentId, now);
 
-      console.log(`📝 STREAM TRACKING: Ended segment ID ${segmentId} at ${new Date(now).toISOString()}`);
+      logger.debug(`📝 STREAM TRACKING: Ended segment ID ${segmentId} at ${new Date(now).toISOString()}`);
     } catch (error) {
-      console.error('❌ STREAM TRACKING: Failed to log segment end:', error.message);
+      logger.error('❌ STREAM TRACKING: Failed to log segment end:', error.message);
     }
   }
 
@@ -587,9 +589,9 @@ class ContinuousRecordingService extends EventEmitter {
       const now = Date.now();
       await this.recordingRepository.endAllOpenSegments(sessionId, now);
 
-      console.log(`📝 STREAM TRACKING: Ended all open segments for session ${sessionId}`);
+      logger.debug(`📝 STREAM TRACKING: Ended all open segments for session ${sessionId}`);
     } catch (error) {
-      console.error('❌ STREAM TRACKING: Failed to end open segments:', error.message);
+      logger.error('❌ STREAM TRACKING: Failed to end open segments:', error.message);
     }
   }
 
@@ -609,7 +611,7 @@ class ContinuousRecordingService extends EventEmitter {
 
       // Check if stream identity changed
       if (currentIdentity !== this.currentStreamIdentity) {
-        console.log(`🔄 STREAM TRACKING: Identity changed from "${this.currentStreamIdentity}" to "${currentIdentity}"`);
+        logger.debug(`🔄 STREAM TRACKING: Identity changed from "${this.currentStreamIdentity}" to "${currentIdentity}"`);
 
         // End the previous segment if there was one
         if (this.currentStreamSegmentId) {
@@ -627,7 +629,7 @@ class ContinuousRecordingService extends EventEmitter {
 
       this.lastStreamCheck = Date.now();
     } catch (error) {
-      console.error('❌ STREAM TRACKING: Error tracking identity change:', error.message);
+      logger.error('❌ STREAM TRACKING: Error tracking identity change:', error.message);
     }
   }
 
@@ -655,7 +657,7 @@ class ContinuousRecordingService extends EventEmitter {
       );
 
       if (targetChanged) {
-        console.log(`🔄 CONTINUOUS RECORDING: Recording target changed. Real streamer: ${realStreamer || 'none'}, Current target: ${this.currentRecordingTarget}`);
+        logger.debug(`🔄 CONTINUOUS RECORDING: Recording target changed. Real streamer: ${realStreamer || 'none'}, Current target: ${this.currentRecordingTarget}`);
         // Stop current recording and restart with new target
         await this.stopRecording();
         await new Promise(resolve => setTimeout(resolve, 1000)); // Brief delay
@@ -663,14 +665,14 @@ class ContinuousRecordingService extends EventEmitter {
 
       if (hasPublisher && !this.isRecording) {
         if (realStreamer) {
-          console.log(`🎥 CONTINUOUS RECORDING: Detected REAL streamer ${realStreamer}, starting participant recording...`);
+          logger.debug(`🎥 CONTINUOUS RECORDING: Detected REAL streamer ${realStreamer}, starting participant recording...`);
         } else {
-          console.log('🎥 CONTINUOUS RECORDING: Detected viewbot publisher, starting room recording...');
+          logger.debug('🎥 CONTINUOUS RECORDING: Detected viewbot publisher, starting room recording...');
         }
         await this.startRecording(realStreamer);
       } else if (!hasPublisher && this.isRecording) {
         // Keep recording for a bit after stream ends to capture final moments
-        console.log('🎥 CONTINUOUS RECORDING: No publishers detected, will continue recording briefly...');
+        logger.debug('🎥 CONTINUOUS RECORDING: No publishers detected, will continue recording briefly...');
       }
 
       // Track stream identity changes (check what's actually being shown)
@@ -680,7 +682,7 @@ class ContinuousRecordingService extends EventEmitter {
     } catch (error) {
       // Room might not exist yet, that's ok
       if (!error.message?.includes('room not found')) {
-        console.error('❌ CONTINUOUS RECORDING: Error checking room:', error.message);
+        logger.error('❌ CONTINUOUS RECORDING: Error checking room:', error.message);
       }
     }
   }
@@ -691,7 +693,7 @@ class ContinuousRecordingService extends EventEmitter {
   startAutoRecordPolling() {
     // Check immediately
     this.checkAndAutoRecord().catch(err => {
-      console.error('❌ CONTINUOUS RECORDING: Initial auto-record check failed:', err.message);
+      logger.error('❌ CONTINUOUS RECORDING: Initial auto-record check failed:', err.message);
     });
 
     // Then check every 5 seconds
@@ -699,12 +701,12 @@ class ContinuousRecordingService extends EventEmitter {
       try {
         await this.checkAndAutoRecord();
       } catch (err) {
-        console.error('❌ CONTINUOUS RECORDING: Auto-record polling error:', err.message);
+        logger.error('❌ CONTINUOUS RECORDING: Auto-record polling error:', err.message);
         // Don't rethrow - keep polling running
       }
     }, 5000);
 
-    console.log('🔄 CONTINUOUS RECORDING: Auto-record polling started');
+    logger.debug('🔄 CONTINUOUS RECORDING: Auto-record polling started');
   }
 
   /**
@@ -719,18 +721,18 @@ class ContinuousRecordingService extends EventEmitter {
       if (egressInfo && (egressInfo.status === 0 || egressInfo.status === 1)) {
         // Check if target changed (need to switch from room to participant or vice versa)
         if (targetParticipant && this.currentRecordingTarget === 'room') {
-          console.log(`🔄 CONTINUOUS RECORDING: Need to switch from room to participant egress for ${targetParticipant}`);
+          logger.debug(`🔄 CONTINUOUS RECORDING: Need to switch from room to participant egress for ${targetParticipant}`);
           // Will stop and restart below
         } else if (!targetParticipant && this.currentRecordingTarget !== 'room') {
-          console.log(`🔄 CONTINUOUS RECORDING: Need to switch from participant to room egress`);
+          logger.debug(`🔄 CONTINUOUS RECORDING: Need to switch from participant to room egress`);
           // Will stop and restart below
         } else {
-          console.log('⚠️ CONTINUOUS RECORDING: Already recording, verified egress is active');
+          logger.debug('⚠️ CONTINUOUS RECORDING: Already recording, verified egress is active');
           return { success: true, egressId: this.currentEgressId };
         }
       }
       // Egress completed or failed or target changed, reset state
-      console.log('🔄 CONTINUOUS RECORDING: Previous egress completed/failed/target changed, resetting state');
+      logger.debug('🔄 CONTINUOUS RECORDING: Previous egress completed/failed/target changed, resetting state');
       this.isRecording = false;
       this.currentEgressId = null;
       this.recordingStartTime = null;
@@ -744,17 +746,17 @@ class ContinuousRecordingService extends EventEmitter {
       if (activeEgresses.length > 0) {
         // If we need participant egress but room egress is running, stop it first
         if (targetParticipant) {
-          console.log(`🔄 CONTINUOUS RECORDING: Stopping existing room egress to start participant egress for ${targetParticipant}`);
+          logger.debug(`🔄 CONTINUOUS RECORDING: Stopping existing room egress to start participant egress for ${targetParticipant}`);
           for (const egress of activeEgresses) {
             try {
               await this.egressClient.stopEgress(egress.egressId);
             } catch (e) {
-              console.log(`⚠️ Could not stop egress ${egress.egressId}: ${e.message}`);
+              logger.debug(`⚠️ Could not stop egress ${egress.egressId}: ${e.message}`);
             }
           }
           await new Promise(resolve => setTimeout(resolve, 1000));
         } else {
-          console.log(`⚠️ CONTINUOUS RECORDING: Found ${activeEgresses.length} active egress job(s), using existing`);
+          logger.debug(`⚠️ CONTINUOUS RECORDING: Found ${activeEgresses.length} active egress job(s), using existing`);
           this.currentEgressId = activeEgresses[0].egressId;
           this.isRecording = true;
           this.recordingStartTime = Date.now();
@@ -796,7 +798,7 @@ class ContinuousRecordingService extends EventEmitter {
 
       if (targetParticipant) {
         // Use Participant Egress for real streamers - records ONLY this participant
-        console.log(`🎬 CONTINUOUS RECORDING: Starting PARTICIPANT egress for ${targetParticipant}...`);
+        logger.debug(`🎬 CONTINUOUS RECORDING: Starting PARTICIPANT egress for ${targetParticipant}...`);
 
         egressInfo = await this.egressClient.startParticipantEgress(
           this.roomName,
@@ -811,10 +813,10 @@ class ContinuousRecordingService extends EventEmitter {
         );
 
         this.currentRecordingTarget = targetParticipant;
-        console.log(`✅ CONTINUOUS RECORDING: Started PARTICIPANT egress for ${targetParticipant}`);
+        logger.debug(`✅ CONTINUOUS RECORDING: Started PARTICIPANT egress for ${targetParticipant}`);
       } else {
         // Use Room Composite egress for viewbots (no real streamer)
-        console.log('🎬 CONTINUOUS RECORDING: Starting ROOM COMPOSITE egress (viewbot mode)...');
+        logger.debug('🎬 CONTINUOUS RECORDING: Starting ROOM COMPOSITE egress (viewbot mode)...');
 
         egressInfo = await this.egressClient.startRoomCompositeEgress(
           this.roomName,
@@ -830,17 +832,17 @@ class ContinuousRecordingService extends EventEmitter {
         );
 
         this.currentRecordingTarget = 'room';
-        console.log('✅ CONTINUOUS RECORDING: Started ROOM COMPOSITE egress');
+        logger.debug('✅ CONTINUOUS RECORDING: Started ROOM COMPOSITE egress');
       }
 
       this.currentEgressId = egressInfo.egressId;
       this.isRecording = true;
       this.recordingStartTime = Date.now();
 
-      console.log(`   Egress ID: ${this.currentEgressId}`);
-      console.log(`   Session: ${this.currentSessionId}`);
-      console.log(`   Target: ${this.currentRecordingTarget}`);
-      console.log(`   Segments: ${hostSessionDir}/`);
+      logger.debug(`   Egress ID: ${this.currentEgressId}`);
+      logger.debug(`   Session: ${this.currentSessionId}`);
+      logger.debug(`   Target: ${this.currentRecordingTarget}`);
+      logger.debug(`   Segments: ${hostSessionDir}/`);
 
       // Create database record for this session
       await this.createSessionRecord(
@@ -868,7 +870,7 @@ class ContinuousRecordingService extends EventEmitter {
       };
 
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Failed to start:', error);
+      logger.error('❌ CONTINUOUS RECORDING: Failed to start:', error);
       return { success: false, error: error.message };
     }
   }
@@ -909,19 +911,19 @@ class ContinuousRecordingService extends EventEmitter {
    */
   async stopRecording() {
     if (!this.isRecording || !this.currentEgressId) {
-      console.log('⚠️ CONTINUOUS RECORDING: Not currently recording');
+      logger.debug('⚠️ CONTINUOUS RECORDING: Not currently recording');
       return { success: true };
     }
 
     try {
-      console.log(`🛑 CONTINUOUS RECORDING: Stopping egress ${this.currentEgressId}...`);
+      logger.debug(`🛑 CONTINUOUS RECORDING: Stopping egress ${this.currentEgressId}...`);
 
       await this.egressClient.stopEgress(this.currentEgressId);
 
       const duration = Date.now() - this.recordingStartTime;
       const endTime = Date.now();
 
-      console.log(`✅ CONTINUOUS RECORDING: Stopped after ${Math.floor(duration / 1000)}s`);
+      logger.debug(`✅ CONTINUOUS RECORDING: Stopped after ${Math.floor(duration / 1000)}s`);
 
       // Get segment count for the session
       let segmentCount = 0;
@@ -931,7 +933,7 @@ class ContinuousRecordingService extends EventEmitter {
           segmentCount = fs.readdirSync(sessionDir).filter(f => f.endsWith('.ts')).length;
         }
       } catch (e) {
-        console.warn('Could not count segments:', e.message);
+        logger.warn('Could not count segments:', e.message);
       }
 
       // Update database record
@@ -962,14 +964,14 @@ class ContinuousRecordingService extends EventEmitter {
       return { success: true, duration, sessionId: stoppedSessionId, segmentCount };
 
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Failed to stop:', error);
+      logger.error('❌ CONTINUOUS RECORDING: Failed to stop:', error);
 
       // Even if stop failed, end open stream segments to keep timeline accurate
       if (this.currentSessionId) {
         try {
           await this.endAllOpenSegments(this.currentSessionId);
         } catch (e) {
-          console.error('❌ CONTINUOUS RECORDING: Failed to end segments on error:', e.message);
+          logger.error('❌ CONTINUOUS RECORDING: Failed to end segments on error:', e.message);
         }
       }
 
@@ -1038,7 +1040,7 @@ class ContinuousRecordingService extends EventEmitter {
       if (activeEgresses.length > 0) {
         // RESUME the active recording instead of stopping it
         const activeEgress = activeEgresses[0];
-        console.log(`🔄 CONTINUOUS RECORDING: Found active egress ${activeEgress.egressId}, resuming state...`);
+        logger.debug(`🔄 CONTINUOUS RECORDING: Found active egress ${activeEgress.egressId}, resuming state...`);
 
         this.currentEgressId = activeEgress.egressId;
         this.isRecording = true;
@@ -1056,7 +1058,7 @@ class ContinuousRecordingService extends EventEmitter {
           hostSessionDir
         );
 
-        console.log(`✅ CONTINUOUS RECORDING: Resumed recording - session: ${this.currentSessionId}`);
+        logger.debug(`✅ CONTINUOUS RECORDING: Resumed recording - session: ${this.currentSessionId}`);
 
         // Emit recording-started event so chat capture begins
         this.emit('recording-started', {
@@ -1072,15 +1074,15 @@ class ContinuousRecordingService extends EventEmitter {
         for (let i = 1; i < activeEgresses.length; i++) {
           const extraEgress = activeEgresses[i];
           try {
-            console.log(`🧹 CONTINUOUS RECORDING: Stopping extra egress ${extraEgress.egressId}...`);
+            logger.debug(`🧹 CONTINUOUS RECORDING: Stopping extra egress ${extraEgress.egressId}...`);
             await this.egressClient.stopEgress(extraEgress.egressId);
           } catch (err) {
-            console.log(`🔍 CONTINUOUS RECORDING: Could not stop extra egress: ${err.message}`);
+            logger.debug(`🔍 CONTINUOUS RECORDING: Could not stop extra egress: ${err.message}`);
           }
         }
       }
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Error in egress check:', error.message);
+      logger.error('❌ CONTINUOUS RECORDING: Error in egress check:', error.message);
     }
   }
 
@@ -1094,20 +1096,20 @@ class ContinuousRecordingService extends EventEmitter {
 
       // Log all egress jobs with their status for debugging
       if (egresses.length > 0) {
-        console.log(`🔍 CONTINUOUS RECORDING: Found ${egresses.length} egress job(s):`);
+        logger.debug(`🔍 CONTINUOUS RECORDING: Found ${egresses.length} egress job(s):`);
         egresses.forEach(e => {
           const statusNames = ['STARTING', 'ACTIVE', 'ENDING', 'COMPLETE', 'FAILED'];
-          console.log(`   - ${e.egressId}: status=${e.status} (${statusNames[e.status] || 'UNKNOWN'})`);
+          logger.debug(`   - ${e.egressId}: status=${e.status} (${statusNames[e.status] || 'UNKNOWN'})`);
         });
       }
 
       // Only return actually active egresses (status 0 or 1)
       const activeEgresses = egresses.filter(e => e.status === 0 || e.status === 1);
-      console.log(`🔍 CONTINUOUS RECORDING: ${activeEgresses.length} egress job(s) are currently active`);
+      logger.debug(`🔍 CONTINUOUS RECORDING: ${activeEgresses.length} egress job(s) are currently active`);
 
       return activeEgresses;
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Failed to list egress:', error.message);
+      logger.error('❌ CONTINUOUS RECORDING: Failed to list egress:', error.message);
       return [];
     }
   }
@@ -1120,7 +1122,7 @@ class ContinuousRecordingService extends EventEmitter {
       const egresses = await this.egressClient.listEgress({ egressId });
       return egresses[0] || null;
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Failed to get egress info:', error);
+      logger.error('❌ CONTINUOUS RECORDING: Failed to get egress info:', error);
       return null;
     }
   }
@@ -1200,7 +1202,7 @@ class ContinuousRecordingService extends EventEmitter {
       recordings.sort((a, b) => b.startTime - a.startTime);
 
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Failed to list recordings:', error);
+      logger.error('❌ CONTINUOUS RECORDING: Failed to list recordings:', error);
     }
 
     return recordings;
@@ -1258,16 +1260,16 @@ class ContinuousRecordingService extends EventEmitter {
    * @param {number} endMs - Clip end time in milliseconds (unix timestamp)
    */
   async findSegmentsForClip(startMs, endMs) {
-    console.log(`🔍 CLIP SEARCH: Starting findSegmentsForClip`);
-    console.log(`🔍 CLIP SEARCH: outputDir = ${this.outputDir}`);
+    logger.debug(`🔍 CLIP SEARCH: Starting findSegmentsForClip`);
+    logger.debug(`🔍 CLIP SEARCH: outputDir = ${this.outputDir}`);
 
     const recordings = await this.getAvailableRecordings();
     const neededSegments = [];
 
-    console.log(`🔍 CLIP SEARCH: Looking for segments between ${startMs} and ${endMs}`);
-    console.log(`🔍 CLIP SEARCH: Found ${recordings.length} recording sessions`);
+    logger.debug(`🔍 CLIP SEARCH: Looking for segments between ${startMs} and ${endMs}`);
+    logger.debug(`🔍 CLIP SEARCH: Found ${recordings.length} recording sessions`);
     recordings.forEach(r => {
-      console.log(`   Session ${r.sessionId}: start=${r.startTime}, end=${r.startTime + r.durationMs}, segments=${r.segmentCount}`);
+      logger.debug(`   Session ${r.sessionId}: start=${r.startTime}, end=${r.startTime + r.durationMs}, segments=${r.segmentCount}`);
     });
 
     for (const recording of recordings) {
@@ -1300,9 +1302,9 @@ class ContinuousRecordingService extends EventEmitter {
     // Sort by time
     neededSegments.sort((a, b) => a.startMs - b.startMs);
 
-    console.log(`🔍 CLIP SEARCH: Found ${neededSegments.length} matching segments`);
+    logger.debug(`🔍 CLIP SEARCH: Found ${neededSegments.length} matching segments`);
     if (neededSegments.length === 0) {
-      console.log(`⚠️ CLIP SEARCH: No segments found! Requested range: ${new Date(startMs).toISOString()} to ${new Date(endMs).toISOString()}`);
+      logger.debug(`⚠️ CLIP SEARCH: No segments found! Requested range: ${new Date(startMs).toISOString()} to ${new Date(endMs).toISOString()}`);
     }
 
     return {
@@ -1370,7 +1372,7 @@ class ContinuousRecordingService extends EventEmitter {
         // Fail-closed: if the DB lookup fails, do NOT delete anything
         // this tick. Better to delay cleanup than to nuke an
         // unconfirmed upload's source file. Next tick retries.
-        console.error('❌ CONTINUOUS RECORDING: Cleanup aborted — failed to load pending uploads:', dbError);
+        logger.error('❌ CONTINUOUS RECORDING: Cleanup aborted — failed to load pending uploads:', dbError);
         return;
       }
 
@@ -1424,11 +1426,11 @@ class ContinuousRecordingService extends EventEmitter {
         const suffix = skippedPendingUpload > 0
           ? ` (skipped ${skippedPendingUpload} pending B2 upload)`
           : '';
-        console.log(`🧹 CONTINUOUS RECORDING: Cleaned up ${deletedCount} old recording(s)${suffix}`);
+        logger.debug(`🧹 CONTINUOUS RECORDING: Cleaned up ${deletedCount} old recording(s)${suffix}`);
       }
 
     } catch (error) {
-      console.error('❌ CONTINUOUS RECORDING: Cleanup error:', error);
+      logger.error('❌ CONTINUOUS RECORDING: Cleanup error:', error);
     }
   }
 
@@ -1442,7 +1444,7 @@ class ContinuousRecordingService extends EventEmitter {
    * Stop the service
    */
   async shutdown() {
-    console.log('🛑 CONTINUOUS RECORDING: Shutting down...');
+    logger.debug('🛑 CONTINUOUS RECORDING: Shutting down...');
 
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
@@ -1456,7 +1458,7 @@ class ContinuousRecordingService extends EventEmitter {
       await this.stopRecording();
     }
 
-    console.log('✅ CONTINUOUS RECORDING: Shutdown complete');
+    logger.debug('✅ CONTINUOUS RECORDING: Shutdown complete');
   }
 }
 

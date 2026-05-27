@@ -2,6 +2,8 @@ const { io: ioClient } = require('socket.io-client');
 const ChatBotLLMService = require('./ChatBotLLMService');
 const ChatBotRepository = require('../database/repository/ChatBotRepository');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ChatBotService' });
+
 class ChatBotService {
     /**
      * @param {object} [deps]
@@ -40,9 +42,9 @@ class ChatBotService {
         // Auto-initialize after a short delay to ensure server is ready
         setTimeout(() => {
             if (!this.isInitialized) {
-                console.log('🤖 AUTO-INIT: Starting delayed ChatBot initialization...');
+                logger.debug('🤖 AUTO-INIT: Starting delayed ChatBot initialization...');
                 this.initialize().catch(err => {
-                    console.error('❌ AUTO-INIT: Failed to auto-initialize ChatBots:', err);
+                    logger.error('❌ AUTO-INIT: Failed to auto-initialize ChatBots:', err);
                 });
             }
         }, 10000); // 10 second delay to let server stabilize
@@ -68,26 +70,26 @@ class ChatBotService {
         if (this.isInitialized) return;
         
         try {
-            console.log('🤖 INIT: Starting ChatBot Service initialization...');
+            logger.debug('🤖 INIT: Starting ChatBot Service initialization...');
             
             // Load and start all enabled bots
             const bots = await this.repo.getEnabled();
             
-            console.log(`🤖 INIT: Found ${bots.length} enabled bots in database`);
-            bots.forEach(bot => console.log(`   - Bot ${bot.id}: ${bot.name}`));
+            logger.debug(`🤖 INIT: Found ${bots.length} enabled bots in database`);
+            bots.forEach(bot => logger.debug(`   - Bot ${bot.id}: ${bot.name}`));
             
             for (const bot of bots) {
-                console.log(`🤖 INIT: Starting bot ${bot.id} (${bot.name})`);
+                logger.debug(`🤖 INIT: Starting bot ${bot.id} (${bot.name})`);
                 await this.startBot(bot);
-                console.log(`🤖 INIT: Bot ${bot.id} started, bots Map size is now: ${this.bots.size}`);
+                logger.debug(`🤖 INIT: Bot ${bot.id} started, bots Map size is now: ${this.bots.size}`);
             }
             
             this.isInitialized = true;
-            console.log(`✅ ChatBot Service initialized with ${bots.length} bots`);
-            console.log(`🤖 INIT: Final bots Map size: ${this.bots.size}`);
-            console.log(`🤖 INIT: Final bots Map keys: ${Array.from(this.bots.keys())}`);
+            logger.debug(`✅ ChatBot Service initialized with ${bots.length} bots`);
+            logger.debug(`🤖 INIT: Final bots Map size: ${this.bots.size}`);
+            logger.debug(`🤖 INIT: Final bots Map keys: ${Array.from(this.bots.keys())}`);
         } catch (error) {
-            console.error('❌ ChatBot Service initialization error:', error);
+            logger.error('❌ ChatBot Service initialization error:', error);
         }
     }
 
@@ -97,7 +99,7 @@ class ChatBotService {
 
     setIoInstance(io) {
         this.io = io;
-        console.log('🤖 ChatBot Service: Socket.IO instance set for managing connections');
+        logger.debug('🤖 ChatBot Service: Socket.IO instance set for managing connections');
     }
 
     generateUsername(customName = null) {
@@ -138,7 +140,7 @@ class ChatBotService {
 
             return bot;
         } catch (error) {
-            console.error('Error creating bot:', error);
+            logger.error('Error creating bot:', error);
             throw error;
         }
     }
@@ -179,7 +181,7 @@ class ChatBotService {
             
             return bot;
         } catch (error) {
-            console.error('Error updating bot:', error);
+            logger.error('Error updating bot:', error);
             throw error;
         }
     }
@@ -191,7 +193,7 @@ class ChatBotService {
             await this.repo.deleteById(botId);
             return { success: true };
         } catch (error) {
-            console.error('Error deleting bot:', error);
+            logger.error('Error deleting bot:', error);
             throw error;
         }
     }
@@ -235,7 +237,7 @@ class ChatBotService {
             
             return botsWithStatus;
         } catch (error) {
-            console.error('Error getting bots:', error);
+            logger.error('Error getting bots:', error);
             throw error;
         }
     }
@@ -257,11 +259,11 @@ class ChatBotService {
     }
 
     async startBot(botData) {
-        console.log(`🤖 START: Attempting to start bot ${botData.id} (${botData.name})`);
-        console.log(`🤖 START: Current bots Map has bot ${botData.id}: ${this.bots.has(botData.id)}`);
+        logger.debug(`🤖 START: Attempting to start bot ${botData.id} (${botData.name})`);
+        logger.debug(`🤖 START: Current bots Map has bot ${botData.id}: ${this.bots.has(botData.id)}`);
         
         if (this.bots.has(botData.id)) {
-            console.log(`🤖 START: Bot ${botData.id} already running, skipping`);
+            logger.debug(`🤖 START: Bot ${botData.id} already running, skipping`);
             return;
         }
 
@@ -287,7 +289,7 @@ class ChatBotService {
         };
 
         // Connect to chat service
-        console.log(`🤖 Attempting to connect bot ${botData.name} to ${this.chatServiceUrl}`);
+        logger.debug(`🤖 Attempting to connect bot ${botData.name} to ${this.chatServiceUrl}`);
         const socket = ioClient(this.chatServiceUrl, {
             path: '/chat/socket.io',
             transports: ['websocket'],
@@ -302,8 +304,8 @@ class ChatBotService {
         botInstance.socket = socket;
 
         socket.on('connect', async () => {
-            console.log(`🤖 Bot ${botData.name} connected as ${username} to chat service`);
-            console.log(`🤖 Socket ID: ${socket.id}, Connected: ${socket.connected}`);
+            logger.debug(`🤖 Bot ${botData.name} connected as ${username} to chat service`);
+            logger.debug(`🤖 Socket ID: ${socket.id}, Connected: ${socket.connected}`);
             botInstance.connected = true;
             
             // Store session in database
@@ -323,7 +325,7 @@ class ChatBotService {
             });
             
             // Start response cycle
-            console.log(`🤖 Bot ${botData.name} starting response cycle`);
+            logger.debug(`🤖 Bot ${botData.name} starting response cycle`);
             this.scheduleNextResponse(botInstance);
         });
 
@@ -357,13 +359,13 @@ class ChatBotService {
         });
 
         socket.on('connect_error', (error) => {
-            console.error(`❌ Bot ${botData.name} connection error:`, error.message);
-            console.error(`   Chat service URL: ${this.chatServiceUrl}`);
-            console.error(`   Make sure chat service is running on port 8081`);
+            logger.error(`❌ Bot ${botData.name} connection error:`, error.message);
+            logger.error(`   Chat service URL: ${this.chatServiceUrl}`);
+            logger.error(`   Make sure chat service is running on port 8081`);
         });
 
         socket.on('disconnect', () => {
-            console.log(`🤖 Bot ${botData.name} disconnected`);
+            logger.debug(`🤖 Bot ${botData.name} disconnected`);
             botInstance.connected = false;
             
             if (botInstance.responseTimer) {
@@ -378,14 +380,14 @@ class ChatBotService {
 
         botInstance.socket = socket;
         this.bots.set(botData.id, botInstance);
-        console.log(`🤖 START: Bot ${botData.id} added to bots Map. New size: ${this.bots.size}`);
+        logger.debug(`🤖 START: Bot ${botData.id} added to bots Map. New size: ${this.bots.size}`);
     }
 
     async stopBot(id) {
         const bot = this.bots.get(id);
         if (!bot) return;
 
-        console.log(`🛑 Stopping bot ${id} (${bot.data?.name})`);
+        logger.debug(`🛑 Stopping bot ${id} (${bot.data?.name})`);
 
         if (bot.responseTimer) {
             clearTimeout(bot.responseTimer);
@@ -399,16 +401,16 @@ class ChatBotService {
 
         // Remove bot from the Map - CRITICAL FIX
         this.bots.delete(id);
-        console.log(`🗑️ Bot ${id} removed from bots Map. Remaining bots: ${this.bots.size}`);
+        logger.debug(`🗑️ Bot ${id} removed from bots Map. Remaining bots: ${this.bots.size}`);
 
         // Clean up session
         await this.repo.deleteSessionsForBot(id);
     }
 
     scheduleNextResponse(botInstance) {
-        console.log(`🤖 scheduleNextResponse called for bot ${botInstance.id}: connected=${botInstance.connected}, enabled=${botInstance.data.is_enabled}`);
+        logger.debug(`🤖 scheduleNextResponse called for bot ${botInstance.id}: connected=${botInstance.connected}, enabled=${botInstance.data.is_enabled}`);
         if (!botInstance.connected || !botInstance.data.is_enabled) {
-            console.log(`🤖 Bot ${botInstance.id} not scheduling - connected: ${botInstance.connected}, enabled: ${botInstance.data.is_enabled}`);
+            logger.debug(`🤖 Bot ${botInstance.id} not scheduling - connected: ${botInstance.connected}, enabled: ${botInstance.data.is_enabled}`);
             return;
         }
         
@@ -417,7 +419,7 @@ class ChatBotService {
             const now = new Date();
             const expiresAt = new Date(botInstance.data.expires_at);
             if (now >= expiresAt) {
-                console.log(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, not scheduling next response`);
+                logger.debug(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, not scheduling next response`);
                 // Mark as disabled and trigger cleanup
                 botInstance.data.is_enabled = 0;
                 botInstance.connected = false;
@@ -429,17 +431,17 @@ class ChatBotService {
         // Skip scheduling regular responses for MovieBot-enabled bots
         // They should only respond to movie transcriptions
         if (botInstance.data.moviebot_enabled) {
-            console.log(`🎬 Bot ${botInstance.id} has MovieBot enabled, skipping regular chat responses`);
+            logger.debug(`🎬 Bot ${botInstance.id} has MovieBot enabled, skipping regular chat responses`);
             return;
         }
 
         const minInterval = botInstance.data.response_interval_min * 1000;
         const maxInterval = botInstance.data.response_interval_max * 1000;
         const interval = Math.random() * (maxInterval - minInterval) + minInterval;
-        console.log(`🤖 Bot ${botInstance.id} scheduled to send message in ${Math.round(interval/1000)} seconds`);
+        logger.debug(`🤖 Bot ${botInstance.id} scheduled to send message in ${Math.round(interval/1000)} seconds`);
 
         botInstance.responseTimer = setTimeout(async () => {
-            console.log(`🤖 Bot ${botInstance.id} timer fired, generating message`);
+            logger.debug(`🤖 Bot ${botInstance.id} timer fired, generating message`);
             await this.generateAndSendMessage(botInstance);
             this.scheduleNextResponse(botInstance);
         }, interval);
@@ -449,7 +451,7 @@ class ChatBotService {
         try {
             // Check if bot is still enabled before generating message
             if (!botInstance.data.is_enabled || !botInstance.connected) {
-                console.log(`🤖 Bot ${botInstance.id} is disabled or disconnected, skipping message generation`);
+                logger.debug(`🤖 Bot ${botInstance.id} is disabled or disconnected, skipping message generation`);
                 return;
             }
             
@@ -458,7 +460,7 @@ class ChatBotService {
                 const now = new Date();
                 const expiresAt = new Date(botInstance.data.expires_at);
                 if (now >= expiresAt) {
-                    console.log(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, stopping message generation`);
+                    logger.debug(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, stopping message generation`);
                     // Stop the bot completely
                     botInstance.data.is_enabled = 0;
                     botInstance.connected = false;
@@ -475,7 +477,7 @@ class ChatBotService {
             // Skip regular messages for MovieBot-enabled bots
             // They should only respond to movie transcriptions
             if (botInstance.data.moviebot_enabled) {
-                console.log(`🎬 Bot ${botInstance.id} has MovieBot enabled, should not be sending regular messages`);
+                logger.debug(`🎬 Bot ${botInstance.id} has MovieBot enabled, should not be sending regular messages`);
                 return;
             }
             
@@ -512,16 +514,16 @@ class ChatBotService {
                 // Update last message time
                 await this.repo.touchSessionLastMessage(botInstance.sessionId);
             } else if (!botInstance.data.is_enabled) {
-                console.log(`🤖 Bot ${botInstance.id} was disabled during message generation, message not sent`);
+                logger.debug(`🤖 Bot ${botInstance.id} was disabled during message generation, message not sent`);
             }
         } catch (error) {
-            console.error(`Error generating message for bot ${botInstance.id}:`, error);
+            logger.error(`Error generating message for bot ${botInstance.id}:`, error);
         }
     }
 
     async createTemporaryBot(data) {
         try {
-            console.log(`🤖 Creating temporary bot: ${data.name}`);
+            logger.debug(`🤖 Creating temporary bot: ${data.name}`);
             
             // Calculate expiration time
             const expiresAt = new Date(Date.now() + (data.duration || 3600) * 1000);
@@ -569,11 +571,11 @@ class ChatBotService {
             // Schedule expiration
             this.scheduleExpiration(bot.id, data.duration || 3600);
             
-            console.log(`✅ Temporary bot ${bot.name} (ID: ${bot.id}) created and started`);
+            logger.debug(`✅ Temporary bot ${bot.name} (ID: ${bot.id}) created and started`);
             return bot;
             
         } catch (error) {
-            console.error('❌ Error creating temporary bot:', error);
+            logger.error('❌ Error creating temporary bot:', error);
             throw error;
         }
     }
@@ -581,11 +583,11 @@ class ChatBotService {
     scheduleExpiration(botId, durationSeconds) {
         const timeoutMs = durationSeconds * 1000;
         
-        console.log(`⏰ Scheduling expiration for bot ${botId} in ${durationSeconds} seconds`);
+        logger.debug(`⏰ Scheduling expiration for bot ${botId} in ${durationSeconds} seconds`);
         
         setTimeout(async () => {
             try {
-                console.log(`🗑️ Expiring temporary bot ${botId}`);
+                logger.debug(`🗑️ Expiring temporary bot ${botId}`);
 
                 // Stop the bot
                 await this.stopBot(botId);
@@ -598,9 +600,9 @@ class ChatBotService {
                 // marked temporary, in case it was promoted out from under us.
                 await this.repo.deleteTemporaryById(botId);
 
-                console.log(`✅ Temporary bot ${botId} expired and removed`);
+                logger.debug(`✅ Temporary bot ${botId} expired and removed`);
             } catch (error) {
-                console.error(`❌ Error expiring bot ${botId}:`, error);
+                logger.error(`❌ Error expiring bot ${botId}:`, error);
             }
         }, timeoutMs);
     }
@@ -614,15 +616,15 @@ class ChatBotService {
                 return 0;
             }
             
-            console.log(`🧹 Cleaning up ${expired.length} expired temporary bots`);
+            logger.debug(`🧹 Cleaning up ${expired.length} expired temporary bots`);
             
             for (const bot of expired) {
-                console.log(`  - Removing expired bot: ${bot.name} (ID: ${bot.id})`);
+                logger.debug(`  - Removing expired bot: ${bot.name} (ID: ${bot.id})`);
                 
                 // First stop the bot if it's running
                 const botInstance = this.bots.get(bot.id);
                 if (botInstance) {
-                    console.log(`    Stopping active bot instance for ${bot.name}`);
+                    logger.debug(`    Stopping active bot instance for ${bot.name}`);
                     // Clear any scheduled timers
                     if (botInstance.responseTimer) {
                         clearTimeout(botInstance.responseTimer);
@@ -644,10 +646,10 @@ class ChatBotService {
                 await this.repo.deleteById(bot.id);
             }
             
-            console.log(`✅ Successfully cleaned up ${expired.length} expired temporary bots`);
+            logger.debug(`✅ Successfully cleaned up ${expired.length} expired temporary bots`);
             return expired.length;
         } catch (error) {
-            console.error('❌ Error cleaning up expired bots:', error);
+            logger.error('❌ Error cleaning up expired bots:', error);
             return 0;
         }
     }
@@ -690,7 +692,7 @@ class ChatBotService {
 
             return { ...bot, is_enabled: newState };
         } catch (error) {
-            console.error('Error toggling bot:', error);
+            logger.error('Error toggling bot:', error);
             throw error;
         }
     }
@@ -720,41 +722,41 @@ class ChatBotService {
                 }
             }
             
-            console.log(`✅ Enabled all ${bots.length} chatbots`);
+            logger.debug(`✅ Enabled all ${bots.length} chatbots`);
             return { success: true, count: bots.length };
         } catch (error) {
-            console.error('Error enabling all bots:', error);
+            logger.error('Error enabling all bots:', error);
             throw error;
         }
     }
 
     async disableAllBots() {
         try {
-            console.log('🤖 DISABLE ALL: Starting to disable all bots...');
-            console.log(`🤖 DISABLE ALL: Current bots Map size: ${this.bots.size}`);
-            console.log(`🤖 DISABLE ALL: Current bots Map keys: ${Array.from(this.bots.keys())}`);
+            logger.debug('🤖 DISABLE ALL: Starting to disable all bots...');
+            logger.debug(`🤖 DISABLE ALL: Current bots Map size: ${this.bots.size}`);
+            logger.debug(`🤖 DISABLE ALL: Current bots Map keys: ${Array.from(this.bots.keys())}`);
             
             // Check what's actually in the database
             const dbBots = await this.repo.listSummary();
-            console.log(`🤖 DISABLE ALL: Found ${dbBots.length} bots in database:`);
-            dbBots.forEach(bot => console.log(`   - Bot ${bot.id}: ${bot.name} (enabled: ${bot.is_enabled})`));
+            logger.debug(`🤖 DISABLE ALL: Found ${dbBots.length} bots in database:`);
+            dbBots.forEach(bot => logger.debug(`   - Bot ${bot.id}: ${bot.name} (enabled: ${bot.is_enabled})`));
 
             // Check active sessions (for logging purposes only)
             const activeSessions = await this.repo.listConnectedSessions();
-            console.log(`🤖 DISABLE ALL: Found ${activeSessions.length} active sessions with socket connections`);
+            logger.debug(`🤖 DISABLE ALL: Found ${activeSessions.length} active sessions with socket connections`);
 
             // Update all bots to disabled state
             await this.repo.disableAll();
-            console.log('🤖 DISABLE ALL: Database updated - all bots set to disabled');
+            logger.debug('🤖 DISABLE ALL: Database updated - all bots set to disabled');
             
             // CRITICAL: Stop all in-memory bot instances FIRST (to disconnect their chat service sockets)
             const runningBots = Array.from(this.bots.keys());
-            console.log(`🤖 DISABLE ALL: Found ${runningBots.length} running bots in memory`);
+            logger.debug(`🤖 DISABLE ALL: Found ${runningBots.length} running bots in memory`);
             
             for (const botId of runningBots) {
                 const botInstance = this.bots.get(botId);
                 if (botInstance) {
-                    console.log(`🤖 DISABLE ALL: Stopping bot ${botId}`);
+                    logger.debug(`🤖 DISABLE ALL: Stopping bot ${botId}`);
                     
                     // Clear any pending response timers
                     if (botInstance.responseTimer) {
@@ -764,7 +766,7 @@ class ChatBotService {
                     
                     // CRITICAL: Disconnect the socket connection to chat service
                     if (botInstance.socket && botInstance.socket.connected) {
-                        console.log(`🤖 DISABLE ALL: Force disconnecting chat service socket for bot ${botId}`);
+                        logger.debug(`🤖 DISABLE ALL: Force disconnecting chat service socket for bot ${botId}`);
                         botInstance.socket.disconnect(true); // Force disconnect from chat service
                         botInstance.connected = false;
                     }
@@ -776,18 +778,18 @@ class ChatBotService {
             
             // Clean up ALL active sessions from database
             await this.repo.deleteAllSessions();
-            console.log(`🤖 DISABLE ALL: Cleaned up ${activeSessions.length} active sessions from database`);
+            logger.debug(`🤖 DISABLE ALL: Cleaned up ${activeSessions.length} active sessions from database`);
             
             // Clear the entire bots Map to ensure clean state
             this.bots.clear();
-            console.log('🤖 DISABLE ALL: Cleared all bots from memory');
+            logger.debug('🤖 DISABLE ALL: Cleared all bots from memory');
             
             // Return count of database bots + sessions cleaned up
             const totalActionsCount = dbBots.length;
-            console.log(`✅ DISABLE ALL: Completed - disabled ${dbBots.length} bots and disconnected ${activeSessions.length} socket connections`);
+            logger.debug(`✅ DISABLE ALL: Completed - disabled ${dbBots.length} bots and disconnected ${activeSessions.length} socket connections`);
             return { success: true, count: totalActionsCount, botsDisabled: dbBots.length, sessionsDisconnected: activeSessions.length };
         } catch (error) {
-            console.error('Error disabling all bots:', error);
+            logger.error('Error disabling all bots:', error);
             throw error;
         }
     }
@@ -834,7 +836,7 @@ class ChatBotService {
                 }
             };
         } catch (error) {
-            console.error('Error testing bot:', error);
+            logger.error('Error testing bot:', error);
             throw error;
         }
     }
@@ -853,7 +855,7 @@ class ChatBotService {
             
             // If not connected, temporarily connect the bot
             if (!botInstance || !botInstance.connected) {
-                console.log(`🤖 Temporarily connecting bot ${bot.name} for manual message`);
+                logger.debug(`🤖 Temporarily connecting bot ${bot.name} for manual message`);
                 
                 // Use assigned name if enabled, otherwise generate random name
                 // SQLite returns 1/0 for booleans, convert to proper boolean
@@ -875,7 +877,7 @@ class ChatBotService {
 
                 return new Promise((resolve, reject) => {
                     socket.on('connect', async () => {
-                        console.log(`🤖 Bot ${bot.name} connected for manual message`);
+                        logger.debug(`🤖 Bot ${bot.name} connected for manual message`);
                         
                         // Join chat
                         socket.emit('join-chat', {
@@ -908,7 +910,7 @@ class ChatBotService {
                                     bot.llm_model  // Pass bot-specific model
                                 );
                                 
-                                console.log(`🤖 DEBUG (temp): LLM response type: ${typeof response}, value:`, response);
+                                logger.debug(`🤖 DEBUG (temp): LLM response type: ${typeof response}, value:`, response);
                                 
                                 // Handle both old string format and new object format
                                 if (typeof response === 'object' && response.message) {
@@ -916,17 +918,17 @@ class ChatBotService {
                                 } else if (typeof response === 'string') {
                                     message = response;
                                 } else {
-                                    console.error(`🤖 ERROR (temp): Invalid response format:`, response);
+                                    logger.error(`🤖 ERROR (temp): Invalid response format:`, response);
                                     message = "I'm having trouble generating a response right now.";
                                 }
                                 
-                                console.log(`🤖 DEBUG (temp): Final message: "${message}"`);
+                                logger.debug(`🤖 DEBUG (temp): Final message: "${message}"`);
                             }
 
                             // Send the message
                             socket.emit('send-message', { message });
                             
-                            console.log(`🤖 Manual message sent from ${bot.name}: "${message}"`);
+                            logger.debug(`🤖 Manual message sent from ${bot.name}: "${message}"`);
                             
                             // Disconnect after sending
                             setTimeout(() => {
@@ -942,7 +944,7 @@ class ChatBotService {
                     });
 
                     socket.on('error', (error) => {
-                        console.error(`❌ Error connecting bot for manual message:`, error);
+                        logger.error(`❌ Error connecting bot for manual message:`, error);
                         reject(error);
                     });
                 });
@@ -968,7 +970,7 @@ class ChatBotService {
                         bot.llm_model  // Pass bot-specific model
                     );
                     
-                    console.log(`🤖 DEBUG: LLM response type: ${typeof response}, value:`, response);
+                    logger.debug(`🤖 DEBUG: LLM response type: ${typeof response}, value:`, response);
                     
                     // Handle both old string format and new object format
                     if (typeof response === 'object' && response.message) {
@@ -978,12 +980,12 @@ class ChatBotService {
                         message = response;
                         promptInfo = { message: response };
                     } else {
-                        console.error(`🤖 ERROR: Invalid response format:`, response);
+                        logger.error(`🤖 ERROR: Invalid response format:`, response);
                         message = "I'm having trouble generating a response right now.";
                         promptInfo = { message: message };
                     }
                     
-                    console.log(`🤖 DEBUG: Final message: "${message}"`);
+                    logger.debug(`🤖 DEBUG: Final message: "${message}"`);
                 }
 
                 botInstance.socket.emit('send-message', { message });
@@ -996,7 +998,7 @@ class ChatBotService {
                     exactPrompt: promptInfo?.exactPrompt || null,
                 });
 
-                console.log(`🤖 Manual message sent from ${bot.name}: "${message}"`);
+                logger.debug(`🤖 Manual message sent from ${bot.name}: "${message}"`);
                 
                 return {
                     bot_name: bot.name,
@@ -1005,7 +1007,7 @@ class ChatBotService {
                 };
             }
         } catch (error) {
-            console.error('Error sending manual message:', error);
+            logger.error('Error sending manual message:', error);
             throw error;
         }
     }
@@ -1014,7 +1016,7 @@ class ChatBotService {
         try {
             return await this.repo.listActiveSessionsWithBot();
         } catch (error) {
-            console.error('Error getting active sessions:', error);
+            logger.error('Error getting active sessions:', error);
             throw error;
         }
     }
@@ -1023,7 +1025,7 @@ class ChatBotService {
         try {
             return await this.repo.getMessages(parseInt(botId), limit);
         } catch (error) {
-            console.error('Error getting message history:', error);
+            logger.error('Error getting message history:', error);
             throw error;
         }
     }
@@ -1039,7 +1041,7 @@ class ChatBotService {
                 if (bot.data.is_temporary && bot.data.expires_at) {
                     const expiresAt = new Date(bot.data.expires_at);
                     if (now >= expiresAt) {
-                        console.log(`🚫 Skipping expired bot ${bot.data.id} (${bot.data.name}) from active bots list`);
+                        logger.debug(`🚫 Skipping expired bot ${bot.data.id} (${bot.data.name}) from active bots list`);
                         continue;
                     }
                 }
@@ -1070,7 +1072,7 @@ class ChatBotService {
                     if (bot.is_temporary && bot.expires_at) {
                         const expiresAt = new Date(bot.expires_at);
                         if (now >= expiresAt) {
-                            console.log(`🚫 Skipping expired bot ${bot.id} (${bot.name}) from MovieBot list`);
+                            logger.debug(`🚫 Skipping expired bot ${bot.id} (${bot.name}) from MovieBot list`);
                             continue;
                         }
                     }
@@ -1086,7 +1088,7 @@ class ChatBotService {
             
             return activeBots;
         } catch (error) {
-            console.error('Error getting MovieBot enabled bots:', error);
+            logger.error('Error getting MovieBot enabled bots:', error);
             return [];
         }
     }
@@ -1099,20 +1101,20 @@ class ChatBotService {
     
     async generateMovieComment(bot, moviePrompt, chatHistory) {
         try {
-            console.log(`🎬 ChatBotService: Generating movie comment for ${bot.username} (ID: ${bot.id})`);
+            logger.debug(`🎬 ChatBotService: Generating movie comment for ${bot.username} (ID: ${bot.id})`);
             
             // Find the bot instance
             const botInstance = this.bots.get(bot.id);
-            console.log(`🎬 ChatBotService: Bot instance found: ${!!botInstance}, connected: ${botInstance?.connected}`);
-            console.log(`🎬 ChatBotService: Available bot IDs: ${Array.from(this.bots.keys())}`);
+            logger.debug(`🎬 ChatBotService: Bot instance found: ${!!botInstance}, connected: ${botInstance?.connected}`);
+            logger.debug(`🎬 ChatBotService: Available bot IDs: ${Array.from(this.bots.keys())}`);
             
             if (!botInstance) {
-                console.error(`❌ ChatBotService: Bot ${bot.id} not found in bots map`);
+                logger.error(`❌ ChatBotService: Bot ${bot.id} not found in bots map`);
                 return { success: false, error: 'Bot not found in active bots' };
             }
             
             if (!botInstance.connected) {
-                console.error(`❌ ChatBotService: Bot ${bot.id} (${bot.username}) not connected to chat service`);
+                logger.error(`❌ ChatBotService: Bot ${bot.id} (${bot.username}) not connected to chat service`);
                 return { success: false, error: 'Bot not connected to chat service' };
             }
             
@@ -1121,7 +1123,7 @@ class ChatBotService {
                 const now = new Date();
                 const expiresAt = new Date(botInstance.data.expires_at);
                 if (now >= expiresAt) {
-                    console.log(`🚫 ChatBotService: Bot ${bot.id} (${bot.username}) has expired, cannot send movie comment`);
+                    logger.debug(`🚫 ChatBotService: Bot ${bot.id} (${bot.username}) has expired, cannot send movie comment`);
                     // Trigger cleanup
                     this.cleanupExpiredBots();
                     return { success: false, error: 'Bot has expired' };
@@ -1170,11 +1172,11 @@ class ChatBotService {
                         botUsername: bot.username,
                     });
                     if (gate && gate.allowed === false) {
-                        console.log(`🛡️ ChatBotService: MovieBot reply from ${bot.username} dropped by moderation (reason=${gate.reason}, eventId=${gate.eventId})`);
+                        logger.debug(`🛡️ ChatBotService: MovieBot reply from ${bot.username} dropped by moderation (reason=${gate.reason}, eventId=${gate.eventId})`);
                         return { success: false, error: `moderation_dropped:${gate.reason}`, moderation_event_id: gate.eventId || null };
                     }
                 } catch (err) {
-                    console.error('❌ ChatBotService: moderation gate threw:', err.message);
+                    logger.error('❌ ChatBotService: moderation gate threw:', err.message);
                     // Fail open here — a bug in the moderation gate shouldn't
                     // silence the bot. The next-tier defense (Stage 1+2 on the
                     // STREAMER's audio) still applies, and outright slurs in
@@ -1185,8 +1187,8 @@ class ChatBotService {
 
             // Send the message through the bot's socket
             if (response && response.message && botInstance.socket && botInstance.connected) {
-                console.log(`🎬 ChatBotService: Attempting to send movie comment from ${bot.username}: "${response.message}"`);
-                console.log(`🎬 ChatBotService: Socket connected: ${botInstance.socket.connected}, Bot connected: ${botInstance.connected}`);
+                logger.debug(`🎬 ChatBotService: Attempting to send movie comment from ${bot.username}: "${response.message}"`);
+                logger.debug(`🎬 ChatBotService: Socket connected: ${botInstance.socket.connected}, Bot connected: ${botInstance.connected}`);
                 
                 // Add message delivery verification
                 let messageDelivered = false;
@@ -1195,7 +1197,7 @@ class ChatBotService {
                 // Set up a timeout to verify message delivery
                 const deliveryTimeout = setTimeout(() => {
                     if (!messageDelivered) {
-                        console.error(`❌ ChatBotService: Message delivery timeout for ${bot.username} - message may not have reached chat`);
+                        logger.error(`❌ ChatBotService: Message delivery timeout for ${bot.username} - message may not have reached chat`);
                     }
                 }, 5000);
                 
@@ -1203,7 +1205,7 @@ class ChatBotService {
                 botInstance.socket.once('message-sent', () => {
                     messageDelivered = true;
                     clearTimeout(deliveryTimeout);
-                    console.log(`✅ ChatBotService: Message delivery confirmed for ${bot.username}`);
+                    logger.debug(`✅ ChatBotService: Message delivery confirmed for ${bot.username}`);
                 });
                 
                 // Emit the message
@@ -1226,7 +1228,7 @@ class ChatBotService {
                     exactPrompt: moviePrompt,
                 });
                 
-                console.log(`✅ ChatBotService: Movie comment sent from ${bot.username} to chat service`);
+                logger.debug(`✅ ChatBotService: Movie comment sent from ${bot.username} to chat service`);
                 
                 return {
                     success: true,
@@ -1244,8 +1246,8 @@ class ChatBotService {
                 if (botInstance.socket && !botInstance.socket.connected) errorDetails.push('Socket not connected to chat service');
                 
                 const errorMsg = `Failed to send message: ${errorDetails.join(', ')}`;
-                console.error(`❌ ChatBotService: ${errorMsg} for bot ${bot.username} (ID: ${bot.id})`);
-                console.error(`❌ ChatBotService: Bot socket state:`, {
+                logger.error(`❌ ChatBotService: ${errorMsg} for bot ${bot.username} (ID: ${bot.id})`);
+                logger.error(`❌ ChatBotService: Bot socket state:`, {
                     hasSocket: !!botInstance.socket,
                     socketConnected: botInstance.socket?.connected,
                     botConnected: botInstance.connected,
@@ -1256,7 +1258,7 @@ class ChatBotService {
             }
             
         } catch (error) {
-            console.error('❌ ChatBotService: Error generating movie comment:', error);
+            logger.error('❌ ChatBotService: Error generating movie comment:', error);
             return { success: false, error: error.message };
         }
     }
@@ -1345,7 +1347,7 @@ class ChatBotService {
                 }
             } catch (modErr) {
                 if (modErr.droppedReason === 'moderated') throw modErr;
-                console.error('❌ ChatBotService: vision moderation gate threw:', modErr.message);
+                logger.error('❌ ChatBotService: vision moderation gate threw:', modErr.message);
             }
         }
 
@@ -1403,7 +1405,7 @@ class ChatBotService {
                 exactPrompt: exactPromptRedacted,
             });
         } catch (persistErr) {
-            console.error('❌ ChatBotService: vision comment persistence failed:', persistErr.message);
+            logger.error('❌ ChatBotService: vision comment persistence failed:', persistErr.message);
         }
 
         return { success: true, message: response.message, bot: bot.username, messageId };
@@ -1411,11 +1413,11 @@ class ChatBotService {
 
     setGlobalPrompt(prompt) {
         this.globalPrompt = prompt;
-        console.log('🤖 ChatBotService: Global prompt updated');
+        logger.debug('🤖 ChatBotService: Global prompt updated');
     }
 
     shutdown() {
-        console.log('Shutting down ChatBot Service...');
+        logger.debug('Shutting down ChatBot Service...');
         this.bots.forEach((bot, id) => {
             this.stopBot(id);
         });

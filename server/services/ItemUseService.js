@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'ItemUseService' });
+
 // server/services/ItemUseService.js
 //
 // Stateless orchestrator for the `/inventory/use/:itemId` mega-handler
@@ -17,7 +19,7 @@
 //
 // Behaviour MUST be byte-equivalent to the original handler: same status
 // codes, same response shape, same DB writes, same socket emits, same chat
-// broadcasts, same console.log spam (callers tail logs for forensics).
+// broadcasts, same log-spam shape (callers tail logs for forensics).
 //
 // Sub-methods are organised by item-type branch and are private-by-convention
 // (leading underscore). The single public entry is `useItem`.
@@ -81,9 +83,9 @@ class ItemUseService {
                 return { ok: false, kind: 'item-not-found' };
             }
 
-            console.log(`🎯 ITEMS: Item "${item.display_name}" (${item.item_type}) being used by user ${userId}`);
-            console.log(`🎯 ITEMS: Item ID: ${item.id}, Name: ${item.name}`);
-            console.log(`🎯 ITEMS: Effect Data: ${item.effect_data}`);
+            logger.debug(`🎯 ITEMS: Item "${item.display_name}" (${item.item_type}) being used by user ${userId}`);
+            logger.debug(`🎯 ITEMS: Item ID: ${item.id}, Name: ${item.name}`);
+            logger.debug(`🎯 ITEMS: Effect Data: ${item.effect_data}`);
 
             // Check if this is a TTS item that needs text input
             const isTTSItem = item.name === 'megaphone' || item.name === 'tts_message';
@@ -102,26 +104,26 @@ class ItemUseService {
             let isAutoTrigger = false;
             if (item.name === 'fart' || item.name === 'thunderstorm') {
                 isAutoTrigger = true; // Fart and thunderstorm always auto-trigger
-                console.log(`🌩️ ITEMS: ${item.name} detected - setting autoTrigger to true`);
+                logger.debug(`🌩️ ITEMS: ${item.name} detected - setting autoTrigger to true`);
             } else if (isInteractiveItem && canvasFxService) {
                 const interactionConfig = canvasFxService.getInteractionConfig(item);
                 isAutoTrigger = interactionConfig && interactionConfig.autoTrigger;
-                console.log(`🔍 ITEMS: Item ${item.name} - autoTrigger: ${isAutoTrigger}`);
+                logger.debug(`🔍 ITEMS: Item ${item.name} - autoTrigger: ${isAutoTrigger}`);
             }
 
-            console.log(`🎯 ITEMS DEBUG: Item ${item.name} - isInteractiveItem: ${isInteractiveItem}, isAutoTrigger: ${isAutoTrigger}, isTTSItem: ${isTTSItem}, item_type: ${item.item_type}`);
+            logger.debug(`🎯 ITEMS DEBUG: Item ${item.name} - isInteractiveItem: ${isInteractiveItem}, isAutoTrigger: ${isAutoTrigger}, isTTSItem: ${isTTSItem}, item_type: ${item.item_type}`);
 
             // Check if this is a buff/debuff item
             const isBuffDebuffItem = itemService.isBuffOrDebuffItem(item);
 
             // Check if this is a cooldown modifier item (guard or weapon)
             const isCooldownModifier = itemService.isCooldownModifierItem(item);
-            console.log(`🔍 ITEMS DEBUG: Item "${item.display_name}" - Type: ${item.item_type}, isBuffDebuffItem: ${isBuffDebuffItem}, isCooldownModifier: ${isCooldownModifier}`);
+            logger.debug(`🔍 ITEMS DEBUG: Item "${item.display_name}" - Type: ${item.item_type}, isBuffDebuffItem: ${isBuffDebuffItem}, isCooldownModifier: ${isCooldownModifier}`);
 
             // Extra debugging for fortress_wall specifically
             if (item.name === 'fortress_wall') {
-                console.log(`🏰 FORTRESS DEBUG: This is the fortress_wall item!`);
-                console.log(`🏰 FORTRESS DEBUG: Should take cooldown modifier path`);
+                logger.debug(`🏰 FORTRESS DEBUG: This is the fortress_wall item!`);
+                logger.debug(`🏰 FORTRESS DEBUG: Should take cooldown modifier path`);
             }
 
             const ctx = {
@@ -153,7 +155,7 @@ class ItemUseService {
                 return this._applyRegular(ctx);
             }
         } catch (error) {
-            console.error('Error using item:', error);
+            logger.error('Error using item:', error);
             if (error.message && error.message.includes('cooldown')) {
                 return { ok: false, kind: 'cooldown', message: error.message };
             }
@@ -167,14 +169,14 @@ class ItemUseService {
         const { user, userId, itemId, item, streamId, services, sendSystemMessage } = ctx;
         const { inventoryService, canvasFxService, soundFxService } = services;
 
-        console.log(`🔥 ITEMS: Auto-trigger item ${item.display_name} - consuming immediately`);
+        logger.debug(`🔥 ITEMS: Auto-trigger item ${item.display_name} - consuming immediately`);
 
         // Consume the item
         const usageResult = await inventoryService.useItem(userId, itemId, streamId);
 
         // Special handling for Fart item
         if (item.name === 'fart') {
-            console.log(`💨 ITEMS: Fart item auto-triggered by ${user.username}`);
+            logger.debug(`💨 ITEMS: Fart item auto-triggered by ${user.username}`);
 
             // Queue the sound effect first
             if (soundFxService) {
@@ -184,9 +186,9 @@ class ItemUseService {
                     'https://www.101soundboards.com/sounds/23972494-fart-reverb',
                     { streamId }
                 ).then(() => {
-                    console.log(`🔊 ITEMS: Fart sound effect queued`);
+                    logger.debug(`🔊 ITEMS: Fart sound effect queued`);
                 }).catch(error => {
-                    console.error('❌ ITEMS: Failed to play fart sound:', error);
+                    logger.error('❌ ITEMS: Failed to play fart sound:', error);
                 });
             }
 
@@ -201,9 +203,9 @@ class ItemUseService {
                             position: { x: 0.5, y: 0.7 } // Center-bottom of screen
                         }
                     ).then(() => {
-                        console.log(`💨 ITEMS: Fart visual effect triggered (after 1000ms delay)`);
+                        logger.debug(`💨 ITEMS: Fart visual effect triggered (after 1000ms delay)`);
                     }).catch(error => {
-                        console.error('❌ ITEMS: Failed to trigger fart visual:', error);
+                        logger.error('❌ ITEMS: Failed to trigger fart visual:', error);
                     });
                 }
             }, 2000); // 2 second delay to sync with sound
@@ -214,7 +216,7 @@ class ItemUseService {
 
         // Special handling for Thunderstorm item
         if (item.name === 'thunderstorm') {
-            console.log(`⛈️ ITEMS: Thunderstorm item auto-triggered by ${user.username}`);
+            logger.debug(`⛈️ ITEMS: Thunderstorm item auto-triggered by ${user.username}`);
 
             if (soundFxService) {
                 soundFxService.queue101Soundboard(
@@ -223,9 +225,9 @@ class ItemUseService {
                     'https://www.101soundboards.com/sounds/74377-thunderstorm',
                     { streamId }
                 ).then(() => {
-                    console.log(`🔊 ITEMS: Thunderstorm sound effect queued`);
+                    logger.debug(`🔊 ITEMS: Thunderstorm sound effect queued`);
                 }).catch(error => {
-                    console.error('❌ ITEMS: Failed to play thunderstorm sound:', error);
+                    logger.error('❌ ITEMS: Failed to play thunderstorm sound:', error);
                 });
             }
 
@@ -239,9 +241,9 @@ class ItemUseService {
                             position: { x: 0.5, y: 0.5 } // Center of screen
                         }
                     ).then(() => {
-                        console.log(`⛈️ ITEMS: Thunderstorm visual effect triggered (after 2 second delay)`);
+                        logger.debug(`⛈️ ITEMS: Thunderstorm visual effect triggered (after 2 second delay)`);
                     }).catch(error => {
-                        console.error('❌ ITEMS: Failed to trigger thunderstorm visual:', error);
+                        logger.error('❌ ITEMS: Failed to trigger thunderstorm visual:', error);
                     });
                 }
             }, 2000); // 2 second delay to sync with sound
@@ -269,7 +271,7 @@ class ItemUseService {
         const { user, userId, itemId, item, streamId, streamStatus, services, io, sessionService } = ctx;
         const { inventoryService, itemService, canvasFxService } = services;
 
-        console.log(`🎯 ITEMS: Taking interactive item path for ${item.display_name}`);
+        logger.debug(`🎯 ITEMS: Taking interactive item path for ${item.display_name}`);
 
         // Check if there's an active stream for interactive items
         // Allow anonymous streamers too - check both hasActiveStream and MediaSoup
@@ -277,12 +279,12 @@ class ItemUseService {
         const hasMediaSoupStreamer = mediasoupService && mediasoupService.currentStreamer;
 
         if (!streamStatus.hasActiveStream && !hasMediaSoupStreamer) {
-            console.log(`❌ ITEMS: No active stream for interactive item ${item.display_name}`);
-            console.log(`   StreamService hasActiveStream: ${streamStatus.hasActiveStream}`);
-            console.log(`   MediasoupService currentStreamer: ${hasMediaSoupStreamer}`);
+            logger.debug(`❌ ITEMS: No active stream for interactive item ${item.display_name}`);
+            logger.debug(`   StreamService hasActiveStream: ${streamStatus.hasActiveStream}`);
+            logger.debug(`   MediasoupService currentStreamer: ${hasMediaSoupStreamer}`);
             return { ok: false, kind: 'no-active-stream' };
         } else if (!streamStatus.hasActiveStream && hasMediaSoupStreamer) {
-            console.log(`⚠️ ITEMS: StreamService says no stream but MediaSoup has streamer - allowing for anonymous`);
+            logger.debug(`⚠️ ITEMS: StreamService says no stream but MediaSoup has streamer - allowing for anonymous`);
         }
 
         // For interactive items, only validate but don't consume the item yet
@@ -353,7 +355,7 @@ class ItemUseService {
         const { user, userId, itemId, item, streamId, services, io, sessionService, sendSystemMessage } = ctx;
         const { inventoryService, itemService, streamService } = services;
 
-        console.log(`🎭 ITEMS: Taking buff/debuff path for ${item.display_name}`);
+        logger.debug(`🎭 ITEMS: Taking buff/debuff path for ${item.display_name}`);
         // Handle buff/debuff items
         const buffDebuffService = services.buffDebuffService;
         if (!buffDebuffService) {
@@ -369,7 +371,7 @@ class ItemUseService {
         if (!currentStreamerSocketId && mediasoupService) {
             currentStreamerSocketId = mediasoupService.getCurrentStreamer();
             if (currentStreamerSocketId) {
-                console.log(`🎭 ITEMS: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                logger.debug(`🎭 ITEMS: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
             }
         }
 
@@ -381,15 +383,15 @@ class ItemUseService {
                 // Accept any user ID, including negative IDs for anonymous/viewbot users
                 targetUserId = session.userId;
                 if (targetUserId < 0) {
-                    console.log(`🎭 ITEMS: Found anonymous/viewbot streamer with synthetic ID: ${targetUserId}`);
+                    logger.debug(`🎭 ITEMS: Found anonymous/viewbot streamer with synthetic ID: ${targetUserId}`);
                 } else {
-                    console.log(`🎭 ITEMS: Found current streamer userId: ${targetUserId}`);
+                    logger.debug(`🎭 ITEMS: Found current streamer userId: ${targetUserId}`);
                 }
             } else {
-                console.log(`🎭 ITEMS: No session found for current streamer ${currentStreamerSocketId}`);
+                logger.debug(`🎭 ITEMS: No session found for current streamer ${currentStreamerSocketId}`);
             }
         } else {
-            console.log(`🎭 ITEMS: No current streamer or session service unavailable`);
+            logger.debug(`🎭 ITEMS: No current streamer or session service unavailable`);
         }
 
         if (!targetUserId) {
@@ -401,7 +403,7 @@ class ItemUseService {
 
         // Apply the buff/debuff
         try {
-            console.log(`🎭 ITEMS: About to call applyBuffDebuffItem with params:`, {
+            logger.debug(`🎭 ITEMS: About to call applyBuffDebuffItem with params:`, {
                 targetUserId,
                 itemId,
                 appliedByUserId: userId,
@@ -418,22 +420,22 @@ class ItemUseService {
                 streamId // Pass the stream ID for visual effects
             );
 
-            console.log(`🎭 ITEMS: applyBuffDebuffItem returned:`, buffResult);
+            logger.debug(`🎭 ITEMS: applyBuffDebuffItem returned:`, buffResult);
 
             // Add the buff result to the response
             result.buffResult = buffResult;
             result.targetUserId = targetUserId;
             result.message = `${result.item.displayName} applied to streamer successfully!`;
 
-            console.log(`🎭 ITEMS: Applied ${result.item.displayName} buff/debuff to user ${targetUserId}`);
+            logger.debug(`🎭 ITEMS: Applied ${result.item.displayName} buff/debuff to user ${targetUserId}`);
 
             // Send system message about the effect
             const effectMessage = `${user.username} used ${result.item.displayName} on the streamer!`;
-            console.log(`📨 ITEMS: Sending buff/debuff chat message: "${effectMessage}"`);
+            logger.debug(`📨 ITEMS: Sending buff/debuff chat message: "${effectMessage}"`);
             await sendSystemMessage(effectMessage);
 
         } catch (buffError) {
-            console.error('Error applying buff/debuff effect:', buffError);
+            logger.error('Error applying buff/debuff effect:', buffError);
             result.message = `${result.item.displayName} used but buff/debuff effect failed: ${buffError.message}`;
         }
 
@@ -479,7 +481,7 @@ class ItemUseService {
         const { user, userId, itemId, item, streamId, services, io, sessionService, sendSystemMessage } = ctx;
         const { inventoryService, itemService } = services;
 
-        console.log(`🛡️⚔️ ITEMS: Taking cooldown modifier path for ${item.display_name}`);
+        logger.debug(`🛡️⚔️ ITEMS: Taking cooldown modifier path for ${item.display_name}`);
         // Handle cooldown modifier items
         const takeoverService = services.takeoverService;
         if (!takeoverService) {
@@ -503,11 +505,11 @@ class ItemUseService {
             result.cooldownEffects = cooldownResult.effects;
             result.message = `${result.item.displayName} used successfully! ${cooldownResult.effects.map(e => e.message).join(', ')}`;
 
-            console.log(`🛡️⚔️ ITEMS: Applied ${result.item.displayName} cooldown effects:`, cooldownResult.effects);
+            logger.debug(`🛡️⚔️ ITEMS: Applied ${result.item.displayName} cooldown effects:`, cooldownResult.effects);
 
             // CRITICAL DEBUG: Check cooldown immediately after modification
             const immediateCheck = await takeoverService.getGlobalCooldownRemaining();
-            console.log(`🔍 CRITICAL DEBUG: Cooldown remaining immediately after modification: ${immediateCheck}s`);
+            logger.debug(`🔍 CRITICAL DEBUG: Cooldown remaining immediately after modification: ${immediateCheck}s`);
 
             // Send system message about the effect
             const effectMessages = cooldownResult.effects.map(effect => {
@@ -524,12 +526,12 @@ class ItemUseService {
             });
 
             for (const message of effectMessages) {
-                console.log(`📨 ITEMS: Sending cooldown modifier chat message: "${message}"`);
+                logger.debug(`📨 ITEMS: Sending cooldown modifier chat message: "${message}"`);
                 await sendSystemMessage(message);
             }
 
         } catch (cooldownError) {
-            console.error('Error applying cooldown effect:', cooldownError);
+            logger.error('Error applying cooldown effect:', cooldownError);
             result.message = `${result.item.displayName} used but cooldown effect failed: ${cooldownError.message}`;
         }
 
@@ -594,7 +596,7 @@ class ItemUseService {
         const { userId, itemId, item, services } = ctx;
         const { inventoryService, itemService } = services;
 
-        console.log(`🎯 ITEMS: Taking ${opts.mode} path for ${item.display_name}`);
+        logger.debug(`🎯 ITEMS: Taking ${opts.mode} path for ${item.display_name}`);
 
         const inventoryItem = await inventoryService.getInventoryItem(userId, itemId);
         if (!inventoryItem || inventoryItem.quantity < 1) {
@@ -644,15 +646,15 @@ class ItemUseService {
         } = ctx;
         const { inventoryService, canvasFxService, streamService, soundFxService } = services;
 
-        console.log(`🎯 ITEMS: Taking regular item path for ${item.display_name}`);
+        logger.debug(`🎯 ITEMS: Taking regular item path for ${item.display_name}`);
         // For non-interactive, non-cooldown-modifier items, use the original flow
-        console.log(`🔍 ITEMS DEBUG: About to call inventoryService.useItem for ${item.display_name}`);
+        logger.debug(`🔍 ITEMS DEBUG: About to call inventoryService.useItem for ${item.display_name}`);
         const result = await inventoryService.useItem(userId, itemId, streamId);
-        console.log(`🔍 ITEMS DEBUG: inventoryService.useItem completed for ${item.display_name}, result:`, result);
+        logger.debug(`🔍 ITEMS DEBUG: inventoryService.useItem completed for ${item.display_name}, result:`, result);
 
         // Special handling for Fart item (automatic sound + visual)
         if (item.name === 'fart') {
-            console.log(`💨 ITEMS: Fart item activated by ${user.username}`);
+            logger.debug(`💨 ITEMS: Fart item activated by ${user.username}`);
 
             // Trigger the sound effect automatically
             if (soundFxService) {
@@ -663,9 +665,9 @@ class ItemUseService {
                         'https://www.101soundboards.com/sounds/23972494-fart-reverb',
                         { streamId }
                     );
-                    console.log(`🔊 ITEMS: Fart sound effect queued`);
+                    logger.debug(`🔊 ITEMS: Fart sound effect queued`);
                 } catch (error) {
-                    console.error('❌ ITEMS: Failed to play fart sound:', error);
+                    logger.error('❌ ITEMS: Failed to play fart sound:', error);
                 }
             }
 
@@ -680,9 +682,9 @@ class ItemUseService {
                             position: { x: 0.5, y: 0.7 } // Center-bottom of screen
                         }
                     ).then(() => {
-                        console.log(`💨 ITEMS: Fart visual effect triggered (after 2 second delay)`);
+                        logger.debug(`💨 ITEMS: Fart visual effect triggered (after 2 second delay)`);
                     }).catch(error => {
-                        console.error('❌ ITEMS: Failed to trigger fart visual:', error);
+                        logger.error('❌ ITEMS: Failed to trigger fart visual:', error);
                     });
                 }
             }, 2000); // 2 second delay to sync with sound
@@ -693,10 +695,10 @@ class ItemUseService {
 
         // Special handling for Kill Switch after item consumption
         if (item.name === 'kill_switch') {
-            console.log(`💥 ITEMS: Kill Switch activated by ${user.username} (user ${userId}) in regular path`);
+            logger.debug(`💥 ITEMS: Kill Switch activated by ${user.username} (user ${userId}) in regular path`);
 
             if (!streamService || !sessionService || !io) {
-                console.error('❌ KILL SWITCH: Required services not available');
+                logger.error('❌ KILL SWITCH: Required services not available');
                 return { ok: false, kind: 'killswitch-failed' };
             }
 
@@ -708,21 +710,21 @@ class ItemUseService {
             if (!currentStreamerSocketId && mediasoupServiceForKillSwitch) {
                 currentStreamerSocketId = mediasoupServiceForKillSwitch.getCurrentStreamer();
                 if (currentStreamerSocketId) {
-                    console.log(`💥 KILL SWITCH: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                    logger.debug(`💥 KILL SWITCH: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
                 }
             }
 
             if (!currentStreamerSocketId) {
-                console.log('❌ KILL SWITCH: No active streamer to disconnect');
+                logger.debug('❌ KILL SWITCH: No active streamer to disconnect');
                 return { ok: false, kind: 'no-active-streamer-killswitch' };
             }
 
-            console.log(`💥 KILL SWITCH: Current streamer socket: ${currentStreamerSocketId}`);
+            logger.debug(`💥 KILL SWITCH: Current streamer socket: ${currentStreamerSocketId}`);
 
             // Get streamer's session info for logging
             const streamerSession = sessionService.getSessionBySocketId(currentStreamerSocketId);
             const streamerUsername = streamerSession?.username || 'Unknown';
-            console.log(`💥 KILL SWITCH: Disconnecting streamer "${streamerUsername}" (socket: ${currentStreamerSocketId})`);
+            logger.debug(`💥 KILL SWITCH: Disconnecting streamer "${streamerUsername}" (socket: ${currentStreamerSocketId})`);
 
             // Force disconnect the current streamer
             try {
@@ -744,15 +746,15 @@ class ItemUseService {
                 setTimeout(() => {
                     const socket = io.sockets.sockets.get(currentStreamerSocketId);
                     if (socket) {
-                        console.log(`💥 KILL SWITCH: Force disconnecting socket ${currentStreamerSocketId}`);
+                        logger.debug(`💥 KILL SWITCH: Force disconnecting socket ${currentStreamerSocketId}`);
                         socket.disconnect(true);
                     }
                 }, 1000); // 1 second delay to allow messages to be sent
 
-                console.log(`✅ KILL SWITCH: Successfully activated by ${user.username}, disconnecting ${streamerUsername}`);
+                logger.debug(`✅ KILL SWITCH: Successfully activated by ${user.username}, disconnecting ${streamerUsername}`);
 
             } catch (error) {
-                console.error('❌ KILL SWITCH: Error during force disconnect:', error);
+                logger.error('❌ KILL SWITCH: Error during force disconnect:', error);
                 return { ok: false, kind: 'killswitch-failed' };
             }
 
@@ -798,7 +800,7 @@ class ItemUseService {
             );
 
             if (effect) {
-                console.log(`🎨 ITEMS: Triggered visual effect for ${result.item.displayName}`);
+                logger.debug(`🎨 ITEMS: Triggered visual effect for ${result.item.displayName}`);
             }
         }
 

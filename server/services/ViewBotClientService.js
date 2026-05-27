@@ -8,6 +8,8 @@ const processManager = require('./ProcessManager');
 const stateManager = require('./ViewBotStateManager');
 const ViewBotInstance = require('./viewbot/ViewBotInstance');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotClientService' });
+
 // Load environment variables
 require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 
@@ -27,7 +29,7 @@ class ViewBotClientService {
     const envServerUrl = process.env.VIEWBOT_SERVER_URL || `${protocol}://${host}:${port}`;
     this.serverUrl = serverUrl || envServerUrl;
     
-    console.log(`🤖 VIEWBOT CLIENT: Service initialized with server URL: ${this.serverUrl}`);
+    logger.debug(`🤖 VIEWBOT CLIENT: Service initialized with server URL: ${this.serverUrl}`);
     this.mediasoupService = mediasoupService;
     this.streamService = streamService;
     this.viewbotService = viewbotService;
@@ -116,7 +118,7 @@ class ViewBotClientService {
     // Initialize database and restore state
     this.initialize();
     
-    console.log('🤖 VIEWBOT CLIENT: Service initialized with cooldown system and rotation queue');
+    logger.debug('🤖 VIEWBOT CLIENT: Service initialized with cooldown system and rotation queue');
   }
 
   /**
@@ -130,10 +132,10 @@ class ViewBotClientService {
         this.rotationProbability = config.rotationProbability || 0.31;
         this.rotationCheckIntervalMin = config.rotationCheckIntervalMin || 5000;
         this.rotationCheckIntervalMax = config.rotationCheckIntervalMax || 10000;
-        console.log(`📄 Loaded rotation config: ${(this.rotationProbability * 100).toFixed(1)}% probability, ${this.rotationCheckIntervalMin/1000}-${this.rotationCheckIntervalMax/1000}s intervals`);
+        logger.debug(`📄 Loaded rotation config: ${(this.rotationProbability * 100).toFixed(1)}% probability, ${this.rotationCheckIntervalMin/1000}-${this.rotationCheckIntervalMax/1000}s intervals`);
       }
     } catch (error) {
-      console.log('⚠️ Could not load rotation config, using defaults:', error.message);
+      logger.debug('⚠️ Could not load rotation config, using defaults:', error.message);
     }
   }
   
@@ -150,9 +152,9 @@ class ViewBotClientService {
         comment: `Rotation settings: ${(this.rotationProbability * 100).toFixed(1)}% probability, ${this.rotationCheckIntervalMin/1000}-${this.rotationCheckIntervalMax/1000} second intervals`
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-      console.log(`💾 Saved rotation config to file`);
+      logger.debug(`💾 Saved rotation config to file`);
     } catch (error) {
-      console.error('❌ Could not save rotation config:', error.message);
+      logger.error('❌ Could not save rotation config:', error.message);
     }
   }
 
@@ -181,7 +183,7 @@ class ViewBotClientService {
       this.rotationCheckIntervalMax = settings.rotationCheckIntervalMax;
     }
     
-    console.log(`🔄 Updated rotation settings: ${(this.rotationProbability * 100).toFixed(1)}% probability, ${this.rotationCheckIntervalMin/1000}-${this.rotationCheckIntervalMax/1000}s intervals`);
+    logger.debug(`🔄 Updated rotation settings: ${(this.rotationProbability * 100).toFixed(1)}% probability, ${this.rotationCheckIntervalMin/1000}-${this.rotationCheckIntervalMax/1000}s intervals`);
     
     // Save to config file
     this.saveRotationConfig();
@@ -199,7 +201,7 @@ class ViewBotClientService {
       (bot) => (typeof bot.isStreaming === 'function' ? bot.isStreaming() : bot.streaming)
     );
     if (activeBots.length > 0) {
-      console.log('🔄 Restarting rotation timers with new settings...');
+      logger.debug('🔄 Restarting rotation timers with new settings...');
       activeBots.forEach(bot => {
         if (bot.rotationCheckTimer) {
           clearTimeout(bot.rotationCheckTimer);
@@ -233,21 +235,21 @@ class ViewBotClientService {
       // Check presence after a short delay to ensure all bots are initialized
       // CRITICAL: Only check presence if rotation wasn't already restarted
       setTimeout(() => {
-        console.log('🔍 VIEWBOT CLIENT: Initial presence check...');
+        logger.debug('🔍 VIEWBOT CLIENT: Initial presence check...');
         // Clear initialization flag
         this.initializationInProgress = false;
         // Only maintain presence if no bot is currently live
         if (!this.currentLiveBot) {
           this.maintainViewBotPresence();
         } else {
-          console.log(`ℹ️ VIEWBOT CLIENT: Skipping presence check - ${this.currentLiveBot} is already live`);
+          logger.debug(`ℹ️ VIEWBOT CLIENT: Skipping presence check - ${this.currentLiveBot} is already live`);
         }
       }, 10000); // 10 second delay for bots to initialize
       
-      console.log('✅ VIEWBOT CLIENT: Service fully initialized with database persistence');
+      logger.debug('✅ VIEWBOT CLIENT: Service fully initialized with database persistence');
     } catch (error) {
-      console.error('❌ VIEWBOT CLIENT: Failed to initialize with database:', error);
-      console.log('⚠️ VIEWBOT CLIENT: Continuing without persistence (memory-only mode)');
+      logger.error('❌ VIEWBOT CLIENT: Failed to initialize with database:', error);
+      logger.debug('⚠️ VIEWBOT CLIENT: Continuing without persistence (memory-only mode)');
     }
   }
 
@@ -258,10 +260,10 @@ class ViewBotClientService {
     const ffmpegCheck = await ViewBotClientService.checkFFmpegAvailability();
     if (ffmpegCheck.available) {
       this.ffmpegPath = ffmpegCheck.path;
-      console.log(`✅ VIEWBOT CLIENT: Detected FFmpeg at ${this.ffmpegPath}`);
+      logger.debug(`✅ VIEWBOT CLIENT: Detected FFmpeg at ${this.ffmpegPath}`);
     } else {
-      console.error(`❌ VIEWBOT CLIENT: FFmpeg not found - ViewBot streaming will not work`);
-      console.error(`📋 VIEWBOT CLIENT: Please install FFmpeg and add it to PATH`);
+      logger.error(`❌ VIEWBOT CLIENT: FFmpeg not found - ViewBot streaming will not work`);
+      logger.error(`📋 VIEWBOT CLIENT: Please install FFmpeg and add it to PATH`);
     }
   }
 
@@ -270,14 +272,14 @@ class ViewBotClientService {
    */
   async restoreSystemState() {
     if (!this.dbInitialized) {
-      console.log('⚠️ VIEWBOT CLIENT: Database not initialized, skipping system state restore');
+      logger.debug('⚠️ VIEWBOT CLIENT: Database not initialized, skipping system state restore');
       return;
     }
     
     try {
-      console.log('📊 VIEWBOT CLIENT: Loading system state from database...');
+      logger.debug('📊 VIEWBOT CLIENT: Loading system state from database...');
       const state = await this.dbService.loadSystemState();
-      console.log('📊 VIEWBOT CLIENT: Loaded state:', state);
+      logger.debug('📊 VIEWBOT CLIENT: Loaded state:', state);
       
       this.rotationEnabled = state.rotationEnabled;
       this.currentLiveBot = state.currentLiveBot;
@@ -295,7 +297,7 @@ class ViewBotClientService {
         this.rotationCheckIntervalMax = state.rotationCheckIntervalMax;
       }
       
-      console.log(`🔄 VIEWBOT CLIENT: Restored system state - rotation: ${this.rotationEnabled}, live bot: ${this.currentLiveBot}`);
+      logger.debug(`🔄 VIEWBOT CLIENT: Restored system state - rotation: ${this.rotationEnabled}, live bot: ${this.currentLiveBot}`);
       
       // CRITICAL FIX: Don't restart rotation here - let restoreViewBots handle it
       // This prevents race conditions during startup
@@ -306,7 +308,7 @@ class ViewBotClientService {
       }, 60000); // Clean up every 60 seconds
       
     } catch (error) {
-      console.error('❌ VIEWBOT CLIENT: Failed to restore system state:', error);
+      logger.error('❌ VIEWBOT CLIENT: Failed to restore system state:', error);
     }
   }
   
@@ -328,7 +330,7 @@ class ViewBotClientService {
         ];
         
         if (clearableErrors.some(err => bot.lastError.includes(err))) {
-          console.log(`🧹 Clearing stale error for ViewBot ${botId}: ${bot.lastError}`);
+          logger.debug(`🧹 Clearing stale error for ViewBot ${botId}: ${bot.lastError}`);
           bot.lastError = null;
         }
       }
@@ -346,7 +348,7 @@ class ViewBotClientService {
       
       // CRITICAL PERFORMANCE FIX: Don't create ViewBotInstance objects at startup
       // Store only the configuration data
-      console.log(`📊 VIEWBOT CLIENT: Loading ${storedBots.length} ViewBot configurations from database...`);
+      logger.debug(`📊 VIEWBOT CLIENT: Loading ${storedBots.length} ViewBot configurations from database...`);
       
       // Create a map to store bot configurations without creating instances
       this.botConfigurations = new Map();
@@ -372,12 +374,12 @@ class ViewBotClientService {
         this.activeBots.set(botData.botId, placeholder);
       }
       
-      console.log(`✅ VIEWBOT CLIENT: Restored ${this.activeBots.size} ViewBots from database`);
+      logger.debug(`✅ VIEWBOT CLIENT: Restored ${this.activeBots.size} ViewBots from database`);
       
       // CRITICAL: Start rotation AFTER all bots are restored
       // This prevents race conditions where multiple bots try to stream
       if (this.rotationEnabled && !this.realStreamerActive) {
-        console.log(`🔄 VIEWBOT CLIENT: Starting rotation system after ViewBot restoration`);
+        logger.debug(`🔄 VIEWBOT CLIENT: Starting rotation system after ViewBot restoration`);
         // Give bots time to fully initialize their connections
         setTimeout(() => {
           // Clear initialization flag before starting rotation
@@ -386,7 +388,7 @@ class ViewBotClientService {
         }, 3000);
       }
     } catch (error) {
-      console.error('❌ VIEWBOT CLIENT: Failed to restore ViewBots:', error);
+      logger.error('❌ VIEWBOT CLIENT: Failed to restore ViewBots:', error);
     }
   }
 
@@ -407,7 +409,7 @@ class ViewBotClientService {
         rotationCheckIntervalMax: this.rotationCheckIntervalMax
       });
     } catch (error) {
-      console.error('❌ VIEWBOT CLIENT: Failed to save system state:', error);
+      logger.error('❌ VIEWBOT CLIENT: Failed to save system state:', error);
     }
   }
 
@@ -459,7 +461,7 @@ class ViewBotClientService {
         });
         
         if (result.available) {
-          console.log(`✅ VIEWBOT CLIENT: Found FFmpeg at ${ffmpegPath}`);
+          logger.debug(`✅ VIEWBOT CLIENT: Found FFmpeg at ${ffmpegPath}`);
           return { available: true, path: ffmpegPath };
         }
         
@@ -485,12 +487,12 @@ class ViewBotClientService {
   async createBot(config = {}) {
     // Allow multiple viewbots to coexist - no longer enforce singleton pattern
     // This enables proper persistence and multiple viewbot management
-    console.log(`📊 VIEWBOT CLIENT: Current active bots: ${this.activeBots.size}`);
+    logger.debug(`📊 VIEWBOT CLIENT: Current active bots: ${this.activeBots.size}`);
     
     // Optional: Add a reasonable limit to prevent resource exhaustion
     const MAX_BOTS = 100; // Configurable limit
     if (this.activeBots.size >= MAX_BOTS) {
-      console.error(`❌ VIEWBOT CLIENT: Maximum number of bots (${MAX_BOTS}) reached`);
+      logger.error(`❌ VIEWBOT CLIENT: Maximum number of bots (${MAX_BOTS}) reached`);
       return {
         success: false,
         message: `Maximum number of ViewBots (${MAX_BOTS}) reached. Please remove some bots before creating new ones.`
@@ -500,11 +502,11 @@ class ViewBotClientService {
     // Check if FFmpeg is available before creating ViewBot
     const ffmpegCheck = await ViewBotClientService.checkFFmpegAvailability();
     if (!ffmpegCheck.available) {
-      console.error(`❌ VIEWBOT CLIENT: FFmpeg not available: ${ffmpegCheck.error}`);
+      logger.error(`❌ VIEWBOT CLIENT: FFmpeg not available: ${ffmpegCheck.error}`);
       if (ffmpegCheck.instructions) {
-        console.error(`📋 VIEWBOT CLIENT: Installation instructions:`);
+        logger.error(`📋 VIEWBOT CLIENT: Installation instructions:`);
         ffmpegCheck.instructions.forEach(instruction => {
-          console.error(`   ${instruction}`);
+          logger.error(`   ${instruction}`);
         });
       }
       return { 
@@ -522,20 +524,20 @@ class ViewBotClientService {
       // Only use FFmpeg if explicitly requested, otherwise use GStreamer
       if (botConfig.useGStreamer !== false) {
         botConfig.useGStreamer = true; // Default to GStreamer
-        console.log(`🎬 VIEWBOT CLIENT: Using GSTREAMER for video file streaming (default)`);
+        logger.debug(`🎬 VIEWBOT CLIENT: Using GSTREAMER for video file streaming (default)`);
       } else {
-        console.log(`🎬 VIEWBOT CLIENT: Using FFMPEG for video file streaming (explicitly requested)`);
+        logger.debug(`🎬 VIEWBOT CLIENT: Using FFMPEG for video file streaming (explicitly requested)`);
       }
     }
     
     // Convert streamDuration (minutes) to timeAllotment (milliseconds) if provided
     if (config.streamDuration && config.streamDuration > 0) {
       botConfig.timeAllotment = config.streamDuration * 60 * 1000; // Convert minutes to milliseconds
-      console.log(`⏱️ VIEWBOT CLIENT: Setting time allotment to ${config.streamDuration} minutes`);
+      logger.debug(`⏱️ VIEWBOT CLIENT: Setting time allotment to ${config.streamDuration} minutes`);
     }
 
     try {
-      console.log(`🤖 VIEWBOT CLIENT: Creating bot ${botId} with config:`, botConfig);
+      logger.debug(`🤖 VIEWBOT CLIENT: Creating bot ${botId} with config:`, botConfig);
       
       // CRITICAL: Always use correct server URL when creating new bots
       const protocol = 'https';
@@ -565,14 +567,14 @@ class ViewBotClientService {
             autoStart: botConfig.autoStart || false,
             timeAllotment: botConfig.timeAllotment || null
           });
-          console.log(`💾 VIEWBOT CLIENT: Saved ViewBot ${botId} to database`);
+          logger.debug(`💾 VIEWBOT CLIENT: Saved ViewBot ${botId} to database`);
         } catch (dbError) {
-          console.error(`⚠️ VIEWBOT CLIENT: Failed to save ViewBot ${botId} to database:`, dbError);
+          logger.error(`⚠️ VIEWBOT CLIENT: Failed to save ViewBot ${botId} to database:`, dbError);
           // Continue without database - bot is still created in memory
         }
       }
       
-      console.log(`✅ VIEWBOT CLIENT: Bot ${botId} created successfully`);
+      logger.debug(`✅ VIEWBOT CLIENT: Bot ${botId} created successfully`);
       
       return {
         success: true,
@@ -582,7 +584,7 @@ class ViewBotClientService {
         status: bot.getStatus()
       };
     } catch (error) {
-      console.error(`❌ VIEWBOT CLIENT: Failed to create bot ${botId}:`, error);
+      logger.error(`❌ VIEWBOT CLIENT: Failed to create bot ${botId}:`, error);
       return {
         success: false,
         message: `Failed to create bot: ${error.message}`
@@ -601,7 +603,7 @@ class ViewBotClientService {
     
     // If it's a placeholder, create the real ViewBotInstance
     if (bot.isPlaceholder) {
-      console.log(`🔄 VIEWBOT CLIENT: Creating real instance for placeholder ${botId}...`);
+      logger.debug(`🔄 VIEWBOT CLIENT: Creating real instance for placeholder ${botId}...`);
       
       const botConfig = this.botConfigurations.get(botId);
       if (!botConfig) {
@@ -636,7 +638,7 @@ class ViewBotClientService {
       this.activeBots.set(botId, realBot);
       bot = realBot;
       
-      console.log(`✅ VIEWBOT CLIENT: Created real instance for ${botId}`);
+      logger.debug(`✅ VIEWBOT CLIENT: Created real instance for ${botId}`);
     }
     
     // If already connected, return success
@@ -645,13 +647,13 @@ class ViewBotClientService {
     }
     
     // Initialize connection
-    console.log(`🔌 VIEWBOT CLIENT: Connecting ${botId}...`);
+    logger.debug(`🔌 VIEWBOT CLIENT: Connecting ${botId}...`);
     try {
       await bot.initialize();
-      console.log(`✅ VIEWBOT CLIENT: Connected ViewBot ${botId}`);
+      logger.debug(`✅ VIEWBOT CLIENT: Connected ViewBot ${botId}`);
       return { success: true };
     } catch (error) {
-      console.error(`❌ VIEWBOT CLIENT: Failed to connect ${botId}:`, error.message);
+      logger.error(`❌ VIEWBOT CLIENT: Failed to connect ${botId}:`, error.message);
       return { success: false, message: error.message };
     }
   }
@@ -660,12 +662,12 @@ class ViewBotClientService {
    * Starts streaming for a specific bot (integrates with rotation system)
    */
   async startBotStreaming(botId) {
-    console.log(`🎯 Starting ViewBot streaming for: ${botId.substring(0, 12)}...`);
+    logger.debug(`🎯 Starting ViewBot streaming for: ${botId.substring(0, 12)}...`);
     
     const bot = this.activeBots.get(botId);
     if (!bot) {
-      console.log(`❌ ViewBot ${botId} not found in activeBots map`);
-      console.log(`📊 Available bots: ${Array.from(this.activeBots.keys()).map(id => id.substring(0, 12)).join(', ')}`);
+      logger.debug(`❌ ViewBot ${botId} not found in activeBots map`);
+      logger.debug(`📊 Available bots: ${Array.from(this.activeBots.keys()).map(id => id.substring(0, 12)).join(', ')}`);
       return { success: false, message: `Bot ${botId} not found` };
     }
     
@@ -679,21 +681,21 @@ class ViewBotClientService {
     // The bot might have been replaced with a real instance during connection
     const connectedBot = this.activeBots.get(botId);
     if (!connectedBot) {
-      console.log(`❌ ViewBot ${botId} disappeared after connection`);
+      logger.debug(`❌ ViewBot ${botId} disappeared after connection`);
       return { success: false, message: `Bot ${botId} not found after connection` };
     }
 
     // Validate real streamer status first
-    console.log(`🔍 Validating real streamer status before starting ViewBot...`);
+    logger.debug(`🔍 Validating real streamer status before starting ViewBot...`);
     this.validateRealStreamerStatus();
     
     // Check if real streamer protection is active
     if (this.realStreamerActive) {
-      console.log(`🚫 ViewBot ${botId}: Blocked by real streamer protection`);
+      logger.debug(`🚫 ViewBot ${botId}: Blocked by real streamer protection`);
       return { success: false, message: 'Cannot start ViewBot - real streamer is active' };
     }
     
-    console.log(`✅ ViewBot ${botId}: Real streamer check passed, proceeding with start`);
+    logger.debug(`✅ ViewBot ${botId}: Real streamer check passed, proceeding with start`);
 
     try {
       // If rotation is enabled, stop current live bot first
@@ -701,10 +703,10 @@ class ViewBotClientService {
         const currentBot = this.activeBots.get(this.currentLiveBot);
         // Check if it's a real bot with methods, not a placeholder
         if (currentBot && currentBot.streaming && typeof currentBot.stopStreaming === 'function') {
-          console.log(`🔄 Stopping current live bot ${this.currentLiveBot} for manual start of ${botId}`);
+          logger.debug(`🔄 Stopping current live bot ${this.currentLiveBot} for manual start of ${botId}`);
           await currentBot.stopStreaming();
         } else if (currentBot && currentBot.streaming) {
-          console.log(`⚠️ Current bot ${this.currentLiveBot} is a placeholder, marking as not streaming`);
+          logger.debug(`⚠️ Current bot ${this.currentLiveBot} is a placeholder, marking as not streaming`);
           // Just clear the streaming flag if it's a placeholder
           this.currentLiveBot = null;
         }
@@ -719,17 +721,17 @@ class ViewBotClientService {
         this.currentLiveBotSetTime = Date.now();
           // Start rotation check timer for this bot
           connectedBot.startRotationCheckTimer();
-          console.log(`🎯 Manual start: Updated current live bot to ${botId} with probability-based rotation`);
+          logger.debug(`🎯 Manual start: Updated current live bot to ${botId} with probability-based rotation`);
         } else {
-          console.log(`⏸️ Manual start: ViewBot ${botId} started with rotation disabled - will stream indefinitely`);
+          logger.debug(`⏸️ Manual start: ViewBot ${botId} started with rotation disabled - will stream indefinitely`);
         }
         
-        console.log(`🎬 VIEWBOT CLIENT: Bot ${botId} streaming started manually`);
+        logger.debug(`🎬 VIEWBOT CLIENT: Bot ${botId} streaming started manually`);
       }
       
       return result;
     } catch (error) {
-      console.error(`❌ VIEWBOT CLIENT: Failed to start streaming for bot ${botId}:`, error);
+      logger.error(`❌ VIEWBOT CLIENT: Failed to start streaming for bot ${botId}:`, error);
       return {
         success: false,
         message: `Failed to start streaming: ${error.message}`
@@ -752,7 +754,7 @@ class ViewBotClientService {
       if (result.success) {
         // Update rotation system tracking
         if (this.rotationEnabled && this.currentLiveBot === botId) {
-          console.log(`🔄 Manual stop: Clearing current live bot ${botId}`);
+          logger.debug(`🔄 Manual stop: Clearing current live bot ${botId}`);
           this.currentLiveBot = null;
           
           // If rotation is enabled, try to start another ViewBot automatically
@@ -762,7 +764,7 @@ class ViewBotClientService {
           
           if (availableBots.length > 0) {
             const nextBot = this.selectViewBotWithCooldown(availableBots);
-            console.log(`🔄 Auto-starting next ViewBot: ${nextBot.botId}`);
+            logger.debug(`🔄 Auto-starting next ViewBot: ${nextBot.botId}`);
             
             // Start the next bot with a short delay
             setTimeout(async () => {
@@ -772,11 +774,11 @@ class ViewBotClientService {
                 this.applyBotCooldown(nextBot.botId);
                 // Start rotation check timer for the next bot
                 nextBot.startRotationCheckTimer();
-                console.log(`✅ Auto-rotation completed: ${botId} → ${nextBot.botId} (probability-based rotation)`)
+                logger.debug(`✅ Auto-rotation completed: ${botId} → ${nextBot.botId} (probability-based rotation)`)
                 this.currentLiveBot = nextBot.botId;
       this.currentLiveBotSetTime = Date.now();
               } catch (error) {
-                console.error(`❌ Auto-rotation failed:`, error);
+                logger.error(`❌ Auto-rotation failed:`, error);
               }
             }, 1000);
           }
@@ -786,13 +788,13 @@ class ViewBotClientService {
         const currentStreamer = this.streamService.getCurrentStreamer();
         if (currentStreamer === botId) {
           this.streamService.clearStreamer();
-          console.log(`🎬 VIEWBOT CLIENT: Bot ${botId} stepped down as active streamer`);
+          logger.debug(`🎬 VIEWBOT CLIENT: Bot ${botId} stepped down as active streamer`);
         }
       }
       
       return result;
     } catch (error) {
-      console.error(`❌ VIEWBOT CLIENT: Failed to stop streaming for bot ${botId}:`, error);
+      logger.error(`❌ VIEWBOT CLIENT: Failed to stop streaming for bot ${botId}:`, error);
       return {
         success: false,
         message: `Failed to stop streaming: ${error.message}`
@@ -826,7 +828,7 @@ class ViewBotClientService {
       if (bot.destroy && typeof bot.destroy === 'function') {
         await bot.destroy();
       } else if (bot.isPlaceholder) {
-        console.log(`🗑️ VIEWBOT CLIENT: Removing placeholder ${botId}`);
+        logger.debug(`🗑️ VIEWBOT CLIENT: Removing placeholder ${botId}`);
       }
       this.activeBots.delete(botId);
       
@@ -835,12 +837,12 @@ class ViewBotClientService {
       if (this.dbInitialized && deleteFromDatabase) {
         try {
           await this.dbService.deleteViewBot(botId);
-          console.log(`💾 VIEWBOT CLIENT: Removed ViewBot ${botId} from database`);
+          logger.debug(`💾 VIEWBOT CLIENT: Removed ViewBot ${botId} from database`);
         } catch (dbError) {
-          console.error(`⚠️ VIEWBOT CLIENT: Failed to remove ViewBot ${botId} from database:`, dbError);
+          logger.error(`⚠️ VIEWBOT CLIENT: Failed to remove ViewBot ${botId} from database:`, dbError);
         }
       } else if (!deleteFromDatabase) {
-        console.log(`📊 VIEWBOT CLIENT: Bot ${botId} disconnected but preserved in database`);
+        logger.debug(`📊 VIEWBOT CLIENT: Bot ${botId} disconnected but preserved in database`);
       }
       
       // Clear streamer if this bot was the active one
@@ -849,14 +851,14 @@ class ViewBotClientService {
         this.streamService.clearStreamer();
       }
       
-      console.log(`🗑️ VIEWBOT CLIENT: Bot ${botId} destroyed`);
+      logger.debug(`🗑️ VIEWBOT CLIENT: Bot ${botId} destroyed`);
       
       return {
         success: true,
         message: `Bot ${botId} destroyed`
       };
     } catch (error) {
-      console.error(`❌ VIEWBOT CLIENT: Failed to destroy bot ${botId}:`, error);
+      logger.error(`❌ VIEWBOT CLIENT: Failed to destroy bot ${botId}:`, error);
       return {
         success: false,
         message: `Failed to destroy bot: ${error.message}`
@@ -942,7 +944,7 @@ class ViewBotClientService {
       const result = await bot.updateConfig(config);
       return result;
     } catch (error) {
-      console.error(`❌ VIEWBOT CLIENT: Failed to update config for bot ${botId}:`, error);
+      logger.error(`❌ VIEWBOT CLIENT: Failed to update config for bot ${botId}:`, error);
       return {
         success: false,
         message: `Failed to update config: ${error.message}`
@@ -977,12 +979,12 @@ class ViewBotClientService {
               isEnabled: true,
               autoStart: false
             });
-            console.log(`💾 VIEWBOT CLIENT: Saved ViewBot ${botId} to database with name "${name}"`);
+            logger.debug(`💾 VIEWBOT CLIENT: Saved ViewBot ${botId} to database with name "${name}"`);
           } else {
-            console.log(`💾 VIEWBOT CLIENT: Updated name for ViewBot ${botId} in database`);
+            logger.debug(`💾 VIEWBOT CLIENT: Updated name for ViewBot ${botId} in database`);
           }
         } catch (dbError) {
-          console.error(`⚠️ VIEWBOT CLIENT: Failed to update ViewBot name in database:`, dbError);
+          logger.error(`⚠️ VIEWBOT CLIENT: Failed to update ViewBot name in database:`, dbError);
         }
       }
 
@@ -992,7 +994,7 @@ class ViewBotClientService {
         name
       };
     } catch (error) {
-      console.error(`❌ VIEWBOT CLIENT: Failed to update name for bot ${botId}:`, error);
+      logger.error(`❌ VIEWBOT CLIENT: Failed to update name for bot ${botId}:`, error);
       return {
         success: false,
         message: `Failed to update name: ${error.message}`
@@ -1056,7 +1058,7 @@ class ViewBotClientService {
    * Complete cleanup for server shutdown
    */
   async cleanup() {
-    console.log('🧹 ViewBotClientService: Starting complete cleanup...');
+    logger.debug('🧹 ViewBotClientService: Starting complete cleanup...');
     
     try {
       // Stop rotation timer
@@ -1067,20 +1069,20 @@ class ViewBotClientService {
       
       // Stop all GStreamer processes
       if (this.gstreamerService) {
-        console.log('   Stopping GStreamer service...');
+        logger.debug('   Stopping GStreamer service...');
         await this.gstreamerService.stopAll();
       }
       
       // Destroy all bots (this will close individual Puppeteer instances)
-      console.log('   Destroying all ViewBot clients...');
+      logger.debug('   Destroying all ViewBot clients...');
       await this.destroyAllBots();
       
       // Kill any orphaned Puppeteer processes
       await this.killOrphanedPuppeteerProcesses();
       
-      console.log('✅ ViewBotClientService: Cleanup complete');
+      logger.debug('✅ ViewBotClientService: Cleanup complete');
     } catch (error) {
-      console.error('❌ ViewBotClientService: Error during cleanup:', error);
+      logger.error('❌ ViewBotClientService: Error during cleanup:', error);
     }
   }
 
@@ -1088,7 +1090,7 @@ class ViewBotClientService {
    * Kill any orphaned Puppeteer browser processes
    */
   async killOrphanedPuppeteerProcesses() {
-    console.log('🧹 ViewBotClientService: Checking for orphaned Puppeteer processes...');
+    logger.debug('🧹 ViewBotClientService: Checking for orphaned Puppeteer processes...');
     const { exec } = require('child_process');
     const { promisify } = require('util');
     const execPromise = promisify(exec);
@@ -1103,9 +1105,9 @@ class ViewBotClientService {
         await execPromise('pkill -f "puppeteer.*chrome" 2>/dev/null').catch(() => {});
         await execPromise('pkill -f "chrome.*--no-sandbox.*--disable-setuid-sandbox" 2>/dev/null').catch(() => {});
       }
-      console.log('✅ ViewBotClientService: Orphaned Puppeteer processes cleaned up');
+      logger.debug('✅ ViewBotClientService: Orphaned Puppeteer processes cleaned up');
     } catch (error) {
-      console.warn('⚠️ ViewBotClientService: Could not clean up Puppeteer processes:', error.message);
+      logger.warn('⚠️ ViewBotClientService: Could not clean up Puppeteer processes:', error.message);
     }
   }
 
@@ -1167,7 +1169,7 @@ class ViewBotClientService {
    */
   async toggleRotation(enabled) {
     this.rotationEnabled = enabled;
-    console.log(`🔄 ViewBot rotation system ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    logger.debug(`🔄 ViewBot rotation system ${enabled ? 'ENABLED' : 'DISABLED'}`);
     
     if (!enabled) {
       // Stop rotation system
@@ -1181,7 +1183,7 @@ class ViewBotClientService {
       for (const [botId, bot] of this.activeBots.entries()) {
         if (bot.streaming && bot.stopRotationCheckTimer) {
           bot.stopRotationCheckTimer();
-          console.log(`⏸️ Stopped rotation checks for ViewBot ${botId} - rotation disabled`);
+          logger.debug(`⏸️ Stopped rotation checks for ViewBot ${botId} - rotation disabled`);
         }
       }
     } else {
@@ -1206,19 +1208,19 @@ class ViewBotClientService {
    * CRITICAL FIX: Ensures rotation continues after server restart
    */
   async restartRotationAfterRestore() {
-    console.log(`🔄 VIEWBOT CLIENT: Checking rotation restart conditions`);
+    logger.debug(`🔄 VIEWBOT CLIENT: Checking rotation restart conditions`);
     
     // CRITICAL: Only start ONE bot for rotation
     // Don't connect multiple bots at once
     
     // Check if there's a current live bot that needs to continue
     if (this.currentLiveBot) {
-      console.log(`🔄 VIEWBOT CLIENT: Found previous bot: ${this.currentLiveBot}`);
+      logger.debug(`🔄 VIEWBOT CLIENT: Found previous bot: ${this.currentLiveBot}`);
       
       // Get the bot (might be a placeholder)
       let bot = this.activeBots.get(this.currentLiveBot);
       if (!bot) {
-        console.log(`🔄 VIEWBOT CLIENT: Previous bot not found, starting fresh`);
+        logger.debug(`🔄 VIEWBOT CLIENT: Previous bot not found, starting fresh`);
         this.currentLiveBot = null;
         await this.startViewBotRotation();
         return;
@@ -1227,7 +1229,7 @@ class ViewBotClientService {
       // Ensure it's connected (converts placeholder to real instance)
       const connectResult = await this.ensureBotConnected(this.currentLiveBot);
       if (!connectResult.success) {
-        console.error(`❌ Failed to connect previous bot ${this.currentLiveBot}`);
+        logger.error(`❌ Failed to connect previous bot ${this.currentLiveBot}`);
         this.currentLiveBot = null;
         await this.startViewBotRotation();
         return;
@@ -1246,7 +1248,7 @@ class ViewBotClientService {
         const psOutput = execSync('ps aux | grep -E "gst-launch.*filesrc" | grep -v grep', { encoding: 'utf8' });
         gstreamerRunning = psOutput.trim().length > 0;
         if (gstreamerRunning) {
-          console.log(`🎬 VIEWBOT CLIENT: Detected existing GStreamer processes running`);
+          logger.debug(`🎬 VIEWBOT CLIENT: Detected existing GStreamer processes running`);
         }
       } catch (e) {
         // No processes found
@@ -1255,7 +1257,7 @@ class ViewBotClientService {
       
       if (gstreamerRunning) {
         // GStreamer is already running - just set up the bot state properly
-        console.log(`✅ VIEWBOT CLIENT: Media already streaming - setting up rotation system`);
+        logger.debug(`✅ VIEWBOT CLIENT: Media already streaming - setting up rotation system`);
         
         // Mark bot as streaming
         bot.streaming = true;
@@ -1269,20 +1271,20 @@ class ViewBotClientService {
           await bot.setupDurationBasedRotation(bot.config.videoFile);
         }
         
-        console.log(`✅ VIEWBOT CLIENT: Rotation system restored for ${this.currentLiveBot}`);
+        logger.debug(`✅ VIEWBOT CLIENT: Rotation system restored for ${this.currentLiveBot}`);
       } else {
         // No media running - start streaming normally
         try {
-          console.log(`🎬 VIEWBOT CLIENT: Starting fresh stream for ${this.currentLiveBot}`);
+          logger.debug(`🎬 VIEWBOT CLIENT: Starting fresh stream for ${this.currentLiveBot}`);
           const result = await bot.startStreaming();
           
           if (result.success) {
             // Start rotation check timer after successful start
             bot.startRotationCheckTimer();
-            console.log(`✅ VIEWBOT CLIENT: Stream started with rotation timer`);
+            logger.debug(`✅ VIEWBOT CLIENT: Stream started with rotation timer`);
           } else if (!result.success && result.message === 'Already streaming') {
             // Bot thinks it's streaming but GStreamer isn't running - fix the state
-            console.log(`🔧 VIEWBOT CLIENT: Fixing inconsistent state - bot thinks it's streaming but it's not`);
+            logger.debug(`🔧 VIEWBOT CLIENT: Fixing inconsistent state - bot thinks it's streaming but it's not`);
             bot.streaming = false;
             bot.isStartingStream = false;
             
@@ -1290,17 +1292,17 @@ class ViewBotClientService {
             const retryResult = await bot.startStreaming();
             if (retryResult.success) {
               bot.startRotationCheckTimer();
-              console.log(`✅ VIEWBOT CLIENT: Stream started after state fix`);
+              logger.debug(`✅ VIEWBOT CLIENT: Stream started after state fix`);
             }
           }
         } catch (error) {
-          console.error(`❌ VIEWBOT CLIENT: Failed to restart ${this.currentLiveBot}:`, error);
+          logger.error(`❌ VIEWBOT CLIENT: Failed to restart ${this.currentLiveBot}:`, error);
           this.currentLiveBot = null;
           await this.startViewBotRotation();
         }
       }
     } else {
-      console.log(`🔄 VIEWBOT CLIENT: No previous bot, starting fresh rotation`);
+      logger.debug(`🔄 VIEWBOT CLIENT: No previous bot, starting fresh rotation`);
       await this.startViewBotRotation();
     }
   }
@@ -1311,18 +1313,18 @@ class ViewBotClientService {
   async startViewBotRotation() {
     // CRITICAL: Don't start rotation during initialization
     if (this.initializationInProgress) {
-      console.log(`⏳ ViewBot rotation deferred - initialization in progress`);
+      logger.debug(`⏳ ViewBot rotation deferred - initialization in progress`);
       return;
     }
     
     // CRITICAL: Prevent concurrent rotation starts
     if (this.currentLiveBot) {
-      console.log(`⚠️ ViewBot rotation already active with ${this.currentLiveBot} - skipping`);
+      logger.debug(`⚠️ ViewBot rotation already active with ${this.currentLiveBot} - skipping`);
       return;
     }
     
     if (this.realStreamerActive) {
-      console.log(`🛑 Cannot start ViewBot rotation - real streamer is active`);
+      logger.debug(`🛑 Cannot start ViewBot rotation - real streamer is active`);
       return;
     }
 
@@ -1332,7 +1334,7 @@ class ViewBotClientService {
     );
 
     if (availableBots.length === 0) {
-      console.log(`⚠️ No available ViewBots for rotation`);
+      logger.debug(`⚠️ No available ViewBots for rotation`);
       return;
     }
 
@@ -1343,10 +1345,10 @@ class ViewBotClientService {
     
     // Ensure bot is connected (handle placeholders and lazy loading)
     if (!firstBot.isConnected || firstBot.isPlaceholder) {
-      console.log(`🔌 Connecting bot ${firstBot.botId} for rotation start...`);
+      logger.debug(`🔌 Connecting bot ${firstBot.botId} for rotation start...`);
       const connectResult = await this.ensureBotConnected(firstBot.botId);
       if (!connectResult.success) {
-        console.error(`❌ Failed to connect bot ${firstBot.botId} for rotation start`);
+        logger.error(`❌ Failed to connect bot ${firstBot.botId} for rotation start`);
         return;
       }
       // Get the real bot instance after connection
@@ -1363,9 +1365,9 @@ class ViewBotClientService {
       this.applyBotCooldown(firstBot.botId);
       // Start rotation check timer for the bot
       firstBot.startRotationCheckTimer();
-      console.log(`🔄 ViewBot rotation started with: ${firstBot.botId}`);
+      logger.debug(`🔄 ViewBot rotation started with: ${firstBot.botId}`);
     } catch (error) {
-      console.error(`❌ Failed to start initial ViewBot rotation:`, error);
+      logger.error(`❌ Failed to start initial ViewBot rotation:`, error);
       // Clear currentLiveBot on failure
       this.currentLiveBot = null;
     }
@@ -1377,41 +1379,41 @@ class ViewBotClientService {
   setRealStreamerStatus(isActive) {
     const previousStatus = this.realStreamerActive;
     this.realStreamerActive = isActive;
-    console.log(`👤 Real streamer status: ${isActive ? 'ACTIVE' : 'INACTIVE'} (was: ${previousStatus ? 'ACTIVE' : 'INACTIVE'})`);
+    logger.debug(`👤 Real streamer status: ${isActive ? 'ACTIVE' : 'INACTIVE'} (was: ${previousStatus ? 'ACTIVE' : 'INACTIVE'})`);
     
     if (isActive) {
       // Clear any pending takeover timer
       if (this.pendingTakeoverTimer) {
         clearTimeout(this.pendingTakeoverTimer);
         this.pendingTakeoverTimer = null;
-        console.log(`🚫 Cancelled pending ViewBot takeover - real streamer is active`);
+        logger.debug(`🚫 Cancelled pending ViewBot takeover - real streamer is active`);
       }
       
       if (this.currentLiveBot) {
         // Stop current ViewBot if a real streamer becomes active
-        console.log(`🛑 Real streamer active - stopping ViewBot ${this.currentLiveBot}`);
+        logger.debug(`🛑 Real streamer active - stopping ViewBot ${this.currentLiveBot}`);
         this.stopViewBotRotation();
       }
     } else {
       // Real streamer disconnected - schedule ViewBot takeover after delay
-      console.log(`🔍 Checking takeover conditions: rotationEnabled=${this.rotationEnabled}, currentLiveBot=${this.currentLiveBot}`);
+      logger.debug(`🔍 Checking takeover conditions: rotationEnabled=${this.rotationEnabled}, currentLiveBot=${this.currentLiveBot}`);
       
       // Only proceed if status actually changed from true to false
       if (previousStatus === true && isActive === false) {
-        console.log(`📉 Real streamer status changed from ACTIVE to INACTIVE`);
+        logger.debug(`📉 Real streamer status changed from ACTIVE to INACTIVE`);
         
         if (this.rotationEnabled) {
           if (!this.currentLiveBot) {
-            console.log(`✅ No ViewBot currently live - scheduling takeover`);
+            logger.debug(`✅ No ViewBot currently live - scheduling takeover`);
             this.scheduleViewBotTakeover();
           } else {
-            console.log(`ℹ️ ViewBot ${this.currentLiveBot} is already live - no takeover needed`);
+            logger.debug(`ℹ️ ViewBot ${this.currentLiveBot} is already live - no takeover needed`);
           }
         } else {
-          console.log(`❌ Rotation is disabled - no ViewBot takeover`);
+          logger.debug(`❌ Rotation is disabled - no ViewBot takeover`);
         }
       } else if (previousStatus === false && isActive === false) {
-        console.log(`ℹ️ Real streamer was already inactive - no action needed`);
+        logger.debug(`ℹ️ Real streamer was already inactive - no action needed`);
         // But still check if we need to maintain presence
         setTimeout(() => this.maintainViewBotPresence(), 2000);
       }
@@ -1435,7 +1437,7 @@ class ViewBotClientService {
     
     if (!currentStreamer) {
       // No active streamer at all - clear the real streamer flag
-      console.log(`🔍 VALIDATION: No active streamer found, clearing real streamer flag`);
+      logger.debug(`🔍 VALIDATION: No active streamer found, clearing real streamer flag`);
       this.realStreamerActive = false;
       return;
     }
@@ -1446,13 +1448,13 @@ class ViewBotClientService {
     
     if (isViewbot && this.realStreamerActive) {
       // Current streamer is a ViewBot but real streamer flag is active - this is inconsistent
-      console.log(`🔍 VALIDATION: Current streamer ${currentStreamer} is ViewBot, clearing real streamer flag`);
+      logger.debug(`🔍 VALIDATION: Current streamer ${currentStreamer} is ViewBot, clearing real streamer flag`);
       this.realStreamerActive = false;
       return;
     }
 
     // If we get here and realStreamerActive is true, there should be a real user streaming
-    console.log(`🔍 VALIDATION: Real streamer flag validated - current streamer: ${currentStreamer.substring(0, 12)}...`);
+    logger.debug(`🔍 VALIDATION: Real streamer flag validated - current streamer: ${currentStreamer.substring(0, 12)}...`);
   }
 
   /**
@@ -1471,7 +1473,7 @@ class ViewBotClientService {
       this.maintainViewBotPresence();
     }, 30000); // 30 seconds
     
-    console.log(`🔍 VALIDATION: Auto-validation started (30s intervals)`);
+    logger.debug(`🔍 VALIDATION: Auto-validation started (30s intervals)`);
   }
 
   /**
@@ -1481,7 +1483,7 @@ class ViewBotClientService {
     if (this.validationTimer) {
       clearInterval(this.validationTimer);
       this.validationTimer = null;
-      console.log(`🔍 VALIDATION: Auto-validation stopped`);
+      logger.debug(`🔍 VALIDATION: Auto-validation stopped`);
     }
   }
   
@@ -1502,7 +1504,7 @@ class ViewBotClientService {
     
     // CRITICAL: Skip if we're already starting an emergency bot
     if (this.isStartingEmergencyBot) {
-      console.log('⏳ PRESENCE: Already starting emergency bot, skipping duplicate attempt');
+      logger.debug('⏳ PRESENCE: Already starting emergency bot, skipping duplicate attempt');
       return;
     }
     
@@ -1513,17 +1515,17 @@ class ViewBotClientService {
       
       // Debug logging to understand the state
       if (!bot) {
-        console.log(`🔍 PRESENCE CHECK: currentLiveBot=${this.currentLiveBot} - bot not found in activeBots`);
-        console.log(`🔧 PRESENCE: Clearing non-existent currentLiveBot: ${this.currentLiveBot}`);
+        logger.debug(`🔍 PRESENCE CHECK: currentLiveBot=${this.currentLiveBot} - bot not found in activeBots`);
+        logger.debug(`🔧 PRESENCE: Clearing non-existent currentLiveBot: ${this.currentLiveBot}`);
         this.currentLiveBot = null;
       } else {
         const isStreaming = typeof bot.isStreaming === 'function' ? bot.isStreaming() : bot.streaming;
         const isStarting = bot.isStartingStream;
-        console.log(`🔍 PRESENCE CHECK: currentLiveBot=${this.currentLiveBot}, streaming=${isStreaming}, isStartingStream=${isStarting}`);
+        logger.debug(`🔍 PRESENCE CHECK: currentLiveBot=${this.currentLiveBot}, streaming=${isStreaming}, isStartingStream=${isStarting}`);
         
         if (isStreaming || isStarting) {
           // All good - ViewBot is live or starting
-          console.log(`✅ PRESENCE: Bot ${this.currentLiveBot} is ${isStreaming ? 'streaming' : 'starting'} - no action needed`);
+          logger.debug(`✅ PRESENCE: Bot ${this.currentLiveBot} is ${isStreaming ? 'streaming' : 'starting'} - no action needed`);
           return;
         } else {
           // Bot exists but not streaming and not starting - check if it was recently selected
@@ -1537,11 +1539,11 @@ class ViewBotClientService {
           const gracePeriod = 30000; // Increased to 30 seconds
           
           if (timeSinceSet > gracePeriod) {
-            console.log(`🔧 PRESENCE: Clearing non-streaming currentLiveBot after ${gracePeriod/1000}s timeout: ${this.currentLiveBot}`);
+            logger.debug(`🔧 PRESENCE: Clearing non-streaming currentLiveBot after ${gracePeriod/1000}s timeout: ${this.currentLiveBot}`);
             this.currentLiveBot = null;
             this.currentLiveBotSetTime = null;
           } else {
-            console.log(`⏳ PRESENCE: Bot ${this.currentLiveBot} not streaming yet, waiting ${(gracePeriod - timeSinceSet)/1000}s more`);
+            logger.debug(`⏳ PRESENCE: Bot ${this.currentLiveBot} not streaming yet, waiting ${(gracePeriod - timeSinceSet)/1000}s more`);
             return;
           }
         }
@@ -1550,18 +1552,18 @@ class ViewBotClientService {
     
     // CRITICAL: Check if rotation is already being processed
     if (this.rotationLock) {
-      console.log(`🔒 PRESENCE: Rotation is already being processed - skipping presence maintenance`);
+      logger.debug(`🔒 PRESENCE: Rotation is already being processed - skipping presence maintenance`);
       return;
     }
     
     // Also check if there's a pending rotation in the queue
     if (this.rotationQueue.length > 0) {
-      console.log(`📋 PRESENCE: Rotation queue has ${this.rotationQueue.length} pending requests - skipping presence maintenance`);
+      logger.debug(`📋 PRESENCE: Rotation queue has ${this.rotationQueue.length} pending requests - skipping presence maintenance`);
       return;
     }
     
     // At this point: rotation enabled, no real streamer, no ViewBot streaming
-    console.log('⚠️ PRESENCE: No one is streaming but rotation is enabled - need emergency start');
+    logger.debug('⚠️ PRESENCE: No one is streaming but rotation is enabled - need emergency start');
     
     // Check if we have available bots (including lazy-loaded ones)
     const availableBots = Array.from(this.activeBots.values()).filter(bot => {
@@ -1570,13 +1572,13 @@ class ViewBotClientService {
     });
     
     if (availableBots.length === 0) {
-      console.log('❌ PRESENCE: No available ViewBots to start');
+      logger.debug('❌ PRESENCE: No available ViewBots to start');
       return;
     }
     
     // CRITICAL FIX: Don't bypass rotation system with startViewBotRotation()
     // Instead, pick a random bot and start it directly, then let rotation timers handle switching
-    console.log('🚀 PRESENCE: Emergency start - picking a random bot to maintain presence');
+    logger.debug('🚀 PRESENCE: Emergency start - picking a random bot to maintain presence');
     
     // CRITICAL: Only pick one bot and set it as current immediately to prevent duplicates
     const randomBot = availableBots[Math.floor(Math.random() * availableBots.length)];
@@ -1584,20 +1586,20 @@ class ViewBotClientService {
     // Set as current IMMEDIATELY to prevent other presence checks from starting another bot
     this.currentLiveBot = randomBot.botId;
     this.currentLiveBotSetTime = Date.now();
-    console.log(`🔒 PRESENCE: Pre-emptively set currentLiveBot to ${randomBot.botId} to prevent duplicates`);
+    logger.debug(`🔒 PRESENCE: Pre-emptively set currentLiveBot to ${randomBot.botId} to prevent duplicates`);
     
     // Set flag to prevent duplicate starts
     this.isStartingEmergencyBot = true;
     
     try {
       // Start the bot streaming using the service method (which handles all the setup)
-      console.log(`🎯 PRESENCE: Starting bot ${randomBot.botId} for emergency presence`);
+      logger.debug(`🎯 PRESENCE: Starting bot ${randomBot.botId} for emergency presence`);
       const result = await this.startBotStreaming(randomBot.botId);
       
       if (result && result.success) {
-        console.log(`✅ PRESENCE: Emergency bot ${randomBot.botId} started successfully`);
+        logger.debug(`✅ PRESENCE: Emergency bot ${randomBot.botId} started successfully`);
       } else {
-        console.log(`❌ PRESENCE: Failed to start emergency bot ${randomBot.botId}:`, result?.message);
+        logger.debug(`❌ PRESENCE: Failed to start emergency bot ${randomBot.botId}:`, result?.message);
       }
     } finally {
       // Clear the flag after attempt
@@ -1615,19 +1617,19 @@ class ViewBotClientService {
   queueRotationRequest(botId, reason) {
     // Check if rotation is enabled first
     if (!this.rotationEnabled) {
-      console.log(`🔄 Rotation request from ${botId} ignored - rotation disabled`);
+      logger.debug(`🔄 Rotation request from ${botId} ignored - rotation disabled`);
       return { success: false, message: 'Rotation is disabled' };
     }
     
     if (this.realStreamerActive) {
-      console.log(`🔄 Rotation request from ${botId} ignored - real streamer active`);
+      logger.debug(`🔄 Rotation request from ${botId} ignored - real streamer active`);
       return { success: false, message: 'Real streamer is active' };
     }
     
     // Check if this bot already has a pending request
     const existingRequest = this.rotationQueue.find(req => req.botId === botId);
     if (existingRequest) {
-      console.log(`⏳ ViewBot ${botId}: Rotation request already queued`);
+      logger.debug(`⏳ ViewBot ${botId}: Rotation request already queued`);
       return { success: false, message: 'Request already queued' };
     }
     
@@ -1639,7 +1641,7 @@ class ViewBotClientService {
     };
     
     this.rotationQueue.push(request);
-    console.log(`📥 Queued rotation request from ${botId} (${reason}). Queue size: ${this.rotationQueue.length}`);
+    logger.debug(`📥 Queued rotation request from ${botId} (${reason}). Queue size: ${this.rotationQueue.length}`);
     
     // Start processing timer if not already running
     if (!this.rotationProcessTimer) {
@@ -1660,7 +1662,7 @@ class ViewBotClientService {
     
     // Check if already processing a rotation
     if (this.rotationLock) {
-      console.log(`🔒 Rotation processor locked - deferring queue processing`);
+      logger.debug(`🔒 Rotation processor locked - deferring queue processing`);
       // Reschedule processing
       this.rotationProcessTimer = setTimeout(() => {
         this.processRotationQueue();
@@ -1673,11 +1675,11 @@ class ViewBotClientService {
     this.rotationQueue = []; // Clear the queue
     
     if (requests.length === 0) {
-      console.log(`📭 Rotation queue empty - nothing to process`);
+      logger.debug(`📭 Rotation queue empty - nothing to process`);
       return;
     }
     
-    console.log(`🔄 Processing ${requests.length} rotation requests`);
+    logger.debug(`🔄 Processing ${requests.length} rotation requests`);
     
     // Filter out requests from bots that are no longer streaming
     const validRequests = requests.filter(req => {
@@ -1686,7 +1688,7 @@ class ViewBotClientService {
     });
     
     if (validRequests.length === 0) {
-      console.log(`❌ No valid rotation requests after filtering`);
+      logger.debug(`❌ No valid rotation requests after filtering`);
       return;
     }
     
@@ -1694,8 +1696,8 @@ class ViewBotClientService {
     // Strategy: Use the first valid request (FIFO)
     const selectedRequest = validRequests[0];
     
-    console.log(`✅ Selected rotation request from ${selectedRequest.botId} (${selectedRequest.reason})`);
-    console.log(`⏭️ Discarding ${validRequests.length - 1} other requests`);
+    logger.debug(`✅ Selected rotation request from ${selectedRequest.botId} (${selectedRequest.reason})`);
+    logger.debug(`⏭️ Discarding ${validRequests.length - 1} other requests`);
     
     // Acquire lock and process the selected rotation
     this.rotationLock = true;
@@ -1703,15 +1705,15 @@ class ViewBotClientService {
     try {
       await this.handleRotationRequest(selectedRequest.botId, selectedRequest.reason);
     } catch (error) {
-      console.error(`❌ Rotation processing failed:`, error);
+      logger.error(`❌ Rotation processing failed:`, error);
     } finally {
       // Release lock
       this.rotationLock = false;
-      console.log(`🔓 Rotation lock released`);
+      logger.debug(`🔓 Rotation lock released`);
       
       // Check if more requests came in while processing
       if (this.rotationQueue.length > 0 && !this.rotationProcessTimer) {
-        console.log(`📬 New requests in queue - scheduling next processing`);
+        logger.debug(`📬 New requests in queue - scheduling next processing`);
         this.rotationProcessTimer = setTimeout(() => {
           this.processRotationQueue();
         }, this.rotationQueueWindow);
@@ -1724,7 +1726,7 @@ class ViewBotClientService {
    * This is called by ViewbotService.handleVideoEnd
    */
   handleRotation(botId) {
-    console.log(`🎬 ViewBotClientService: Handling rotation for bot ${botId} after video end`);
+    logger.debug(`🎬 ViewBotClientService: Handling rotation for bot ${botId} after video end`);
     
     // Queue the rotation request to go through the normal rotation process
     this.queueRotationRequest(botId, 'video-end');
@@ -1735,23 +1737,23 @@ class ViewBotClientService {
    */
   async handleRotationRequest(botId, reason) {
     if (!this.rotationEnabled) {
-      console.log(`🔄 Rotation request from ${botId} ignored - rotation disabled`);
+      logger.debug(`🔄 Rotation request from ${botId} ignored - rotation disabled`);
       return { success: false, message: 'Rotation is disabled' };
     }
 
     if (this.realStreamerActive) {
-      console.log(`🔄 Rotation request from ${botId} ignored - real streamer active`);
+      logger.debug(`🔄 Rotation request from ${botId} ignored - real streamer active`);
       return { success: false, message: 'Real streamer is active' };
     }
 
-    console.log(`🔄 Processing rotation request from ${botId} (reason: ${reason})`);
+    logger.debug(`🔄 Processing rotation request from ${botId} (reason: ${reason})`);
     
     // Clean up any orphaned GStreamer processes before rotation
     try {
       const { execSync } = require('child_process');
       const orphanedCount = execSync('pgrep -f gst-launch | wc -l', { encoding: 'utf8' }).trim();
       if (parseInt(orphanedCount) > 1) {
-        console.log(`🧹 Cleaning up ${orphanedCount} orphaned GStreamer processes before rotation`);
+        logger.debug(`🧹 Cleaning up ${orphanedCount} orphaned GStreamer processes before rotation`);
         execSync('pkill -9 -f gst-launch 2>/dev/null || true', { stdio: 'ignore' });
       }
     } catch (e) {
@@ -1765,7 +1767,7 @@ class ViewBotClientService {
     );
 
     if (availableBots.length === 0) {
-      console.log(`🔄 No available ViewBots for rotation - stopping rotation`);
+      logger.debug(`🔄 No available ViewBots for rotation - stopping rotation`);
       this.currentLiveBot = null;
       return { success: false, message: 'No available ViewBots for rotation' };
     }
@@ -1775,10 +1777,10 @@ class ViewBotClientService {
     
     // Ensure the selected bot is connected (handle placeholders and lazy loading)
     if (!nextBot.isConnected || nextBot.isPlaceholder) {
-      console.log(`🔌 Connecting bot ${nextBot.botId} for rotation...`);
+      logger.debug(`🔌 Connecting bot ${nextBot.botId} for rotation...`);
       const connectResult = await this.ensureBotConnected(nextBot.botId);
       if (!connectResult.success) {
-        console.error(`❌ Failed to connect bot ${nextBot.botId} for rotation`);
+        logger.error(`❌ Failed to connect bot ${nextBot.botId} for rotation`);
         return { success: false, message: `Failed to connect next bot: ${connectResult.message}` };
       }
       // Get the real bot instance after connection
@@ -1788,7 +1790,7 @@ class ViewBotClientService {
     try {
       // Stop current bot
       const currentBot = this.activeBots.get(botId);
-      console.log(`🔄🔄🔄 ROTATION: Stopping current bot ${botId}`, {
+      logger.debug(`🔄🔄🔄 ROTATION: Stopping current bot ${botId}`, {
         found: !!currentBot,
         isPlaceholder: currentBot?.isPlaceholder,
         hasStopStreaming: !!(currentBot?.stopStreaming),
@@ -1798,30 +1800,30 @@ class ViewBotClientService {
       // CRITICAL: Even if it's a placeholder, we need to check for orphaned processes
       if (currentBot) {
         if (!currentBot.isPlaceholder && currentBot.stopStreaming) {
-          console.log(`🛑🛑🛑 ROTATION: Calling stopStreaming() on real bot ${botId}...`);
+          logger.debug(`🛑🛑🛑 ROTATION: Calling stopStreaming() on real bot ${botId}...`);
           await currentBot.stopStreaming();
-          console.log(`✅ ROTATION: stopStreaming() completed for ${botId}`);
+          logger.debug(`✅ ROTATION: stopStreaming() completed for ${botId}`);
         } else if (currentBot.cleanupGStreamerProcesses) {
           // If it has cleanup method but is a placeholder, still cleanup!
-          console.log(`⚠️⚠️⚠️ ROTATION: Bot ${botId} is placeholder but has cleanup method - cleaning up orphaned processes`);
+          logger.debug(`⚠️⚠️⚠️ ROTATION: Bot ${botId} is placeholder but has cleanup method - cleaning up orphaned processes`);
           currentBot.cleanupGStreamerProcesses();
         } else {
-          console.log(`❌❌❌ ROTATION: Bot ${botId} is placeholder with no cleanup - ORPHANED PROCESSES LIKELY!`);
+          logger.debug(`❌❌❌ ROTATION: Bot ${botId} is placeholder with no cleanup - ORPHANED PROCESSES LIKELY!`);
         }
         
         // CRITICAL: Disconnect the bot to free resources
         // This prevents accumulation of connected bots
         if (currentBot.socket) {
-          console.log(`🔌 Disconnecting ViewBot ${botId} after rotation`);
+          logger.debug(`🔌 Disconnecting ViewBot ${botId} after rotation`);
           currentBot.socket.disconnect();
           currentBot.isConnected = false;
         }
       } else {
-        console.log(`⚠️ ROTATION: Current bot ${botId} is placeholder or not found, skipping stop`);
+        logger.debug(`⚠️ ROTATION: Current bot ${botId} is placeholder or not found, skipping stop`);
       }
 
       // Add delay to ensure MediaSoup cleanup completes
-      console.log(`⏳ ViewBot rotation: Waiting for cleanup before starting next bot...`);
+      logger.debug(`⏳ ViewBot rotation: Waiting for cleanup before starting next bot...`);
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Start next bot with probability-based rotation
@@ -1833,7 +1835,7 @@ class ViewBotClientService {
       this.currentLiveBot = nextBot.botId;
       this.currentLiveBotSetTime = Date.now();
       
-      console.log(`🔄 ViewBot rotation completed: ${botId} → ${nextBot.botId}`);
+      logger.debug(`🔄 ViewBot rotation completed: ${botId} → ${nextBot.botId}`);
       
       // Record rotation in database
       if (this.dbInitialized) {
@@ -1850,7 +1852,7 @@ class ViewBotClientService {
             }
           });
         } catch (dbError) {
-          console.error('⚠️ VIEWBOT CLIENT: Failed to record rotation in database:', dbError);
+          logger.error('⚠️ VIEWBOT CLIENT: Failed to record rotation in database:', dbError);
         }
       }
       
@@ -1861,7 +1863,7 @@ class ViewBotClientService {
         reason: reason
       };
     } catch (error) {
-      console.error(`❌ ViewBot rotation failed:`, error);
+      logger.error(`❌ ViewBot rotation failed:`, error);
       return { success: false, message: error.message };
     }
   }
@@ -1878,7 +1880,7 @@ class ViewBotClientService {
       // CRITICAL: Clear the current live bot reference
       const wasLiveBot = this.currentLiveBot;
       this.currentLiveBot = null;
-      console.log(`🛑 Stopped ViewBot rotation - cleared currentLiveBot: ${wasLiveBot}`);
+      logger.debug(`🛑 Stopped ViewBot rotation - cleared currentLiveBot: ${wasLiveBot}`);
     }
 
     if (this.rotationTimer) {
@@ -1891,7 +1893,7 @@ class ViewBotClientService {
    * Manually trigger ViewBot takeover (admin function)
    */
   async manualTriggerTakeover() {
-    console.log(`🎮 MANUAL: Triggering ViewBot takeover`);
+    logger.debug(`🎮 MANUAL: Triggering ViewBot takeover`);
     
     // Check conditions
     if (!this.rotationEnabled) {
@@ -1951,7 +1953,7 @@ class ViewBotClientService {
     }
     
     this.rotationProbability = probability;
-    console.log(`🎲 Updated rotation probability to ${(probability * 100).toFixed(1)}%`);
+    logger.debug(`🎲 Updated rotation probability to ${(probability * 100).toFixed(1)}%`);
     
     // Update all streaming bots with new probability
     for (const [botId, bot] of this.activeBots.entries()) {
@@ -1987,7 +1989,7 @@ class ViewBotClientService {
     this.rotationCheckIntervalMin = minInterval;
     this.rotationCheckIntervalMax = maxInterval;
     
-    console.log(`⏱️ Updated rotation check interval to ${minInterval/1000}-${maxInterval/1000} seconds`);
+    logger.debug(`⏱️ Updated rotation check interval to ${minInterval/1000}-${maxInterval/1000} seconds`);
     
     // Update all streaming bots with new intervals
     for (const [botId, bot] of this.activeBots.entries()) {
@@ -2019,17 +2021,17 @@ class ViewBotClientService {
     // Random delay between 5-10 seconds
     const delay = Math.floor(Math.random() * 5000) + 5000;
     
-    console.log(`⏱️ Scheduling ViewBot takeover in ${delay/1000} seconds...`);
+    logger.debug(`⏱️ Scheduling ViewBot takeover in ${delay/1000} seconds...`);
     
     this.pendingTakeoverTimer = setTimeout(async () => {
       this.pendingTakeoverTimer = null;
       
       // Double-check that no real streamer started in the meantime
       if (!this.realStreamerActive && this.rotationEnabled && !this.currentLiveBot) {
-        console.log(`🚀 Executing ViewBot takeover after real streamer disconnect`);
+        logger.debug(`🚀 Executing ViewBot takeover after real streamer disconnect`);
         await this.startViewBotRotation();
       } else {
-        console.log(`🚫 ViewBot takeover cancelled - conditions changed`);
+        logger.debug(`🚫 ViewBot takeover cancelled - conditions changed`);
       }
     }, delay);
   }
@@ -2052,11 +2054,11 @@ class ViewBotClientService {
       // Remove expired cooldowns
       for (const botId of expiredBots) {
         this.botCooldowns.delete(botId);
-        console.log(`🔄 COOLDOWN: Reset cooldown for ViewBot ${botId} after 2-hour window`);
+        logger.debug(`🔄 COOLDOWN: Reset cooldown for ViewBot ${botId} after 2-hour window`);
       }
       
       if (expiredBots.length > 0) {
-        console.log(`🧹 COOLDOWN: Cleared ${expiredBots.length} expired cooldowns`);
+        logger.debug(`🧹 COOLDOWN: Cleared ${expiredBots.length} expired cooldowns`);
       }
     }, 30 * 60 * 1000); // Every 30 minutes
   }
@@ -2073,14 +2075,14 @@ class ViewBotClientService {
       if (now - existing.lastPlayed.getTime() <= this.cooldownWindowMs) {
         existing.count++;
         existing.lastPlayed = new Date();
-        console.log(`📉 COOLDOWN: ViewBot ${botId} played ${existing.count} times in window`);
+        logger.debug(`📉 COOLDOWN: ViewBot ${botId} played ${existing.count} times in window`);
       } else {
         // Reset if outside window
         this.botCooldowns.set(botId, {
           count: 1,
           lastPlayed: new Date()
         });
-        console.log(`🔄 COOLDOWN: Reset and applied cooldown for ViewBot ${botId}`);
+        logger.debug(`🔄 COOLDOWN: Reset and applied cooldown for ViewBot ${botId}`);
       }
     } else {
       // First play in window
@@ -2088,7 +2090,7 @@ class ViewBotClientService {
         count: 1,
         lastPlayed: new Date()
       });
-      console.log(`📝 COOLDOWN: Applied first cooldown for ViewBot ${botId}`);
+      logger.debug(`📝 COOLDOWN: Applied first cooldown for ViewBot ${botId}`);
     }
   }
   
@@ -2137,7 +2139,7 @@ class ViewBotClientService {
     }));
     
     // Log the weights for debugging
-    console.log(`🎲 COOLDOWN: Bot selection weights:`, weights.map(w => 
+    logger.debug(`🎲 COOLDOWN: Bot selection weights:`, weights.map(w => 
       `${w.bot.botId.split('-').pop()}: ${(w.weight * 100).toFixed(0)}%`
     ).join(', '));
     
@@ -2163,7 +2165,7 @@ class ViewBotClientService {
    * Handles video end event from a ViewBot
    */
   async handleVideoEnd(botId) {
-    console.log(`🎬 ViewBot ${botId}: Video file ended`);
+    logger.debug(`🎬 ViewBot ${botId}: Video file ended`);
     
     const bot = this.activeBots.get(botId);
     if (!bot || !bot.streaming) {
@@ -2171,7 +2173,7 @@ class ViewBotClientService {
     }
     
     // Stop the current bot first and ensure cleanup
-    console.log(`🧹 ViewBot ${botId}: Stopping and cleaning up before rotation`);
+    logger.debug(`🧹 ViewBot ${botId}: Stopping and cleaning up before rotation`);
     await bot.stopStreaming();
     
     // Clear current live bot immediately
@@ -2182,12 +2184,12 @@ class ViewBotClientService {
     if (this.rotationEnabled && !this.realStreamerActive) {
       // CRITICAL: Wait for GStreamer cleanup to fully complete (2.5s for SIGKILL + reference clearing)
       const cleanupDelay = 3000; // 3 second delay to ensure processes are killed and references cleared
-      console.log(`⏳ Waiting ${cleanupDelay}ms for complete cleanup before rotation...`);
+      logger.debug(`⏳ Waiting ${cleanupDelay}ms for complete cleanup before rotation...`);
       
       setTimeout(async () => {
         // Double-check conditions after delay
         if (this.rotationEnabled && !this.realStreamerActive && !this.currentLiveBot) {
-          console.log(`🔄 Starting rotation after video end cleanup delay`);
+          logger.debug(`🔄 Starting rotation after video end cleanup delay`);
           
           // Find any available bot to start (queue will handle selection)
           const availableBots = Array.from(this.activeBots.values()).filter(b => 
@@ -2195,27 +2197,27 @@ class ViewBotClientService {
           );
           
           if (availableBots.length > 0) {
-            console.log(`🎯 Starting new viewbot after video end`);
+            logger.debug(`🎯 Starting new viewbot after video end`);
             
             try {
               // Just start the rotation system - it will pick the best bot
               await this.startViewBotRotation();
-              console.log(`✅ Post-video rotation started`);
+              logger.debug(`✅ Post-video rotation started`);
               
               // Rotation will be recorded by startViewBotRotation
             } catch (error) {
-              console.error(`❌ Failed to rotate after video end:`, error);
+              logger.error(`❌ Failed to rotate after video end:`, error);
             }
           } else {
-            console.log(`⚠️ No available bots for rotation after video end`);
+            logger.debug(`⚠️ No available bots for rotation after video end`);
           }
         } else {
-          console.log(`⏸️ Rotation cancelled after delay (conditions changed)`);
+          logger.debug(`⏸️ Rotation cancelled after delay (conditions changed)`);
         }
       }, cleanupDelay);
     } else {
       // Just stop streaming
-      console.log(`⏹️ ViewBot stopped after video end (rotation disabled or real streamer active)`);
+      logger.debug(`⏹️ ViewBot stopped after video end (rotation disabled or real streamer active)`);
     }
   }
   
@@ -2231,7 +2233,7 @@ class ViewBotClientService {
       return { success: false, message: 'No ViewBot currently streaming' };
     }
     
-    console.log(`💪 Force rotation requested`);
+    logger.debug(`💪 Force rotation requested`);
     
     // Use the queue to prevent race conditions
     const result = this.queueRotationRequest(this.currentLiveBot, 'forced');
@@ -2262,8 +2264,8 @@ class ViewBotClientService {
     if (method === 'gstreamer') {
       const gstreamerAvailable = await ViewBotInstance.checkGStreamerAvailability();
       if (!gstreamerAvailable) {
-        console.warn('⚠️ GStreamer is not installed. Install GStreamer for this method to work.');
-        console.warn('   ViewBots will fall back to FFmpeg when GStreamer fails.');
+        logger.warn('⚠️ GStreamer is not installed. Install GStreamer for this method to work.');
+        logger.warn('   ViewBots will fall back to FFmpeg when GStreamer fails.');
       }
     }
 
@@ -2275,14 +2277,14 @@ class ViewBotClientService {
       bot.config.useGStreamer = (method === 'gstreamer');
     }
     
-    console.log(`🎬 Global streaming method changed from ${previousMethod} to ${method}`);
+    logger.debug(`🎬 Global streaming method changed from ${previousMethod} to ${method}`);
     
     // Save to database if available
     if (this.dbInitialized) {
       try {
         await this.saveSystemState();
       } catch (error) {
-        console.error('Failed to save streaming method to database:', error);
+        logger.error('Failed to save streaming method to database:', error);
       }
     }
     

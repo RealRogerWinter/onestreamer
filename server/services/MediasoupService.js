@@ -1,5 +1,7 @@
 const mediasoup = require('mediasoup');
 
+const logger = require('../bootstrap/logger').child({ svc: 'MediasoupService' });
+
 class MediasoupService {
   constructor() {
     this.worker = null;
@@ -41,7 +43,7 @@ class MediasoupService {
   }
 
   async initialize() {
-    console.log('🎬 MEDIASOUP: Initializing mediasoup worker...');
+    logger.debug('🎬 MEDIASOUP: Initializing mediasoup worker...');
     
     try {
       // Create mediasoup worker with optimized settings
@@ -55,16 +57,16 @@ class MediasoupService {
       });
 
       this.worker.on('died', () => {
-        console.error('❌ MEDIASOUP: Worker died unexpectedly!');
-        console.error('❌ MEDIASOUP: This is usually due to port conflicts or system resource issues');
+        logger.error('❌ MEDIASOUP: Worker died unexpectedly!');
+        logger.error('❌ MEDIASOUP: This is usually due to port conflicts or system resource issues');
         // Don't exit immediately, let the server continue without mediasoup
         this.worker = null;
       });
 
-      console.log('✅ MEDIASOUP: Worker created successfully');
+      logger.debug('✅ MEDIASOUP: Worker created successfully');
     } catch (error) {
-      console.error('❌ MEDIASOUP: Failed to create worker:', error.message);
-      console.log('⚠️ MEDIASOUP: Server will continue without mediasoup functionality');
+      logger.error('❌ MEDIASOUP: Failed to create worker:', error.message);
+      logger.debug('⚠️ MEDIASOUP: Server will continue without mediasoup functionality');
       this.worker = null;
       return;
     }
@@ -144,7 +146,7 @@ class MediasoupService {
     ];
 
     this.router = await this.worker.createRouter({ mediaCodecs });
-    console.log('✅ MEDIASOUP: Router created successfully');
+    logger.debug('✅ MEDIASOUP: Router created successfully');
   }
 
   async getRouterRtpCapabilities(preferH264 = false) {
@@ -156,7 +158,7 @@ class MediasoupService {
 
     // CRITICAL iOS FIX: Reorder codecs for iOS/Safari to prefer H264 Baseline
     if (preferH264 && capabilities.codecs) {
-      console.log('📱 MEDIASOUP: Optimizing RTP capabilities for iOS Safari');
+      logger.debug('📱 MEDIASOUP: Optimizing RTP capabilities for iOS Safari');
 
       const codecs = [...capabilities.codecs];
       const videoCodecs = codecs.filter(c => c.kind === 'video');
@@ -169,7 +171,7 @@ class MediasoupService {
       );
 
       if (h264Baseline) {
-        console.log('✅ MEDIASOUP: Found H264 Baseline codec for iOS');
+        logger.debug('✅ MEDIASOUP: Found H264 Baseline codec for iOS');
 
         // Put audio codecs first, then H264 Baseline ONLY for iOS
         // This simplifies codec negotiation and prevents iOS confusion
@@ -188,7 +190,7 @@ class MediasoupService {
           codecs: optimizedCodecs
         };
       } else {
-        console.warn('⚠️ MEDIASOUP: H264 Baseline codec not found for iOS');
+        logger.warn('⚠️ MEDIASOUP: H264 Baseline codec not found for iOS');
       }
     }
 
@@ -201,17 +203,17 @@ class MediasoupService {
   }
 
   async createWebRtcTransport(socketId, isMobile = false) {
-    console.log(`📡 MEDIASOUP: Creating transport for ${socketId} (current streamer: ${this.currentStreamer})`);
+    logger.debug(`📡 MEDIASOUP: Creating transport for ${socketId} (current streamer: ${this.currentStreamer})`);
     
     // Check if MediaSoup is properly initialized
     if (!this.worker || !this.router) {
-      console.error('❌ MEDIASOUP: Worker or router not initialized');
+      logger.error('❌ MEDIASOUP: Worker or router not initialized');
       throw new Error('MediaSoup not initialized. Worker or router is null.');
     }
     
     // Check if worker is still alive
     if (this.worker.closed) {
-      console.error('❌ MEDIASOUP: Worker is closed');
+      logger.error('❌ MEDIASOUP: Worker is closed');
       throw new Error('MediaSoup worker is closed');
     }
     
@@ -229,10 +231,10 @@ class MediasoupService {
     // Use the isMobile parameter passed from client
     const isMobileClient = isMobile || false;
     
-    console.log(`📡 MEDIASOUP: Creating WebRTC transport for ${socketId}...`);
-    console.log(`   Transport type: WebRTC`);
-    console.log(`   Client type: ${isMobileClient ? 'MOBILE' : 'Desktop'}`);
-    console.log(`   TCP enabled: true, UDP enabled: true`);
+    logger.debug(`📡 MEDIASOUP: Creating WebRTC transport for ${socketId}...`);
+    logger.debug(`   Transport type: WebRTC`);
+    logger.debug(`   Client type: ${isMobileClient ? 'MOBILE' : 'Desktop'}`);
+    logger.debug(`   TCP enabled: true, UDP enabled: true`);
     
     // Mobile-optimized transport configuration based on MediaSoup best practices
     const transportConfig = {
@@ -274,14 +276,14 @@ class MediasoupService {
     const transport = await this.router.createWebRtcTransport(transportConfig);
 
     transport.on('dtlsstatechange', (dtlsState) => {
-      console.log(`🔄 MEDIASOUP: Transport DTLS state changed for ${socketId}: ${dtlsState}`);
+      logger.debug(`🔄 MEDIASOUP: Transport DTLS state changed for ${socketId}: ${dtlsState}`);
       if (dtlsState === 'closed') {
         this.cleanupTransport(socketId);
       }
     });
 
     transport.on('close', () => {
-      console.log(`🔒 MEDIASOUP: Transport closed for ${socketId}`);
+      logger.debug(`🔒 MEDIASOUP: Transport closed for ${socketId}`);
       this.cleanupTransport(socketId);
     });
 
@@ -290,7 +292,7 @@ class MediasoupService {
     transport.socketId = socketId;
     
     this.transports.set(socketId, transport);
-    console.log(`📡 MEDIASOUP: Created WebRTC transport for ${socketId} (${this.transports.size}/${this.maxTransports})`);
+    logger.debug(`📡 MEDIASOUP: Created WebRTC transport for ${socketId} (${this.transports.size}/${this.maxTransports})`);
 
     return {
       id: transport.id,
@@ -301,9 +303,9 @@ class MediasoupService {
   }
 
   async connectTransport(socketId, dtlsParameters) {
-    console.log(`🔗 MEDIASOUP: Attempting to connect transport for ${socketId}`);
-    console.log(`🔗 MEDIASOUP: Current transports:`, Array.from(this.transports.keys()));
-    console.log(`🔗 MEDIASOUP: Total transports: ${this.transports.size}`);
+    logger.debug(`🔗 MEDIASOUP: Attempting to connect transport for ${socketId}`);
+    logger.debug(`🔗 MEDIASOUP: Current transports:`, Array.from(this.transports.keys()));
+    logger.debug(`🔗 MEDIASOUP: Total transports: ${this.transports.size}`);
     
     // Add retry logic for race conditions
     let transport;
@@ -319,29 +321,29 @@ class MediasoupService {
       }
       
       if (attempts < maxAttempts) {
-        console.log(`🔄 MEDIASOUP: Transport not found for ${socketId}, attempt ${attempts}/${maxAttempts}, waiting...`);
+        logger.debug(`🔄 MEDIASOUP: Transport not found for ${socketId}, attempt ${attempts}/${maxAttempts}, waiting...`);
         await new Promise(resolve => setTimeout(resolve, 100 * attempts));
       }
     }
     
     if (!transport) {
-      console.error(`❌ MEDIASOUP: Transport not found for ${socketId} after ${maxAttempts} attempts`);
-      console.error(`❌ MEDIASOUP: Available transports: ${Array.from(this.transports.keys()).join(', ')}`);
+      logger.error(`❌ MEDIASOUP: Transport not found for ${socketId} after ${maxAttempts} attempts`);
+      logger.error(`❌ MEDIASOUP: Available transports: ${Array.from(this.transports.keys()).join(', ')}`);
       throw new Error(`Transport not found for ${socketId} after ${maxAttempts} attempts. Available: ${Array.from(this.transports.keys()).join(', ')}`);
     }
 
     if (transport.closed) {
-      console.error(`❌ MEDIASOUP: Transport is already closed for ${socketId}`);
+      logger.error(`❌ MEDIASOUP: Transport is already closed for ${socketId}`);
       throw new Error(`Transport is closed for ${socketId}`);
     }
 
-    console.log(`🔗 MEDIASOUP: Transport found for ${socketId}, connecting...`);
+    logger.debug(`🔗 MEDIASOUP: Transport found for ${socketId}, connecting...`);
     
     try {
       await transport.connect({ dtlsParameters });
-      console.log(`✅ MEDIASOUP: Transport connected successfully for ${socketId}`);
+      logger.debug(`✅ MEDIASOUP: Transport connected successfully for ${socketId}`);
     } catch (connectError) {
-      console.error(`❌ MEDIASOUP: Failed to connect transport for ${socketId}:`, connectError);
+      logger.error(`❌ MEDIASOUP: Failed to connect transport for ${socketId}:`, connectError);
       // Clean up the failed transport
       await this.cleanupSocketResources(socketId);
       throw connectError;
@@ -356,26 +358,26 @@ class MediasoupService {
     
     // Generate new ICE parameters for the transport
     const iceParameters = await transport.restartIce();
-    console.log(`🔄 MEDIASOUP: ICE restart for transport ${transportId} (socket: ${socketId})`);
+    logger.debug(`🔄 MEDIASOUP: ICE restart for transport ${transportId} (socket: ${socketId})`);
     return iceParameters;
   }
 
   async produce(socketId, kind, rtpParameters, appData) {
-    console.log('=== MEDIASOUP PRODUCE METHOD ===');
-    console.log('Socket ID:', socketId);
-    console.log('Kind:', kind);
-    console.log('RTP Parameters MID:', rtpParameters?.mid);
-    console.log('RTP Codecs:', rtpParameters?.codecs?.map(c => c.mimeType));
+    logger.debug('=== MEDIASOUP PRODUCE METHOD ===');
+    logger.debug('Socket ID:', socketId);
+    logger.debug('Kind:', kind);
+    logger.debug('RTP Parameters MID:', rtpParameters?.mid);
+    logger.debug('RTP Codecs:', rtpParameters?.codecs?.map(c => c.mimeType));
     
     const transport = this.transports.get(socketId);
     if (!transport) {
-      console.error(`Transport not found for ${socketId}. Available transports:`, Array.from(this.transports.keys()));
+      logger.error(`Transport not found for ${socketId}. Available transports:`, Array.from(this.transports.keys()));
       throw new Error(`Transport not found for ${socketId}`);
     }
 
-    console.log('Transport found, attempting to produce...');
-    console.log('Transport ID:', transport.id);
-    console.log('Transport closed:', transport.closed);
+    logger.debug('Transport found, attempting to produce...');
+    logger.debug('Transport ID:', transport.id);
+    logger.debug('Transport closed:', transport.closed);
     
     try {
       const producer = await transport.produce({
@@ -384,12 +386,12 @@ class MediasoupService {
         appData
       });
 
-      console.log('Producer created successfully!');
-      console.log('Producer ID:', producer.id);
-      console.log('Producer MID:', producer.rtpParameters?.mid);
+      logger.debug('Producer created successfully!');
+      logger.debug('Producer ID:', producer.id);
+      logger.debug('Producer MID:', producer.rtpParameters?.mid);
 
       producer.on('transportclose', () => {
-        console.log(`Producer ${producer.id} closed due to transport close`);
+        logger.debug(`Producer ${producer.id} closed due to transport close`);
         producer.close();
       });
 
@@ -400,16 +402,16 @@ class MediasoupService {
       this.producers.get(socketId).set(kind, producer);
       this.currentStreamer = socketId;
 
-      console.log(`📺 MEDIASOUP: Producer created for ${socketId} (${kind})`);
-      console.log(`🎯 MEDIASOUP: ${socketId} is now the active streamer`);
-      console.log('Total producers for this socket:', this.producers.get(socketId).size);
+      logger.debug(`📺 MEDIASOUP: Producer created for ${socketId} (${kind})`);
+      logger.debug(`🎯 MEDIASOUP: ${socketId} is now the active streamer`);
+      logger.debug('Total producers for this socket:', this.producers.get(socketId).size);
       
       return producer.id;
     } catch (error) {
-      console.error('Failed to create producer:');
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-      console.error('RTP Parameters that failed:', JSON.stringify(rtpParameters, null, 2));
+      logger.error('Failed to create producer:');
+      logger.error('Error message:', error.message);
+      logger.error('Error stack:', error.stack);
+      logger.error('RTP Parameters that failed:', JSON.stringify(rtpParameters, null, 2));
       throw error;
     }
   }
@@ -436,8 +438,8 @@ class MediasoupService {
     this.producers.get(socketId).set(kind, producer);
     this.currentStreamer = socketId;
 
-    console.log(`📺 MEDIASOUP: Producer created for ${socketId} (${kind})`);
-    console.log(`🎯 MEDIASOUP: ${socketId} is now the active streamer`);
+    logger.debug(`📺 MEDIASOUP: Producer created for ${socketId} (${kind})`);
+    logger.debug(`🎯 MEDIASOUP: ${socketId} is now the active streamer`);
 
     return {
       id: producer.id,
@@ -461,18 +463,18 @@ class MediasoupService {
     }
     
     if (!foundProducer) {
-      console.error(`❌ MEDIASOUP: Producer ${producerId} not found`);
+      logger.error(`❌ MEDIASOUP: Producer ${producerId} not found`);
       return null;
     }
     
     const consumerTransport = this.transports.get(consumerSocketId);
     if (!consumerTransport) {
-      console.error(`❌ MEDIASOUP: No transport found for consumer ${consumerSocketId}`);
+      logger.error(`❌ MEDIASOUP: No transport found for consumer ${consumerSocketId}`);
       return null;
     }
     
     if (!this.router.canConsume({ producerId, rtpCapabilities })) {
-      console.error(`❌ MEDIASOUP: Cannot consume producer ${producerId}`);
+      logger.error(`❌ MEDIASOUP: Cannot consume producer ${producerId}`);
       return null;
     }
     
@@ -489,19 +491,19 @@ class MediasoupService {
     this.consumers.get(consumerSocketId).add(consumer);
     
     consumer.on('transportclose', () => {
-      console.log(`🔌 MEDIASOUP: Consumer transport closed for ${consumerSocketId}`);
+      logger.debug(`🔌 MEDIASOUP: Consumer transport closed for ${consumerSocketId}`);
       consumer.close();
     });
     
     consumer.on('producerclose', () => {
-      console.log(`🔌 MEDIASOUP: Producer closed for consumer ${consumerSocketId}`);
+      logger.debug(`🔌 MEDIASOUP: Producer closed for consumer ${consumerSocketId}`);
       consumer.close();
     });
     
     // Resume consumer
     await consumer.resume();
     
-    console.log(`✅ MEDIASOUP: Consumer created for ${consumerSocketId} from producer ${producerId}`);
+    logger.debug(`✅ MEDIASOUP: Consumer created for ${consumerSocketId} from producer ${producerId}`);
     
     return consumer;
   }
@@ -510,24 +512,24 @@ class MediasoupService {
     const consumerTransport = this.transports.get(consumerSocketId);
     let producerMap = this.producers.get(producerSocketId);
 
-    console.log(`📺 MEDIASOUP: Creating consumer for ${consumerSocketId} from producer ${producerSocketId}`);
-    console.log(`📺 MEDIASOUP: Consumer transport exists: ${!!consumerTransport}`);
-    console.log(`📺 MEDIASOUP: Producer map exists: ${!!producerMap}, size: ${producerMap?.size || 0}`);
+    logger.debug(`📺 MEDIASOUP: Creating consumer for ${consumerSocketId} from producer ${producerSocketId}`);
+    logger.debug(`📺 MEDIASOUP: Consumer transport exists: ${!!consumerTransport}`);
+    logger.debug(`📺 MEDIASOUP: Producer map exists: ${!!producerMap}, size: ${producerMap?.size || 0}`);
 
     // Validate transport state before attempting to create consumer
     if (!consumerTransport) {
-      console.error(`❌ MEDIASOUP: No transport found for consumer ${consumerSocketId}`);
+      logger.error(`❌ MEDIASOUP: No transport found for consumer ${consumerSocketId}`);
       return null;
     }
 
     if (consumerTransport.closed) {
-      console.error(`❌ MEDIASOUP: Consumer transport is closed for ${consumerSocketId}`);
+      logger.error(`❌ MEDIASOUP: Consumer transport is closed for ${consumerSocketId}`);
       return null;
     }
 
     // Check transport connection state
     if (consumerTransport.connectionState === 'failed') {
-      console.error(`❌ MEDIASOUP: Consumer transport in failed state for ${consumerSocketId}`);
+      logger.error(`❌ MEDIASOUP: Consumer transport in failed state for ${consumerSocketId}`);
       return null;
     }
 
@@ -535,14 +537,14 @@ class MediasoupService {
     // The producer socket ID won't contain 'viewbot', but the producer will have isViewBot flag
     let isViewbotProducer = false;
     
-    console.log(`🔍 MEDIASOUP: Checking if producer ${producerSocketId} is viewbot...`);
-    console.log(`   Producer map exists: ${!!producerMap}`);
-    console.log(`   Producer map size: ${producerMap?.size || 0}`);
+    logger.debug(`🔍 MEDIASOUP: Checking if producer ${producerSocketId} is viewbot...`);
+    logger.debug(`   Producer map exists: ${!!producerMap}`);
+    logger.debug(`   Producer map size: ${producerMap?.size || 0}`);
     
     // Check if any producer has isViewBot flag in appData
     if (!isViewbotProducer && producerMap) {
       for (const producer of producerMap.values()) {
-        console.log(`   Checking producer ${producer.id}:`, {
+        logger.debug(`   Checking producer ${producer.id}:`, {
           kind: producer.kind,
           hasAppData: !!producer.appData,
           isViewBot: producer.appData?.isViewBot,
@@ -550,41 +552,41 @@ class MediasoupService {
         });
         if (producer.appData && producer.appData.isViewBot) {
           isViewbotProducer = true;
-          console.log(`🤖 MEDIASOUP: Detected viewbot producer via appData.isViewBot flag`);
+          logger.debug(`🤖 MEDIASOUP: Detected viewbot producer via appData.isViewBot flag`);
           break;
         }
       }
     }
     
-    console.log(`🔍 MEDIASOUP: Is viewbot producer: ${isViewbotProducer}`);
+    logger.debug(`🔍 MEDIASOUP: Is viewbot producer: ${isViewbotProducer}`);
     
     // For viewbot producers, note the limitation
     // Plain RTP producers don't support ICE/TURN which mobile clients need
     if (isViewbotProducer) {
-      console.log(`📱 MEDIASOUP: Viewbot producer detected - mobile clients may have issues`);
-      console.log(`   Note: Plain RTP producers don't support ICE/TURN needed by mobile networks`);
+      logger.debug(`📱 MEDIASOUP: Viewbot producer detected - mobile clients may have issues`);
+      logger.debug(`   Note: Plain RTP producers don't support ICE/TURN needed by mobile networks`);
       // Continue with normal consumption but note this may fail on mobile
     }
     
     if (isViewbotProducer && producerMap) {
-      console.log(`🤖 MEDIASOUP: Viewbot Plain RTP producer detected - creating WebRTC bridge for mobile compatibility`);
+      logger.debug(`🤖 MEDIASOUP: Viewbot Plain RTP producer detected - creating WebRTC bridge for mobile compatibility`);
       
       // For viewbot Plain RTP producers, ALL clients should consume normally
       // The issue is that Plain RTP doesn't support ICE/TURN for mobile
       // MediaSoup doesn't support producing to WebRTC transport from server side
       // So we'll just log the limitation
-      console.log(`⚠️ MEDIASOUP: Viewbot Plain RTP producer detected`);
-      console.log(`   Mobile clients may have connectivity issues due to lack of ICE/TURN support`);
-      console.log(`   Plain RTP producers cannot be bridged to WebRTC automatically`);
+      logger.debug(`⚠️ MEDIASOUP: Viewbot Plain RTP producer detected`);
+      logger.debug(`   Mobile clients may have connectivity issues due to lack of ICE/TURN support`);
+      logger.debug(`   Plain RTP producers cannot be bridged to WebRTC automatically`);
       
       // Continue with normal consumption - will work for desktop, may fail for mobile
       // The real fix is to have viewbots use WebRTC from the start
     }
 
     if (!consumerTransport || !producerMap) {
-      console.error(`❌ MEDIASOUP: Missing components for consumer creation`);
-      console.error(`Consumer transport: ${!!consumerTransport}`);
-      console.error(`Producer map: ${!!producerMap}`);
+      logger.error(`❌ MEDIASOUP: Missing components for consumer creation`);
+      logger.error(`Consumer transport: ${!!consumerTransport}`);
+      logger.error(`Producer map: ${!!producerMap}`);
       return null;
     }
 
@@ -593,33 +595,33 @@ class MediasoupService {
     if (kind) {
       producer = producerMap.get(kind);
       if (!producer) {
-        console.error(`❌ MEDIASOUP: No ${kind} producer found for ${producerSocketId}`);
+        logger.error(`❌ MEDIASOUP: No ${kind} producer found for ${producerSocketId}`);
         return null;
       }
     } else {
       // Get first available producer (for backward compatibility)
       producer = producerMap.values().next().value;
       if (!producer) {
-        console.error(`❌ MEDIASOUP: No producers found for ${producerSocketId}`);
+        logger.error(`❌ MEDIASOUP: No producers found for ${producerSocketId}`);
         return null;
       }
     }
 
     // Validate producer state before creating consumer
     if (producer.closed) {
-      console.error(`❌ MEDIASOUP: Producer is closed for ${producerSocketId} (${producer.kind})`);
+      logger.error(`❌ MEDIASOUP: Producer is closed for ${producerSocketId} (${producer.kind})`);
       return null;
     }
 
     if (producer.paused) {
-      console.warn(`⚠️ MEDIASOUP: Producer is paused for ${producerSocketId} (${producer.kind}), attempting to consume anyway`);
+      logger.warn(`⚠️ MEDIASOUP: Producer is paused for ${producerSocketId} (${producer.kind}), attempting to consume anyway`);
     }
 
     if (!this.router.canConsume({
       producerId: producer.id,
       rtpCapabilities,
     })) {
-      console.error(`❌ MEDIASOUP: Cannot consume producer ${producer.id} (${producer.kind})`);
+      logger.error(`❌ MEDIASOUP: Cannot consume producer ${producer.id} (${producer.kind})`);
       return null;
     }
 
@@ -662,15 +664,15 @@ class MediasoupService {
       );
 
       if (consumer._isIOS) {
-        console.log(`📱 iOS video consumer detected for ${consumerSocketId}, using MEASURED keyframe approach`);
+        logger.debug(`📱 iOS video consumer detected for ${consumerSocketId}, using MEASURED keyframe approach`);
 
         // MEASURED APPROACH: Single initial keyframe after decoder initialization
         setTimeout(async () => {
           try {
             await consumer.requestKeyFrame();
-            console.log(`📱 Initial keyframe sent for iOS consumer ${consumer.id}`);
+            logger.debug(`📱 Initial keyframe sent for iOS consumer ${consumer.id}`);
           } catch (e) {
-            console.error(`Failed to send initial keyframe:`, e);
+            logger.error(`Failed to send initial keyframe:`, e);
           }
         }, 500); // Wait 500ms for iOS decoder initialization
 
@@ -688,7 +690,7 @@ class MediasoupService {
               await consumer.requestKeyFrame();
               // Reduced logging to avoid spam
               if (Math.random() < 0.1) { // Log only 10% of requests
-                console.log(`🔑 Periodic keyframe for iOS consumer ${consumer.id}`);
+                logger.debug(`🔑 Periodic keyframe for iOS consumer ${consumer.id}`);
               }
             }
           } catch (e) {
@@ -699,7 +701,7 @@ class MediasoupService {
       }
     }
 
-    console.log(`📺 MEDIASOUP: Consumer created for ${consumerSocketId} from ${producerSocketId} (${producer.kind})`);
+    logger.debug(`📺 MEDIASOUP: Consumer created for ${consumerSocketId} from ${producerSocketId} (${producer.kind})`);
 
     return {
       id: consumer.id,
@@ -725,10 +727,10 @@ class MediasoupService {
         
         try {
           await consumer.resume();
-          console.log(`▶️ MEDIASOUP: Consumer ${consumerId} resumed for ${socketId}`);
+          logger.debug(`▶️ MEDIASOUP: Consumer ${consumerId} resumed for ${socketId}`);
           return;
         } catch (error) {
-          console.error(`❌ MEDIASOUP: Failed to resume consumer ${consumerId}: ${error.message}`);
+          logger.error(`❌ MEDIASOUP: Failed to resume consumer ${consumerId}: ${error.message}`);
           throw error;
         }
       }
@@ -786,7 +788,7 @@ class MediasoupService {
     for (const [socketId, transport] of this.transports.entries()) {
       if (transport.createdAt && (now - transport.createdAt) > this.transportTimeout) {
         if (!this.producers.has(socketId) && !this.consumers.has(socketId)) {
-          console.log(`🧹 MEDIASOUP: Cleaning up stale transport for ${socketId}`);
+          logger.debug(`🧹 MEDIASOUP: Cleaning up stale transport for ${socketId}`);
           this.cleanupSocketResources(socketId);
           cleanupCount++;
         }
@@ -803,19 +805,19 @@ class MediasoupService {
       
       // If transport exists but no producers AND no consumers, and it's older than 30 seconds, clean it up
       if (!this.producers.has(socketId) && !hasConsumers && transport.appData?.createdAt && (now - transport.appData.createdAt) > 30000) {
-        console.log(`🧹 MEDIASOUP: Cleaning up orphaned transport for ${socketId} (no producers or consumers)`);
+        logger.debug(`🧹 MEDIASOUP: Cleaning up orphaned transport for ${socketId} (no producers or consumers)`);
         this.cleanupSocketResources(socketId);
         cleanupCount++;
       }
     }
 
     if (cleanupCount > 0) {
-      console.log(`🧹 MEDIASOUP: Periodic cleanup completed, removed ${cleanupCount} stale resources`);
+      logger.debug(`🧹 MEDIASOUP: Periodic cleanup completed, removed ${cleanupCount} stale resources`);
     }
   }
 
   async cleanupSocketResources(socketId) {
-    console.log(`🧹 MEDIASOUP: Cleaning up all resources for ${socketId}`);
+    logger.debug(`🧹 MEDIASOUP: Cleaning up all resources for ${socketId}`);
 
     // Clean up consumers first
     const consumers = this.consumers.get(socketId);
@@ -831,7 +833,7 @@ class MediasoupService {
             consumer.close();
           }
         } catch (error) {
-          console.warn(`⚠️ MEDIASOUP: Error closing consumer: ${error.message}`);
+          logger.warn(`⚠️ MEDIASOUP: Error closing consumer: ${error.message}`);
         }
       }
       this.consumers.delete(socketId);
@@ -844,10 +846,10 @@ class MediasoupService {
         try {
           if (!producer.closed) {
             producer.close();
-            console.log(`🛑 MEDIASOUP: Closed ${kind} producer for ${socketId}`);
+            logger.debug(`🛑 MEDIASOUP: Closed ${kind} producer for ${socketId}`);
           }
         } catch (error) {
-          console.warn(`⚠️ MEDIASOUP: Error closing producer: ${error.message}`);
+          logger.warn(`⚠️ MEDIASOUP: Error closing producer: ${error.message}`);
         }
       }
       this.producers.delete(socketId);
@@ -856,9 +858,9 @@ class MediasoupService {
       // (Don't clear during takeovers where a new streamer has already been set)
       if (this.currentStreamer === socketId) {
         this.currentStreamer = null;
-        console.log(`🎯 MEDIASOUP: Streamer ${socketId} disconnected, no active streamer`);
+        logger.debug(`🎯 MEDIASOUP: Streamer ${socketId} disconnected, no active streamer`);
       } else if (this.currentStreamer) {
-        console.log(`🎯 MEDIASOUP: Cleaning up ${socketId} but ${this.currentStreamer} is current streamer`);
+        logger.debug(`🎯 MEDIASOUP: Cleaning up ${socketId} but ${this.currentStreamer} is current streamer`);
       }
     }
 
@@ -875,11 +877,11 @@ class MediasoupService {
           // ViewBot case with separate video and audio transports
           if (!transport.video.closed) {
             transport.video.close();
-            console.log(`🔒 Closed video transport for ${socketId}`);
+            logger.debug(`🔒 Closed video transport for ${socketId}`);
           }
           if (!transport.audio.closed) {
             transport.audio.close();
-            console.log(`🔒 Closed audio transport for ${socketId}`);
+            logger.debug(`🔒 Closed audio transport for ${socketId}`);
           }
         } else if (transport.close && typeof transport.close === 'function') {
           // Regular single transport case
@@ -888,10 +890,10 @@ class MediasoupService {
           }
         }
       } catch (error) {
-        console.warn(`⚠️ MEDIASOUP: Error closing transport: ${error.message}`);
+        logger.warn(`⚠️ MEDIASOUP: Error closing transport: ${error.message}`);
       }
       this.transports.delete(socketId);
-      console.log(`🔒 MEDIASOUP: Transport cleaned up for ${socketId}`);
+      logger.debug(`🔒 MEDIASOUP: Transport cleaned up for ${socketId}`);
     }
   }
 
@@ -902,7 +904,7 @@ class MediasoupService {
 
   // Clean up all resources (for server shutdown)
   cleanupAll() {
-    console.log('🧹 MEDIASOUP: Cleaning up all resources...');
+    logger.debug('🧹 MEDIASOUP: Cleaning up all resources...');
     
     // Clear the cleanup interval
     if (this.cleanupIntervalId) {
@@ -922,7 +924,7 @@ class MediasoupService {
     this.transports.clear();
     this.currentStreamer = null;
     
-    console.log('✅ MEDIASOUP: All resources cleaned up');
+    logger.debug('✅ MEDIASOUP: All resources cleaned up');
   }
 
   getStats() {

@@ -9,9 +9,11 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotLiveKitService' });
+
 // Disable all non-essential logging for production
 const DEBUG = false;
-const log = DEBUG ? console.log.bind(console) : () => {};
+const log = DEBUG ? logger.debug.bind(logger) : () => {};
 
 class ViewBotLiveKitService {
   constructor(livekitService) {
@@ -30,7 +32,7 @@ class ViewBotLiveKitService {
    */
   setStreamService(streamService) {
     this.streamService = streamService;
-    console.log('✅ LIVEKIT VIEWBOT: StreamService registered for real streamer protection');
+    logger.debug('✅ LIVEKIT VIEWBOT: StreamService registered for real streamer protection');
   }
 
   /**
@@ -39,7 +41,7 @@ class ViewBotLiveKitService {
    */
   setURLViewBotService(urlViewBotService) {
     this.urlViewBotService = urlViewBotService;
-    console.log('✅ LIVEKIT VIEWBOT: ViewBotURLService registered for URL stream protection');
+    logger.debug('✅ LIVEKIT VIEWBOT: ViewBotURLService registered for URL stream protection');
   }
 
   /**
@@ -53,7 +55,7 @@ class ViewBotLiveKitService {
     const isActive = this.urlViewBotService.isURLStreamActive();
     if (isActive) {
       const activeStream = this.urlViewBotService.getActiveURLStream();
-      console.log(`🛡️ LIVEKIT VIEWBOT: URL stream ${activeStream?.urlId} is active - viewbot creation blocked`);
+      logger.debug(`🛡️ LIVEKIT VIEWBOT: URL stream ${activeStream?.urlId} is active - viewbot creation blocked`);
     }
     return isActive;
   }
@@ -99,7 +101,7 @@ class ViewBotLiveKitService {
         this.config.apiSecret
       );
       
-      console.log('🤖 LIVEKIT VIEWBOT: Service initialized');
+      logger.debug('🤖 LIVEKIT VIEWBOT: Service initialized');
       
       // Load available video files
       await this.loadVideoFiles();
@@ -118,12 +120,12 @@ class ViewBotLiveKitService {
         .map(f => path.join(uploadsDir, f));
       
       if (this.videoFiles.length > 0) {
-        console.log(`📹 LIVEKIT VIEWBOT: Found ${this.videoFiles.length} video files for rotation`);
+        logger.debug(`📹 LIVEKIT VIEWBOT: Found ${this.videoFiles.length} video files for rotation`);
       } else {
-        console.warn('⚠️ LIVEKIT VIEWBOT: No video files found in uploads directory');
+        logger.warn('⚠️ LIVEKIT VIEWBOT: No video files found in uploads directory');
       }
     } catch (error) {
-      console.error('❌ LIVEKIT VIEWBOT: Failed to load video files:', error);
+      logger.error('❌ LIVEKIT VIEWBOT: Failed to load video files:', error);
     }
   }
 
@@ -146,7 +148,7 @@ class ViewBotLiveKitService {
   async createViewBot(config = {}) {
     // CRITICAL: Check if real streamer is active before creating viewbot
     if (this.isRealStreamerActive()) {
-      console.log('🛡️ LIVEKIT VIEWBOT: BLOCKED - Real streamer is active, cannot create viewbot');
+      logger.debug('🛡️ LIVEKIT VIEWBOT: BLOCKED - Real streamer is active, cannot create viewbot');
       return {
         success: false,
         message: 'Real streamer is active - viewbot creation blocked'
@@ -157,13 +159,13 @@ class ViewBotLiveKitService {
 
     const botId = `viewbot-${uuidv4().substring(0, 8)}`;
 
-    console.log(`🤖 LIVEKIT VIEWBOT: Creating ViewBot: ${botId}`);
+    logger.debug(`🤖 LIVEKIT VIEWBOT: Creating ViewBot: ${botId}`);
 
     // Get a video file if not provided
     let videoFile = config.videoFile || this.getNextVideoFile();
     
     if (!videoFile) {
-      console.error('❌ LIVEKIT VIEWBOT: No video files available');
+      logger.error('❌ LIVEKIT VIEWBOT: No video files available');
       return {
         success: false,
         message: 'No video files available for streaming'
@@ -200,13 +202,13 @@ class ViewBotLiveKitService {
       // Register viewbot as current streamer
       if (global.streamService) {
         global.streamService.setStreamer(botId, 'viewbot');
-        console.log(`✅ LIVEKIT VIEWBOT: Registered ${botId} as current streamer`);
+        logger.debug(`✅ LIVEKIT VIEWBOT: Registered ${botId} as current streamer`);
       }
 
       // CRITICAL: Emit stream-ready so clients know to switch to this stream
       // LiveKit viewbots don't use socket.io so they can't emit viewbot-stream-ready
       if (global.io) {
-        console.log(`📢 LIVEKIT VIEWBOT ${botId}: Emitting stream-ready to all clients`);
+        logger.debug(`📢 LIVEKIT VIEWBOT ${botId}: Emitting stream-ready to all clients`);
         global.io.emit('stream-ready', {
           streamerId: botId,
           newStreamId: botId,
@@ -219,14 +221,14 @@ class ViewBotLiveKitService {
         });
       }
 
-      console.log(`✅ LIVEKIT VIEWBOT: ViewBot created: ${botId}`);
+      logger.debug(`✅ LIVEKIT VIEWBOT: ViewBot created: ${botId}`);
       return {
         success: true,
         botId,
         message: 'LiveKit ViewBot created successfully'
       };
     } catch (error) {
-      console.error(`❌ LIVEKIT VIEWBOT: Failed to create ViewBot:`, error);
+      logger.error(`❌ LIVEKIT VIEWBOT: Failed to create ViewBot:`, error);
       await this.cleanup(bot);
       return {
         success: false,
@@ -265,7 +267,7 @@ class ViewBotLiveKitService {
     const { config } = bot;
 
     // Use RTMP ingress for LiveKit streaming
-    console.log(`🎬 LIVEKIT VIEWBOT: Using RTMP ingress for ${bot.id}`);
+    logger.debug(`🎬 LIVEKIT VIEWBOT: Using RTMP ingress for ${bot.id}`);
     return this.startRTMPStream(bot);
   }
 
@@ -306,11 +308,11 @@ class ViewBotLiveKitService {
   async startRTMPStream(bot) {
     const { config } = bot;
 
-    console.log(`📹 LIVEKIT VIEWBOT ${bot.id}: Streaming video via RTMP (GStreamer): ${path.basename(config.videoFile)}`);
+    logger.debug(`📹 LIVEKIT VIEWBOT ${bot.id}: Streaming video via RTMP (GStreamer): ${path.basename(config.videoFile)}`);
 
     // Check if video has audio
     const hasAudio = await this.hasAudioTrack(config.videoFile);
-    console.log(`🔊 LIVEKIT VIEWBOT ${bot.id}: Video has audio: ${hasAudio}`);
+    logger.debug(`🔊 LIVEKIT VIEWBOT ${bot.id}: Video has audio: ${hasAudio}`);
 
     // CRITICAL FIX: Delete old ingress before creating new one (for video rotation)
     // This prevents SIGPIPE errors when the same bot ID tries to create a new ingress
@@ -322,13 +324,13 @@ class ViewBotLiveKitService {
           : `http://${this.config.host}`;
         const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
         await ingressClient.deleteIngress(bot.ingressId);
-        console.log(`🗑️ LIVEKIT VIEWBOT ${bot.id}: Deleted old ingress before video rotation`);
+        logger.debug(`🗑️ LIVEKIT VIEWBOT ${bot.id}: Deleted old ingress before video rotation`);
         bot.ingressId = null;
         bot.streamKey = null;
         // Small delay to allow LiveKit to clean up
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
-        console.log(`⚠️ LIVEKIT VIEWBOT ${bot.id}: Could not delete old ingress: ${error.message}`);
+        logger.debug(`⚠️ LIVEKIT VIEWBOT ${bot.id}: Could not delete old ingress: ${error.message}`);
       }
     }
 
@@ -343,7 +345,7 @@ class ViewBotLiveKitService {
 
     const rtmpUrl = `rtmp://127.0.0.1:1935/live/${bot.streamKey}`;
 
-    console.log(`🎥 LIVEKIT VIEWBOT ${bot.id}: Streaming to RTMP URL: ${rtmpUrl}`);
+    logger.debug(`🎥 LIVEKIT VIEWBOT ${bot.id}: Streaming to RTMP URL: ${rtmpUrl}`);
 
     return new Promise((resolve, reject) => {
       // GStreamer pipeline for RTMP streaming - WORKING CONFIGURATION
@@ -362,14 +364,14 @@ class ViewBotLiveKitService {
         audioPipeline + ` ` +
         `flvmux name=mux streamable=true ! rtmpsink location="${rtmpUrl}"`;
 
-      console.log(`🎬 LIVEKIT VIEWBOT ${bot.id}: Starting GStreamer RTMP pipeline (audio: ${hasAudio ? 'real' : 'silent'})`);
+      logger.debug(`🎬 LIVEKIT VIEWBOT ${bot.id}: Starting GStreamer RTMP pipeline (audio: ${hasAudio ? 'real' : 'silent'})`);
 
       bot.gstreamerProcess = spawn('sh', ['-c', `gst-launch-1.0 -v ${pipelineCmd}`], {
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
       bot.gstreamerProcess.on('error', (error) => {
-        console.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer error:`, error);
+        logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer error:`, error);
         reject(error);
       });
 
@@ -380,22 +382,22 @@ class ViewBotLiveKitService {
         const output = data.toString();
 
         if (output.includes('ERROR')) {
-          console.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer ERROR:`, output);
+          logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer ERROR:`, output);
           if (!streamStarted) {
             reject(new Error('GStreamer error: ' + output));
           }
         } else if (output.includes('WARNING')) {
-          console.warn(`⚠️ LIVEKIT VIEWBOT ${bot.id}: GStreamer WARNING:`, output);
+          logger.warn(`⚠️ LIVEKIT VIEWBOT ${bot.id}: GStreamer WARNING:`, output);
         } else if (output.includes('PLAYING') || output.includes('Pipeline is PREROLLED')) {
           if (!streamStarted) {
             streamStarted = true;
             bot.running = true;
             bot.startTime = Date.now();
-            console.log(`✅ LIVEKIT VIEWBOT ${bot.id}: GStreamer RTMP stream started successfully`);
+            logger.debug(`✅ LIVEKIT VIEWBOT ${bot.id}: GStreamer RTMP stream started successfully`);
 
             // Monitor how long it takes for the track to appear in the room
             this.monitorTrackPublishing(bot.id, bot.id, bot.startTime).catch(err => {
-              console.error(`❌ Failed to monitor track publishing:`, err);
+              logger.error(`❌ Failed to monitor track publishing:`, err);
             });
 
             resolve();
@@ -407,23 +409,23 @@ class ViewBotLiveKitService {
       bot.gstreamerProcess.stderr.on('data', handleOutput);
 
       bot.gstreamerProcess.on('exit', (code, signal) => {
-        console.log(`🎬 LIVEKIT VIEWBOT ${bot.id}: GStreamer process ended (code: ${code}, signal: ${signal})`);
+        logger.debug(`🎬 LIVEKIT VIEWBOT ${bot.id}: GStreamer process ended (code: ${code}, signal: ${signal})`);
         bot.running = false;
 
         // Auto-restart on video end if still supposed to be running
         if (code === 0 && this.activeBots.has(bot.id)) {
-          console.log(`🔄 LIVEKIT VIEWBOT ${bot.id}: Video ended, rotating to next video...`);
+          logger.debug(`🔄 LIVEKIT VIEWBOT ${bot.id}: Video ended, rotating to next video...`);
 
           // Get next video file
           const nextVideo = this.getNextVideoFile();
           if (nextVideo) {
             bot.config.videoFile = nextVideo;
-            console.log(`🎥 LIVEKIT VIEWBOT ${bot.id}: Next video: ${path.basename(nextVideo)}`);
+            logger.debug(`🎥 LIVEKIT VIEWBOT ${bot.id}: Next video: ${path.basename(nextVideo)}`);
           }
 
           setTimeout(() => {
             this.startRTMPStream(bot).catch(err => {
-              console.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Failed to restart:`, err);
+              logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Failed to restart:`, err);
             });
           }, 1000);
         }
@@ -470,7 +472,7 @@ class ViewBotLiveKitService {
       // this flag lets us re-validate that on the current livekit-server-sdk version.
       const bypassTranscoding = process.env.LIVEKIT_INGRESS_BYPASS_TRANSCODING === 'true';
 
-      console.log(`🎬 LIVEKIT INGRESS: Creating with ${videoWidth}x${videoHeight}@${videoFps}fps ${videoBitrate/1000}kbps${bypassTranscoding ? ' [BYPASS TRANSCODING]' : ''}`);
+      logger.debug(`🎬 LIVEKIT INGRESS: Creating with ${videoWidth}x${videoHeight}@${videoFps}fps ${videoBitrate/1000}kbps${bypassTranscoding ? ' [BYPASS TRANSCODING]' : ''}`);
 
       const ingressRequest = {
         name: `viewbot-${bot.id}`,
@@ -518,11 +520,11 @@ class ViewBotLiveKitService {
 
       const ingress = await ingressClient.createIngress(IngressInput.RTMP_INPUT, ingressRequest);
 
-      console.log(`✅ LIVEKIT VIEWBOT ${bot.id}: Created ingress with stream key: ${ingress.streamKey}`);
+      logger.debug(`✅ LIVEKIT VIEWBOT ${bot.id}: Created ingress with stream key: ${ingress.streamKey}`);
 
       return ingress;
     } catch (error) {
-      console.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Failed to create ingress:`, error);
+      logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Failed to create ingress:`, error);
       return null;
     }
   }
@@ -540,10 +542,10 @@ class ViewBotLiveKitService {
       const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
 
       await ingressClient.deleteIngress(ingressId);
-      console.log(`✅ LIVEKIT: Deleted ingress ${ingressId}`);
+      logger.debug(`✅ LIVEKIT: Deleted ingress ${ingressId}`);
       return true;
     } catch (error) {
-      console.error(`❌ LIVEKIT: Failed to delete ingress ${ingressId}:`, error.message);
+      logger.error(`❌ LIVEKIT: Failed to delete ingress ${ingressId}:`, error.message);
       return false;
     }
   }
@@ -551,8 +553,8 @@ class ViewBotLiveKitService {
   async startGStreamerWHIPStream_OLD(bot) {
     const { config } = bot;
 
-    console.log(`🎬 LIVEKIT VIEWBOT: Starting GStreamer WHIP stream for ${bot.id}`);
-    console.log(`📹 LIVEKIT VIEWBOT ${bot.id}: Streaming video: ${path.basename(config.videoFile)}`);
+    logger.debug(`🎬 LIVEKIT VIEWBOT: Starting GStreamer WHIP stream for ${bot.id}`);
+    logger.debug(`📹 LIVEKIT VIEWBOT ${bot.id}: Streaming video: ${path.basename(config.videoFile)}`);
 
     return new Promise(async (resolve, reject) => {
       // Construct WHIP endpoint URL with token
@@ -602,14 +604,14 @@ class ViewBotLiveKitService {
         'signaller::use-link-headers=true'
       ];
       
-      console.log(`🎥 LIVEKIT VIEWBOT ${bot.id}: Starting GStreamer pipeline with whipclientsink`);
+      logger.debug(`🎥 LIVEKIT VIEWBOT ${bot.id}: Starting GStreamer pipeline with whipclientsink`);
       
       bot.gstreamerProcess = spawn('gst-launch-1.0', pipelineArgs, {
         stdio: ['ignore', 'pipe', 'pipe']
       });
       
       bot.gstreamerProcess.on('error', (error) => {
-        console.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer launch error:`, error);
+        logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer launch error:`, error);
         reject(error);
       });
       
@@ -619,43 +621,43 @@ class ViewBotLiveKitService {
         const output = data.toString();
         
         if (output.includes('ERROR')) {
-          console.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer ERROR:`, output);
+          logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer ERROR:`, output);
           if (!pipelineStarted) {
             reject(new Error('GStreamer pipeline error: ' + output));
           }
         } else if (output.includes('WARNING')) {
-          console.warn(`⚠️ LIVEKIT VIEWBOT ${bot.id}: GStreamer WARNING:`, output);
+          logger.warn(`⚠️ LIVEKIT VIEWBOT ${bot.id}: GStreamer WARNING:`, output);
         } else if (output.includes('PLAYING') || output.includes('Pipeline is PREROLLED')) {
-          console.log(`▶️ LIVEKIT VIEWBOT ${bot.id}: GStreamer pipeline PLAYING`);
+          logger.debug(`▶️ LIVEKIT VIEWBOT ${bot.id}: GStreamer pipeline PLAYING`);
           bot.running = true;
           bot.startTime = Date.now();
           if (!pipelineStarted) {
             pipelineStarted = true;
-            console.log(`✅ LIVEKIT VIEWBOT ${bot.id}: Streaming to LiveKit via WHIP`);
+            logger.debug(`✅ LIVEKIT VIEWBOT ${bot.id}: Streaming to LiveKit via WHIP`);
             resolve();
           }
         } else if (output.includes('Setting pipeline to PLAYING')) {
-          console.log(`🚀 LIVEKIT VIEWBOT ${bot.id}: Starting pipeline...`);
+          logger.debug(`🚀 LIVEKIT VIEWBOT ${bot.id}: Starting pipeline...`);
         }
         
         // Log other output for debugging
         if (!output.includes('WARNING') && !output.includes('ERROR') && output.trim()) {
-          console.log(`📝 LIVEKIT VIEWBOT ${bot.id}: ${output.trim()}`);
+          logger.debug(`📝 LIVEKIT VIEWBOT ${bot.id}: ${output.trim()}`);
         }
       });
       
       bot.gstreamerProcess.stdout.on('data', (data) => {
-        console.log(`📝 LIVEKIT VIEWBOT ${bot.id} stdout: ${data.toString().trim()}`);
+        logger.debug(`📝 LIVEKIT VIEWBOT ${bot.id} stdout: ${data.toString().trim()}`);
       });
       
       // Handle when GStreamer process exits (video file ends)
       bot.gstreamerProcess.on('exit', async (code, signal) => {
-        console.log(`🎬 LIVEKIT VIEWBOT ${bot.id}: GStreamer process ended (code: ${code}, signal: ${signal})`);
+        logger.debug(`🎬 LIVEKIT VIEWBOT ${bot.id}: GStreamer process ended (code: ${code}, signal: ${signal})`);
         bot.running = false;
         
         // If video ended naturally, rotate to next
         if (code === 0 && this.videoFiles.length > 1) {
-          console.log(`🔄 LIVEKIT VIEWBOT ${bot.id}: Video ended, rotating to next...`);
+          logger.debug(`🔄 LIVEKIT VIEWBOT ${bot.id}: Video ended, rotating to next...`);
           await this.rotateVideo(bot);
         }
       });
@@ -678,7 +680,7 @@ class ViewBotLiveKitService {
     const nextVideo = this.getNextVideoFile();
     if (!nextVideo) return;
     
-    console.log(`🔄 LIVEKIT VIEWBOT ${bot.id}: Rotating to video: ${path.basename(nextVideo)}`);
+    logger.debug(`🔄 LIVEKIT VIEWBOT ${bot.id}: Rotating to video: ${path.basename(nextVideo)}`);
     
     // Stop current process
     if (bot.gstreamerProcess) {
@@ -693,7 +695,7 @@ class ViewBotLiveKitService {
     try {
       await this.startFFmpegStream(bot);
     } catch (error) {
-      console.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Failed to rotate video:`, error);
+      logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Failed to rotate video:`, error);
     }
   }
 
@@ -706,7 +708,7 @@ class ViewBotLiveKitService {
       return { success: false, message: 'ViewBot not found' };
     }
 
-    console.log(`🛑 LIVEKIT VIEWBOT: Stopping ViewBot: ${botId}`);
+    logger.debug(`🛑 LIVEKIT VIEWBOT: Stopping ViewBot: ${botId}`);
 
     bot.running = false;
     await this.cleanup(bot);
@@ -715,7 +717,7 @@ class ViewBotLiveKitService {
     // Deregister viewbot as current streamer
     if (global.streamService && global.streamService.getCurrentStreamer() === botId) {
       global.streamService.clearStreamer();
-      console.log(`✅ LIVEKIT VIEWBOT: Deregistered ${botId} as current streamer`);
+      logger.debug(`✅ LIVEKIT VIEWBOT: Deregistered ${botId} as current streamer`);
     }
 
     return {
@@ -736,7 +738,7 @@ class ViewBotLiveKitService {
       const processName = bot.gstreamerProcess ? 'GStreamer' : 'FFmpeg';
 
       try {
-        console.log(`🛑 LIVEKIT VIEWBOT ${bot.id}: Stopping ${processName} process (PID: ${process.pid})...`);
+        logger.debug(`🛑 LIVEKIT VIEWBOT ${bot.id}: Stopping ${processName} process (PID: ${process.pid})...`);
 
         if (process.pid) {
           try {
@@ -750,7 +752,7 @@ class ViewBotLiveKitService {
             // Kill the parent process
             process.kill('SIGTERM');
           } catch (e) {
-            console.log(`⚠️ LIVEKIT VIEWBOT ${bot.id}: Error sending SIGTERM:`, e.message);
+            logger.debug(`⚠️ LIVEKIT VIEWBOT ${bot.id}: Error sending SIGTERM:`, e.message);
           }
         }
 
@@ -767,13 +769,13 @@ class ViewBotLiveKitService {
             exec(`pkill -KILL -P ${process.pid}`, () => {});
             // Force kill parent
             process.kill('SIGKILL');
-            console.log(`🛑 LIVEKIT VIEWBOT ${bot.id}: Force killed ${processName} process tree`);
+            logger.debug(`🛑 LIVEKIT VIEWBOT ${bot.id}: Force killed ${processName} process tree`);
           } catch (e) {
-            console.log(`⚠️ LIVEKIT VIEWBOT ${bot.id}: Process already terminated`);
+            logger.debug(`⚠️ LIVEKIT VIEWBOT ${bot.id}: Process already terminated`);
           }
         }
       } catch (error) {
-        console.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Error killing ${processName}:`, error.message);
+        logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Error killing ${processName}:`, error.message);
       }
       bot.gstreamerProcess = null;
       bot.ffmpegProcess = null;
@@ -789,9 +791,9 @@ class ViewBotLiveKitService {
         const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
 
         await ingressClient.deleteIngress(bot.ingressId);
-        console.log(`✅ LIVEKIT VIEWBOT ${bot.id}: Deleted ingress`);
+        logger.debug(`✅ LIVEKIT VIEWBOT ${bot.id}: Deleted ingress`);
       } catch (error) {
-        console.log(`ℹ️ LIVEKIT VIEWBOT ${bot.id}: Failed to delete ingress:`, error.message);
+        logger.debug(`ℹ️ LIVEKIT VIEWBOT ${bot.id}: Failed to delete ingress:`, error.message);
       }
       bot.ingressId = null;
       bot.streamKey = null;
@@ -801,10 +803,10 @@ class ViewBotLiveKitService {
     if (bot.participantId) {
       try {
         await this.roomClient.removeParticipant(this.config.roomName, bot.id);
-        console.log(`✅ LIVEKIT VIEWBOT ${bot.id}: Removed from room`);
+        logger.debug(`✅ LIVEKIT VIEWBOT ${bot.id}: Removed from room`);
       } catch (error) {
         // Participant may have already disconnected
-        console.log(`ℹ️ LIVEKIT VIEWBOT ${bot.id}: Already disconnected from room`);
+        logger.debug(`ℹ️ LIVEKIT VIEWBOT ${bot.id}: Already disconnected from room`);
       }
     }
   }
@@ -864,7 +866,7 @@ class ViewBotLiveKitService {
    * Stop all ViewBots
    */
   async stopAllViewBots() {
-    console.log(`🛑 LIVEKIT VIEWBOT: Stopping all ViewBots...`);
+    logger.debug(`🛑 LIVEKIT VIEWBOT: Stopping all ViewBots...`);
     
     const stopPromises = [];
     for (const [botId, bot] of this.activeBots) {
@@ -874,7 +876,7 @@ class ViewBotLiveKitService {
     await Promise.all(stopPromises);
     this.activeBots.clear();
     
-    console.log(`✅ LIVEKIT VIEWBOT: All ViewBots stopped`);
+    logger.debug(`✅ LIVEKIT VIEWBOT: All ViewBots stopped`);
   }
 
   /**
@@ -907,7 +909,7 @@ class ViewBotLiveKitService {
   async startFFmpegFallback(bot) {
     const { config } = bot;
 
-    console.log(`🎬 LIVEKIT VIEWBOT (FFmpeg): Starting test pattern stream for ${bot.id}`);
+    logger.debug(`🎬 LIVEKIT VIEWBOT (FFmpeg): Starting test pattern stream for ${bot.id}`);
 
     return new Promise((resolve, reject) => {
       // Use FFmpeg to generate test pattern with audio
@@ -947,7 +949,7 @@ class ViewBotLiveKitService {
         `${outputPath}.m3u8`
       ];
 
-      console.log(`🎥 LIVEKIT VIEWBOT (FFmpeg) ${bot.id}: Starting test pattern with HLS output`);
+      logger.debug(`🎥 LIVEKIT VIEWBOT (FFmpeg) ${bot.id}: Starting test pattern with HLS output`);
 
       bot.ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
         stdio: ['ignore', 'pipe', 'pipe']
@@ -959,7 +961,7 @@ class ViewBotLiveKitService {
         const output = data.toString();
 
         if (output.includes('error') || output.includes('Error')) {
-          console.error(`❌ VIEWBOT ${bot.id} FFmpeg error:`, output);
+          logger.error(`❌ VIEWBOT ${bot.id} FFmpeg error:`, output);
           if (!streamStarted) {
             reject(new Error('FFmpeg error: ' + output));
           }
@@ -968,7 +970,7 @@ class ViewBotLiveKitService {
         // Check if streaming started
         if (output.includes('Opening') || output.includes('muxer')) {
           if (!streamStarted) {
-            console.log(`✅ VIEWBOT ${bot.id}: FFmpeg test pattern streaming`);
+            logger.debug(`✅ VIEWBOT ${bot.id}: FFmpeg test pattern streaming`);
             streamStarted = true;
             bot.running = true;
             bot.startTime = Date.now();
@@ -978,21 +980,21 @@ class ViewBotLiveKitService {
       });
 
       bot.ffmpegProcess.on('error', (error) => {
-        console.error(`❌ FFmpeg process error for ${bot.id}:`, error);
+        logger.error(`❌ FFmpeg process error for ${bot.id}:`, error);
         if (!streamStarted) {
           reject(error);
         }
       });
 
       bot.ffmpegProcess.on('exit', (code, signal) => {
-        console.log(`🛑 FFmpeg process for ${bot.id} exited (code: ${code}, signal: ${signal})`);
+        logger.debug(`🛑 FFmpeg process for ${bot.id} exited (code: ${code}, signal: ${signal})`);
         bot.running = false;
       });
 
       // Timeout fallback
       setTimeout(() => {
         if (!streamStarted) {
-          console.log(`⚠️ VIEWBOT ${bot.id}: FFmpeg may be running but no confirmation received`);
+          logger.debug(`⚠️ VIEWBOT ${bot.id}: FFmpeg may be running but no confirmation received`);
           bot.running = true;
           bot.startTime = Date.now();
           resolve();
@@ -1005,43 +1007,43 @@ class ViewBotLiveKitService {
    * Monitor how long it takes for a viewbot's track to be published to the room
    */
   async monitorTrackPublishing(botId, participantIdentity, startTime) {
-    console.log(`🔍 LIVEKIT VIEWBOT ${botId}: Starting track publishing monitor for ${participantIdentity}`);
+    logger.debug(`🔍 LIVEKIT VIEWBOT ${botId}: Starting track publishing monitor for ${participantIdentity}`);
     const maxAttempts = 20; // 20 seconds max
     let attempts = 0;
 
     const checkInterval = setInterval(async () => {
       attempts++;
-      console.log(`🔍 LIVEKIT VIEWBOT ${botId}: Checking for tracks (attempt ${attempts}/${maxAttempts})`);
+      logger.debug(`🔍 LIVEKIT VIEWBOT ${botId}: Checking for tracks (attempt ${attempts}/${maxAttempts})`);
 
       try {
         const participants = await this.roomClient.listParticipants(this.config.roomName);
-        console.log(`🔍 LIVEKIT VIEWBOT ${botId}: Found ${participants.length} participants in room`);
+        logger.debug(`🔍 LIVEKIT VIEWBOT ${botId}: Found ${participants.length} participants in room`);
         const participant = participants.find(p => p.identity === participantIdentity);
 
         if (participant) {
-          console.log(`🔍 LIVEKIT VIEWBOT ${botId}: Found participant ${participantIdentity}, checking tracks...`);
-          console.log(`🔍 LIVEKIT VIEWBOT ${botId}: Participant tracks:`, participant.tracks.map(t => ({ type: t.type, width: t.width, height: t.height })));
+          logger.debug(`🔍 LIVEKIT VIEWBOT ${botId}: Found participant ${participantIdentity}, checking tracks...`);
+          logger.debug(`🔍 LIVEKIT VIEWBOT ${botId}: Participant tracks:`, participant.tracks.map(t => ({ type: t.type, width: t.width, height: t.height })));
 
           const videoTracks = participant.tracks.filter(t => t.type === 'video' || t.type === 1);
 
           if (videoTracks.length > 0) {
             const publishDelay = Date.now() - startTime;
-            console.log(`⏱️ LIVEKIT VIEWBOT ${botId}: Video track published to room after ${publishDelay}ms`);
+            logger.debug(`⏱️ LIVEKIT VIEWBOT ${botId}: Video track published to room after ${publishDelay}ms`);
             clearInterval(checkInterval);
             return;
           } else {
-            console.log(`🔍 LIVEKIT VIEWBOT ${botId}: Participant found but no video tracks yet`);
+            logger.debug(`🔍 LIVEKIT VIEWBOT ${botId}: Participant found but no video tracks yet`);
           }
         } else {
-          console.log(`🔍 LIVEKIT VIEWBOT ${botId}: Participant ${participantIdentity} not found in room yet`);
+          logger.debug(`🔍 LIVEKIT VIEWBOT ${botId}: Participant ${participantIdentity} not found in room yet`);
         }
 
         if (attempts >= maxAttempts) {
-          console.log(`⚠️ LIVEKIT VIEWBOT ${botId}: Track not published after ${maxAttempts} seconds`);
+          logger.debug(`⚠️ LIVEKIT VIEWBOT ${botId}: Track not published after ${maxAttempts} seconds`);
           clearInterval(checkInterval);
         }
       } catch (error) {
-        console.error(`❌ Error monitoring track publishing:`, error);
+        logger.error(`❌ Error monitoring track publishing:`, error);
         clearInterval(checkInterval);
       }
     }, 1000); // Check every second

@@ -17,6 +17,8 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
+const logger = require('../bootstrap/logger').child({ svc: 'RandomStreamRotationService' });
+
 // Persistence file for enabled state
 const STATE_FILE = path.join(__dirname, '../data/random-rotation-state.json');
 
@@ -147,7 +149,7 @@ class RandomStreamRotationService extends EventEmitter {
     this.lockedAt = null;
     this.remainingTimeWhenLocked = null; // Store remaining time when locked
 
-    console.log('🎲 RandomStreamRotationService initialized');
+    logger.debug('🎲 RandomStreamRotationService initialized');
 
     // Load persisted state
     this._loadState();
@@ -168,9 +170,9 @@ class RandomStreamRotationService extends EventEmitter {
         savedAt: new Date().toISOString()
       };
       fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-      console.log(`💾 Random rotation state saved (enabled: ${state.enabled})`);
+      logger.debug(`💾 Random rotation state saved (enabled: ${state.enabled})`);
     } catch (error) {
-      console.error('❌ Failed to save rotation state:', error.message);
+      logger.error('❌ Failed to save rotation state:', error.message);
     }
   }
 
@@ -184,15 +186,15 @@ class RandomStreamRotationService extends EventEmitter {
         const state = JSON.parse(data);
         if (state.enabled) {
           this.shouldAutoRestart = true;
-          console.log('📂 Random rotation state loaded - will auto-start when ready');
+          logger.debug('📂 Random rotation state loaded - will auto-start when ready');
         }
         if (state.settings) {
           this.settings = { ...this.settings, ...state.settings };
-          console.log('📂 Random rotation settings restored');
+          logger.debug('📂 Random rotation settings restored');
         }
       }
     } catch (error) {
-      console.error('❌ Failed to load rotation state:', error.message);
+      logger.error('❌ Failed to load rotation state:', error.message);
     }
   }
 
@@ -243,18 +245,18 @@ class RandomStreamRotationService extends EventEmitter {
   async _scheduleRetryWithBackoff(operation, operationName) {
     if (!this._shouldRetry()) {
       const waitTime = Math.round(this.retryConfig.maxDelayMs / 1000);
-      console.log(`⚠️ ROTATION: Max retries (${this.retryConfig.maxRetries}) reached for ${operationName}. Waiting ${waitTime}s before reset...`);
+      logger.debug(`⚠️ ROTATION: Max retries (${this.retryConfig.maxRetries}) reached for ${operationName}. Waiting ${waitTime}s before reset...`);
 
       // Wait for max delay then reset and try again (don't give up permanently)
       return new Promise((resolve) => {
         this.retryState.currentRetryTimer = setTimeout(async () => {
           // Check if locked before retrying
           if (this.isLocked) {
-            console.log('🔒 ROTATION: Skipping retry - timer is locked');
+            logger.debug('🔒 ROTATION: Skipping retry - timer is locked');
             resolve({ success: false, error: 'Rotation is locked' });
             return;
           }
-          console.log(`🔄 ROTATION: Resetting retry counter and attempting ${operationName} again...`);
+          logger.debug(`🔄 ROTATION: Resetting retry counter and attempting ${operationName} again...`);
           this.retryState.consecutiveFailures = 0; // Reset for fresh attempts
           const result = await operation();
           resolve(result);
@@ -264,13 +266,13 @@ class RandomStreamRotationService extends EventEmitter {
 
     const delay = this._calculateRetryDelay();
     const delaySeconds = Math.round(delay / 1000);
-    console.log(`🔄 ROTATION: Retry ${this.retryState.consecutiveFailures}/${this.retryConfig.maxRetries} for ${operationName} in ${delaySeconds}s...`);
+    logger.debug(`🔄 ROTATION: Retry ${this.retryState.consecutiveFailures}/${this.retryConfig.maxRetries} for ${operationName} in ${delaySeconds}s...`);
 
     return new Promise((resolve) => {
       this.retryState.currentRetryTimer = setTimeout(async () => {
         // Check if locked before retrying
         if (this.isLocked) {
-          console.log('🔒 ROTATION: Skipping retry - timer is locked');
+          logger.debug('🔒 ROTATION: Skipping retry - timer is locked');
           resolve({ success: false, error: 'Rotation is locked' });
           return;
         }
@@ -286,7 +288,7 @@ class RandomStreamRotationService extends EventEmitter {
    */
   async autoStartIfEnabled() {
     if (this.shouldAutoRestart && !this.isEnabled && !this.isRestarting) {
-      console.log('🔄 Auto-starting random rotation (persisted state)');
+      logger.debug('🔄 Auto-starting random rotation (persisted state)');
       this.isRestarting = true;
       try {
         await this.start();
@@ -308,19 +310,19 @@ class RandomStreamRotationService extends EventEmitter {
    */
   setViewBotURLService(service) {
     this.viewBotURLService = service;
-    console.log('✅ ViewBotURLService registered with RandomStreamRotation');
+    logger.debug('✅ ViewBotURLService registered with RandomStreamRotation');
 
     // CRITICAL: Listen for URL stream failures to auto-rotate to next stream
     if (service) {
       service.on('url-stream-ended', async (data) => {
         const { urlId, reason } = data;
-        console.log(`🔔 ROTATION: URL stream ${urlId} ended (reason: ${reason})`);
+        logger.debug(`🔔 ROTATION: URL stream ${urlId} ended (reason: ${reason})`);
 
         // Only auto-rotate if the stream failed (not manual stop)
         const shouldRotate = ['error', 'reconnect_failed', 'source_ended', 'health-check', 'http_error'].includes(reason);
 
         if (shouldRotate && this.isEnabled) {
-          console.log(`🔄 ROTATION: Auto-rotating to next stream due to ${reason}...`);
+          logger.debug(`🔄 ROTATION: Auto-rotating to next stream due to ${reason}...`);
 
           // Announce to chat that stream disconnected and we're finding a new one
           this.sendChatAnnouncement('Stream disconnected - finding a new streamer...');
@@ -331,13 +333,13 @@ class RandomStreamRotationService extends EventEmitter {
 
           // CRITICAL: Check if service is busy (reconnecting or starting new stream)
           if (this.viewBotURLService.isBusy()) {
-            console.log('⏳ ROTATION: Service is busy (reconnecting/starting), skipping auto-rotation');
+            logger.debug('⏳ ROTATION: Service is busy (reconnecting/starting), skipping auto-rotation');
             return;
           }
 
           // Check if already restarting or retry timer pending
           if (this.isRestarting || this.retryState.currentRetryTimer) {
-            console.log('⏳ ROTATION: Already restarting or retry pending, skipping auto-rotation');
+            logger.debug('⏳ ROTATION: Already restarting or retry pending, skipping auto-rotation');
             return;
           }
 
@@ -347,7 +349,7 @@ class RandomStreamRotationService extends EventEmitter {
             try {
               const result = await this._rotateToNewStream();
               if (result.success) {
-                console.log(`✅ ROTATION: Auto-rotated to new stream: ${result.stream?.displayName}`);
+                logger.debug(`✅ ROTATION: Auto-rotated to new stream: ${result.stream?.displayName}`);
                 this._recordSuccess();
 
                 // Ensure rotation timer is scheduled
@@ -355,29 +357,29 @@ class RandomStreamRotationService extends EventEmitter {
                   this._scheduleNextRotation();
                 }
               } else {
-                console.error(`❌ ROTATION: Auto-rotation failed: ${result.error}`);
+                logger.error(`❌ ROTATION: Auto-rotation failed: ${result.error}`);
                 this._recordFailure();
                 // Auto-restart monitor will handle retry with backoff
               }
             } catch (error) {
-              console.error(`❌ ROTATION: Auto-rotation error:`, error.message);
+              logger.error(`❌ ROTATION: Auto-rotation error:`, error.message);
               this._recordFailure();
             } finally {
               this.isRestarting = false;
             }
           } else {
-            console.log('⏭️ ROTATION: Another stream already started, skipping auto-rotation');
+            logger.debug('⏭️ ROTATION: Another stream already started, skipping auto-rotation');
             this._recordSuccess(); // Stream recovered on its own
           }
         }
       });
-      console.log('✅ URL stream failure listener registered for auto-rotation');
+      logger.debug('✅ URL stream failure listener registered for auto-rotation');
     }
   }
 
   setViewBotRotation(rotation) {
     this.viewBotRotation = rotation;
-    console.log('✅ ViewBotRotation registered with RandomStreamRotation');
+    logger.debug('✅ ViewBotRotation registered with RandomStreamRotation');
   }
 
   /**
@@ -393,12 +395,12 @@ class RandomStreamRotationService extends EventEmitter {
     if (this.kickService && typeof this.kickService.setWhitelistService === 'function') {
       this.kickService.setWhitelistService(whitelistService);
     }
-    console.log('✅ WhitelistService registered with RandomStreamRotation');
+    logger.debug('✅ WhitelistService registered with RandomStreamRotation');
   }
 
   setSocketIO(io) {
     this.io = io;
-    console.log('✅ Socket.IO registered with RandomStreamRotation');
+    logger.debug('✅ Socket.IO registered with RandomStreamRotation');
 
     // Listen for stream-ended events to auto-restart rotation
     if (io) {
@@ -412,7 +414,7 @@ class RandomStreamRotationService extends EventEmitter {
    */
   setStreamNotifier(streamNotifier) {
     this.streamNotifier = streamNotifier;
-    console.log('✅ StreamNotifier registered with RandomStreamRotation');
+    logger.debug('✅ StreamNotifier registered with RandomStreamRotation');
   }
 
   /**
@@ -461,13 +463,13 @@ class RandomStreamRotationService extends EventEmitter {
 
       // Case 1: Should auto-restart but not enabled (shouldn't happen often with new logic)
       if (this.shouldAutoRestart && !this.isEnabled) {
-        console.log('🔄 No active streamer detected, auto-restarting random rotation...');
+        logger.debug('🔄 No active streamer detected, auto-restarting random rotation...');
         this.isRestarting = true;
         try {
           await this.start();
           this._recordSuccess();
         } catch (error) {
-          console.error('❌ Auto-restart failed:', error.message);
+          logger.error('❌ Auto-restart failed:', error.message);
           this._recordFailure();
         } finally {
           this.isRestarting = false;
@@ -494,12 +496,12 @@ class RandomStreamRotationService extends EventEmitter {
             return;
           }
 
-          console.log(`⚠️ ROTATION: Enabled but no active URL stream (failures: ${this.retryState.consecutiveFailures}) - starting recovery...`);
+          logger.debug(`⚠️ ROTATION: Enabled but no active URL stream (failures: ${this.retryState.consecutiveFailures}) - starting recovery...`);
           this.isRestarting = true;
           try {
             const result = await this._rotateToNewStream();
             if (result.success) {
-              console.log(`✅ ROTATION: Recovery successful: ${result.stream?.displayName}`);
+              logger.debug(`✅ ROTATION: Recovery successful: ${result.stream?.displayName}`);
               this._recordSuccess();
 
               // CRITICAL: Ensure rotation timer is scheduled after recovery
@@ -507,23 +509,23 @@ class RandomStreamRotationService extends EventEmitter {
                 this._scheduleNextRotation();
               }
             } else {
-              console.error(`❌ ROTATION: Recovery failed: ${result.error}`);
+              logger.error(`❌ ROTATION: Recovery failed: ${result.error}`);
               this._recordFailure();
             }
           } catch (error) {
-            console.error('❌ ROTATION: Recovery error:', error.message);
+            logger.error('❌ ROTATION: Recovery error:', error.message);
             this._recordFailure();
           } finally {
             this.isRestarting = false;
           }
         } else if (!hasRotationTimer && activeStreamCount > 0) {
           // Stream is active but no rotation timer - reschedule
-          console.log('⚠️ ROTATION: Stream active but no rotation timer detected!');
-          console.log(`   - rotationTimer: ${this.rotationTimer ? 'set' : 'null'}`);
-          console.log(`   - currentRetryTimer: ${this.retryState.currentRetryTimer ? 'set' : 'null'}`);
-          console.log(`   - isLocked: ${this.isLocked}`);
-          console.log(`   - nextRotationAt: ${this.nextRotationAt ? new Date(this.nextRotationAt).toLocaleTimeString() : 'null'}`);
-          console.log('🔄 ROTATION: Rescheduling timer to recover...');
+          logger.debug('⚠️ ROTATION: Stream active but no rotation timer detected!');
+          logger.debug(`   - rotationTimer: ${this.rotationTimer ? 'set' : 'null'}`);
+          logger.debug(`   - currentRetryTimer: ${this.retryState.currentRetryTimer ? 'set' : 'null'}`);
+          logger.debug(`   - isLocked: ${this.isLocked}`);
+          logger.debug(`   - nextRotationAt: ${this.nextRotationAt ? new Date(this.nextRotationAt).toLocaleTimeString() : 'null'}`);
+          logger.debug('🔄 ROTATION: Rescheduling timer to recover...');
           this._scheduleNextRotation();
         }
       }
@@ -532,7 +534,7 @@ class RandomStreamRotationService extends EventEmitter {
     // Run check on interval
     this.autoRestartMonitor = setInterval(runMonitorCheck, baseInterval);
 
-    console.log('👁️ Auto-restart monitor started (with exponential backoff)');
+    logger.debug('👁️ Auto-restart monitor started (with exponential backoff)');
   }
 
   /**
@@ -574,9 +576,9 @@ class RandomStreamRotationService extends EventEmitter {
         }
       );
 
-      console.log('📢 Rotation announcement sent to chat');
+      logger.debug('📢 Rotation announcement sent to chat');
     } catch (error) {
-      console.error('❌ Failed to send rotation announcement:', error.message);
+      logger.error('❌ Failed to send rotation announcement:', error.message);
     }
   }
 
@@ -610,7 +612,7 @@ class RandomStreamRotationService extends EventEmitter {
 
       // If we've used too many, clear the used set
       if (attempts >= maxAttempts) {
-        console.log('🔄 Clearing used animal names cache');
+        logger.debug('🔄 Clearing used animal names cache');
         this.usedAnimalNames.clear();
         break;
       }
@@ -708,11 +710,11 @@ class RandomStreamRotationService extends EventEmitter {
     }
 
     if (this.isEnabled) {
-      console.log('⚠️ Random rotation already running');
+      logger.debug('⚠️ Random rotation already running');
       return { success: false, error: 'Already running' };
     }
 
-    console.log('🎬 Starting random stream rotation...');
+    logger.debug('🎬 Starting random stream rotation...');
 
     // CRITICAL: Set state BEFORE attempting first stream
     // Both flags must be set together for consistent state
@@ -739,7 +741,7 @@ class RandomStreamRotationService extends EventEmitter {
     if (!result.success) {
       // CRITICAL FIX: Don't disable - keep trying via auto-restart monitor
       // The monitor will use _executeRotationWithRetry which has proper backoff
-      console.log('⚠️ ROTATION: Initial stream failed but keeping rotation enabled for retry...');
+      logger.debug('⚠️ ROTATION: Initial stream failed but keeping rotation enabled for retry...');
       // Don't set isEnabled = false - let the system keep retrying
       return result;
     }
@@ -781,7 +783,7 @@ class RandomStreamRotationService extends EventEmitter {
     const maxInitialRetries = 3;
 
     for (let attempt = 1; attempt <= maxInitialRetries; attempt++) {
-      console.log(`🎬 ROTATION: Starting first stream (attempt ${attempt}/${maxInitialRetries})...`);
+      logger.debug(`🎬 ROTATION: Starting first stream (attempt ${attempt}/${maxInitialRetries})...`);
 
       const result = await this._rotateToNewStream();
 
@@ -791,12 +793,12 @@ class RandomStreamRotationService extends EventEmitter {
       }
 
       this._recordFailure();
-      console.log(`⚠️ ROTATION: First stream attempt ${attempt} failed: ${result.error}`);
+      logger.debug(`⚠️ ROTATION: First stream attempt ${attempt} failed: ${result.error}`);
 
       if (attempt < maxInitialRetries) {
         const delay = this._calculateRetryDelay();
         const delaySeconds = Math.round(delay / 1000);
-        console.log(`⏳ ROTATION: Waiting ${delaySeconds}s before retry...`);
+        logger.debug(`⏳ ROTATION: Waiting ${delaySeconds}s before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -810,66 +812,66 @@ class RandomStreamRotationService extends EventEmitter {
    * CRITICAL: Must stop every viewbot system to prevent conflicts
    */
   async _cleanupAllViewbots() {
-    console.log('🧹 Performing comprehensive viewbot cleanup...');
+    logger.debug('🧹 Performing comprehensive viewbot cleanup...');
 
     // 1. Stop SimpleViewBotRotation (primary viewbot system)
     if (this.viewBotRotation) {
-      console.log('🛑 Stopping SimpleViewBotRotation...');
+      logger.debug('🛑 Stopping SimpleViewBotRotation...');
       // Disable the rotation to prevent auto-restart
       this.viewBotRotation.settings.enabled = false;
       // Stop and wait for cleanup
       await this.viewBotRotation.stopRotation();
-      console.log('✅ SimpleViewBotRotation stopped and disabled');
+      logger.debug('✅ SimpleViewBotRotation stopped and disabled');
     }
 
     // 2. CRITICAL: Stop ViewBotRotationService (global.viewBotRotation)
     // This is a SEPARATE service from SimpleViewBotRotation!
     if (global.viewBotRotation && global.viewBotRotation.stopRotation) {
-      console.log('🛑 Stopping ViewBotRotationService (global.viewBotRotation)...');
+      logger.debug('🛑 Stopping ViewBotRotationService (global.viewBotRotation)...');
       try {
         global.viewBotRotation.enabled = false;
         await global.viewBotRotation.stopRotation();
-        console.log('✅ ViewBotRotationService stopped and disabled');
+        logger.debug('✅ ViewBotRotationService stopped and disabled');
       } catch (error) {
-        console.error('⚠️ Error stopping ViewBotRotationService:', error.message);
+        logger.error('⚠️ Error stopping ViewBotRotationService:', error.message);
       }
     }
 
     // 3. Stop ViewBotManager if it exists (alternative viewbot system)
     if (global.viewBotManager) {
-      console.log('🛑 Stopping ViewBotManager...');
+      logger.debug('🛑 Stopping ViewBotManager...');
       try {
         // Stop rotation first
         global.viewBotManager.stopRotation();
         // Then cleanup all bots
         await global.viewBotManager.cleanup();
-        console.log('✅ ViewBotManager cleaned up');
+        logger.debug('✅ ViewBotManager cleaned up');
       } catch (error) {
-        console.error('⚠️ Error cleaning up ViewBotManager:', error.message);
+        logger.error('⚠️ Error cleaning up ViewBotManager:', error.message);
       }
     }
 
     // 4. Stop UnifiedViewBotRotation if it exists
     if (global.unifiedViewBotRotation) {
-      console.log('🛑 Stopping UnifiedViewBotRotation...');
+      logger.debug('🛑 Stopping UnifiedViewBotRotation...');
       try {
         if (global.unifiedViewBotRotation.stopRotation) {
           await global.unifiedViewBotRotation.stopRotation();
         }
-        console.log('✅ UnifiedViewBotRotation stopped');
+        logger.debug('✅ UnifiedViewBotRotation stopped');
       } catch (error) {
-        console.error('⚠️ Error stopping UnifiedViewBotRotation:', error.message);
+        logger.error('⚠️ Error stopping UnifiedViewBotRotation:', error.message);
       }
     }
 
     // 5. CRITICAL: Stop all LiveKit viewbots and remove them from the room
     if (global.viewBotLiveKitService) {
-      console.log('🛑 Stopping all LiveKit viewbots...');
+      logger.debug('🛑 Stopping all LiveKit viewbots...');
       try {
         await global.viewBotLiveKitService.stopAllViewBots();
-        console.log('✅ All LiveKit viewbots stopped');
+        logger.debug('✅ All LiveKit viewbots stopped');
       } catch (error) {
-        console.error('⚠️ Error stopping LiveKit viewbots:', error.message);
+        logger.error('⚠️ Error stopping LiveKit viewbots:', error.message);
       }
     }
 
@@ -877,7 +879,7 @@ class RandomStreamRotationService extends EventEmitter {
     if (global.streamService) {
       const currentStreamer = global.streamService.getCurrentStreamer();
       if (currentStreamer && (currentStreamer.startsWith('viewbot-') || currentStreamer.includes('viewbot'))) {
-        console.log(`🧹 Clearing viewbot streamer: ${currentStreamer}`);
+        logger.debug(`🧹 Clearing viewbot streamer: ${currentStreamer}`);
         global.streamService.clearStreamer();
       }
     }
@@ -886,7 +888,7 @@ class RandomStreamRotationService extends EventEmitter {
     if (global.mediasoupService && global.mediasoupService.currentStreamer) {
       const current = global.mediasoupService.currentStreamer;
       if (current.startsWith('viewbot-') || current.includes('viewbot')) {
-        console.log(`🧹 Clearing MediaSoup viewbot streamer: ${current}`);
+        logger.debug(`🧹 Clearing MediaSoup viewbot streamer: ${current}`);
         global.mediasoupService.currentStreamer = null;
       }
     }
@@ -894,7 +896,7 @@ class RandomStreamRotationService extends EventEmitter {
     // 6. Emit stream-ended to notify viewers the current content is ending
     // PR 3.1: routed through StreamNotifier (single chokepoint).
     if (this.streamNotifier) {
-      console.log('📢 Broadcasting stream-ended to prepare for rotation...');
+      logger.debug('📢 Broadcasting stream-ended to prepare for rotation...');
       this.streamNotifier.streamEnded({
         reason: 'random_rotation_starting',
         isRandomRotation: true,
@@ -904,7 +906,7 @@ class RandomStreamRotationService extends EventEmitter {
     // Brief pause to allow cleanup to complete
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    console.log('✅ Viewbot cleanup complete');
+    logger.debug('✅ Viewbot cleanup complete');
   }
 
   /**
@@ -912,11 +914,11 @@ class RandomStreamRotationService extends EventEmitter {
    */
   async stop() {
     if (!this.isEnabled && !this.shouldAutoRestart) {
-      console.log('⚠️ Random rotation not running');
+      logger.debug('⚠️ Random rotation not running');
       return { success: false, error: 'Not running' };
     }
 
-    console.log('⏹️ Stopping random stream rotation...');
+    logger.debug('⏹️ Stopping random stream rotation...');
 
     const stoppingStream = this.currentStream;
     this.isEnabled = false;
@@ -926,7 +928,7 @@ class RandomStreamRotationService extends EventEmitter {
     if (this.autoRestartMonitor) {
       clearInterval(this.autoRestartMonitor);
       this.autoRestartMonitor = null;
-      console.log('🛑 Auto-restart monitor stopped');
+      logger.debug('🛑 Auto-restart monitor stopped');
     }
 
     // Save state for persistence
@@ -969,7 +971,7 @@ class RandomStreamRotationService extends EventEmitter {
 
     // Re-enable viewbot rotation if it was active before
     if (this.viewBotRotation) {
-      console.log('▶️ Re-enabling viewbot rotation');
+      logger.debug('▶️ Re-enabling viewbot rotation');
       this.viewBotRotation.updateSettings({ enabled: true });
       await this.viewBotRotation.startRotation();
     }
@@ -994,7 +996,7 @@ class RandomStreamRotationService extends EventEmitter {
       });
     }
 
-    console.log('✅ Random stream rotation stopped');
+    logger.debug('✅ Random stream rotation stopped');
     return { success: true };
   }
 
@@ -1004,11 +1006,11 @@ class RandomStreamRotationService extends EventEmitter {
    */
   async pause() {
     if (!this.isEnabled) {
-      console.log('⚠️ Random rotation not running, nothing to pause');
+      logger.debug('⚠️ Random rotation not running, nothing to pause');
       return { success: false, error: 'Not running' };
     }
 
-    console.log('⏸️ Pausing random stream rotation (real streamer taking over)...');
+    logger.debug('⏸️ Pausing random stream rotation (real streamer taking over)...');
 
     this.isEnabled = false;
     // Keep shouldAutoRestart = true so we resume after the real streamer stops
@@ -1046,7 +1048,7 @@ class RandomStreamRotationService extends EventEmitter {
       });
     }
 
-    console.log('✅ Random stream rotation paused (will auto-restart when streamer ends)');
+    logger.debug('✅ Random stream rotation paused (will auto-restart when streamer ends)');
     return { success: true };
   }
 
@@ -1060,12 +1062,12 @@ class RandomStreamRotationService extends EventEmitter {
       return { success: false, error: 'Rotation not enabled' };
     }
 
-    console.log(`🔄 Force rotating to new stream...${platform ? ` (platform: ${platform})` : ''}`);
+    logger.debug(`🔄 Force rotating to new stream...${platform ? ` (platform: ${platform})` : ''}`);
 
     // If locked, unlock first (force rotate overrides lock)
     const wasLocked = this.isLocked;
     if (this.isLocked) {
-      console.log('🔓 ROTATION: Force rotate - unlocking timer');
+      logger.debug('🔓 ROTATION: Force rotate - unlocking timer');
       this.isLocked = false;
       this.lockedAt = null;
       this.remainingTimeWhenLocked = null;
@@ -1156,7 +1158,7 @@ class RandomStreamRotationService extends EventEmitter {
     // Calculate new interval (remaining time + extension)
     const newInterval = remainingTime + extendMs;
 
-    console.log(`⏰ EXTEND: Adding ${extendMinutes} minutes to rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
+    logger.debug(`⏰ EXTEND: Adding ${extendMinutes} minutes to rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
 
     // Record extend time for cooldown
     this.lastExtendTime = Date.now();
@@ -1237,7 +1239,7 @@ class RandomStreamRotationService extends EventEmitter {
     // Calculate new interval (remaining time + extension)
     const newInterval = remainingTime + extendMs;
 
-    console.log(`⏰ ADMIN EXTEND: Adding ${minutes} minutes to rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
+    logger.debug(`⏰ ADMIN EXTEND: Adding ${minutes} minutes to rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
 
     // Reschedule with the extended time (no cooldown for admin)
     this._scheduleNextRotation(newInterval);
@@ -1311,7 +1313,7 @@ class RandomStreamRotationService extends EventEmitter {
       this.rotationTimer = null;
     }
 
-    console.log(`⏰ REDUCE: Removing ${actualReductionMinutes} minutes from rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
+    logger.debug(`⏰ REDUCE: Removing ${actualReductionMinutes} minutes from rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
 
     // Record time for cooldown (shares with extend)
     this.lastExtendTime = Date.now();
@@ -1377,7 +1379,7 @@ class RandomStreamRotationService extends EventEmitter {
       this.rotationTimer = null;
     }
 
-    console.log(`⏰ ADMIN REDUCE: Removing ${actualReductionMinutes} minutes from rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
+    logger.debug(`⏰ ADMIN REDUCE: Removing ${actualReductionMinutes} minutes from rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
 
     // Reschedule with the reduced time (no cooldown for admin)
     this._scheduleNextRotation(newInterval);
@@ -1436,7 +1438,7 @@ class RandomStreamRotationService extends EventEmitter {
     if (this.retryState.currentRetryTimer) {
       clearTimeout(this.retryState.currentRetryTimer);
       this.retryState.currentRetryTimer = null;
-      console.log('🔒 ROTATION: Also cleared pending retry timer');
+      logger.debug('🔒 ROTATION: Also cleared pending retry timer');
     }
 
     // Clear countdown announcements
@@ -1445,7 +1447,7 @@ class RandomStreamRotationService extends EventEmitter {
     this.isLocked = true;
     this.lockedAt = Date.now();
 
-    console.log(`🔒 ROTATION LOCKED: Timer frozen with ${Math.round(this.remainingTimeWhenLocked / 1000)} seconds remaining`);
+    logger.debug(`🔒 ROTATION LOCKED: Timer frozen with ${Math.round(this.remainingTimeWhenLocked / 1000)} seconds remaining`);
 
     // Emit lock event
     if (this.io) {
@@ -1483,7 +1485,7 @@ class RandomStreamRotationService extends EventEmitter {
     this.lockedAt = null;
     this.remainingTimeWhenLocked = null;
 
-    console.log(`🔓 ROTATION UNLOCKED: Resuming timer with ${Math.round(remainingTime / 1000)} seconds remaining`);
+    logger.debug(`🔓 ROTATION UNLOCKED: Resuming timer with ${Math.round(remainingTime / 1000)} seconds remaining`);
 
     // Resume the timer with the remaining time
     this._scheduleNextRotation(remainingTime);
@@ -1529,7 +1531,7 @@ class RandomStreamRotationService extends EventEmitter {
 
       // Stop current stream if any
       if (this.currentStream && this.viewBotURLService) {
-        console.log(`⏹️ Stopping current stream: ${this.currentStream.displayName}`);
+        logger.debug(`⏹️ Stopping current stream: ${this.currentStream.displayName}`);
 
         // Emit stream-switching event BEFORE stopping (viewers can prepare for transition)
         if (this.io) {
@@ -1550,13 +1552,13 @@ class RandomStreamRotationService extends EventEmitter {
       let platform;
       if (forcePlatform && ['kick', 'twitch'].includes(forcePlatform.toLowerCase())) {
         platform = forcePlatform.toLowerCase();
-        console.log(`🎯 Forced platform: ${platform}`);
+        logger.debug(`🎯 Forced platform: ${platform}`);
       } else {
         platform = this.selectRandomPlatform();
         if (!platform) {
           return { success: false, error: 'No platforms available' };
         }
-        console.log(`🎲 Selected platform: ${platform}`);
+        logger.debug(`🎲 Selected platform: ${platform}`);
       }
 
       let streamer = null;
@@ -1576,7 +1578,7 @@ class RandomStreamRotationService extends EventEmitter {
 
       if (!streamer) {
         // If selected platform fails, try the other one
-        console.log(`⚠️ No streamer found on ${platform}, trying other platform...`);
+        logger.debug(`⚠️ No streamer found on ${platform}, trying other platform...`);
 
         const otherPlatform = platform === 'twitch' ? 'kick' : 'twitch';
         const enabledPlatforms = this.settings.platforms || ['twitch'];
@@ -1605,13 +1607,13 @@ class RandomStreamRotationService extends EventEmitter {
       const animalName = this.generateAnimalName();
 
       const platformIcon = streamer.platform === 'kick' ? '🟢' : '🟣';
-      console.log(`${platformIcon} Connecting to: ${streamer.displayName} (${streamer.game}) on ${streamer.platform} as "${animalName}"`);
+      logger.debug(`${platformIcon} Connecting to: ${streamer.displayName} (${streamer.game}) on ${streamer.platform} as "${animalName}"`);
 
       // For Kick streams, use the direct HLS playback URL if available
       // (streamlink doesn't support Kick, so we need the direct URL)
       const streamUrl = streamer.playbackUrl || streamer.url;
       if (streamer.platform === 'kick' && streamer.playbackUrl) {
-        console.log(`🟢 Using direct Kick HLS URL: ${streamer.playbackUrl}`);
+        logger.debug(`🟢 Using direct Kick HLS URL: ${streamer.playbackUrl}`);
       }
 
       // Start URL stream
@@ -1623,7 +1625,7 @@ class RandomStreamRotationService extends EventEmitter {
       });
 
       if (!result.success) {
-        console.error(`❌ Failed to start stream: ${result.error}`);
+        logger.error(`❌ Failed to start stream: ${result.error}`);
         return result;
       }
 
@@ -1691,7 +1693,7 @@ class RandomStreamRotationService extends EventEmitter {
         });
       }
 
-      console.log(`✅ Now streaming: "${animalName}" (${streamer.displayName} playing ${streamer.game} on ${streamer.platform})`);
+      logger.debug(`✅ Now streaming: "${animalName}" (${streamer.displayName} playing ${streamer.game} on ${streamer.platform})`);
 
       // Send announcement to chat
       const announcement = this.generateRotationAnnouncement(streamer);
@@ -1700,7 +1702,7 @@ class RandomStreamRotationService extends EventEmitter {
       return { success: true, stream: this.currentStream };
 
     } catch (error) {
-      console.error('❌ Error rotating stream:', error.message);
+      logger.error('❌ Error rotating stream:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -1723,7 +1725,7 @@ class RandomStreamRotationService extends EventEmitter {
     this.nextRotationAt = Date.now() + interval;
     this.currentRotationDuration = interval;
 
-    console.log(`⏱️ Next rotation in ${minutes} minutes (at ${new Date(this.nextRotationAt).toLocaleTimeString()})`);
+    logger.debug(`⏱️ Next rotation in ${minutes} minutes (at ${new Date(this.nextRotationAt).toLocaleTimeString()})`);
 
     // Emit rotation timing to clients
     this._emitRotationTiming();
@@ -1733,34 +1735,34 @@ class RandomStreamRotationService extends EventEmitter {
 
     this.rotationTimer = setTimeout(async () => {
       try {
-        console.log('⏰ ROTATION TIMER FIRED - executing rotation callback...');
+        logger.debug('⏰ ROTATION TIMER FIRED - executing rotation callback...');
 
         if (!this.isEnabled) {
-          console.log('⏭️ ROTATION: Skipping - rotation not enabled');
+          logger.debug('⏭️ ROTATION: Skipping - rotation not enabled');
           return;
         }
 
         // Check if locked - don't rotate when locked
         if (this.isLocked) {
-          console.log('🔒 ROTATION: Skipping scheduled rotation - timer is locked');
+          logger.debug('🔒 ROTATION: Skipping scheduled rotation - timer is locked');
           return; // Don't reschedule - will resume when unlocked
         }
 
         // Check if already restarting (mutex)
         if (this.isRestarting) {
-          console.log('⏳ ROTATION: Skipping scheduled rotation - restart in progress');
+          logger.debug('⏳ ROTATION: Skipping scheduled rotation - restart in progress');
           this._scheduleNextRotation(); // Reschedule for later
           return;
         }
 
         await this._executeRotationWithRetry();
       } catch (error) {
-        console.error('❌ ROTATION TIMER ERROR:', error.message);
-        console.error(error.stack);
+        logger.error('❌ ROTATION TIMER ERROR:', error.message);
+        logger.error(error.stack);
 
         // CRITICAL: Always reschedule on error to prevent stuck state
         if (this.isEnabled && !this.isLocked) {
-          console.log('🔄 ROTATION: Rescheduling after error...');
+          logger.debug('🔄 ROTATION: Rescheduling after error...');
           this._scheduleNextRotation();
         }
       }
@@ -1786,7 +1788,7 @@ class RandomStreamRotationService extends EventEmitter {
    */
   _emitFullRotationStatus() {
     if (this.io && this.isEnabled && this.currentStream) {
-      console.log('📡 EMITTING full rotation status with timing');
+      logger.debug('📡 EMITTING full rotation status with timing');
       this.io.emit('random-rotation-status', {
         enabled: true,
         currentStream: this.currentStream,
@@ -1867,7 +1869,7 @@ class RandomStreamRotationService extends EventEmitter {
       }
     });
 
-    console.log(`📢 Scheduled ${this.countdownAnnouncementTimers.length} countdown announcements`);
+    logger.debug(`📢 Scheduled ${this.countdownAnnouncementTimers.length} countdown announcements`);
   }
 
   /**
@@ -1879,7 +1881,7 @@ class RandomStreamRotationService extends EventEmitter {
 
     // Check if locked - don't rotate when locked
     if (this.isLocked) {
-      console.log('🔒 ROTATION: Skipping rotation - timer is locked');
+      logger.debug('🔒 ROTATION: Skipping rotation - timer is locked');
       return;
     }
 
@@ -1892,7 +1894,7 @@ class RandomStreamRotationService extends EventEmitter {
       this._emitFullRotationStatus();
     } else {
       this._recordFailure();
-      console.log(`⚠️ ROTATION: Failed (${this.retryState.consecutiveFailures} consecutive failures): ${result.error}`);
+      logger.debug(`⚠️ ROTATION: Failed (${this.retryState.consecutiveFailures} consecutive failures): ${result.error}`);
 
       // Use exponential backoff retry
       const retryResult = await this._scheduleRetryWithBackoff(
@@ -1903,7 +1905,7 @@ class RandomStreamRotationService extends EventEmitter {
       // If retry eventually succeeded, the recursive call handled scheduling
       // If we get here and rotation is still enabled but no timer, something went wrong - reschedule
       if (this.isEnabled && !this.rotationTimer && !this.retryState.currentRetryTimer) {
-        console.log('⚠️ ROTATION: No timer active after retry - rescheduling...');
+        logger.debug('⚠️ ROTATION: No timer active after retry - rescheduling...');
         this._scheduleNextRotation();
       }
     }
@@ -2001,7 +2003,7 @@ class RandomStreamRotationService extends EventEmitter {
       }
     }
 
-    console.log('⚙️ Settings updated:', this.settings);
+    logger.debug('⚙️ Settings updated:', this.settings);
     this._saveState();
     return this.settings;
   }
@@ -2023,7 +2025,7 @@ class RandomStreamRotationService extends EventEmitter {
       streamHistory: []
     };
     this.usedAnimalNames.clear();
-    console.log('🧹 Stats cleared');
+    logger.debug('🧹 Stats cleared');
   }
 }
 

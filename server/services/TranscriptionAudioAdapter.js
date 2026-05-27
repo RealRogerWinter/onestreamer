@@ -10,11 +10,13 @@ const path = require('path');
 const { RoomServiceClient, IngressClient, AccessToken } = require('livekit-server-sdk');
 const { Room, RoomEvent, TrackKind, AudioStream } = require('@livekit/rtc-node');
 
+const logger = require('../bootstrap/logger').child({ svc: 'TranscriptionAudioAdapter' });
+
 class TranscriptionAudioAdapter {
     constructor(webrtcService) {
         this.webrtcService = webrtcService;
         this.backendType = this.detectBackend();
-        console.log(`🎙️ TranscriptionAudioAdapter: Initialized with ${this.backendType.toUpperCase()} backend`);
+        logger.debug(`🎙️ TranscriptionAudioAdapter: Initialized with ${this.backendType.toUpperCase()} backend`);
     }
 
     detectBackend() {
@@ -73,29 +75,29 @@ class TranscriptionAudioAdapter {
                 const participants = await roomClient.listParticipants(config.roomName);
                 const TRACK_TYPE_AUDIO = 0;
 
-                console.log(`🔍 TranscriptionAudioAdapter: Looking for audio for streamer: ${streamerId}`);
-                console.log(`   Found ${participants.length} participants in LiveKit room`);
+                logger.debug(`🔍 TranscriptionAudioAdapter: Looking for audio for streamer: ${streamerId}`);
+                logger.debug(`   Found ${participants.length} participants in LiveKit room`);
 
                 // In LiveKit mode, streamerId might be a socket ID that doesn't match participant identity
                 // Try to find by identity first, then fall back to any participant with audio
                 let participant = participants.find(p => p.identity === streamerId);
 
                 if (!participant) {
-                    console.log(`   Streamer ID ${streamerId} not found, searching for any participant with audio...`);
+                    logger.debug(`   Streamer ID ${streamerId} not found, searching for any participant with audio...`);
                     // Find any participant with audio tracks
                     participant = participants.find(p =>
                         p.tracks && p.tracks.some(t => t.type === TRACK_TYPE_AUDIO)
                     );
 
                     if (participant) {
-                        console.log(`   Using participant ${participant.identity} with audio`);
+                        logger.debug(`   Using participant ${participant.identity} with audio`);
                     }
                 }
 
                 if (participant && participant.tracks) {
                     const audioTrack = participant.tracks.find(t => t.type === TRACK_TYPE_AUDIO);
                     if (audioTrack) {
-                        console.log(`✅ Found audio track ${audioTrack.sid} from ${participant.identity}`);
+                        logger.debug(`✅ Found audio track ${audioTrack.sid} from ${participant.identity}`);
                         // Return a MediaSoup-compatible producer object
                         return {
                             id: audioTrack.sid,
@@ -106,10 +108,10 @@ class TranscriptionAudioAdapter {
                         };
                     }
                 } else {
-                    console.log(`   No participants with audio tracks found`);
+                    logger.debug(`   No participants with audio tracks found`);
                 }
             } catch (error) {
-                console.error('❌ TranscriptionAudioAdapter: Failed to query LiveKit participants:', error.message);
+                logger.error('❌ TranscriptionAudioAdapter: Failed to query LiveKit participants:', error.message);
             }
             return null;
         }
@@ -133,7 +135,7 @@ class TranscriptionAudioAdapter {
      * MediaSoup audio capture implementation
      */
     async createMediaSoupAudioCapture(sessionId, streamerId) {
-        console.log(`📡 TranscriptionAudioAdapter: Creating MediaSoup audio capture for ${streamerId}`);
+        logger.debug(`📡 TranscriptionAudioAdapter: Creating MediaSoup audio capture for ${streamerId}`);
 
         // Get the audio producer
         const producerMap = this.webrtcService.producers.get(streamerId);
@@ -201,7 +203,7 @@ class TranscriptionAudioAdapter {
      * LiveKit audio capture implementation via RTC client SDK subscription
      */
     async createLiveKitAudioCapture(sessionId, streamerId) {
-        console.log(`📡 TranscriptionAudioAdapter: Creating LiveKit audio capture for ${streamerId}`);
+        logger.debug(`📡 TranscriptionAudioAdapter: Creating LiveKit audio capture for ${streamerId}`);
 
         try {
             const config = require('../config/webrtc.config').livekit;
@@ -223,10 +225,10 @@ class TranscriptionAudioAdapter {
                 config.apiSecret
             );
 
-            console.log(`🔍 Querying LiveKit participants in room: ${config.roomName}`);
+            logger.debug(`🔍 Querying LiveKit participants in room: ${config.roomName}`);
 
             const participants = await roomClient.listParticipants(config.roomName);
-            console.log(`📋 Found ${participants.length} participant(s)`);
+            logger.debug(`📋 Found ${participants.length} participant(s)`);
 
             // Find participant with audio track
             const TRACK_TYPE_AUDIO = 0;
@@ -239,7 +241,7 @@ class TranscriptionAudioAdapter {
                     if (track) {
                         audioParticipant = participant;
                         audioTrack = track;
-                        console.log(`✅ Found audio track ${track.sid} from participant ${participant.identity}`);
+                        logger.debug(`✅ Found audio track ${track.sid} from participant ${participant.identity}`);
                         break;
                     }
                 }
@@ -280,7 +282,7 @@ class TranscriptionAudioAdapter {
             };
 
         } catch (error) {
-            console.error('❌ LiveKit audio capture failed:', error);
+            logger.error('❌ LiveKit audio capture failed:', error);
             return { success: false, error: error.message };
         }
     }
@@ -309,7 +311,7 @@ class TranscriptionAudioAdapter {
      * Start LiveKit RTC audio capture using client SDK
      */
     async startLiveKitRTCCapture(session, captureInfo, audioBufferService) {
-        console.log(`🎵 TranscriptionAudioAdapter: Starting RTC audio capture for session ${session.id}`);
+        logger.debug(`🎵 TranscriptionAudioAdapter: Starting RTC audio capture for session ${session.id}`);
 
         const bufferDir = path.join(__dirname, '..', '..', 'audio-buffers');
         const bufferFile = path.join(bufferDir, `${session.id}.wav`);
@@ -323,12 +325,12 @@ class TranscriptionAudioAdapter {
             // Connect to LiveKit room
             const room = new Room();
 
-            console.log(`🔗 Connecting to LiveKit room: ${captureInfo.roomName}`);
-            console.log(`🔗 Using wsUrl: ${captureInfo.wsUrl}`);
+            logger.debug(`🔗 Connecting to LiveKit room: ${captureInfo.roomName}`);
+            logger.debug(`🔗 Using wsUrl: ${captureInfo.wsUrl}`);
             await room.connect(captureInfo.wsUrl, captureInfo.token, {
                 autoSubscribe: true
             });
-            console.log(`✅ Connected to room`);
+            logger.debug(`✅ Connected to room`);
 
             // Save to PCM file first (will convert to WAV later with proper header)
             const pcmFile = bufferFile.replace('.wav', '.pcm');
@@ -344,10 +346,10 @@ class TranscriptionAudioAdapter {
                 }, 10000);
 
                 room.on(RoomEvent.TrackSubscribed, async (track, publication, participant) => {
-                    console.log(`📡 Track subscribed: ${track.sid} from ${participant.identity}`);
+                    logger.debug(`📡 Track subscribed: ${track.sid} from ${participant.identity}`);
 
                     if (track.kind === TrackKind.KIND_AUDIO) {
-                        console.log(`🎧 Audio track subscribed, starting capture...`);
+                        logger.debug(`🎧 Audio track subscribed, starting capture...`);
                         clearTimeout(timeout);
 
                         try {
@@ -355,7 +357,7 @@ class TranscriptionAudioAdapter {
                             const stream = new AudioStream(track);
                             session.audioStreamReader = stream;
 
-                            console.log(`📥 Reading audio frames...`);
+                            logger.debug(`📥 Reading audio frames...`);
 
                             // Read frames asynchronously in background
                             // Track if we should stop writing (to prevent write-after-end errors)
@@ -367,14 +369,14 @@ class TranscriptionAudioAdapter {
                                     for await (const frame of stream) {
                                         // Check if we should stop writing (stream may be closing)
                                         if (stopWriting || pcmStream.closed || pcmStream.destroyed) {
-                                            console.log(`   ⏹️ Audio capture stopped (stopWriting: ${stopWriting}, closed: ${pcmStream.closed})`);
+                                            logger.debug(`   ⏹️ Audio capture stopped (stopWriting: ${stopWriting}, closed: ${pcmStream.closed})`);
                                             break;
                                         }
 
                                         // Update sample rate from first frame
                                         if (frameCount === 0) {
                                             sampleRate = frame.sampleRate;
-                                            console.log(`   Sample rate: ${sampleRate} Hz`);
+                                            logger.debug(`   Sample rate: ${sampleRate} Hz`);
                                         }
 
                                         // frame.data is Int16Array with PCM samples
@@ -387,7 +389,7 @@ class TranscriptionAudioAdapter {
                                                 pcmStream.write(pcmData);
                                             }
                                         } catch (writeError) {
-                                            console.warn(`   ⚠️ Write error (stream likely closed): ${writeError.message}`);
+                                            logger.warn(`   ⚠️ Write error (stream likely closed): ${writeError.message}`);
                                             break;
                                         }
                                         frameCount++;
@@ -395,17 +397,17 @@ class TranscriptionAudioAdapter {
                                         // Check for non-zero audio on first few frames
                                         if (frameCount <= 10) {
                                             const hasAudio = frame.data.some(sample => Math.abs(sample) > 100);
-                                            console.log(`   🔊 Frame ${frameCount}: ${frame.data.length} samples, hasAudio: ${hasAudio}, max: ${Math.max(...frame.data.map(Math.abs))}`);
+                                            logger.debug(`   🔊 Frame ${frameCount}: ${frame.data.length} samples, hasAudio: ${hasAudio}, max: ${Math.max(...frame.data.map(Math.abs))}`);
                                         }
 
                                         // Log progress
                                         if (frameCount % 100 === 0) {
                                             const duration = (frameCount * frame.samplesPerChannel) / frame.sampleRate;
-                                            console.log(`   📊 Captured ${duration.toFixed(1)}s (${frameCount} frames)`);
+                                            logger.debug(`   📊 Captured ${duration.toFixed(1)}s (${frameCount} frames)`);
                                         }
                                     }
                                 } catch (error) {
-                                    console.error(`❌ Error reading audio frames:`, error.message);
+                                    logger.error(`❌ Error reading audio frames:`, error.message);
                                 } finally {
                                     pcmStream.end();
                                 }
@@ -428,9 +430,9 @@ class TranscriptionAudioAdapter {
             session.sampleRate = sampleRate;
             session.bufferFile = bufferFile;
 
-            console.log(`✅ TranscriptionAudioAdapter: RTC audio capture started`);
-            console.log(`   PCM file: ${pcmPath}`);
-            console.log(`   Sample rate: ${sampleRate} Hz`);
+            logger.debug(`✅ TranscriptionAudioAdapter: RTC audio capture started`);
+            logger.debug(`   PCM file: ${pcmPath}`);
+            logger.debug(`   Sample rate: ${sampleRate} Hz`);
 
             return {
                 success: true,
@@ -439,7 +441,7 @@ class TranscriptionAudioAdapter {
             };
 
         } catch (error) {
-            console.error(`❌ Failed to start RTC audio capture:`, error);
+            logger.error(`❌ Failed to start RTC audio capture:`, error);
             return {
                 success: false,
                 error: error.message
@@ -482,7 +484,7 @@ class TranscriptionAudioAdapter {
      */
     async finalizeLiveKitCapture(session) {
         if (!session.pcmFile || !session.bufferFile) {
-            console.log(`⚠️ No PCM file to finalize for session ${session.id}`);
+            logger.debug(`⚠️ No PCM file to finalize for session ${session.id}`);
             return;
         }
 
@@ -498,13 +500,13 @@ class TranscriptionAudioAdapter {
                 await new Promise(resolve => {
                     session.pcmStream.on('finish', resolve);
                     session.pcmStream.on('error', (err) => {
-                        console.warn(`   ⚠️ PCM stream error during finalize: ${err.message}`);
+                        logger.warn(`   ⚠️ PCM stream error during finalize: ${err.message}`);
                         resolve();
                     });
                     try {
                         session.pcmStream.end();
                     } catch (endError) {
-                        console.warn(`   ⚠️ Error ending PCM stream: ${endError.message}`);
+                        logger.warn(`   ⚠️ Error ending PCM stream: ${endError.message}`);
                         resolve();
                     }
                 });
@@ -515,23 +517,23 @@ class TranscriptionAudioAdapter {
 
             // Read PCM data
             if (!fs.existsSync(session.pcmFile)) {
-                console.error(`❌ PCM file not found: ${session.pcmFile}`);
+                logger.error(`❌ PCM file not found: ${session.pcmFile}`);
                 return;
             }
 
             const pcmData = fs.readFileSync(session.pcmFile);
             const sampleRate = session.sampleRate || 48000;
 
-            console.log(`📝 Finalizing WAV file...`);
-            console.log(`   PCM data: ${pcmData.length} bytes`);
-            console.log(`   Sample rate: ${sampleRate} Hz`);
+            logger.debug(`📝 Finalizing WAV file...`);
+            logger.debug(`   PCM data: ${pcmData.length} bytes`);
+            logger.debug(`   Sample rate: ${sampleRate} Hz`);
 
             // Create WAV file with proper header
             const wavHeader = this.createWAVHeader(sampleRate, 1, 16, pcmData.length);
             const wavData = Buffer.concat([wavHeader, pcmData]);
 
             fs.writeFileSync(session.bufferFile, wavData);
-            console.log(`✅ WAV file created: ${session.bufferFile} (${wavData.length} bytes)`);
+            logger.debug(`✅ WAV file created: ${session.bufferFile} (${wavData.length} bytes)`);
 
             // Clean up PCM file
             fs.unlinkSync(session.pcmFile);
@@ -540,7 +542,7 @@ class TranscriptionAudioAdapter {
             session.pcmFile = null;
 
         } catch (error) {
-            console.error(`❌ Error finalizing WAV file:`, error.message);
+            logger.error(`❌ Error finalizing WAV file:`, error.message);
         }
     }
 
@@ -548,14 +550,14 @@ class TranscriptionAudioAdapter {
      * Fallback method - Subscribe with headless Chrome + FFmpeg
      */
     async fallbackFFmpegCapture(session, captureInfo, bufferFile) {
-        console.log(`🔄 TranscriptionAudioAdapter: Using Puppeteer + FFmpeg fallback`);
+        logger.debug(`🔄 TranscriptionAudioAdapter: Using Puppeteer + FFmpeg fallback`);
 
         try {
             // Use Puppeteer to subscribe to LiveKit audio in headless browser
             // Then capture system audio with FFmpeg
             const puppeteer = require('puppeteer');
 
-            console.log(`🌐 Launching headless browser to subscribe to LiveKit audio...`);
+            logger.debug(`🌐 Launching headless browser to subscribe to LiveKit audio...`);
 
             const browser = await puppeteer.launch({
                 headless: true,
@@ -587,15 +589,15 @@ class TranscriptionAudioAdapter {
                 if (track.kind === 'audio') {
                     const audioElement = document.getElementById('audio');
                     track.attach(audioElement);
-                    console.log('Audio track attached');
+                    logger.debug('Audio track attached');
                 }
             });
 
             await room.connect('${captureInfo.wsUrl}', '${captureInfo.token}');
-            console.log('Connected to LiveKit room');
+            logger.debug('Connected to LiveKit room');
         };
 
-        connect().catch(console.error);
+        connect().catch((err) => logger.error({ err }, "connect failed"));
     </script>
 </body>
 </html>
@@ -607,11 +609,11 @@ class TranscriptionAudioAdapter {
             // Close browser and use simpler approach
             await browser.close();
 
-            console.log(`⚠️ Browser-based capture complex, using silent placeholder`);
+            logger.debug(`⚠️ Browser-based capture complex, using silent placeholder`);
             return this.createSilentPlaceholder(session, bufferFile);
 
         } catch (error) {
-            console.error(`❌ Puppeteer fallback failed:`, error);
+            logger.error(`❌ Puppeteer fallback failed:`, error);
             return this.createSilentPlaceholder(session, bufferFile);
         }
     }
@@ -620,7 +622,7 @@ class TranscriptionAudioAdapter {
      * Create silent audio file as placeholder
      */
     async createSilentPlaceholder(session, bufferFile) {
-        console.log(`🔇 Creating silent audio placeholder`);
+        logger.debug(`🔇 Creating silent audio placeholder`);
 
         try {
             // Generate 20 seconds of silence at 16kHz mono
@@ -636,7 +638,7 @@ class TranscriptionAudioAdapter {
             const ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
 
             ffmpegProcess.on('close', () => {
-                console.log(`✅ Silent placeholder created (transcription will show no words)`);
+                logger.debug(`✅ Silent placeholder created (transcription will show no words)`);
             });
 
             session.audioProcess = ffmpegProcess;
@@ -656,12 +658,12 @@ class TranscriptionAudioAdapter {
      * Cleanup resources
      */
     async cleanup(session) {
-        console.log(`🧹 TranscriptionAudioAdapter: Cleaning up session ${session.id}`);
+        logger.debug(`🧹 TranscriptionAudioAdapter: Cleaning up session ${session.id}`);
 
         // CRITICAL: Signal audio capture to stop BEFORE finalizing
         // This prevents ERR_STREAM_WRITE_AFTER_END crashes
         if (session.stopAudioCapture) {
-            console.log(`   ⏹️ Signaling audio capture to stop...`);
+            logger.debug(`   ⏹️ Signaling audio capture to stop...`);
             session.stopAudioCapture();
             // Brief delay to allow current write to complete
             await new Promise(resolve => setTimeout(resolve, 50));
@@ -676,9 +678,9 @@ class TranscriptionAudioAdapter {
         if (session.audioProcess) {
             try {
                 session.audioProcess.kill('SIGTERM');
-                console.log(`   ✅ Stopped audio capture process`);
+                logger.debug(`   ✅ Stopped audio capture process`);
             } catch (error) {
-                console.error(`   ⚠️ Error stopping audio process:`, error.message);
+                logger.error(`   ⚠️ Error stopping audio process:`, error.message);
             }
         }
 
@@ -687,9 +689,9 @@ class TranscriptionAudioAdapter {
             if (typeof session.transport.close === 'function') {
                 try {
                     session.transport.close();
-                    console.log(`   ✅ Closed transport`);
+                    logger.debug(`   ✅ Closed transport`);
                 } catch (error) {
-                    console.error(`   ⚠️ Error closing transport:`, error.message);
+                    logger.error(`   ⚠️ Error closing transport:`, error.message);
                 }
             }
         }
@@ -698,9 +700,9 @@ class TranscriptionAudioAdapter {
             if (typeof session.consumer.close === 'function') {
                 try {
                     session.consumer.close();
-                    console.log(`   ✅ Closed consumer`);
+                    logger.debug(`   ✅ Closed consumer`);
                 } catch (error) {
-                    console.error(`   ⚠️ Error closing consumer:`, error.message);
+                    logger.error(`   ⚠️ Error closing consumer:`, error.message);
                 }
             }
         }
@@ -716,9 +718,9 @@ class TranscriptionAudioAdapter {
         if (session.livekitRoom) {
             try {
                 await session.livekitRoom.disconnect();
-                console.log(`   ✅ Disconnected from LiveKit room`);
+                logger.debug(`   ✅ Disconnected from LiveKit room`);
             } catch (error) {
-                console.error(`   ⚠️ Error disconnecting from room:`, error.message);
+                logger.error(`   ⚠️ Error disconnecting from room:`, error.message);
             }
         }
 
@@ -728,9 +730,9 @@ class TranscriptionAudioAdapter {
                 if (!session.pcmStream.closed && !session.pcmStream.destroyed) {
                     session.pcmStream.end();
                 }
-                console.log(`   ✅ Closed PCM stream`);
+                logger.debug(`   ✅ Closed PCM stream`);
             } catch (error) {
-                console.error(`   ⚠️ Error closing PCM stream:`, error.message);
+                logger.error(`   ⚠️ Error closing PCM stream:`, error.message);
             }
         }
     }

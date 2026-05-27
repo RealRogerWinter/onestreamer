@@ -4,6 +4,8 @@ const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
 const { v4: uuidv4 } = require('uuid');
 
+const logger = require('../bootstrap/logger').child({ svc: 'AudioBufferService' });
+
 class AudioBufferService extends EventEmitter {
     constructor() {
         super();
@@ -32,10 +34,10 @@ class AudioBufferService extends EventEmitter {
         // Initialize directories
         this.initializeDirectories();
         
-        console.log('🎵 AudioBufferService: Initialized');
-        console.log(`   Buffer duration: ${this.config.bufferDuration}s`);
-        console.log(`   Sample rate: ${this.config.sampleRate}Hz`);
-        console.log(`   Max buffer size: ${(this.maxBufferSize / 1024 / 1024).toFixed(2)}MB`);
+        logger.debug('🎵 AudioBufferService: Initialized');
+        logger.debug(`   Buffer duration: ${this.config.bufferDuration}s`);
+        logger.debug(`   Sample rate: ${this.config.sampleRate}Hz`);
+        logger.debug(`   Max buffer size: ${(this.maxBufferSize / 1024 / 1024).toFixed(2)}MB`);
     }
     
     initializeDirectories() {
@@ -47,11 +49,11 @@ class AudioBufferService extends EventEmitter {
     }
     
     async startBuffering(sessionId, transport, audioConsumer, ffmpegRtpPort, ffmpegRtcpPort) {
-        console.log(`🎵 AudioBufferService: Starting buffering for session ${sessionId}`);
-        console.log(`   FFmpeg will listen on ports: RTP=${ffmpegRtpPort}, RTCP=${ffmpegRtcpPort}`);
+        logger.debug(`🎵 AudioBufferService: Starting buffering for session ${sessionId}`);
+        logger.debug(`   FFmpeg will listen on ports: RTP=${ffmpegRtpPort}, RTCP=${ffmpegRtcpPort}`);
         
         if (this.sessions.has(sessionId)) {
-            console.warn(`⚠️ AudioBufferService: Session ${sessionId} already exists`);
+            logger.warn(`⚠️ AudioBufferService: Session ${sessionId} already exists`);
             return { success: false, error: 'Session already exists' };
         }
         
@@ -83,7 +85,7 @@ class AudioBufferService extends EventEmitter {
             // Monitor buffer growth
             this.startBufferMonitoring(session);
             
-            console.log(`✅ AudioBufferService: Started buffering for ${sessionId}`);
+            logger.debug(`✅ AudioBufferService: Started buffering for ${sessionId}`);
             return { 
                 success: true, 
                 sessionId, 
@@ -91,7 +93,7 @@ class AudioBufferService extends EventEmitter {
             };
             
         } catch (error) {
-            console.error(`❌ AudioBufferService: Failed to start buffering:`, error);
+            logger.error(`❌ AudioBufferService: Failed to start buffering:`, error);
             return { success: false, error: error.message };
         }
     }
@@ -107,11 +109,11 @@ class AudioBufferService extends EventEmitter {
                 // Use the FFmpeg listening port that MediaSoup is configured to send to
                 const ffmpegRtpPort = session.ffmpegRtpPort;
                 
-                console.log(`🎬 AudioBufferService: Starting FFmpeg capture`);
-                console.log(`   FFmpeg RTP Port: ${ffmpegRtpPort}`);
-                console.log(`   MediaSoup sending from: ${transport.tuple.localIp}:${transport.tuple.localPort}`);
-                console.log(`   Codec: ${audioCodec.mimeType}`);
-                console.log(`   Payload Type: ${payloadType}`);
+                logger.debug(`🎬 AudioBufferService: Starting FFmpeg capture`);
+                logger.debug(`   FFmpeg RTP Port: ${ffmpegRtpPort}`);
+                logger.debug(`   MediaSoup sending from: ${transport.tuple.localIp}:${transport.tuple.localPort}`);
+                logger.debug(`   Codec: ${audioCodec.mimeType}`);
+                logger.debug(`   Payload Type: ${payloadType}`);
                 
                 // Create SDP file for FFmpeg to listen on the correct port
                 const sdpContent = `v=0
@@ -139,7 +141,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                     session.bufferFile
                 ];
                 
-                console.log(`🚀 AudioBufferService: FFmpeg command:`, 'ffmpeg', ffmpegArgs.join(' '));
+                logger.debug(`🚀 AudioBufferService: FFmpeg command:`, 'ffmpeg', ffmpegArgs.join(' '));
                 
                 const ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
                 
@@ -152,17 +154,17 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                     
                     // Log FFmpeg output for debugging
                     if (message.includes('Error') || message.includes('Failed')) {
-                        console.error(`❌ FFmpeg:`, message);
+                        logger.error(`❌ FFmpeg:`, message);
                         if (!startupError) {
                             startupError = message;
                         }
                     } else if (message.includes('Stream #') || message.includes('Output #')) {
-                        console.log(`📹 FFmpeg:`, message.trim());
+                        logger.debug(`📹 FFmpeg:`, message.trim());
                     }
                 });
                 
                 ffmpegProcess.on('error', (error) => {
-                    console.error(`❌ AudioBufferService: FFmpeg process error:`, error);
+                    logger.error(`❌ AudioBufferService: FFmpeg process error:`, error);
                     resolve({ success: false, error: error.message });
                 });
                 
@@ -171,7 +173,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                     if (!ffmpegProcess.killed) {
                         // Check if file is being created
                         if (fs.existsSync(session.bufferFile)) {
-                            console.log(`✅ AudioBufferService: FFmpeg is running and writing to ${session.bufferFile}`);
+                            logger.debug(`✅ AudioBufferService: FFmpeg is running and writing to ${session.bufferFile}`);
                             resolve({ success: true, process: ffmpegProcess });
                         } else if (startupError) {
                             ffmpegProcess.kill();
@@ -183,7 +185,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                                     resolve({ success: true, process: ffmpegProcess });
                                 } else {
                                     // Don't kill FFmpeg yet, just resolve success for faster startup
-                                    console.log(`⏳ AudioBufferService: FFmpeg started, buffer file pending`);
+                                    logger.debug(`⏳ AudioBufferService: FFmpeg started, buffer file pending`);
                                     resolve({ success: true, process: ffmpegProcess });
                                 }
                             }, 500); // Reduced from 2000ms for faster response
@@ -194,7 +196,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                 }, 500); // Reduced from 1000ms for faster startup
                 
             } catch (error) {
-                console.error(`❌ AudioBufferService: Failed to start FFmpeg:`, error);
+                logger.error(`❌ AudioBufferService: Failed to start FFmpeg:`, error);
                 resolve({ success: false, error: error.message });
             }
         });
@@ -219,10 +221,10 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                     const duration = Math.floor(session.bytesWritten / this.bytesPerSecond);
                     
                     if (growthRate > 0) {
-                        console.log(`📊 AudioBufferService: Buffer ${session.id}`);
-                        console.log(`   Size: ${(session.bytesWritten / 1024).toFixed(2)}KB`);
-                        console.log(`   Duration: ${duration}s`);
-                        console.log(`   Growth: ${(growthRate / 1024).toFixed(2)}KB/s`);
+                        logger.debug(`📊 AudioBufferService: Buffer ${session.id}`);
+                        logger.debug(`   Size: ${(session.bytesWritten / 1024).toFixed(2)}KB`);
+                        logger.debug(`   Duration: ${duration}s`);
+                        logger.debug(`   Growth: ${(growthRate / 1024).toFixed(2)}KB/s`);
                         
                         this.emit('buffer-update', {
                             sessionId: session.id,
@@ -234,12 +236,12 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                     
                     // Implement circular buffer if size exceeds max
                     if (session.bytesWritten > this.maxBufferSize) {
-                        console.log(`⚠️ AudioBufferService: Buffer size exceeded, implementing circular buffer`);
+                        logger.debug(`⚠️ AudioBufferService: Buffer size exceeded, implementing circular buffer`);
                         this.trimBuffer(session);
                     }
                 }
             } catch (error) {
-                console.error(`❌ AudioBufferService: Monitor error:`, error);
+                logger.error(`❌ AudioBufferService: Monitor error:`, error);
             }
         }, 2000); // Check every 2 seconds
     }
@@ -247,7 +249,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
     async trimBuffer(session) {
         // For now, we'll restart the FFmpeg process to keep it simple
         // In production, you might want to implement a proper circular buffer
-        console.log(`🔄 AudioBufferService: Trimming buffer for ${session.id}`);
+        logger.debug(`🔄 AudioBufferService: Trimming buffer for ${session.id}`);
         
         try {
             // Extract the last N seconds before trimming
@@ -264,10 +266,10 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                 
                 // Restart FFmpeg to append to the trimmed file
                 // Note: This is simplified - in production you'd handle this more gracefully
-                console.log(`✅ AudioBufferService: Buffer trimmed successfully`);
+                logger.debug(`✅ AudioBufferService: Buffer trimmed successfully`);
             }
         } catch (error) {
-            console.error(`❌ AudioBufferService: Failed to trim buffer:`, error);
+            logger.error(`❌ AudioBufferService: Failed to trim buffer:`, error);
         }
     }
     
@@ -301,9 +303,9 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
             session.extractionCount++;
             const outputPath = path.join(this.tempDir, `${sessionId}_extract_${session.extractionCount}.wav`);
             
-            console.log(`🎯 AudioBufferService: Extracting last ${secondsToExtract.toFixed(1)}s from buffer`);
-            console.log(`   Buffer size: ${(fileSizeBytes / 1024).toFixed(2)}KB`);
-            console.log(`   Extracting: ${(bytesToExtract / 1024).toFixed(2)}KB`);
+            logger.debug(`🎯 AudioBufferService: Extracting last ${secondsToExtract.toFixed(1)}s from buffer`);
+            logger.debug(`   Buffer size: ${(fileSizeBytes / 1024).toFixed(2)}KB`);
+            logger.debug(`   Extracting: ${(bytesToExtract / 1024).toFixed(2)}KB`);
             
             // Use FFmpeg to extract the last N seconds
             return new Promise((resolve) => {
@@ -327,7 +329,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                 ffmpeg.on('close', (code) => {
                     if (code === 0 && fs.existsSync(outputPath)) {
                         const extractStats = fs.statSync(outputPath);
-                        console.log(`✅ AudioBufferService: Extracted ${(extractStats.size / 1024).toFixed(2)}KB audio`);
+                        logger.debug(`✅ AudioBufferService: Extracted ${(extractStats.size / 1024).toFixed(2)}KB audio`);
                         
                         resolve({
                             success: true,
@@ -336,19 +338,19 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                             size: extractStats.size
                         });
                     } else {
-                        console.error(`❌ AudioBufferService: FFmpeg extraction failed with code ${code}`);
+                        logger.error(`❌ AudioBufferService: FFmpeg extraction failed with code ${code}`);
                         resolve({ success: false, error: `FFmpeg failed with code ${code}` });
                     }
                 });
                 
                 ffmpeg.on('error', (error) => {
-                    console.error(`❌ AudioBufferService: FFmpeg error:`, error);
+                    logger.error(`❌ AudioBufferService: FFmpeg error:`, error);
                     resolve({ success: false, error: error.message });
                 });
             });
             
         } catch (error) {
-            console.error(`❌ AudioBufferService: Extraction error:`, error);
+            logger.error(`❌ AudioBufferService: Extraction error:`, error);
             return { success: false, error: error.message };
         }
     }
@@ -374,7 +376,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                 audioSize: audioDataSize
             };
         } catch (error) {
-            console.error(`❌ AudioBufferService: Error getting buffer info:`, error);
+            logger.error(`❌ AudioBufferService: Error getting buffer info:`, error);
             return { duration: 0, size: 0 };
         }
     }
@@ -410,8 +412,8 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
             session.extractionCount++;
             const outputPath = path.join(this.tempDir, `${sessionId}_extract_${session.extractionCount}.wav`);
             
-            console.log(`🎯 AudioBufferService: Extracting audio range ${startSeconds.toFixed(1)}s - ${actualEnd.toFixed(1)}s`);
-            console.log(`   Duration: ${extractDuration.toFixed(1)}s`);
+            logger.debug(`🎯 AudioBufferService: Extracting audio range ${startSeconds.toFixed(1)}s - ${actualEnd.toFixed(1)}s`);
+            logger.debug(`   Duration: ${extractDuration.toFixed(1)}s`);
             
             // Use FFmpeg to extract the specified range
             return new Promise((resolve) => {
@@ -436,7 +438,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                 ffmpeg.on('close', (code) => {
                     if (code === 0 && fs.existsSync(outputPath)) {
                         const extractedStats = fs.statSync(outputPath);
-                        console.log(`✅ AudioBufferService: Extracted ${(extractedStats.size / 1024).toFixed(2)}KB`);
+                        logger.debug(`✅ AudioBufferService: Extracted ${(extractedStats.size / 1024).toFixed(2)}KB`);
                         
                         resolve({
                             success: true,
@@ -446,7 +448,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                             endTime: actualEnd
                         });
                     } else {
-                        console.error(`❌ AudioBufferService: FFmpeg extraction failed:`, stderr);
+                        logger.error(`❌ AudioBufferService: FFmpeg extraction failed:`, stderr);
                         resolve({
                             success: false,
                             error: `FFmpeg failed with code ${code}`
@@ -455,7 +457,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                 });
                 
                 ffmpeg.on('error', (error) => {
-                    console.error(`❌ AudioBufferService: FFmpeg error:`, error);
+                    logger.error(`❌ AudioBufferService: FFmpeg error:`, error);
                     resolve({
                         success: false,
                         error: error.message
@@ -463,7 +465,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                 });
             });
         } catch (error) {
-            console.error(`❌ AudioBufferService: Extract range error:`, error);
+            logger.error(`❌ AudioBufferService: Extract range error:`, error);
             return { success: false, error: error.message };
         }
     }
@@ -474,7 +476,7 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
             return { success: false, error: 'Session not found' };
         }
         
-        console.log(`🛑 AudioBufferService: Stopping buffering for ${sessionId}`);
+        logger.debug(`🛑 AudioBufferService: Stopping buffering for ${sessionId}`);
         
         session.isActive = false;
         
@@ -507,12 +509,12 @@ a=fmtp:${payloadType} minptime=10;useinbandfec=1
                 fs.unlinkSync(sdpPath);
             }
         } catch (error) {
-            console.error(`⚠️ AudioBufferService: Error cleaning up files:`, error);
+            logger.error(`⚠️ AudioBufferService: Error cleaning up files:`, error);
         }
         
         this.sessions.delete(sessionId);
         
-        console.log(`✅ AudioBufferService: Stopped buffering for ${sessionId}`);
+        logger.debug(`✅ AudioBufferService: Stopped buffering for ${sessionId}`);
         return { success: true };
     }
     

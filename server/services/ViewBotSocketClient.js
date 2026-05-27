@@ -8,6 +8,8 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
+const logger = require('../bootstrap/logger').child({ svc: 'ViewBotSocketClient' });
+
 class ViewBotSocketClient {
   constructor(botId, serverUrl, mediaFile = null) {
     this.botId = botId;
@@ -29,7 +31,7 @@ class ViewBotSocketClient {
       process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = 0;
     }
     
-    console.log(`🤖 ViewBotSocketClient: Created ${botId} for ${serverUrl}`);
+    logger.debug(`🤖 ViewBotSocketClient: Created ${botId} for ${serverUrl}`);
   }
   
   /**
@@ -37,8 +39,8 @@ class ViewBotSocketClient {
    */
   async connect() {
     return new Promise((resolve, reject) => {
-      console.log(`🔌 ViewBot ${this.botId}: Connecting to ${this.serverUrl}...`);
-      console.log(`🔍 ViewBot ${this.botId}: Connection context - Timestamp: ${new Date().toISOString()}`);
+      logger.debug(`🔌 ViewBot ${this.botId}: Connecting to ${this.serverUrl}...`);
+      logger.debug(`🔍 ViewBot ${this.botId}: Connection context - Timestamp: ${new Date().toISOString()}`);
       
       this.socket = io(this.serverUrl, {
         transports: ['websocket'],
@@ -49,19 +51,19 @@ class ViewBotSocketClient {
       });
       
       this.socket.on('connect', () => {
-        console.log(`✅ ViewBot ${this.botId}: Connected to server - Socket ID: ${this.socket.id}`);
-        console.log(`🔍 ViewBot ${this.botId}: Setting up handlers at ${new Date().toISOString()}`);
+        logger.debug(`✅ ViewBot ${this.botId}: Connected to server - Socket ID: ${this.socket.id}`);
+        logger.debug(`🔍 ViewBot ${this.botId}: Setting up handlers at ${new Date().toISOString()}`);
         this.setupSocketHandlers();
         resolve();
       });
       
       this.socket.on('connect_error', (error) => {
-        console.error(`❌ ViewBot ${this.botId}: Connection error:`, error.message);
+        logger.error(`❌ ViewBot ${this.botId}: Connection error:`, error.message);
         reject(error);
       });
       
       this.socket.on('disconnect', (reason) => {
-        console.log(`🔌 ViewBot ${this.botId}: Disconnected - ${reason}`);
+        logger.debug(`🔌 ViewBot ${this.botId}: Disconnected - ${reason}`);
         this.cleanup();
       });
     });
@@ -74,30 +76,30 @@ class ViewBotSocketClient {
     // Handle stream approval (ViewBots are always approved)
     // Server sends 'streaming-approved' not 'stream-approved'
     this.socket.on('streaming-approved', () => {
-      console.log(`✅ ViewBot ${this.botId}: Streaming approved`);
+      logger.debug(`✅ ViewBot ${this.botId}: Streaming approved`);
     });
     
     // Also listen for viewbot-specific approval
     this.socket.on('viewbot-stream-approved', (data) => {
-      console.log(`✅ ViewBot ${this.botId}: ViewBot stream approved`);
+      logger.debug(`✅ ViewBot ${this.botId}: ViewBot stream approved`);
     });
     
     // Handle stream denial (shouldn't happen for ViewBots)
     this.socket.on('stream-denied', (data) => {
-      console.warn(`⚠️ ViewBot ${this.botId}: Stream denied - ${data.reason}`);
+      logger.warn(`⚠️ ViewBot ${this.botId}: Stream denied - ${data.reason}`);
     });
     
     // Handle becoming current streamer
     this.socket.on('current-streamer', (data) => {
       if (data.streamerId === this.socket.id) {
-        console.log(`🎬 ViewBot ${this.botId}: Now current streamer`);
+        logger.debug(`🎬 ViewBot ${this.botId}: Now current streamer`);
       }
     });
     
     // Handle stream-ready event (for verification)
     this.socket.on('stream-ready', (data) => {
       if (data.streamerId === this.socket.id) {
-        console.log(`📢 ViewBot ${this.botId}: stream-ready event received!`);
+        logger.debug(`📢 ViewBot ${this.botId}: stream-ready event received!`);
       }
     });
   }
@@ -107,15 +109,15 @@ class ViewBotSocketClient {
    */
   async startStreaming() {
     if (this.isStreaming) {
-      console.log(`⚠️ ViewBot ${this.botId}: Already streaming`);
+      logger.debug(`⚠️ ViewBot ${this.botId}: Already streaming`);
       return;
     }
     
-    console.log(`🎬 ViewBot ${this.botId}: Starting stream...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Starting stream...`);
     
     try {
       // Add small delay to ensure server handlers are ready
-      console.log(`⏳ ViewBot ${this.botId}: Waiting for server to be ready...`);
+      logger.debug(`⏳ ViewBot ${this.botId}: Waiting for server to be ready...`);
       await new Promise(resolve => setTimeout(resolve, 100));
       
       // Step 1: Request stream takeover (like real users)
@@ -130,7 +132,7 @@ class ViewBotSocketClient {
       const USE_WEBRTC = false; // Can't use WebRTC with GStreamer
       
       if (USE_WEBRTC) {
-        console.log(`📱 ViewBot ${this.botId}: Using WebRTC transport (mobile-compatible)`);
+        logger.debug(`📱 ViewBot ${this.botId}: Using WebRTC transport (mobile-compatible)`);
         
         // Step 2a: Create WebRTC transport
         const transportOptions = await this.createWebRtcTransport();
@@ -146,7 +148,7 @@ class ViewBotSocketClient {
         await this.createWebRtcProducers();
         
       } else {
-        console.log(`🖥️ ViewBot ${this.botId}: Using Plain RTP transport (desktop only)`);
+        logger.debug(`🖥️ ViewBot ${this.botId}: Using Plain RTP transport (desktop only)`);
         
         // Step 2: Create MediaSoup Plain RTP transport and get ports
         const transportConfig = await this.createMediaSoupTransport();
@@ -161,10 +163,10 @@ class ViewBotSocketClient {
       }
       
       this.isStreaming = true;
-      console.log(`✅ ViewBot ${this.botId}: Streaming started successfully`);
+      logger.debug(`✅ ViewBot ${this.botId}: Streaming started successfully`);
       
     } catch (error) {
-      console.error(`❌ ViewBot ${this.botId}: Failed to start streaming:`, error);
+      logger.error(`❌ ViewBot ${this.botId}: Failed to start streaming:`, error);
       this.cleanup();
       throw error;
     }
@@ -175,12 +177,12 @@ class ViewBotSocketClient {
    */
   async requestStreamTakeover() {
     return new Promise((resolve, reject) => {
-      console.log(`📡 ViewBot ${this.botId}: Requesting stream takeover...`);
-      console.log(`📡 ViewBot ${this.botId}: Socket connected: ${this.socket.connected}`);
-      console.log(`📡 ViewBot ${this.botId}: Socket ID: ${this.socket.id}`);
+      logger.debug(`📡 ViewBot ${this.botId}: Requesting stream takeover...`);
+      logger.debug(`📡 ViewBot ${this.botId}: Socket connected: ${this.socket.connected}`);
+      logger.debug(`📡 ViewBot ${this.botId}: Socket ID: ${this.socket.id}`);
       
       // Debug: Log the emit
-      console.log(`📡 ViewBot ${this.botId}: Emitting 'request-to-stream' event with data:`, {
+      logger.debug(`📡 ViewBot ${this.botId}: Emitting 'request-to-stream' event with data:`, {
         isViewBot: true,
         streamType: 'viewbot',
         botId: this.botId
@@ -192,11 +194,11 @@ class ViewBotSocketClient {
         streamType: 'viewbot',
         botId: this.botId
       }, (acknowledged) => {
-        console.log(`📡 ViewBot ${this.botId}: Callback received - acknowledged: ${acknowledged}`);
+        logger.debug(`📡 ViewBot ${this.botId}: Callback received - acknowledged: ${acknowledged}`);
         if (acknowledged) {
-          console.log(`✅ ViewBot ${this.botId}: Request acknowledged`);
+          logger.debug(`✅ ViewBot ${this.botId}: Request acknowledged`);
         } else {
-          console.log(`❌ ViewBot ${this.botId}: Request NOT acknowledged`);
+          logger.debug(`❌ ViewBot ${this.botId}: Request NOT acknowledged`);
         }
       });
       
@@ -211,7 +213,7 @@ class ViewBotSocketClient {
         this.socket.off('viewbot-stream-approved', handleApproval2);
         this.socket.off('takeover-denied', handleDenial);
         this.socket.off('stream-denied', handleDenial2);
-        console.log(`✅ ViewBot ${this.botId}: Takeover approved`);
+        logger.debug(`✅ ViewBot ${this.botId}: Takeover approved`);
         resolve();
       };
       
@@ -221,7 +223,7 @@ class ViewBotSocketClient {
         this.socket.off('viewbot-stream-approved', handleApproval2);
         this.socket.off('takeover-denied', handleDenial);
         this.socket.off('stream-denied', handleDenial2);
-        console.log(`✅ ViewBot ${this.botId}: ViewBot takeover approved`);
+        logger.debug(`✅ ViewBot ${this.botId}: ViewBot takeover approved`);
         resolve();
       };
       
@@ -255,15 +257,15 @@ class ViewBotSocketClient {
    */
   async createWebRtcTransport() {
     return new Promise((resolve, reject) => {
-      console.log(`🚀 ViewBot ${this.botId}: Requesting WebRTC transport (mobile-compatible)...`);
+      logger.debug(`🚀 ViewBot ${this.botId}: Requesting WebRTC transport (mobile-compatible)...`);
       
       this.socket.emit('viewbot-create-webrtc-transport', {
         botId: this.botId
       }, (response) => {
         if (response && response.success && response.transportOptions) {
-          console.log(`✅ ViewBot ${this.botId}: Got WebRTC transport`);
-          console.log(`   Transport ID: ${response.transportOptions.id}`);
-          console.log(`   ICE candidates: ${response.transportOptions.iceCandidates?.length || 0}`);
+          logger.debug(`✅ ViewBot ${this.botId}: Got WebRTC transport`);
+          logger.debug(`   Transport ID: ${response.transportOptions.id}`);
+          logger.debug(`   ICE candidates: ${response.transportOptions.iceCandidates?.length || 0}`);
           
           this.webrtcTransport = response.transportOptions;
           this.useWebRtc = true;
@@ -273,7 +275,7 @@ class ViewBotSocketClient {
           // Then pipe it to the WebRTC transport
           resolve(response.transportOptions);
         } else {
-          console.error(`❌ ViewBot ${this.botId}: WebRTC transport creation failed:`, response);
+          logger.error(`❌ ViewBot ${this.botId}: WebRTC transport creation failed:`, response);
           reject(new Error('Failed to create WebRTC transport'));
         }
       });
@@ -285,14 +287,14 @@ class ViewBotSocketClient {
    */
   async createMediaSoupTransport() {
     return new Promise((resolve, reject) => {
-      console.log(`🚚 ViewBot ${this.botId}: Requesting MediaSoup Plain RTP transport (LEGACY)...`);
+      logger.debug(`🚚 ViewBot ${this.botId}: Requesting MediaSoup Plain RTP transport (LEGACY)...`);
       
       this.socket.emit('viewbot-create-transport', {
         botId: this.botId
       }, (response) => {
         // Check if server returned LiveKit configuration
         if (response && response.useLiveKit) {
-          console.log(`🎮 ViewBot ${this.botId}: Server is using LiveKit, switching to whipsink pipeline`);
+          logger.debug(`🎮 ViewBot ${this.botId}: Server is using LiveKit, switching to whipsink pipeline`);
           this.transport = {
             useLiveKit: true,
             token: response.token,
@@ -305,7 +307,7 @@ class ViewBotSocketClient {
             whipUrl: response.whipUrl
           });
         } else if (response && response.videoPort && response.audioPort) {
-          console.log(`✅ ViewBot ${this.botId}: Got MediaSoup ports - Video: ${response.videoPort}, Audio: ${response.audioPort}`);
+          logger.debug(`✅ ViewBot ${this.botId}: Got MediaSoup ports - Video: ${response.videoPort}, Audio: ${response.audioPort}`);
           this.transport = response;
           this.rtpPorts = {
             video: response.videoPort,
@@ -316,7 +318,7 @@ class ViewBotSocketClient {
             audio: response.audioPort
           });
         } else {
-          console.error(`❌ ViewBot ${this.botId}: Transport creation failed:`, response);
+          logger.error(`❌ ViewBot ${this.botId}: Transport creation failed:`, response);
           reject(new Error('Failed to create MediaSoup transport'));
         }
       });
@@ -330,18 +332,18 @@ class ViewBotSocketClient {
     return new Promise((resolve, reject) => {
       // Only use real video files, no test patterns
       if (!this.mediaFile || !fs.existsSync(this.mediaFile)) {
-        console.error(`❌ ViewBot ${this.botId}: No video file available (${this.mediaFile})`);
+        logger.error(`❌ ViewBot ${this.botId}: No video file available (${this.mediaFile})`);
         reject(new Error('No video file available for streaming'));
         return;
       }
       
-      console.log(`📹 ViewBot ${this.botId}: Streaming video file: ${this.mediaFile}`);
+      logger.debug(`📹 ViewBot ${this.botId}: Streaming video file: ${this.mediaFile}`);
       
       let pipelineArgs;
       
       // Check if we're using LiveKit
       if (transportConfig.useLiveKit) {
-        console.log(`🎮 ViewBot ${this.botId}: Starting LiveKit GStreamer pipeline with whipsink`);
+        logger.debug(`🎮 ViewBot ${this.botId}: Starting LiveKit GStreamer pipeline with whipsink`);
         
         // Build LiveKit pipeline with whipclientsink
         const whipUrl = `${transportConfig.whipUrl}?authorization=Bearer%20${encodeURIComponent(transportConfig.token)}`;
@@ -376,7 +378,7 @@ class ViewBotSocketClient {
       } else {
         // MediaSoup pipeline with RTP ports
         this.rtpPorts = transportConfig;
-        console.log(`🎥 ViewBot ${this.botId}: Starting MediaSoup GStreamer pipeline - Video: ${transportConfig.video}, Audio: ${transportConfig.audio}`);
+        logger.debug(`🎥 ViewBot ${this.botId}: Starting MediaSoup GStreamer pipeline - Video: ${transportConfig.video}, Audio: ${transportConfig.audio}`);
         
         pipelineArgs = [
           'filesrc', `location=${this.mediaFile}`,
@@ -400,35 +402,35 @@ class ViewBotSocketClient {
         ];
       }
       
-      console.log(`🎥 ViewBot ${this.botId}: GStreamer command:`, 'gst-launch-1.0', pipelineArgs.join(' '));
+      logger.debug(`🎥 ViewBot ${this.botId}: GStreamer command:`, 'gst-launch-1.0', pipelineArgs.join(' '));
       
       this.gstreamerProcess = spawn('gst-launch-1.0', pipelineArgs, {
         stdio: ['ignore', 'pipe', 'pipe']
       });
       
       this.gstreamerProcess.on('error', (error) => {
-        console.error(`❌ ViewBot ${this.botId}: GStreamer error:`, error);
+        logger.error(`❌ ViewBot ${this.botId}: GStreamer error:`, error);
         reject(error);
       });
       
       this.gstreamerProcess.stderr.on('data', (data) => {
         const output = data.toString();
         if (output.includes('ERROR')) {
-          console.error(`❌ ViewBot ${this.botId}: GStreamer ERROR:`, output);
+          logger.error(`❌ ViewBot ${this.botId}: GStreamer ERROR:`, output);
         } else if (output.includes('WARNING')) {
-          console.warn(`⚠️ ViewBot ${this.botId}: GStreamer WARNING:`, output);
+          logger.warn(`⚠️ ViewBot ${this.botId}: GStreamer WARNING:`, output);
         } else if (output.includes('PLAYING')) {
-          console.log(`▶️ ViewBot ${this.botId}: GStreamer pipeline PLAYING`);
+          logger.debug(`▶️ ViewBot ${this.botId}: GStreamer pipeline PLAYING`);
         }
       });
       
       // Handle when GStreamer process exits (video file ends)
       this.gstreamerProcess.on('exit', async (code, signal) => {
-        console.log(`🎬 ViewBot ${this.botId}: GStreamer process ended (code: ${code}, signal: ${signal})`);
+        logger.debug(`🎬 ViewBot ${this.botId}: GStreamer process ended (code: ${code}, signal: ${signal})`);
         
         // If we're still supposed to be streaming and the video file ended naturally
         if (this.isStreaming && code === 0 && this.videoFile) {
-          console.log(`🔄 ViewBot ${this.botId}: Video file ended, triggering rotation...`);
+          logger.debug(`🔄 ViewBot ${this.botId}: Video file ended, triggering rotation...`);
           
           // Stop current stream
           await this.stopStreaming();
@@ -445,7 +447,7 @@ class ViewBotSocketClient {
       
       // Give GStreamer time to start
       setTimeout(() => {
-        console.log(`✅ ViewBot ${this.botId}: GStreamer started`);
+        logger.debug(`✅ ViewBot ${this.botId}: GStreamer started`);
         resolve();
       }, 100);
     });
@@ -460,7 +462,7 @@ class ViewBotSocketClient {
       video: 5004,
       audio: 5006
     };
-    console.log(`🔌 ViewBot ${this.botId}: Using local RTP ports - Video: ${ports.video}, Audio: ${ports.audio}`);
+    logger.debug(`🔌 ViewBot ${this.botId}: Using local RTP ports - Video: ${ports.video}, Audio: ${ports.audio}`);
     return ports;
   }
   
@@ -468,7 +470,7 @@ class ViewBotSocketClient {
    * Create WebRTC producers (mobile-compatible)
    */
   async createWebRtcProducers() {
-    console.log(`🎬 ViewBot ${this.botId}: Creating WebRTC producers...`);
+    logger.debug(`🎬 ViewBot ${this.botId}: Creating WebRTC producers...`);
     
     return new Promise((resolve, reject) => {
       this.socket.emit('viewbot-webrtc-produce', {
@@ -476,12 +478,12 @@ class ViewBotSocketClient {
         transportId: this.webrtcTransport?.id
       }, (response) => {
         if (response && response.success) {
-          console.log(`✅ ViewBot ${this.botId}: WebRTC producers created`);
-          console.log(`   Video producer: ${response.videoProducerId}`);
-          console.log(`   Audio producer: ${response.audioProducerId}`);
+          logger.debug(`✅ ViewBot ${this.botId}: WebRTC producers created`);
+          logger.debug(`   Video producer: ${response.videoProducerId}`);
+          logger.debug(`   Audio producer: ${response.audioProducerId}`);
           
           // Emit stream-ready event
-          console.log(`📢 ViewBot ${this.botId}: Emitting viewbot-stream-ready event`);
+          logger.debug(`📢 ViewBot ${this.botId}: Emitting viewbot-stream-ready event`);
           this.socket.emit('viewbot-stream-ready', {
             botId: this.botId,
             timestamp: new Date().toISOString(),
@@ -490,10 +492,10 @@ class ViewBotSocketClient {
             isWebRTC: true
           });
           
-          console.log(`✅ ViewBot ${this.botId}: Stream ready notification sent`);
+          logger.debug(`✅ ViewBot ${this.botId}: Stream ready notification sent`);
           resolve();
         } else {
-          console.error(`❌ ViewBot ${this.botId}: Failed to create WebRTC producers:`, response);
+          logger.error(`❌ ViewBot ${this.botId}: Failed to create WebRTC producers:`, response);
           reject(new Error('Failed to create WebRTC producers'));
         }
       });
@@ -504,7 +506,7 @@ class ViewBotSocketClient {
    * Create MediaSoup producers and notify server (Plain RTP - legacy)
    */
   async createProducers(rtpPorts) {
-    console.log(`🎤 ViewBot ${this.botId}: Creating MediaSoup producers...`);
+    logger.debug(`🎤 ViewBot ${this.botId}: Creating MediaSoup producers...`);
     
     return new Promise((resolve, reject) => {
       // Request server to create producers for our Plain RTP transports
@@ -515,10 +517,10 @@ class ViewBotSocketClient {
         rtpPorts: rtpPorts
       }, (response) => {
         if (response && response.success) {
-          console.log(`✅ ViewBot ${this.botId}: MediaSoup producers created`);
+          logger.debug(`✅ ViewBot ${this.botId}: MediaSoup producers created`);
           
           // Now emit stream-ready since producers exist
-          console.log(`📢 ViewBot ${this.botId}: Emitting viewbot-stream-ready event`);
+          logger.debug(`📢 ViewBot ${this.botId}: Emitting viewbot-stream-ready event`);
           this.socket.emit('viewbot-stream-ready', {
             botId: this.botId,
             timestamp: new Date().toISOString(),
@@ -528,7 +530,7 @@ class ViewBotSocketClient {
             audioProducerId: response.audioProducerId
           });
           
-          console.log(`✅ ViewBot ${this.botId}: Stream ready notification sent`);
+          logger.debug(`✅ ViewBot ${this.botId}: Stream ready notification sent`);
           resolve();
         } else {
           reject(new Error('Failed to create MediaSoup producers'));
@@ -543,7 +545,7 @@ class ViewBotSocketClient {
    * Stop streaming
    */
   async stopStreaming() {
-    console.log(`⏹️ ViewBot ${this.botId}: Stopping stream...`);
+    logger.debug(`⏹️ ViewBot ${this.botId}: Stopping stream...`);
     
     this.isStreaming = false;
     
@@ -575,7 +577,7 @@ class ViewBotSocketClient {
     
     // IMPORTANT: Request server to close transports BEFORE disconnecting
     if (this.socket && this.socket.connected) {
-      console.log(`🧹 ViewBot ${this.botId}: Requesting transport cleanup from server...`);
+      logger.debug(`🧹 ViewBot ${this.botId}: Requesting transport cleanup from server...`);
       this.socket.emit('viewbot-cleanup-transports', { 
         botId: this.botId,
         socketId: this.socket.id 
@@ -598,7 +600,7 @@ class ViewBotSocketClient {
     this.transport = null;
     this.rtpPorts = { video: null, audio: null };
     
-    console.log(`🧹 ViewBot ${this.botId}: Cleaned up`);
+    logger.debug(`🧹 ViewBot ${this.botId}: Cleaned up`);
   }
 }
 

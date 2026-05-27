@@ -1,5 +1,7 @@
 const EventEmitter = require('events');
 
+const logger = require('../bootstrap/logger').child({ svc: 'CanvasFxService' });
+
 class CanvasFxService extends EventEmitter {
     constructor(io = null, itemService = null, buffDebuffService = null) {
         super();
@@ -30,7 +32,7 @@ class CanvasFxService extends EventEmitter {
             defaultDuration: 2000
         };
         
-        console.log('🎨 CANVASFX: Service initialized');
+        logger.debug('🎨 CANVASFX: Service initialized');
     }
     
     // Set dependencies after initialization if needed
@@ -59,22 +61,22 @@ class CanvasFxService extends EventEmitter {
     
     // Handle buff applied event from BuffDebuffService
     async handleBuffApplied(buffData) {
-        console.log(`🎨 CANVASFX: handleBuffApplied called with buffData:`, JSON.stringify(buffData, null, 2));
+        logger.debug(`🎨 CANVASFX: handleBuffApplied called with buffData:`, JSON.stringify(buffData, null, 2));
         
         // Check if this is a resumed buff (streamer coming back online with active buff)
         if (buffData.isResumed) {
-            console.log(`🎨 CANVASFX: This is a RESUMED buff for ${buffData.item_name} - re-applying visual effect`);
+            logger.debug(`🎨 CANVASFX: This is a RESUMED buff for ${buffData.item_name} - re-applying visual effect`);
         }
         
         try {
             // Check if this buff has visual effects
             const item = await this.itemService.getItemById(buffData.item_id);
-            console.log(`🎨 CANVASFX: Retrieved item:`, item ? item.name : 'null');
+            logger.debug(`🎨 CANVASFX: Retrieved item:`, item ? item.name : 'null');
             if (item && this.hasVisualEffect(item)) {
-                console.log(`🎨 CANVASFX: Triggering visual effect for ${item.name}`);
-                console.log(`🎨 CANVASFX: Buff data for ${item.name}:`, JSON.stringify(buffData, null, 2));
+                logger.debug(`🎨 CANVASFX: Triggering visual effect for ${item.name}`);
+                logger.debug(`🎨 CANVASFX: Buff data for ${item.name}:`, JSON.stringify(buffData, null, 2));
                 const buffDuration = buffData.remaining_seconds || buffData.duration_seconds || 60;
-                console.log(`🎨 CANVASFX: Using buff duration ${buffDuration}s for ${item.name}`);
+                logger.debug(`🎨 CANVASFX: Using buff duration ${buffDuration}s for ${item.name}`);
                 
                 const effect = await this.triggerItemEffect(
                     buffData.user_id,
@@ -97,15 +99,15 @@ class CanvasFxService extends EventEmitter {
                         for (const phaseEffect of phaseEffects) {
                             this.buffSyncedEffects.set(phaseEffect.id, buffData.id);
                         }
-                        console.log(`🎨 CANVASFX: Tracking multi-phase buff-synced effect ${effect.id} (${phaseEffects.length} phases) with buff ${buffData.id}`);
+                        logger.debug(`🎨 CANVASFX: Tracking multi-phase buff-synced effect ${effect.id} (${phaseEffects.length} phases) with buff ${buffData.id}`);
                     } else {
                         this.buffSyncedEffects.set(effect.id, buffData.id);
-                        console.log(`🎨 CANVASFX: Tracking buff-synced effect ${effect.id} with buff ${buffData.id}`);
+                        logger.debug(`🎨 CANVASFX: Tracking buff-synced effect ${effect.id} with buff ${buffData.id}`);
                     }
                 }
             }
         } catch (error) {
-            console.error('❌ CANVASFX: Error handling buff visual effect:', error);
+            logger.error('❌ CANVASFX: Error handling buff visual effect:', error);
         }
     }
     
@@ -166,10 +168,10 @@ class CanvasFxService extends EventEmitter {
             }
             
             if (effectsToCancel.length > 0) {
-                console.log(`🎨 CANVASFX: Cancelled ${effectsToCancel.length} buff-synced effects for expired buff ${buffData.id}`);
+                logger.debug(`🎨 CANVASFX: Cancelled ${effectsToCancel.length} buff-synced effects for expired buff ${buffData.id}`);
             }
         } catch (error) {
-            console.error('❌ CANVASFX: Error handling buff expiry:', error);
+            logger.error('❌ CANVASFX: Error handling buff expiry:', error);
         }
     }
     
@@ -177,7 +179,7 @@ class CanvasFxService extends EventEmitter {
     startStreamerMonitoring() {
         // Initialize current streamer
         this.currentStreamer = this.streamService.getCurrentStreamer();
-        console.log(`🎨 CANVASFX: Started streamer monitoring - Initial streamer: ${this.currentStreamer}`);
+        logger.debug(`🎨 CANVASFX: Started streamer monitoring - Initial streamer: ${this.currentStreamer}`);
         
         // Check for streamer changes every 2 seconds
         this.streamerCheckInterval = setInterval(async () => {
@@ -192,7 +194,7 @@ class CanvasFxService extends EventEmitter {
             
             // Log every change for debugging
             if (this.currentStreamer !== newStreamer) {
-                console.log(`🎨 CANVASFX: Streamer change detected - Previous: ${this.currentStreamer}, New: ${newStreamer}`);
+                logger.debug(`🎨 CANVASFX: Streamer change detected - Previous: ${this.currentStreamer}, New: ${newStreamer}`);
             }
             
             // Streamer changed or went offline
@@ -200,34 +202,34 @@ class CanvasFxService extends EventEmitter {
                 const previousStreamer = this.currentStreamer;
                 this.currentStreamer = newStreamer;
                 
-                console.log(`🎨 CANVASFX: DEBUG - Conditions: prev=${previousStreamer}, new=${newStreamer}, prev&&!new=${previousStreamer && !newStreamer}, prev&&new&&different=${previousStreamer && newStreamer && previousStreamer !== newStreamer}, !prev&&new=${!previousStreamer && newStreamer}`);
+                logger.debug(`🎨 CANVASFX: DEBUG - Conditions: prev=${previousStreamer}, new=${newStreamer}, prev&&!new=${previousStreamer && !newStreamer}, prev&&new&&different=${previousStreamer && newStreamer && previousStreamer !== newStreamer}, !prev&&new=${!previousStreamer && newStreamer}`);
                 
                 if (previousStreamer && !newStreamer) {
                     // Stream ended
-                    console.log(`🎨 CANVASFX: BRANCH: Stream ended`);
+                    logger.debug(`🎨 CANVASFX: BRANCH: Stream ended`);
                     await this.handleStreamEnded();
-                    console.log(`🎨 CANVASFX: Stream ended, previous streamer was ${previousStreamer}`);
+                    logger.debug(`🎨 CANVASFX: Stream ended, previous streamer was ${previousStreamer}`);
                 } else if (previousStreamer && newStreamer && previousStreamer !== newStreamer) {
                     // Streamer switched
-                    console.log(`🎨 CANVASFX: BRANCH: Streamer switched`);
-                    console.log(`🎨 CANVASFX: ABOUT TO CALL handleStreamerChanged(${previousStreamer}, ${newStreamer})`);
+                    logger.debug(`🎨 CANVASFX: BRANCH: Streamer switched`);
+                    logger.debug(`🎨 CANVASFX: ABOUT TO CALL handleStreamerChanged(${previousStreamer}, ${newStreamer})`);
                     try {
                         await this.handleStreamerChanged(previousStreamer, newStreamer);
-                        console.log(`🎨 CANVASFX: COMPLETED handleStreamerChanged call`);
+                        logger.debug(`🎨 CANVASFX: COMPLETED handleStreamerChanged call`);
                     } catch (error) {
-                        console.error(`❌ CANVASFX: ERROR in handleStreamerChanged:`, error);
+                        logger.error(`❌ CANVASFX: ERROR in handleStreamerChanged:`, error);
                     }
-                    console.log(`🎨 CANVASFX: Streamer changed from ${previousStreamer} to ${newStreamer}`);
+                    logger.debug(`🎨 CANVASFX: Streamer changed from ${previousStreamer} to ${newStreamer}`);
                 } else if (!previousStreamer && newStreamer) {
                     // New streamer went live
-                    console.log(`🎨 CANVASFX: BRANCH: New streamer went live`);
+                    logger.debug(`🎨 CANVASFX: BRANCH: New streamer went live`);
                     // New streamer went live - but check if this might be a takeover
-                    console.log(`🎨 CANVASFX: NEW STREAMER DETECTED - calling handleStreamerWentLive(${newStreamer})`);
+                    logger.debug(`🎨 CANVASFX: NEW STREAMER DETECTED - calling handleStreamerWentLive(${newStreamer})`);
                     
                     // Clear any existing buff-synced effects first (in case this is actually a takeover)
                     const existingEffects = Array.from(this.buffSyncedEffects.keys());
                     if (existingEffects.length > 0) {
-                        console.log(`🎨 CANVASFX: Clearing ${existingEffects.length} existing buff-synced effects before new streamer`);
+                        logger.debug(`🎨 CANVASFX: Clearing ${existingEffects.length} existing buff-synced effects before new streamer`);
                         for (const effectId of existingEffects) {
                             await this.cancelEffect(effectId, 'new-streamer-cleanup');
                             this.buffSyncedEffects.delete(effectId);
@@ -236,25 +238,25 @@ class CanvasFxService extends EventEmitter {
                         // Send cleanup to all clients
                         if (this.io) {
                             this.io.emit('canvas-effects-clear-buff-synced');
-                            console.log(`📡 CANVASFX: Sent buff-synced effects clear before new streamer`);
+                            logger.debug(`📡 CANVASFX: Sent buff-synced effects clear before new streamer`);
                         }
                     }
                     
                     await this.handleStreamerWentLive(newStreamer);
-                    console.log(`🎨 CANVASFX: New streamer went live: ${newStreamer}`);
+                    logger.debug(`🎨 CANVASFX: New streamer went live: ${newStreamer}`);
                 }
             }
         } catch (error) {
-            console.error('❌ CANVASFX: Error checking streamer change:', error);
+            logger.error('❌ CANVASFX: Error checking streamer change:', error);
         }
     }
     
     // Handle streamer change
     async handleStreamerChanged(previousStreamer, newStreamer) {
-        console.log(`🎨 CANVASFX: ENTERED handleStreamerChanged method - ${previousStreamer} -> ${newStreamer}`);
+        logger.debug(`🎨 CANVASFX: ENTERED handleStreamerChanged method - ${previousStreamer} -> ${newStreamer}`);
         try {
-            console.log(`🎨 CANVASFX: Handling streamer switch from ${previousStreamer} to ${newStreamer}`);
-            console.log(`🎨 CANVASFX: DEBUG - Starting STEP 1: Clear existing effects`);
+            logger.debug(`🎨 CANVASFX: Handling streamer switch from ${previousStreamer} to ${newStreamer}`);
+            logger.debug(`🎨 CANVASFX: DEBUG - Starting STEP 1: Clear existing effects`);
             
             // STEP 1: Clear all existing buff-synced effects from previous streamer
             const effectsToCancel = [];
@@ -262,10 +264,10 @@ class CanvasFxService extends EventEmitter {
             this.buffSyncedEffects.forEach((buffId, effectId) => {
                 // Cancel all buff-synced effects on streamer switch
                 effectsToCancel.push(effectId);
-                console.log(`🎨 CANVASFX: Marking buff-synced effect ${effectId} for cancellation`);
+                logger.debug(`🎨 CANVASFX: Marking buff-synced effect ${effectId} for cancellation`);
             });
             
-            console.log(`🎨 CANVASFX: DEBUG - Found ${effectsToCancel.length} effects to cancel`);
+            logger.debug(`🎨 CANVASFX: DEBUG - Found ${effectsToCancel.length} effects to cancel`);
             
             // Cancel all found effects
             for (const effectId of effectsToCancel) {
@@ -281,7 +283,7 @@ class CanvasFxService extends EventEmitter {
                 }
             });
             
-            console.log(`🎨 CANVASFX: DEBUG - Found ${remainingEffects.length} remaining effects to cleanup`);
+            logger.debug(`🎨 CANVASFX: DEBUG - Found ${remainingEffects.length} remaining effects to cleanup`);
             
             for (const effectId of remainingEffects) {
                 if (!effectsToCancel.includes(effectId)) {
@@ -290,13 +292,13 @@ class CanvasFxService extends EventEmitter {
             }
             
             if (effectsToCancel.length > 0) {
-                console.log(`🎨 CANVASFX: Cancelled ${effectsToCancel.length} buff-synced effects from previous streamer`);
+                logger.debug(`🎨 CANVASFX: Cancelled ${effectsToCancel.length} buff-synced effects from previous streamer`);
             }
             
             // Send cleanup broadcast to all clients
             if (this.io) {
                 this.io.emit('canvas-effects-clear-buff-synced');
-                console.log(`📡 CANVASFX: Sent buff-synced effects clear to all clients`);
+                logger.debug(`📡 CANVASFX: Sent buff-synced effects clear to all clients`);
             }
             
             // Force cleanup for the previous streamer specifically
@@ -304,18 +306,18 @@ class CanvasFxService extends EventEmitter {
                 this.forceCleanupForSocket(previousStreamer, 'streamer-switched');
             }
             
-            console.log(`🎨 CANVASFX: DEBUG - Starting STEP 2: Check new streamer buffs`);
+            logger.debug(`🎨 CANVASFX: DEBUG - Starting STEP 2: Check new streamer buffs`);
             
             // STEP 2: Check if NEW streamer has active smoke bomb buffs and trigger them
-            console.log(`🎨 CANVASFX: Calling handleStreamerWentLive for new streamer ${newStreamer}`);
+            logger.debug(`🎨 CANVASFX: Calling handleStreamerWentLive for new streamer ${newStreamer}`);
             await this.handleStreamerWentLive(newStreamer);
-            console.log(`🎨 CANVASFX: Completed handleStreamerWentLive for new streamer ${newStreamer}`);
+            logger.debug(`🎨 CANVASFX: Completed handleStreamerWentLive for new streamer ${newStreamer}`);
             
-            console.log(`🎨 CANVASFX: DEBUG - Completed streamer switch handling`);
+            logger.debug(`🎨 CANVASFX: DEBUG - Completed streamer switch handling`);
             
         } catch (error) {
-            console.error('❌ CANVASFX: Error handling streamer change:', error);
-            console.error('❌ CANVASFX: Error stack:', error.stack);
+            logger.error('❌ CANVASFX: Error handling streamer change:', error);
+            logger.error('❌ CANVASFX: Error stack:', error.stack);
         }
     }
     
@@ -324,18 +326,18 @@ class CanvasFxService extends EventEmitter {
         try {
             // Map socket ID to user ID
             if (!this.sessionService) {
-                console.warn('⚠️ CANVASFX: SessionService not available for mapping streamer socket to user');
+                logger.warn('⚠️ CANVASFX: SessionService not available for mapping streamer socket to user');
                 return;
             }
             
             const session = this.sessionService.getSessionBySocketId(newStreamerSocketId);
             if (!session || !session.userId) {
-                console.log(`🎨 CANVASFX: No session found for new streamer socketId ${newStreamerSocketId}`);
+                logger.debug(`🎨 CANVASFX: No session found for new streamer socketId ${newStreamerSocketId}`);
                 return;
             }
             
             const streamerId = session.userId;
-            console.log(`🎨 CANVASFX: Checking for existing buffs for new streamer userId ${streamerId}`);
+            logger.debug(`🎨 CANVASFX: Checking for existing buffs for new streamer userId ${streamerId}`);
             
             // Check for active smoke bomb debuffs on this streamer
             if (this.buffDebuffService) {
@@ -347,13 +349,13 @@ class CanvasFxService extends EventEmitter {
                 );
                 
                 if (smokeBombBuffs.length > 0) {
-                    console.log(`🎨 CANVASFX: Found ${smokeBombBuffs.length} active smoke bomb buff(s) on new streamer`);
+                    logger.debug(`🎨 CANVASFX: Found ${smokeBombBuffs.length} active smoke bomb buff(s) on new streamer`);
                     
                     // For each smoke bomb buff, trigger the persistent smoke phase
                     for (const buff of smokeBombBuffs) {
                         const item = await this.itemService.getItemById(buff.itemId);
                         if (item) {
-                            console.log(`🎨 CANVASFX: Triggering existing smoke bomb animation for streamer (${buff.remainingSeconds}s remaining)`);
+                            logger.debug(`🎨 CANVASFX: Triggering existing smoke bomb animation for streamer (${buff.remainingSeconds}s remaining)`);
                             
                             // Calculate remaining duration in milliseconds
                             const remainingDurationMs = buff.remainingSeconds * 1000;
@@ -406,31 +408,31 @@ class CanvasFxService extends EventEmitter {
                             // Broadcast to all viewers immediately
                             if (this.io) {
                                 this.io.emit('canvas-effect-trigger', persistentSmokeEffect);
-                                console.log(`📡 CANVASFX: Broadcasted existing smoke bomb effect for new streamer (${remainingDurationMs}ms remaining)`);
+                                logger.debug(`📡 CANVASFX: Broadcasted existing smoke bomb effect for new streamer (${remainingDurationMs}ms remaining)`);
                             }
                             
                             // Emit local event
                             this.emit('effect-triggered', persistentSmokeEffect);
                             
-                            console.log(`✅ CANVASFX: Activated persistent smoke for streamer with existing buff (${buff.remainingSeconds}s remaining)`);
+                            logger.debug(`✅ CANVASFX: Activated persistent smoke for streamer with existing buff (${buff.remainingSeconds}s remaining)`);
                         }
                     }
                 } else {
-                    console.log(`🎨 CANVASFX: No active smoke bomb buffs found for new streamer userId ${streamerId}`);
+                    logger.debug(`🎨 CANVASFX: No active smoke bomb buffs found for new streamer userId ${streamerId}`);
                 }
             } else {
-                console.warn('⚠️ CANVASFX: BuffDebuffService not available for checking existing buffs');
+                logger.warn('⚠️ CANVASFX: BuffDebuffService not available for checking existing buffs');
             }
             
         } catch (error) {
-            console.error('❌ CANVASFX: Error handling streamer went live:', error);
+            logger.error('❌ CANVASFX: Error handling streamer went live:', error);
         }
     }
     
     // Handle stream ending
     async handleStreamEnded() {
         try {
-            console.log(`🎨 CANVASFX: Handling stream end - cleaning up all buff-synced effects`);
+            logger.debug(`🎨 CANVASFX: Handling stream end - cleaning up all buff-synced effects`);
             
             // Cancel all buff-synced effects when stream ends
             const effectsToCancel = Array.from(this.buffSyncedEffects.keys());
@@ -457,14 +459,14 @@ class CanvasFxService extends EventEmitter {
             // Force a complete cleanup broadcast
             if (this.io) {
                 this.io.emit('canvas-effects-clear-buff-synced');
-                console.log(`📡 CANVASFX: Sent complete buff-synced effects clear to all clients (stream ended)`);
+                logger.debug(`📡 CANVASFX: Sent complete buff-synced effects clear to all clients (stream ended)`);
             }
             
             if (effectsToCancel.length > 0 || remainingEffects.length > 0) {
-                console.log(`🎨 CANVASFX: Cancelled ${effectsToCancel.length} buff-synced effects + ${remainingEffects.length} remaining effects due to stream ending`);
+                logger.debug(`🎨 CANVASFX: Cancelled ${effectsToCancel.length} buff-synced effects + ${remainingEffects.length} remaining effects due to stream ending`);
             }
         } catch (error) {
-            console.error('❌ CANVASFX: Error handling stream end:', error);
+            logger.error('❌ CANVASFX: Error handling stream end:', error);
         }
     }
     
@@ -752,33 +754,33 @@ class CanvasFxService extends EventEmitter {
     // Trigger visual effect from item usage
     async triggerItemEffect(userId, itemId, streamId, effectParams = {}) {
         try {
-            console.log(`🎨 CANVASFX: === TRIGGERING ITEM EFFECT ===`);
-            console.log(`🎨 CANVASFX DEBUG: triggerItemEffect called - userId: ${userId}, itemId: ${itemId}, streamId: ${streamId}`);
-            console.log(`🎨 CANVASFX DEBUG: effectParams:`, JSON.stringify(effectParams, null, 2));
+            logger.debug(`🎨 CANVASFX: === TRIGGERING ITEM EFFECT ===`);
+            logger.debug(`🎨 CANVASFX DEBUG: triggerItemEffect called - userId: ${userId}, itemId: ${itemId}, streamId: ${streamId}`);
+            logger.debug(`🎨 CANVASFX DEBUG: effectParams:`, JSON.stringify(effectParams, null, 2));
             
             // Check concurrent effect limit
             if (this.activeEffects.size >= this.config.maxConcurrentEffects) {
-                console.warn('⚠️ CANVASFX: Max concurrent effects reached, dropping effect');
+                logger.warn('⚠️ CANVASFX: Max concurrent effects reached, dropping effect');
                 this.effectStats.droppedEffects++;
                 return null;
             }
             
             const item = await this.itemService.getItemById(itemId);
             if (!item) {
-                console.error('❌ CANVASFX: Item not found:', itemId);
+                logger.error('❌ CANVASFX: Item not found:', itemId);
                 return null;
             }
             
-            console.log(`🎨 CANVASFX DEBUG: Item found - name: ${item.name}, display_name: ${item.display_name}`);
+            logger.debug(`🎨 CANVASFX DEBUG: Item found - name: ${item.name}, display_name: ${item.display_name}`);
             
             const effectConfig = this.getEffectConfig(item);
-            console.log(`🎨 CANVASFX DEBUG: Effect config retrieved:`, effectConfig);
+            logger.debug(`🎨 CANVASFX DEBUG: Effect config retrieved:`, effectConfig);
             
             // Handle buff-duration effects specially
             let effectDuration = effectConfig.duration;
             if (effectConfig.duration === 'buff-duration' && effectParams.buffDuration) {
                 effectDuration = effectParams.buffDuration * 1000; // Convert seconds to milliseconds
-                console.log(`🎨 CANVASFX: Using buff duration of ${effectParams.buffDuration}s for ${item.name}`);
+                logger.debug(`🎨 CANVASFX: Using buff duration of ${effectParams.buffDuration}s for ${item.name}`);
             }
             
             // Handle multi-phase effects
@@ -810,12 +812,12 @@ class CanvasFxService extends EventEmitter {
             
             // Broadcast to all viewers
             if (this.io) {
-                console.log(`📡 CANVASFX: About to broadcast canvas-effect-trigger for ${item.display_name}`);
-                console.log(`📡 CANVASFX: Effect data being sent:`, JSON.stringify(effect, null, 2));
+                logger.debug(`📡 CANVASFX: About to broadcast canvas-effect-trigger for ${item.display_name}`);
+                logger.debug(`📡 CANVASFX: Effect data being sent:`, JSON.stringify(effect, null, 2));
                 this.io.emit('canvas-effect-trigger', effect);
-                console.log(`📡 CANVASFX: Broadcasted effect ${effect.type} for item ${item.display_name}`);
+                logger.debug(`📡 CANVASFX: Broadcasted effect ${effect.type} for item ${item.display_name}`);
             } else {
-                console.error(`❌ CANVASFX: No io instance available to broadcast effect!`);
+                logger.error(`❌ CANVASFX: No io instance available to broadcast effect!`);
             }
             
             // Emit local event
@@ -827,13 +829,13 @@ class CanvasFxService extends EventEmitter {
                     this.cleanupEffect(effect.id);
                 }, effectDuration);
             } else {
-                console.log(`🎨 CANVASFX: Buff-synced effect ${effect.id} will be managed by buff lifecycle`);
+                logger.debug(`🎨 CANVASFX: Buff-synced effect ${effect.id} will be managed by buff lifecycle`);
             }
             
             return effect;
             
         } catch (error) {
-            console.error('❌ CANVASFX: Error triggering item effect:', error);
+            logger.error('❌ CANVASFX: Error triggering item effect:', error);
             return null;
         }
     }
@@ -843,14 +845,14 @@ class CanvasFxService extends EventEmitter {
         try {
             // Check concurrent effect limit
             if (this.activeEffects.size >= this.config.maxConcurrentEffects) {
-                console.warn('⚠️ CANVASFX: Max concurrent effects reached, dropping effect');
+                logger.warn('⚠️ CANVASFX: Max concurrent effects reached, dropping effect');
                 this.effectStats.droppedEffects++;
                 return null;
             }
             
             const item = await this.itemService.getItemById(itemId);
             if (!item) {
-                console.error('❌ CANVASFX: Item not found:', itemId);
+                logger.error('❌ CANVASFX: Item not found:', itemId);
                 return null;
             }
             
@@ -860,7 +862,7 @@ class CanvasFxService extends EventEmitter {
             let effectDuration = effectConfig.duration;
             if (effectConfig.duration === 'buff-duration' && effectParams.buffDuration) {
                 effectDuration = effectParams.buffDuration * 1000; // Convert seconds to milliseconds
-                console.log(`🎨 CANVASFX: Using buff duration of ${effectParams.buffDuration}s for positioned ${item.name}`);
+                logger.debug(`🎨 CANVASFX: Using buff duration of ${effectParams.buffDuration}s for positioned ${item.name}`);
             }
             
             // Handle multi-phase effects
@@ -902,7 +904,7 @@ class CanvasFxService extends EventEmitter {
             // Broadcast to all viewers
             if (this.io) {
                 this.io.emit('canvas-effect-trigger', effect);
-                console.log(`📡 CANVASFX: Broadcasted positioned effect ${effect.type} for item ${item.display_name} at (${position.x}, ${position.y})`);
+                logger.debug(`📡 CANVASFX: Broadcasted positioned effect ${effect.type} for item ${item.display_name} at (${position.x}, ${position.y})`);
             }
             
             // Emit local event
@@ -914,13 +916,13 @@ class CanvasFxService extends EventEmitter {
                     this.cleanupEffect(effect.id);
                 }, effectDuration);
             } else {
-                console.log(`🎨 CANVASFX: Buff-synced positioned effect ${effect.id} will be managed by buff lifecycle`);
+                logger.debug(`🎨 CANVASFX: Buff-synced positioned effect ${effect.id} will be managed by buff lifecycle`);
             }
             
             return effect;
             
         } catch (error) {
-            console.error('❌ CANVASFX: Error triggering positioned item effect:', error);
+            logger.error('❌ CANVASFX: Error triggering positioned item effect:', error);
             return null;
         }
     }
@@ -928,7 +930,7 @@ class CanvasFxService extends EventEmitter {
     // Trigger multi-phase effect (like smoke bomb with initial puff + persistent smoke)
     async triggerMultiPhaseEffect(userId, itemId, streamId, item, effectConfig, totalDuration, effectParams) {
         try {
-            console.log(`🎨 CANVASFX: Triggering multi-phase effect for ${item.name} with total duration ${totalDuration}ms`);
+            logger.debug(`🎨 CANVASFX: Triggering multi-phase effect for ${item.name} with total duration ${totalDuration}ms`);
             
             const mainEffectId = `fx_multi_${userId}_${itemId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const phaseEffects = [];
@@ -982,7 +984,7 @@ class CanvasFxService extends EventEmitter {
                         // Broadcast phase to all viewers
                         if (this.io) {
                             this.io.emit('canvas-effect-trigger', phaseEffect);
-                            console.log(`📡 CANVASFX: Broadcasted phase "${phase.name}" of ${item.display_name} (${phaseDuration}ms)`);
+                            logger.debug(`📡 CANVASFX: Broadcasted phase "${phase.name}" of ${item.display_name} (${phaseDuration}ms)`);
                         }
                         
                         // Auto-cleanup after phase duration (only for non-buff-synced phases or last phase)
@@ -991,7 +993,7 @@ class CanvasFxService extends EventEmitter {
                                 this.cleanupEffect(phaseEffect.id);
                             }, phaseDuration);
                         } else {
-                            console.log(`🎨 CANVASFX: Phase "${phase.name}" will be managed by buff lifecycle`);
+                            logger.debug(`🎨 CANVASFX: Phase "${phase.name}" will be managed by buff lifecycle`);
                         }
                     }
                 }, phase.delay || 0);
@@ -1016,13 +1018,13 @@ class CanvasFxService extends EventEmitter {
             };
             this.emit('effect-triggered', mainEffect);
             
-            console.log(`✅ CANVASFX: Multi-phase effect "${item.name}" scheduled with ${phaseEffects.length} phases`);
+            logger.debug(`✅ CANVASFX: Multi-phase effect "${item.name}" scheduled with ${phaseEffects.length} phases`);
             
             // Return the main effect for tracking
             return mainEffect;
             
         } catch (error) {
-            console.error('❌ CANVASFX: Error triggering multi-phase effect:', error);
+            logger.error('❌ CANVASFX: Error triggering multi-phase effect:', error);
             return null;
         }
     }
@@ -1768,7 +1770,7 @@ class CanvasFxService extends EventEmitter {
             // Emit local event
             this.emit('effect-completed', effect);
             
-            console.log(`🧹 CANVASFX: Cleaned up effect ${effectId}`);
+            logger.debug(`🧹 CANVASFX: Cleaned up effect ${effectId}`);
         }
     }
     
@@ -1797,14 +1799,14 @@ class CanvasFxService extends EventEmitter {
                         reason: reason,
                         effectId: effectId
                     });
-                    console.log(`📡 CANVASFX: Sent additional smoke bomb force clear for ${effectId}`);
+                    logger.debug(`📡 CANVASFX: Sent additional smoke bomb force clear for ${effectId}`);
                 }
             }
             
             // Emit local event
             this.emit('effect-cancelled', { ...effect, reason });
             
-            console.log(`🚫 CANVASFX: Cancelled effect ${effectId} (${effect.itemName}) - ${reason}`);
+            logger.debug(`🚫 CANVASFX: Cancelled effect ${effectId} (${effect.itemName}) - ${reason}`);
             return true;
         }
         return false;
@@ -1819,12 +1821,12 @@ class CanvasFxService extends EventEmitter {
             this.io.emit('canvas-effects-clear');
         }
         
-        console.log('🧹 CANVASFX: Cleared all active effects');
+        logger.debug('🧹 CANVASFX: Cleared all active effects');
     }
     
     // Force clear smoke bomb effects for a specific socket (e.g., former streamer)
     forceCleanupForSocket(socketId, reason = 'manual') {
-        console.log(`🎨 CANVASFX: Force cleaning up effects for socket ${socketId} - ${reason}`);
+        logger.debug(`🎨 CANVASFX: Force cleaning up effects for socket ${socketId} - ${reason}`);
         
         if (this.io && socketId) {
             // Send multiple cleanup events to ensure the client clears the effects
@@ -1836,7 +1838,7 @@ class CanvasFxService extends EventEmitter {
                 forceComplete: true
             });
             
-            console.log(`📡 CANVASFX: Sent comprehensive cleanup to socket ${socketId}`);
+            logger.debug(`📡 CANVASFX: Sent comprehensive cleanup to socket ${socketId}`);
         }
     }
     
@@ -1877,7 +1879,7 @@ class CanvasFxService extends EventEmitter {
             socket.emit('canvas-effects-sync', { effects: this.getAllActiveEffects() });
         });
         
-        console.log(`🔌 CANVASFX: Client connected, sent ${activeEffects.length} active effects`);
+        logger.debug(`🔌 CANVASFX: Client connected, sent ${activeEffects.length} active effects`);
     }
     
     // Lifecycle entry point — uniform name across services for the
@@ -1895,7 +1897,7 @@ class CanvasFxService extends EventEmitter {
         
         this.activeEffects.clear();
         this.buffSyncedEffects.clear();
-        console.log('🎨 CANVASFX: Service shutdown complete');
+        logger.debug('🎨 CANVASFX: Service shutdown complete');
     }
 }
 

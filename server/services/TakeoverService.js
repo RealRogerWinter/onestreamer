@@ -1,3 +1,5 @@
+const logger = require('../bootstrap/logger').child({ svc: 'TakeoverService' });
+
 class TakeoverService {
   constructor(redisClient = null, sessionService = null) {
     this.redisClient = redisClient;
@@ -13,12 +15,12 @@ class TakeoverService {
     // Game mode integration (optional)
     this.gameStreamService = null;
 
-    console.log(`🔧 TAKEOVER: Cooldown settings (${process.env.NODE_ENV || 'production'}):`);
-    console.log(`   Global cooldown: ${this.globalCooldownSeconds}s`);
-    console.log(`   Individual cooldown: ${this.individualCooldownSeconds}s`);
+    logger.debug(`🔧 TAKEOVER: Cooldown settings (${process.env.NODE_ENV || 'production'}):`);
+    logger.debug(`   Global cooldown: ${this.globalCooldownSeconds}s`);
+    logger.debug(`   Individual cooldown: ${this.individualCooldownSeconds}s`);
 
     // Initialize lastStreamStartTime asynchronously
-    this.loadLastStreamStartTime().catch(console.error);
+    this.loadLastStreamStartTime().catch((err) => logger.error({ err }, "loadLastStreamStartTime failed"));
   }
 
   /**
@@ -26,7 +28,7 @@ class TakeoverService {
    */
   setGameStreamService(gameStreamService) {
     this.gameStreamService = gameStreamService;
-    console.log('🔧 TAKEOVER: Game stream service integrated');
+    logger.debug('🔧 TAKEOVER: Game stream service integrated');
   }
 
   async canTakeOver(socketId) {
@@ -34,7 +36,7 @@ class TakeoverService {
       // Check if game mode is active (highest priority block)
       if (this.gameStreamService && !this.gameStreamService.canTakeOver()) {
         const denial = this.gameStreamService.getTakeoverDenialReason();
-        console.log(`   ❌ Game mode is active - takeover blocked`);
+        logger.debug(`   ❌ Game mode is active - takeover blocked`);
         return denial || {
           allowed: false,
           reason: 'GAME_MODE_ACTIVE',
@@ -55,16 +57,16 @@ class TakeoverService {
       
       const identifier = ip || socketId; // Fallback to socketId if no IP available
       
-      console.log(`🔍 TAKEOVER: Checking if ${socketId} (IP: ${ip || 'unknown'}) can take over`);
-      console.log(`   Using identifier: ${identifier}`);
-      console.log(`   Global cooldown: ${this.globalCooldownSeconds}s`);
-      console.log(`   Individual cooldown: ${this.individualCooldownSeconds}s`);
-      console.log(`   Last stream start: ${this.lastStreamStartTime ? new Date(this.lastStreamStartTime).toISOString() : 'never'}`);
+      logger.debug(`🔍 TAKEOVER: Checking if ${socketId} (IP: ${ip || 'unknown'}) can take over`);
+      logger.debug(`   Using identifier: ${identifier}`);
+      logger.debug(`   Global cooldown: ${this.globalCooldownSeconds}s`);
+      logger.debug(`   Individual cooldown: ${this.individualCooldownSeconds}s`);
+      logger.debug(`   Last stream start: ${this.lastStreamStartTime ? new Date(this.lastStreamStartTime).toISOString() : 'never'}`);
       
       // Check individual IP cooldown first
       const ipCooldown = await this.getIpCooldown(identifier);
       if (ipCooldown && ipCooldown.remaining > 0) {
-        console.log(`   ❌ Individual cooldown active: ${ipCooldown.remaining}s remaining`);
+        logger.debug(`   ❌ Individual cooldown active: ${ipCooldown.remaining}s remaining`);
         return {
           allowed: false,
           reason: 'individual_cooldown',
@@ -75,7 +77,7 @@ class TakeoverService {
       // Check for extended cooldown from guard items first
       if (this.extendedCooldownUntil && now < this.extendedCooldownUntil) {
         const remainingMs = this.extendedCooldownUntil - now;
-        console.log(`   ❌ Extended cooldown active (guard item): ${Math.ceil(remainingMs / 1000)}s remaining`);
+        logger.debug(`   ❌ Extended cooldown active (guard item): ${Math.ceil(remainingMs / 1000)}s remaining`);
         return {
           allowed: false,
           reason: 'global_cooldown',
@@ -88,11 +90,11 @@ class TakeoverService {
         const globalCooldownMs = this.globalCooldownSeconds * 1000;
         const timeSinceStreamStart = now - this.lastStreamStartTime;
         
-        console.log(`   Time since last stream start: ${Math.floor(timeSinceStreamStart / 1000)}s`);
+        logger.debug(`   Time since last stream start: ${Math.floor(timeSinceStreamStart / 1000)}s`);
         
         if (timeSinceStreamStart < globalCooldownMs) {
           const remainingMs = globalCooldownMs - timeSinceStreamStart;
-          console.log(`   ❌ Global cooldown active: ${Math.ceil(remainingMs / 1000)}s remaining`);
+          logger.debug(`   ❌ Global cooldown active: ${Math.ceil(remainingMs / 1000)}s remaining`);
           return {
             allowed: false,
             reason: 'global_cooldown',
@@ -101,10 +103,10 @@ class TakeoverService {
         }
       }
 
-      console.log(`   ✅ Takeover allowed for ${socketId} (IP: ${ip || 'unknown'})`);
+      logger.debug(`   ✅ Takeover allowed for ${socketId} (IP: ${ip || 'unknown'})`);
       return { allowed: true, ip };
     } catch (error) {
-      console.error('Error checking takeover eligibility:', error);
+      logger.error('Error checking takeover eligibility:', error);
       return { allowed: true };
     }
   }
@@ -115,10 +117,10 @@ class TakeoverService {
     // CRITICAL: If skipGlobalCooldown is true (for viewbots), do NOT set lastStreamStartTime
     if (!skipGlobalCooldown) {
       this.lastStreamStartTime = timestamp; // Track when new stream starts
-      console.log(`📝 TAKEOVER: Recording takeover at ${new Date(timestamp).toISOString()}`);
-      console.log(`   Global cooldown will be active for ${this.globalCooldownSeconds}s`);
+      logger.debug(`📝 TAKEOVER: Recording takeover at ${new Date(timestamp).toISOString()}`);
+      logger.debug(`   Global cooldown will be active for ${this.globalCooldownSeconds}s`);
     } else {
-      console.log(`📝 TAKEOVER: Recording takeover WITHOUT global cooldown (viewbot)`);
+      logger.debug(`📝 TAKEOVER: Recording takeover WITHOUT global cooldown (viewbot)`);
     }
     
     try {
@@ -130,7 +132,7 @@ class TakeoverService {
         this.inMemoryStorage.set('last_stream_start_time', timestamp);
       }
     } catch (error) {
-      console.error('Error recording takeover:', error);
+      logger.error('Error recording takeover:', error);
       this.inMemoryStorage.set('last_takeover_time', timestamp);
       this.inMemoryStorage.set('last_stream_start_time', timestamp);
     }
@@ -145,7 +147,7 @@ class TakeoverService {
         return this.inMemoryStorage.get('last_takeover_time') || null;
       }
     } catch (error) {
-      console.error('Error getting last takeover time:', error);
+      logger.error('Error getting last takeover time:', error);
       return this.inMemoryStorage.get('last_takeover_time') || null;
     }
   }
@@ -188,7 +190,7 @@ class TakeoverService {
     
     this.ipCooldowns.set(identifier, { timestamp, reason, duration });
     
-    console.log(`🔒 TAKEOVER: Set ${duration}s cooldown for ${socketId} (IP: ${ip || 'unknown'}, identifier: ${identifier}, reason: ${reason})`);
+    logger.debug(`🔒 TAKEOVER: Set ${duration}s cooldown for ${socketId} (IP: ${ip || 'unknown'}, identifier: ${identifier}, reason: ${reason})`);
     
     try {
       if (this.redisClient) {
@@ -196,7 +198,7 @@ class TakeoverService {
         await this.redisClient.expire(`cooldown:${identifier}`, duration);
       }
     } catch (error) {
-      console.error('Error setting IP cooldown in Redis:', error);
+      logger.error('Error setting IP cooldown in Redis:', error);
     }
   }
 
@@ -247,7 +249,7 @@ class TakeoverService {
         }
       }
     } catch (error) {
-      console.error('Error getting IP cooldown from Redis:', error);
+      logger.error('Error getting IP cooldown from Redis:', error);
     }
 
     return null;
@@ -287,7 +289,7 @@ class TakeoverService {
         await this.redisClient.del(`cooldown:${identifier}`);
       }
     } catch (error) {
-      console.error('Error removing cooldown from Redis:', error);
+      logger.error('Error removing cooldown from Redis:', error);
     }
 
     return hadCooldown;
@@ -305,7 +307,7 @@ class TakeoverService {
         }
       }
     } catch (error) {
-      console.error('Error resetting cooldowns in Redis:', error);
+      logger.error('Error resetting cooldowns in Redis:', error);
     }
 
     return count;
@@ -320,7 +322,7 @@ class TakeoverService {
         this.lastStreamStartTime = this.inMemoryStorage.get('last_stream_start_time') || null;
       }
     } catch (error) {
-      console.error('Error loading last stream start time:', error);
+      logger.error('Error loading last stream start time:', error);
       this.lastStreamStartTime = null;
     }
   }
@@ -373,7 +375,7 @@ class TakeoverService {
         }
       }
     } catch (error) {
-      console.error('Error getting all cooldowns from Redis:', error);
+      logger.error('Error getting all cooldowns from Redis:', error);
     }
 
     return cooldowns;
@@ -381,14 +383,14 @@ class TakeoverService {
 
   // Methods for item-based cooldown modifications
   async modifyGlobalCooldown(changeSeconds, reason = 'item_effect') {
-    console.log(`🔧 TAKEOVER: ===== MODIFY GLOBAL COOLDOWN CALLED =====`);
-    console.log(`🔧 TAKEOVER: Change: ${changeSeconds}s, Reason: ${reason}`);
-    console.log(`🔧 TAKEOVER: Current lastStreamStartTime: ${this.lastStreamStartTime}`);
+    logger.debug(`🔧 TAKEOVER: ===== MODIFY GLOBAL COOLDOWN CALLED =====`);
+    logger.debug(`🔧 TAKEOVER: Change: ${changeSeconds}s, Reason: ${reason}`);
+    logger.debug(`🔧 TAKEOVER: Current lastStreamStartTime: ${this.lastStreamStartTime}`);
     try {
       const now = Date.now();
       
       if (!this.lastStreamStartTime) {
-        console.log(`🔧 TAKEOVER: No active stream - handling cooldown modification`);
+        logger.debug(`🔧 TAKEOVER: No active stream - handling cooldown modification`);
         
         if (changeSeconds > 0) {
           // For increases (guard items), ADD to any existing extended cooldown
@@ -398,14 +400,14 @@ class TakeoverService {
             const currentRemaining = this.extendedCooldownUntil - now;
             this.extendedCooldownUntil += (changeSeconds * 1000);
             const newRemaining = this.extendedCooldownUntil - now;
-            console.log(`🔧 TAKEOVER: Added ${changeSeconds}s to existing extended cooldown`);
-            console.log(`   Previous remaining: ${Math.ceil(currentRemaining / 1000)}s`);
-            console.log(`   New total remaining: ${Math.ceil(newRemaining / 1000)}s`);
+            logger.debug(`🔧 TAKEOVER: Added ${changeSeconds}s to existing extended cooldown`);
+            logger.debug(`   Previous remaining: ${Math.ceil(currentRemaining / 1000)}s`);
+            logger.debug(`   New total remaining: ${Math.ceil(newRemaining / 1000)}s`);
           } else {
             // Create new extended cooldown
             this.extendedCooldownUntil = now + (changeSeconds * 1000);
-            console.log(`🔧 TAKEOVER: Created new extended cooldown: ${changeSeconds}s (reason: ${reason})`);
-            console.log(`   Extended until: ${new Date(this.extendedCooldownUntil).toISOString()}`);
+            logger.debug(`🔧 TAKEOVER: Created new extended cooldown: ${changeSeconds}s (reason: ${reason})`);
+            logger.debug(`   Extended until: ${new Date(this.extendedCooldownUntil).toISOString()}`);
           }
         } else {
           // For decreases (weapon items), reduce extended cooldown if it exists
@@ -415,13 +417,13 @@ class TakeoverService {
             
             if (newRemaining > 0) {
               this.extendedCooldownUntil = now + newRemaining;
-              console.log(`🔧 TAKEOVER: Reduced extended cooldown from ${Math.ceil(currentRemaining / 1000)}s to ${Math.ceil(newRemaining / 1000)}s`);
+              logger.debug(`🔧 TAKEOVER: Reduced extended cooldown from ${Math.ceil(currentRemaining / 1000)}s to ${Math.ceil(newRemaining / 1000)}s`);
             } else {
               this.extendedCooldownUntil = null;
-              console.log(`🔧 TAKEOVER: Extended cooldown completely removed by weapon`);
+              logger.debug(`🔧 TAKEOVER: Extended cooldown completely removed by weapon`);
             }
           } else {
-            console.log(`🔧 TAKEOVER: Cannot reduce non-existent cooldown (reason: ${reason})`);
+            logger.debug(`🔧 TAKEOVER: Cannot reduce non-existent cooldown (reason: ${reason})`);
             return false;
           }
         }
@@ -433,10 +435,10 @@ class TakeoverService {
         // Calculate remaining cooldown before modification
         const remainingMs = Math.max(0, originalGlobalCooldownMs - timeSinceStreamStart);
         
-        console.log(`🔧 TAKEOVER: Current state before modification:`);
-        console.log(`   Time since stream start: ${Math.ceil(timeSinceStreamStart / 1000)}s`);
-        console.log(`   Base global cooldown: ${Math.ceil(originalGlobalCooldownMs / 1000)}s`);
-        console.log(`   Current remaining: ${Math.ceil(remainingMs / 1000)}s`);
+        logger.debug(`🔧 TAKEOVER: Current state before modification:`);
+        logger.debug(`   Time since stream start: ${Math.ceil(timeSinceStreamStart / 1000)}s`);
+        logger.debug(`   Base global cooldown: ${Math.ceil(originalGlobalCooldownMs / 1000)}s`);
+        logger.debug(`   Current remaining: ${Math.ceil(remainingMs / 1000)}s`);
         
         if (changeSeconds > 0) {
           // For increases (guard items), ADD to the current cooldown duration
@@ -446,17 +448,17 @@ class TakeoverService {
           // First, check for extended cooldown
           if (this.extendedCooldownUntil && now < this.extendedCooldownUntil) {
             currentEffectiveCooldownEnd = this.extendedCooldownUntil;
-            console.log(`🔧 TAKEOVER: Found existing extended cooldown ending at ${new Date(currentEffectiveCooldownEnd).toISOString()}`);
+            logger.debug(`🔧 TAKEOVER: Found existing extended cooldown ending at ${new Date(currentEffectiveCooldownEnd).toISOString()}`);
           }
           // Otherwise, check for base cooldown
           else if (remainingMs > 0) {
             currentEffectiveCooldownEnd = now + remainingMs;
-            console.log(`🔧 TAKEOVER: Found base cooldown with ${Math.ceil(remainingMs / 1000)}s remaining`);
+            logger.debug(`🔧 TAKEOVER: Found base cooldown with ${Math.ceil(remainingMs / 1000)}s remaining`);
           }
           // No cooldown active, start from now
           else {
             currentEffectiveCooldownEnd = now;
-            console.log(`🔧 TAKEOVER: No active cooldown, starting from now`);
+            logger.debug(`🔧 TAKEOVER: No active cooldown, starting from now`);
           }
           
           // Add the new cooldown time to the current effective end time
@@ -464,14 +466,14 @@ class TakeoverService {
           this.extendedCooldownUntil = currentEffectiveCooldownEnd + additionalMs;
           
           const totalRemaining = Math.ceil((this.extendedCooldownUntil - now) / 1000);
-          console.log(`🔧 TAKEOVER: Guard item used - ADDING ${changeSeconds}s to cooldown`);
-          console.log(`   Previous effective end: ${new Date(currentEffectiveCooldownEnd).toISOString()}`);
-          console.log(`   New extended cooldown until: ${new Date(this.extendedCooldownUntil).toISOString()}`);
-          console.log(`   Total cooldown remaining: ${totalRemaining}s`);
+          logger.debug(`🔧 TAKEOVER: Guard item used - ADDING ${changeSeconds}s to cooldown`);
+          logger.debug(`   Previous effective end: ${new Date(currentEffectiveCooldownEnd).toISOString()}`);
+          logger.debug(`   New extended cooldown until: ${new Date(this.extendedCooldownUntil).toISOString()}`);
+          logger.debug(`   Total cooldown remaining: ${totalRemaining}s`);
         } else {
           // For decreases (weapon items), reduce from current remaining
-          console.log(`🔧 TAKEOVER: Weapon item used - attempting to reduce cooldown by ${Math.abs(changeSeconds)}s`);
-          console.log(`   Current remaining: ${Math.ceil(remainingMs / 1000)}s`);
+          logger.debug(`🔧 TAKEOVER: Weapon item used - attempting to reduce cooldown by ${Math.abs(changeSeconds)}s`);
+          logger.debug(`   Current remaining: ${Math.ceil(remainingMs / 1000)}s`);
           
           // Check if we have an extended cooldown active
           if (this.extendedCooldownUntil && now < this.extendedCooldownUntil) {
@@ -481,10 +483,10 @@ class TakeoverService {
             
             if (newExtendedRemaining > 0) {
               this.extendedCooldownUntil = now + newExtendedRemaining;
-              console.log(`🔧 TAKEOVER: Reduced extended cooldown to ${Math.ceil(newExtendedRemaining / 1000)}s`);
+              logger.debug(`🔧 TAKEOVER: Reduced extended cooldown to ${Math.ceil(newExtendedRemaining / 1000)}s`);
             } else {
               this.extendedCooldownUntil = null;
-              console.log(`🔧 TAKEOVER: Extended cooldown completely removed by weapon`);
+              logger.debug(`🔧 TAKEOVER: Extended cooldown completely removed by weapon`);
             }
           } else {
             // No extended cooldown, use standard logic
@@ -493,9 +495,9 @@ class TakeoverService {
             if (newRemainingMs > 0) {
               // Create a new extended cooldown for the reduced time
               this.extendedCooldownUntil = now + newRemainingMs;
-              console.log(`🔧 TAKEOVER: Created new reduced cooldown: ${Math.ceil(newRemainingMs / 1000)}s`);
+              logger.debug(`🔧 TAKEOVER: Created new reduced cooldown: ${Math.ceil(newRemainingMs / 1000)}s`);
             } else {
-              console.log(`🔧 TAKEOVER: Weapon completely removed remaining cooldown`);
+              logger.debug(`🔧 TAKEOVER: Weapon completely removed remaining cooldown`);
             }
           }
         }
@@ -509,12 +511,12 @@ class TakeoverService {
           this.inMemoryStorage.set('last_stream_start_time', this.lastStreamStartTime);
         }
       } catch (error) {
-        console.error('Error persisting global cooldown modification:', error);
+        logger.error('Error persisting global cooldown modification:', error);
       }
       
       return true;
     } catch (error) {
-      console.error('Error modifying global cooldown:', error);
+      logger.error('Error modifying global cooldown:', error);
       return false;
     }
   }
@@ -522,10 +524,10 @@ class TakeoverService {
   async resetAllIndividualCooldowns(reason = 'chaos_orb') {
     try {
       const count = await this.resetAllCooldowns();
-      console.log(`🔧 TAKEOVER: Reset all ${count} individual cooldowns (reason: ${reason})`);
+      logger.debug(`🔧 TAKEOVER: Reset all ${count} individual cooldowns (reason: ${reason})`);
       return count;
     } catch (error) {
-      console.error('Error resetting all individual cooldowns:', error);
+      logger.error('Error resetting all individual cooldowns:', error);
       return 0;
     }
   }
@@ -547,35 +549,35 @@ class TakeoverService {
             // Don't change the TTL - let it expire naturally with the extended time
           }
         } catch (error) {
-          console.error(`Error updating frozen cooldown for ${identifier}:`, error);
+          logger.error(`Error updating frozen cooldown for ${identifier}:`, error);
         }
       }
       
-      console.log(`🔧 TAKEOVER: Froze ${this.ipCooldowns.size} individual cooldowns for ${durationSeconds}s (reason: ${reason})`);
+      logger.debug(`🔧 TAKEOVER: Froze ${this.ipCooldowns.size} individual cooldowns for ${durationSeconds}s (reason: ${reason})`);
       return this.ipCooldowns.size;
     } catch (error) {
-      console.error('Error freezing individual cooldowns:', error);
+      logger.error('Error freezing individual cooldowns:', error);
       return 0;
     }
   }
 
   // Get current global cooldown remaining time
   async getGlobalCooldownRemaining() {
-    console.log(`🔧 TAKEOVER: ===== GET GLOBAL COOLDOWN REMAINING =====`);
-    console.log(`🔧 TAKEOVER: lastStreamStartTime: ${this.lastStreamStartTime}`);
-    console.log(`🔧 TAKEOVER: globalCooldownSeconds: ${this.globalCooldownSeconds}`);
+    logger.debug(`🔧 TAKEOVER: ===== GET GLOBAL COOLDOWN REMAINING =====`);
+    logger.debug(`🔧 TAKEOVER: lastStreamStartTime: ${this.lastStreamStartTime}`);
+    logger.debug(`🔧 TAKEOVER: globalCooldownSeconds: ${this.globalCooldownSeconds}`);
     
     const now = Date.now();
     
     // First check for extended cooldown (can exist even without active stream)
     if (this.extendedCooldownUntil && now < this.extendedCooldownUntil) {
       const remaining = Math.ceil((this.extendedCooldownUntil - now) / 1000);
-      console.log(`🔧 TAKEOVER: Using extended cooldown - remaining: ${remaining}s`);
+      logger.debug(`🔧 TAKEOVER: Using extended cooldown - remaining: ${remaining}s`);
       return Math.max(0, remaining);
     }
     
     if (!this.lastStreamStartTime) {
-      console.log(`🔧 TAKEOVER: No stream start time and no extended cooldown - returning 0`);
+      logger.debug(`🔧 TAKEOVER: No stream start time and no extended cooldown - returning 0`);
       return 0;
     }
     
@@ -585,10 +587,10 @@ class TakeoverService {
     const globalCooldownMs = this.globalCooldownSeconds * 1000;
     const remaining = Math.max(0, Math.ceil((globalCooldownMs - timeSinceStreamStart) / 1000));
     
-    console.log(`🔧 TAKEOVER: now: ${now} (${new Date(now).toISOString()})`);
-    console.log(`🔧 TAKEOVER: timeSinceStreamStart: ${timeSinceStreamStart}ms`);
-    console.log(`🔧 TAKEOVER: globalCooldownMs: ${globalCooldownMs}ms`);
-    console.log(`🔧 TAKEOVER: remaining: ${remaining}s`);
+    logger.debug(`🔧 TAKEOVER: now: ${now} (${new Date(now).toISOString()})`);
+    logger.debug(`🔧 TAKEOVER: timeSinceStreamStart: ${timeSinceStreamStart}ms`);
+    logger.debug(`🔧 TAKEOVER: globalCooldownMs: ${globalCooldownMs}ms`);
+    logger.debug(`🔧 TAKEOVER: remaining: ${remaining}s`);
     
     return remaining;
   }
