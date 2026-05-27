@@ -69,13 +69,17 @@
 //                   transcriptionService via getter)
 //   [extracted] MovieBot/VisionBot/Groq/      → routes/admin-ai.js        (15B.3.j — landed)
 //               OpenAI admin                   (14 routes; both bot services eager)
+//   [extracted] admin moderation/IP-ban/      → routes/admin-moderation.js (15B.3.c — landed)
+//               streaming-logs                 (16 routes from two non-contiguous
+//                                              source blocks; auth=authenticateModerator;
+//                                              streamingLogsService required explicitly
+//                                              in index.js since it's not in the eager
+//                                              `services` bag)
 //
 //   [Phase 15B residual — explicit] route clusters still inline:
 //     - visualfx debug static assets       (~5 routes; trivial — paths
 //                                            could move to public/ static)
 //     - emoji CRUD (user + admin)          (~6 routes; auth-isolated)
-//     - admin moderation ban/timeout       (~16 routes when combined with
-//                                            admin verify / IP-ban / logs)
 //     - user chat-color get/set            (~2 routes; tiny cluster)
 //     - admin dashboard HTML render        (1 route)
 //     - admin stream control               (~4 routes)
@@ -83,7 +87,7 @@
 //     - debug + system metrics             (~5 routes)
 //     - uploaded videos                    (~3 routes)
 //
-// Total residual: ~42 inline handlers (down from ~140 at Phase-15-start), ~1500 LoC of route bodies.
+// Total residual: ~26 inline handlers (down from ~140 at Phase-15-start), ~900 LoC of route bodies.
 // All have a clean destination per the table above; further extractions
 // would be a Phase 16 candidate if scope permits.
 //
@@ -1090,6 +1094,27 @@ app.use(require('./routes/health'));
 const { authenticateAdmin, authenticateModerator } = require('./middleware/auth');
 // AuthService already imported at the top of the file
 
+// Phase 15B.3.c — admin moderation/IP-ban/streaming-logs cluster extracted
+// to routes/admin-moderation.js (16 routes; all auth via authenticateModerator).
+// Mounted here — after `authenticateModerator` is in scope.
+// `streamingLogsService` is not part of the eager `services` factory bag
+// (it's a singleton lazy-required by callers); require it here so the
+// deps-bag arg has a real value at module-load.
+const streamingLogsService = require('./services/StreamingLogsService');
+app.use(require('./routes/admin-moderation')({
+  authenticateModerator,
+  authService,
+  IPBanService,
+  streamService,
+  streamingLogsService,
+  mediasoupService,
+  streamNotifier,
+  io,
+  axios,
+  https,
+  logger,
+}));
+
 // Simple admin auth middleware (kept for legacy endpoints that might need admin key)
 const adminKeyAuth = (req, res, next) => {
   const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
@@ -2014,408 +2039,6 @@ app.get('/admin/performance-stats', authenticateAdmin, (req, res) => {
   }
 });
 
-// Stream Moderation Endpoints
-app.get('/api/admin/verify', authenticateModerator, (req, res) => {
-  res.json({ success: true, isAdmin: req.userRecord.is_admin === 1, isModerator: req.userRecord.is_moderator === 1 });
-});
-
-app.get('/api/admin/stream-details/:streamerId', authenticateModerator, (req, res) => {
-  try {
-    const { streamerId } = req.params;
-    const socket = io.sockets.sockets.get(streamerId);
-    
-    if (!socket) {
-      return res.status(404).json({ error: 'Stream not found' });
-    }
-    
-    const ipAddress = IPBanService.getIPFromSocket(socket);
-    const startTime = socket.handshake.time || new Date().toISOString();
-    
-    res.json({
-      streamerId,
-      ipAddress,
-      startTime,
-      connectionTime: socket.handshake.time
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to get stream details');
-    res.status(500).json({ error: 'Failed to get stream details' });
-  }
-});
-
-app.post('/api/admin/stream/disconnect', authenticateModerator, async (req, res) => {
-  try {
-    const { streamerId } = req.body;
-    
-    if (!streamerId) {
-      return res.status(400).json({ error: 'Streamer ID required' });
-    }
-    
-    const currentStreamer = streamService.getCurrentStreamer();
-    if (currentStreamer !== streamerId) {
-      return res.status(400).json({ error: 'Specified streamer is not currently streaming' });
-    }
-    
-    // Check if this is a viewbot stream
-    const isViewbotStream = (viewbotService && viewbotService.isViewbotStream(streamerId)) || 
-                           viewbotSocketIds.has(streamerId);
-    
-    if (isViewbotStream) {
-      // For viewbots, trigger rotation instead of disconnect
-      logger.info(`🔨 MODERATION: Admin triggering viewbot rotation for stream ${streamerId}`);
-      
-      // Try different rotation methods based on what's available
-      let rotationResult = { success: false, message: 'No rotation service available' };
-      
-      if (viewBotClientService) {
-        // Use ViewBotClientService for rotation
-        rotationResult = await viewBotClientService.forceRotation();
-        logger.info({ rotationResult }, `🤖 ROTATION: Triggered via ViewBotClientService`);
-      } else if (global.viewBotRotation) {
-        // Use simple rotation service
-        await global.viewBotRotation.forceRotation();
-        rotationResult = { success: true, message: 'Rotation triggered via simple rotation service' };
-        logger.info(`🤖 ROTATION: Triggered via simple rotation service`);
-      }
-      
-      // Also ensure rotation is enabled after this action
-      if (global.viewBotRotation) {
-        await global.viewBotRotation.startRotation();
-      }
-      
-      res.json({ 
-        success: true, 
-        message: 'Viewbot rotation triggered',
-        streamerId,
-        rotationResult
-      });
-    } else {
-      // For regular users, perform normal disconnect
-      logger.info(`🔨 MODERATION: Admin disconnecting regular stream ${streamerId}`);
-      
-      // Get the socket
-      const socket = io.sockets.sockets.get(streamerId);
-      if (!socket) {
-        return res.status(404).json({ error: 'Streamer socket not found' });
-      }
-      
-      // Clear the streamer
-      streamService.clearStreamer();
-      mediasoupService.currentStreamer = null;
-      
-      // Cleanup MediaSoup resources
-      mediasoupService.cleanup(streamerId);
-      
-      // Notify the streamer they've been disconnected
-      socket.emit('stream-disconnected-by-admin', { 
-        reason: 'Disconnected by administrator',
-        timestamp: new Date().toISOString()
-      });
-      
-      // Disconnect the socket
-      socket.disconnect(true);
-      
-      // Notify all viewers
-      streamNotifier.streamEnded({ reason: 'admin_disconnect' });
-      
-      // After disconnecting a regular user, ensure viewbot rotation is enabled
-      if (global.viewBotRotation) {
-        logger.info(`🤖 ROTATION: Enabling rotation after user disconnect`);
-        await global.viewBotRotation.startRotation();
-      }
-      
-      res.json({ 
-        success: true, 
-        message: 'Stream disconnected successfully',
-        streamerId,
-        rotationEnabled: true
-      });
-    }
-  } catch (error) {
-    logger.error({ err: error }, '❌ MODERATION: Failed to disconnect/rotate stream');
-    res.status(500).json({ error: 'Failed to disconnect stream' });
-  }
-});
-
-app.post('/api/admin/stream/ban-ip', authenticateModerator, async (req, res) => {
-  try {
-    const { streamerId, ip, reason } = req.body;
-    
-    if (!streamerId) {
-      return res.status(400).json({ error: 'Streamer ID required' });
-    }
-    
-    // Get the socket to extract IP if not provided
-    const socket = io.sockets.sockets.get(streamerId);
-    let ipToBan = ip;
-    
-    if (!ipToBan && socket) {
-      ipToBan = IPBanService.getIPFromSocket(socket);
-    }
-    
-    if (!ipToBan) {
-      return res.status(400).json({ error: 'Could not determine IP address to ban' });
-    }
-    
-    // Ban the IP
-    const banResult = await IPBanService.banIP(
-      ipToBan,
-      req.user.id,
-      req.userRecord.username,
-      reason || 'Banned by admin moderation',
-      true // permanent ban
-    );
-    
-    if (!banResult.success) {
-      return res.status(500).json({ error: 'Failed to ban IP', details: banResult.error });
-    }
-    
-    logger.info(`🚫 MODERATION: IP ${ipToBan} banned by ${req.userRecord.username}`);
-    
-    // If the streamer is currently streaming, disconnect them
-    const currentStreamer = streamService.getCurrentStreamer();
-    if (currentStreamer === streamerId) {
-      streamService.clearStreamer();
-      mediasoupService.currentStreamer = null;
-      mediasoupService.cleanup(streamerId);
-      
-      if (socket) {
-        socket.emit('banned', { 
-          reason: reason || 'Your IP has been banned',
-          timestamp: new Date().toISOString()
-        });
-        socket.disconnect(true);
-      }
-      
-      streamNotifier.streamEnded({ reason: 'streamer_banned' });
-    }
-    
-    // Disconnect any other sockets from this IP
-    io.sockets.sockets.forEach((otherSocket) => {
-      const socketIP = IPBanService.getIPFromSocket(otherSocket);
-      if (socketIP === ipToBan) {
-        otherSocket.emit('banned', { 
-          reason: 'Your IP has been banned',
-          timestamp: new Date().toISOString()
-        });
-        otherSocket.disconnect(true);
-      }
-    });
-    
-    res.json({ 
-      success: true, 
-      message: 'IP banned and connections terminated',
-      ip: ipToBan,
-      streamerId 
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ MODERATION: Failed to ban IP');
-    res.status(500).json({ error: 'Failed to ban IP' });
-  }
-});
-
-app.get('/api/admin/banned-ips', authenticateModerator, async (req, res) => {
-  try {
-    const bannedIPs = await IPBanService.getBannedIPs();
-    res.json({ success: true, bannedIPs });
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to get banned IPs');
-    res.status(500).json({ error: 'Failed to get banned IPs' });
-  }
-});
-
-app.post('/api/admin/unban-ip', authenticateModerator, async (req, res) => {
-  try {
-    const { ip } = req.body;
-    
-    if (!ip) {
-      return res.status(400).json({ error: 'IP address required' });
-    }
-    
-    // Pass the Socket.IO instance to properly notify unbanned clients
-    const result = await IPBanService.unbanIP(ip, io);
-    
-    if (!result.success) {
-      return res.status(500).json({ error: 'Failed to unban IP', details: result.error });
-    }
-    
-    logger.info(`✅ MODERATION: IP ${ip} unbanned by ${req.userRecord.username}`);
-    
-    res.json({ 
-      success: true, 
-      message: 'IP unbanned successfully',
-      ip 
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ MODERATION: Failed to unban IP');
-    res.status(500).json({ error: 'Failed to unban IP' });
-  }
-});
-
-// Manual IP ban endpoint
-app.post('/api/admin/ban-ip-manual', authenticateModerator, async (req, res) => {
-  try {
-    const { ip, reason, permanent, expiresAt } = req.body;
-    
-    if (!ip) {
-      return res.status(400).json({ error: 'IP address required' });
-    }
-    
-    // Basic IP validation
-    const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-    if (!ipRegex.test(ip)) {
-      return res.status(400).json({ error: 'Invalid IP address format' });
-    }
-    
-    const result = await IPBanService.banIP(
-      ip, 
-      req.userRecord.id, 
-      req.userRecord.username, 
-      reason || 'Manual ban by admin',
-      permanent !== false, // default to permanent
-      expiresAt || null
-    );
-    
-    if (!result.success) {
-      return res.status(500).json({ error: 'Failed to ban IP', details: result.error });
-    }
-    
-    logger.info(`🚫 MODERATION: IP ${ip} manually banned by ${req.userRecord.username} - Reason: ${reason}`);
-    
-    res.json({ 
-      success: true, 
-      message: 'IP banned successfully',
-      ip,
-      reason 
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ MODERATION: Failed to manually ban IP');
-    res.status(500).json({ error: 'Failed to ban IP' });
-  }
-});
-
-// Get streamer connection history
-app.get('/api/admin/streamer-connections', authenticateModerator, async (req, res) => {
-  try {
-    const { limit = 100, offset = 0, streamerId, ip } = req.query;
-    
-    let query = `
-      SELECT * FROM streamer_connections 
-      WHERE 1=1
-      AND ip_address NOT IN ('127.0.0.1', '::1', 'localhost')
-    `;
-    const params = [];
-    
-    if (streamerId) {
-      query += ` AND streamer_id = ?`;
-      params.push(streamerId);
-    }
-    
-    if (ip) {
-      query += ` AND ip_address = ?`;
-      params.push(ip);
-    }
-    
-    query += ` ORDER BY connected_at DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), parseInt(offset));
-    
-    const connections = await allAsync(query, params);
-    
-    res.json({ 
-      success: true, 
-      connections,
-      count: connections.length 
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to get streamer connections');
-    res.status(500).json({ error: 'Failed to get streamer connections' });
-  }
-});
-
-// Streaming Logs endpoints
-const streamingLogsService = require('./services/StreamingLogsService');
-
-// Get streaming logs
-app.get('/api/admin/streaming-logs', authenticateModerator, async (req, res) => {
-  try {
-    const filters = {
-      limit: parseInt(req.query.limit) || 100,
-      offset: parseInt(req.query.offset) || 0,
-      excludeViewbots: req.query.includeViewbots !== 'true',
-      ipAddress: req.query.ip,
-      userId: req.query.userId ? parseInt(req.query.userId) : undefined,
-      activeOnly: req.query.activeOnly === 'true',
-      startDate: req.query.startDate,
-      endDate: req.query.endDate
-    };
-    
-    const result = await streamingLogsService.getLogs(filters);
-    
-    if (!result.success) {
-      return res.status(500).json({ error: result.error });
-    }
-    
-    res.json(result);
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to get streaming logs');
-    res.status(500).json({ error: 'Failed to get streaming logs' });
-  }
-});
-
-// Get streaming logs statistics
-app.get('/api/admin/streaming-logs/stats', authenticateModerator, async (req, res) => {
-  try {
-    const result = await streamingLogsService.getStats();
-    
-    if (!result.success) {
-      return res.status(500).json({ error: result.error });
-    }
-    
-    res.json(result);
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to get streaming stats');
-    res.status(500).json({ error: 'Failed to get streaming stats' });
-  }
-});
-
-// Ban IP from streaming log
-app.post('/api/admin/streaming-logs/ban-ip', authenticateModerator, async (req, res) => {
-  try {
-    const { ip, sessionId, reason } = req.body;
-    
-    if (!ip) {
-      return res.status(400).json({ error: 'IP address required' });
-    }
-    
-    // Ban the IP
-    const result = await IPBanService.banIP(
-      ip,
-      req.userRecord.id,
-      req.userRecord.username,
-      reason || `Banned from streaming logs (Session: ${sessionId})`,
-      true, // permanent by default
-      null
-    );
-    
-    if (!result.success) {
-      return res.status(500).json({ error: 'Failed to ban IP', details: result.error });
-    }
-    
-    // Mark session as banned
-    await streamingLogsService.markSessionBanned(ip);
-    
-    logger.info(`🚫 STREAMING LOGS: IP ${ip} banned by ${req.userRecord.username} from logs`);
-    
-    res.json({ 
-      success: true, 
-      message: 'IP banned successfully',
-      ip
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ ADMIN: Failed to ban IP from logs');
-    res.status(500).json({ error: 'Failed to ban IP' });
-  }
-});
 
 // Video file upload endpoint for ViewBot
 app.post('/admin/upload-video', adminKeyAuth, upload.single('video'), (req, res) => {
