@@ -1,11 +1,17 @@
-const { runAsync, getAsync, allAsync } = require('../database/database');
+const { runAsync } = require('../database/database');
+const UserInventoryRepository = require('../database/repository/UserInventoryRepository');
 
 class InventoryService {
-    constructor(itemService, buffDebuffService = null) {
+    constructor(itemService, buffDebuffService = null, deps = {}) {
         this.itemService = itemService;
         this.buffDebuffService = buffDebuffService;
         this.streamService = null;
         this.sessionService = null;
+        // Repo wiring — accepts an injected repo for unit-test mocking,
+        // falls back to a default-constructed instance otherwise. Same
+        // shape as BuffDebuffService / ContinuousRecordingService /
+        // AccountService.
+        this.userInventoryRepository = deps.userInventoryRepository || new UserInventoryRepository();
     }
 
     // Set buff-debuff service dependency after initialization if needed
@@ -27,46 +33,11 @@ class InventoryService {
     }
 
     async getUserInventory(userId) {
-        const inventory = await allAsync(
-            `SELECT 
-                ui.id as inventory_id,
-                ui.item_id,
-                ui.quantity,
-                ui.acquired_at,
-                ui.last_used_at,
-                i.name,
-                i.display_name,
-                i.emoji,
-                i.description,
-                i.item_type,
-                i.category,
-                i.rarity,
-                i.cooldown_seconds,
-                i.max_stack
-             FROM user_inventory ui
-             JOIN items i ON ui.item_id = i.id
-             WHERE ui.user_id = ? AND ui.quantity > 0 AND i.is_active = 1
-             ORDER BY i.rarity DESC, i.name`,
-            [userId]
-        );
-
-        return inventory;
+        return await this.userInventoryRepository.findInventoryWithItemsForUser(userId);
     }
 
     async getInventoryItem(userId, itemId) {
-        return await getAsync(
-            `SELECT 
-                ui.*,
-                i.name,
-                i.display_name,
-                i.emoji,
-                i.cooldown_seconds,
-                i.max_stack
-             FROM user_inventory ui
-             JOIN items i ON ui.item_id = i.id
-             WHERE ui.user_id = ? AND ui.item_id = ?`,
-            [userId, itemId]
-        );
+        return await this.userInventoryRepository.findInventoryItem(userId, itemId);
     }
 
     async addItemToInventory(userId, itemId, quantity = 1) {
@@ -82,12 +53,9 @@ class InventoryService {
                 existingInventory.quantity + quantity,
                 item.max_stack
             );
-            
-            await runAsync(
-                'UPDATE user_inventory SET quantity = ? WHERE user_id = ? AND item_id = ?',
-                [newQuantity, userId, itemId]
-            );
-            
+
+            await this.userInventoryRepository.updateQuantity(userId, itemId, newQuantity);
+
             return {
                 itemId,
                 quantity: newQuantity,
@@ -95,12 +63,9 @@ class InventoryService {
             };
         } else {
             const finalQuantity = item.max_stack === 0 ? quantity : Math.min(quantity, item.max_stack);
-            
-            await runAsync(
-                'INSERT INTO user_inventory (user_id, item_id, quantity) VALUES (?, ?, ?)',
-                [userId, itemId, finalQuantity]
-            );
-            
+
+            await this.userInventoryRepository.insertItem(userId, itemId, finalQuantity);
+
             return {
                 itemId,
                 quantity: finalQuantity,
@@ -123,17 +88,11 @@ class InventoryService {
         const newQuantity = inventoryItem.quantity - quantity;
         
         if (newQuantity === 0) {
-            await runAsync(
-                'DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?',
-                [userId, itemId]
-            );
+            await this.userInventoryRepository.deleteItem(userId, itemId);
         } else {
-            await runAsync(
-                'UPDATE user_inventory SET quantity = ? WHERE user_id = ? AND item_id = ?',
-                [newQuantity, userId, itemId]
-            );
+            await this.userInventoryRepository.updateQuantity(userId, itemId, newQuantity);
         }
-        
+
         return {
             itemId,
             quantity: newQuantity,
@@ -212,13 +171,10 @@ class InventoryService {
         }
 
         await this.removeItemFromInventory(userId, itemId, 1);
-        
+
         await this.itemService.applyItemCooldown(userId, itemId, streamId);
-        
-        await runAsync(
-            'UPDATE user_inventory SET last_used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND item_id = ?',
-            [userId, itemId]
-        );
+
+        await this.userInventoryRepository.markUsed(userId, itemId);
         
         const result = {
             success: true,
@@ -247,17 +203,8 @@ class InventoryService {
     }
 
     async getUserInventoryValue(userId) {
-        const result = await getAsync(
-            `SELECT 
-                SUM(ui.quantity * i.base_price) as total_value,
-                COUNT(DISTINCT ui.item_id) as unique_items,
-                SUM(ui.quantity) as total_items
-             FROM user_inventory ui
-             JOIN items i ON ui.item_id = i.id
-             WHERE ui.user_id = ? AND ui.quantity > 0`,
-            [userId]
-        );
-        
+        const result = await this.userInventoryRepository.aggregateValueForUser(userId);
+
         return {
             totalValue: result?.total_value || 0,
             uniqueItems: result?.unique_items || 0,
@@ -266,27 +213,7 @@ class InventoryService {
     }
 
     async getInventoryByRarity(userId) {
-        const inventory = await allAsync(
-            `SELECT 
-                i.rarity,
-                COUNT(DISTINCT ui.item_id) as item_count,
-                SUM(ui.quantity) as total_quantity
-             FROM user_inventory ui
-             JOIN items i ON ui.item_id = i.id
-             WHERE ui.user_id = ? AND ui.quantity > 0
-             GROUP BY i.rarity
-             ORDER BY 
-                CASE i.rarity
-                    WHEN 'legendary' THEN 1
-                    WHEN 'epic' THEN 2
-                    WHEN 'rare' THEN 3
-                    WHEN 'uncommon' THEN 4
-                    WHEN 'common' THEN 5
-                END`,
-            [userId]
-        );
-        
-        return inventory;
+        return await this.userInventoryRepository.aggregateByRarity(userId);
     }
 
     async transferItem(fromUserId, toUserId, itemId, quantity = 1) {
@@ -330,31 +257,12 @@ class InventoryService {
     }
 
     async getRecentlyUsedItems(userId, limit = 5) {
-        const items = await allAsync(
-            `SELECT 
-                ui.item_id,
-                ui.last_used_at,
-                i.name,
-                i.display_name,
-                i.emoji,
-                i.item_type
-             FROM user_inventory ui
-             JOIN items i ON ui.item_id = i.id
-             WHERE ui.user_id = ? AND ui.last_used_at IS NOT NULL
-             ORDER BY ui.last_used_at DESC
-             LIMIT ?`,
-            [userId, limit]
-        );
-        
-        return items;
+        return await this.userInventoryRepository.findRecentlyUsed(userId, limit);
     }
 
     async clearUserInventory(userId) {
-        await runAsync(
-            'DELETE FROM user_inventory WHERE user_id = ?',
-            [userId]
-        );
-        
+        await this.userInventoryRepository.deleteAllForUser(userId);
+
         return { success: true, message: 'Inventory cleared' };
     }
 }
