@@ -1,31 +1,27 @@
 /**
- * AccountService.addPoints / subtractPoints — concurrent lost-update bug.
+ * AccountService.addPoints / subtractPoints — atomic-SQL regression gate.
  *
- * Documents a real pre-Phase-5 defect: `addPoints` (server/services/
- * AccountService.js:226-254) is a read-compute-write loop that issues
- * `UPDATE user_stats SET points_balance = ?` with the absolute new value
- * computed in JS. Two concurrent callers both read the same balance, both
- * compute, both write — second write overwrites first. Points are lost.
+ * Pre-PR-5.1, addPoints/subtractPoints were a read-compute-write loop:
+ * SELECT points_balance → JS arithmetic → UPDATE … = ? (absolute). Two
+ * concurrent callers both read the same balance, both computed, both
+ * wrote, second write overwrote first — points lost.
  *
- * The fix (Phase 5) is a single atomic SQL:
+ * PR 5.1 (ADR-0013) collapsed both code paths to a single atomic SQL:
  *   UPDATE user_stats
- *      SET points_balance = points_balance + ?
- *    WHERE user_id = ?
- * RETURNING points_balance;
+ *      SET points_balance = points_balance + ?   -- or `- ?` for subtract
+ *    WHERE user_id = ?                            -- + AND points_balance >= ?
+ *  RETURNING points_balance;
  *
- * This test deliberately demonstrates the bug. The headline assertion is
- * `toBeLessThan(N * amount)` — i.e. "we lose points" — so the test PASSES
- * today (the bug is live) and would FAIL once Phase 5's atomic UPDATE
- * lands. When that PR fixes the race, flip the assertion to `toBe(N *
- * amount)` in the same diff that lands the SQL change. Until then, this
- * test is the regression gate: if anyone tries to "optimise" the
- * read-compute-write code path without making it atomic, the assertion
- * still holds and we keep the bug documented.
+ * This test is now the regression gate for that invariant: concurrent
+ * addPoints/subtractPoints under microtask interleaving must produce the
+ * EXACT atomic-arithmetic answer. If anyone reintroduces a JS-side
+ * read-compute-write path, the `toBe(...)` assertions below will fail.
  *
  * The DB layer is mocked with an in-memory implementation whose `getAsync`
  * / `runAsync` each `await Promise.resolve()` once, so concurrent awaits
- * interleave through the microtask queue. That faithfully reproduces what
- * real sqlite3 (which yields on actual I/O) does today.
+ * interleave through the microtask queue. The mock implements the
+ * relative-arithmetic UPDATE … RETURNING semantics that real sqlite3
+ * applies atomically per-statement.
  */
 
 // Mock the DB primitives BEFORE any require that pulls them in.
@@ -38,13 +34,6 @@ jest.mock('../../database/database', () => {
     // expose the race in a single-thread Node environment.
     async function runAsync(sql, params = []) {
         await Promise.resolve();
-        if (/UPDATE\s+user_stats\s+SET\s+points_balance\s*=\s*\?/i.test(sql)) {
-            const [newBalance, userId] = params;
-            const row = userStats.get(userId) || { user_id: userId };
-            row.points_balance = newBalance;
-            userStats.set(userId, row);
-            return { changes: 1, lastID: undefined };
-        }
         if (/INSERT\s+INTO\s+user_stats/i.test(sql)) {
             const [userId, balance] = params;
             userStats.set(userId, { user_id: userId, points_balance: balance });
@@ -59,7 +48,36 @@ jest.mock('../../database/database', () => {
 
     async function getAsync(sql, params = []) {
         await Promise.resolve();
+
+        // PR 5.1: atomic guarded subtract — must come before the plain
+        // add/subtract regexes so the guarded variant matches first.
+        if (/UPDATE\s+user_stats\s+SET\s+points_balance\s*=\s*points_balance\s*-\s*\?[\s\S]*WHERE\s+user_id\s*=\s*\?\s+AND\s+points_balance\s*>=\s*\?[\s\S]*RETURNING\s+points_balance/i.test(sql)) {
+            const [amount, userId, minBalance] = params;
+            const row = userStats.get(userId);
+            if (!row || row.points_balance < minBalance) {
+                return undefined;
+            }
+            row.points_balance -= amount;
+            userStats.set(userId, row);
+            return { points_balance: row.points_balance };
+        }
+
+        // PR 5.1: atomic add — relative-arithmetic UPDATE … RETURNING.
+        if (/UPDATE\s+user_stats\s+SET\s+points_balance\s*=\s*points_balance\s*\+\s*\?[\s\S]*WHERE\s+user_id\s*=\s*\?[\s\S]*RETURNING\s+points_balance/i.test(sql)) {
+            const [amount, userId] = params;
+            const row = userStats.get(userId);
+            if (!row) {
+                return undefined;
+            }
+            row.points_balance += amount;
+            userStats.set(userId, row);
+            return { points_balance: row.points_balance };
+        }
+
         if (/SELECT\s+\*\s+FROM\s+user_stats\s+WHERE\s+user_id\s*=\s*\?/i.test(sql)) {
+            return userStats.get(params[0]) || null;
+        }
+        if (/SELECT\s+points_balance\s+FROM\s+user_stats\s+WHERE\s+user_id\s*=\s*\?/i.test(sql)) {
             return userStats.get(params[0]) || null;
         }
         return null;
@@ -91,7 +109,7 @@ jest.mock('../../database/repository/UserRepository', () => {
 const AccountService = require('../../services/AccountService');
 const { __testStore } = require('../../database/database');
 
-describe('AccountService — points-balance race (PRE-PHASE-5 BUG)', () => {
+describe('AccountService — points-balance atomicity (ADR-0013)', () => {
     beforeEach(() => {
         __testStore.userStats.clear();
         __testStore.transactions.length = 0;
@@ -104,7 +122,7 @@ describe('AccountService — points-balance race (PRE-PHASE-5 BUG)', () => {
         jest.restoreAllMocks();
     });
 
-    test('addPoints LOSES POINTS under concurrent calls (read-compute-write race)', async () => {
+    test('addPoints is ATOMIC under concurrent calls (PR 5.1 contract)', async () => {
         const account = new AccountService();
         const userId = 42;
 
@@ -116,37 +134,27 @@ describe('AccountService — points-balance race (PRE-PHASE-5 BUG)', () => {
         const amount = 5;
         const expectedIfAtomic = N * amount; // 100
 
-        // Fire N concurrent addPoints calls. They all enter the
-        // read-compute-write loop at roughly the same microtask tick;
-        // because the SQL UPDATE uses an absolute value computed in JS,
-        // late writers overwrite earlier ones.
+        // Fire N concurrent addPoints calls. They interleave through the
+        // microtask queue; each one's UPDATE is a single relative-arithmetic
+        // statement against the live row, so every increment must land.
         await Promise.all(
             Array.from({ length: N }, () =>
-                account.addPoints(userId, amount, 'test', 'race-documentation')
+                account.addPoints(userId, amount, 'test', 'atomic-contract')
             )
         );
 
         const final = __testStore.userStats.get(userId).points_balance;
 
-        // Headline assertion: today's read-compute-write code path LOSES
-        // updates. final is STRICTLY LESS than what an atomic increment
-        // would produce. When Phase 5 lands `UPDATE … SET balance =
-        // balance + ?`, flip this to `toBe(expectedIfAtomic)`.
-        expect(final).toBeLessThan(expectedIfAtomic);
-
-        // Belt-and-braces: at least one call's amount survived, so the
-        // bug is "lost updates" rather than "no updates land at all."
-        expect(final).toBeGreaterThan(0);
+        // No lost updates. Exact arithmetic answer.
+        expect(final).toBe(expectedIfAtomic);
     });
 
-    test('subtractPoints LOSES POINTS under concurrent calls (same race shape)', async () => {
+    test('subtractPoints is ATOMIC under concurrent calls (PR 5.1 contract)', async () => {
         const account = new AccountService();
         const userId = 99;
 
-        // Seed a fat balance so all subtractions can succeed without
-        // hitting any insufficient-balance branch (there isn't one in
-        // the current code — that's a separate issue worth fixing in
-        // the same Phase 5 atomic UPDATE).
+        // Seed a fat balance so all subtractions succeed without hitting
+        // the insufficient-balance guard.
         const seed = 10_000;
         __testStore.userStats.set(userId, { user_id: userId, points_balance: seed });
 
@@ -156,17 +164,14 @@ describe('AccountService — points-balance race (PRE-PHASE-5 BUG)', () => {
 
         await Promise.all(
             Array.from({ length: N }, () =>
-                account.subtractPoints(userId, amount, 'test', 'race-documentation')
+                account.subtractPoints(userId, amount, 'test', 'atomic-contract')
             )
         );
 
         const final = __testStore.userStats.get(userId).points_balance;
 
-        // Same shape as addPoints: late writers overwrite earlier ones,
-        // so `final` is HIGHER than the atomic-arithmetic answer.
-        expect(final).toBeGreaterThan(expectedIfAtomic);
-        // Sanity: the seed wasn't completely untouched.
-        expect(final).toBeLessThan(seed);
+        // No lost updates. Exact arithmetic answer.
+        expect(final).toBe(expectedIfAtomic);
     });
 
     test('addPoints is CORRECT under sequential calls (proves the race is the bug, not the math)', async () => {

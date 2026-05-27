@@ -227,29 +227,33 @@ class AccountService {
         if (amount <= 0) {
             throw new Error('Amount must be positive');
         }
-        
-        // Get current balance
-        const stats = await this.getUserStats(userId);
-        if (!stats) {
-            // Create stats record if doesn't exist
+
+        // Atomic relative-arithmetic UPDATE. RETURNING gives us the post-write
+        // balance without a follow-up SELECT, so concurrent callers can't
+        // race on stale reads (ADR-0013).
+        const updated = await getAsync(
+            `UPDATE user_stats
+                SET points_balance = points_balance + ?,
+                    updated_at = CURRENT_TIMESTAMP
+              WHERE user_id = ?
+          RETURNING points_balance`,
+            [amount, userId]
+        );
+
+        let newBalance;
+        if (updated) {
+            newBalance = updated.points_balance;
+        } else {
+            // No stats row yet — INSERT with the amount as the initial balance.
             await runAsync(
                 `INSERT INTO user_stats (user_id, points_balance) VALUES (?, ?)`,
-                [userId, 0]
+                [userId, amount]
             );
+            newBalance = amount;
         }
-        
-        const currentBalance = stats?.points_balance || 0;
-        const newBalance = currentBalance + amount;
-        
-        // Update balance
-        await runAsync(
-            'UPDATE user_stats SET points_balance = ? WHERE user_id = ?',
-            [newBalance, userId]
-        );
-        
-        // Record transaction
+
         await this.recordTransaction(userId, amount, newBalance, type, description, metadata);
-        
+
         console.log(`💰 Added ${amount} points to user ${userId} (${type}). New balance: ${newBalance}`);
         return newBalance;
     }
@@ -267,26 +271,36 @@ class AccountService {
         if (amount <= 0) {
             throw new Error('Amount must be positive');
         }
-        
-        // Get current balance
-        const stats = await this.getUserStats(userId);
-        const currentBalance = stats?.points_balance || 0;
-        
-        if (currentBalance < amount) {
+
+        // Atomic guarded UPDATE: only debit if the row exists AND has enough
+        // balance. RETURNING gives us the post-debit balance for the
+        // transaction record; no follow-up SELECT, no race window.
+        const updated = await getAsync(
+            `UPDATE user_stats
+                SET points_balance = points_balance - ?,
+                    updated_at = CURRENT_TIMESTAMP
+              WHERE user_id = ?
+                AND points_balance >= ?
+          RETURNING points_balance`,
+            [amount, userId, amount]
+        );
+
+        if (!updated) {
+            // Either no stats row or insufficient balance — disambiguate
+            // for the error message. The SELECT can race with concurrent
+            // mutations but it's only feeding the error string.
+            const stats = await getAsync(
+                'SELECT points_balance FROM user_stats WHERE user_id = ?',
+                [userId]
+            );
+            const currentBalance = stats?.points_balance || 0;
             throw new Error(`Insufficient points balance. Has: ${currentBalance}, Needs: ${amount}`);
         }
-        
-        const newBalance = currentBalance - amount;
-        
-        // Update balance
-        await runAsync(
-            'UPDATE user_stats SET points_balance = ? WHERE user_id = ?',
-            [newBalance, userId]
-        );
-        
-        // Record transaction (negative amount)
+
+        const newBalance = updated.points_balance;
+
         await this.recordTransaction(userId, -amount, newBalance, type, description, metadata);
-        
+
         console.log(`💸 Subtracted ${amount} points from user ${userId} (${type}). New balance: ${newBalance}`);
         return newBalance;
     }
