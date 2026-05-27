@@ -102,6 +102,18 @@ jest.mock('../../services/BotEventBus', () => class {
     (this._listeners.get(event) || []).forEach((cb) => cb(payload));
   }
 });
+
+// PR 4.2: LifecycleManager stub records constructor args (none — the real
+// class takes no deps) and surfaces a recording `stop()` so the
+// reverse-shutdown ordering test (stoppables iteration) can see it ran.
+jest.mock('../../services/LifecycleManager', () => class {
+  constructor(...args) {
+    this._args = args;
+    this._stubName = 'LifecycleManager';
+    this._stopped = false;
+  }
+  async stop() { this._stopped = true; }
+});
 jest.mock('../../services/StreamBotService', () => class {
   constructor(...args) {
     this._args = args;
@@ -187,6 +199,9 @@ const ChatBotService = require('../../services/ChatBotService');
 const StreamBotService = require('../../services/StreamBotService');
 const MovieBotService = require('../../services/MovieBotService');
 
+// PR 4.2
+const LifecycleManager = require('../../services/LifecycleManager');
+
 // PR-I4 additions
 const ViewbotService = require('../../services/ViewbotService');
 const ViewBotWebRTCService = require('../../services/ViewBotWebRTCService');
@@ -208,7 +223,7 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 38 expected keys (no more, no less)', () => {
+  test('returns all 39 expected keys (no more, no less)', () => {
     const { services } = createServices(buildDeps());
 
     const expectedKeys = [
@@ -257,10 +272,12 @@ describe('server/bootstrap/services factory', () => {
       'movieBotService',
       // PR 1.3
       'botEventBus',
+      // PR 4.2
+      'lifecycleManager',
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(38);
+    expect(expectedKeys).toHaveLength(39);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -305,6 +322,8 @@ describe('server/bootstrap/services factory', () => {
     expect(s.chatBotService).toBeInstanceOf(ChatBotService);
     expect(s.streamBotService).toBeInstanceOf(StreamBotService);
     expect(s.movieBotService).toBeInstanceOf(MovieBotService);
+    // PR 4.2
+    expect(s.lifecycleManager).toBeInstanceOf(LifecycleManager);
   });
 
   test('takeoverService is constructed with (redisClient, sessionService)', () => {
@@ -555,6 +574,22 @@ describe('server/bootstrap/services factory', () => {
     s.botEventBus.emit('chat-message', { username: 'TestCat', message: 'hello' });
 
     expect(received).toEqual({ username: 'TestCat', message: 'hello' });
+  });
+
+  // ── PR 4.2: LifecycleManager wiring ──────────────────────────────────
+
+  test('PR 4.2: lifecycleManager is constructed with no args', () => {
+    const { services: s } = createServices(buildDeps());
+    expect(s.lifecycleManager._args).toEqual([]);
+  });
+
+  test('PR 4.2: lifecycleManager appears in stoppables and at the end (drained first under reverse-iteration)', () => {
+    const { stoppables } = createServices(buildDeps());
+    expect(stoppables).toContain(stoppables.find((s) => s._stubName === 'LifecycleManager'));
+    // Reverse-iteration order: the LAST entry in stoppables is drained
+    // FIRST. We want lifecycleManager drained first so any pending
+    // deferred work is cancelled before its target services tear down.
+    expect(stoppables[stoppables.length - 1]._stubName).toBe('LifecycleManager');
   });
 
   test('streamBotService gets chatBotService + chatBotService.llmService via setters', () => {

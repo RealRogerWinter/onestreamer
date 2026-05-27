@@ -71,9 +71,11 @@ These are the **hard** half. Each is created without storing the handle on a sta
 
 This is Phase 2 PR 2.6's target (see refactor plan); the fix is to gate cleanup on confirmed upload, in the same PR that adds the deterministic test.
 
-### `setTimeout` chains in `server/index.js` startup
+### ~~`setTimeout` chains in `server/index.js` startup~~ (resolved by PR 4.2)
 
-`server/index.js:5242, 5319, 5401, 5505, 5514, 5913, 5952, 6140` schedule autostarts and graceful-shutdown work with no per-handle reference. If service init fails partway, the deferred work still fires against torn-down state. Phase 4 (`startServer()` decomposition into a phased `LifecycleManager.start()`) cleans this up.
+Originally flagged: `server/index.js:5242, 5319, 5401, 5505, 5514, 5913, 5952, 6140` schedule autostarts and graceful-shutdown work with no per-handle reference. If service init fails partway, the deferred work still fires against torn-down state.
+
+**Resolved in PR 4.2** ([ADR-0011](adr/0011-lifecycle-manager.md)). New `LifecycleManager` service (`server/services/LifecycleManager.js`) is the registry for one-shot deferred work; every `setTimeout(fn, delayMs)` callsite that matched the "schedule autostart / grace-period" pattern was relocated to `lifecycleManager.schedule(name, fn, delayMs)`. Stoppable; SIGTERM clears every pending handle before the dependent services tear down. Two dev-debug `setTimeout` sites (`'test-event'` emit + `getStreamerDisplayName` smoke loop) were **deleted** rather than relocated. Two non-scheduler shapes (`Promise.race` deadline + `await new Promise(r => setTimeout(r, 500))` sleep) are intentionally left untouched — different shape, different teardown story.
 
 ### ~~`global.viewBotIntervals` Map~~ (resolved by deletion in PR 3.4)
 

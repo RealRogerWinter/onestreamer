@@ -14,6 +14,11 @@
  * of this listener-relocation PR.
  *
  * `deps` (all required unless noted):
+ *   - lifecycleManager          PR 4.2 deferred-work registry. The two
+ *                               grace-period schedules in this handler
+ *                               (3 s rotation restart, 1 s real-streamer-
+ *                               status validation) route through it so
+ *                               SIGTERM during the window cancels them.
  *   - mediasoupService          Plain-RTP transport bookkeeping for the
  *                               socket; cascading `cleanup(socketId)` at the
  *                               end. Also has its `currentStreamer` cleared
@@ -57,6 +62,7 @@
  */
 module.exports = function registerDisconnectHandler(io, socket, deps) {
   const {
+    lifecycleManager,
     mediasoupService,
     sessionService,
     timeTrackingService,
@@ -160,11 +166,13 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
         console.log(`🔓 PRIORITY: Real user ${socket.id} disconnected - clearing viewbot protection`);
         viewBotClientService.setRealStreamerStatus(false);
 
-        // CRITICAL: Restart viewbot rotation after real user disconnects
-        // This is needed because stopRotation() disables the rotation service
-        // PR 4.2 will relocate this setTimeout into the LifecycleManager
-        // registry so it gets drained on shutdown; preserved as-is here.
-        setTimeout(async () => {
+        // CRITICAL: Restart viewbot rotation after real user disconnects.
+        // stopRotation() disables the rotation service, so we re-enable it
+        // after a 3 s settle window. Routed through LifecycleManager (PR
+        // 4.2) so a SIGTERM landing inside the window cancels the restart
+        // against torn-down rotation services rather than firing against
+        // half-cleaned-up state.
+        lifecycleManager.schedule('viewbot-rotation-restart-after-disconnect', async () => {
           console.log(`🔄 RESTART: Attempting to restart viewbot rotation after real user disconnect`);
 
           // Restart ViewBotRotationService (global.viewBotRotation)
@@ -186,7 +194,7 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
               console.error(`❌ RESTART: Failed to restart SimpleViewBotRotation:`, e);
             }
           }
-        }, 3000); // 3 second delay to allow cleanup
+        }, 3000);
       }
 
       // Only apply individual cooldown for real users, not viewbots
@@ -202,12 +210,13 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
       mediasoupService.currentStreamer = null;
       console.log(`🧹 DISCONNECT: Cleared ${socket.id} from both services`);
 
-      // Additional validation: Ensure real streamer status is accurate after disconnect
-      // PR 4.2 will relocate this setTimeout into the LifecycleManager registry.
+      // Additional validation: Ensure real streamer status is accurate after disconnect.
+      // PR 4.2: routed through LifecycleManager so the 1 s grace window is
+      // cancelled on SIGTERM.
       if (viewBotClientService) {
-        setTimeout(() => {
+        lifecycleManager.schedule('real-streamer-status-validate', () => {
           viewBotClientService.validateRealStreamerStatus();
-        }, 1000); // Small delay to ensure all services are updated
+        }, 1000);
       }
 
       streamNotifier.streamEnded({ reason: 'streamer_disconnected', previousStreamer: socket.id });

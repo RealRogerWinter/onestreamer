@@ -509,6 +509,8 @@ const {
   viewerCountNotifier,
   // PR 3.3: buff/inventory event-cluster chokepoint.
   buffNotifier,
+  // PR 4.2: deferred-work registry.
+  lifecycleManager,
 } = services;
 
 // Expose the whole bag for extracted routes/sockets (PR-G2 / PR-H2 onwards
@@ -4074,12 +4076,13 @@ function notifyViewersStreamEnded() {
   console.log(`🔍 ROTATION TRIGGER: Checking conditions - viewBotRotation exists: ${!!global.viewBotRotation}, enabled: ${global.viewBotRotation?.enabled}`);
   if (global.viewBotRotation && global.viewBotRotation.enabled) {
     console.log('✅ ROTATION TRIGGER: Conditions met, scheduling rotation in 5s');
-    setTimeout(async () => {
+    // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
+    // grace window cancels the rotation attempt against a torn-down service.
+    lifecycleManager.schedule('post-stream-rotation', async () => {
       const currentStreamer = streamService.getCurrentStreamer();
       console.log(`🔍 ROTATION TRIGGER: After 5s delay (${Date.now() - triggerTime}ms elapsed) - currentStreamer: ${currentStreamer}`);
       if (!currentStreamer && global.viewBotRotation && global.viewBotRotation.enabled) {
         console.log('✅ ROTATION TRIGGER: No streamer, triggering rotation...');
-        const rotateStartTime = Date.now();
         try {
           await global.viewBotRotation.rotateToNextBot();
           console.log(`⏱️ ROTATION TRIGGER: Total time from stream end to rotation complete: ${Date.now() - triggerTime}ms`);
@@ -4737,6 +4740,7 @@ io.on('connection', async (socket) => {
   // 1 s real-streamer-status validation) are preserved unchanged inside the
   // handler — relocating them into the LifecycleManager is PR 4.2's job.
   registerDisconnectHandler(io, socket, {
+    lifecycleManager,
     mediasoupService,
     sessionService,
     timeTrackingService,
@@ -4965,14 +4969,17 @@ async function startServer() {
       app.use('/api/random-stream', randomStreamRoutes(randomStreamRotationService));
       console.log('✅ RANDOM STREAM: API routes initialized at /api/random-stream (MediaSoup backend)');
 
-      // Auto-start random rotation if it was enabled before restart
-      setTimeout(async () => {
+      // Auto-start random rotation if it was enabled before restart.
+      // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
+      // grace window cancels the autostart attempt against a torn-down
+      // rotation service.
+      lifecycleManager.schedule('random-rotation-autostart-mediasoup', async () => {
         try {
           await randomStreamRotationService.autoStartIfEnabled();
         } catch (error) {
           console.error('❌ RANDOM STREAM: Auto-start failed:', error.message);
         }
-      }, 5000); // Wait 5 seconds for all services to be ready
+      }, 5000);
     } else {
       // ── LiveKit branch orchestration ──────────────────────────────────
       // viewBotLiveKitService was constructed + initialized + given
@@ -5064,14 +5071,17 @@ async function startServer() {
       app.use('/api/random-stream', randomStreamRoutes(randomStreamRotationService));
       console.log('✅ RANDOM STREAM: API routes initialized at /api/random-stream');
 
-      // Auto-start random rotation if it was enabled before restart
-      setTimeout(async () => {
+      // Auto-start random rotation if it was enabled before restart.
+      // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
+      // grace window cancels the autostart attempt against a torn-down
+      // rotation service.
+      lifecycleManager.schedule('random-rotation-autostart-livekit', async () => {
         try {
           await randomStreamRotationService.autoStartIfEnabled();
         } catch (error) {
           console.error('❌ RANDOM STREAM: Auto-start failed:', error.message);
         }
-      }, 5000); // Wait 5 seconds for all services to be ready
+      }, 5000);
 
       // Store for later registration with ViewBotRotationService
       global.viewBotLiveKitService = viewBotLiveKitService;
@@ -5143,17 +5153,11 @@ async function startServer() {
     global.streamService = streamService;
     global.streamManager = streamService;  // streamManager and streamService are same
     console.log('✅ GLOBAL OBJECTS: Set global.io and global.streamService for event emission');
-    console.log('🔍 DEBUG: global.io test:', typeof global.io);
-    console.log('🔍 DEBUG: io.emit test:', typeof io.emit);
-    
-    // Test emit
-    setTimeout(() => {
-      if (global.io) {
-        console.log('🔍 DEBUG: Testing global.io.emit after 5 seconds');
-        global.io.emit('test-event', { test: true });
-      }
-    }, 5000);
-    
+    // PR 4.2: removed a 5-second dev-only "test-event" emit that fired on
+    // every boot just to sanity-check global.io. The two preceding typeof
+    // log lines already cover that — the deferred broadcast was dead-code
+    // debug that shouldn't have shipped to production but did.
+
     // Helper function to get video files
     async function getVideoFiles() {
       const uploadsDir = path.join(__dirname, 'uploads');
@@ -5254,9 +5258,12 @@ async function startServer() {
       viewBotRotation.enabled = true;
       console.log(`🔍 VIEWBOT ROTATION: Enabled set to ${viewBotRotation.enabled}`);
 
-      // Delay rotation start to ensure server is fully ready
+      // Delay rotation start to ensure server is fully ready.
+      // PR 4.2: routed through LifecycleManager so SIGTERM during the 10 s
+      // grace window cancels the rotation start against a torn-down
+      // mediasoup / viewbot stack.
       console.log('⏰ VIEWBOT ROTATION: Scheduling rotation start in 10 seconds...');
-      setTimeout(async () => {
+      lifecycleManager.schedule('viewbot-rotation-start', async () => {
         try {
           console.log('🚀 VIEWBOT ROTATION: Starting rotation after delay...');
           await viewBotRotation.startRotation();
@@ -5264,8 +5271,8 @@ async function startServer() {
         } catch (error) {
           console.error('❌ VIEWBOT ROTATION: Failed to start rotation:', error);
         }
-      }, 10000); // 10 second delay
-      console.log('✅ VIEWBOT ROTATION: setTimeout scheduled');
+      }, 10000);
+      console.log('✅ VIEWBOT ROTATION: schedule registered');
       
       console.log('✅ VIEWBOT ROTATION: New Socket.IO-based rotation system initialized');
 
@@ -5663,13 +5670,23 @@ async function startServer() {
     res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
   });
 
-  // Start account deletion scheduler after a delay to ensure database is ready
-  setTimeout(() => {
+  // Start account deletion scheduler after a delay to ensure database is ready.
+  // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s grace
+  // window cancels the scheduler's own `setInterval` start against a
+  // torn-down DB connection. The body below is intentionally fully
+  // synchronous (require → new → start → push → log): SIGTERM can't
+  // interleave a half-pushed scheduler because all four steps complete
+  // atomically with respect to the event loop. Either the timer fires
+  // before SIGTERM and the push completes, or lifecycleManager.stop()
+  // cancels the timer before fire and the scheduler is never
+  // constructed.
+  lifecycleManager.schedule('account-deletion-scheduler-start', () => {
     const AccountDeletionScheduler = require('./services/AccountDeletionScheduler');
     const deletionScheduler = new AccountDeletionScheduler();
     deletionScheduler.start();
+    stoppables.push(deletionScheduler);
     console.log('🗑️ Account deletion scheduler started');
-  }, 5000); // Wait 5 seconds for database to initialize
+  }, 5000);
 
   // Start HTTP server
   httpServer.listen(PORT, '0.0.0.0', () => {
@@ -5702,23 +5719,11 @@ async function startServer() {
   //   }
   // }, 2000);
 
-  // Test the getStreamerDisplayName function when server starts
-    setTimeout(async () => {
-      console.log('🧪 TESTING: getStreamerDisplayName function with current sessions...');
-      const allSessions = sessionService.getAllSessions();
-      for (const [ip, session] of Object.entries(allSessions)) {
-        if (session.userId) {
-          console.log(`🧪 TESTING: Found authenticated session for IP ${ip}, User ${session.userId}`);
-          // Test with all socket IDs for this session
-          const sockets = sessionService.getSocketsByIp(ip);
-          for (const socketId of sockets) {
-            console.log(`🧪 TESTING: Testing with socket ${socketId}...`);
-            const displayName = await getStreamerDisplayName(socketId);
-            console.log(`🧪 TESTING: getStreamerDisplayName(${socketId}) = "${displayName}"`);
-          }
-        }
-      }
-    }, 3000);
+  // PR 4.2: removed a 3-second dev-only diagnostic that iterated every
+  // authenticated session at boot and called getStreamerDisplayName for
+  // each socket. Useful when the lookup was being added; dead chatter now
+  // and never gated behind NODE_ENV. The function itself is exercised by
+  // the live request paths.
 
   httpServer.on('error', (err) => {
     console.error('❌ SERVER: Server error:', err);

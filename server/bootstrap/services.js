@@ -135,6 +135,9 @@ const MovieBotService = require('../services/MovieBotService');
 // PR 1.3: shared event bus that decouples ChatBot from MovieBot.
 const BotEventBus = require('../services/BotEventBus');
 
+// PR 4.2: deferred-work registry.
+const LifecycleManager = require('../services/LifecycleManager');
+
 // PR-I4: late ViewBot stack — see createViewBotServices below.
 const ViewbotService = require('../services/ViewbotService');
 const ViewBotClientService = require('../services/ViewBotClientService');
@@ -163,6 +166,16 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   // No-dep singletons first.
   const streamService = new StreamService();
   const sessionService = new SessionService();
+
+  // PR 4.2: registry for one-shot `setTimeout`-style deferred work. Closes
+  // the hazard in `docs/architecture/background-work.md` where the 7 prior
+  // `setTimeout` callsites in `server/index.js` (and 2 inside
+  // `server/sockets/DisconnectHandler.js`) had no per-handle reference, so
+  // SIGTERM during a delay window fired the callback against torn-down
+  // state. Constructed early — no deps — and threaded through every
+  // callsite that previously called `setTimeout` directly. Added to
+  // `stoppables` so the shutdown loop drains pending work via `stop()`.
+  const lifecycleManager = new LifecycleManager();
 
   // PR 3.1: single emit chokepoint for `stream-ended`. Constructed early so
   // every downstream service that previously called io.emit('stream-ended', …)
@@ -377,6 +390,8 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     movieBotService,
     // PR 1.3:
     botEventBus,
+    // PR 4.2:
+    lifecycleManager,
   };
 
   // PR 1.2: stoppables in construction order. server/index.js's SIGINT
@@ -399,6 +414,15 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     recordingCleanupScheduler,
     continuousRecordingService,
     streamBotService,
+    // PR 4.2: drained last (reverse-iterated first by the shutdown loop) so
+    // any in-flight deferred work the other services have scheduled is
+    // cancelled BEFORE those services tear down their own state.
+    // INVARIANT (asserted in services.test.js): lifecycleManager MUST remain
+    // the last entry in this array. If you add a new stoppable, add it
+    // ABOVE this line, not below — a new stoppable below lifecycleManager
+    // would tear down BEFORE its deferred work is cancelled, which is the
+    // exact failure mode PR 4.2 was closing.
+    lifecycleManager,
   ];
 
   return { services, stoppables };
