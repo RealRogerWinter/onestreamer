@@ -139,6 +139,14 @@ const BotEventBus = require('../services/BotEventBus');
 // PR 4.2: deferred-work registry.
 const LifecycleManager = require('../services/LifecycleManager');
 
+// PR 8.3 (Phase 8): ProcessManager singleton — registry for ViewBot
+// gst-launch / chrome child PIDs. Exposes a stoppable.stop() that reaps
+// any tracked PIDs not already cleaned up by their owning service's
+// stop() path. See ADR-0011 (lifecycle contract) and the runbook
+// `viewbot-fleet-misbehaving.md` for the orphan-process hazard this
+// closes.
+const processManager = require('../services/ProcessManager');
+
 // PR-I4: late ViewBot stack — see createViewBotServices below.
 const ViewbotService = require('../services/ViewbotService');
 const ViewBotClientService = require('../services/ViewBotClientService');
@@ -427,6 +435,15 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     recordingCleanupScheduler,
     continuousRecordingService,
     streamBotService,
+    // PR 8.3 (Phase 8): ProcessManager runs LATE in the shutdown order
+    // (early in the array → late in reverse-iteration) so the per-bot
+    // stop() paths on ViewBot services — which already call
+    // `processManager.killBotProcesses(botId)` and `onBotStopped` — have
+    // a chance to clean their tracked PIDs FIRST. By the time the reaper
+    // runs, the registry is near-empty in the happy path; the reaper
+    // exists to catch the case where a service died unexpectedly with a
+    // registered PID still in the map.
+    processManager,
     // PR 4.2: drained last (reverse-iterated first by the shutdown loop) so
     // any in-flight deferred work the other services have scheduled is
     // cancelled BEFORE those services tear down their own state.

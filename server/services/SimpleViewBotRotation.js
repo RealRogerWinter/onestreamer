@@ -12,6 +12,13 @@ const SimpleViewBotSocket = require('./SimpleViewBotSocket');
 const { spawn } = require('child_process');
 const webrtcConfig = require('../config/webrtc.config');
 
+// PR 8.3 (Phase 8): the actual ProcessManager singleton. The previous
+// `global.processManager.trackProcess(...)` paths in this file were
+// no-ops — `global.processManager` was never assigned. Importing the
+// singleton directly makes the registry populate so the shutdown reaper
+// can find these PIDs. See ADR-0011 and PR 8.3 in CHANGELOG.
+const processManager = require('./ProcessManager');
+
 class SimpleViewBotRotation {
   constructor() {
     // Core state
@@ -311,17 +318,34 @@ class SimpleViewBotRotation {
     // Build GStreamer pipeline
     const pipeline = this.buildGStreamerPipeline(bot);
 
-    // Start GStreamer process
+    // PR 8.3 (Phase 8): spawn with `detached: true` so the gst-launch
+    // process becomes its own process-group leader. The shutdown reaper
+    // uses negative-PID group kill (`kill -SIG -<pid>`), which is a no-op
+    // — or worse, signals the wrong group — if the child inherits Node's
+    // PGID. Precedent: ViewBotClientService also spawns gst-launch with
+    // `detached: !isWindows` for the same reason.
     this.gstreamerProcess = spawn('gst-launch-1.0', pipeline.split(' '), {
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32'
     });
 
-    // Track with ProcessManager if available
-    if (global.processManager && typeof global.processManager.trackProcess === 'function') {
-      global.processManager.trackProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
-    } else if (global.processManager && typeof global.processManager.addProcess === 'function') {
-      global.processManager.addProcess(this.gstreamerProcess.pid, 'gstreamer', bot.id);
-    }
+    // PR 8.3 (Phase 8): register with the actual ProcessManager singleton.
+    // Previous `global.processManager.trackProcess(...)` calls were no-ops
+    // (the global was never assigned) — the resulting orphan-process leak
+    // is what PR 8.3 is closing.
+    processManager.registerProcess(bot.id, 'gstreamer', this.gstreamerProcess.pid);
+
+    // PR 8.3 (review fix): deregister on natural exit so the registry
+    // doesn't keep a ghost PID. Without this, a gst-launch that exits on
+    // its own (EOS, crash, gracefully killed by a per-bot path) leaves an
+    // entry behind; the shutdown reaper later sends SIGTERM to a dead or
+    // recycled PID. The deregister is fire-and-forget (no await) because
+    // it's inside an event handler.
+    this.gstreamerProcess.once('exit', () => {
+      processManager.onBotStopped(bot.id).catch((err) => {
+        console.error(`[ProcessManager] onBotStopped(${bot.id}) from exit handler failed:`, err.message);
+      });
+    });
 
     // Handle process events
     this.gstreamerProcess.on('error', (error) => {
@@ -370,23 +394,28 @@ class SimpleViewBotRotation {
     // Kill GStreamer process
     if (this.gstreamerProcess) {
       try {
-        // Use ProcessManager if available
-        if (global.processManager && global.processManager.killProcessGroup) {
-          await global.processManager.killProcessGroup(this.gstreamerProcess.pid);
-        } else {
-          this.gstreamerProcess.kill('SIGTERM');
-          // Force kill after timeout
-          setTimeout(() => {
-            if (this.gstreamerProcess && !this.gstreamerProcess.killed) {
-              this.gstreamerProcess.kill('SIGKILL');
-            }
-          }, 2000);
-        }
+        this.gstreamerProcess.kill('SIGTERM');
+        // Force kill after timeout
+        setTimeout(() => {
+          if (this.gstreamerProcess && !this.gstreamerProcess.killed) {
+            this.gstreamerProcess.kill('SIGKILL');
+          }
+        }, 2000);
       } catch (error) {
         console.error(`⚠️ Error killing GStreamer for ${botId}:`, error);
       }
 
       this.gstreamerProcess = null;
+    }
+
+    // PR 8.3 (Phase 8): deregister with the ProcessManager so the
+    // shutdown reaper doesn't find this PID still in the registry. The
+    // `onBotStopped` path also runs `killBotProcesses` for belt-and-braces
+    // (process-group SIGKILL on top of the per-handle SIGTERM above).
+    try {
+      await processManager.onBotStopped(botId);
+    } catch (err) {
+      console.error(`⚠️ ProcessManager.onBotStopped(${botId}) failed:`, err.message);
     }
 
     // Emit event

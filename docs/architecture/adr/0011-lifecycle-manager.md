@@ -197,3 +197,133 @@ control flow. Forcing both through `schedule` would distort the API.
   hazard catalog this ADR closes.
 - ADR-0009 — StreamNotifier chokepoint (same shape: a single registry
   replacing N callsites for a single concern).
+
+## Amendment — PR 8.3 (Phase 8): child-process force-reap
+
+**Date**: 2026-05-27
+**PR**: 8.3 — `viewbot-child-process-force-reap`
+
+Lifecycle work is two-sided: closing `setTimeout` handles is one side
+(this ADR's original scope); reaping child processes is the other.
+PR 8.3 extends `ProcessManager` (`server/services/ProcessManager.js`)
+with a `reapAll({ graceMs })` / `stop()` pair and wires it into the
+shutdown loop's `stoppables` array as a sibling to LifecycleManager.
+
+### Why a separate stoppable rather than folding into LifecycleManager
+
+LifecycleManager's scope is deliberately narrow: **one-shot `setTimeout`
+work**. Process-PID tracking has a different shape (per-bot map of
+{type → pid+comm}, indefinite lifetime, OS-level signalling) and would
+distort the LifecycleManager API. ProcessManager already existed for
+the per-bot kill paths (`killBotProcesses`, `prepareForStreaming`,
+`onBotStopped`); the shutdown reaper is its natural home.
+
+### Stoppables order
+
+`stoppables = [..., processManager, lifecycleManager]`. Reverse
+iteration → lifecycleManager drains FIRST (cancel deferred work),
+processManager drains NEXT (reap straggler PIDs). ViewBot stoppables
+are pushed AFTER this array in `server/index.js`, so they actually
+drain BEFORE processManager — by which time their per-bot `stop()`
+paths have called `processManager.onBotStopped(botId)` and the
+registry is near-empty in the happy path. The reaper exists for the
+**unhappy** path: a service crashed mid-`stop()`, or a PID was
+registered but never deregistered.
+
+### Reaper semantics
+
+1. **SIGTERM** every tracked PID via process-group kill (negative PID),
+   with a direct-PID fallback if the process wasn't a group leader.
+2. **Poll** every 100 ms via `process.kill(pid, 0)` until the grace
+   period (default 2000 ms) expires.
+3. **PID-reuse defense**: before SIGKILL, compare `/proc/<pid>/comm`
+   against the snapshot captured at register time. If the comm drifted,
+   the kernel recycled the PID into an unrelated process — **skip**
+   SIGKILL. Better to leak a real orphan than to SIGKILL an unrelated
+   process.
+4. **SIGKILL** anything still alive whose comm still matches.
+5. **Clear** the registry; subsequent `reapAll()` calls are no-ops.
+
+### Trade-offs (questions the reviewer asked)
+
+- **SIGKILL vs mid-write to recording files**: recording writes flow
+  through `ContinuousRecordingService` / `RecordingService` `ffmpeg`
+  spawns — separate processes, separate file handles. They are NOT in
+  the ProcessManager registry, so the reaper never SIGKILLs them.
+  ViewBot `gst-launch` PIDs write only to UDP RTP sockets, not to disk.
+- **2 s grace period — estimated against what?** `gst-launch-1.0`'s
+  typical SIGTERM-to-clean-exit latency is sub-second (the GStreamer
+  pipeline shuts down on EOS without slow drains; not measured rigorously,
+  but observed during steady-state rotation tick). 2 s is generous
+  headroom. The full reaper budget is `graceMs + ~100 ms polling overhead
+  + a few ms per SIGKILL` — must stay below the shutdown loop's 5 s
+  per-stoppable deadline. With 2 s grace and even dozens of tracked PIDs
+  (reaped in parallel against a single deadline, not per-PID), the
+  budget fits with ~3 s margin. Configurable via `reapAll({ graceMs })`
+  if a future pipeline shape needs more.
+- **PID-reuse window**: between SIGTERM and SIGKILL the OS may recycle
+  the PID. The comm-snapshot defense (point 3 above) is a best-effort
+  guard; on a non-Linux host where `/proc` isn't readable, the snapshot
+  is `null` and the defense degrades to "SIGKILL anyway". Acceptable for
+  the single-host single-tenant posture.
+- **Does adding ProcessManager break LifecycleManager's ordering
+  contract?** No. The `services.test.js` invariant ("lifecycleManager
+  is the last entry") still holds — ProcessManager is inserted
+  immediately before it. A new test pins this ordering explicitly.
+
+### Scope explicitly NOT covered by PR 8.3
+
+- **Chrome PIDs from Puppeteer-based services**: at least three callers
+  launch Chromium via Puppeteer — `WebRTCViewBot`, `ViewBotClientService`,
+  and `TranscriptionAudioAdapter` (the last is NOT ViewBot-scoped but
+  shares the lifecycle). Puppeteer's `browser.close()` is the canonical
+  lifecycle path. SIGKILL on Puppeteer-spawned Chrome PIDs is an "unhappy
+  path" recovery the runbook already documents via
+  `pkill -f "chrome --enable-automation"`. Folding Puppeteer-managed PIDs
+  into the registry would require threading through Puppeteer's internal
+  process map; deferred.
+- **`ViewBotURLService` ffmpeg spawns**: ffmpeg here is the URL-relay
+  pipeline (Twitch/Kick ingestion + remux). Not a gst-launch/chrome
+  process; we scoped this PR to those two.
+- **Other `spawn('ffmpeg', ...)` sites across services**: out of scope
+  for PR 8.3 (same reasoning). A future PR can extend the reaper to
+  cover them if operational signal justifies it.
+
+### Scope invariant — registry is ViewBot-only
+
+`ProcessManager.registerProcess(...)` is for ViewBot child processes
+ONLY. Recording-service ffmpeg PIDs (from `ContinuousRecordingService`,
+`RecordingService`, `ClipProcessorService`) must NEVER be registered —
+the shutdown reaper would SIGKILL them mid-write, corrupting recording
+segments. This is enforced by a static test (`ProcessManager.reaper.test.js`
+"only ViewBot services register PIDs with the reaper") that greps the
+`server/services/` tree and asserts only ViewBot-named files appear as
+callers. A future contributor copy-pasting the pattern into a recording
+file would fail this test.
+
+### What the comm-snapshot defense covers — and what it doesn't
+
+The defense covers both SIGTERM and SIGKILL (review fix applied during
+PR 8.3): each phase reads `/proc/<pid>/comm` and compares against the
+snapshot taken at register time. If they don't match, the PID has been
+recycled and we skip the signal entirely. This is the right place to
+gate because daemons that don't catch SIGKILL often DO catch SIGTERM
+(treating it as a clean-exit cue), so an unconditional SIGTERM to a
+recycled PID is just as harmful as an SIGKILL to one.
+
+The defense does NOT cover:
+- Truly null comm reads (non-Linux hosts where `/proc` doesn't exist) —
+  the snapshot is `null` and the check is bypassed. Acceptable for the
+  single-host single-tenant posture (production is Linux).
+- PID recycled into a binary with the SAME comm (e.g. another
+  `gst-launch-1.0` launched by an unrelated user / process). Lower
+  probability on this host; documented as an accepted residual risk.
+- The 15-char `TASK_COMM_LEN-1` truncation: both the snapshot read and
+  the reap-time read truncate identically, so the comparison still
+  works for binaries whose name exceeds 15 chars. `gst-launch-1.0` is
+  14 chars; Chromium would be `chromium-browse` (truncated, both sides).
+
+### References
+
+- Runbook: [`docs/operations/runbooks/viewbot-fleet-misbehaving.md`](../../operations/runbooks/viewbot-fleet-misbehaving.md) — the orphan-process hazard PR 8.3 closes.
+- ADR-0016 — tick-loop watchdog (the OTHER half of the Phase 8 viewbot reliability work; observability-only, no recovery).

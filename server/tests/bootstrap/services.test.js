@@ -70,6 +70,18 @@ jest.mock('../../services/game', () => ({
 // PR-I3 additions — bots use post-construction setters wired by the factory,
 // so the mocks need recording stubs for those setters too (so we can assert
 // they were called in the expected order with the expected arguments).
+// PR 8.3 (Phase 8): ProcessManager is required as a singleton in
+// services.js. Replace it with a stub-singleton that exposes stop() and
+// the _stubName tag the order-assertion test reads.
+jest.mock('../../services/ProcessManager', () => ({
+  _stubName: 'ProcessManager',
+  async stop() {},
+  async reapAll() {},
+  registerProcess() {},
+  killBotProcesses() {},
+  onBotStopped() {},
+}));
+
 jest.mock('../../services/ChatBotService', () => class {
   constructor(...args) {
     this._args = args;
@@ -596,6 +608,23 @@ describe('server/bootstrap/services factory', () => {
     // FIRST. We want lifecycleManager drained first so any pending
     // deferred work is cancelled before its target services tear down.
     expect(stoppables[stoppables.length - 1]._stubName).toBe('LifecycleManager');
+  });
+
+  // ── PR 8.3 (Phase 8): ProcessManager wiring ──────────────────────────
+  test('PR 8.3: processManager appears in stoppables, immediately before lifecycleManager (drained late so per-bot stop() paths run first)', () => {
+    const { stoppables } = createServices(buildDeps());
+    const pmIndex = stoppables.findIndex((s) => s && s._stubName === 'ProcessManager');
+    const lmIndex = stoppables.findIndex((s) => s && s._stubName === 'LifecycleManager');
+    expect(pmIndex).toBeGreaterThanOrEqual(0);
+    expect(lmIndex).toBe(stoppables.length - 1);
+    // processManager must be just before lifecycleManager in the factory
+    // array. In reverse iteration this means: lifecycleManager drains
+    // first (cancel deferred work), then processManager reaps any
+    // straggler PIDs. ViewBot stoppables are pushed AFTER this array in
+    // server/index.js, so they actually drain BEFORE processManager — by
+    // which time their per-bot kill paths should have emptied the
+    // registry. The reaper is the safety net for the unhappy path.
+    expect(pmIndex).toBe(lmIndex - 1);
   });
 
   test('streamBotService gets chatBotService + chatBotService.llmService via setters', () => {
