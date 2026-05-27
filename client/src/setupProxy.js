@@ -95,16 +95,6 @@ module.exports = function(app) {
     })
   );
 
-  // Proxy for visualfx-debug endpoints
-  app.use(
-    '/visualfx-debug-simple',
-    createProxyMiddleware({
-      target: mainServerTarget,
-      changeOrigin: true,
-      secure: false
-    })
-  );
-
   // Proxy for other debug endpoints
   app.use(
     '/debug',

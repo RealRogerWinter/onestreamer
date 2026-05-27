@@ -39,20 +39,6 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
-    
-    <!-- VisualFX Debug Panel Integration -->
-    <script>
-      // Load VisualFX debug panel for admins
-      (function() {
-        const script = document.createElement('script');
-        script.src = '/visualfx-debug.js';
-        script.async = true;
-        script.onerror = function() {
-          console.log('VisualFX Debug Panel not available');
-        };
-        document.head.appendChild(script);
-      })();
-    </script>
     <!--
       This HTML file is a template.
       If you open it directly in the browser, you will see an empty page.

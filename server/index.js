@@ -83,13 +83,18 @@
 //                  (6 routes; serverDir passed as absolute path for the two
 //                   __dirname-relative `path.join` calls inside the body)
 //
+//   [deleted]   visualfx debug static assets — 5 routes deleted as dead code
+//                                              (Phase 15B residual investigation
+//                                              found the debug panel loaded a
+//                                              file via a 404 route since the
+//                                              initial commit — the whole
+//                                              surface was forgotten)
+//
 //   [Phase 15B residual — explicit] route clusters still inline:
-//     - visualfx debug static assets       (~5 routes; trivial — paths
-//                                            could move to public/ static)
 //     - user chat-color get/set            (~2 routes; tiny cluster)
 //     - admin dashboard HTML render        (1 route)
 //
-// Total residual: ~5 inline handlers (down from ~140 at Phase-15-start), ~150 LoC of route bodies.
+// Total residual: ~3 inline handlers (down from ~140 at Phase-15-start), ~100 LoC of route bodies.
 // All have a clean destination per the table above; further extractions
 // would be a Phase 16 candidate if scope permits.
 //
@@ -422,36 +427,6 @@ app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avat
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   }
 }));
-
-// Serve VisualFX debug panel files
-app.get('/visualfx-debug.js', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/src/visualfx-debug.js'));
-});
-
-app.get('/ClientVisualFxProcessor.js', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/src/ClientVisualFxProcessor.js'));
-});
-
-app.get('/useVisualFxProcessor.js', (req, res) => {
-  // Serve the compiled TypeScript hook (it's integrated in the React build)
-  res.json({ 
-    message: 'Visual FX Processor hook is integrated in the React components',
-    status: 'integrated' 
-  });
-});
-
-app.get('/StreamerViewManager.js', (req, res) => {
-  // Serve info about the StreamerViewManager (integrated in React build)
-  res.json({ 
-    message: 'StreamerViewManager is integrated in the React components',
-    status: 'integrated',
-    features: ['automatic view switching', 'effect detection', 'self-stream consumption']
-  });
-});
-
-app.get('/visualfx-debug-panel.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/public/visualfx-debug-panel.html'));
-});
 
 // Session configuration
 app.use(session({
