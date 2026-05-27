@@ -4903,10 +4903,34 @@ async function startServer() {
     const ModerationService = require('./services/ModerationService');
     const ModerationStage2 = require('./services/ModerationStage2');
     const ModerationStage3 = require('./services/ModerationStage3');
+
+    // Resolve the Groq API key for Stage 2. Three sources in priority order:
+    //   1. `MODERATION_GROQ_API_KEY` env  (ops override for quota isolation)
+    //   2. `GROQ_API_KEY` env             (shared with MovieBot)
+    //   3. `groq_config.api_key` DB row   (admin-managed, same row ChatBotLLMService.loadGroqConfig reads)
+    //
+    // The fall-through to the DB is the production hotfix: a live install
+    // had the Groq key stored ONLY in `groq_config` (admin-set via the
+    // existing /admin/groq UI) and the env unset, so ChatBotLLMService /
+    // MovieBot worked but moderation Stage 2 never fired. Without this
+    // fall-through, every Stage 1 hit produced an `admin_review` row with
+    // empty `stage2_verdict_json` — the LLM classifier was dark.
+    let moderationGroqKey = process.env.MODERATION_GROQ_API_KEY || process.env.GROQ_API_KEY || null;
+    if (!moderationGroqKey) {
+      try {
+        const row = await database.getAsync('SELECT api_key, enabled FROM groq_config WHERE id = 1');
+        if (row && row.enabled === 1 && row.api_key) {
+          moderationGroqKey = row.api_key;
+          console.log('✅ ModerationStage2: Groq key loaded from groq_config table (env unset)');
+        } else {
+          console.log('⚠️ ModerationStage2: no Groq key in env OR groq_config — Stage 2 will be skipped');
+        }
+      } catch (e) {
+        console.warn('⚠️ ModerationStage2: could not read groq_config:', e.message);
+      }
+    }
     const moderationStage2 = new ModerationStage2({
-      // GROQ_API_KEY is read from process.env by default. Override via
-      // `MODERATION_GROQ_API_KEY` if ops want a separate quota from MovieBot.
-      apiKey: process.env.MODERATION_GROQ_API_KEY || process.env.GROQ_API_KEY || null,
+      apiKey: moderationGroqKey,
       model: process.env.MODERATION_GROQ_MODEL || undefined,
     });
     // PR-M3: Stage 3 is the free OpenAI omni-moderation cross-check. Optional —

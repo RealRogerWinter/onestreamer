@@ -295,6 +295,40 @@ describe('ModerationService.handleTranscriptChunk', () => {
     expect(row.transcript_excerpt).toBe('faggot from text field');
   });
 
+  // Regression: in production, ViewBotURLService calls
+  // streamService.setStreamer(urlId) WITHOUT a streamType arg, so
+  // StreamService.setStreamer defaults to 'webcam'. As a result,
+  // streamService.getStreamType() reported 'webcam' for URL-relay
+  // sessions and moderation_events rows from URL relays were mis-labelled.
+  // The recovery: detect the `url-stream-` id prefix in
+  // _resolveStreamType(streamerId). Mislabel impact at enforce=true: the
+  // ActionArbiter would route to _actWebcam (attempting to ban a user_id
+  // that doesn't exist for a URL relay) instead of _actUrlRelay.
+  test('regression: url-stream-prefixed streamerId resolves to stream_type=url-relay', async () => {
+    const streamService = makeStreamServiceStub({ streamType: 'webcam' }); // production default
+    const { svc, wrapper } = await buildService({ streamService });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({
+      streamerId: 'url-stream-1779851056114-2',
+      text: 'i would never say faggot but he did',
+    });
+    const row = await wrapper.getAsync('SELECT stream_type, streamer_id FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.stream_type).toBe('url-relay');
+    expect(row.streamer_id).toBe('url-stream-1779851056114-2');
+  });
+
+  test('regression: non-prefixed streamerId falls through to streamService.getStreamType', async () => {
+    const streamService = makeStreamServiceStub({ streamType: 'viewbot' });
+    const { svc, wrapper } = await buildService({ streamService });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({
+      streamerId: 'sock_abc123',
+      text: 'i would never say faggot but he did',
+    });
+    const row = await wrapper.getAsync('SELECT stream_type FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.stream_type).toBe('viewbot');
+  });
+
   test('Stage 1 hit writes a moderation_events row with admin_review decision', async () => {
     const { svc, moderationNotifier, wrapper } = await buildService();
     await svc.initialize();

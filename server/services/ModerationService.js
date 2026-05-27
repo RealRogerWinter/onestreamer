@@ -417,7 +417,7 @@ class ModerationService extends EventEmitter {
       return null;
     }
 
-    const streamType = this._resolveStreamType();
+    const streamType = this._resolveStreamType(chunk.streamerId);
     const streamGeneration = this.streamService.getStreamGeneration();
     const matchedTermsJson = JSON.stringify(matches.map((m) => ({
       term: m.term,
@@ -615,11 +615,34 @@ class ModerationService extends EventEmitter {
 
   /**
    * Map the live stream state to one of the moderation_events.stream_type
-   * enum values. PR-M3 will refine 'webcam' vs 'url-relay' by consulting
-   * viewBotURLService; for M1 we use what streamService says and default
-   * to 'webcam' for anything we don't recognize.
+   * enum values.
+   *
+   * Production observation that drove this rewrite: `ViewBotURLService`
+   * calls `streamService.setStreamer(urlId)` for URL-relay sessions WITHOUT
+   * a second `streamType` argument. `StreamService.setStreamer` defaults
+   * the missing arg to `'webcam'`, so `getStreamType()` reports `'webcam'`
+   * for what's actually a URL relay. That mislabels every moderation_events
+   * row from a URL-relay session, and — when `AI_MODERATION_ENFORCE=true` —
+   * routes the ActionArbiter to `_actWebcam` (which would attempt to ban a
+   * `user_id` that doesn't exist for URL relays) instead of `_actUrlRelay`
+   * (which adds a `WhitelistService` block entry, the right action).
+   *
+   * The canonical URL-relay id prefix is `url-stream-` (literal substring
+   * used in `ViewBotURLService.js` around `participantIdentity?.startsWith('url-stream-')`
+   * and the `url-stream-${Date.now()}-...` mint site). We detect it here
+   * to recover the correct `stream_type` without requiring a cross-cutting
+   * change to `ViewBotURLService` (which would touch many call sites
+   * and could surprise other consumers of `streamService.getStreamType()`).
+   *
+   * @param {string} [streamerId]  Optional. When provided, takes precedence
+   *                               over the streamService value so the prefix
+   *                               check works even when `setStreamer` was
+   *                               called with the default streamType.
    */
-  _resolveStreamType() {
+  _resolveStreamType(streamerId) {
+    if (typeof streamerId === 'string' && streamerId.startsWith('url-stream-')) {
+      return 'url-relay';
+    }
     const t = this.streamService.getStreamType();
     if (t === 'viewbot' || t === 'webrtc-viewbot') return 'viewbot';
     if (t === 'url-relay') return 'url-relay';
