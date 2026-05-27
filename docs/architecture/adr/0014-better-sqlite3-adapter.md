@@ -5,8 +5,12 @@
 **Phase**: 5 (DB layer)
 **PR**: 5.2 (`better-sqlite3-adapter`)
 **Supersedes (eventually)**: none — sqlite3 stays open alongside.
-**Cross-references**: [ADR-0013](0013-atomic-sql-for-mutable-counters.md)
+**Cross-references**: [ADR-0013a](0013a-atomic-sql-for-mutable-counters.md)
 (atomic-SQL principle; this adapter must preserve `RETURNING`-via-`getAsync`).
+Note: numbered `0013a` because ADR-0013 was double-allocated (also assigned
+to AI moderation pipeline in a parallel branch). See ADR-0015 for the
+collision resolution; the atomic-SQL ADR keeps its content, only the file
+slug shifted.
 
 ## Context
 
@@ -40,7 +44,7 @@ wins (prepared-statement amortization + one-fewer-libuv-hop) are
 unconditional even when the engine-throughput benchmark doesn't carry
 over.
 
-The brief for Phase 5 named this swap as PR 5.2's deliverable; ADR-0013
+The brief for Phase 5 named this swap as PR 5.2's deliverable; ADR-0013a
 flagged `RETURNING`-via-`getAsync` as a constraint this adapter must
 preserve.
 
@@ -340,7 +344,7 @@ objects. Rejected:
 
 ## References
 
-- ADR-0013 — atomic-SQL for mutable counters; the contract this adapter
+- ADR-0013a — atomic-SQL for mutable counters; the contract this adapter
   must preserve.
 - `server/database/applyPragmas.js` — the per-connection PRAGMA
   contract this adapter mirrors.

@@ -54,3 +54,15 @@ What else we looked at and why we did not pick it.
 | 0011 | [LifecycleManager for deferred one-shot work](0011-lifecycle-manager.md) | accepted |
 | 0012 | [Partial decomposition of `startServer()`](0012-startserver-decomposition-partial.md) | accepted |
 | 0013 | [AI moderation pipeline for streamer audio](0013-ai-moderation-pipeline.md) | accepted |
+| 0013a | [Atomic SQL for mutable per-row counters](0013a-atomic-sql-for-mutable-counters.md) | accepted |
+| 0014 | [better-sqlite3 adapter behind an env flag](0014-better-sqlite3-adapter.md) | accepted |
+| 0015 | [Transaction shape for multi-statement DB operations](0015-transaction-shape-for-multi-statement.md) | accepted |
+
+### Note on the 0013a slug
+
+ADR-0013 was double-allocated: the AI moderation pipeline and the atomic-SQL
+ADR both shipped on main with the same number from parallel branches. The
+collision was resolved in PR 7.1 (Phase 7) by renaming the atomic-SQL ADR
+to `0013a-atomic-sql-for-mutable-counters.md` — the bare `0013` slug stays
+with the more-referenced AI moderation ADR. Future ADRs continue sequentially
+from 0015.

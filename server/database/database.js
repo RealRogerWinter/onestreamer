@@ -886,11 +886,17 @@ if (process.env.USE_BETTER_SQLITE3 === 'true') {
     }
 }
 
+// withTransaction (ADR-0015). Closes over the *current* wrappers — captured
+// AFTER the USE_BETTER_SQLITE3 swap above. Module-load order is the contract.
+const { createWithTransaction } = require('./transaction');
+const withTransaction = createWithTransaction({ runAsync, getAsync, allAsync });
+
 module.exports = {
     db,
     runAsync,
     getAsync,
     allAsync,
+    withTransaction,
     // Test-only handle for the adapter, when active. Gated on NODE_ENV so
     // production code physically can't reach the adapter's raw Database
     // (which exposes .exec/.transaction/.backup outside the wrappers).
