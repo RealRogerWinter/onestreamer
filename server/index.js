@@ -1094,11 +1094,21 @@ const { authenticateAdmin, authenticateModerator } = require('./middleware/auth'
 const adminKeyAuth = (req, res, next) => {
   const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
   const correctKey = ADMIN_KEY;
-  
+
   if (adminKey !== correctKey) {
     return res.status(401).json({ error: 'Unauthorized - Invalid admin key' });
   }
   next();
+};
+
+// Accept either the legacy admin-key OR a valid admin JWT. Lets the admin-panel
+// UI hit endpoints with just the bearer token it already carries, while still
+// honoring scripts/automation that send X-Admin-Key. Used by the visionbot
+// routes; safe to widen to MovieBot/Groq when those panels need it too.
+const adminKeyOrJwt = (req, res, next) => {
+  const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
+  if (adminKey && adminKey === ADMIN_KEY) return next();
+  return authenticateAdmin(req, res, next);
 };
 
 // Custom Emoji API endpoints
@@ -2671,7 +2681,7 @@ app.get('/admin/moviebot/logs', adminKeyAuth, async (req, res) => {
 // VisionBot admin endpoints — sibling block to MovieBot above. Mirrors that
 // shape: enable / disable / status / config / logs. Auth via adminKeyAuth
 // to match the existing MovieBot client-side calls from BotsPanel.
-app.post('/admin/visionbot/enable', adminKeyAuth, async (req, res) => {
+app.post('/admin/visionbot/enable', adminKeyOrJwt, async (req, res) => {
   try {
     const svc = req.app.locals.services && req.app.locals.services.visionBotService;
     if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
@@ -2688,7 +2698,7 @@ app.post('/admin/visionbot/enable', adminKeyAuth, async (req, res) => {
   }
 });
 
-app.post('/admin/visionbot/disable', adminKeyAuth, async (req, res) => {
+app.post('/admin/visionbot/disable', adminKeyOrJwt, async (req, res) => {
   try {
     const svc = req.app.locals.services && req.app.locals.services.visionBotService;
     if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
@@ -2700,7 +2710,7 @@ app.post('/admin/visionbot/disable', adminKeyAuth, async (req, res) => {
   }
 });
 
-app.get('/admin/visionbot/status', adminKeyAuth, async (req, res) => {
+app.get('/admin/visionbot/status', adminKeyOrJwt, async (req, res) => {
   try {
     const svc = req.app.locals.services && req.app.locals.services.visionBotService;
     if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
@@ -2711,7 +2721,7 @@ app.get('/admin/visionbot/status', adminKeyAuth, async (req, res) => {
   }
 });
 
-app.post('/admin/visionbot/config', adminKeyAuth, async (req, res) => {
+app.post('/admin/visionbot/config', adminKeyOrJwt, async (req, res) => {
   try {
     const svc = req.app.locals.services && req.app.locals.services.visionBotService;
     if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
@@ -2723,7 +2733,7 @@ app.post('/admin/visionbot/config', adminKeyAuth, async (req, res) => {
   }
 });
 
-app.get('/admin/visionbot/logs', adminKeyAuth, async (req, res) => {
+app.get('/admin/visionbot/logs', adminKeyOrJwt, async (req, res) => {
   try {
     const svc = req.app.locals.services && req.app.locals.services.visionBotService;
     if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
