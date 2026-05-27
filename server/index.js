@@ -4531,19 +4531,99 @@ app.get('/admin/groq/status', adminKeyAuth, async (req, res) => {
 app.post('/admin/groq/config', adminKeyAuth, async (req, res) => {
   try {
     const { enabled, apiKey, model } = req.body;
-    
+
     // Update Groq settings in LLM service
     const result = chatBotService.llmService.updateGroqSettings(
       enabled,
       apiKey || null,
       model || null
     );
-    
+
     console.log('🚀 ADMIN: Updated global Groq settings:', result);
     res.json({ success: true, ...result });
   } catch (error) {
     console.error('❌ ADMIN: Failed to update Groq config:', error);
     res.status(500).json({ error: 'Failed to update Groq config' });
+  }
+});
+
+// PR-M8 (follow-up to ADR-0021): admin surface for the OpenAI moderation
+// key. Symmetric with /admin/groq/{status,config}. Used by operators who
+// store keys in DB rather than env. The boot-time resolver
+// (server/index.js around the ModerationStage3 construction) reads this
+// table when OPENAI_API_KEY env is unset.
+//
+// The status endpoint deliberately does NOT return the api_key value —
+// only its presence + length + 8-char prefix for confirmation. Echoing
+// the full key on a GET would defeat the point of storing it as a
+// secret.
+app.get('/admin/openai/status', adminKeyAuth, async (req, res) => {
+  try {
+    const row = await database.getAsync('SELECT enabled, api_key, updated_at, updated_by FROM openai_config WHERE id = 1');
+    const hasKey = !!(row && row.api_key);
+    res.json({
+      enabled: !!(row && row.enabled === 1),
+      hasKey,
+      keyLength: hasKey ? row.api_key.length : 0,
+      keyPrefix: hasKey ? row.api_key.slice(0, 8) : null,
+      updated_at: row ? row.updated_at : null,
+      updated_by: row ? row.updated_by : null,
+      envKeyPresent: !!process.env.OPENAI_API_KEY,
+    });
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to get OpenAI status:', error);
+    res.status(500).json({ error: 'Failed to get OpenAI status' });
+  }
+});
+
+app.post('/admin/openai/config', adminKeyAuth, async (req, res) => {
+  try {
+    const { enabled, apiKey } = req.body || {};
+    if (enabled !== undefined && typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+    if (apiKey !== undefined && apiKey !== null && typeof apiKey !== 'string') {
+      return res.status(400).json({ error: 'apiKey must be a string or null' });
+    }
+    // Build UPDATE dynamically so the caller can flip enabled without
+    // re-sending the key (and vice versa). The seed row exists from the
+    // schema apply so INSERT OR REPLACE isn't necessary.
+    const fields = [];
+    const params = [];
+    if (enabled !== undefined) {
+      fields.push('enabled = ?');
+      params.push(enabled ? 1 : 0);
+    }
+    if (apiKey !== undefined) {
+      fields.push('api_key = ?');
+      params.push(apiKey);
+    }
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'pass at least one of enabled, apiKey' });
+    }
+    fields.push("updated_at = datetime('now')");
+    fields.push('updated_by = ?');
+    params.push('admin');
+    await database.runAsync(`UPDATE openai_config SET ${fields.join(', ')} WHERE id = 1`, params);
+
+    console.log(`🔑 ADMIN: Updated openai_config (enabled=${enabled !== undefined ? enabled : 'unchanged'}, apiKey=${apiKey === undefined ? 'unchanged' : (apiKey ? 'updated' : 'cleared')})`);
+    // Return the same shape as /status so the admin UI can render the
+    // post-write state without an extra round-trip.
+    const row = await database.getAsync('SELECT enabled, api_key, updated_at, updated_by FROM openai_config WHERE id = 1');
+    const hasKey = !!(row && row.api_key);
+    res.json({
+      success: true,
+      enabled: !!(row && row.enabled === 1),
+      hasKey,
+      keyLength: hasKey ? row.api_key.length : 0,
+      keyPrefix: hasKey ? row.api_key.slice(0, 8) : null,
+      updated_at: row ? row.updated_at : null,
+      updated_by: row ? row.updated_by : null,
+      note: 'A server restart is required for the new key to take effect — the boot-time resolver reads this row once on startup.',
+    });
+  } catch (error) {
+    console.error('❌ ADMIN: Failed to update OpenAI config:', error);
+    res.status(500).json({ error: 'Failed to update OpenAI config' });
   }
 });
 
@@ -5021,15 +5101,42 @@ async function startServer() {
     // events route to admin_review (no auto-action). The action arbiter is
     // injected LATER via setActionArbiter() — after RandomStreamRotationService
     // is built in the MediaSoup or LiveKit branch below.
+    //
+    // PR-M8 (follow-up to ADR-0021): resolve the OpenAI key in priority order:
+    //   1. OPENAI_API_KEY env  (operator-set, the standard path)
+    //   2. openai_config.api_key DB row WHERE enabled=1
+    //
+    // This mirrors the Groq Stage 2 DB-fallback hotfix above. The same
+    // production install pattern (keys live in DB, admin UI manages them)
+    // had Stage 3 silently degraded — every Stage 2 risk-3 verdict routed
+    // to admin_review because Stage 3 had no second opinion to give, and
+    // OmniImageMod's image moderation path (which reuses Stage 3) would
+    // have been silently dark the moment image_moderation_enabled=1 was
+    // flipped. This fall-through closes the gap without forcing operators
+    // to migrate their key from DB to env.
+    let moderationOpenAiKey = process.env.OPENAI_API_KEY || null;
+    if (!moderationOpenAiKey) {
+      try {
+        const row = await database.getAsync('SELECT api_key, enabled FROM openai_config WHERE id = 1');
+        if (row && row.enabled === 1 && row.api_key) {
+          moderationOpenAiKey = row.api_key;
+          console.log('✅ ModerationStage3: OpenAI key loaded from openai_config table (env unset)');
+        } else {
+          console.log('⚠️ ModerationStage3: no OpenAI key in env OR openai_config — Stage 3 (text + image) will be skipped');
+        }
+      } catch (e) {
+        console.warn('⚠️ ModerationStage3: could not read openai_config:', e.message);
+      }
+    }
     const moderationStage3 = new ModerationStage3({
-      apiKey: process.env.OPENAI_API_KEY || null,
+      apiKey: moderationOpenAiKey,
     });
     // OmniImageMod PR 2 (ADR-0021): a SECOND Stage 3 instance for the image
     // input pipeline. Same endpoint + key, but a separate circuit-breaker
     // state so a stall on the heavier-payload image path can't blind text
     // moderation (and vice versa).
     const moderationStage3Image = new ModerationStage3({
-      apiKey: process.env.OPENAI_API_KEY || null,
+      apiKey: moderationOpenAiKey,
     });
     let moderationService = new ModerationService({
       database,

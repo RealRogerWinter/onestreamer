@@ -170,3 +170,26 @@ ALTER TABLE moderation_global_config ADD COLUMN image_frame_retention_days INTEG
 UPDATE moderation_global_config
     SET image_categories_enabled_json = '["sexual","violence","violence/graphic","self-harm","self-harm/intent","self-harm/instructions"]'
     WHERE id = 1 AND image_categories_enabled_json IS NULL;
+
+-- ── OpenAI key DB-fallback (PR-M8, follow-up to ADR-0021) ────────────────
+-- Mirrors `groq_config` for the OpenAI omni-moderation Stage 3 key.
+-- Background: PR-M7 (the Groq Stage 2 DB-fallback hotfix) closed the
+-- "env empty, key in DB, classifier dark" gap for Stage 2. The
+-- equivalent gap for Stage 3 (OpenAI omni-moderation) remained until
+-- now — an install with OPENAI_API_KEY only in DB had Stage 3 silently
+-- degraded, which also affected the OmniImageMod image-moderation path
+-- (which uses a second Stage 3 instance per ADR-0021).
+--
+-- Singleton row (id=1). Same shape as groq_config so the admin UI can
+-- treat them symmetrically. server/index.js resolves the key at boot:
+-- OPENAI_API_KEY env → openai_config.api_key DB → null. Stage 3 reports
+-- degraded with reason='no_api_key' if both are empty.
+CREATE TABLE IF NOT EXISTS openai_config (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled     INTEGER NOT NULL DEFAULT 0,
+    api_key     TEXT,
+    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by  TEXT
+);
+INSERT OR IGNORE INTO openai_config (id, enabled, updated_by)
+    VALUES (1, 0, 'seed');
