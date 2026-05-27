@@ -52,3 +52,4 @@ What else we looked at and why we did not pick it.
 | 0009 | [Single `stream-ended` emission chokepoint (`StreamNotifier`)](0009-stream-notifier-chokepoint.md) | accepted |
 | 0010 | [URL-relay whitelist mode for family-friendly content](0010-url-relay-whitelist-mode.md) | accepted |
 | 0011 | [LifecycleManager for deferred one-shot work](0011-lifecycle-manager.md) | accepted |
+| 0012 | [Partial decomposition of `startServer()`](0012-startserver-decomposition-partial.md) | accepted |

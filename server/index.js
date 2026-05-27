@@ -58,6 +58,8 @@ const bugReportsRoutes = require('./routes/bug-reports');
 const clipsRoutes = require('./routes/clips');
 const adminRecordingsRoutes = require('./routes/admin-recordings');
 const turnRoutes = require('./routes/turn');
+const mountSocialEmbedRoutes = require('./routes/social-embed');
+const startListeners = require('./bootstrap/start-listeners');
 // Socket handler modules (PR-H pilot extraction — see server/sockets/).
 const registerAdminHandler = require('./sockets/AdminHandler');
 const registerBuffHandler = require('./sockets/BuffHandler');
@@ -176,6 +178,11 @@ const io = socketIo(server, {
 });
 
 const PORT = process.env.PORT || 8080;
+// Single source of truth for the built React index.html. Used by the
+// catch-all React route AND by the social-embed clip handler — PR 4.3's
+// first review pass caught a duplicate inline path that survived the
+// initial extraction.
+const CLIENT_BUILD_INDEX_PATH = path.join(__dirname, '..', 'client', 'build', 'index.html');
 
 // Compression middleware for better performance
 const compression = require('compression');
@@ -5333,297 +5340,15 @@ async function startServer() {
     console.log('⚠️ SERVER: Continuing without ChatBot service...');
   }
 
-  // ============================================================================
-  // SOCIAL MEDIA EMBED SUPPORT - Dynamic Open Graph meta tags for blog posts
-  // ============================================================================
-  // This middleware serves custom HTML with proper meta tags for social crawlers
-  // so that blog links display rich previews in Discord, Twitter, Facebook, etc.
-  // ============================================================================
-
-  app.get('/blog/:slug', async (req, res, next) => {
-    const { slug } = req.params;
-
-    // Skip static files and index.html
-    if (slug === 'index.html' || slug.includes('.')) {
-      return next();
-    }
-
-    try {
-      // Fetch article from Strapi
-      const https = require('https');
-      const strapiUrl = `http://127.0.0.1:1337/api/articles?filters[slug][$eq]=${encodeURIComponent(slug)}&populate=*`;
-
-      const fetchArticle = () => new Promise((resolve, reject) => {
-        require('http').get(strapiUrl, (response) => {
-          let data = '';
-          response.on('data', chunk => data += chunk);
-          response.on('end', () => {
-            try {
-              const json = JSON.parse(data);
-              resolve(json.data?.[0] || null);
-            } catch (e) {
-              reject(e);
-            }
-          });
-        }).on('error', reject);
-      });
-
-      const article = await fetchArticle();
-
-      if (!article) {
-        // Article not found - serve normal blog page
-        return res.sendFile(path.join('/var/www/html/blog', 'index.html'));
-      }
-
-      // Escape HTML entities for security
-      const escapeHtml = (str) => {
-        if (!str) return '';
-        return str
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;');
-      };
-
-      const title = escapeHtml(article.title) || 'Blog Post';
-      const rawDescription = article.excerpt || article.content?.trim().substring(0, 160).replace(/[#*_`\n\r]/g, ' ').replace(/\s+/g, ' ').trim() + '...';
-      const description = escapeHtml(rawDescription);
-      const author = escapeHtml(article.author || 'OneStreamer Team');
-
-      // Build URLs
-      const baseUrl = 'https://onestreamer.live';
-      const articleUrl = `${baseUrl}/blog/${slug}`;
-
-      // Cover image URL
-      let imageUrl = `${baseUrl}/og-blog.png`; // Default blog OG image
-      if (article.cover?.url || article.coverImage?.url) {
-        const coverUrl = article.cover?.url || article.coverImage?.url;
-        if (coverUrl.startsWith('http')) {
-          imageUrl = coverUrl;
-        } else if (coverUrl.startsWith('/uploads')) {
-          // Strapi uploads need to go through /strapi path
-          imageUrl = `${baseUrl}/strapi${coverUrl}`;
-        } else {
-          imageUrl = `${baseUrl}${coverUrl}`;
-        }
-      }
-
-      // Format date
-      const publishedDate = article.publishedAt ? new Date(article.publishedAt).toISOString() : '';
-      const modifiedDate = article.updatedAt ? new Date(article.updatedAt).toISOString() : '';
-
-      // Read the blog index.html template
-      const fs = require('fs');
-      const blogIndexPath = path.join('/var/www/html/blog', 'index.html');
-      let html = fs.readFileSync(blogIndexPath, 'utf8');
-
-      // Update the title tag
-      html = html.replace(
-        /<title[^>]*>.*?<\/title>/,
-        `<title>${title} | OneStreamer Blog</title>`
-      );
-
-      // Update meta tags with article-specific content
-      html = html.replace(/id="page-title">.*?<\/title>/, `id="page-title">${title} | OneStreamer Blog</title>`);
-      html = html.replace(/id="meta-title" content="[^"]*"/, `id="meta-title" content="${title} | OneStreamer Blog"`);
-      html = html.replace(/id="page-description"[^>]*content="[^"]*"/, `id="page-description" name="description" content="${description}"`);
-      html = html.replace(/id="canonical-url" href="[^"]*"/, `id="canonical-url" href="${articleUrl}"`);
-
-      // Open Graph - match id, any attributes, then content
-      html = html.replace(/id="og-type"[^>]*content="[^"]*"/, `id="og-type" property="og:type" content="article"`);
-      html = html.replace(/id="og-url"[^>]*content="[^"]*"/, `id="og-url" property="og:url" content="${articleUrl}"`);
-      html = html.replace(/id="og-title"[^>]*content="[^"]*"/, `id="og-title" property="og:title" content="${title}"`);
-      html = html.replace(/id="og-description"[^>]*content="[^"]*"/, `id="og-description" property="og:description" content="${description}"`);
-      html = html.replace(/id="og-image"[^>]*content="[^"]*"/, `id="og-image" property="og:image" content="${imageUrl}"`);
-
-      // Twitter - match id, any attributes, then content
-      html = html.replace(/id="twitter-url"[^>]*content="[^"]*"/, `id="twitter-url" name="twitter:url" content="${articleUrl}"`);
-      html = html.replace(/id="twitter-title"[^>]*content="[^"]*"/, `id="twitter-title" name="twitter:title" content="${title}"`);
-      html = html.replace(/id="twitter-description"[^>]*content="[^"]*"/, `id="twitter-description" name="twitter:description" content="${description}"`);
-      html = html.replace(/id="twitter-image"[^>]*content="[^"]*"/, `id="twitter-image" name="twitter:image" content="${imageUrl}"`);
-
-      // Article meta - match id, any attributes, then content
-      html = html.replace(/id="article-author"[^>]*content="[^"]*"/, `id="article-author" property="article:author" content="${author}"`);
-      html = html.replace(/id="article-published"[^>]*content="[^"]*"/, `id="article-published" property="article:published_time" content="${publishedDate}"`);
-      html = html.replace(/id="article-modified"[^>]*content="[^"]*"/, `id="article-modified" property="article:modified_time" content="${modifiedDate}"`);
-
-      // Update JSON-LD structured data
-      const jsonLd = {
-        "@context": "https://schema.org",
-        "@type": "BlogPosting",
-        "headline": title,
-        "description": description,
-        "image": imageUrl,
-        "url": articleUrl,
-        "datePublished": publishedDate,
-        "dateModified": modifiedDate,
-        "author": {
-          "@type": "Person",
-          "name": author
-        },
-        "publisher": {
-          "@type": "Organization",
-          "name": "OneStreamer",
-          "url": "https://onestreamer.live",
-          "logo": {
-            "@type": "ImageObject",
-            "url": "https://onestreamer.live/logo.png"
-          }
-        }
-      };
-      html = html.replace(
-        /<script type="application\/ld\+json" id="schema-data">[\s\S]*?<\/script>/,
-        `<script type="application/ld+json" id="schema-data">${JSON.stringify(jsonLd, null, 2)}</script>`
-      );
-
-      res.setHeader('Content-Type', 'text/html');
-      res.send(html);
-
-    } catch (error) {
-      console.error(`❌ Error generating blog meta tags for ${slug}:`, error);
-      // On error, fall back to serving the normal blog page
-      res.sendFile(path.join('/var/www/html/blog', 'index.html'));
-    }
-  });
-
-  // ============================================================================
-  // SOCIAL MEDIA EMBED SUPPORT - Dynamic Open Graph meta tags for clip pages
-  // ============================================================================
-  // This middleware serves custom HTML with proper meta tags for social crawlers
-  // so that clip links display rich previews in Discord, Twitter, Facebook, etc.
-  // ============================================================================
-
-  app.get('/clips/:clipId', async (req, res, next) => {
-    const { clipId } = req.params;
-
-    // Validate clipId format (UUID)
-    const uuidRegex = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-    if (!uuidRegex.test(clipId)) {
-      // Not a valid clip URL, let React handle it
-      return next();
-    }
-
-    try {
-      // Fetch clip data
-      const clip = await clipService.getClip(clipId);
-
-      if (!clip || clip.status !== 'ready' || !clip.is_public) {
-        // Clip not found or not ready/public - serve normal React app
-        return res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
-      }
-
-      // Format duration for display (e.g., "0:45" or "1:30")
-      const durationSec = Math.round((clip.duration_ms || 0) / 1000);
-      const minutes = Math.floor(durationSec / 60);
-      const seconds = durationSec % 60;
-      const durationStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-      // Escape HTML entities for security
-      const escapeHtml = (str) => {
-        if (!str) return '';
-        return str
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;');
-      };
-
-      const title = escapeHtml(clip.title) || 'Clip';
-      const description = escapeHtml(clip.description) || `A ${durationStr} clip by ${escapeHtml(clip.creator_username || 'Anonymous')}`;
-      const creatorName = escapeHtml(clip.creator_username || 'Anonymous');
-
-      // Build URLs
-      const baseUrl = 'https://onestreamer.live';
-      const clipUrl = `${baseUrl}/clips/${clipId}`;
-      const thumbnailUrl = `${baseUrl}/api/clips/${clipId}/thumbnail`;
-      const videoUrl = `${baseUrl}/api/clips/${clipId}/stream`;
-
-      // Read the base index.html template
-      const fs = require('fs');
-      const indexPath = path.join(__dirname, '..', 'client', 'build', 'index.html');
-      let html = fs.readFileSync(indexPath, 'utf8');
-
-      // Google Analytics script
-      const gaScript = `
-    <!-- Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XN4PGT5J9W"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        gtag('js', new Date());
-        gtag('config', 'G-XN4PGT5J9W', {
-            page_path: window.location.pathname
-        });
-    </script>
-`;
-
-      // Build the Open Graph and Twitter Card meta tags
-      const metaTags = `
-    <!-- Open Graph Meta Tags for Social Media Sharing -->
-    <meta property="og:site_name" content="OneStreamer">
-    <meta property="og:url" content="${clipUrl}">
-    <meta property="og:type" content="video.other">
-    <meta property="og:title" content="${title}">
-    <meta property="og:description" content="${description}">
-    <meta property="og:image" content="${thumbnailUrl}">
-    <meta property="og:image:width" content="1280">
-    <meta property="og:image:height" content="720">
-    <meta property="og:image:alt" content="${title}">
-    <meta property="og:video" content="${videoUrl}">
-    <meta property="og:video:secure_url" content="${videoUrl}">
-    <meta property="og:video:type" content="video/mp4">
-    <meta property="og:video:width" content="1280">
-    <meta property="og:video:height" content="720">
-
-    <!-- Twitter Card Meta Tags -->
-    <meta name="twitter:card" content="player">
-    <meta name="twitter:site" content="@onestreamer">
-    <meta name="twitter:title" content="${title}">
-    <meta name="twitter:description" content="${description}">
-    <meta name="twitter:image" content="${thumbnailUrl}">
-    <meta name="twitter:player" content="${clipUrl}?embed=true">
-    <meta name="twitter:player:width" content="1280">
-    <meta name="twitter:player:height" content="720">
-
-    <!-- Additional metadata -->
-    <meta property="video:duration" content="${durationSec}">
-    <meta name="author" content="${creatorName}">
-`;
-
-      // Update the title tag
-      html = html.replace(
-        /<title>.*?<\/title>/,
-        `<title>${title} - OneStreamer Clip</title>`
-      );
-
-      // Update the description meta tag
-      html = html.replace(
-        /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/,
-        `<meta name="description" content="${description}">`
-      );
-
-      // Insert Open Graph tags after the description meta tag
-      html = html.replace(
-        /(<meta\s+name="description"\s+content="[^"]*"\s*\/?>)/,
-        `$1${metaTags}`
-      );
-
-      // Insert Google Analytics script before closing </head> tag
-      html = html.replace(
-        /<\/head>/,
-        `${gaScript}</head>`
-      );
-
-      res.setHeader('Content-Type', 'text/html');
-      res.send(html);
-
-    } catch (error) {
-      console.error(`❌ Error generating clip meta tags for ${clipId}:`, error);
-      // On error, fall back to serving the normal React app
-      res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
-    }
+  // Social-media embed routes (Open Graph + Twitter Card + JSON-LD for the
+  // blog and clip URLs). Extracted to server/routes/social-embed.js as part
+  // of PR 4.3's startServer() decomposition — two ~140-line Express handler
+  // blocks that didn't touch any internal service except clipService.
+  // Mounted here so it still sits BEFORE the catch-all route below
+  // (registration order matters for Express).
+  mountSocialEmbedRoutes(app, {
+    clipService,
+    clientBuildIndexPath: CLIENT_BUILD_INDEX_PATH,
   });
 
   // Catch-all route - serve React app for client-side routing
@@ -5667,7 +5392,7 @@ async function startServer() {
     }
     
     // Serve React app for all other routes including /auth/complete-registration
-    res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
+    res.sendFile(CLIENT_BUILD_INDEX_PATH);
   });
 
   // Start account deletion scheduler after a delay to ensure database is ready.
@@ -5688,51 +5413,20 @@ async function startServer() {
     console.log('🗑️ Account deletion scheduler started');
   }, 5000);
 
-  // Start HTTP server
-  httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 HTTP server running on port ${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log('🔍 HTTP Server accessible on:');
-    console.log('  - http://localhost:' + PORT);
-    console.log('  - http://onestreamer.live:' + PORT);
-  });
+  // HTTP + HTTPS listener startup extracted to server/bootstrap/start-listeners.js
+  // (PR 4.3). The error handler below is left inline because it's a long-
+  // lived runtime concern, not a startup concern.
+  startListeners({ httpServer, httpsServer, port: PORT, httpsPort: HTTPS_PORT });
 
-  // Start HTTPS server if configured
-  if (httpsServer) {
-    httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
-      console.log(`🔒 HTTPS server running on port ${HTTPS_PORT}`);
-      console.log('🔍 HTTPS Server accessible on:');
-      console.log('  - https://localhost:' + HTTPS_PORT);
-      console.log('  - https://onestreamer.live:' + HTTPS_PORT);
-      console.log('⚠️  Note: Using self-signed certificate. Browser will show security warning.');
-    });
-  }
-
-  // Visual effects sync temporarily disabled to debug rotate_90 issue
-  // setTimeout(() => {
-  //   console.log('🔄 VISUAL FX SYNC: Starting visual effects synchronization...');
-  //   try {
-  //     startVisualEffectSync();
-  //     console.log('🔄 VISUAL FX SYNC: Successfully started!');
-  //   } catch (error) {
-  //     console.error('❌ VISUAL FX SYNC: Failed to start:', error);
-  //   }
-  // }, 2000);
-
-  // PR 4.2: removed a 3-second dev-only diagnostic that iterated every
-  // authenticated session at boot and called getStreamerDisplayName for
-  // each socket. Useful when the lookup was being added; dead chatter now
-  // and never gated behind NODE_ENV. The function itself is exercised by
-  // the live request paths.
+  // PR 4.3: deleted a 5-second-interval "keep-alive log" setInterval whose
+  // body was a commented-out console.log — the timer was no-op work that
+  // contributed to the leaked-handle tally in background-work.md. Node
+  // doesn't need a setInterval to stay alive — the httpServer/httpsServer
+  // listening sockets already keep the process up.
 
   httpServer.on('error', (err) => {
     console.error('❌ SERVER: Server error:', err);
   });
-
-  // Keep the process alive and log periodically
-  setInterval(() => {
-    // console.log('💓 SERVER: Still alive, connections:', io.sockets.sockets.size);
-  }, 5000);
 }
 
 startServer().catch(console.error);
