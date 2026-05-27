@@ -64,7 +64,7 @@
 //               cleanupMediaProcesses
 //   5821–5835   cleanupMediaProcesses        → bootstrap/shutdown.js     (15B.4)
 //
-//   4600–4863   io.on('connection', ...)     → bootstrap/register-       (15B.5)
+//   [extracted] io.on('connection', ...)     → bootstrap/register-       (15B.5 — landed)
 //               socket-handler registration    socket-handlers.js
 //
 // Middleware (lines 188–374 pre-Phase-15B) — stays in index.js with section
@@ -4562,270 +4562,81 @@ movieBotService.on('prompt-logged', (data) => {
   logger.info(`📋 MOVIEBOT: Prompt logged for ${data.bot}`);
 });
 
-io.on('connection', async (socket) => {
-  logger.info(`🆕 NEW CONNECTION: Socket ${socket.id} connected at ${new Date().toISOString()}`);
-  
-  // Check if IP is banned
-  const clientIP = IPBanService.getIPFromSocket(socket);
-  const isBanned = await IPBanService.isIPBanned(clientIP);
-  
-  if (isBanned) {
-    logger.info(`🚫 CONNECTION: Banned IP attempted to connect: ${clientIP}`);
-    socket.emit('banned', { 
-      reason: 'Your IP address has been banned from this service',
-      timestamp: new Date().toISOString()
-    });
-    socket.disconnect(true);
-    return;
-  }
-  
-  // Handle authentication if token is provided
-  const token = socket.handshake.auth?.token;
-  logger.info({ token: !!token }, `🔑 SOCKET AUTH: Token provided for ${socket.id}`);
-  
-  let authenticatedUserId = null;
-  if (token) {
-    try {
-      const decoded = authService.verifyToken(token);
-      authenticatedUserId = decoded.id;
-      logger.info(`✅ SOCKET AUTH: User authenticated: ${socket.id} -> User ID ${authenticatedUserId}`);
-    } catch (error) {
-      logger.info({ err: error }, `❌ SOCKET AUTH: Invalid token for ${socket.id}`);
-    }
-  }
+// Phase 15B.5 — io.on('connection', ...) registration extracted to
+// bootstrap/register-socket-handlers.js. The lazy-service getters
+// (viewbotService / viewBotClientService / recordingService /
+// transcriptionService) are passed via getter functions so they resolve
+// at connection-callback time (always after startServer's lazy inits).
+require('./bootstrap/register-socket-handlers')(io, {
+  // Connection-level services
+  IPBanService,
+  authService,
+  sessionService,
 
-  // Register session for this socket
-  const session = sessionService.registerSocket(socket);
-  const ip = sessionService.getIpAddress(socket);
-  
-  // Associate authenticated user with session if available, or clear if anonymous
-  if (authenticatedUserId) {
-    sessionService.linkUserToSession(ip, authenticatedUserId);
-    sessionService.linkUserToSocket(socket.id, authenticatedUserId);
-    logger.info(`🔗 SOCKET AUTH: Associated user ${authenticatedUserId} with session for IP ${ip}`);
-  } else {
-    // Clear any existing user ID from the session for anonymous users
-    sessionService.linkUserToSession(ip, null);
-    sessionService.linkUserToSocket(socket.id, null);
-    logger.info(`🔗 SOCKET AUTH: Cleared user ID for anonymous connection from IP ${ip}`);
-  }
-  
-  logger.info(`📡 SOCKET: User connected: ${socket.id} from IP: ${ip}, session: ${JSON.stringify(session)}`);
+  // Per-handler register functions
+  registerStreamHandler,
+  registerMediaSoupHandler,
+  registerViewBotHandler,
+  registerBuffHandler,
+  registerDrawingHandler,
+  registerAdminHandler,
+  registerGameHandler,
+  registerDisconnectHandler,
+  registerEffectHandler,
 
-  // Debug: Log all events for ViewBot connections
-  socket.onAny((eventName, ...args) => {
-    logger.info(`🔴 DEBUG: Socket ${socket.id} received event '${eventName}'`);
-    if (eventName === 'request-to-stream') {
-      logger.info({ args }, `🔴 DEBUG: request-to-stream args`);
-    }
-  });
+  // Connection-level service touches
+  canvasFxService,
+  visualFxService,
 
-  // ============================================
-  // Streaming Socket Handlers
-  // ============================================
-  // Extracted to server/sockets/StreamHandler.js as part of PR-H3. Covers
-  // join-as-viewer, request-to-stream, stream-offer, stream-answer, and
-  // stop-streaming. ICE-candidate signalling and the ViewBot-rotation
-  // `stop-stream` event remain inline (different ownership groups).
-  registerStreamHandler(io, socket, {
-    streamService,
-    sessionService,
-    takeoverService,
-    mediasoupService,
-    testStreamService,
-    timeTrackingService,
-    buffDebuffService,
-    streamingLogsService,
-    recordingService,
-    SimpleViewBotRotation,
-    IPBanService,
-    notifiedStreamers,
-    viewbotSocketIds,
-    lastEmittedStreamReady,
-    getViewbotService: () => viewbotService,
-    getViewBotClientService: () => viewBotClientService,
-    enrichStreamStatus,
-    getStreamerDisplayName,
-    notifyViewersStreamStarted,
-    notifyViewersStreamEnded,
-    broadcastGlobalCooldown,
-    runAsync,
-    database,
-    axios,
-    https,
-    streamNotifier,
-    viewerCountNotifier,
-    buffNotifier,
-  });
-  // ============================================
-  // End Streaming Socket Handlers
-  // ============================================
+  // Eager per-handler service deps
+  streamService,
+  takeoverService,
+  mediasoupService,
+  testStreamService,
+  timeTrackingService,
+  buffDebuffService,
+  streamingLogsService,
+  SimpleViewBotRotation,
+  plainTransportService,
+  lifecycleManager,
+  itemService,
+  inventoryService,
+  gameStreamService,
+  gameService,
+  accountService,
 
-  // ============================================
-  // MediaSoup Socket Handlers
-  // ============================================
-  // Extracted to server/sockets/MediaSoupHandler.js as part of PR-H4. Covers
-  // mediasoup:get-rtp-capabilities, mediasoup:create-send-transport,
-  // mediasoup:connect-transport, mediasoup:produce, mediasoup:consume,
-  // mediasoup:resume-consumer, mediasoup:request-keyframe, and ice-candidate.
-  registerMediaSoupHandler(io, socket, {
-    mediasoupService,
-    streamService,
-    sessionService,
-    notifiedStreamers,
-    lastEmittedStreamReady,
-    verifyAndEmitStreamReady,
-    getStreamerDisplayName,
-    notifyViewersStreamStarted,
-    broadcastGlobalCooldown,
-    getRecordingService: () => recordingService,
-    getTranscriptionService: () => transcriptionService,
-    viewerCountNotifier,
-  });
-  // ============================================
-  // End MediaSoup Socket Handlers
-  // ============================================
+  // Shared module-scope state
+  notifiedStreamers,
+  viewbotSocketIds,
+  lastEmittedStreamReady,
 
-  // ============================================
-  // ViewBot Socket Handlers
-  // ============================================
-  // Extracted to server/sockets/ViewBotHandler.js as part of PR-H5. Covers
-  // viewbot-create-plain-bridge, viewbot-create-webrtc-transport (both the
-  // legacy + the modern mobile-compatible variants), viewbot-create-plain-
-  // transport, stop-stream (ViewBot-rotation-specific), viewbot-create-
-  // transport, viewbot-webrtc-produce, viewbot-create-producers,
-  // viewbot-stream-ready, viewbot-rotation-request, viewbot-video-ended,
-  // and viewbot-cleanup-transports.
-  registerViewBotHandler(io, socket, {
-    mediasoupService,
-    streamService,
-    plainTransportService,
-    lastEmittedStreamReady,
-    notifyViewersStreamEnded,
-    getViewBotClientService: () => viewBotClientService,
-    getViewbotService: () => viewbotService,
-    streamNotifier,
-  });
-  // ============================================
-  // End ViewBot Socket Handlers
-  // ============================================
+  // Orchestration helpers + cache helpers
+  enrichStreamStatus,
+  verifyAndEmitStreamReady,
+  getStreamerDisplayName,
+  notifyViewersStreamStarted,
+  notifyViewersStreamEnded,
+  broadcastGlobalCooldown,
+  cleanupViewbotUsername,
 
-  // request-stream extracted to server/sockets/StreamHandler.js (PR 4.1).
-  // request-test-stream (graceful-degradation viewbot fallback) extracted to
-  // the same handler in PR 4.1 — both are viewer-side stream-acquisition
-  // events that pair with stream-offer / stream-answer.
+  // Chokepoint notifiers
+  streamNotifier,
+  viewerCountNotifier,
+  buffNotifier,
 
-  // viewbot-create-plain-bridge, viewbot-create-webrtc-transport (legacy +
-  // mobile variants), viewbot-create-plain-transport, viewbot-create-transport,
-  // viewbot-webrtc-produce, viewbot-create-producers, viewbot-stream-ready,
-  // viewbot-rotation-request, viewbot-video-ended, viewbot-cleanup-transports,
-  // and the ViewBot-rotation-specific `stop-stream` all extracted to
-  // server/sockets/ViewBotHandler.js (PR-H5). Handler is registered near the
-  // top of the io.on('connection') block above.
+  // Utility imports
+  runAsync,
+  database,
+  axios,
+  https,
 
-  // stream-offer / stream-answer extracted to server/sockets/StreamHandler.js
-  // (PR-H3). ice-candidate moved to server/sockets/MediaSoupHandler.js (PR-H4)
-  // because it pairs with the MediaSoup WebRTC transport setup and the legacy
-  // P2P signalling that depends on it.
-
-  // stop-streaming extracted to server/sockets/StreamHandler.js (PR-H3).
-  // The closely-named `stop-stream` event (ViewBot-rotation specific) moved
-  // to server/sockets/ViewBotHandler.js as part of PR-H5.
-
-  // Mediasoup WebRTC events extracted to server/sockets/MediaSoupHandler.js
-  // (PR-H4). Covers mediasoup:get-rtp-capabilities,
-  // mediasoup:create-send-transport, mediasoup:connect-transport,
-  // mediasoup:produce, mediasoup:consume, mediasoup:resume-consumer, and
-  // mediasoup:request-keyframe (plus ice-candidate). Handler is registered
-  // near the top of the io.on('connection') block above.
-
-  // Buff/Debuff socket events - extracted to server/sockets/BuffHandler.js
-  // as part of PR-H6 (split out of the EffectHandler extraction in PR-H2
-  // because the buff system has its own 6-service dependency surface and
-  // viewbot-target translation logic). Covers apply-buff-item, get-my-buffs,
-  // get-streamer-buffs, and remove-my-buff.
-  registerBuffHandler(io, socket, {
-    itemService,
-    inventoryService,
-    buffDebuffService,
-    viewbotService,
-    streamService,
-    sessionService,
-    buffNotifier,
-  });
-
-  // Canvas effects handlers
-  canvasFxService.handleClientConnection(socket);
-  
-  // Visual effects handlers - sync active visual effects to new clients
-  visualFxService.handleClientConnection(socket);
-  
-  // Drawing path broadcast handlers (drawing-path-complete, drawing-path-start,
-  // drawing-path-update) extracted to server/sockets/DrawingHandler.js (PR 4.1).
-  registerDrawingHandler(io, socket);
-  
-  // Admin socket handlers (admin-message, admin-kick, admin:game-status)
-  // extracted to server/sockets/AdminHandler.js as part of PR-H.
-  registerAdminHandler(io, socket, { gameStreamService });
-
-  // ============================================
-  // Game System Socket Handlers
-  // ============================================
-  // Extracted to server/sockets/GameHandler.js as part of PR-H2.
-  // Covers admin:start-game, admin:stop-game, game:join, game:leave,
-  // game:input, game:use-item, game:interact, plus the game-specific
-  // disconnect cleanup (coexists with the main disconnect handler).
-  registerGameHandler(io, socket, {
-    gameService,
-    gameStreamService,
-    sessionService,
-    accountService
-  });
-  // ============================================
-  // End Game System Socket Handlers
-  // ============================================
-
-  // viewbot-cleanup-transports extracted to server/sockets/ViewBotHandler.js
-  // as part of PR-H5.
-
-  // The disconnect cleanup chain is extracted to server/sockets/DisconnectHandler.js
-  // (PR 4.1). It runs the full per-socket teardown: Plain RTP transports,
-  // time-tracking flush, session unregister, ViewBot Plain Transport cleanup,
-  // mediasoup cleanup, real-streamer-vs-viewbot detection, deferred rotation
-  // restart, takeover cooldown, stream-ended chokepoint broadcast, and
-  // viewer-count fanout. The two nested setTimeouts (3 s rotation-restart,
-  // 1 s real-streamer-status validation) are preserved unchanged inside the
-  // handler — relocating them into the LifecycleManager is PR 4.2's job.
-  registerDisconnectHandler(io, socket, {
-    lifecycleManager,
-    mediasoupService,
-    sessionService,
-    timeTrackingService,
-    notifiedStreamers,
-    viewbotSocketIds,
-    cleanupViewbotUsername,
-    plainTransportService,
-    streamService,
-    takeoverService,
-    streamingLogsService,
-    streamNotifier,
-    notifyViewersStreamEnded,
-    viewerCountNotifier,
-    SimpleViewBotRotation,
-    getViewbotService: () => viewbotService,
-    getViewBotClientService: () => viewBotClientService,
-  });
-
-  // VisualFX Event Handlers - extracted to server/sockets/EffectHandler.js
-  // as part of PR-H2. Covers apply-visual-effect, remove-visual-effect,
-  // get-visual-effects, and get-visual-fx-stats.
-  registerEffectHandler(io, socket, {
-    visualFxService,
-    streamService,
-    sessionService
-  });
-
+  // Lazy-service getters (resolved at connection-callback time)
+  getViewbotService: () => viewbotService,
+  getViewBotClientService: () => viewBotClientService,
+  getRecordingService: () => recordingService,
+  getTranscriptionService: () => transcriptionService,
 });
+
 
 async function startServer() {
   redisClient = await bootInitializeRedis();
