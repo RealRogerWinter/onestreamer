@@ -16,13 +16,13 @@
 //   432–446     initializeRedis              → bootstrap/redis.js     (15B.2.b)
 //   557–582     getActiveVisualEffects       → services/VisualFxService.js (15B.2.b)
 //   587–623     startVisualEffectSync        → services/VisualFxService.js (15B.2.b)
-//   841–860     broadcastGlobalCooldown      → services/StreamOrchestration.js (15B.2.a)
+//   [extracted] broadcastGlobalCooldown      → services/StreamOrchestration.js (15B.2.a — landed)
 //   882–893     cleanupViewbotUsername       → services/viewbot/UsernameCache.js (15B.2.b)
 //   896–916     generateViewbotUsername      → services/viewbot/UsernameCache.js (15B.2.b)
 //   919–1014    getStreamerDisplayName       → services/UserService.js OR keep in index.js
 //                                              with header (lazy-service closure — see audit)
-//   1021–1030   enrichStreamStatus           → services/StreamOrchestration.js (15B.2.a)
-//   1042–1121   verifyAndEmitStreamReady     → services/StreamOrchestration.js (15B.2.a)
+//   [extracted] enrichStreamStatus           → services/StreamOrchestration.js (15B.2.a — landed)
+//   [extracted] verifyAndEmitStreamReady     → services/StreamOrchestration.js (15B.2.a — landed)
 //
 // Routes (lines 1123–4598, ~3475 LoC, 143 handlers) — extracted by PR 15B.3.
 // One PR per cluster; ordered by independence (lowest cross-reference first).
@@ -911,27 +911,11 @@ const notifiedStreamers = new Set();
 // truest "state unification" for an unreachable Map is no Map.
 // See docs/architecture/background-work.md and the CHANGELOG entry.
 
-// Helper function to broadcast global cooldown to all users except current streamer
-const broadcastGlobalCooldown = async (currentStreamerId) => {
-  try {
-    // Calculate remaining global cooldown for all users
-    const globalCooldownSeconds = takeoverService.globalCooldownSeconds;
-    
-    logger.info(`📡 COOLDOWN: Broadcasting global cooldown of ${globalCooldownSeconds}s to all users except ${currentStreamerId}`);
-    
-    // Broadcast to ALL connected sockets except the current streamer
-    io.sockets.sockets.forEach((socket) => {
-      if (socket.id !== currentStreamerId) {
-        socket.emit('global-cooldown', { 
-          cooldownRemaining: globalCooldownSeconds,
-          reason: 'global_cooldown'
-        });
-      }
-    });
-  } catch (error) {
-    logger.error({ err: error }, '❌ Failed to broadcast global cooldown');
-  }
-};
+// Phase 15B.2.a — broadcastGlobalCooldown, enrichStreamStatus, and
+// verifyAndEmitStreamReady extracted to server/services/StreamOrchestration.js.
+// The factory is invoked below, after `getStreamerDisplayName` is defined
+// (since that helper is a constructor dep — see the StreamOrchestration
+// module docstring for the closure-audit reasoning).
 
 // Animal names for random viewbot usernames (same as chat service)
 const VIEWBOT_ANIMALS = [
@@ -1091,108 +1075,28 @@ const getStreamerDisplayName = async (streamerId) => {
 // it in /api/internal/test-viewbot-username).
 app.locals.getStreamerDisplayName = getStreamerDisplayName;
 
-// Helper function to enrich stream status with streamer info
-const enrichStreamStatus = async (status) => {
-  const enriched = { ...status };
-  logger.info({ streamerId: status.streamerId }, '🔍 ENRICH: Enriching stream status with streamerId');
-  if (status.streamerId) {
-    logger.info({ streamerId: status.streamerId }, '🔍 ENRICH: Getting streamer display name for');
-    enriched.streamerDisplayName = await getStreamerDisplayName(status.streamerId);
-    logger.info({ streamerDisplayName: enriched.streamerDisplayName }, '🔍 ENRICH: Got streamer display name');
-  }
-  return enriched;
-};
-
-// DEDUP: Track last emitted stream-ready to prevent duplicate emissions
+// DEDUP: Track last emitted stream-ready to prevent duplicate emissions.
 // NOTE: declared `const` and mutated in place so the same reference can be
-// shared with extracted socket-handler modules (see server/sockets/StreamHandler.js).
+// shared with `server/sockets/StreamHandler.js` (passed via deps bag at
+// the socket-handler registration site) AND with StreamOrchestration's
+// `verifyAndEmitStreamReady` (passed via factory args below).
 const lastEmittedStreamReady = { streamerId: null, timestamp: 0 };
 
-/**
- * Helper function to verify tracks and emit stream-ready
- * This ensures viewers don't try to consume streams before tracks are publishing
- * CRITICAL FIX: Prevents "black square" issues during stream switches
- */
-const verifyAndEmitStreamReady = async (streamerId, streamData = {}) => {
-  // DEDUP: Prevent duplicate stream-ready emissions within 2 seconds
-  const now = Date.now();
-  if (lastEmittedStreamReady.streamerId === streamerId &&
-      (now - lastEmittedStreamReady.timestamp) < 2000) {
-    logger.info(`⏭️ STREAM-READY: Skipping duplicate emission for ${streamerId} (${now - lastEmittedStreamReady.timestamp}ms since last)`);
-    return true; // Return true as if successful since we already emitted for this stream
-  }
-  logger.info(`🔍 STREAM-READY: Verifying tracks for ${streamerId} before emitting...`);
-
-  // Check if we're using LiveKit backend
-  const isLiveKit = mediasoupService.isLiveKit && mediasoupService.isLiveKit();
-
-  if (isLiveKit && mediasoupService.verifyParticipantTracks) {
-    // For LiveKit, verify tracks are actually publishing
-    try {
-      const verification = await mediasoupService.verifyParticipantTracks(streamerId, {
-        requireVideo: true,
-        requireAudio: false,
-        maxAttempts: 10,
-        retryDelay: 500
-      });
-
-      if (!verification.verified) {
-        logger.error(`❌ STREAM-READY: Track verification failed for ${streamerId} after ${verification.attempt} attempts`);
-        // Don't emit stream-ready - tracks aren't ready
-        return false;
-      }
-
-      logger.info(`✅ STREAM-READY: Tracks verified for ${streamerId} (video: ${verification.hasVideo}, audio: ${verification.hasAudio}) after ${verification.attempt} attempts`);
-
-      // Emit stream-ready with verified track info
-      const streamerDisplayName = await getStreamerDisplayName(streamerId);
-      const emitTimestamp = Date.now();
-      io.emit('stream-ready', {
-        streamerId,
-        newStreamId: streamerId,
-        isWebRTC: true,
-        hasVideo: verification.hasVideo,
-        hasAudio: verification.hasAudio,
-        producerVerified: true,
-        trackCount: verification.trackCount,
-        timestamp: emitTimestamp,
-        streamerDisplayName,
-        ...streamData
-      });
-
-      // DEDUP: Track this emission
-      lastEmittedStreamReady.streamerId = streamerId;
-      lastEmittedStreamReady.timestamp = emitTimestamp;
-      logger.info(`📡 STREAM-READY: Emitted verified stream-ready for ${streamerId}`);
-      return true;
-
-    } catch (error) {
-      logger.error({ err: error }, `❌ STREAM-READY: Error verifying tracks for ${streamerId}`);
-      // Don't emit stream-ready on error
-      return false;
-    }
-  } else {
-    // For MediaSoup or when verification isn't available, emit immediately
-    // MediaSoup producers are synchronous, so they're ready when created
-    const streamerDisplayName = await getStreamerDisplayName(streamerId);
-    const emitTimestamp = Date.now();
-    io.emit('stream-ready', {
-      streamerId,
-      newStreamId: streamerId,
-      isWebRTC: true,
-      producerVerified: true,
-      timestamp: emitTimestamp,
-      streamerDisplayName,
-      ...streamData
-    });
-
-    // DEDUP: Track this emission
-    lastEmittedStreamReady.streamerId = streamerId;
-    lastEmittedStreamReady.timestamp = emitTimestamp;
-    logger.info(`📡 STREAM-READY: Emitted stream-ready for ${streamerId} (MediaSoup/no verification needed)`);
-    return true;
-  }
-};
+// Phase 15B.2.a — construct StreamOrchestration once `getStreamerDisplayName`
+// is in scope. The factory binds the three orchestration helpers to their
+// deps at construction time; the lazy services those helpers transitively
+// read (via getStreamerDisplayName) are still read at call time, so this
+// construction can land here (before startServer() and before the lazy
+// services exist).
+const { createStreamOrchestration } = require('./services/StreamOrchestration');
+const streamOrchestration = createStreamOrchestration({
+  io,
+  takeoverService,
+  mediasoupService,
+  getStreamerDisplayName,
+  lastEmittedStreamReady,
+});
+const { broadcastGlobalCooldown, enrichStreamStatus, verifyAndEmitStreamReady } = streamOrchestration;
 
 app.get('/', (req, res) => {
   res.json({ 
