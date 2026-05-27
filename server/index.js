@@ -4990,264 +4990,173 @@ async function startServer() {
     app.use('/api/moderation-ai', moderationAIRoutes());
     console.log('✅ MODERATION-AI: API routes mounted at /api/moderation-ai');
 
-    if (!livekitService) {
-      // ── MediaSoup branch orchestration ────────────────────────────────
-      // Initialize URL Stream ViewBot Service for MediaSoup backend
-      const viewBotURLService = new ViewBotURLService();
-      viewBotURLService.setStreamService(streamService);
-      viewBotURLService.setViewBotRotation(SimpleViewBotRotation); // For stopping/resuming viewbots
-      if (whitelistService) viewBotURLService.setWhitelistService(whitelistService);
-      // PR 3.1 (post-review fix): deliberately NOT calling
-      // viewBotURLService.setStreamNotifier on this branch. The original
-      // MediaSoup branch did not call setSocketIO(io) either, so the two
-      // emits inside ViewBotURLService._handleStreamEnd / stopURLStream were
-      // suppressed in MediaSoup mode by the `if (this.io)` guard. The new
-      // `if (this.streamNotifier)` guard preserves that suppression iff the
-      // setter is not called — wiring the notifier here would silently
-      // activate two previously-dormant emit paths in MediaSoup-mode
-      // production. Keep them dormant.
-      // No LiveKit service for MediaSoup backend
-      const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
-      urlStreamHealthService.start();
+    // ── Streaming-backend orchestration (PR 9.2 alignment of ADR-0017) ────
+    // PR 9.1's archaeology classified 13 divergences between the prior
+    // MediaSoup-vs-LiveKit branches. PR 9.2 hoists the 10 accidental-
+    // duplication blocks out of the if/else, deletes 1 stale log line
+    // (D4), and confines the 2 deliberate asymmetries to the surviving
+    // `if (livekitService)` block below. See ADR-0017 + the per-divergence
+    // sequencing doc at docs/architecture/plans/mediasoup-livekit-divergences.md.
 
-      // Handle health service events for automatic recovery
-      urlStreamHealthService.on('source-offline', async ({ urlId, sourceUrl }) => {
-        console.log(`🏥 HEALTH: Source offline detected for ${urlId}, triggering reconnect...`);
-        const stream = viewBotURLService.activeStreams.get(urlId);
-        if (stream) {
-          viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Source stream went offline'));
-        }
-      });
+    // Initialize URL Stream ViewBot Service.
+    const viewBotURLService = new ViewBotURLService();
+    viewBotURLService.setStreamService(streamService);
+    viewBotURLService.setViewBotRotation(SimpleViewBotRotation); // For stopping/resuming viewbots
+    if (whitelistService) viewBotURLService.setWhitelistService(whitelistService);
+    const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
+    urlStreamHealthService.start();
 
-      urlStreamHealthService.on('stream-stale', async ({ urlId }) => {
-        console.log(`🏥 HEALTH: Stale stream detected for ${urlId}, triggering reconnect...`);
-        const stream = viewBotURLService.activeStreams.get(urlId);
-        if (stream) {
-          viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Stream became stale - no progress'));
-        }
-      });
-
-      console.log('✅ URL STREAM: ViewBotURLService initialized (MediaSoup backend)');
-
-      // Register URL ViewBot service with rotation for protection
-      SimpleViewBotRotation.setURLViewBotService(viewBotURLService);
-      console.log('✅ URL STREAM: Registered with SimpleViewBotRotation for URL stream protection');
-
-      // Store globally for API routes
-      global.viewBotURLService = viewBotURLService;
-      global.urlStreamHealthService = urlStreamHealthService;
-
-      // Initialize URL Stream API routes
-      const urlStreamRoutes = require('./routes/url-stream');
-      app.use('/api/url-stream', urlStreamRoutes(viewBotURLService, urlStreamHealthService));
-      console.log('✅ URL STREAM: API routes initialized at /api/url-stream (MediaSoup backend)');
-
-      // Initialize Random Stream Rotation Service (MediaSoup backend)
-      const randomStreamRotationService = new RandomStreamRotationService();
-      randomStreamRotationService.setViewBotURLService(viewBotURLService);
-      randomStreamRotationService.setViewBotRotation(SimpleViewBotRotation);
-      randomStreamRotationService.setSocketIO(io);
-      randomStreamRotationService.setStreamNotifier(streamNotifier);
-      if (whitelistService) randomStreamRotationService.setWhitelistService(whitelistService);
-      global.randomStreamRotationService = randomStreamRotationService;
-      console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized (MediaSoup backend)');
-
-      // PR-M3: wire the AI moderation ActionArbiter now that the rotation
-      // service is built. The arbiter is what turns a 2-of-2 HIGH agreement
-      // verdict into an actual ban/skip + rotation. Behind the
-      // AI_MODERATION_ENFORCE env flag (default false in M3, flipped true in
-      // M6) — when false, the arbiter still runs the stale-session check
-      // but downgrades all verdicts to admin_review.
-      if (moderationService) {
-        const ModerationActionArbiter = require('./services/ModerationActionArbiter');
-        const userRepositoryInstance = new UserRepository(database);
-        const actionArbiter = new ModerationActionArbiter({
-          userRepository: userRepositoryInstance,
-          sessionService,
-          streamService,
-          randomStreamRotationService,
-          whitelistService,
-          moderationNotifier,
-          // Initial value (paranoid fallback). The authoritative source is
-          // the DB-backed `moderation_global_config.enforce` row, which
-          // `moderationService.setActionArbiter()` immediately syncs into
-          // the arbiter via its `setEnforce()` method. The env flag is
-          // honored ONCE at first install (when the DB row is still the
-          // 'seed' default) so an upgrading operator's env=true persists.
-          enforce: process.env.AI_MODERATION_ENFORCE === 'true',
-        });
-        moderationService.setActionArbiter(actionArbiter);
-        app.locals.moderationActionArbiter = actionArbiter;
+    // Handle health service events for automatic recovery
+    urlStreamHealthService.on('source-offline', async ({ urlId, sourceUrl }) => {
+      console.log(`🏥 HEALTH: Source offline detected for ${urlId}, triggering reconnect...`);
+      const stream = viewBotURLService.activeStreams.get(urlId);
+      if (stream) {
+        viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Source stream went offline'));
       }
+    });
 
-      // PR-W4: drift enforcer. Polls the active relay every drift_check_seconds
-      // and stops it if the streamer drifted out of policy mid-broadcast.
-      if (whitelistService) {
-        const whitelistEnforcer = new WhitelistEnforcer({
-          viewBotURLService,
-          whitelistService,
-          twitchService: randomStreamRotationService.twitchService,
-          kickService: randomStreamRotationService.kickService,
-          io,
-        });
-        whitelistEnforcer.start();
-        app.locals.whitelistEnforcer = whitelistEnforcer;
-        global.whitelistEnforcer = whitelistEnforcer;
-        // Register with shutdown loop so SIGTERM stops the interval before
-        // viewBotURLService is drained — without this an in-flight tick can
-        // call stopURLStream against a service that's already mid-teardown.
-        stoppables.push(whitelistEnforcer);
+    urlStreamHealthService.on('stream-stale', async ({ urlId }) => {
+      console.log(`🏥 HEALTH: Stale stream detected for ${urlId}, triggering reconnect...`);
+      const stream = viewBotURLService.activeStreams.get(urlId);
+      if (stream) {
+        viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Stream became stale - no progress'));
       }
+    });
 
-      // Initialize Random Stream API routes
-      const randomStreamRoutes = require('./routes/random-stream');
-      app.use('/api/random-stream', randomStreamRoutes(randomStreamRotationService));
-      console.log('✅ RANDOM STREAM: API routes initialized at /api/random-stream (MediaSoup backend)');
+    console.log('✅ URL STREAM: ViewBotURLService initialized');
 
-      // Auto-start random rotation if it was enabled before restart.
-      // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
-      // grace window cancels the autostart attempt against a torn-down
-      // rotation service.
-      lifecycleManager.schedule('random-rotation-autostart-mediasoup', async () => {
-        try {
-          await randomStreamRotationService.autoStartIfEnabled();
-        } catch (error) {
-          console.error('❌ RANDOM STREAM: Auto-start failed:', error.message);
-        }
-      }, 5000);
-    } else {
-      // ── LiveKit branch orchestration ──────────────────────────────────
-      // viewBotLiveKitService was constructed + initialized + given
-      // streamService inside createViewBotServices.
+    // Register URL ViewBot service with rotation for protection
+    SimpleViewBotRotation.setURLViewBotService(viewBotURLService);
+    console.log('✅ URL STREAM: Registered with SimpleViewBotRotation for URL stream protection');
 
+    // Store globally for API routes
+    global.viewBotURLService = viewBotURLService;
+    global.urlStreamHealthService = urlStreamHealthService;
+
+    // Initialize URL Stream API routes
+    const urlStreamRoutes = require('./routes/url-stream');
+    app.use('/api/url-stream', urlStreamRoutes(viewBotURLService, urlStreamHealthService));
+    console.log('✅ URL STREAM: API routes initialized at /api/url-stream');
+
+    // Initialize Random Stream Rotation Service.
+    const randomStreamRotationService = new RandomStreamRotationService();
+    randomStreamRotationService.setViewBotURLService(viewBotURLService);
+    randomStreamRotationService.setViewBotRotation(SimpleViewBotRotation);
+    randomStreamRotationService.setSocketIO(io);
+    randomStreamRotationService.setStreamNotifier(streamNotifier);
+    if (whitelistService) randomStreamRotationService.setWhitelistService(whitelistService);
+    global.randomStreamRotationService = randomStreamRotationService;
+    console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized');
+
+    // PR-M3: wire the AI moderation ActionArbiter now that the rotation
+    // service is built. The arbiter is what turns a 2-of-2 HIGH agreement
+    // verdict into an actual ban/skip + rotation. Behind the
+    // AI_MODERATION_ENFORCE env flag (default false in M3, flipped true in
+    // M6) — when false, the arbiter still runs the stale-session check
+    // but downgrades all verdicts to admin_review.
+    if (moderationService) {
+      const ModerationActionArbiter = require('./services/ModerationActionArbiter');
+      const userRepositoryInstance = new UserRepository(database);
+      const actionArbiter = new ModerationActionArbiter({
+        userRepository: userRepositoryInstance,
+        sessionService,
+        streamService,
+        randomStreamRotationService,
+        whitelistService,
+        moderationNotifier,
+        // Initial value (paranoid fallback). The authoritative source is
+        // the DB-backed `moderation_global_config.enforce` row, which
+        // `moderationService.setActionArbiter()` immediately syncs into
+        // the arbiter via its `setEnforce()` method. The env flag is
+        // honored ONCE at first install (when the DB row is still the
+        // 'seed' default) so an upgrading operator's env=true persists.
+        enforce: process.env.AI_MODERATION_ENFORCE === 'true',
+      });
+      moderationService.setActionArbiter(actionArbiter);
+      app.locals.moderationActionArbiter = actionArbiter;
+    }
+
+    // PR-W4: drift enforcer. Polls the active relay every drift_check_seconds
+    // and stops it if the streamer drifted out of policy mid-broadcast.
+    if (whitelistService) {
+      const whitelistEnforcer = new WhitelistEnforcer({
+        viewBotURLService,
+        whitelistService,
+        twitchService: randomStreamRotationService.twitchService,
+        kickService: randomStreamRotationService.kickService,
+        io,
+      });
+      whitelistEnforcer.start();
+      app.locals.whitelistEnforcer = whitelistEnforcer;
+      global.whitelistEnforcer = whitelistEnforcer;
+      // Register with shutdown loop so SIGTERM stops the interval before
+      // viewBotURLService is drained — without this an in-flight tick can
+      // call stopURLStream against a service that's already mid-teardown.
+      stoppables.push(whitelistEnforcer);
+    }
+
+    // Initialize Random Stream API routes
+    const randomStreamRoutes = require('./routes/random-stream');
+    app.use('/api/random-stream', randomStreamRoutes(randomStreamRotationService));
+    console.log('✅ RANDOM STREAM: API routes initialized at /api/random-stream');
+
+    // Auto-start random rotation if it was enabled before restart.
+    // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
+    // grace window cancels the autostart attempt against a torn-down
+    // rotation service. PR 9.2: schedule name unified from the previous
+    // per-backend `-mediasoup` / `-livekit` suffixes (only one fires per
+    // process; nothing reads the name to discriminate).
+    lifecycleManager.schedule('random-rotation-autostart', async () => {
+      try {
+        await randomStreamRotationService.autoStartIfEnabled();
+      } catch (error) {
+        console.error('❌ RANDOM STREAM: Auto-start failed:', error.message);
+      }
+    }, 5000);
+
+    // ── LiveKit-only wires (deliberate asymmetries — ADR-0017 D2, D3, D10) ──
+    // The block below is divided into three sub-zones with explicit fences.
+    // Future maintainers adding a LiveKit-only wire: pick the zone that
+    // matches the wire's concern. DO NOT add new wires to the (b) dormancy
+    // zone without a separate behaviour-change PR + smoke pass on both
+    // backends — that zone exists to keep two socket-emit paths suppressed
+    // on the MediaSoup rollback path (ADR-0008).
+    if (livekitService) {
+      // ─ (a) Rotation + LiveKit-service cross-wires ─────────────────────
       // Register with rotation systems so they can use RTMP viewbots
       SimpleViewBotRotation.setLiveKitService(viewBotLiveKitService);
       console.log('✅ VIEWBOT: Registered LiveKit service with SimpleViewBotRotation');
-      console.log('✅ VIEWBOT: Registered StreamService with SimpleViewBotRotation for real streamer protection');
 
-      // Initialize URL Stream ViewBot Service
-      const viewBotURLService = new ViewBotURLService();
-      viewBotURLService.setStreamService(streamService);
+      // LiveKit-only cross-wire: ViewBotURLService uses livekit-ingress
+      // (RTMP) when `livekitService` exists; the MediaSoup branch has no
+      // equivalent (the dormant `_startMediaSoupStream` path is called
+      // out in ADR-0008 as non-functional today).
       viewBotURLService.setLiveKitService(viewBotLiveKitService);
-      viewBotURLService.setViewBotRotation(SimpleViewBotRotation); // For stopping/resuming viewbots
-      viewBotURLService.setSocketIO(io); // For notifying viewers when URL stream starts
-      viewBotURLService.setStreamNotifier(streamNotifier);
-      if (whitelistService) viewBotURLService.setWhitelistService(whitelistService);
-      const urlStreamHealthService = new URLStreamHealthService(viewBotURLService);
-      urlStreamHealthService.start();
-
-      // Handle health service events for automatic recovery
-      urlStreamHealthService.on('source-offline', async ({ urlId, sourceUrl }) => {
-        console.log(`🏥 HEALTH: Source offline detected for ${urlId}, triggering reconnect...`);
-        const stream = viewBotURLService.activeStreams.get(urlId);
-        if (stream) {
-          viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Source stream went offline'));
-        }
-      });
-
-      urlStreamHealthService.on('stream-stale', async ({ urlId }) => {
-        console.log(`🏥 HEALTH: Stale stream detected for ${urlId}, triggering reconnect...`);
-        const stream = viewBotURLService.activeStreams.get(urlId);
-        if (stream) {
-          viewBotURLService._handleStreamError(urlId, 'health-check', new Error('Stream became stale - no progress'));
-        }
-      });
-
-      console.log('✅ URL STREAM: ViewBotURLService initialized');
-
-      // Register URL ViewBot service with rotation for protection
-      SimpleViewBotRotation.setURLViewBotService(viewBotURLService);
-      console.log('✅ URL STREAM: Registered with SimpleViewBotRotation for URL stream protection');
 
       // CRITICAL: Register URL ViewBot service with LiveKit ViewBot service for protection
       // This prevents viewbot creation when URL stream is active
       viewBotLiveKitService.setURLViewBotService(viewBotURLService);
       console.log('✅ URL STREAM: Registered with ViewBotLiveKitService for URL stream protection');
 
-      // Store globally for API routes
-      global.viewBotURLService = viewBotURLService;
-      global.urlStreamHealthService = urlStreamHealthService;
+      // ─ (b) PR 3.1 deliberate-dormancy zone — DO NOT MOVE ──────────────
+      // The two setters below wire emit paths that the MediaSoup branch
+      // deliberately KEEPS SUPPRESSED. `ViewBotURLService._handleStreamEnd`
+      // and `stopURLStream` check `if (this.io)` / `if (this.streamNotifier)`
+      // and skip the emits when the setters never ran. Wiring them on the
+      // MediaSoup branch (livekitService=null) would silently activate two
+      // previously-dormant socket-emit paths in MediaSoup-mode production.
+      // Adding new setters here requires a behaviour-change PR + smoke
+      // pass on the MediaSoup rollback path documented in ADR-0008.
+      viewBotURLService.setSocketIO(io); // For notifying viewers when URL stream starts
+      viewBotURLService.setStreamNotifier(streamNotifier);
 
-      // Initialize URL Stream API routes
-      const urlStreamRoutes = require('./routes/url-stream');
-      app.use('/api/url-stream', urlStreamRoutes(viewBotURLService, urlStreamHealthService));
-      console.log('✅ URL STREAM: API routes initialized at /api/url-stream');
-
-      // Initialize Random Stream Rotation Service
-      const randomStreamRotationService = new RandomStreamRotationService();
-      randomStreamRotationService.setViewBotURLService(viewBotURLService);
-      randomStreamRotationService.setViewBotRotation(SimpleViewBotRotation);
-      randomStreamRotationService.setSocketIO(io);
-      randomStreamRotationService.setStreamNotifier(streamNotifier);
-      if (whitelistService) randomStreamRotationService.setWhitelistService(whitelistService);
-      global.randomStreamRotationService = randomStreamRotationService;
-      console.log('✅ RANDOM STREAM: RandomStreamRotationService initialized');
-
-      // PR-M3: wire the AI moderation ActionArbiter (LiveKit branch). Same
-      // contract as the MediaSoup branch above — once rotation is built we
-      // hand it to the arbiter so 2-of-2 HIGH verdicts can produce real
-      // bans + rotations (when AI_MODERATION_ENFORCE=true).
-      if (moderationService) {
-        const ModerationActionArbiter = require('./services/ModerationActionArbiter');
-        const userRepositoryInstance = new UserRepository(database);
-        const actionArbiter = new ModerationActionArbiter({
-          userRepository: userRepositoryInstance,
-          sessionService,
-          streamService,
-          randomStreamRotationService,
-          whitelistService,
-          moderationNotifier,
-          // Initial value (paranoid fallback). The authoritative source is
-          // the DB-backed `moderation_global_config.enforce` row, which
-          // `moderationService.setActionArbiter()` immediately syncs into
-          // the arbiter via its `setEnforce()` method. The env flag is
-          // honored ONCE at first install (when the DB row is still the
-          // 'seed' default) so an upgrading operator's env=true persists.
-          enforce: process.env.AI_MODERATION_ENFORCE === 'true',
-        });
-        moderationService.setActionArbiter(actionArbiter);
-        app.locals.moderationActionArbiter = actionArbiter;
-      }
-
-      // PR-W4: drift enforcer (LiveKit branch).
-      if (whitelistService) {
-        const whitelistEnforcer = new WhitelistEnforcer({
-          viewBotURLService,
-          whitelistService,
-          twitchService: randomStreamRotationService.twitchService,
-          kickService: randomStreamRotationService.kickService,
-          io,
-        });
-        whitelistEnforcer.start();
-        app.locals.whitelistEnforcer = whitelistEnforcer;
-        global.whitelistEnforcer = whitelistEnforcer;
-        // Register with shutdown loop so SIGTERM stops the interval before
-        // viewBotURLService is drained — without this an in-flight tick can
-        // call stopURLStream against a service that's already mid-teardown.
-        stoppables.push(whitelistEnforcer);
-      }
-
-      // Initialize Random Stream API routes
-      const randomStreamRoutes = require('./routes/random-stream');
-      app.use('/api/random-stream', randomStreamRoutes(randomStreamRotationService));
-      console.log('✅ RANDOM STREAM: API routes initialized at /api/random-stream');
-
-      // Auto-start random rotation if it was enabled before restart.
-      // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
-      // grace window cancels the autostart attempt against a torn-down
-      // rotation service.
-      lifecycleManager.schedule('random-rotation-autostart-livekit', async () => {
-        try {
-          await randomStreamRotationService.autoStartIfEnabled();
-        } catch (error) {
-          console.error('❌ RANDOM STREAM: Auto-start failed:', error.message);
-        }
-      }, 5000);
-
+      // ─ (c) LiveKit-process lifecycle ──────────────────────────────────
       // Store for later registration with ViewBotRotationService
       global.viewBotLiveKitService = viewBotLiveKitService;
 
-      // Start LiveKit streamer health check to detect stale streamers (WebRTC dropped but socket alive)
+      // Start LiveKit streamer health check to detect stale streamers (WebRTC dropped but socket alive).
+      // The interval is cleared by livekitService.stop() (verified via
+      // LiveKitService.stopStreamerHealthCheck on the stoppables-shutdown path).
       livekitService.startStreamerHealthCheck(streamService, io, 10000); // Check every 10 seconds
       console.log('✅ LIVEKIT: Started streamer health check for stale connection detection');
     }
