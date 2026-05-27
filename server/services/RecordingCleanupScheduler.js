@@ -12,8 +12,19 @@ class RecordingCleanupScheduler {
     constructor(config = {}) {
         this.checkIntervalMs = config.checkIntervalMs || 60 * 60 * 1000; // Check every hour
         this.checkInterval = null;
+        // PR 8.4 (Phase 8): how much LONGER an un-uploaded recording is
+        // kept past the retention cutoff to give `RecordingUploadScheduler`
+        // a chance to finish retrying. Default 24 h. With retention = 7 d
+        // and retry_window = 1 d, an un-uploaded session survives until
+        // it's 8 d old; an uploaded session is cleaned at 7 d as before.
+        // Closes the race documented in
+        // `docs/architecture/background-work.md` ("Notable hazards →
+        // Recording cleanup races recording upload"). The PR 2.6 fix
+        // already gated the **filesystem** cleanup on b2_file_id; this
+        // closes the matching gap in the **database** cleanup.
+        this.retryWindowMs = config.retryWindowMs ?? (24 * 60 * 60 * 1000);
 
-        console.log('[CleanupScheduler] Initialized');
+        console.log(`[CleanupScheduler] Initialized (retryWindowMs=${this.retryWindowMs})`);
     }
 
     /**
@@ -55,14 +66,29 @@ class RecordingCleanupScheduler {
         try {
             const retentionDays = await this.getRetentionDays();
             const cutoffTime = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
+            // PR 8.4 (Phase 8): un-uploaded sessions get the retry-window
+            // extension beyond the retention cutoff before they're eligible
+            // for deletion. extendedCutoff is FURTHER in the past than
+            // cutoff; `start_time < extendedCutoff` means age exceeds
+            // retention + retry_window.
+            const extendedCutoff = cutoffTime - this.retryWindowMs;
 
-            console.log(`[CleanupScheduler] Running cleanup - retention: ${retentionDays} days, cutoff: ${new Date(cutoffTime).toISOString()}`);
+            console.log(`[CleanupScheduler] Running cleanup - retention: ${retentionDays} days, cutoff: ${new Date(cutoffTime).toISOString()}, extendedCutoff: ${new Date(extendedCutoff).toISOString()}`);
 
-            // Find expired sessions
+            // Find expired sessions. The `(b2_file_id IS NOT NULL OR
+            // start_time < ?)` guard protects un-uploaded sessions from
+            // being deleted while RecordingUploadScheduler is still
+            // retrying. b2_file_id IS NOT NULL → confirmed uploaded
+            // (safe to delete locally). start_time < extendedCutoff →
+            // safety valve: even an un-uploaded session is cleaned up
+            // eventually, so a permanently-failed upload doesn't leak
+            // local storage forever.
             const expiredSessions = await allAsync(`
                 SELECT * FROM recording_sessions
-                WHERE start_time < ? AND status IN ('completed', 'uploaded')
-            `, [cutoffTime]);
+                WHERE start_time < ?
+                  AND status IN ('completed', 'uploaded')
+                  AND (b2_file_id IS NOT NULL OR start_time < ?)
+            `, [cutoffTime, extendedCutoff]);
 
             if (expiredSessions.length === 0) {
                 return;
@@ -141,12 +167,18 @@ class RecordingCleanupScheduler {
     async getStatus() {
         const retentionDays = await this.getRetentionDays();
         const cutoffTime = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
+        // PR 8.4: mirror runCleanup's `(b2_file_id IS NOT NULL OR
+        // start_time < extendedCutoff)` guard so getStatus reports the
+        // same count the next tick will actually delete.
+        const extendedCutoff = cutoffTime - this.retryWindowMs;
 
         // Count sessions that would be deleted
         const expiredCount = await getAsync(`
             SELECT COUNT(*) as count FROM recording_sessions
-            WHERE start_time < ? AND status IN ('completed', 'uploaded')
-        `, [cutoffTime]);
+            WHERE start_time < ?
+              AND status IN ('completed', 'uploaded')
+              AND (b2_file_id IS NOT NULL OR start_time < ?)
+        `, [cutoffTime, extendedCutoff]);
 
         // Get total session count
         const totalCount = await getAsync('SELECT COUNT(*) as count FROM recording_sessions');
@@ -160,6 +192,10 @@ class RecordingCleanupScheduler {
         return {
             retentionDays,
             cutoffTime: new Date(cutoffTime).toISOString(),
+            // PR 8.4: surface the retry-window so admins can see why an
+            // expected-to-be-cleaned session is still around.
+            retryWindowMs: this.retryWindowMs,
+            extendedCutoffTime: new Date(extendedCutoff).toISOString(),
             pendingDeletion: expiredCount?.count || 0,
             totalSessions: totalCount?.count || 0,
             totalStorageBytes: storageUsed?.total || 0,
