@@ -6,6 +6,22 @@ const AccountStatsRepository = require('../database/repository/AccountStatsRepos
 const UserSessionRepository = require('../database/repository/UserSessionRepository');
 
 const logger = require('../bootstrap/logger').child({ svc: 'AccountService' });
+
+// PR 16.4: typed error used by adminGrantPoints / adminRevokePoints to
+// signal client-facing failures (admin row missing or not is_admin, target
+// user not found, insufficient balance on revoke). Route handler in
+// server/routes/internal.js catches and maps { statusCode, clientMessage }
+// to the JSON body shape that the pre-PR routes built inline. Anything else
+// propagates as a 500.
+class AccountServiceError extends Error {
+    constructor(statusCode, clientMessage) {
+        super(clientMessage);
+        this.name = 'AccountServiceError';
+        this.statusCode = statusCode;
+        this.clientMessage = clientMessage;
+    }
+}
+
 class AccountService {
     /**
      * @param {object} [deps]
@@ -326,6 +342,105 @@ class AccountService {
      */
     async getTransactionHistory(userId, limit = 50) {
         return await this.accountStatsRepository.listTransactionsByUserId(userId, limit);
+    }
+
+    /**
+     * PR 16.4: admin grant. Verifies the caller is_admin, resolves
+     * targetUsername to a user row, then funnels through `addPoints` with
+     * `type='admin_award'` so the audit row carries the standard ledger
+     * type. Extracted from the inline /api/internal/admin/award-points
+     * handler in server/routes/internal.js.
+     *
+     * Auth (Bearer token + decoded.id === adminUserId) stays in the
+     * handler — this method assumes the caller has proven they are
+     * adminUserId; what it adds is the is_admin row-level check.
+     *
+     * @throws {AccountServiceError} 403 'Admin access required' when the
+     *                               adminUserId row is missing or has
+     *                               is_admin = 0; 404 `User 'X' not found`
+     *                               when targetUsername doesn't resolve.
+     * @returns {Promise<{ newBalance, targetUserId, targetUsername }>}
+     *          Same subset the pre-PR handler used to build its 200 body.
+     */
+    async adminGrantPoints(adminUserId, targetUsername, amount) {
+        const adminUser = await this.getUserById(adminUserId);
+        if (!adminUser || !adminUser.is_admin) {
+            throw new AccountServiceError(403, 'Admin access required');
+        }
+
+        const targetUser = await this.getUserByUsername(targetUsername);
+        if (!targetUser) {
+            throw new AccountServiceError(404, `User '${targetUsername}' not found`);
+        }
+
+        const newBalance = await this.addPoints(
+            targetUser.id,
+            amount,
+            'admin_award',
+            `Admin award by ${adminUser.username}`,
+            { adminId: adminUserId }
+        );
+
+        logger.debug(
+            `💰 ADMIN: ${adminUser.username} awarded ${amount} points to ${targetUsername}. New balance: ${newBalance}`
+        );
+
+        return {
+            newBalance,
+            targetUserId: targetUser.id,
+            targetUsername: targetUser.username,
+        };
+    }
+
+    /**
+     * PR 16.4: admin revoke. Sibling of adminGrantPoints — same is_admin
+     * guard, same target resolution, but adds a balance precheck (the
+     * service throws 400 if `amount > currentBalance`, matching the pre-PR
+     * `User only has X points` message) and funnels through
+     * `subtractPoints` with `type='admin_deduction'`.
+     *
+     * @throws {AccountServiceError} 403 'Admin access required'; 404
+     *                               `User 'X' not found`; 400
+     *                               `User only has X points (cannot
+     *                               deduct Y)`.
+     * @returns {Promise<{ newBalance, targetUserId, targetUsername }>}
+     */
+    async adminRevokePoints(adminUserId, targetUsername, amount) {
+        const adminUser = await this.getUserById(adminUserId);
+        if (!adminUser || !adminUser.is_admin) {
+            throw new AccountServiceError(403, 'Admin access required');
+        }
+
+        const targetUser = await this.getUserByUsername(targetUsername);
+        if (!targetUser) {
+            throw new AccountServiceError(404, `User '${targetUsername}' not found`);
+        }
+
+        const currentBalance = await this.getPointsBalance(targetUser.id);
+        if (currentBalance < amount) {
+            throw new AccountServiceError(
+                400,
+                `User only has ${currentBalance} points (cannot deduct ${amount})`
+            );
+        }
+
+        const newBalance = await this.subtractPoints(
+            targetUser.id,
+            amount,
+            'admin_deduction',
+            `Admin deduction by ${adminUser.username}`,
+            { adminId: adminUserId }
+        );
+
+        logger.debug(
+            `💸 ADMIN: ${adminUser.username} deducted ${amount} points from ${targetUsername}. New balance: ${newBalance}`
+        );
+
+        return {
+            newBalance,
+            targetUserId: targetUser.id,
+            targetUsername: targetUser.username,
+        };
     }
 
     async transferIPSessionToUser(userId, ipAddress, sessionData) {
@@ -668,3 +783,4 @@ class AccountService {
 }
 
 module.exports = AccountService;
+module.exports.AccountServiceError = AccountServiceError;

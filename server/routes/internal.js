@@ -41,6 +41,9 @@ const InventoryService = require('../services/InventoryService');
 const { GameMechanicsError } = require('../services/GameMechanicsService');
 // PR 16.3: same typed-error pattern for gift-item eligibility failures.
 const { InventoryError } = require('../services/InventoryService');
+// PR 16.4: same typed-error pattern for admin point grant/revoke failures
+// (is_admin guard, target-not-found, insufficient-balance on revoke).
+const { AccountServiceError } = require('../services/AccountService');
 
 const authService = new AuthService();
 
@@ -679,64 +682,26 @@ router.post('/admin/award-points', express.json(), async (req, res) => {
       });
     }
 
-    // Verify admin authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
     const token = authHeader.substring(7);
     const decoded = authService.verifyToken(token);
-
     if (!decoded || decoded.id !== adminUserId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid admin credentials'
-      });
+      return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
     }
 
-    // Check if the user is actually an admin
     const accountService = new AccountService();
-    const adminUser = await accountService.getUserById(adminUserId);
-
-    if (!adminUser || !adminUser.is_admin) {
-      return res.status(403).json({
-        success: false,
-        error: 'Admin access required'
-      });
-    }
-
-    // Find the target user by username
-    const targetUser = await accountService.getUserByUsername(targetUsername);
-
-    if (!targetUser) {
-      return res.status(404).json({
-        success: false,
-        error: `User '${targetUsername}' not found`
-      });
-    }
-
-    // Award points to the user (creates new points)
-    const newBalance = await accountService.addPoints(
-      targetUser.id,
-      amount,
-      'admin_award',
-      `Admin award by ${adminUser.username}`,
-      { adminId: adminUserId }
-    );
-
-    logger.debug(`💰 ADMIN: ${adminUser.username} awarded ${amount} points to ${targetUsername}. New balance: ${newBalance}`);
-
-    res.json({
-      success: true,
-      newBalance,
-      targetUserId: targetUser.id,
-      targetUsername: targetUser.username
-    });
+    const result = await accountService.adminGrantPoints(adminUserId, targetUsername, amount);
+    res.json({ success: true, ...result });
   } catch (error) {
+    if (error instanceof AccountServiceError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: error.clientMessage,
+      });
+    }
     logger.error('❌ ADMIN: Error giving points:', error);
     res.status(500).json({
       success: false,
@@ -757,74 +722,26 @@ router.post('/admin/take-points', express.json(), async (req, res) => {
       });
     }
 
-    // Verify admin authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
     const token = authHeader.substring(7);
     const decoded = authService.verifyToken(token);
-
     if (!decoded || decoded.id !== adminUserId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid admin credentials'
-      });
+      return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
     }
 
-    // Check if the user is actually an admin
     const accountService = new AccountService();
-    const adminUser = await accountService.getUserById(adminUserId);
-
-    if (!adminUser || !adminUser.is_admin) {
-      return res.status(403).json({
-        success: false,
-        error: 'Admin access required'
-      });
-    }
-
-    // Find the target user by username
-    const targetUser = await accountService.getUserByUsername(targetUsername);
-
-    if (!targetUser) {
-      return res.status(404).json({
-        success: false,
-        error: `User '${targetUsername}' not found`
-      });
-    }
-
-    // Check if user has enough points
-    const currentBalance = await accountService.getPointsBalance(targetUser.id);
-
-    if (currentBalance < amount) {
-      return res.status(400).json({
-        success: false,
-        error: `User only has ${currentBalance} points (cannot deduct ${amount})`
-      });
-    }
-
-    // Take points from the user
-    const newBalance = await accountService.subtractPoints(
-      targetUser.id,
-      amount,
-      'admin_deduction',
-      `Admin deduction by ${adminUser.username}`,
-      { adminId: adminUserId }
-    );
-
-    logger.debug(`💸 ADMIN: ${adminUser.username} deducted ${amount} points from ${targetUsername}. New balance: ${newBalance}`);
-
-    res.json({
-      success: true,
-      newBalance,
-      targetUserId: targetUser.id,
-      targetUsername: targetUser.username
-    });
+    const result = await accountService.adminRevokePoints(adminUserId, targetUsername, amount);
+    res.json({ success: true, ...result });
   } catch (error) {
+    if (error instanceof AccountServiceError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: error.clientMessage,
+      });
+    }
     logger.error('❌ ADMIN: Error taking points:', error);
     res.status(500).json({
       success: false,
