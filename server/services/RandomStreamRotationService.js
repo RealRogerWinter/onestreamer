@@ -21,6 +21,7 @@ const RotationRetryState = require('./random-stream/RotationRetryState');
 const AnimalNameGenerator = require('./random-stream/AnimalNameGenerator');
 const RotationAnnouncer = require('./random-stream/RotationAnnouncer');
 const PlatformSelector = require('./random-stream/PlatformSelector');
+const RotationScheduler = require('./random-stream/RotationScheduler');
 
 const logger = require('../bootstrap/logger').child({ svc: 'RandomStreamRotationService' });
 
@@ -41,10 +42,11 @@ class RandomStreamRotationService extends EventEmitter {
     // State
     this.isEnabled = false;
     this.currentStream = null;
-    this.rotationTimer = null;
-    this.nextRotationAt = null; // Timestamp of next scheduled rotation
-    this.currentRotationDuration = null; // Duration of current rotation interval in ms
-    this.countdownAnnouncementTimers = []; // Timers for periodic countdown announcements
+    // `rotationTimer`, `nextRotationAt`, `currentRotationDuration`, and
+    // `countdownAnnouncementTimers` moved to RotationScheduler in PR 17.3.
+    // They're re-exposed below as property accessors so existing consumers
+    // (lifecycle methods, manual-control verbs, getStatus, auto-restart
+    // monitor) keep working byte-equivalent.
 
     // Settings
     this.settings = {
@@ -109,11 +111,43 @@ class RandomStreamRotationService extends EventEmitter {
       kickService: this.kickService,
     });
 
+    // Scheduler (PR 17.3) — owns the rotation timer, countdown-announcement
+    // timer set, and the "when does the next rotation fire" bookkeeping.
+    // Property accessors below proxy `this.rotationTimer`/`this.nextRotationAt`/
+    // `this.currentRotationDuration`/`this.countdownAnnouncementTimers` to the
+    // scheduler's slots so consumers that read or set these fields directly
+    // (lifecycle, manual-control verbs, getStatus, auto-restart monitor) keep
+    // working byte-equivalent.
+    this._scheduler = new RotationScheduler({ host: this, logger });
+
     logger.debug('🎲 RandomStreamRotationService initialized');
 
     // Load persisted state
     this._loadState();
   }
+
+  // ---- PR 17.3: scheduler state accessors -------------------------------
+  // Direct proxies to `this._scheduler.*`. Consumers (lifecycle, verbs,
+  // monitor) continue to read/write `this.rotationTimer` etc. unchanged.
+  get rotationTimer() { return this._scheduler.rotationTimer; }
+  set rotationTimer(v) { this._scheduler.rotationTimer = v; }
+  get nextRotationAt() { return this._scheduler.nextRotationAt; }
+  set nextRotationAt(v) { this._scheduler.nextRotationAt = v; }
+  get currentRotationDuration() { return this._scheduler.currentRotationDuration; }
+  set currentRotationDuration(v) { this._scheduler.currentRotationDuration = v; }
+  get countdownAnnouncementTimers() { return this._scheduler.countdownAnnouncementTimers; }
+  set countdownAnnouncementTimers(v) { this._scheduler.countdownAnnouncementTimers = v; }
+
+  // ---- PR 17.3: scheduler method delegates ------------------------------
+  // Public + private method names preserved so external consumers (auto-
+  // restart monitor reads `this.rotationTimer`; ModerationActionArbiter
+  // calls `_rotateToNewStream` directly; tests stub these) keep working.
+  _scheduleNextRotation(customInterval = null) { return this._scheduler.scheduleNext(customInterval); }
+  _emitRotationTiming() { return this._scheduler.emitRotationTiming(); }
+  _emitFullRotationStatus() { return this._scheduler.emitFullRotationStatus(); }
+  _clearCountdownAnnouncements() { return this._scheduler.clearCountdownAnnouncements(); }
+  _scheduleCountdownAnnouncements() { return this._scheduler.scheduleCountdownAnnouncements(); }
+  async _executeRotationWithRetry() { return this._scheduler.executeRotationWithRetry(); }
 
   /**
    * Save enabled state to file for persistence across restarts
@@ -1490,209 +1524,10 @@ class RandomStreamRotationService extends EventEmitter {
     }
   }
 
-  /**
-   * Internal: Schedule the next rotation
-   * Uses robust retry logic with exponential backoff
-   */
-  _scheduleNextRotation(customInterval = null) {
-    // ALWAYS clear any existing rotation timer first to prevent orphaned timers
-    if (this.rotationTimer) {
-      clearTimeout(this.rotationTimer);
-      this.rotationTimer = null;
-    }
-
-    const interval = customInterval !== null ? customInterval : this.getRandomInterval();
-    const minutes = Math.round(interval / 60000 * 10) / 10;
-
-    // Track next rotation time
-    this.nextRotationAt = Date.now() + interval;
-    this.currentRotationDuration = interval;
-
-    logger.debug(`⏱️ Next rotation in ${minutes} minutes (at ${new Date(this.nextRotationAt).toLocaleTimeString()})`);
-
-    // Emit rotation timing to clients
-    this._emitRotationTiming();
-
-    // Schedule countdown announcements (2 min, 1 min, 30 sec warnings)
-    this._scheduleCountdownAnnouncements();
-
-    this.rotationTimer = setTimeout(async () => {
-      try {
-        logger.debug('⏰ ROTATION TIMER FIRED - executing rotation callback...');
-
-        if (!this.isEnabled) {
-          logger.debug('⏭️ ROTATION: Skipping - rotation not enabled');
-          return;
-        }
-
-        // Check if locked - don't rotate when locked
-        if (this.isLocked) {
-          logger.debug('🔒 ROTATION: Skipping scheduled rotation - timer is locked');
-          return; // Don't reschedule - will resume when unlocked
-        }
-
-        // Check if already restarting (mutex)
-        if (this.isRestarting) {
-          logger.debug('⏳ ROTATION: Skipping scheduled rotation - restart in progress');
-          this._scheduleNextRotation(); // Reschedule for later
-          return;
-        }
-
-        await this._executeRotationWithRetry();
-      } catch (error) {
-        logger.error('❌ ROTATION TIMER ERROR:', error.message);
-        logger.error(error.stack);
-
-        // CRITICAL: Always reschedule on error to prevent stuck state
-        if (this.isEnabled && !this.isLocked) {
-          logger.debug('🔄 ROTATION: Rescheduling after error...');
-          this._scheduleNextRotation();
-        }
-      }
-    }, interval);
-  }
-
-  /**
-   * Emit rotation timing information to all connected clients
-   */
-  _emitRotationTiming() {
-    if (this.io && this.isEnabled) {
-      this.io.emit('rotation-timing', {
-        nextRotationAt: this.nextRotationAt,
-        currentRotationDuration: this.currentRotationDuration,
-        serverTime: Date.now()
-      });
-    }
-  }
-
-  /**
-   * Emit complete rotation status WITH timing data
-   * Called after scheduling so timing is accurate
-   */
-  _emitFullRotationStatus() {
-    if (this.io && this.isEnabled && this.currentStream) {
-      logger.debug('📡 EMITTING full rotation status with timing');
-      this.io.emit('random-rotation-status', {
-        enabled: true,
-        currentStream: this.currentStream,
-        rotationTiming: {
-          nextRotationAt: this.nextRotationAt,
-          currentRotationDuration: this.currentRotationDuration,
-          serverTime: Date.now()
-        }
-      });
-    }
-  }
-
-  /**
-   * Clear all countdown announcement timers
-   */
-  _clearCountdownAnnouncements() {
-    this.countdownAnnouncementTimers.forEach(timer => clearTimeout(timer));
-    this.countdownAnnouncementTimers = [];
-  }
-
-  /**
-   * Schedule countdown announcements for the current rotation
-   * Sends helpful messages at key intervals to encourage engagement
-   */
-  _scheduleCountdownAnnouncements() {
-    // Clear any existing timers first
-    this._clearCountdownAnnouncements();
-
-    if (!this.nextRotationAt || !this.isEnabled) return;
-
-    const remainingMs = this.nextRotationAt - Date.now();
-
-    // Define announcements with time remaining (in ms) and messages
-    // Messages rotate to add variety
-    const announcements = [
-      {
-        timeRemaining: 180000, // 3 minutes
-        messages: [
-          "📺 3 minutes until we switch! Use !extend to add more time or !next to skip ahead!",
-          "⏰ Stream switching in 3 minutes! Like it? !extend to stay. Bored? !next to skip!",
-          "🎬 3 min warning! Vote !extend to keep watching or !next to find something new!"
-        ]
-      },
-      {
-        timeRemaining: 60000, // 1 minute
-        messages: [
-          "⚠️ 1 minute left! Quick - use !extend to keep watching or !next to skip to something new!",
-          "🔔 60 seconds! Vote !extend to add time, !next to skip, or !lock to freeze the timer!",
-          "⏰ Final minute! Enjoying this stream? !extend to stay, !next to move on!"
-        ]
-      },
-      {
-        timeRemaining: 30000, // 30 seconds
-        messages: [
-          "🚨 30 seconds! Last chance to !extend or !lock if you want to keep watching!",
-          "⚡ 30 sec warning! !extend to add time, !next to skip now!",
-          "⏱️ Switching soon! Use !extend, !next, or !lock before time runs out!"
-        ]
-      }
-    ];
-
-    // Schedule each announcement
-    announcements.forEach(announcement => {
-      const delay = remainingMs - announcement.timeRemaining;
-
-      // Only schedule if there's enough time remaining
-      if (delay > 0) {
-        const timer = setTimeout(() => {
-          // Don't announce if locked or disabled
-          if (this.isLocked || !this.isEnabled) return;
-
-          // Pick a random message from the array
-          const message = announcement.messages[Math.floor(Math.random() * announcement.messages.length)];
-          this.sendChatAnnouncement(message);
-        }, delay);
-
-        this.countdownAnnouncementTimers.push(timer);
-      }
-    });
-
-    logger.debug(`📢 Scheduled ${this.countdownAnnouncementTimers.length} countdown announcements`);
-  }
-
-  /**
-   * Execute rotation with robust retry logic
-   * CRITICAL: Never gives up permanently - always reschedules
-   */
-  async _executeRotationWithRetry() {
-    if (!this.isEnabled) return;
-
-    // Check if locked - don't rotate when locked
-    if (this.isLocked) {
-      logger.debug('🔒 ROTATION: Skipping rotation - timer is locked');
-      return;
-    }
-
-    const result = await this._rotateToNewStream();
-
-    if (result.success) {
-      this._recordSuccess();
-      this._scheduleNextRotation();
-      // Emit complete status WITH timing after scheduling
-      this._emitFullRotationStatus();
-    } else {
-      this._recordFailure();
-      logger.debug(`⚠️ ROTATION: Failed (${this.retryState.consecutiveFailures} consecutive failures): ${result.error}`);
-
-      // Use exponential backoff retry
-      const retryResult = await this._scheduleRetryWithBackoff(
-        () => this._executeRotationWithRetry(),
-        'scheduled rotation'
-      );
-
-      // If retry eventually succeeded, the recursive call handled scheduling
-      // If we get here and rotation is still enabled but no timer, something went wrong - reschedule
-      if (this.isEnabled && !this.rotationTimer && !this.retryState.currentRetryTimer) {
-        logger.debug('⚠️ ROTATION: No timer active after retry - rescheduling...');
-        this._scheduleNextRotation();
-      }
-    }
-  }
+  // _scheduleNextRotation, _emitRotationTiming, _emitFullRotationStatus,
+  // _clearCountdownAnnouncements, _scheduleCountdownAnnouncements, and
+  // _executeRotationWithRetry moved to RotationScheduler (PR 17.3). Thin
+  // delegates kept above the constructor as class methods.
 
   /**
    * Get current status
