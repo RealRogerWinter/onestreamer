@@ -131,6 +131,7 @@ async function bootstrapMoneyFlowSchema(primitives) {
             base_price INTEGER NOT NULL DEFAULT 0,
             is_purchasable BOOLEAN DEFAULT 1,
             is_active BOOLEAN DEFAULT 1,
+            is_tradeable BOOLEAN DEFAULT 0,
             cooldown_seconds INTEGER DEFAULT 0,
             max_stack INTEGER DEFAULT 0,
             effect_data TEXT
@@ -171,6 +172,18 @@ async function bootstrapMoneyFlowSchema(primitives) {
             points_before INTEGER,
             points_after INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+    // PR 16.3: gift_transactions audit table — InventoryService.giftItem
+    // INSERTs one row per successful gift.
+    await primitives.runAsync(`
+        CREATE TABLE gift_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_user_id INTEGER NOT NULL,
+            to_user_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `);
 }

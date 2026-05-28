@@ -2,6 +2,21 @@ const UserInventoryRepository = require('../database/repository/UserInventoryRep
 const ItemTransactionRepository = require('../database/repository/ItemTransactionRepository');
 
 const logger = require('../bootstrap/logger').child({ svc: 'InventoryService' });
+
+// PR 16.3: typed error used by giftItem to signal client-facing validation
+// failures (self-gift, item not giftable, insufficient inventory). The
+// HTTP handler in server/routes/internal.js catches this and maps
+// { statusCode, clientMessage } to the JSON body shape that pre-PR routes
+// built inline. Anything else propagates as a 500.
+class InventoryError extends Error {
+  constructor(statusCode, clientMessage) {
+    super(clientMessage);
+    this.name = 'InventoryError';
+    this.statusCode = statusCode;
+    this.clientMessage = clientMessage;
+  }
+}
+
 class InventoryService {
     constructor(itemService, buffDebuffService = null, deps = {}) {
         this.itemService = itemService;
@@ -266,6 +281,105 @@ class InventoryService {
 
         return { success: true, message: 'Inventory cleared' };
     }
+
+    /**
+     * PR 16.3: peer-to-peer gift of an inventory item. Extracted from the
+     * inline /api/internal/gift-item handler in server/routes/internal.js.
+     * The handler still does username → recipientId and itemName → itemId
+     * resolution (HTTP-string-to-domain-id translation); this method owns
+     * the eligibility checks (self-gift, is_tradeable, sufficient quantity)
+     * and the swap + audit-row write.
+     *
+     * NOT transactional today — the pre-PR inline handler did the same three
+     * sequential writes (remove, add, insert-audit) without a transaction
+     * wrapper. Wrapping them in `withTransaction` is a follow-up worth
+     * considering but is OUT OF SCOPE for Phase 16 (which is byte-equivalent
+     * extraction).
+     *
+     * @throws {InventoryError} 400 self-gift, 400 not-tradeable, 400
+     *                          insufficient-quantity, 404 item-not-found.
+     * @returns {Promise<{ item: { id, name, emoji }, quantity }>} The same
+     *          subset the pre-PR handler used to build its 200 response.
+     */
+    async giftItem(fromUserId, toUserId, itemId, quantity = 1) {
+        if (toUserId === fromUserId) {
+            throw new InventoryError(400, 'Cannot gift items to yourself');
+        }
+
+        const item = await this.itemService.getItemById(itemId);
+        if (!item) {
+            // The pre-PR route resolved itemId from a name lookup that
+            // returned 404 with `Item '<name>' not found` before any
+            // InventoryService call. This branch defends the service when
+            // a caller hands in an itemId that no longer resolves (e.g.
+            // an admin deleted the item between routes lookup + service
+            // dispatch). Tiny window; preserve as 404.
+            throw new InventoryError(404, 'Item not found');
+        }
+
+        if (!item.is_tradeable) {
+            throw new InventoryError(400, `${item.display_name} cannot be gifted`);
+        }
+
+        const senderInventory = await this.getInventoryItem(fromUserId, itemId);
+        if (!senderInventory || senderInventory.quantity < quantity) {
+            throw new InventoryError(
+                400,
+                `You don't have enough ${item.display_name} to gift (have: ${senderInventory?.quantity || 0}, need: ${quantity})`
+            );
+        }
+
+        await this.removeItemFromInventory(fromUserId, itemId, quantity);
+        await this.addItemToInventory(toUserId, itemId, quantity);
+
+        // Audit row. Required-late so the unit tests can jest.mock the
+        // database module per-test without dragging it into the require
+        // graph at InventoryService module-load time. Matches the inline
+        // require pre-PR.
+        const { runAsync } = require('../database/database');
+        await runAsync(
+            `INSERT INTO gift_transactions (from_user_id, to_user_id, item_id, quantity, timestamp)
+             VALUES (?, ?, ?, ?, datetime('now'))`,
+            [fromUserId, toUserId, itemId, quantity]
+        );
+
+        return {
+            item: {
+                id: item.id,
+                name: item.display_name,
+                emoji: item.emoji,
+            },
+            quantity,
+        };
+    }
+
+    /**
+     * PR 16.3: list the user's giftable items. Extracted from the inline
+     * /api/internal/giftable-items/:userId handler. Filters the full
+     * inventory down to rows where the item is `is_tradeable` AND quantity
+     * > 0, shaped for the chat client's gift-picker UI.
+     *
+     * @returns {Promise<Array<{ id, name, display_name, emoji, quantity, rarity }>>}
+     */
+    async getGiftableItems(userId) {
+        const inventory = await this.getUserInventory(userId);
+        const giftableItems = [];
+        for (const invItem of inventory) {
+            const item = await this.itemService.getItemById(invItem.item_id);
+            if (item && item.is_tradeable && invItem.quantity > 0) {
+                giftableItems.push({
+                    id: item.id,
+                    name: item.name,
+                    display_name: item.display_name,
+                    emoji: item.emoji,
+                    quantity: invItem.quantity,
+                    rarity: item.rarity,
+                });
+            }
+        }
+        return giftableItems;
+    }
 }
 
 module.exports = InventoryService;
+module.exports.InventoryError = InventoryError;

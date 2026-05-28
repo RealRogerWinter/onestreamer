@@ -39,6 +39,8 @@ const InventoryService = require('../services/InventoryService');
 // each route used to build inline. Keeps responses byte-equivalent without
 // duplicating status-code knowledge between the service and the handlers.
 const { GameMechanicsError } = require('../services/GameMechanicsService');
+// PR 16.3: same typed-error pattern for gift-item eligibility failures.
+const { InventoryError } = require('../services/InventoryService');
 
 const authService = new AuthService();
 
@@ -415,30 +417,22 @@ router.post('/gift-item', express.json(), async (req, res) => {
       });
     }
 
-    // Verify authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
     const token = authHeader.substring(7);
     const decoded = authService.verifyToken(token);
-
     if (!decoded || decoded.id !== fromUserId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid credentials'
-      });
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
+    // HTTP-layer string-to-id resolution stays in the handler — username
+    // → recipientId and itemName → item happen here, returning the
+    // pre-PR 404s when either is unknown. The service receives only ids.
     const accountService = new AccountService();
     const itemService = new ItemService();
-    const inventoryService = new InventoryService(itemService);
 
-    // Find the recipient user
     const toUser = await accountService.getUserByUsername(toUsername);
     if (!toUser) {
       return res.status(404).json({
@@ -447,7 +441,12 @@ router.post('/gift-item', express.json(), async (req, res) => {
       });
     }
 
-    // Check if trying to gift to self
+    // Self-gift short-circuit BEFORE item lookup. The service guards self-
+    // gift too (defense in depth), but the pre-PR inline handler ran this
+    // check between username resolution and item-name resolution, so we
+    // mirror that observable HTTP order here. Otherwise a `!gift bogus me`
+    // would return `404 Item 'bogus' not found` instead of the historical
+    // `400 Cannot gift items to yourself`.
     if (toUser.id === fromUserId) {
       return res.status(400).json({
         success: false,
@@ -455,13 +454,11 @@ router.post('/gift-item', express.json(), async (req, res) => {
       });
     }
 
-    // Find the item by name (case insensitive)
     const items = await itemService.getAllItems();
     const item = items.find(i =>
       i.name.toLowerCase() === itemName.toLowerCase() ||
       i.display_name.toLowerCase() === itemName.toLowerCase()
     );
-
     if (!item) {
       return res.status(404).json({
         success: false,
@@ -469,52 +466,33 @@ router.post('/gift-item', express.json(), async (req, res) => {
       });
     }
 
-    // Check if the item is giftable
-    if (!item.is_tradeable) {
-      return res.status(400).json({
-        success: false,
-        error: `${item.display_name} cannot be gifted`
-      });
-    }
+    const inventoryService =
+      (req.app.locals.services && req.app.locals.services.inventoryService)
+      || new InventoryService(itemService);
 
-    // Check sender's inventory
-    const senderInventory = await inventoryService.getInventoryItem(fromUserId, item.id);
-    if (!senderInventory || senderInventory.quantity < quantity) {
-      return res.status(400).json({
-        success: false,
-        error: `You don't have enough ${item.display_name} to gift (have: ${senderInventory?.quantity || 0}, need: ${quantity})`
-      });
-    }
+    const giftResult = await inventoryService.giftItem(fromUserId, toUser.id, item.id, quantity);
 
-    // Get sender info for logging
+    // Sender-row lookup happens AFTER eligibility passes, matching pre-PR
+    // order — the row is only needed for the log line + `from` field on the
+    // 200 response.
     const fromUser = await accountService.getUserById(fromUserId);
-
-    // Perform the transfer
-    await inventoryService.removeItemFromInventory(fromUserId, item.id, quantity);
-    await inventoryService.addItemToInventory(toUser.id, item.id, quantity);
-
-    // Log the gift transaction
-    const db = require('../database/database');
-    await db.runAsync(
-      `INSERT INTO gift_transactions (from_user_id, to_user_id, item_id, quantity, timestamp)
-       VALUES (?, ?, ?, ?, datetime('now'))`,
-      [fromUserId, toUser.id, item.id, quantity]
-    );
 
     logger.debug(`🎁 GIFT: ${fromUser.username} gifted ${quantity}x ${item.display_name} to ${toUsername}`);
 
     res.json({
       success: true,
-      item: {
-        id: item.id,
-        name: item.display_name,
-        emoji: item.emoji
-      },
-      quantity,
+      item: giftResult.item,
+      quantity: giftResult.quantity,
       from: fromUser.username,
       to: toUsername
     });
   } catch (error) {
+    if (error instanceof InventoryError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: error.clientMessage,
+      });
+    }
     logger.error('❌ GIFT: Error processing gift:', error);
     res.status(500).json({
       success: false,
@@ -526,48 +504,23 @@ router.post('/gift-item', express.json(), async (req, res) => {
 // Endpoint to get user's giftable items
 router.get('/giftable-items/:userId', async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userIdInt = parseInt(req.params.userId);
 
-    // Verify authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
     const token = authHeader.substring(7);
     const decoded = authService.verifyToken(token);
-
-    if (!decoded || decoded.id !== parseInt(userId)) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid credentials'
-      });
+    if (!decoded || decoded.id !== userIdInt) {
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    const itemService = new ItemService();
-    const inventoryService = new InventoryService(itemService);
+    const inventoryService =
+      (req.app.locals.services && req.app.locals.services.inventoryService)
+      || new InventoryService(new ItemService());
 
-    // Get user's inventory
-    const inventory = await inventoryService.getUserInventory(parseInt(userId));
-
-    // Filter for giftable items
-    const giftableItems = [];
-    for (const invItem of inventory) {
-      const item = await itemService.getItemById(invItem.item_id);
-      if (item && item.is_tradeable && invItem.quantity > 0) {
-        giftableItems.push({
-          id: item.id,
-          name: item.name,
-          display_name: item.display_name,
-          emoji: item.emoji,
-          quantity: invItem.quantity,
-          rarity: item.rarity
-        });
-      }
-    }
+    const giftableItems = await inventoryService.getGiftableItems(userIdInt);
 
     res.json({
       success: true,
