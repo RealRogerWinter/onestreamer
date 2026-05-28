@@ -17,66 +17,15 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
+const RotationRetryState = require('./random-stream/RotationRetryState');
+const AnimalNameGenerator = require('./random-stream/AnimalNameGenerator');
+const RotationAnnouncer = require('./random-stream/RotationAnnouncer');
+const PlatformSelector = require('./random-stream/PlatformSelector');
+
 const logger = require('../bootstrap/logger').child({ svc: 'RandomStreamRotationService' });
 
 // Persistence file for enabled state
 const STATE_FILE = path.join(__dirname, '../data/random-rotation-state.json');
-
-// Random animal names for display
-const ANIMALS = [
-  'Aardvark', 'Albatross', 'Alligator', 'Alpaca', 'Ant', 'Anteater', 'Antelope', 'Armadillo',
-  'Badger', 'Bat', 'Bear', 'Beaver', 'Bee', 'Bison', 'Boar', 'Buffalo', 'Butterfly',
-  'Camel', 'Capybara', 'Caribou', 'Cat', 'Caterpillar', 'Cheetah', 'Chicken', 'Chimpanzee', 'Chinchilla', 'Cobra', 'Cougar', 'Coyote', 'Crab', 'Crane', 'Crocodile', 'Crow',
-  'Deer', 'Dingo', 'Dog', 'Dolphin', 'Donkey', 'Dove', 'Dragonfly', 'Duck',
-  'Eagle', 'Echidna', 'Eel', 'Elephant', 'Elk', 'Emu',
-  'Falcon', 'Ferret', 'Finch', 'Flamingo', 'Fox', 'Frog',
-  'Gazelle', 'Gecko', 'Gerbil', 'Giraffe', 'Goat', 'Goose', 'Gopher', 'Gorilla', 'Grasshopper', 'Grizzly',
-  'Hamster', 'Hare', 'Hawk', 'Hedgehog', 'Heron', 'Hippo', 'Hornet', 'Horse', 'Hummingbird', 'Hyena',
-  'Iguana', 'Impala',
-  'Jackal', 'Jaguar', 'Jellyfish',
-  'Kangaroo', 'Koala', 'Kiwi', 'Kookaburra',
-  'Lemur', 'Leopard', 'Lion', 'Lizard', 'Llama', 'Lobster', 'Lynx',
-  'Manatee', 'Mandrill', 'Meerkat', 'Mink', 'Mole', 'Mongoose', 'Monkey', 'Moose', 'Moth', 'Mouse',
-  'Narwhal', 'Newt', 'Nightingale',
-  'Ocelot', 'Octopus', 'Opossum', 'Orangutan', 'Orca', 'Ostrich', 'Otter', 'Owl', 'Ox', 'Oyster',
-  'Panda', 'Panther', 'Parrot', 'Peacock', 'Pelican', 'Penguin', 'Pheasant', 'Pig', 'Pigeon', 'Platypus', 'Polar Bear', 'Porcupine', 'Porpoise', 'Possum', 'Puma',
-  'Quail', 'Quokka',
-  'Rabbit', 'Raccoon', 'Ram', 'Raven', 'Reindeer', 'Rhino', 'Robin', 'Rooster',
-  'Salamander', 'Salmon', 'Scorpion', 'Sea Lion', 'Seahorse', 'Seal', 'Shark', 'Sheep', 'Shrimp', 'Skunk', 'Sloth', 'Snail', 'Snake', 'Sparrow', 'Spider', 'Squid', 'Squirrel', 'Starfish', 'Stingray', 'Stork', 'Swan',
-  'Tapir', 'Tiger', 'Toad', 'Toucan', 'Turkey', 'Turtle',
-  'Vulture',
-  'Wallaby', 'Walrus', 'Warthog', 'Wasp', 'Weasel', 'Whale', 'Wolf', 'Wolverine', 'Wombat', 'Woodpecker',
-  'Yak',
-  'Zebra'
-];
-
-// Adjectives for more unique names
-const ADJECTIVES = [
-  'Swift', 'Brave', 'Clever', 'Mighty', 'Gentle', 'Wild', 'Silent', 'Noble',
-  'Fierce', 'Calm', 'Lucky', 'Happy', 'Sneaky', 'Fluffy', 'Tiny', 'Giant',
-  'Golden', 'Silver', 'Crimson', 'Azure', 'Emerald', 'Amber', 'Violet', 'Scarlet',
-  'Northern', 'Southern', 'Eastern', 'Western', 'Arctic', 'Tropical',
-  'Royal', 'Cosmic', 'Electric', 'Mystic', 'Shadow', 'Storm', 'Thunder', 'Crystal'
-];
-
-// Goading messages to encourage users to go live (placeholders: {STREAMER}, {PLATFORM}, {URL}, {GAME})
-const ROTATION_MESSAGES = [
-  "📺 Looks like no one is going live... Changing the channel to: {STREAMER} playing {GAME} on {PLATFORM} | {URL}",
-  "🎬 Since nobody's streaming, we're tuning into: {STREAMER} ({GAME}) on {PLATFORM} | {URL}",
-  "😴 Empty streams? Let's watch {STREAMER} play {GAME} on {PLATFORM} instead! | {URL}",
-  "🔄 No streamers? Fine, we'll watch {STREAMER} playing {GAME} on {PLATFORM} | {URL}",
-  "📡 Switching to: {STREAMER} ({GAME}) on {PLATFORM}. Someone go live already! | {URL}",
-  "🎮 Nobody streaming? {STREAMER} is live playing {GAME} on {PLATFORM}! | {URL}",
-  "🌟 While waiting for a real streamer, here's {STREAMER} playing {GAME} on {PLATFORM} | {URL}",
-  "📻 Channel surfing... landed on {STREAMER} ({GAME}) on {PLATFORM} | {URL}",
-  "🎪 The show must go on! Now watching: {STREAMER} play {GAME} on {PLATFORM} | {URL}",
-  "🦥 Is anyone awake? Tuning into {STREAMER} ({GAME}) on {PLATFORM} | {URL}",
-  "🎯 Random channel acquired: {STREAMER} playing {GAME} on {PLATFORM} | {URL}",
-  "📺 *changes channel* Now showing: {STREAMER} ({GAME}) on {PLATFORM} | {URL}",
-  "🎲 Rolled the dice and got: {STREAMER} playing {GAME} on {PLATFORM} | {URL}",
-  "🔮 The stream gods have chosen: {STREAMER} ({GAME}) on {PLATFORM} | {URL}",
-  "⚡ Zapping to: {STREAMER} playing {GAME} on {PLATFORM} - come on, someone go live! | {URL}"
-];
 
 class RandomStreamRotationService extends EventEmitter {
   constructor() {
@@ -93,7 +42,6 @@ class RandomStreamRotationService extends EventEmitter {
     this.isEnabled = false;
     this.currentStream = null;
     this.rotationTimer = null;
-    this.usedAnimalNames = new Set();
     this.nextRotationAt = null; // Timestamp of next scheduled rotation
     this.currentRotationDuration = null; // Duration of current rotation interval in ms
     this.countdownAnnouncementTimers = []; // Timers for periodic countdown announcements
@@ -122,22 +70,27 @@ class RandomStreamRotationService extends EventEmitter {
     // Flag to prevent restart loops
     this.isRestarting = false;
 
-    // Retry configuration for robust failure recovery
-    this.retryConfig = {
-      maxRetries: 5,              // Maximum consecutive retries before giving up temporarily
-      baseDelayMs: 1500,          // Base delay (1.5 seconds) - fast retry for source unavailable errors
-      maxDelayMs: 60000,          // Max delay (1 minute)
-      backoffMultiplier: 2,       // Exponential backoff multiplier
-      resetAfterSuccessMs: 60000  // Reset retry count after 1 minute of success
-    };
+    // Retry state machine (PR 17.1) — extracted to RotationRetryState. The
+    // helper owns config + state; we expose `this.retryConfig` and
+    // `this.retryState` as references to its internal objects so existing
+    // in-file read sites (auto-restart monitor, lifecycle, getStatus, etc.)
+    // remain byte-equivalent.
+    this._retryHelper = new RotationRetryState({
+      maxRetries: 5,
+      baseDelayMs: 1500,
+      maxDelayMs: 60000,
+      backoffMultiplier: 2,
+    });
+    this.retryConfig = this._retryHelper.config;
+    this.retryState = this._retryHelper.state;
 
-    // Retry state tracking
-    this.retryState = {
-      consecutiveFailures: 0,
-      lastFailureTime: null,
-      lastSuccessTime: null,
-      currentRetryTimer: null
-    };
+    // Animal name generator (PR 17.1) — extracted. `this.usedAnimalNames`
+    // aliases the generator's internal Set so `clearStats()` keeps working.
+    this._animalNameGen = new AnimalNameGenerator({ logger });
+    this.usedAnimalNames = this._animalNameGen.usedNames;
+
+    // Chat announcement composer (PR 17.1) — extracted.
+    this._announcer = new RotationAnnouncer();
 
     // Extend state tracking
     this.lastExtendTime = null; // Timestamp of last successful extend
@@ -148,6 +101,13 @@ class RandomStreamRotationService extends EventEmitter {
     this.isLocked = false;
     this.lockedAt = null;
     this.remainingTimeWhenLocked = null; // Store remaining time when locked
+
+    // Platform selector (PR 17.1) — extracted. Holds refs to the inner Twitch
+    // + Kick services that the constructor just instantiated.
+    this._platformSelector = new PlatformSelector({
+      twitchService: this.twitchService,
+      kickService: this.kickService,
+    });
 
     logger.debug('🎲 RandomStreamRotationService initialized');
 
@@ -198,87 +158,17 @@ class RandomStreamRotationService extends EventEmitter {
     }
   }
 
-  /**
-   * Calculate retry delay with exponential backoff
-   */
-  _calculateRetryDelay() {
-    const { baseDelayMs, maxDelayMs, backoffMultiplier } = this.retryConfig;
-    const failures = this.retryState.consecutiveFailures;
-    const delay = Math.min(baseDelayMs * Math.pow(backoffMultiplier, failures), maxDelayMs);
-    return delay;
-  }
-
-  /**
-   * Record a successful operation - resets retry state
-   */
-  _recordSuccess() {
-    this.retryState.consecutiveFailures = 0;
-    this.retryState.lastSuccessTime = Date.now();
-    this.retryState.lastFailureTime = null;
-
-    // Clear any pending retry timer
-    if (this.retryState.currentRetryTimer) {
-      clearTimeout(this.retryState.currentRetryTimer);
-      this.retryState.currentRetryTimer = null;
-    }
-  }
-
-  /**
-   * Record a failed operation - increments retry counter
-   */
-  _recordFailure() {
-    this.retryState.consecutiveFailures++;
-    this.retryState.lastFailureTime = Date.now();
-  }
-
-  /**
-   * Check if we should continue retrying
-   */
-  _shouldRetry() {
-    return this.retryState.consecutiveFailures < this.retryConfig.maxRetries;
-  }
-
-  /**
-   * Schedule a retry with exponential backoff
-   * Returns a promise that resolves when the retry completes
-   */
+  // Retry/backoff math lives in RotationRetryState (server/services/random-stream/).
+  // These methods stay on the main class as thin delegates so callers (including
+  // private call-sites elsewhere in this file) keep working unchanged.
+  _calculateRetryDelay() { return this._retryHelper.calculateRetryDelay(); }
+  _recordSuccess() { return this._retryHelper.recordSuccess(); }
+  _recordFailure() { return this._retryHelper.recordFailure(); }
+  _shouldRetry() { return this._retryHelper.shouldRetry(); }
   async _scheduleRetryWithBackoff(operation, operationName) {
-    if (!this._shouldRetry()) {
-      const waitTime = Math.round(this.retryConfig.maxDelayMs / 1000);
-      logger.debug(`⚠️ ROTATION: Max retries (${this.retryConfig.maxRetries}) reached for ${operationName}. Waiting ${waitTime}s before reset...`);
-
-      // Wait for max delay then reset and try again (don't give up permanently)
-      return new Promise((resolve) => {
-        this.retryState.currentRetryTimer = setTimeout(async () => {
-          // Check if locked before retrying
-          if (this.isLocked) {
-            logger.debug('🔒 ROTATION: Skipping retry - timer is locked');
-            resolve({ success: false, error: 'Rotation is locked' });
-            return;
-          }
-          logger.debug(`🔄 ROTATION: Resetting retry counter and attempting ${operationName} again...`);
-          this.retryState.consecutiveFailures = 0; // Reset for fresh attempts
-          const result = await operation();
-          resolve(result);
-        }, this.retryConfig.maxDelayMs);
-      });
-    }
-
-    const delay = this._calculateRetryDelay();
-    const delaySeconds = Math.round(delay / 1000);
-    logger.debug(`🔄 ROTATION: Retry ${this.retryState.consecutiveFailures}/${this.retryConfig.maxRetries} for ${operationName} in ${delaySeconds}s...`);
-
-    return new Promise((resolve) => {
-      this.retryState.currentRetryTimer = setTimeout(async () => {
-        // Check if locked before retrying
-        if (this.isLocked) {
-          logger.debug('🔒 ROTATION: Skipping retry - timer is locked');
-          resolve({ success: false, error: 'Rotation is locked' });
-          return;
-        }
-        const result = await operation();
-        resolve(result);
-      }, delay);
+    return this._retryHelper.scheduleRetryWithBackoff(operation, operationName, {
+      isLocked: () => this.isLocked,
+      logger,
     });
   }
 
@@ -582,122 +472,15 @@ class RandomStreamRotationService extends EventEmitter {
     }
   }
 
-  /**
-   * Generate a random rotation announcement message
-   */
-  generateRotationAnnouncement(streamer) {
-    const template = ROTATION_MESSAGES[Math.floor(Math.random() * ROTATION_MESSAGES.length)];
-    const platformName = streamer.platform === 'kick' ? 'Kick' : 'Twitch';
-
-    return template
-      .replace('{STREAMER}', streamer.displayName || streamer.username)
-      .replace('{PLATFORM}', platformName)
-      .replace('{URL}', streamer.url)
-      .replace('{GAME}', streamer.game || 'Unknown');
-  }
-
-  /**
-   * Generate a random animal name
-   */
-  generateAnimalName() {
-    let name;
-    let attempts = 0;
-    const maxAttempts = 100;
-
-    do {
-      const adjective = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
-      const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
-      name = `${adjective} ${animal}`;
-      attempts++;
-
-      // If we've used too many, clear the used set
-      if (attempts >= maxAttempts) {
-        logger.debug('🔄 Clearing used animal names cache');
-        this.usedAnimalNames.clear();
-        break;
-      }
-    } while (this.usedAnimalNames.has(name));
-
-    this.usedAnimalNames.add(name);
-    return name;
-  }
-
-  /**
-   * Get random rotation interval (in ms)
-   */
-  getRandomInterval() {
-    const minMs = this.settings.minRotationMinutes * 60 * 1000;
-    const maxMs = this.settings.maxRotationMinutes * 60 * 1000;
-    return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
-  }
-
-  /**
-   * Check if service is ready to run
-   */
-  isReady() {
-    const enabledPlatforms = this.settings.platforms || ['twitch'];
-
-    // Check if at least one enabled platform is available
-    const availablePlatforms = [];
-
-    if (enabledPlatforms.includes('twitch') && this.twitchService.isConfigured()) {
-      availablePlatforms.push('twitch');
-    }
-    if (enabledPlatforms.includes('kick')) {
-      availablePlatforms.push('kick'); // Kick doesn't need API keys
-    }
-
-    if (availablePlatforms.length === 0) {
-      if (enabledPlatforms.includes('twitch') && !this.twitchService.isConfigured()) {
-        return { ready: false, error: 'Twitch API not configured and Kick not enabled' };
-      }
-      return { ready: false, error: 'No platforms enabled' };
-    }
-
-    if (!this.viewBotURLService) {
-      return { ready: false, error: 'ViewBotURLService not set' };
-    }
-
-    return { ready: true, availablePlatforms };
-  }
-
-  /**
-   * Select a random platform based on weights
-   */
-  selectRandomPlatform() {
-    const enabledPlatforms = this.settings.platforms || ['twitch'];
-    const availablePlatforms = [];
-
-    // Only include platforms that are actually available
-    if (enabledPlatforms.includes('twitch') && this.twitchService.isConfigured()) {
-      availablePlatforms.push('twitch');
-    }
-    if (enabledPlatforms.includes('kick')) {
-      availablePlatforms.push('kick');
-    }
-
-    if (availablePlatforms.length === 0) {
-      return null;
-    }
-
-    if (availablePlatforms.length === 1) {
-      return availablePlatforms[0];
-    }
-
-    // Use weighted random selection
-    const weights = this.settings.platformWeight || { twitch: 50, kick: 50 };
-    const totalWeight = availablePlatforms.reduce((sum, p) => sum + (weights[p] || 50), 0);
-    let random = Math.random() * totalWeight;
-
-    for (const platform of availablePlatforms) {
-      random -= (weights[platform] || 50);
-      if (random <= 0) {
-        return platform;
-      }
-    }
-
-    return availablePlatforms[0];
-  }
+  // Pure helpers extracted (PR 17.1) to server/services/random-stream/.
+  // Public method names preserved as thin delegates so external callers
+  // (routes/random-stream.js calls generateAnimalName() directly) keep
+  // working unchanged.
+  generateRotationAnnouncement(streamer) { return this._announcer.generate(streamer); }
+  generateAnimalName() { return this._animalNameGen.generate(); }
+  getRandomInterval() { return this._platformSelector.getRandomInterval(this.settings); }
+  isReady() { return this._platformSelector.isReady(this.settings, this.viewBotURLService); }
+  selectRandomPlatform() { return this._platformSelector.selectRandom(this.settings); }
 
   /**
    * Start the random stream rotation
