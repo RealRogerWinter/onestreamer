@@ -39,6 +39,7 @@ jest.mock('../../services/TimeTrackingService', () => class { constructor(...arg
 jest.mock('../../services/ItemService', () => class { constructor(...args) { this._args = args; this._stubName = 'ItemService'; } });
 jest.mock('../../services/InventoryService', () => class { constructor(...args) { this._args = args; this._stubName = 'InventoryService'; } });
 jest.mock('../../services/ShopService', () => class { constructor(...args) { this._args = args; this._stubName = 'ShopService'; } });
+jest.mock('../../services/GameMechanicsService', () => class { constructor(...args) { this._args = args; this._stubName = 'GameMechanicsService'; } });
 jest.mock('../../services/BuffDebuffService', () => class { constructor(...args) { this._args = args; this._stubName = 'BuffDebuffService'; } });
 jest.mock('../../services/CanvasFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'CanvasFxService'; } });
 jest.mock('../../services/SoundFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'SoundFxService'; } });
@@ -185,6 +186,7 @@ const TimeTrackingService = require('../../services/TimeTrackingService');
 const ItemService = require('../../services/ItemService');
 const InventoryService = require('../../services/InventoryService');
 const ShopService = require('../../services/ShopService');
+const GameMechanicsService = require('../../services/GameMechanicsService');
 const BuffDebuffService = require('../../services/BuffDebuffService');
 const CanvasFxService = require('../../services/CanvasFxService');
 const SoundFxService = require('../../services/SoundFxService');
@@ -236,12 +238,16 @@ function buildDeps(overrides = {}) {
     database: { _kind: 'database' },
     env: { NODE_ENV: 'test' },
     mediasoupService: { _kind: 'mediasoup' },
+    // PR 16.1: GameMechanicsService takes a shared Map by reference from
+    // the factory — server/index.js creates it before calling createServices.
+    // The factory guards null; pass a real Map so the constructor accepts.
+    userBonusCooldowns: new Map(),
     ...overrides,
   };
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 42 expected keys (no more, no less)', () => {
+  test('returns all 43 expected keys (no more, no less)', () => {
     const { services } = createServices(buildDeps());
 
     const expectedKeys = [
@@ -266,6 +272,8 @@ describe('server/bootstrap/services factory', () => {
       'itemService',
       'inventoryService',
       'shopService',
+      // PR 16.1
+      'gameMechanicsService',
       'buffDebuffService',
       'canvasFxService',
       'soundFxService',
@@ -301,7 +309,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(42);
+    expect(expectedKeys).toHaveLength(43);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -319,6 +327,8 @@ describe('server/bootstrap/services factory', () => {
     expect(s.itemService).toBeInstanceOf(ItemService);
     expect(s.inventoryService).toBeInstanceOf(InventoryService);
     expect(s.shopService).toBeInstanceOf(ShopService);
+    // PR 16.1
+    expect(s.gameMechanicsService).toBeInstanceOf(GameMechanicsService);
     expect(s.buffDebuffService).toBeInstanceOf(BuffDebuffService);
     expect(s.canvasFxService).toBeInstanceOf(CanvasFxService);
     expect(s.soundFxService).toBeInstanceOf(SoundFxService);
@@ -379,6 +389,22 @@ describe('server/bootstrap/services factory', () => {
     expect(s.shopService._args[1]).toBe(s.inventoryService);
     expect(s.shopService._args[2]).toBe(s.accountService);
     expect(s.shopService._args[3]).toBe(deps.io);
+  });
+
+  test('gameMechanicsService is constructed with { accountService, userBonusCooldowns }', () => {
+    // PR 16.1: the cooldown Map flows from server/index.js → factory →
+    // GameMechanicsService by reference, so /claim-chat-bonus mutations
+    // through the service and /bonus-status reads via
+    // req.app.locals.userBonusCooldowns hit the same data. Identity-pin
+    // here so a future refactor that accidentally clones the Map gets
+    // caught by the test.
+    const deps = buildDeps();
+    const { services: s } = createServices(deps);
+
+    expect(s.gameMechanicsService._args).toHaveLength(1);
+    const ctorArg = s.gameMechanicsService._args[0];
+    expect(ctorArg.accountService).toBe(s.accountService);
+    expect(ctorArg.userBonusCooldowns).toBe(deps.userBonusCooldowns);
   });
 
   test('buffDebuffService is constructed with (io, streamService, timeTrackingService, sessionService, options)', () => {

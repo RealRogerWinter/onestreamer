@@ -583,11 +583,19 @@ if (process.env.USE_WEBRTC_ADAPTER === 'true') {
 // Store service type for debugging
 global.mediasoupServiceType = usingAdapter ? 'adapter' : 'direct';
 
+// PR 16.1: userBonusCooldowns is the shared Map<userId, lastClaimEpochMs>
+// backing /claim-chat-bonus and /bonus-status/:userId. Created here so the
+// services factory can hand it to GameMechanicsService (passed by reference
+// — same pattern as lastEmittedStreamReady), and so app.locals can expose it
+// to the routes module. The previous Map-construction site (just before the
+// /api/internal mount, ~50 lines below) is removed in favor of this one.
+const userBonusCooldowns = new Map();
+
 // Composition root for the early-core services. See
 // server/bootstrap/services.js for the dependency graph and PR-I2 scope.
 const createServices = require('./bootstrap/services');
 const { createViewBotServices } = createServices; // PR-I4 late-init helper.
-const { services, stoppables: coreStoppables } = createServices({ io, redisClient, database, env: process.env, mediasoupService });
+const { services, stoppables: coreStoppables } = createServices({ io, redisClient, database, env: process.env, mediasoupService, userBonusCooldowns });
 
 // PR 1.2: accumulator for graceful-shutdown iteration. Construction order;
 // the SIGINT handler reverses at shutdown time so newer services stop first.
@@ -872,7 +880,11 @@ clipProcessorService.setSocketIO(io);
 // gamble/slots, leaderboard, admin point grants. Extracted in PR-G2.
 // userBonusCooldowns is exposed on app.locals so /claim-chat-bonus and
 // /bonus-status/:userId in the extracted router share the same Map.
-const userBonusCooldowns = new Map();
+// PR 16.1: the Map itself is now created earlier (just before createServices)
+// so it can be threaded into GameMechanicsService; we only stamp the
+// app.locals alias here. Same reference — mutations through
+// gameMechanicsService and reads through req.app.locals.userBonusCooldowns
+// see the same data.
 app.locals.userBonusCooldowns = userBonusCooldowns;
 app.use('/api/internal', require('./routes/internal'));
 

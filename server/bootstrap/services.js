@@ -104,6 +104,7 @@ const TimeTrackingService = require('../services/TimeTrackingService');
 const ItemService = require('../services/ItemService');
 const InventoryService = require('../services/InventoryService');
 const ShopService = require('../services/ShopService');
+const GameMechanicsService = require('../services/GameMechanicsService');
 const BuffDebuffService = require('../services/BuffDebuffService');
 const CanvasFxService = require('../services/CanvasFxService');
 const SoundFxService = require('../services/SoundFxService');
@@ -172,12 +173,19 @@ const ViewBotLiveKitService = require('../services/ViewBotLiveKitService');
  * @param {object}  deps.mediasoupService  Pre-built mediasoup service
  *                                     (adapter or direct — server/index.js
  *                                     picks based on USE_WEBRTC_ADAPTER).
+ * @param {Map}     deps.userBonusCooldowns  Shared Map<userId, lastClaimEpochMs>
+ *                                     for /claim-chat-bonus + /bonus-status.
+ *                                     Created in server/index.js and exposed
+ *                                     on app.locals so the read-only route
+ *                                     can read the same Map this service
+ *                                     mutates. Passed by reference (same
+ *                                     pattern as `lastEmittedStreamReady`).
  * @returns {object} Service bag — keys match the variable names used
  *                   throughout server/index.js so destructuring is a 1:1
  *                   substitute for the previous inline `new XService(...)`
  *                   block.
  */
-function createServices({ io, redisClient, database, env, mediasoupService }) {
+function createServices({ io, redisClient, database, env, mediasoupService, userBonusCooldowns }) {
   // No-dep singletons first.
   const streamService = new StreamService();
   const sessionService = new SessionService();
@@ -239,6 +247,16 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
   const itemService = new ItemService();
   const inventoryService = new InventoryService(itemService);
   const shopService = new ShopService(itemService, inventoryService, accountService, io);
+
+  // PR 16.1: game-mechanic primitives for the chat-economy money-flow
+  // endpoints (/gamble, /slots, /claim-chat-bonus, /transfer-points,
+  // /bonus-status). Stub-only in PR 16.1; method bodies land in PR 16.2.
+  // userBonusCooldowns is the Map shared by reference with
+  // app.locals.userBonusCooldowns (created in server/index.js).
+  const gameMechanicsService = new GameMechanicsService({
+    accountService,
+    userBonusCooldowns,
+  });
 
   // Buff/visual/audio fx — buffDebuffService is a fan-in point.
   // PR 3.3: buffNotifier threaded via the options bag (5th positional arg)
@@ -415,6 +433,7 @@ function createServices({ io, redisClient, database, env, mediasoupService }) {
     itemService,
     inventoryService,
     shopService,
+    gameMechanicsService,
     buffDebuffService,
     canvasFxService,
     soundFxService,
