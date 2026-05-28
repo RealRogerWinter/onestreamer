@@ -33,8 +33,37 @@ const AuthService = require('../services/AuthService');
 const AccountService = require('../services/AccountService');
 const ItemService = require('../services/ItemService');
 const InventoryService = require('../services/InventoryService');
+// PR 16.2: GameMechanicsError is the typed error subclass that the game-
+// mechanic methods throw for client-facing failures. The handler catches it
+// and maps `{ statusCode, clientMessage, extra }` to the JSON HTTP shape that
+// each route used to build inline. Keeps responses byte-equivalent without
+// duplicating status-code knowledge between the service and the handlers.
+const { GameMechanicsError } = require('../services/GameMechanicsService');
 
 const authService = new AuthService();
+
+// PR 16.2: small helper used by the five game-mechanic handlers. Catches the
+// service's typed errors and maps to the byte-equivalent res.json shape;
+// anything else (an unexpected throw) is rethrown so the per-route catch can
+// still emit its own 500 log line and 500 body. Avoids three copies of the
+// same map-and-respond block.
+//
+// Spread order: `extra` is spread FIRST, then `success` / `error` are written
+// — so a future caller that accidentally puts an `error` key in `extra`
+// cannot shadow the clientMessage. Today `extra` is only ever the 429
+// cooldown's `{ remainingSeconds, nextAvailable }`, but the ordering hardens
+// the contract for free.
+function respondGameMechanicsError(err, res) {
+  if (err instanceof GameMechanicsError) {
+    res.status(err.statusCode).json({
+      ...err.extra,
+      success: false,
+      error: err.clientMessage,
+    });
+    return true;
+  }
+  return false;
+}
 
 // API endpoint for chat service to track messages
 router.post('/track-chat-message', express.json(), async (req, res) => {
@@ -266,70 +295,26 @@ router.post('/gamble', express.json(), async (req, res) => {
       });
     }
 
-    // Verify authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
     const token = authHeader.substring(7);
     const decoded = authService.verifyToken(token);
-
     if (!decoded || decoded.id !== userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid credentials'
-      });
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    const accountService = new AccountService();
-
-    // Check balance
-    const currentBalance = await accountService.getPointsBalance(userId);
-
-    if (currentBalance < amount) {
-      return res.status(400).json({
-        success: false,
-        error: `Insufficient points. You have ${currentBalance} points`
-      });
+    const svc = req.app.locals.services && req.app.locals.services.gameMechanicsService;
+    if (!svc) {
+      logger.error('❌ GAMBLE: gameMechanicsService not available on app.locals.services');
+      return res.status(500).json({ success: false, error: 'Failed to process gamble' });
     }
 
-    // 50/50 chance
-    const won = Math.random() < 0.5;
-    let newBalance;
-
-    if (won) {
-      // Win - double the amount
-      newBalance = await accountService.addPoints(
-        userId,
-        amount,
-        'gamble_win',
-        `Won ${amount} points gambling`,
-        { amount, result: 'win' }
-      );
-    } else {
-      // Lose
-      newBalance = await accountService.subtractPoints(
-        userId,
-        amount,
-        'gamble_loss',
-        `Lost ${amount} points gambling`,
-        { amount, result: 'loss' }
-      );
-    }
-
-    logger.debug(`🎲 GAMBLE: User ${userId} ${won ? 'won' : 'lost'} ${amount} points. New balance: ${newBalance}`);
-
-    res.json({
-      success: true,
-      won,
-      amount,
-      newBalance
-    });
+    const result = await svc.gamble(userId, amount);
+    res.json({ success: true, ...result });
   } catch (error) {
+    if (respondGameMechanicsError(error, res)) return;
     logger.error('❌ GAMBLE: Error processing gamble:', error);
     res.status(500).json({
       success: false,
@@ -350,96 +335,26 @@ router.post('/slots', express.json(), async (req, res) => {
       });
     }
 
-    // Verify authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
     const token = authHeader.substring(7);
     const decoded = authService.verifyToken(token);
-
     if (!decoded || decoded.id !== userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid credentials'
-      });
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    const accountService = new AccountService();
-
-    // Check balance
-    const currentBalance = await accountService.getPointsBalance(userId);
-
-    if (currentBalance < amount) {
-      return res.status(400).json({
-        success: false,
-        error: `Insufficient points. You have ${currentBalance} points`
-      });
+    const svc = req.app.locals.services && req.app.locals.services.gameMechanicsService;
+    if (!svc) {
+      logger.error('❌ SLOTS: gameMechanicsService not available on app.locals.services');
+      return res.status(500).json({ success: false, error: 'Failed to process slots' });
     }
 
-    // Slot symbols
-    const slotSymbols = ['🍒', '🍋', '🍊', '🍇', '💎', '7️⃣'];
-    const symbols = [
-      slotSymbols[Math.floor(Math.random() * slotSymbols.length)],
-      slotSymbols[Math.floor(Math.random() * slotSymbols.length)],
-      slotSymbols[Math.floor(Math.random() * slotSymbols.length)]
-    ];
-
-    // Calculate winnings
-    let winAmount = 0;
-    if (symbols[0] === symbols[1] && symbols[1] === symbols[2]) {
-      // All three match
-      if (symbols[0] === '7️⃣') {
-        winAmount = amount * 10; // Jackpot!
-      } else if (symbols[0] === '💎') {
-        winAmount = amount * 5;
-      } else {
-        winAmount = amount * 3;
-      }
-    } else if (symbols[0] === symbols[1] || symbols[1] === symbols[2] || symbols[0] === symbols[2]) {
-      // Two match
-      winAmount = amount; // Return bet
-    }
-
-    // Process the result
-    let newBalance;
-    if (winAmount > amount) {
-      // Won more than bet
-      const profit = winAmount - amount;
-      newBalance = await accountService.addPoints(
-        userId,
-        profit,
-        'slots_win',
-        `Won ${profit} points on slots`,
-        { bet: amount, symbols: symbols.join(''), winAmount }
-      );
-    } else if (winAmount === amount) {
-      // Broke even
-      newBalance = currentBalance;
-    } else {
-      // Lost
-      newBalance = await accountService.subtractPoints(
-        userId,
-        amount,
-        'slots_loss',
-        `Lost ${amount} points on slots`,
-        { bet: amount, symbols: symbols.join(''), winAmount }
-      );
-    }
-
-    logger.debug(`🎰 SLOTS: User ${userId} bet ${amount}, got [${symbols.join(' ')}], won ${winAmount}. New balance: ${newBalance}`);
-
-    res.json({
-      success: true,
-      symbols,
-      winAmount,
-      newBalance
-    });
+    const result = await svc.slots(userId, amount);
+    res.json({ success: true, ...result });
   } catch (error) {
+    if (respondGameMechanicsError(error, res)) return;
     logger.error('❌ SLOTS: Error processing slots:', error);
     res.status(500).json({
       success: false,
@@ -451,7 +366,6 @@ router.post('/slots', express.json(), async (req, res) => {
 // Endpoint for authenticated users to claim chat bonus
 router.post('/claim-chat-bonus', express.json(), async (req, res) => {
   try {
-    const userBonusCooldowns = req.app.locals.userBonusCooldowns;
     const { userId } = req.body;
 
     if (!userId) {
@@ -461,73 +375,26 @@ router.post('/claim-chat-bonus', express.json(), async (req, res) => {
       });
     }
 
-    // Verify authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
     const token = authHeader.substring(7);
     const decoded = authService.verifyToken(token);
-
     if (!decoded || decoded.id !== userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid credentials'
-      });
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    // Check cooldown for this user
-    const now = Date.now();
-    const lastClaim = userBonusCooldowns.get(userId);
-
-    if (lastClaim) {
-      const timeSinceLastClaim = now - lastClaim;
-      const minimumCooldown = 2 * 60 * 1000; // 2 minutes in milliseconds
-
-      if (timeSinceLastClaim < minimumCooldown) {
-        const remainingTime = Math.ceil((minimumCooldown - timeSinceLastClaim) / 1000);
-        logger.debug(`⏰ BONUS: User ${userId} tried to claim too soon. ${remainingTime}s remaining`);
-        return res.status(429).json({
-          success: false,
-          error: 'Bonus on cooldown',
-          remainingSeconds: remainingTime,
-          nextAvailable: new Date(lastClaim + minimumCooldown).toISOString()
-        });
-      }
+    const svc = req.app.locals.services && req.app.locals.services.gameMechanicsService;
+    if (!svc) {
+      logger.error('❌ BONUS: gameMechanicsService not available on app.locals.services');
+      return res.status(500).json({ success: false, error: 'Failed to claim bonus' });
     }
 
-    const accountService = new AccountService();
-
-    // Award 100 bonus points
-    const newBalance = await accountService.addPoints(
-      userId,
-      100,
-      'chat_bonus',
-      'Chat activity bonus',
-      { source: 'chat_bonus_icon' }
-    );
-
-    // Update last claim time for this user
-    userBonusCooldowns.set(userId, now);
-
-    // Calculate next bonus time (random 2-6 minutes from now)
-    const nextBonusDelay = Math.floor(Math.random() * 240000) + 120000; // 2-6 minutes
-    const nextBonusTime = new Date(now + nextBonusDelay);
-
-    logger.debug(`🎁 BONUS: User ${userId} claimed 100 chat bonus points. New balance: ${newBalance}. Next available: ${nextBonusTime.toISOString()}`);
-
-    res.json({
-      success: true,
-      pointsAwarded: 100,
-      newBalance,
-      nextBonusDelay, // Send delay to client for timer
-      nextBonusTime: nextBonusTime.toISOString()
-    });
+    const result = await svc.claimChatBonus(userId);
+    res.json({ success: true, ...result });
   } catch (error) {
+    if (respondGameMechanicsError(error, res)) return;
     logger.error('❌ BONUS: Error claiming chat bonus:', error);
     res.status(500).json({
       success: false,
@@ -718,48 +585,26 @@ router.get('/giftable-items/:userId', async (req, res) => {
 // Endpoint to check bonus availability for a user
 router.get('/bonus-status/:userId', async (req, res) => {
   try {
-    const userBonusCooldowns = req.app.locals.userBonusCooldowns;
-    const { userId } = req.params;
+    const userIdInt = parseInt(req.params.userId);
 
-    // Verify authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
     const token = authHeader.substring(7);
     const decoded = authService.verifyToken(token);
-
-    if (!decoded || decoded.id !== parseInt(userId)) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid credentials'
-      });
+    if (!decoded || decoded.id !== userIdInt) {
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    const now = Date.now();
-    const lastClaim = userBonusCooldowns.get(parseInt(userId));
-    const minimumCooldown = 2 * 60 * 1000; // 2 minutes
-
-    if (!lastClaim || (now - lastClaim) >= minimumCooldown) {
-      // Bonus is available
-      res.json({
-        success: true,
-        available: true
-      });
-    } else {
-      // Still on cooldown
-      const remainingTime = Math.ceil((minimumCooldown - (now - lastClaim)) / 1000);
-      res.json({
-        success: true,
-        available: false,
-        remainingSeconds: remainingTime,
-        nextAvailable: new Date(lastClaim + minimumCooldown).toISOString()
-      });
+    const svc = req.app.locals.services && req.app.locals.services.gameMechanicsService;
+    if (!svc) {
+      logger.error('❌ BONUS: gameMechanicsService not available on app.locals.services');
+      return res.status(500).json({ success: false, error: 'Failed to check bonus status' });
     }
+
+    const result = svc.getBonusStatus(userIdInt);
+    res.json({ success: true, ...result });
   } catch (error) {
     logger.error('❌ BONUS: Error checking bonus status:', error);
     res.status(500).json({
@@ -841,91 +686,26 @@ router.post('/transfer-points', express.json(), async (req, res) => {
       });
     }
 
-    // Verify authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
     const token = authHeader.substring(7);
     const decoded = authService.verifyToken(token);
-
     if (!decoded || decoded.id !== fromUserId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid credentials'
-      });
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    const accountService = new AccountService();
-
-    // Get sender info
-    const senderUser = await accountService.getUserById(fromUserId);
-    if (!senderUser) {
-      return res.status(404).json({
-        success: false,
-        error: 'Sender not found'
-      });
+    const svc = req.app.locals.services && req.app.locals.services.gameMechanicsService;
+    if (!svc) {
+      logger.error('❌ TRANSFER: gameMechanicsService not available on app.locals.services');
+      return res.status(500).json({ success: false, error: 'Failed to transfer points' });
     }
 
-    // Find the target user by username
-    const targetUser = await accountService.getUserByUsername(toUsername);
-
-    if (!targetUser) {
-      return res.status(404).json({
-        success: false,
-        error: `User '${toUsername}' not found`
-      });
-    }
-
-    // Check if trying to send to self
-    if (targetUser.id === fromUserId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Cannot send points to yourself'
-      });
-    }
-
-    // Check sender's balance
-    const senderBalance = await accountService.getPointsBalance(fromUserId);
-
-    if (senderBalance < amount) {
-      return res.status(400).json({
-        success: false,
-        error: `Insufficient points. You have ${senderBalance} points but tried to send ${amount}`
-      });
-    }
-
-    // Perform the transfer
-    const senderNewBalance = await accountService.subtractPoints(
-      fromUserId,
-      amount,
-      'transfer_out',
-      `Sent ${amount} points to ${toUsername}`,
-      { recipientId: targetUser.id, recipientUsername: toUsername }
-    );
-
-    const recipientNewBalance = await accountService.addPoints(
-      targetUser.id,
-      amount,
-      'transfer_in',
-      `Received ${amount} points from ${senderUsername || senderUser.username}`,
-      { senderId: fromUserId, senderUsername: senderUsername || senderUser.username }
-    );
-
-    logger.debug(`💸 TRANSFER: ${senderUsername || senderUser.username} sent ${amount} points to ${toUsername}. Sender balance: ${senderNewBalance}, Recipient balance: ${recipientNewBalance}`);
-
-    res.json({
-      success: true,
-      senderNewBalance,
-      recipientNewBalance,
-      recipientUserId: targetUser.id,
-      recipientUsername: targetUser.username
-    });
+    const result = await svc.transferPoints(fromUserId, toUsername, amount, senderUsername);
+    res.json({ success: true, ...result });
   } catch (error) {
+    if (respondGameMechanicsError(error, res)) return;
     logger.error('❌ TRANSFER: Error transferring points:', error);
     res.status(500).json({
       success: false,

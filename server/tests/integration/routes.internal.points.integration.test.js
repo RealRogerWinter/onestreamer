@@ -66,13 +66,27 @@ const {
 
 const internalRouter = require('../../routes/internal');
 
+// PR 16.2: /transfer-points now dispatches to
+// req.app.locals.services.gameMechanicsService instead of constructing
+// `new AccountService()` inline. Other internal routes (/award-points,
+// /admin/award-points) still construct AccountService inside the handler
+// in PR 16.2's diff — that scope is PR 16.4. Wire just enough services bag
+// for the routes-under-test to resolve their dependencies.
+const AccountServiceForTest = require('../../services/AccountService');
+const GameMechanicsService = require('../../services/GameMechanicsService');
+
 function buildApp() {
     const app = express();
     app.use(express.json());
-    // internal.js routes don't read req.app.locals.services for the
-    // money-flow endpoints (they construct `new AccountService()`
-    // inside the handler), so we mount with no app.locals beyond what
-    // its required dependencies need.
+    const accountService = new AccountServiceForTest();
+    const userBonusCooldowns = new Map();
+    app.locals.services = {
+        gameMechanicsService: new GameMechanicsService({
+            accountService,
+            userBonusCooldowns,
+        }),
+    };
+    app.locals.userBonusCooldowns = userBonusCooldowns;
     app.use('/api/internal', internalRouter);
     return app;
 }
