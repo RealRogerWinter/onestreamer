@@ -21,7 +21,6 @@ const io = require('socket.io-client');
 const puppeteer = require('puppeteer');
 const processManager = require('../ProcessManager');
 const stateManager = require('../ViewBotStateManager');
-const { buildVideoRtpParameters, buildAudioRtpParameters } = require('./rtpParameters');
 const { buildTestPatternVideoArgs, buildTestPatternAudioArgs } = require('./testPatternFfmpegArgs');
 const { buildCanvasHTML } = require('./canvasHtml');
 const { buildGstreamerVideoPipeline, buildGstreamerAudioPipeline, gstreamerBinaryPath } = require('./gstreamerPipeline');
@@ -64,15 +63,15 @@ class ViewBotInstance {
     this.checkIntervalMin = parentService ? parentService.rotationCheckIntervalMin : 5000;
     this.checkIntervalMax = parentService ? parentService.rotationCheckIntervalMax : 10000;
     this.nextCheckTime = null;
-    
+
     // Database session tracking
     this.currentSessionId = null;
     this.sessionStartTime = null;
-    
+
     // WebRTC transport state
     this.transportInfo = null;
     this.rtpCapabilities = null;
-    
+
     // FFmpeg processes and ports
     this.videoFFmpeg = null;
     this.audioFFmpeg = null;
@@ -80,7 +79,7 @@ class ViewBotInstance {
     this.audioRtpPort = null;
     this.videoSSRC = null;
     this.audioSSRC = null;
-    
+
     // Legacy properties (kept for backward compatibility)
     this.mediaGenerator = null;
     this.ffmpegProcess = null;
@@ -852,10 +851,7 @@ class ViewBotInstance {
       if (this.config.videoFile) {
         const { width = 1280, height = 720, frameRate = 30 } = this.config;
         const videoFile = this.config.videoFile.replace(/\\/g, '/');
-        
-        // Mark stream start time
-        this.streamStartTime = Date.now();
-        
+
         await this.startDirectRTPPipelines(videoFile, width, height, frameRate);
         
         // Reset recovery counter on success
@@ -912,20 +908,6 @@ class ViewBotInstance {
       botId: this.botId,
       logger,
     });
-  }
-
-  /**
-   * Creates RTP parameters for video
-   */
-  createVideoRtpParameters() {
-    return buildVideoRtpParameters(this.botId);
-  }
-
-  /**
-   * Creates RTP parameters for audio
-   */
-  createAudioRtpParameters() {
-    return buildAudioRtpParameters(this.botId);
   }
 
   /**
@@ -1500,36 +1482,6 @@ class ViewBotInstance {
       execSync(`pkill -f "gst-launch.*${this.mediaFile}" 2>/dev/null || true`, { stdio: 'ignore' });
     } catch (e) {
       // Ignore errors - process might not exist
-    }
-    
-    // Clean up combined FFmpeg process if exists
-    if (this.combinedFFmpeg && !this.combinedFFmpeg.killed) {
-      logger.debug(`🛑 ViewBot ${this.botId}: Killing combined FFmpeg process`);
-      this.combinedFFmpeg.kill('SIGTERM');
-      this.combinedFFmpeg = null;
-      this.videoFFmpeg = null;
-      this.audioFFmpeg = null;
-    } else {
-      // Clean up video FFmpeg process
-      if (this.videoFFmpeg && !this.videoFFmpeg.killed) {
-        logger.debug(`🛑 ViewBot ${this.botId}: Killing video FFmpeg process`);
-        this.videoFFmpeg.kill('SIGTERM');
-        this.videoFFmpeg = null;
-      }
-      
-      // Clean up audio FFmpeg process (only if it's different from video)
-      if (this.audioFFmpeg && this.audioFFmpeg !== this.videoFFmpeg && !this.audioFFmpeg.killed) {
-        logger.debug(`🛑 ViewBot ${this.botId}: Killing audio FFmpeg process`);
-        this.audioFFmpeg.kill('SIGTERM');
-        this.audioFFmpeg = null;
-      }
-    }
-    
-    // Clean up legacy FFmpeg process (for backward compatibility)
-    if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
-      logger.debug(`🛑 ViewBot ${this.botId}: Killing legacy FFmpeg process`);
-      this.ffmpegProcess.kill('SIGTERM');
-      this.ffmpegProcess = null;
     }
     
     // Clean up Puppeteer resources (no longer used but kept for safety)
