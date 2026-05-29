@@ -5,6 +5,12 @@ const ChatBotRepository = require('../database/repository/ChatBotRepository');
 const logger = require('../bootstrap/logger').child({ svc: 'ChatBotService' });
 const { ANIMALS, COLORS } = require('./chatbot/botIdentity');
 const { filterActiveMovieBots } = require('./chatbot/movieBotRoster');
+const {
+    buildCombinedPrompt,
+    temporaryBotExpiresAt,
+    deleteTemporaryBotRecords,
+    quiesceBotInstance,
+} = require('./chatbot/temporaryBotLifecycle');
 
 class ChatBotService {
     /**
@@ -530,7 +536,7 @@ class ChatBotService {
             logger.debug(`🤖 Creating temporary bot: ${data.name}`);
             
             // Calculate expiration time
-            const expiresAt = new Date(Date.now() + (data.duration || 3600) * 1000);
+            const expiresAt = temporaryBotExpiresAt(data.duration || 3600);
             
             // Read the active MovieBot prompt template via the factory-wired
             // closure (PR 1.3). MovieBotService.loadConfigFromDatabase always
@@ -544,7 +550,7 @@ class ChatBotService {
                 this.getMoviePromptTemplate?.() ||
                 `You are watching a stream. Your core identity is that you are currently a viewer of this stream watching the content.`;
             
-            const combinedPrompt = `${movieBotPrompt}\n\nYour specific personality: ${data.personalityPrompt}\nYour name is ${data.name}.`;
+            const combinedPrompt = buildCombinedPrompt(movieBotPrompt, data.personalityPrompt, data.name);
             
             // Create the bot in database
             const result = await this.repo.createTemporary({
@@ -596,13 +602,10 @@ class ChatBotService {
                 // Stop the bot
                 await this.stopBot(botId);
 
-                // Delete from related tables first (order matters due to foreign keys)
-                await this.repo.deleteAutoSummonedForBot(botId);
-                await this.repo.deleteTemporaryRecord(botId);
-
-                // Delete from chatbots table — only if the row is still
-                // marked temporary, in case it was promoted out from under us.
-                await this.repo.deleteTemporaryById(botId);
+                // Delete records (FK-safe order). The final delete only removes
+                // the chatbot row if it's still temporary, in case it was
+                // promoted out from under us.
+                await deleteTemporaryBotRecords(this.repo, botId, 'deleteTemporaryById');
 
                 logger.debug(`✅ Temporary bot ${botId} expired and removed`);
             } catch (error) {
@@ -629,25 +632,14 @@ class ChatBotService {
                 const botInstance = this.bots.get(bot.id);
                 if (botInstance) {
                     logger.debug(`    Stopping active bot instance for ${bot.name}`);
-                    // Clear any scheduled timers
-                    if (botInstance.responseTimer) {
-                        clearTimeout(botInstance.responseTimer);
-                        botInstance.responseTimer = null;
-                    }
-                    // Mark as disabled to prevent new messages
-                    botInstance.data.is_enabled = 0;
-                    botInstance.connected = false;
+                    quiesceBotInstance(botInstance);
                 }
-                
+
                 await this.stopBot(bot.id);
 
-                // Delete from related tables first (order matters due to foreign keys)
-                // auto_summoned_bots doesn't have ON DELETE CASCADE, so must delete manually
-                await this.repo.deleteAutoSummonedForBot(bot.id);
-                await this.repo.deleteTemporaryRecord(bot.id);
-
-                // Then delete from chatbots table (chatbot_sessions and chatbot_message_history cascade)
-                await this.repo.deleteById(bot.id);
+                // Delete records (FK-safe order; auto_summoned_bots has no
+                // ON DELETE CASCADE, so it is removed explicitly first).
+                await deleteTemporaryBotRecords(this.repo, bot.id, 'deleteById');
             }
             
             logger.debug(`✅ Successfully cleaned up ${expired.length} expired temporary bots`);
