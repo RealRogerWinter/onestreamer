@@ -26,6 +26,7 @@ const { buildTestPatternVideoArgs, buildTestPatternAudioArgs } = require('./test
 const { buildCanvasHTML } = require('./canvasHtml');
 const { buildGstreamerVideoPipeline, buildGstreamerAudioPipeline, gstreamerBinaryPath } = require('./gstreamerPipeline');
 const PipelineHealthMonitor = require('./pipelineHealthMonitor');
+const RotationScheduler = require('./rotationScheduler');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'ViewBotInstance' });
 
@@ -52,7 +53,8 @@ class ViewBotInstance {
     this.startTime = null;
     this.lastError = null;
     
-    // ViewBot rotation system - probability-based
+    // ViewBot rotation system - probability-based. The live timer is owned by
+    // this.rotationScheduler; this field is retained as documented state shape.
     this.rotationCheckTimer = null;
     this.rotationProbability = parentService ? parentService.rotationProbability : 0.31;
     this.checkIntervalMin = parentService ? parentService.rotationCheckIntervalMin : 5000;
@@ -87,6 +89,15 @@ class ViewBotInstance {
       getAudioProcess: () => this.gstreamerAudioProcess,
       shouldRun: () => !this.stopping && !this.handlingVideoEnd && this.streaming,
       onCrash: (type) => this.handlePipelineCrash(type),
+    });
+
+    // Rotation-check scheduling (the rotate action stays here in requestRotation)
+    this.rotationScheduler = new RotationScheduler({
+      botId: this.botId,
+      logger,
+      getParentService: () => this.getParentService(),
+      isStreaming: () => this.streaming,
+      onRotate: () => this.requestRotation(),
     });
 
     logger.debug(`🤖 ViewBot ${this.botId} initialized`);
@@ -1926,78 +1937,21 @@ class ViewBotInstance {
    * Starts rotation check timer with random intervals and probability checks
    */
   startRotationCheckTimer() {
-    // Stop any existing timer
-    this.stopRotationCheckTimer();
-    
-    // Check if rotation is enabled through the parent service
-    const parentService = this.getParentService();
-    if (!parentService || !parentService.rotationEnabled) {
-      logger.debug(`⏸️ ViewBot ${this.botId}: Rotation disabled - no checks will be performed`);
-      return;
-    }
-    
-    // Schedule the next check
-    this.scheduleNextRotationCheck();
+    this.rotationScheduler.start();
   }
-  
+
   /**
    * Schedules the next rotation probability check
    */
   scheduleNextRotationCheck() {
-    const parentService = this.getParentService();
-    if (!parentService) return;
-    
-    // Get intervals from parent service (which loads from config)
-    const minInterval = parentService.rotationCheckIntervalMin || 65000;
-    const maxInterval = parentService.rotationCheckIntervalMax || 65000;
-    
-    // Random interval between min and max
-    const interval = Math.floor(Math.random() * (maxInterval - minInterval + 1)) + minInterval;
-    
-    logger.debug(`⏱️ ViewBot ${this.botId}: Next rotation check in ${interval/1000} seconds (using ${minInterval/1000}-${maxInterval/1000}s range)`);
-    
-    this.rotationCheckTimer = setTimeout(() => {
-      this.performRotationCheck();
-    }, interval);
-  }
-  
-  /**
-   * Performs a rotation probability check
-   */
-  performRotationCheck() {
-    const parentService = this.getParentService();
-    
-    // Safety checks
-    if (!parentService || !parentService.rotationEnabled || !this.streaming) {
-      logger.debug(`🚫 ViewBot ${this.botId}: Rotation check skipped - conditions not met`);
-      return;
-    }
-    
-    // Get probability from parent service (which loads from config)
-    const rotationProbability = parentService.rotationProbability || 0.31;
-    
-    // Roll the dice
-    const roll = Math.random();
-    logger.debug(`🎲 ViewBot ${this.botId}: Rotation check - rolled ${(roll * 100).toFixed(2)}% vs ${(rotationProbability * 100).toFixed(2)}% threshold`);
-    
-    if (roll < rotationProbability) {
-      logger.debug(`✅ ViewBot ${this.botId}: Rotation triggered! Requesting rotation...`);
-      this.requestRotation();
-    } else {
-      logger.debug(`⏭️ ViewBot ${this.botId}: No rotation this time, scheduling next check`);
-      this.scheduleNextRotationCheck();
-    }
+    this.rotationScheduler.scheduleNext();
   }
   
   /**
    * Stops the rotation check timer
    */
   stopRotationCheckTimer() {
-    if (this.rotationCheckTimer) {
-      clearTimeout(this.rotationCheckTimer);
-      this.rotationCheckTimer = null;
-      logger.debug(`⏹️ ViewBot ${this.botId}: Stopped rotation check timer`);
-    }
+    this.rotationScheduler.stop();
   }
   
   /**
@@ -2022,7 +1976,7 @@ class ViewBotInstance {
     }
     
     // If currently streaming, restart the rotation timer with new interval from parent
-    if (this.streaming && this.rotationCheckTimer) {
+    if (this.streaming && this.rotationScheduler.timer) {
       this.stopRotationCheckTimer();
       this.scheduleNextRotationCheck();
     }
