@@ -9,6 +9,7 @@ import { AudioSettingsConfig, VideoSettingsConfig, ScreenShareSettingsConfig } f
 import CanvasEffectOverlay from '../canvas/CanvasEffectOverlay';
 import { useStreamerViewManager } from '../../hooks/useStreamerViewManager';
 import { useVisualFxProcessor } from '../../hooks/useVisualFxProcessor';
+import { resolutionConstraints } from '../../utils/resolutionConstraints';
 import './WebRTCViewer.css';
 
 interface WebRTCStreamerProps {
@@ -197,16 +198,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       // console.log('📹 Current video tracks:', streamRef.current.getVideoTracks());
       
       // Build video constraints based on settings
-      const getResolutionConstraints = () => {
-        switch (videoSettings.resolution) {
-          case '480p':
-            return { width: { ideal: 854 }, height: { ideal: 480 } };
-          case '720p':
-            return { width: { ideal: 1280 }, height: { ideal: 720 } };
-          default:
-            return { width: { ideal: 1280 }, height: { ideal: 720 } };
-        }
-      };
+      const getResolutionConstraints = () => resolutionConstraints(videoSettings.resolution);
       
       const videoConstraints: any = {
         deviceId: { exact: newDeviceId },
@@ -435,16 +427,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     try {
       console.log('📹 Updating stored camera video for later...');
 
-      const getResolutionConstraints = () => {
-        switch (videoSettings.resolution) {
-          case '480p':
-            return { width: { ideal: 854 }, height: { ideal: 480 } };
-          case '720p':
-            return { width: { ideal: 1280 }, height: { ideal: 720 } };
-          default:
-            return { width: { ideal: 1280 }, height: { ideal: 720 } };
-        }
-      };
+      const getResolutionConstraints = () => resolutionConstraints(videoSettings.resolution);
 
       const videoConstraints: any = {
         deviceId: { exact: newDeviceId },
@@ -482,16 +465,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       console.log('📹 Getting new camera stream for PiP...');
 
       // Build video constraints based on current settings
-      const getResolutionConstraints = () => {
-        switch (videoSettings.resolution) {
-          case '480p':
-            return { width: { ideal: 854 }, height: { ideal: 480 } };
-          case '720p':
-            return { width: { ideal: 1280 }, height: { ideal: 720 } };
-          default:
-            return { width: { ideal: 1280 }, height: { ideal: 720 } };
-        }
-      };
+      const getResolutionConstraints = () => resolutionConstraints(videoSettings.resolution);
 
       const videoConstraints: any = {
         deviceId: { exact: newDeviceId },
@@ -963,16 +937,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       }
 
       // Build video constraints based on settings
-      const getResolutionConstraints = (resolution: string) => {
-        switch (resolution) {
-          case '480p':
-            return { width: { ideal: 854 }, height: { ideal: 480 } };
-          case '720p':
-            return { width: { ideal: 1280 }, height: { ideal: 720 } };
-          default:
-            return { width: { ideal: 1280 }, height: { ideal: 720 } };
-        }
-      };
+      const getResolutionConstraints = (resolution: string) => resolutionConstraints(resolution);
       
       let videoConstraints: any = false;
       if (videoSettings.videoEnabled) {
