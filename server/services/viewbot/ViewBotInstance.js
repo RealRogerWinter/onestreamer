@@ -22,6 +22,7 @@ const puppeteer = require('puppeteer');
 const processManager = require('../ProcessManager');
 const stateManager = require('../ViewBotStateManager');
 const { buildVideoRtpParameters, buildAudioRtpParameters } = require('./rtpParameters');
+const { buildTestPatternVideoArgs, buildTestPatternAudioArgs } = require('./testPatternFfmpegArgs');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'ViewBotInstance' });
 
@@ -1275,193 +1276,25 @@ class ViewBotInstance {
    * Creates FFmpeg arguments for video test pattern generation
    */
   createVideoFFmpegArgs(width, height, frameRate, pattern) {
-    if (!this.videoRtpPort) {
-      throw new Error('Video RTP port not allocated by server');
-    }
-    
-    // Determine input source based on content type
-    let inputArgs = [];
-    
-    if (this.config.contentType === 'videoFile' && this.config.videoFile) {
-      logger.debug(`🎬 ViewBot ${this.botId}: Using video file input: ${this.config.videoFile}`);
-      logger.debug(`🎬 ViewBot ${this.botId}: ContentType is: "${this.config.contentType}"`);
-      logger.debug(`🎬 ViewBot ${this.botId}: Video file path: "${this.config.videoFile}"`);
-      
-      // Check if file exists and is actually a file (not a directory)
-      const path = require('path');
-      
-      if (!fs.existsSync(this.config.videoFile)) {
-        logger.error(`❌ ViewBot ${this.botId}: Video file does not exist: ${this.config.videoFile}`);
-        throw new Error(`Video file not found: ${this.config.videoFile}`);
-      }
-      
-      const stats = fs.statSync(this.config.videoFile);
-      if (stats.isDirectory()) {
-        logger.error(`❌ ViewBot ${this.botId}: Path is a directory, not a file: ${this.config.videoFile}`);
-        throw new Error(`Path is a directory, not a video file: ${this.config.videoFile}`);
-      }
-      
-      // Check if file has a video extension
-      const ext = path.extname(this.config.videoFile).toLowerCase();
-      const validExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.3gp', '.ogv', '.ts'];
-      if (!validExtensions.includes(ext)) {
-        logger.warn(`⚠️ ViewBot ${this.botId}: File does not have a recognized video extension: ${ext}`);
-        logger.warn(`⚠️ ViewBot ${this.botId}: Supported extensions: ${validExtensions.join(', ')}`);
-        logger.warn(`⚠️ ViewBot ${this.botId}: Attempting to process anyway...`);
-      }
-      
-      logger.debug(`✅ ViewBot ${this.botId}: Video file exists and will be used for streaming`);
-      
-      inputArgs = [
-        // No loop - allow video to end naturally
-        '-i', this.config.videoFile // Node.js spawn() handles paths with spaces automatically
-      ];
-    } else {
-      // Use test pattern sources
-      let videoInput;
-      switch (pattern) {
-        case 'color-bars':
-        case 'color_bars':
-          videoInput = `testsrc2=size=${width}x${height}:rate=${frameRate}:duration=3600`;
-          break;
-        case 'moving-text':
-        case 'moving_text':
-          videoInput = `color=black:size=${width}x${height}:rate=${frameRate}:duration=3600`;
-          break;
-        case 'clock':
-          videoInput = `testsrc=size=${width}x${height}:rate=${frameRate}:duration=3600`;
-          break;
-        case 'noise':
-          videoInput = `rgbtestsrc=size=${width}x${height}:rate=${frameRate}:duration=3600`;
-          break;
-        default:
-          videoInput = `testsrc2=size=${width}x${height}:rate=${frameRate}:duration=3600`;
-      }
-      
-      inputArgs = [
-        '-f', 'lavfi',
-        '-i', videoInput
-      ];
-    }
-    
-    // Use fixed SSRC that matches what MediaSoup expects
-    const ssrc = 11111111; // Fixed video SSRC
-    
-    // Build complete FFmpeg args
-    const args = [
-      '-re', // Read input at native frame rate
-      ...inputArgs, // Input source (test pattern or video file)
-      // Video processing options with PTS reset for sync
-      '-vf', `scale=${width}:${height},format=yuv420p,setpts=PTS-STARTPTS`, // Scale, ensure format, and reset PTS
-      '-r', frameRate.toString(), // Set frame rate
-      '-vsync', 'cfr', // Constant frame rate for consistent timing
-      // Video codec settings for VP8 with better parameters
-      '-codec:v', 'libvpx',
-      '-deadline', 'realtime',
-      '-error-resilient', '1',
-      '-auto-alt-ref', '0',
-      '-cpu-used', '8', // Faster encoding for real-time
-      '-b:v', '800k',
-      '-minrate', '400k',
-      '-maxrate', '1200k',
-      '-bufsize', '1600k',
-      '-g', '10', // Keyframe every 10 frames for faster start
-      '-keyint_min', '10', // Minimum keyframe interval
-      '-quality', 'realtime',
-      '-static-thresh', '0', // Disable static area detection
-      '-max-intra-rate', '0', // No limit on intra frames
-      '-lag-in-frames', '0', // No frame lookahead
-      '-pix_fmt', 'yuv420p',
-      // RTP output settings with fixed SSRC
-      '-an', // No audio in video stream
-      '-f', 'rtp',
-      '-ssrc', String(ssrc),
-      '-payload_type', '96',
-      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.videoRtpPort}`
-    ];
-    
-    logger.debug(`🎬 ViewBot ${this.botId}: Video FFmpeg command: ffmpeg ${args.join(' ')}`);
-    
-    // Debug the actual input configuration
-    logger.debug(`🔍 ViewBot ${this.botId}: Video config debug:`);
-    logger.debug(`  - contentType: "${this.config.contentType}"`);
-    logger.debug(`  - videoFile: "${this.config.videoFile}"`);
-    logger.debug(`  - using video file input: ${this.config.contentType === 'videoFile' && this.config.videoFile}`);
-    logger.debug(`  - input args: [${inputArgs.join(', ')}]`);
-    logger.debug(`  - target RTP port: ${this.videoRtpPort}`);
-    
-    return args;
+    return buildTestPatternVideoArgs({
+      videoRtpPort: this.videoRtpPort,
+      config: this.config,
+      width, height, frameRate, pattern,
+      botId: this.botId,
+      logger,
+    });
   }
 
   /**
    * Creates FFmpeg arguments for audio generation
    */
   createAudioFFmpegArgs() {
-    if (!this.audioRtpPort) {
-      throw new Error('Audio RTP port not allocated by server');
-    }
-    
-    // Use fixed SSRC that matches what MediaSoup expects
-    const ssrc = 22222222; // Fixed audio SSRC
-    
-    // Determine audio input source based on content type
-    let inputArgs = [];
-    
-    if (this.config.contentType === 'videoFile' && this.config.videoFile) {
-      logger.debug(`🎤 ViewBot ${this.botId}: Extracting audio from video file: ${this.config.videoFile}`);
-      logger.debug(`🎤 ViewBot ${this.botId}: ContentType is: "${this.config.contentType}"`);
-      logger.debug(`🎤 ViewBot ${this.botId}: Video file path: "${this.config.videoFile}"`);
-      
-      // Check if file exists and is actually a file (not a directory)
-      const path = require('path');
-      
-      if (!fs.existsSync(this.config.videoFile)) {
-        logger.error(`❌ ViewBot ${this.botId}: Video file does not exist: ${this.config.videoFile}`);
-        throw new Error(`Video file not found: ${this.config.videoFile}`);
-      }
-      
-      const stats = fs.statSync(this.config.videoFile);
-      if (stats.isDirectory()) {
-        logger.error(`❌ ViewBot ${this.botId}: Path is a directory, not a file: ${this.config.videoFile}`);
-        throw new Error(`Path is a directory, not a video file: ${this.config.videoFile}`);
-      }
-      
-      logger.debug(`✅ ViewBot ${this.botId}: Video file exists, audio will be extracted`);
-      
-      inputArgs = [
-        // No loop - allow video to end naturally
-        '-i', this.config.videoFile // Node.js spawn() handles paths with spaces automatically
-      ];
-    } else {
-      // Use silent audio for test patterns
-      inputArgs = [
-        '-f', 'lavfi',
-        '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000:duration=3600' // Silent audio for 1 hour
-      ];
-    }
-    
-    // Build complete audio FFmpeg args
-    const args = [
-      '-re', // Read input at native frame rate
-      ...inputArgs, // Input source (silent audio or video file audio)
-      // Audio processing with sync
-      '-af', 'aresample=async=1:first_pts=0', // Resample with sync
-      // Audio codec settings for Opus
-      '-codec:a', 'libopus',
-      '-b:a', '128k',
-      '-ar', '48000',
-      '-ac', '2',
-      '-application', 'voip',
-      // RTP output settings with fixed SSRC
-      '-vn', // No video in audio stream
-      '-f', 'rtp',
-      '-ssrc', String(ssrc),
-      '-payload_type', '111',
-      `rtp://${process.env.SERVER_HOST || '127.0.0.1'}:${this.audioRtpPort}`
-    ];
-    
-    logger.debug(`🎤 ViewBot ${this.botId}: Audio FFmpeg command: ffmpeg ${args.join(' ')}`);
-    return args;
+    return buildTestPatternAudioArgs({
+      audioRtpPort: this.audioRtpPort,
+      config: this.config,
+      botId: this.botId,
+      logger,
+    });
   }
 
   /**
