@@ -724,120 +724,25 @@ class ViewBotURLService extends EventEmitter {
     const settings = streamEntry.encodingSettings;
     const useAdaptive = this.adaptiveConfig.enabled && settings;
 
-    const args = [];
-
-    // Input buffer settings for smoother streaming
-    args.push(
-      '-analyzeduration', '3000000',   // 3 seconds - balance between startup speed and stability
-      '-probesize', '10000000',        // 10MB - read more data for format detection
-      '-fflags', '+genpts+discardcorrupt+nobuffer',
-      '-flags', 'low_delay',
-      '-max_delay', '500000'           // 500ms max delay
-    );
-
-    // Add -re flag and reconnect options for direct HLS/URL inputs (not piped stdin)
-    if (input !== '-') {
-      args.push(
-        '-reconnect', '1',
-        '-reconnect_streamed', '1',
-        '-reconnect_delay_max', '5',
-        '-re'
-      );
-      logger.debug(`📡 Using -re flag with reconnect for direct URL input: ${input.substring(0, 60)}...`);
-    } else {
-      // For piped input, add thread queue size for better buffering
-      args.push('-thread_queue_size', '4096');
-    }
-
-    // Input
-    args.push('-i', input);
-
-    // Experimental: VIEWBOT_STREAM_COPY=true bypasses re-encoding entirely.
-    // Only works when the source is already H.264 + AAC (most IVS/Kick/Twitch HLS).
-    // Risk: GOP/keyframe mismatch can cause WebRTC subscriber freeze-on-join,
-    // and a silent platform-side codec change breaks copy with no error.
-    // NB: this function has a later `const process = spawn(...)` that shadows the
-    // global `process` for the entire function scope — so we read env via globalThis
-    // to avoid the TDZ.
+    // Experimental: VIEWBOT_STREAM_COPY=true bypasses re-encoding entirely (only
+    // valid when the source is already H.264 + AAC). Read env via globalThis
+    // because the `const process = spawn(...)` below shadows the global `process`
+    // for the whole function scope (TDZ).
     const streamCopy = globalThis.process.env.VIEWBOT_STREAM_COPY === 'true' && input !== '-';
+
+    const args = buildRtmpFfmpegArgs({ input, rtmpUrl, settings, useAdaptive, streamCopy });
+
+    if (input !== '-') {
+      logger.debug(`📡 Using -re flag with reconnect for direct URL input: ${input.substring(0, 60)}...`);
+    }
     if (streamCopy) {
-      args.push('-c:v', 'copy', '-c:a', 'copy', '-bsf:v', 'h264_mp4toannexb');
-      args.push('-f', 'flv', '-flvflags', 'no_duration_filesize', rtmpUrl);
       logger.debug(`🎬 FFmpeg RTMP [STREAM-COPY]: ${this.ffmpegPath} -i ${input.substring(0, 60)}... -> ${rtmpUrl}`);
-      const ffmpegProc = spawn(this.ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-      return ffmpegProc;
-    }
-
-    // Video filter - use adaptive scale or default 720p
-    if (useAdaptive && settings.scale) {
-      args.push('-vf', settings.scale);
-    } else if (useAdaptive) {
-      // No scaling needed if source matches target
-      // Add fps filter if needed
-      if (settings.sourceFps && Math.abs(settings.sourceFps - settings.fps) > 2) {
-        args.push('-vf', `fps=${settings.fps}`);
-      }
     } else {
-      // Default: scale to 720p
-      args.push('-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2');
+      const logSettings = useAdaptive
+        ? `ADAPTIVE ${settings.width}x${settings.height}@${settings.fps}fps ${settings.videoBitrate}kbps`
+        : 'FIXED 720p@30fps 4000kbps';
+      logger.debug(`🎬 FFmpeg RTMP (${logSettings}): ${this.ffmpegPath} ... -> ${rtmpUrl}`);
     }
-
-    // Video encoding - use adaptive or default settings
-    if (useAdaptive) {
-      args.push(
-        '-c:v', 'libx264',
-        '-preset', settings.preset,
-        '-profile:v', settings.profile,
-        '-level', settings.level,
-        '-b:v', `${settings.videoBitrate}k`,
-        '-maxrate', `${settings.maxrate}k`,
-        '-bufsize', `${settings.bufsize}k`,
-        '-pix_fmt', settings.pixFmt,
-        '-r', String(settings.fps),
-        '-g', String(settings.gopSize),
-        '-keyint_min', String(settings.keyintMin),
-        '-sc_threshold', String(settings.scThreshold)
-      );
-    } else {
-      // Default fixed settings (720p @ 2Mbps). Used only when the source probe fails;
-      // the adaptive path is the hot path. Values mirror viewbot-config.json's 2 Mbps
-      // target and the LiveKit ingress's 2125 kbps tier.
-      args.push(
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-profile:v', 'main',
-        '-level', '3.1',
-        '-b:v', '2000k',
-        '-maxrate', '2500k',
-        '-bufsize', '4000k',
-        '-pix_fmt', 'yuv420p',
-        '-r', '30',
-        '-g', '60',
-        '-keyint_min', '30',
-        '-sc_threshold', '0'
-      );
-    }
-
-    // Audio encoding
-    args.push(
-      '-c:a', 'aac',
-      '-b:a', useAdaptive && settings.audioBitrate ? `${settings.audioBitrate}k` : '160k',
-      '-ar', '48000',
-      '-ac', useAdaptive ? String(settings.audioChannels || 2) : '2'
-    );
-
-    // Output with RTMP optimizations for smoother streaming
-    args.push(
-      '-f', 'flv',
-      '-flvflags', 'no_duration_filesize',  // Don't write duration/filesize (causes issues with live)
-      rtmpUrl
-    );
-
-    const logSettings = useAdaptive
-      ? `ADAPTIVE ${settings.width}x${settings.height}@${settings.fps}fps ${settings.videoBitrate}kbps`
-      : 'FIXED 720p@30fps 4000kbps';
-
-    logger.debug(`🎬 FFmpeg RTMP (${logSettings}): ${this.ffmpegPath} ... -> ${rtmpUrl}`);
 
     const process = spawn(this.ffmpegPath, args, {
       stdio: ['pipe', 'pipe', 'pipe']
