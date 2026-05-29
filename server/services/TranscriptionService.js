@@ -398,13 +398,10 @@ class TranscriptionService extends EventEmitter {
         
         session.status = 'stopping';
         session.endTime = new Date();
-        
-        // Process any remaining audio in buffer
-        if (session.audioBuffer.length > 0) {
-            await this.processAudioChunk(session, session.audioBuffer);
-        }
-        
-        // Cleanup session
+
+        // Cleanup session. (Audio is consumed continuously by the
+        // startTranscriptionProcessing interval via AudioBufferService; there
+        // is no separate end-of-session buffer to flush here.)
         await this.cleanupSession(session);
         
         // Update database
