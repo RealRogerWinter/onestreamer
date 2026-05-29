@@ -24,6 +24,7 @@ const stateManager = require('../ViewBotStateManager');
 const { buildVideoRtpParameters, buildAudioRtpParameters } = require('./rtpParameters');
 const { buildTestPatternVideoArgs, buildTestPatternAudioArgs } = require('./testPatternFfmpegArgs');
 const { buildCanvasHTML } = require('./canvasHtml');
+const { buildGstreamerVideoPipeline, buildGstreamerAudioPipeline, gstreamerBinaryPath } = require('./gstreamerPipeline');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'ViewBotInstance' });
 
@@ -599,43 +600,15 @@ class ViewBotInstance {
   async startDirectRTPPipelines(videoFile, width, height, frameRate) {
     const { spawn } = require('child_process');
     
-    // Video pipeline - direct RTP without rtpbin
-    const videoPipeline = [
-      '-e',  // Force EOS on shutdown
-      '-v',  // Verbose for debugging
-      'filesrc', `location=${videoFile}`,
-      '!', 'decodebin',
-      '!', 'queue', 'max-size-buffers=200', 'max-size-time=2000000000', 'max-size-bytes=10485760',
-      '!', 'videoconvert',
-      '!', 'videoscale',
-      '!', `video/x-raw,width=${width},height=${height}`,
-      '!', 'videorate',
-      '!', `video/x-raw,framerate=${frameRate}/1`,
-      '!', 'vp8enc', 'deadline=1', 'cpu-used=4', 'error-resilient=1', 'target-bitrate=1500000', 'keyframe-max-dist=30', 'threads=2',
-      '!', 'rtpvp8pay', `ssrc=${this.videoSSRC}`, 'pt=96', 'mtu=1200', 'picture-id-mode=2',
-      '!', 'udpsink', 'host=127.0.0.1', `port=${this.videoRtpPort}`, 'sync=true', 'async=false'
-    ];
-    
-    // Audio pipeline - direct RTP without rtpbin
-    const audioPipeline = [
-      '-e',  // Force EOS on shutdown
-      '-v',  // Verbose for debugging
-      'filesrc', `location=${videoFile}`,
-      '!', 'decodebin',
-      '!', 'queue', 'max-size-buffers=200', 'max-size-time=2000000000', 'max-size-bytes=10485760',
-      '!', 'audioconvert',
-      '!', 'audioresample',
-      '!', 'audio/x-raw,rate=48000,channels=2',
-      '!', 'opusenc', 'bitrate=128000', 'frame-size=20',
-      '!', 'rtpopuspay', `ssrc=${this.audioSSRC}`, 'pt=111', 'mtu=1200',
-      '!', 'udpsink', 'host=127.0.0.1', `port=${this.audioRtpPort}`, 'sync=true', 'async=false'
-    ];
-    
-    // Use the correct GStreamer path based on the operating system
-    const isWindows = process.platform === 'win32';
-    const gstreamerPath = isWindows 
-      ? 'C:\\Program Files\\gstreamer\\1.0\\msvc_x86_64\\bin\\gst-launch-1.0.exe'
-      : 'gst-launch-1.0';
+    // Direct RTP pipelines (no rtpbin) — pure arg construction in gstreamerPipeline.js
+    const videoPipeline = buildGstreamerVideoPipeline({
+      videoFile, width, height, frameRate,
+      videoSSRC: this.videoSSRC, videoRtpPort: this.videoRtpPort,
+    });
+    const audioPipeline = buildGstreamerAudioPipeline({
+      videoFile, audioSSRC: this.audioSSRC, audioRtpPort: this.audioRtpPort,
+    });
+    const gstreamerPath = gstreamerBinaryPath();
     
     logger.debug(`🎥 ViewBot ${this.botId}: Starting video pipeline (no rtpbin)`);
     logger.debug(`🎥 ViewBot ${this.botId}: GStreamer path: ${gstreamerPath}`);
