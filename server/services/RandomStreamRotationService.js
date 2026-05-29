@@ -14,7 +14,6 @@ const TwitchRandomService = require('./TwitchRandomService');
 const KickRandomService = require('./KickRandomService');
 const https = require('https');
 const axios = require('axios');
-const fs = require('fs');
 const path = require('path');
 
 const RotationRetryState = require('./random-stream/RotationRetryState');
@@ -23,6 +22,8 @@ const RotationAnnouncer = require('./random-stream/RotationAnnouncer');
 const PlatformSelector = require('./random-stream/PlatformSelector');
 const RotationScheduler = require('./random-stream/RotationScheduler');
 const RotationTimerController = require('./random-stream/RotationTimerController');
+const RotationStatePersistence = require('./random-stream/RotationStatePersistence');
+const RotationRecoveryMonitor = require('./random-stream/RotationRecoveryMonitor');
 
 const logger = require('../bootstrap/logger').child({ svc: 'RandomStreamRotationService' });
 
@@ -118,6 +119,12 @@ class RandomStreamRotationService extends EventEmitter {
     // Manual-control verbs + extend-cooldown/lock state (PR 17.4) — extracted.
     this._timerController = new RotationTimerController({ host: this, logger });
 
+    // Persistence + recovery monitor (PR 17.5) — extracted. Persistence must
+    // be constructed before the _loadState() call below; the recovery monitor
+    // owns the autoRestartMonitor interval handle (re-exposed via accessor).
+    this._persistence = new RotationStatePersistence({ host: this, stateFile: STATE_FILE, logger });
+    this._recoveryMonitor = new RotationRecoveryMonitor({ host: this, logger });
+
     logger.debug('🎲 RandomStreamRotationService initialized');
 
     // Load persisted state
@@ -179,48 +186,18 @@ class RandomStreamRotationService extends EventEmitter {
   getLockStatus() { return this._timerController.getLockStatus(); }
   getExtendCooldownStatus() { return this._timerController.getExtendCooldownStatus(); }
 
-  /**
-   * Save enabled state to file for persistence across restarts
-   */
-  _saveState() {
-    try {
-      const dir = path.dirname(STATE_FILE);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      const state = {
-        enabled: this.isEnabled || this.shouldAutoRestart,
-        settings: this.settings,
-        savedAt: new Date().toISOString()
-      };
-      fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-      logger.debug(`💾 Random rotation state saved (enabled: ${state.enabled})`);
-    } catch (error) {
-      logger.error('❌ Failed to save rotation state:', error.message);
-    }
-  }
-
-  /**
-   * Load persisted state from file
-   */
-  _loadState() {
-    try {
-      if (fs.existsSync(STATE_FILE)) {
-        const data = fs.readFileSync(STATE_FILE, 'utf8');
-        const state = JSON.parse(data);
-        if (state.enabled) {
-          this.shouldAutoRestart = true;
-          logger.debug('📂 Random rotation state loaded - will auto-start when ready');
-        }
-        if (state.settings) {
-          this.settings = { ...this.settings, ...state.settings };
-          logger.debug('📂 Random rotation settings restored');
-        }
-      }
-    } catch (error) {
-      logger.error('❌ Failed to load rotation state:', error.message);
-    }
-  }
+  // ---- PR 17.5: persistence + recovery-monitor delegates ----------------
+  // `autoRestartMonitor` (the 5s poll interval handle) lives on the recovery
+  // monitor; re-exposed so `stop()`'s `clearInterval(this.autoRestartMonitor)`
+  // keeps working. Method names preserved (setSocketIO calls
+  // _setupStreamEndedListener; start/stop/settings-update call _saveState).
+  get autoRestartMonitor() { return this._recoveryMonitor.autoRestartMonitor; }
+  set autoRestartMonitor(v) { this._recoveryMonitor.autoRestartMonitor = v; }
+  _saveState() { return this._persistence.save(); }
+  _loadState() { return this._persistence.load(); }
+  _setupStreamEndedListener() { return this._recoveryMonitor.setupStreamEndedListener(); }
+  _startAutoRestartMonitor() { return this._recoveryMonitor.startAutoRestartMonitor(); }
+  _hasRealStreamer() { return this._recoveryMonitor.hasRealStreamer(); }
 
   // Retry/backoff math lives in RotationRetryState (server/services/random-stream/).
   // These methods stay on the main class as thin delegates so callers (including
@@ -369,144 +346,6 @@ class RandomStreamRotationService extends EventEmitter {
   setStreamNotifier(streamNotifier) {
     this.streamNotifier = streamNotifier;
     logger.debug('✅ StreamNotifier registered with RandomStreamRotation');
-  }
-
-  /**
-   * Setup listener for stream-ended events to auto-restart rotation
-   */
-  _setupStreamEndedListener() {
-    // Listen on the io instance for when any stream ends
-    // We'll hook into the global streamService instead
-    if (global.streamService) {
-      // Poll periodically to check if stream ended and we should restart
-      this._startAutoRestartMonitor();
-    }
-  }
-
-  /**
-   * Monitor for stream ending to auto-restart rotation
-   * Uses exponential backoff to avoid rapid retry loops
-   */
-  _startAutoRestartMonitor() {
-    // Dynamic check interval - increases on failures, resets on success
-    const baseInterval = 5000;  // 5 seconds base
-    const maxInterval = 60000;  // 1 minute max
-
-    if (this.autoRestartMonitor) {
-      clearInterval(this.autoRestartMonitor);
-    }
-
-    const runMonitorCheck = async () => {
-      // Skip if already processing or a retry timer is pending
-      if (this.isRestarting || this.retryState.currentRetryTimer) return;
-
-      // CRITICAL: Check if ViewBotURLService is busy (starting or reconnecting)
-      if (this.viewBotURLService && this.viewBotURLService.isBusy()) {
-        return; // Don't interfere while service is busy
-      }
-
-      // Check if there's currently a real streamer
-      const hasRealStreamer = this._hasRealStreamer();
-      if (hasRealStreamer) {
-        // Reset failure count when real streamer is active
-        if (this.retryState.consecutiveFailures > 0) {
-          this._recordSuccess();
-        }
-        return;
-      }
-
-      // Case 1: Should auto-restart but not enabled (shouldn't happen often with new logic)
-      if (this.shouldAutoRestart && !this.isEnabled) {
-        logger.debug('🔄 No active streamer detected, auto-restarting random rotation...');
-        this.isRestarting = true;
-        try {
-          await this.start();
-          this._recordSuccess();
-        } catch (error) {
-          logger.error('❌ Auto-restart failed:', error.message);
-          this._recordFailure();
-        } finally {
-          this.isRestarting = false;
-        }
-        return;
-      }
-
-      // Case 2: Rotation is enabled but no URL stream is actually active (dead stream detection)
-      if (this.isEnabled && this.viewBotURLService) {
-        const activeStreamCount = this.viewBotURLService.activeStreams.size;
-
-        // Also check if rotation timer exists - if not, we may have lost state
-        const hasRotationTimer = this.rotationTimer !== null || this.retryState.currentRetryTimer !== null;
-
-        if (activeStreamCount === 0) {
-          // Check backoff - don't retry too fast after failures
-          const timeSinceLastFailure = this.retryState.lastFailureTime
-            ? Date.now() - this.retryState.lastFailureTime
-            : Infinity;
-          const requiredBackoff = this._calculateRetryDelay();
-
-          if (timeSinceLastFailure < requiredBackoff) {
-            // Still in backoff period, skip this check
-            return;
-          }
-
-          logger.debug(`⚠️ ROTATION: Enabled but no active URL stream (failures: ${this.retryState.consecutiveFailures}) - starting recovery...`);
-          this.isRestarting = true;
-          try {
-            const result = await this._rotateToNewStream();
-            if (result.success) {
-              logger.debug(`✅ ROTATION: Recovery successful: ${result.stream?.displayName}`);
-              this._recordSuccess();
-
-              // CRITICAL: Ensure rotation timer is scheduled after recovery
-              if (!this.rotationTimer) {
-                this._scheduleNextRotation();
-              }
-            } else {
-              logger.error(`❌ ROTATION: Recovery failed: ${result.error}`);
-              this._recordFailure();
-            }
-          } catch (error) {
-            logger.error('❌ ROTATION: Recovery error:', error.message);
-            this._recordFailure();
-          } finally {
-            this.isRestarting = false;
-          }
-        } else if (!hasRotationTimer && activeStreamCount > 0) {
-          // Stream is active but no rotation timer - reschedule
-          logger.debug('⚠️ ROTATION: Stream active but no rotation timer detected!');
-          logger.debug(`   - rotationTimer: ${this.rotationTimer ? 'set' : 'null'}`);
-          logger.debug(`   - currentRetryTimer: ${this.retryState.currentRetryTimer ? 'set' : 'null'}`);
-          logger.debug(`   - isLocked: ${this.isLocked}`);
-          logger.debug(`   - nextRotationAt: ${this.nextRotationAt ? new Date(this.nextRotationAt).toLocaleTimeString() : 'null'}`);
-          logger.debug('🔄 ROTATION: Rescheduling timer to recover...');
-          this._scheduleNextRotation();
-        }
-      }
-    };
-
-    // Run check on interval
-    this.autoRestartMonitor = setInterval(runMonitorCheck, baseInterval);
-
-    logger.debug('👁️ Auto-restart monitor started (with exponential backoff)');
-  }
-
-  /**
-   * Check if there's a real (non-viewbot, non-url-stream) streamer active
-   */
-  _hasRealStreamer() {
-    if (!global.streamService) return false;
-
-    const currentStreamer = global.streamService.getCurrentStreamer();
-    if (!currentStreamer) return false;
-
-    // URL streams and viewbots are not "real" streamers
-    if (currentStreamer.startsWith('url-stream-')) return false;
-    if (currentStreamer.startsWith('viewbot-')) return false;
-    if (currentStreamer.includes('viewbot')) return false;
-
-    // There's a real streamer
-    return true;
   }
 
   /**
