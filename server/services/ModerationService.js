@@ -29,11 +29,13 @@
 //   stream end (PR-M3 will hook this when the action arbiter ties into the
 //   rotation lock).
 
-const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const Stage1 = require('./ModerationStage1');
+const SchemaSeed = require('./moderation/SchemaSeed');
+const TermsAdmin = require('./moderation/TermsAdmin');
+const Retention = require('./moderation/Retention');
+const ImageModerationConfig = require('./moderation/ImageModerationConfig');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ModerationService' });
 const DEFAULT_SEED_PATH = path.join(__dirname, '..', 'data', 'seeds', 'moderation-core-list.json');
@@ -134,6 +136,37 @@ class ModerationService extends EventEmitter {
     this._chunkListener = null;
     this._stopped = false;
     this.initialized = false;
+
+    // Extracted collaborators (behavior-preserving decomposition). Each
+    // holds only the deps it needs; the public ModerationService methods
+    // delegate to these.
+    this._schemaSeed = new SchemaSeed({
+      database: this.database,
+      schemaPath: this.schemaPath,
+      seedPath: this.seedPath,
+      seedHashPath: this.seedHashPath,
+      failClosed: this.failClosed,
+    });
+    this._termsAdmin = new TermsAdmin({
+      database: this.database,
+      reloadCache: () => this._loadTermsCache(),
+    });
+    this._retention = new Retention({ database: this.database });
+    this._imageConfig = new ImageModerationConfig({
+      database: this.database,
+      owner: this,
+    });
+  }
+
+  // Mirror the retention scheduler timer so callers/tests that read
+  // `_retentionTimer` (e.g., the idempotency + stop() assertions) observe
+  // the collaborator-owned handle.
+  get _retentionTimer() {
+    return this._retention ? this._retention._retentionTimer : null;
+  }
+
+  get _retentionFirstRun() {
+    return this._retention ? this._retention._retentionFirstRun : null;
   }
 
   // ── Initialization ─────────────────────────────────────────────────────
@@ -141,9 +174,9 @@ class ModerationService extends EventEmitter {
   async initialize() {
     if (this.initialized) return;
 
-    await this._applySchema();
-    await this._verifySeedIntegrity();
-    await this._upsertEmbeddedTerms();
+    await this._schemaSeed.applySchema();
+    await this._schemaSeed.verifySeedIntegrity();
+    await this._schemaSeed.upsertEmbeddedTerms();
     await this._loadTermsCache();
     await this._loadGlobalConfig();
     this._subscribeToTranscriptionChunks();
@@ -203,21 +236,7 @@ class ModerationService extends EventEmitter {
     // OmniImageMod (ADR-0021): cache the image-moderation knobs alongside
     // enforce. Defaults are conservative — feature off, only the 6 omni
     // image-supported categories enabled, 30-day banned-frame retention.
-    this._imageModerationEnabled = !!(row && row.image_moderation_enabled === 1);
-    let cats = null;
-    if (row && row.image_categories_enabled_json) {
-      try { cats = JSON.parse(row.image_categories_enabled_json); } catch (_) { cats = null; }
-    }
-    if (!Array.isArray(cats) || cats.length === 0) {
-      cats = ['sexual', 'violence', 'violence/graphic', 'self-harm', 'self-harm/intent', 'self-harm/instructions'];
-    }
-    this._imageCategoriesEnabled = new Set(cats);
-    this._imageFrameRetentionDays = (row && Number.isFinite(row.image_frame_retention_days))
-      ? row.image_frame_retention_days
-      : 30;
-    if (this.frameCaptureService && typeof this.frameCaptureService.setBannedRetentionDays === 'function') {
-      this.frameCaptureService.setBannedRetentionDays(this._imageFrameRetentionDays);
-    }
+    this._imageConfig.applyGlobalConfigRow(row);
   }
 
   // ── Image-moderation config (OmniImageMod PR 2/3, ADR-0021) ──────────
@@ -226,19 +245,7 @@ class ModerationService extends EventEmitter {
    * Read the image-moderation config from the DB (full shape for admin UI).
    */
   async getImageModerationConfig() {
-    const row = await this.database.getAsync(
-      `SELECT image_moderation_enabled, image_categories_enabled_json, image_frame_retention_days
-         FROM moderation_global_config WHERE id = 1`
-    );
-    let categories = null;
-    if (row && row.image_categories_enabled_json) {
-      try { categories = JSON.parse(row.image_categories_enabled_json); } catch (_) { categories = null; }
-    }
-    return {
-      enabled: !!(row && row.image_moderation_enabled === 1),
-      categories: Array.isArray(categories) ? categories : [],
-      frame_retention_days: row ? row.image_frame_retention_days : 30,
-    };
+    return this._imageConfig.getImageModerationConfig();
   }
 
   /**
@@ -248,44 +255,8 @@ class ModerationService extends EventEmitter {
    * text-only category (e.g., 'sexual/minors') silently drops it because
    * image input cannot trigger those.
    */
-  async setImageModerationConfig({ enabled, categories, frame_retention_days } = {}, adminId = null) {
-    const IMAGE_SUPPORTED = new Set([
-      'sexual', 'violence', 'violence/graphic',
-      'self-harm', 'self-harm/intent', 'self-harm/instructions',
-    ]);
-    const fields = [];
-    const params = [];
-    if (typeof enabled === 'boolean') {
-      fields.push('image_moderation_enabled = ?');
-      params.push(enabled ? 1 : 0);
-      this._imageModerationEnabled = enabled;
-    }
-    if (Array.isArray(categories)) {
-      const filtered = categories.filter((c) => IMAGE_SUPPORTED.has(c));
-      fields.push('image_categories_enabled_json = ?');
-      params.push(JSON.stringify(filtered));
-      this._imageCategoriesEnabled = new Set(filtered);
-    }
-    if (Number.isFinite(frame_retention_days)) {
-      const clamped = Math.max(1, Math.min(365, Math.floor(frame_retention_days)));
-      fields.push('image_frame_retention_days = ?');
-      params.push(clamped);
-      this._imageFrameRetentionDays = clamped;
-      if (this.frameCaptureService && typeof this.frameCaptureService.setBannedRetentionDays === 'function') {
-        this.frameCaptureService.setBannedRetentionDays(clamped);
-      }
-    }
-    if (fields.length === 0) return { changed: false };
-    fields.push('updated_at = CURRENT_TIMESTAMP');
-    if (adminId) {
-      fields.push('updated_by = ?');
-      params.push(String(adminId));
-    }
-    await this.database.runAsync(
-      `UPDATE moderation_global_config SET ${fields.join(', ')} WHERE id = 1`,
-      params
-    );
-    return { changed: true };
+  async setImageModerationConfig(opts = {}, adminId = null) {
+    return this._imageConfig.setImageModerationConfig(opts, adminId);
   }
 
   /**
@@ -507,155 +478,6 @@ class ModerationService extends EventEmitter {
       this.actionArbiter.setEnforce(this._enforce);
     }
     return { ok: true, enforce: this._enforce };
-  }
-
-  /**
-   * Apply ai-moderation-schema.sql. Idempotent (CREATE TABLE IF NOT EXISTS
-   * + INSERT OR IGNORE on the config seed). Mirrors WhitelistService's
-   * _applySchema pattern. Strips `--` line comments BEFORE splitting on `;`
-   * so any semicolons inside comments don't break the split.
-   */
-  async _applySchema() {
-    let schema;
-    try {
-      schema = fs.readFileSync(this.schemaPath, 'utf8');
-    } catch (err) {
-      const msg = `ModerationService: cannot read schema file at ${this.schemaPath}: ${err.message}`;
-      if (this.failClosed) throw new Error(msg);
-      logger.warn('⚠️ ' + msg);
-      return;
-    }
-
-    const commentStripped = schema
-      .split('\n')
-      .map((line) => {
-        const idx = line.indexOf('--');
-        return idx >= 0 ? line.slice(0, idx) : line;
-      })
-      .join('\n');
-
-    const statements = commentStripped
-      .split(';')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-    for (const stmt of statements) {
-      try {
-        await this.database.runAsync(stmt + ';');
-      } catch (err) {
-        // SQLite raises "duplicate column name: X" when an ALTER TABLE adds
-        // a column that already exists. The OmniImageMod schema additions
-        // (ADR-0021) ship ALTERs that need to be idempotent across reboots,
-        // so we tolerate that specific error and move on. Any other schema
-        // failure still throws.
-        if (err && typeof err.message === 'string' && err.message.toLowerCase().includes('duplicate column')) {
-          continue;
-        }
-        logger.error('❌ ModerationService: schema statement failed:', err.message);
-        logger.error('   Offending statement:', stmt.slice(0, 200));
-        throw err;
-      }
-    }
-  }
-
-  /**
-   * Verify the embedded seed file against its SHA-256 sibling. On mismatch:
-   * fail closed (throw) if failClosed=true, else log and continue. The
-   * seed file is committed alongside its checksum so any out-of-band edit
-   * is detected at boot, matching the WhitelistService startup pattern.
-   */
-  async _verifySeedIntegrity() {
-    let seedBytes;
-    let storedHash;
-    try {
-      seedBytes = fs.readFileSync(this.seedPath);
-    } catch (err) {
-      const msg = `ModerationService: cannot read seed file at ${this.seedPath}: ${err.message}`;
-      if (this.failClosed) throw new Error(msg);
-      logger.warn('⚠️ ' + msg);
-      return;
-    }
-    try {
-      storedHash = fs.readFileSync(this.seedHashPath, 'utf8').trim();
-    } catch (err) {
-      const msg = `ModerationService: cannot read seed hash file at ${this.seedHashPath}: ${err.message}`;
-      if (this.failClosed) throw new Error(msg);
-      logger.warn('⚠️ ' + msg);
-      return;
-    }
-    const computed = crypto.createHash('sha256').update(seedBytes).digest('hex');
-    if (computed !== storedHash) {
-      const msg = `ModerationService: seed integrity mismatch (computed=${computed.slice(0, 16)}, stored=${storedHash.slice(0, 16)})`;
-      if (this.failClosed) throw new Error(msg);
-      logger.warn('⚠️ ' + msg);
-      return;
-    }
-    logger.debug('✅ ModerationService: seed integrity verified');
-  }
-
-  /**
-   * Upsert embedded terms from the seed JSON into the moderation_terms
-   * table with source='embedded'. Idempotent: a `INSERT OR IGNORE` on the
-   * UNIQUE(normalized_form, category) constraint plus an UPDATE that flips
-   * `enabled` back to 1 (so an admin can't permanently disable an embedded
-   * term — they can only soft-disable until the next boot, at which point
-   * the seed wins).
-   *
-   * NOTE: Re-enabling on every boot is deliberate. Stage 1 is recall-only,
-   * and an admin who wants a hard-tier slur permanently off the list
-   * should remove it from the seed file (and update the SHA-256) rather
-   * than rely on a runtime override that vanishes on restart. The audit
-   * log will show the disable, the re-enable on boot, and the admin's
-   * decision history.
-   */
-  async _upsertEmbeddedTerms() {
-    let seed;
-    try {
-      seed = JSON.parse(fs.readFileSync(this.seedPath, 'utf8'));
-    } catch (err) {
-      logger.warn('⚠️ ModerationService: failed to parse seed JSON:', err.message);
-      return;
-    }
-    if (!seed || !Array.isArray(seed.terms)) {
-      logger.warn('⚠️ ModerationService: seed JSON has no terms array');
-      return;
-    }
-
-    let inserted = 0;
-    let restored = 0;
-    for (const entry of seed.terms) {
-      if (!entry || typeof entry.term !== 'string') continue;
-      const normalized = Stage1.normalize(entry.normalized_form || entry.term);
-      if (!normalized) continue;
-
-      try {
-        // INSERT OR IGNORE: if the (normalized_form, category) pair exists,
-        // the row is left alone — including its `enabled` flag.
-        const result = await this.database.runAsync(
-          `INSERT OR IGNORE INTO moderation_terms
-              (term, normalized_form, category, severity, source, enabled, created_by, notes)
-            VALUES (?, ?, ?, ?, 'embedded', 1, 'seed', ?)`,
-          [entry.term, normalized, entry.category, entry.severity || 'hard', entry.notes || null]
-        );
-        if (result && (result.changes > 0 || result.lastID)) {
-          inserted += 1;
-        } else {
-          // Row already existed. Re-enable it (the boot-wins policy noted
-          // above) and refresh source='embedded' attribution if an admin
-          // had cloned the row.
-          const upd = await this.database.runAsync(
-            `UPDATE moderation_terms
-                SET enabled = 1, source = 'embedded'
-              WHERE normalized_form = ? AND category = ? AND (enabled = 0 OR source <> 'embedded')`,
-            [normalized, entry.category]
-          );
-          if (upd && upd.changes > 0) restored += 1;
-        }
-      } catch (err) {
-        logger.warn(`⚠️ ModerationService: upsert failed for term "${entry.term}":`, err.message);
-      }
-    }
-    logger.debug(`✅ ModerationService: seed upserted (inserted=${inserted}, restored=${restored}, total=${seed.terms.length})`);
   }
 
   /**
@@ -1248,192 +1070,48 @@ class ModerationService extends EventEmitter {
     return { ok: true, event_id: eventId };
   }
 
-  // ── Terms CRUD ─────────────────────────────────────────────────────────
+  // ── Terms CRUD (delegated to TermsAdmin) ───────────────────────────────
 
-  async getTerms({ enabled = null, category = null, source = null } = {}) {
-    const where = [];
-    const params = [];
-    if (enabled !== null) { where.push('enabled = ?'); params.push(enabled ? 1 : 0); }
-    if (category) { where.push('category = ?'); params.push(category); }
-    if (source) { where.push('source = ?'); params.push(source); }
-    let sql = 'SELECT * FROM moderation_terms';
-    if (where.length > 0) sql += ' WHERE ' + where.join(' AND ');
-    sql += ' ORDER BY category, severity, normalized_form';
-    return this.database.allAsync(sql, params);
+  async getTerms(opts = {}) {
+    return this._termsAdmin.getTerms(opts);
   }
 
-  async addTerm({ term, category, severity = 'soft', notes = null }, adminId) {
-    if (!term || typeof term !== 'string') throw new Error('term required');
-    if (!['hate_speech', 'threat', 'sexual'].includes(category)) throw new Error('invalid category');
-    if (!['hard', 'soft'].includes(severity)) throw new Error('invalid severity');
-    const normalized = Stage1.normalize(term);
-    if (!normalized) throw new Error('term normalizes to empty string');
-
-    const result = await this.database.runAsync(
-      `INSERT INTO moderation_terms
-          (term, normalized_form, category, severity, source, enabled, created_by, notes)
-        VALUES (?, ?, ?, ?, 'admin', 1, ?, ?)`,
-      [term, normalized, category, severity, adminId || null, notes]
-    );
-    const id = result && result.id;
-    await this._auditTerm({ actor: adminId, action: 'add', term_id: id, after: { term, normalized_form: normalized, category, severity, notes } });
-    await this._loadTermsCache();
-    return { id, normalized_form: normalized };
+  async addTerm(spec, adminId) {
+    return this._termsAdmin.addTerm(spec, adminId);
   }
 
   async setTermEnabled(id, enabled, adminId) {
-    const before = await this.database.getAsync('SELECT * FROM moderation_terms WHERE id = ?', [id]);
-    if (!before) return { ok: false, error: 'not_found' };
-    if (before.source === 'embedded' && enabled === false) {
-      // Embedded rows can be soft-disabled, but they're re-enabled on the
-      // next boot (the seed wins). Log it loudly so the admin understands
-      // the durability semantics.
-      logger.warn(`⚠️ ModerationService: admin disabled embedded term id=${id} ("${before.term}") — will be re-enabled on next boot`);
-    }
-    await this.database.runAsync(
-      'UPDATE moderation_terms SET enabled = ? WHERE id = ?',
-      [enabled ? 1 : 0, id]
-    );
-    await this._auditTerm({ actor: adminId, action: enabled ? 'enable' : 'disable', term_id: id, before, after: { ...before, enabled: enabled ? 1 : 0 } });
-    await this._loadTermsCache();
-    return { ok: true, id };
+    return this._termsAdmin.setTermEnabled(id, enabled, adminId);
   }
 
   async removeTerm(id, adminId) {
-    const before = await this.database.getAsync('SELECT * FROM moderation_terms WHERE id = ?', [id]);
-    if (!before) return { ok: false, error: 'not_found' };
-    if (before.source === 'embedded') {
-      return { ok: false, error: 'cannot_remove_embedded' };
-    }
-    await this.database.runAsync('DELETE FROM moderation_terms WHERE id = ?', [id]);
-    await this._auditTerm({ actor: adminId, action: 'remove', term_id: id, before });
-    await this._loadTermsCache();
-    return { ok: true, id };
+    return this._termsAdmin.removeTerm(id, adminId);
   }
 
-  async _auditTerm({ actor, action, term_id, before = null, after = null }) {
-    // Hash-chain wiring is M6 — for now we store the rows with empty
-    // prev_hash/row_hash and PR-M6 will backfill once a hash function is
-    // chosen. The audit row itself is already useful for the events tab.
-    await this.database.runAsync(
-      `INSERT INTO moderation_terms_audit (actor, action, term_id, before_json, after_json)
-       VALUES (?, ?, ?, ?, ?)`,
-      [actor || null, action, term_id, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null]
-    );
+  async getTermsAudit(opts = {}) {
+    return this._termsAdmin.getTermsAudit(opts);
   }
 
-  async getTermsAudit({ limit = 50 } = {}) {
-    return this.database.allAsync(
-      'SELECT * FROM moderation_terms_audit ORDER BY at DESC, id DESC LIMIT ?',
-      [Math.min(Number(limit) || 50, 500)]
-    );
-  }
-
-  // ── Config CRUD ────────────────────────────────────────────────────────
+  // ── Config CRUD (delegated to TermsAdmin) ──────────────────────────────
 
   async getCategoryConfig() {
-    return this.database.allAsync('SELECT * FROM moderation_config ORDER BY category');
+    return this._termsAdmin.getCategoryConfig();
   }
 
-  // ── Retention (PR-M6) ──────────────────────────────────────────────────
+  // ── Retention (PR-M6, delegated to Retention) ─────────────────────────
 
-  /**
-   * Purge moderation_events rows older than the configured retention
-   * windows: 90 days for non-clean decisions (kept to cover the appeal
-   * window + DSA Article 17 statement-of-reasons accessibility), 30 days
-   * for `final_decision='clean'` rows (which we don't write today —
-   * PR-M1 only writes on Stage 1 hits — but the constraint is kept so the
-   * window applies cleanly if a future PR starts logging clean
-   * classifications). Returns counts so the scheduler can log.
-   *
-   * @param {object} [opts]
-   * @param {number} [opts.flaggedRetentionDays=90]
-   * @param {number} [opts.cleanRetentionDays=30]
-   */
-  async purgeOldEvents({ flaggedRetentionDays = 90, cleanRetentionDays = 30 } = {}) {
-    const flaggedCutoff = `-${Math.max(1, flaggedRetentionDays)} days`;
-    const cleanCutoff = `-${Math.max(1, cleanRetentionDays)} days`;
-
-    let flaggedDeleted = 0;
-    let cleanDeleted = 0;
-    try {
-      const r = await this.database.runAsync(
-        `DELETE FROM moderation_events
-          WHERE final_decision <> 'clean'
-            AND created_at < datetime('now', ?)`,
-        [flaggedCutoff]
-      );
-      flaggedDeleted = (r && r.changes) || 0;
-    } catch (err) {
-      logger.error('❌ ModerationService.purgeOldEvents (flagged) failed:', err.message);
-    }
-    try {
-      const r = await this.database.runAsync(
-        `DELETE FROM moderation_events
-          WHERE final_decision = 'clean'
-            AND created_at < datetime('now', ?)`,
-        [cleanCutoff]
-      );
-      cleanDeleted = (r && r.changes) || 0;
-    } catch (err) {
-      logger.error('❌ ModerationService.purgeOldEvents (clean) failed:', err.message);
-    }
-    if (flaggedDeleted > 0 || cleanDeleted > 0) {
-      logger.debug(`🧹 ModerationService: purged ${flaggedDeleted} flagged + ${cleanDeleted} clean moderation_events rows`);
-    }
-    return { flaggedDeleted, cleanDeleted };
+  async purgeOldEvents(opts = {}) {
+    return this._retention.purgeOldEvents(opts);
   }
 
-  /**
-   * Start the daily retention scheduler. setInterval-driven; the handle
-   * is unref'd so it doesn't keep the process alive on shutdown.
-   * `stop()` clears it.
-   */
   startRetentionScheduler(opts = {}) {
-    const interval = opts.intervalMs || 24 * 60 * 60 * 1000; // 24h
-    if (this._retentionTimer) return; // idempotent
-    // Kick off the first run after a 60s grace period so we don't compete
-    // with other boot-time IO.
-    this._retentionFirstRun = setTimeout(() => {
-      this.purgeOldEvents(opts).catch((err) => logger.error('retention first run:', err));
-    }, 60_000);
-    if (typeof this._retentionFirstRun.unref === 'function') this._retentionFirstRun.unref();
-    this._retentionTimer = setInterval(() => {
-      this.purgeOldEvents(opts).catch((err) => logger.error('retention tick:', err));
-    }, interval);
-    if (typeof this._retentionTimer.unref === 'function') this._retentionTimer.unref();
+    return this._retention.startRetentionScheduler(opts);
   }
 
-  // ── Config ──────────────────────────────────────────────────────────────
+  // ── Config (delegated to TermsAdmin) ───────────────────────────────────
 
-  async setCategoryConfig({ category, action_mode, stage2_threshold, stage3_required, enabled }, adminId) {
-    if (!['hate_speech', 'threat', 'sexual'].includes(category)) throw new Error('invalid category');
-    const fields = [];
-    const params = [];
-    if (action_mode !== undefined) {
-      if (!['auto_ban', 'admin_review', 'mute_pending'].includes(action_mode)) throw new Error('invalid action_mode');
-      fields.push('action_mode = ?'); params.push(action_mode);
-    }
-    if (stage2_threshold !== undefined) {
-      const t = Number(stage2_threshold);
-      if (!Number.isInteger(t) || t < 0 || t > 3) throw new Error('invalid stage2_threshold');
-      fields.push('stage2_threshold = ?'); params.push(t);
-    }
-    if (stage3_required !== undefined) {
-      fields.push('stage3_required = ?'); params.push(stage3_required ? 1 : 0);
-    }
-    if (enabled !== undefined) {
-      fields.push('enabled = ?'); params.push(enabled ? 1 : 0);
-    }
-    if (fields.length === 0) return { ok: false, error: 'no_fields' };
-    fields.push('updated_at = CURRENT_TIMESTAMP');
-    fields.push('updated_by = ?'); params.push(adminId || null);
-    params.push(category);
-    await this.database.runAsync(
-      `UPDATE moderation_config SET ${fields.join(', ')} WHERE category = ?`,
-      params
-    );
-    return { ok: true, category };
+  async setCategoryConfig(spec, adminId) {
+    return this._termsAdmin.setCategoryConfig(spec, adminId);
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
@@ -1441,14 +1119,7 @@ class ModerationService extends EventEmitter {
   async stop() {
     this._stopped = true;
     this._unsubscribeFromTranscriptionChunks();
-    if (this._retentionTimer) {
-      clearInterval(this._retentionTimer);
-      this._retentionTimer = null;
-    }
-    if (this._retentionFirstRun) {
-      clearTimeout(this._retentionFirstRun);
-      this._retentionFirstRun = null;
-    }
+    this._retention.stop();
     // Drain any in-flight per-streamer chains.
     const chains = Array.from(this._streamerChains.values());
     await Promise.allSettled(chains);
