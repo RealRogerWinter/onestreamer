@@ -8,15 +8,18 @@
  * Pipeline: URL -> streamlink/yt-dlp -> FFmpeg -> RTP/RTMP -> MediaSoup/LiveKit -> Viewers
  */
 
-const { spawn } = require('child_process');
 const EventEmitter = require('events');
 const URLStreamExtractorService = require('./URLStreamExtractorService');
 const StreamProbeService = require('./StreamProbeService');
 const AdaptiveEncodingSettings = require('./AdaptiveEncodingSettings');
 const KickRandomService = require('./KickRandomService');
 const { defaultPropsForPlatform } = require('./viewbot/streamDefaults');
-const { buildRtpFfmpegArgs } = require('./viewbot/ffmpegArgs');
 const webrtcConfig = require('../config/webrtc.config');
+const WhitelistGate = require('./urlstream/WhitelistGate');
+const ViewerNotifier = require('./urlstream/ViewerNotifier');
+const IngressJanitor = require('./urlstream/IngressJanitor');
+const FFmpegPipeline = require('./urlstream/FFmpegPipeline');
+const StreamReconnector = require('./urlstream/StreamReconnector');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ViewBotURLService' });
 
@@ -75,6 +78,14 @@ class ViewBotURLService extends EventEmitter {
 
     // Initialize adaptive settings with backend type
     this._initAdaptiveSettings();
+
+    // Collaborators (decomposed from this service). Each takes a back-reference
+    // so it can read/mutate service state; behavior is unchanged.
+    this.whitelistGate = new WhitelistGate(this);
+    this.viewerNotifier = new ViewerNotifier(this, logger);
+    this.ingressJanitor = new IngressJanitor(this, logger);
+    this.ffmpegPipeline = new FFmpegPipeline(this, logger);
+    this.streamReconnector = new StreamReconnector(this, logger);
 
     logger.debug(`🔗 ViewBotURLService initialized (backend: ${this.backend}, adaptive: ${this.adaptiveConfig.enabled})`);
   }
@@ -248,102 +259,57 @@ class ViewBotURLService extends EventEmitter {
   }
 
   /**
+   * Start the streaming pipeline for the active backend.
+   * Shared dispatch used by startURLStream, reconnect, and Kick token refresh.
+   */
+  async _startPipeline(urlId, streamEntry) {
+    if (this.backend === 'livekit' && this.livekitService) {
+      await this._startLiveKitStream(urlId, streamEntry);
+    } else {
+      await this._startMediaSoupStream(urlId, streamEntry);
+    }
+  }
+
+  /**
+   * Register a URL stream as the current streamer on StreamService and
+   * MediaSoup. Shared across startURLStream, broadcast, reconnect, and Kick
+   * token refresh. The per-call-site debug logs are preserved verbatim via
+   * the optional `streamerLog` / `mediasoupLog` strings.
+   */
+  _registerAsCurrentStreamer(urlId, { streamerLog = null, mediasoupLog = null } = {}) {
+    if (this.streamService) {
+      if (streamerLog) logger.debug(streamerLog);
+      this.streamService.setStreamer(urlId);
+    }
+    if (global.mediasoupService) {
+      if (mediasoupLog) logger.debug(mediasoupLog);
+      global.mediasoupService.currentStreamer = urlId;
+    }
+  }
+
+  /**
+   * Delete and null a stream's LiveKit ingress. Shared by the reconnect,
+   * Kick-refresh, and natural-end teardown paths. Callers own the try/catch
+   * and the surrounding livekitService guard (the log strings differ).
+   */
+  async _teardownIngress(streamEntry) {
+    await this.livekitService.deleteIngress(streamEntry.ingressInfo.ingressId);
+    streamEntry.ingressInfo = null;
+  }
+
+  /**
    * Wait for stream to be ready, then notify viewers
    * Polls LiveKit to check if participant has published tracks
    */
   async _notifyViewersWhenReady(urlId, streamEntry, validation) {
-    if (!this.io) {
-      logger.warn('⚠️ URL STREAM: Socket.IO not available - viewers may not auto-switch');
-      return;
-    }
-
-    const maxWaitTime = 15000; // Max 15 seconds to wait
-    const pollInterval = 1000; // Check every 1 second
-    const startTime = Date.now();
-
-    logger.debug(`⏳ URL STREAM: Waiting for stream ${urlId} to be ready for viewers...`);
-
-    const checkStreamReady = async () => {
-      // Check if stream is still active
-      if (!this.activeStreams.has(urlId)) {
-        logger.debug(`⚠️ URL STREAM: Stream ${urlId} ended before becoming ready`);
-        return;
-      }
-
-      // If using LiveKit, check if participant has tracks
-      if (this.backend === 'livekit' && this.livekitService) {
-        try {
-          const { RoomServiceClient } = require('livekit-server-sdk');
-          const webrtcConfig = require('../config/webrtc.config');
-          const config = webrtcConfig.livekit;
-          const host = config.host.startsWith('http') ? config.host : `http://${config.host}`;
-          const roomClient = new RoomServiceClient(host, config.apiKey, config.apiSecret);
-
-          const participants = await roomClient.listParticipants(config.roomName);
-          const urlParticipant = participants.find(p => p.identity === urlId);
-
-          if (urlParticipant && urlParticipant.tracks && urlParticipant.tracks.length > 0) {
-            logger.debug(`✅ URL STREAM: Stream ${urlId} is now live with ${urlParticipant.tracks.length} tracks`);
-            this._broadcastNewStreamer(urlId, streamEntry, validation);
-            return;
-          }
-        } catch (err) {
-          logger.warn(`⚠️ URL STREAM: Error checking participant status: ${err.message}`);
-        }
-      }
-
-      // Check if we've waited long enough
-      const elapsed = Date.now() - startTime;
-      if (elapsed >= maxWaitTime) {
-        logger.debug(`⏰ URL STREAM: Max wait time reached, notifying viewers anyway`);
-        this._broadcastNewStreamer(urlId, streamEntry, validation);
-        return;
-      }
-
-      // Continue polling
-      setTimeout(checkStreamReady, pollInterval);
-    };
-
-    // Start polling after initial delay (let FFmpeg establish connection)
-    setTimeout(checkStreamReady, 2000);
+    return this.viewerNotifier.notifyWhenReady(urlId, streamEntry, validation);
   }
 
   /**
    * Broadcast new-streamer event to all viewers
    */
   _broadcastNewStreamer(urlId, streamEntry, validation) {
-    if (!this.io) return;
-
-    // CRITICAL: Register the URL stream as the current streamer
-    // This ensures viewers switch to consuming from the URL stream
-    if (this.streamService) {
-      logger.debug(`📢 URL STREAM: Registering ${urlId} as current streamer`);
-      this.streamService.setStreamer(urlId);
-    }
-
-    // Also set on MediasoupService/WebRTCAdapter if available
-    if (global.mediasoupService) {
-      logger.debug(`📢 URL STREAM: Setting MediaSoup currentStreamer to ${urlId}`);
-      global.mediasoupService.currentStreamer = urlId;
-    }
-
-    logger.debug('📢 URL STREAM: Broadcasting new-streamer event to all viewers');
-    this.io.emit('new-streamer', {
-      streamer: {
-        odyseeId: urlId,
-        odysee_username: streamEntry.displayName || validation.title || 'URL Stream',
-        userId: urlId,
-        isUrlStream: true,
-        platform: validation.platform
-      }
-    });
-
-    // Also emit stream-started event for any listeners
-    this.io.emit('stream-started', {
-      streamerId: urlId,
-      streamerName: streamEntry.displayName || validation.title || 'URL Stream',
-      isUrlStream: true
-    });
+    return this.viewerNotifier.broadcastNewStreamer(urlId, streamEntry, validation);
   }
 
   /**
@@ -430,7 +396,7 @@ class ViewBotURLService extends EventEmitter {
       // Run cleanup in background - don't block new stream startup
       // Pass the new urlId to exclude it from cleanup (prevent killing the new stream)
       logger.debug('🧹 URL STREAM: Running cleanup in background...');
-      this._cleanupAllURLStreamIngresses(urlId).catch(err =>
+      this.ingressJanitor.cleanupAll(urlId).catch(err =>
         logger.error('⚠️ Background cleanup error:', err.message)
       );
       logger.debug(`   URL: ${url}`);
@@ -450,7 +416,7 @@ class ViewBotURLService extends EventEmitter {
 
       // Whitelist gate (ADR-0010, PR-W2). Returns { allowed: true } when no
       // service is injected, so this is a pass-through in Phase 0.
-      const gate = this._checkWhitelistGate(url, validation);
+      const gate = this.whitelistGate.check(url, validation);
       if (!gate.allowed) {
         logger.debug(`⛔ URL STREAM: whitelist gate rejected ${urlId}: ${gate.reason}`);
         return {
@@ -515,24 +481,16 @@ class ViewBotURLService extends EventEmitter {
       await this._stopViewBotsForURLStream();
 
       // Start the streaming pipeline
-      if (this.backend === 'livekit' && this.livekitService) {
-        await this._startLiveKitStream(urlId, streamEntry);
-      } else {
-        await this._startMediaSoupStream(urlId, streamEntry);
-      }
+      await this._startPipeline(urlId, streamEntry);
 
       streamEntry.status = 'streaming';
 
       // CRITICAL FIX: Register as current streamer IMMEDIATELY
       // This prevents "offline" status indicator during stream startup
       // (previously only set after track verification, causing null streamerId)
-      if (this.streamService) {
-        logger.debug(`📢 URL STREAM: Immediately registering ${urlId} as current streamer`);
-        this.streamService.setStreamer(urlId);
-      }
-      if (global.mediasoupService) {
-        global.mediasoupService.currentStreamer = urlId;
-      }
+      this._registerAsCurrentStreamer(urlId, {
+        streamerLog: `📢 URL STREAM: Immediately registering ${urlId} as current streamer`,
+      });
 
       // Emit event for integration
       this.emit('url-stream-started', {
@@ -587,7 +545,7 @@ class ViewBotURLService extends EventEmitter {
       streamEntry.processes.push({ type: 'streamlink', process: streamlinkProcess });
 
       // FFmpeg reads from stdin
-      ffmpegProcess = this._createFFmpegRTPProcess('-', streamEntry);
+      ffmpegProcess = this.ffmpegPipeline.createRTPProcess('-', streamEntry);
       streamEntry.processes.push({ type: 'ffmpeg', process: ffmpegProcess });
 
       // Pipe streamlink to FFmpeg
@@ -608,15 +566,15 @@ class ViewBotURLService extends EventEmitter {
 
     } else {
       // Direct URL mode: FFmpeg reads from URL directly
-      ffmpegProcess = this._createFFmpegRTPProcess(streamInfo.streamUrl, streamEntry);
+      ffmpegProcess = this.ffmpegPipeline.createRTPProcess(streamInfo.streamUrl, streamEntry);
       streamEntry.processes.push({ type: 'ffmpeg', process: ffmpegProcess });
     }
 
     // Handle FFmpeg events
-    this._setupFFmpegHandlers(urlId, ffmpegProcess);
+    this.ffmpegPipeline.setupHandlers(urlId, ffmpegProcess);
 
     // Wait for FFmpeg to start producing
-    await this._waitForStream(ffmpegProcess, 15000);  // 15s timeout for analyzeduration
+    await this.ffmpegPipeline.waitForStream(ffmpegProcess, 15000);  // 15s timeout for analyzeduration
 
     logger.debug(`✅ MediaSoup pipeline started for ${urlId}`);
   }
@@ -660,7 +618,7 @@ class ViewBotURLService extends EventEmitter {
       const streamlinkProcess = this.extractorService.createStreamPipe(sourceUrl, quality);
       streamEntry.processes.push({ type: 'streamlink', process: streamlinkProcess });
 
-      ffmpegProcess = this._createFFmpegRTMPProcess('-', rtmpUrl, streamEntry);
+      ffmpegProcess = this.ffmpegPipeline.createRTMPProcess('-', rtmpUrl, streamEntry);
       streamEntry.processes.push({ type: 'ffmpeg', process: ffmpegProcess });
 
       // Handle pipe errors to prevent EPIPE crashes
@@ -683,12 +641,12 @@ class ViewBotURLService extends EventEmitter {
 
     } else {
       // Direct URL mode
-      ffmpegProcess = this._createFFmpegRTMPProcess(streamInfo.streamUrl, rtmpUrl, streamEntry);
+      ffmpegProcess = this.ffmpegPipeline.createRTMPProcess(streamInfo.streamUrl, rtmpUrl, streamEntry);
       streamEntry.processes.push({ type: 'ffmpeg', process: ffmpegProcess });
     }
 
-    this._setupFFmpegHandlers(urlId, ffmpegProcess);
-    await this._waitForStream(ffmpegProcess, 15000);  // 15s timeout for analyzeduration
+    this.ffmpegPipeline.setupHandlers(urlId, ffmpegProcess);
+    await this.ffmpegPipeline.waitForStream(ffmpegProcess, 15000);  // 15s timeout for analyzeduration
 
     logger.debug(`✅ LiveKit pipeline started for ${urlId}`);
   }
@@ -698,22 +656,7 @@ class ViewBotURLService extends EventEmitter {
    * Uses adaptive encoding settings when available
    */
   _createFFmpegRTPProcess(input, streamEntry) {
-    const settings = streamEntry.encodingSettings;
-    const useAdaptive = this.adaptiveConfig.enabled && settings;
-
-    const args = buildRtpFfmpegArgs({ input, settings, useAdaptive, rtpPorts: this.rtpPorts });
-
-    const logSettings = useAdaptive
-      ? `ADAPTIVE ${settings.width}x${settings.height}@${settings.fps}fps ${settings.videoBitrate}kbps`
-      : 'FIXED 720p 1500kbps';
-
-    logger.debug(`🎬 FFmpeg RTP (${logSettings}): ${this.ffmpegPath} ${args.slice(0, 5).join(' ')}...`);
-
-    const process = spawn(this.ffmpegPath, args, {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    return process;
+    return this.ffmpegPipeline.createRTPProcess(input, streamEntry);
   }
 
   /**
@@ -721,129 +664,14 @@ class ViewBotURLService extends EventEmitter {
    * Uses adaptive encoding settings when available, falls back to fixed 720p
    */
   _createFFmpegRTMPProcess(input, rtmpUrl, streamEntry) {
-    const settings = streamEntry.encodingSettings;
-    const useAdaptive = this.adaptiveConfig.enabled && settings;
-
-    // Experimental: VIEWBOT_STREAM_COPY=true bypasses re-encoding entirely (only
-    // valid when the source is already H.264 + AAC). Read env via globalThis
-    // because the `const process = spawn(...)` below shadows the global `process`
-    // for the whole function scope (TDZ).
-    const streamCopy = globalThis.process.env.VIEWBOT_STREAM_COPY === 'true' && input !== '-';
-
-    const args = buildRtmpFfmpegArgs({ input, rtmpUrl, settings, useAdaptive, streamCopy });
-
-    if (input !== '-') {
-      logger.debug(`📡 Using -re flag with reconnect for direct URL input: ${input.substring(0, 60)}...`);
-    }
-    if (streamCopy) {
-      logger.debug(`🎬 FFmpeg RTMP [STREAM-COPY]: ${this.ffmpegPath} -i ${input.substring(0, 60)}... -> ${rtmpUrl}`);
-    } else {
-      const logSettings = useAdaptive
-        ? `ADAPTIVE ${settings.width}x${settings.height}@${settings.fps}fps ${settings.videoBitrate}kbps`
-        : 'FIXED 720p@30fps 4000kbps';
-      logger.debug(`🎬 FFmpeg RTMP (${logSettings}): ${this.ffmpegPath} ... -> ${rtmpUrl}`);
-    }
-
-    const process = spawn(this.ffmpegPath, args, {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    return process;
+    return this.ffmpegPipeline.createRTMPProcess(input, rtmpUrl, streamEntry);
   }
 
   /**
    * Setup FFmpeg process event handlers
    */
   _setupFFmpegHandlers(urlId, ffmpegProcess) {
-    let lastProgressTime = Date.now();
-    let lastHealthReportTime = 0;
-
-    ffmpegProcess.stderr.on('data', (data) => {
-      const output = data.toString();
-
-      // Log errors. Pino drops a bare string as the 2nd arg of `error()`
-      // (it expects an object), so the raw stderr we want to see was being
-      // eaten silently — every "❌ FFmpeg error for X:" line had no payload.
-      // Pass it as an object so the stderr lands in the JSON record.
-      if (output.includes('Error') || output.includes('error')) {
-        logger.error({ stderr: output.substring(0, 400) }, `❌ FFmpeg error for ${urlId}`);
-      }
-
-      // Track progress and report to health service
-      if (output.includes('frame=') || output.includes('time=')) {
-        const now = Date.now();
-        if (now - lastProgressTime > 30000) { // Log every 30s
-          logger.debug(`📊 URL stream ${urlId}: FFmpeg active`);
-          lastProgressTime = now;
-        }
-
-        // Report progress to health service more frequently (every 5s)
-        // This prevents false "stale stream" detection
-        if (global.urlStreamHealthService && now - lastHealthReportTime > 5000) {
-          // Parse FFmpeg stats from output
-          const stats = {};
-          const frameMatch = output.match(/frame=\s*(\d+)/);
-          const fpsMatch = output.match(/fps=\s*(\d+\.?\d*)/);
-          const timeMatch = output.match(/time=\s*(\d+:\d+:\d+\.\d+)/);
-          const bitrateMatch = output.match(/bitrate=\s*(\d+\.?\d*\w+)/);
-
-          if (frameMatch) stats.frame = parseInt(frameMatch[1]);
-          if (fpsMatch) stats.fps = parseFloat(fpsMatch[1]);
-          if (timeMatch) stats.time = timeMatch[1];
-          if (bitrateMatch) stats.bitrate = bitrateMatch[1];
-
-          global.urlStreamHealthService.updateFFmpegProgress(urlId, stats);
-          lastHealthReportTime = now;
-        }
-      }
-
-      // Detect stream end
-      if (output.includes('EOF') || output.includes('End of file')) {
-        logger.debug(`🏁 URL stream ${urlId}: Source stream ended`);
-        this._handleStreamEnd(urlId, 'source_ended');
-      }
-
-      // CRITICAL: Detect HTTP errors from source stream (403 Forbidden, 404 Not Found, etc.)
-      // These cause FFmpeg to exit with code 0 but the stream is dead
-      const httpErrorMatch = output.match(/HTTP error (\d{3})/);
-      if (httpErrorMatch) {
-        const errorCode = httpErrorMatch[1];
-        logger.error(`🚫 URL stream ${urlId}: Source returned HTTP ${errorCode}`);
-        // Mark that we detected an HTTP error - will trigger reconnect on FFmpeg exit
-        const stream = this.activeStreams.get(urlId);
-        if (stream) {
-          stream._httpError = parseInt(errorCode);
-        }
-      }
-    });
-
-    ffmpegProcess.on('error', (err) => {
-      logger.error({ err }, `❌ FFmpeg process error for ${urlId}`);
-      this._handleStreamError(urlId, 'ffmpeg', err);
-    });
-
-    ffmpegProcess.on('exit', (code, signal) => {
-      logger.debug(`📤 FFmpeg exited for ${urlId} with code ${code}, signal ${signal}`);
-
-      // CRITICAL FIX: Handle code 0 exits that are actually errors
-      // HTTP 403/404 errors cause FFmpeg to exit "successfully" with code 0
-      const stream = this.activeStreams.get(urlId);
-
-      if (code !== 0 && code !== null) {
-        this._handleStreamError(urlId, 'ffmpeg', new Error(`Exit code ${code}`));
-      } else if (code === 0 && stream && stream.status === 'streaming') {
-        // FFmpeg exited with code 0 but stream was supposed to be running
-        // This happens with HTTP 403, source going offline, etc.
-        const httpError = stream._httpError;
-        if (httpError) {
-          logger.debug(`🔄 URL stream ${urlId}: FFmpeg exited normally after HTTP ${httpError}, triggering recovery`);
-          this._handleStreamError(urlId, 'ffmpeg', new Error(`Source HTTP error ${httpError}`));
-        } else {
-          logger.debug(`🔄 URL stream ${urlId}: FFmpeg exited normally while streaming, triggering recovery`);
-          this._handleStreamError(urlId, 'ffmpeg', new Error('Unexpected stream end'));
-        }
-      }
-    });
+    return this.ffmpegPipeline.setupHandlers(urlId, ffmpegProcess);
   }
 
   /**
@@ -851,47 +679,7 @@ class ViewBotURLService extends EventEmitter {
    * Fails fast if FFmpeg exits early (e.g., HTTP 404, connection refused)
    */
   _waitForStream(ffmpegProcess, timeout) {
-    return new Promise((resolve, reject) => {
-      let resolved = false;
-
-      const cleanup = () => {
-        clearTimeout(timer);
-        ffmpegProcess.stderr.removeListener('data', checkOutput);
-        ffmpegProcess.removeListener('exit', onExit);
-      };
-
-      const timer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          cleanup();
-          reject(new Error('FFmpeg startup timeout'));
-        }
-      }, timeout);
-
-      const checkOutput = (data) => {
-        const output = data.toString();
-        if (output.includes('frame=') || output.includes('Stream mapping')) {
-          if (!resolved) {
-            resolved = true;
-            cleanup();
-            resolve();
-          }
-        }
-      };
-
-      // CRITICAL: Fail fast if FFmpeg exits before producing output
-      // This happens with HTTP 404/403, connection refused, invalid URLs, etc.
-      const onExit = (code) => {
-        if (!resolved) {
-          resolved = true;
-          cleanup();
-          reject(new Error(`FFmpeg exited early with code ${code}`));
-        }
-      };
-
-      ffmpegProcess.stderr.on('data', checkOutput);
-      ffmpegProcess.on('exit', onExit);
-    });
+    return this.ffmpegPipeline.waitForStream(ffmpegProcess, timeout);
   }
 
   /**
@@ -899,203 +687,14 @@ class ViewBotURLService extends EventEmitter {
    * CRITICAL: Uses mutex to prevent multiple simultaneous reconnect attempts
    */
   async _handleStreamError(urlId, source, error) {
-    const streamEntry = this.activeStreams.get(urlId);
-    if (!streamEntry) return;
-
-    logger.error({ source, errMsg: error && error.message, errName: error && error.name }, `❌ Stream error for ${urlId}`);
-
-    // CRITICAL: Check if already reconnecting to prevent race conditions
-    // Multiple error events (FFmpeg error, streamlink exit, etc.) could fire simultaneously
-    if (this._reconnecting) {
-      logger.debug(`⏳ URL STREAM: Ignoring error for ${urlId} - reconnect already in progress`);
-      return;
-    }
-
-    // CRITICAL: Check if a new stream is starting (mutex check)
-    if (this._startingStream) {
-      logger.debug(`⏳ URL STREAM: Ignoring error for ${urlId} - new stream is starting`);
-      return;
-    }
-
-    // CRITICAL: For HTTP 4xx errors (403 Forbidden, 404 Not Found, etc.)
-    // For Kick streams with 403 (token expired), try to refresh the token
-    // For other platforms or non-refreshable errors, end stream immediately
-    const httpError = streamEntry._httpError;
-    if (httpError && httpError >= 400 && httpError < 500) {
-      streamEntry._httpError = null; // Clear the flag
-
-      // Special handling for Kick 403 errors - try token refresh
-      if (httpError === 403 && streamEntry.platform === 'kick' && streamEntry.kickUsername) {
-        if (streamEntry.tokenRefreshAttempts < streamEntry.maxTokenRefreshAttempts) {
-          logger.debug(`🔄 KICK TOKEN: HTTP 403 detected - attempting token refresh for ${streamEntry.kickUsername} (attempt ${streamEntry.tokenRefreshAttempts + 1}/${streamEntry.maxTokenRefreshAttempts})`);
-
-          // Try to refresh token and restart stream
-          const refreshed = await this._refreshKickTokenAndRestart(urlId, streamEntry);
-          if (refreshed) {
-            return; // Successfully refreshed, don't end stream
-          }
-          // If refresh failed, fall through to end stream
-          logger.debug(`❌ KICK TOKEN: Token refresh failed, ending stream`);
-        } else {
-          logger.debug(`🚫 KICK TOKEN: Max token refresh attempts (${streamEntry.maxTokenRefreshAttempts}) reached for ${urlId}`);
-        }
-      }
-
-      logger.debug(`🚫 URL STREAM: HTTP ${httpError} error - ending stream immediately`);
-      this._handleStreamEnd(urlId, 'http_error');
-      return;
-    }
-
-    if (streamEntry.autoReconnect && streamEntry.reconnectAttempts < streamEntry.maxReconnectAttempts) {
-      // CRITICAL: Set reconnecting mutex BEFORE any async operations
-      this._reconnecting = true;
-
-      // CRITICAL: Clear health data so reconnected stream gets fresh grace period
-      // Without this, the old stale timestamp persists and triggers immediate reconnect loops
-      if (global.urlStreamHealthService) {
-        logger.debug(`🏥 Clearing health data for ${urlId} before reconnect`);
-        global.urlStreamHealthService.clearHealthData(urlId);
-      }
-
-      try {
-        streamEntry.reconnectAttempts++;
-        streamEntry.status = 'reconnecting';
-
-        logger.debug(`🔄 Attempting reconnect ${streamEntry.reconnectAttempts}/${streamEntry.maxReconnectAttempts} for ${urlId}`);
-
-        // Stop current processes
-        await this._stopProcesses(streamEntry);
-
-        // Clean up LiveKit ingress before reconnect (critical to prevent "Publish failed" errors)
-        if (streamEntry.ingressInfo && this.livekitService) {
-          try {
-            logger.debug(`🧹 Cleaning up old LiveKit ingress ${streamEntry.ingressInfo.ingressId} before reconnect`);
-            await this.livekitService.deleteIngress(streamEntry.ingressInfo.ingressId);
-            streamEntry.ingressInfo = null;
-          } catch (err) {
-            logger.error(`⚠️ Error cleaning up old ingress for ${urlId}:`, err.message);
-          }
-        }
-
-        // Wait before reconnecting (exponential backoff)
-        const delay = Math.min(5000 * Math.pow(2, streamEntry.reconnectAttempts - 1), 30000);
-        logger.debug(`⏳ Waiting ${delay/1000}s before reconnect attempt for ${urlId}`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-
-        // Verify stream is still in activeStreams (could have been stopped during delay)
-        if (!this.activeStreams.has(urlId)) {
-          logger.debug(`⚠️ URL STREAM: Stream ${urlId} was removed during reconnect delay, aborting`);
-          return;
-        }
-
-        // Attempt restart
-        try {
-          if (this.backend === 'livekit' && this.livekitService) {
-            await this._startLiveKitStream(urlId, streamEntry);
-          } else {
-            await this._startMediaSoupStream(urlId, streamEntry);
-          }
-          streamEntry.status = 'streaming';
-          streamEntry.reconnectAttempts = 0; // Reset on success
-          logger.debug(`✅ Reconnected successfully: ${urlId}`);
-
-          // CRITICAL: Re-register as current streamer after reconnect
-          // This ensures status indicator stays correct
-          if (this.streamService) {
-            logger.debug(`📢 URL STREAM: Re-registering ${urlId} as current streamer after reconnect`);
-            this.streamService.setStreamer(urlId);
-          }
-          if (global.mediasoupService) {
-            global.mediasoupService.currentStreamer = urlId;
-          }
-
-          // Notify viewers about the reconnected stream
-          if (this.io) {
-            this.io.emit('stream-reconnected', {
-              streamerId: urlId,
-              streamerName: streamEntry.displayName,
-              isUrlStream: true
-            });
-          }
-        } catch (reconnectError) {
-          logger.error(`❌ Reconnect failed for ${urlId}:`, reconnectError.message);
-          this._handleStreamEnd(urlId, 'reconnect_failed');
-        }
-      } finally {
-        // CRITICAL: Always release the reconnect mutex
-        this._reconnecting = false;
-      }
-    } else {
-      this._handleStreamEnd(urlId, 'error');
-    }
+    return this.streamReconnector.handleStreamError(urlId, source, error);
   }
 
   /**
    * Handle stream ending
    */
   async _handleStreamEnd(urlId, reason) {
-    const streamEntry = this.activeStreams.get(urlId);
-    if (!streamEntry) return;
-
-    logger.debug(`🛑 URL stream ended: ${urlId} (reason: ${reason})`);
-
-    // Stop all processes
-    await this._stopProcesses(streamEntry);
-
-    // Clean up LiveKit ingress if exists
-    if (streamEntry.ingressInfo && this.livekitService) {
-      try {
-        logger.debug(`🧹 Cleaning up LiveKit ingress ${streamEntry.ingressInfo.ingressId} for ${urlId}`);
-        await this.livekitService.deleteIngress(streamEntry.ingressInfo.ingressId);
-        streamEntry.ingressInfo = null;
-      } catch (err) {
-        logger.error(`⚠️ Error cleaning up LiveKit ingress for ${urlId}:`, err.message);
-      }
-    }
-
-    // Update status
-    streamEntry.status = 'ended';
-    streamEntry.endedAt = Date.now();
-    streamEntry.endReason = reason;
-
-    // Remove from active streams
-    this.activeStreams.delete(urlId);
-
-    // CRITICAL: Clear the currentStreamer if this was the active streamer
-    // This ensures other systems know no stream is active
-    if (this.streamService) {
-      const currentStreamer = this.streamService.getCurrentStreamer();
-      if (currentStreamer === urlId) {
-        logger.debug(`🧹 URL STREAM: Clearing currentStreamer (was ${urlId})`);
-        this.streamService.clearStreamer();
-      }
-    }
-
-    // Emit event
-    this.emit('url-stream-ended', {
-      urlId,
-      reason,
-      sourceUrl: streamEntry.sourceUrl,
-      duration: streamEntry.endedAt - streamEntry.startedAt
-    });
-
-    // Notify viewers that URL stream has ended
-    // PR 3.1: routed through StreamNotifier (single chokepoint). Same null-
-    // guard preserves the MediaSoup-branch behavior where setStreamNotifier
-    // is not called and the emit is suppressed.
-    if (this.streamNotifier) {
-      logger.debug('📢 URL STREAM: Broadcasting stream-ended event (natural end)');
-      this.streamNotifier.streamEnded({
-        reason: `url_stream_${reason}`,
-        streamerId: urlId,
-        isUrlStream: true,
-      });
-    }
-
-    // Resume viewbot rotation if no more URL streams are active
-    if (this.activeStreams.size === 0) {
-      await this._resumeViewBots();
-    }
+    return this.streamReconnector.handleStreamEnd(urlId, reason);
   }
 
   /**
@@ -1104,93 +703,7 @@ class ViewBotURLService extends EventEmitter {
    * @returns {boolean} true if refresh succeeded, false otherwise
    */
   async _refreshKickTokenAndRestart(urlId, streamEntry) {
-    try {
-      streamEntry.tokenRefreshAttempts++;
-      streamEntry.status = 'refreshing_token';
-
-      logger.debug(`🔑 KICK TOKEN: Getting fresh playback URL for ${streamEntry.kickUsername}...`);
-
-      // Get fresh playback URL from Kick
-      const playbackInfo = await this.kickService.getPlaybackUrl(streamEntry.kickUsername);
-
-      if (!playbackInfo || !playbackInfo.playback_url) {
-        logger.error(`❌ KICK TOKEN: Failed to get fresh playback URL for ${streamEntry.kickUsername}`);
-        return false;
-      }
-
-      const newPlaybackUrl = playbackInfo.playback_url;
-      logger.debug(`✅ KICK TOKEN: Got fresh playback URL for ${streamEntry.kickUsername}`);
-
-      // Stop current FFmpeg/streamlink processes
-      logger.debug(`🛑 KICK TOKEN: Stopping current processes for ${urlId}...`);
-      await this._stopProcesses(streamEntry);
-
-      // Clean up LiveKit ingress before restart
-      if (streamEntry.ingressInfo && this.livekitService) {
-        try {
-          logger.debug(`🧹 KICK TOKEN: Cleaning up old LiveKit ingress ${streamEntry.ingressInfo.ingressId}`);
-          await this.livekitService.deleteIngress(streamEntry.ingressInfo.ingressId);
-          streamEntry.ingressInfo = null;
-        } catch (err) {
-          logger.error(`⚠️ KICK TOKEN: Error cleaning up old ingress:`, err.message);
-        }
-      }
-
-      // Clear health data for fresh grace period
-      if (global.urlStreamHealthService) {
-        logger.debug(`🏥 KICK TOKEN: Clearing health data for ${urlId}`);
-        global.urlStreamHealthService.clearHealthData(urlId);
-      }
-
-      // Update stream entry with new URL
-      streamEntry.sourceUrl = newPlaybackUrl;
-
-      // Update streamInfo for direct HLS playback
-      streamEntry.streamInfo = {
-        mode: 'direct',
-        url: newPlaybackUrl
-      };
-
-      // Small delay to let cleanup complete
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Verify stream is still in activeStreams
-      if (!this.activeStreams.has(urlId)) {
-        logger.debug(`⚠️ KICK TOKEN: Stream ${urlId} was removed during token refresh, aborting`);
-        return false;
-      }
-
-      // Restart the stream with fresh URL
-      logger.debug(`🚀 KICK TOKEN: Restarting stream with fresh URL...`);
-
-      try {
-        if (this.backend === 'livekit' && this.livekitService) {
-          await this._startLiveKitStream(urlId, streamEntry);
-        } else {
-          await this._startMediaSoupStream(urlId, streamEntry);
-        }
-
-        streamEntry.status = 'streaming';
-        logger.debug(`✅ KICK TOKEN: Successfully refreshed and restarted stream ${urlId}`);
-
-        // Re-register as current streamer
-        if (this.streamService) {
-          logger.debug(`📢 KICK TOKEN: Re-registering ${urlId} as current streamer`);
-          this.streamService.setStreamer(urlId);
-        }
-        if (global.mediasoupService) {
-          global.mediasoupService.currentStreamer = urlId;
-        }
-
-        return true;
-      } catch (restartError) {
-        logger.error(`❌ KICK TOKEN: Failed to restart stream: ${restartError.message}`);
-        return false;
-      }
-    } catch (error) {
-      logger.error(`❌ KICK TOKEN: Error during token refresh: ${error.message}`);
-      return false;
-    }
+    return this.streamReconnector.refreshKickTokenAndRestart(urlId, streamEntry);
   }
 
   /**
@@ -1198,70 +711,7 @@ class ViewBotURLService extends EventEmitter {
    * Properly waits for process termination with fallback to SIGKILL
    */
   async _stopProcesses(streamEntry) {
-    const killPromises = streamEntry.processes.map(async ({ type, process }) => {
-      if (!process || process.killed) {
-        return;
-      }
-
-      const pid = process.pid;
-      logger.debug(`🛑 Killing ${type} process (PID ${pid}) for ${streamEntry.urlId}`);
-
-      return new Promise((resolve) => {
-        let resolved = false;
-
-        // Handle process exit
-        const onExit = () => {
-          if (!resolved) {
-            resolved = true;
-            logger.debug(`✅ ${type} process (PID ${pid}) terminated for ${streamEntry.urlId}`);
-            resolve();
-          }
-        };
-
-        process.once('exit', onExit);
-        process.once('close', onExit);
-
-        // Try SIGTERM first
-        try {
-          process.kill('SIGTERM');
-        } catch (err) {
-          // Process might already be dead
-          if (err.code !== 'ESRCH') {
-            logger.error(`⚠️ Error sending SIGTERM to ${type} (PID ${pid}):`, err.message);
-          }
-          if (!resolved) {
-            resolved = true;
-            resolve();
-          }
-          return;
-        }
-
-        // Force SIGKILL after 3 seconds if not dead
-        setTimeout(() => {
-          if (!resolved && !process.killed) {
-            logger.debug(`⚠️ Force killing ${type} process (PID ${pid}) with SIGKILL`);
-            try {
-              process.kill('SIGKILL');
-            } catch (err) {
-              // Ignore errors - process may already be dead
-            }
-          }
-        }, 3000);
-
-        // Final timeout to prevent hanging - resolve after 5 seconds max
-        setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            logger.debug(`⏱️ ${type} process (PID ${pid}) cleanup timeout - continuing`);
-            resolve();
-          }
-        }, 5000);
-      });
-    });
-
-    // Wait for all processes to be killed (with timeout protection)
-    await Promise.all(killPromises);
-    streamEntry.processes = [];
+    return this.ffmpegPipeline.stopProcesses(streamEntry);
   }
 
   /**
@@ -1328,13 +778,7 @@ class ViewBotURLService extends EventEmitter {
     await Promise.allSettled(stopPromises);
 
     // SAFETY NET: Kill any orphaned processes that weren't tracked
-    try {
-      const { exec } = require('child_process');
-      exec('pkill -9 -f "ffmpeg.*rtmp://127.0.0.1:1935"', () => {});
-      exec('pkill -9 -f "streamlink.*twitch|streamlink.*kick"', () => {});
-    } catch (err) {
-      // Ignore errors
-    }
+    this.ingressJanitor.killOrphans();
 
     logger.debug('✅ All URL streams stopped');
   }
@@ -1346,169 +790,7 @@ class ViewBotURLService extends EventEmitter {
    * @param {string} excludeUrlId - Optional URL ID to exclude from cleanup (for the new stream being started)
    */
   async _cleanupAllURLStreamIngresses(excludeUrlId = null) {
-    if (!this.livekitService) {
-      logger.debug('⚠️ URL STREAM CLEANUP: No LiveKit service, skipping ingress cleanup');
-      return;
-    }
-
-    try {
-      const { IngressClient, RoomServiceClient } = require('livekit-server-sdk');
-      const host = this.livekitService.config?.host || 'http://localhost:7882';
-      const apiKey = this.livekitService.config?.apiKey;
-      const apiSecret = this.livekitService.config?.apiSecret;
-      const roomName = this.livekitService.config?.roomName || 'onestreamer-main';
-
-      const ingressClient = new IngressClient(
-        host.startsWith('http') ? host : `http://${host}`,
-        apiKey,
-        apiSecret
-      );
-      const roomClient = new RoomServiceClient(
-        host.startsWith('http') ? host : `http://${host}`,
-        apiKey,
-        apiSecret
-      );
-
-      // 1. List and delete ALL url-stream AND viewbot ingresses
-      logger.debug(`🧹 URL STREAM CLEANUP: Listing all ingresses...${excludeUrlId ? ` (excluding ${excludeUrlId})` : ''}`);
-      const allIngresses = await ingressClient.listIngress({ roomName });
-
-      // Find URL stream ingresses (excluding the one we're starting)
-      const urlStreamIngresses = allIngresses.filter(ing => {
-        const isUrlStream = ing.participantIdentity?.startsWith('url-stream-') ||
-          ing.name?.includes('url-stream');
-        // If excludeUrlId is set, skip ingresses that match
-        if (excludeUrlId && (ing.participantIdentity === excludeUrlId || ing.name?.includes(excludeUrlId))) {
-          logger.debug(`🔒 URL STREAM CLEANUP: Preserving ingress for new stream: ${ing.participantIdentity}`);
-          return false;
-        }
-        return isUrlStream;
-      });
-
-      // Find viewbot ingresses (they should be stopped when URL stream starts)
-      const viewbotIngresses = allIngresses.filter(ing =>
-        ing.participantIdentity?.startsWith('viewbot-') ||
-        ing.name?.includes('viewbot')
-      );
-
-      logger.debug(`🧹 URL STREAM CLEANUP: Found ${urlStreamIngresses.length} URL stream ingresses and ${viewbotIngresses.length} viewbot ingresses to clean up`);
-
-      // Delete URL stream ingresses
-      for (const ingress of urlStreamIngresses) {
-        try {
-          await ingressClient.deleteIngress(ingress.ingressId);
-          logger.debug(`🗑️ URL STREAM CLEANUP: Deleted URL stream ingress ${ingress.ingressId} (${ingress.participantIdentity})`);
-        } catch (err) {
-          logger.error(`⚠️ URL STREAM CLEANUP: Failed to delete ingress ${ingress.ingressId}:`, err.message);
-        }
-      }
-
-      // Delete viewbot ingresses
-      for (const ingress of viewbotIngresses) {
-        try {
-          await ingressClient.deleteIngress(ingress.ingressId);
-          logger.debug(`🗑️ URL STREAM CLEANUP: Deleted viewbot ingress ${ingress.ingressId} (${ingress.participantIdentity})`);
-        } catch (err) {
-          logger.error(`⚠️ URL STREAM CLEANUP: Failed to delete viewbot ingress ${ingress.ingressId}:`, err.message);
-        }
-      }
-
-      // 2. Remove ALL url-stream participants from the room (excluding the new stream)
-      logger.debug('🧹 URL STREAM CLEANUP: Listing room participants...');
-      const participants = await roomClient.listParticipants(roomName);
-      const urlStreamParticipants = participants.filter(p => {
-        if (!p.identity?.startsWith('url-stream-')) return false;
-        // If excludeUrlId is set, skip the new stream's participant
-        if (excludeUrlId && p.identity === excludeUrlId) {
-          logger.debug(`🔒 URL STREAM CLEANUP: Preserving participant for new stream: ${p.identity}`);
-          return false;
-        }
-        return true;
-      });
-
-      logger.debug(`🧹 URL STREAM CLEANUP: Found ${urlStreamParticipants.length} URL stream participants to remove`);
-
-      for (const participant of urlStreamParticipants) {
-        try {
-          await roomClient.removeParticipant(roomName, participant.identity);
-          logger.debug(`🗑️ URL STREAM CLEANUP: Removed participant ${participant.identity}`);
-        } catch (err) {
-          logger.error(`⚠️ URL STREAM CLEANUP: Failed to remove participant ${participant.identity}:`, err.message);
-        }
-      }
-
-      // 3. Also remove viewbot participants that have tracks (they shouldn't be publishing alongside URL stream)
-      const viewbotParticipants = participants.filter(p =>
-        p.identity?.startsWith('viewbot-') && p.tracks && p.tracks.length > 0
-      );
-
-      logger.debug(`🧹 URL STREAM CLEANUP: Found ${viewbotParticipants.length} viewbot participants with tracks to remove`);
-
-      for (const participant of viewbotParticipants) {
-        try {
-          await roomClient.removeParticipant(roomName, participant.identity);
-          logger.debug(`🗑️ URL STREAM CLEANUP: Removed viewbot participant ${participant.identity}`);
-        } catch (err) {
-          logger.error(`⚠️ URL STREAM CLEANUP: Failed to remove viewbot participant ${participant.identity}:`, err.message);
-        }
-      }
-
-      // 4. CRITICAL: Stop all LOCAL processes (FFmpeg, streamlink) for tracked streams (excluding new stream)
-      logger.debug('🧹 URL STREAM CLEANUP: Stopping local processes for tracked streams...');
-      for (const [urlId, streamEntry] of this.activeStreams) {
-        // Skip the new stream we're starting
-        if (excludeUrlId && urlId === excludeUrlId) {
-          logger.debug(`🔒 URL STREAM CLEANUP: Preserving processes for new stream: ${urlId}`);
-          continue;
-        }
-        if (streamEntry.processes && streamEntry.processes.length > 0) {
-          logger.debug(`🛑 URL STREAM CLEANUP: Stopping ${streamEntry.processes.length} processes for ${urlId}`);
-          await this._stopProcesses(streamEntry);
-        }
-      }
-
-      // 5. SAFETY NET: Kill any orphaned ffmpeg/streamlink processes by pattern
-      // This catches processes that weren't properly tracked
-      // IMPORTANT: Skip pkill if we're preserving a stream - pkill would kill ALL processes including the new one
-      if (!excludeUrlId) {
-        logger.debug('🧹 URL STREAM CLEANUP: Killing any orphaned streaming processes...');
-        try {
-          const { exec } = require('child_process');
-          await new Promise((resolve) => {
-            exec('pkill -9 -f "ffmpeg.*rtmp://127.0.0.1:1935"', (err) => {
-              if (!err) logger.debug('🗑️ URL STREAM CLEANUP: Killed orphaned FFmpeg RTMP processes');
-              resolve();
-            });
-          });
-          await new Promise((resolve) => {
-            exec('pkill -9 -f "streamlink.*twitch|streamlink.*kick"', (err) => {
-              if (!err) logger.debug('🗑️ URL STREAM CLEANUP: Killed orphaned streamlink processes');
-              resolve();
-            });
-          });
-        } catch (err) {
-          logger.error('⚠️ URL STREAM CLEANUP: Error killing orphaned processes:', err.message);
-        }
-      } else {
-        logger.debug('🔒 URL STREAM CLEANUP: Skipping pkill to preserve new stream processes');
-      }
-
-      // 6. Clear local tracking (but preserve excluded stream entry)
-      if (excludeUrlId) {
-        const preservedEntry = this.activeStreams.get(excludeUrlId);
-        this.activeStreams.clear();
-        if (preservedEntry) {
-          this.activeStreams.set(excludeUrlId, preservedEntry);
-          logger.debug(`🔒 URL STREAM CLEANUP: Preserved activeStream entry for ${excludeUrlId}`);
-        }
-      } else {
-        this.activeStreams.clear();
-      }
-      logger.debug('✅ URL STREAM CLEANUP: Complete - old URL streams, processes, and viewbots cleaned up');
-
-    } catch (error) {
-      logger.error('❌ URL STREAM CLEANUP: Error during cleanup:', error.message);
-    }
+    return this.ingressJanitor.cleanupAll(excludeUrlId);
   }
 
   /**
@@ -1559,11 +841,7 @@ class ViewBotURLService extends EventEmitter {
    * Logins are lowercased to match WhitelistService's canonical form.
    */
   _extractLoginFromUrl(url, platform) {
-    if (!url || !platform) return null;
-    const ident = this.extractorService.extractIdentifier(url);
-    if (!ident || !ident.identifier) return null;
-    if (ident.platform !== platform) return null;
-    return String(ident.identifier).toLowerCase();
+    return this.whitelistGate.extractLoginFromUrl(url, platform);
   }
 
   /**
@@ -1581,19 +859,7 @@ class ViewBotURLService extends EventEmitter {
    * by this service — they're not on the whitelist's per-platform tables.
    */
   _checkWhitelistGate(url, validation) {
-    if (!this.whitelistService) return { allowed: true, reason: 'service_unset' };
-    if (!validation || !['twitch', 'kick'].includes(validation.platform)) {
-      return { allowed: true, reason: 'platform_not_gated' };
-    }
-    const login = this._extractLoginFromUrl(url, validation.platform);
-    return this.whitelistService.checkAllowed({
-      platform: validation.platform,
-      login,
-      currentGameName: null,
-      isMature: null,
-      ccls: null,
-      hasMatureContent: null,
-    });
+    return this.whitelistGate.check(url, validation);
   }
 
   /**
