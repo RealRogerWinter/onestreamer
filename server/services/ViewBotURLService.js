@@ -14,6 +14,7 @@ const URLStreamExtractorService = require('./URLStreamExtractorService');
 const StreamProbeService = require('./StreamProbeService');
 const AdaptiveEncodingSettings = require('./AdaptiveEncodingSettings');
 const KickRandomService = require('./KickRandomService');
+const { defaultPropsForPlatform } = require('./viewbot/streamDefaults');
 const webrtcConfig = require('../config/webrtc.config');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ViewBotURLService' });
@@ -204,45 +205,7 @@ class ViewBotURLService extends EventEmitter {
    * Get default stream properties based on platform and quality
    */
   _getDefaultPropsForPlatform(platform, quality) {
-    // Platform-specific defaults based on typical stream characteristics
-    const platformDefaults = {
-      twitch: {
-        best: { width: 1920, height: 1080, fps: 60, videoBitrate: 6000000 },
-        '1080p': { width: 1920, height: 1080, fps: 60, videoBitrate: 6000000 },
-        '720p': { width: 1280, height: 720, fps: 60, videoBitrate: 3000000 },
-        '480p': { width: 854, height: 480, fps: 30, videoBitrate: 1500000 },
-        worst: { width: 640, height: 360, fps: 30, videoBitrate: 800000 }
-      },
-      youtube: {
-        best: { width: 1920, height: 1080, fps: 60, videoBitrate: 8000000 },
-        '1080p': { width: 1920, height: 1080, fps: 60, videoBitrate: 8000000 },
-        '720p': { width: 1280, height: 720, fps: 60, videoBitrate: 4000000 },
-        '480p': { width: 854, height: 480, fps: 30, videoBitrate: 2000000 },
-        worst: { width: 640, height: 360, fps: 30, videoBitrate: 1000000 }
-      },
-      kick: {
-        best: { width: 1920, height: 1080, fps: 60, videoBitrate: 8000000 },
-        '1080p': { width: 1920, height: 1080, fps: 60, videoBitrate: 8000000 },
-        '720p': { width: 1280, height: 720, fps: 60, videoBitrate: 4000000 },
-        '480p': { width: 854, height: 480, fps: 30, videoBitrate: 1500000 },
-        worst: { width: 640, height: 360, fps: 30, videoBitrate: 800000 }
-      },
-      default: {
-        best: { width: 1280, height: 720, fps: 30, videoBitrate: 3000000 },
-        worst: { width: 640, height: 360, fps: 30, videoBitrate: 1000000 }
-      }
-    };
-
-    const platformSettings = platformDefaults[platform] || platformDefaults.default;
-    const qualitySettings = platformSettings[quality] || platformSettings.best || platformSettings.default?.best;
-
-    return {
-      ...this.probeService.defaults,
-      ...qualitySettings,
-      hasAudio: true,
-      audioBitrate: 128000,
-      probeNote: `platform_default_${platform}`
-    };
+    return defaultPropsForPlatform(platform, quality, this.probeService.defaults);
   }
 
   /**
