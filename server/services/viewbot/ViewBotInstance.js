@@ -25,6 +25,7 @@ const { buildVideoRtpParameters, buildAudioRtpParameters } = require('./rtpParam
 const { buildTestPatternVideoArgs, buildTestPatternAudioArgs } = require('./testPatternFfmpegArgs');
 const { buildCanvasHTML } = require('./canvasHtml');
 const { buildGstreamerVideoPipeline, buildGstreamerAudioPipeline, gstreamerBinaryPath } = require('./gstreamerPipeline');
+const PipelineHealthMonitor = require('./pipelineHealthMonitor');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'ViewBotInstance' });
 
@@ -77,7 +78,17 @@ class ViewBotInstance {
     // Legacy properties (kept for backward compatibility)
     this.mediaGenerator = null;
     this.ffmpegProcess = null;
-    
+
+    // Pipeline health detection (recovery stays on this instance via handlePipelineCrash)
+    this.healthMonitor = new PipelineHealthMonitor({
+      botId: this.botId,
+      logger,
+      getVideoProcess: () => this.gstreamerVideoProcess,
+      getAudioProcess: () => this.gstreamerAudioProcess,
+      shouldRun: () => !this.stopping && !this.handlingVideoEnd && this.streaming,
+      onCrash: (type) => this.handlePipelineCrash(type),
+    });
+
     logger.debug(`🤖 ViewBot ${this.botId} initialized`);
   }
 
@@ -935,10 +946,7 @@ class ViewBotInstance {
     }
     
     // Clear health check timer if set
-    if (this.pipelineHealthCheckTimer) {
-      clearInterval(this.pipelineHealthCheckTimer);
-      this.pipelineHealthCheckTimer = null;
-    }
+    this.healthMonitor.stop();
     
     // Clear recovery timer if set
     if (this.recoveryTimer) {
@@ -1017,96 +1025,7 @@ class ViewBotInstance {
    * Checks pipeline status every 5 seconds and recovers if needed
    */
   startPipelineHealthCheck() {
-    if (this.pipelineHealthCheckTimer) {
-      clearInterval(this.pipelineHealthCheckTimer);
-    }
-    
-    logger.debug(`🏥 ViewBot ${this.botId}: Starting pipeline health monitoring`);
-    
-    // Initial health check after 10 seconds
-    setTimeout(() => this.checkPipelineHealth(), 10000);
-    
-    // Regular health checks every 5 seconds
-    this.pipelineHealthCheckTimer = setInterval(() => {
-      this.checkPipelineHealth();
-    }, 5000);
-  }
-  
-  /**
-   * Check if GStreamer pipelines are healthy and recover if needed
-   */
-  async checkPipelineHealth() {
-    // Skip if we're stopping or handling video end
-    if (this.stopping || this.handlingVideoEnd || !this.streaming) {
-      return;
-    }
-    
-    const videoPid = this.gstreamerVideoProcess?.pid;
-    const audioPid = this.gstreamerAudioProcess?.pid;
-    
-    // Check if processes exist
-    const videoAlive = this.isProcessAlive(videoPid);
-    const audioAlive = this.isProcessAlive(audioPid);
-    
-    if (!videoAlive && !audioAlive) {
-      logger.error(`💀 ViewBot ${this.botId}: Both pipelines are dead!`);
-      this.handlePipelineCrash('both');
-    } else if (!videoAlive) {
-      logger.error(`💀 ViewBot ${this.botId}: Video pipeline is dead (PID ${videoPid})`);
-      this.handlePipelineCrash('video');
-    } else if (!audioAlive) {
-      logger.error(`💀 ViewBot ${this.botId}: Audio pipeline is dead (PID ${audioPid})`);
-      this.handlePipelineCrash('audio');
-    } else {
-      // Both alive, check for stuck pipelines
-      this.checkPipelineActivity();
-    }
-  }
-  
-  /**
-   * Check if a process is still alive
-   */
-  isProcessAlive(pid) {
-    if (!pid) return false;
-    
-    try {
-      // Sending signal 0 tests if process exists without killing it
-      process.kill(pid, 0);
-      return true;
-    } catch (error) {
-      // Process doesn't exist
-      return false;
-    }
-  }
-  
-  /**
-   * Check if pipelines are producing data (not stuck)
-   */
-  checkPipelineActivity() {
-    // Track frame counts
-    const currentTime = Date.now();
-    
-    if (!this.lastHealthCheck) {
-      this.lastHealthCheck = {
-        time: currentTime,
-        videoFrames: 0,
-        audioFrames: 0
-      };
-      return;
-    }
-    
-    const timeDiff = currentTime - this.lastHealthCheck.time;
-    
-    // If more than 10 seconds without activity, pipeline might be stuck
-    if (timeDiff > 10000) {
-      logger.warn(`⚠️ ViewBot ${this.botId}: No pipeline activity for ${timeDiff/1000}s`);
-      
-      // Check if we should recover
-      if (timeDiff > 15000) {
-        logger.error(`🔄 ViewBot ${this.botId}: Pipelines appear stuck, recovering...`);
-        this.handlePipelineCrash('stuck');
-      }
-    }
+    this.healthMonitor.start();
   }
   
   /**
@@ -2237,10 +2156,7 @@ class ViewBotInstance {
       this.videoEndTimer = null;
     }
     
-    if (this.pipelineHealthCheckTimer) {
-      clearInterval(this.pipelineHealthCheckTimer);
-      this.pipelineHealthCheckTimer = null;
-    }
+    this.healthMonitor.stop();
     
     if (this.recoveryTimer) {
       clearTimeout(this.recoveryTimer);
