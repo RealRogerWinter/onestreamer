@@ -223,13 +223,6 @@ class ModerationService extends EventEmitter {
   // ── Image-moderation config (OmniImageMod PR 2/3, ADR-0021) ──────────
 
   /**
-   * In-memory read of the cached image-moderation enable flag.
-   */
-  isImageModerationEnabled() {
-    return !!this._imageModerationEnabled;
-  }
-
-  /**
    * Read the image-moderation config from the DB (full shape for admin UI).
    */
   async getImageModerationConfig() {
@@ -288,7 +281,6 @@ class ModerationService extends EventEmitter {
       fields.push('updated_by = ?');
       params.push(String(adminId));
     }
-    params.push();
     await this.database.runAsync(
       `UPDATE moderation_global_config SET ${fields.join(', ')} WHERE id = 1`,
       params
@@ -687,13 +679,6 @@ class ModerationService extends EventEmitter {
   }
 
   /**
-   * Force a cache refresh. Wired in PR-M5 when admin edits trigger this.
-   */
-  async refreshTermsCache() {
-    await this._loadTermsCache();
-  }
-
-  /**
    * Late-inject the ActionArbiter. The arbiter depends on
    * RandomStreamRotationService, which is constructed in server/index.js
    * AFTER ModerationService — both the MediaSoup and the LiveKit branches
@@ -710,10 +695,6 @@ class ModerationService extends EventEmitter {
     if (this.actionArbiter && typeof this.actionArbiter.setEnforce === 'function' && this._enforce !== undefined) {
       this.actionArbiter.setEnforce(this._enforce);
     }
-  }
-
-  setStage3(stage3) {
-    this.stage3 = stage3 || null;
   }
 
   // ── Event subscription ─────────────────────────────────────────────────

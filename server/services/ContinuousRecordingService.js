@@ -1,4 +1,4 @@
-const { EgressClient, SegmentedFileOutput, SegmentedFileProtocol, RoomServiceClient, EncodedFileOutput, EncodedFileType } = require('livekit-server-sdk');
+const { EgressClient, SegmentedFileOutput, SegmentedFileProtocol, RoomServiceClient } = require('livekit-server-sdk');
 const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
@@ -36,7 +36,6 @@ class ContinuousRecordingService extends EventEmitter {
     this.outputDir = config.outputDir || '/root/onestreamer/egress-recordings';
     this.segmentDuration = config.segmentDuration || 4; // 4 seconds per segment for low latency
     this.retentionMinutes = config.retentionMinutes || 10; // keep last 10 minutes
-    this.maxClipDuration = config.maxClipDuration || 120; // max 2 minute clips
 
     // State
     this.egressClient = null;
@@ -47,12 +46,10 @@ class ContinuousRecordingService extends EventEmitter {
     this.roomServiceClient = null;
     this.autoRecordInterval = null;
     this.currentRecordingTarget = null; // 'room' or participant identity (for participant egress)
-    this.lastRealStreamerCheck = null; // Track last detected real streamer
 
     // Stream identity tracking
     this.currentStreamIdentity = null;
     this.currentStreamSegmentId = null;
-    this.lastStreamCheck = null;
 
     // Repository for users-table reads
     this.userRepository = new UserRepository({ getAsync, runAsync, allAsync });
@@ -181,18 +178,6 @@ class ContinuousRecordingService extends EventEmitter {
   }
 
   /**
-   * Get recording session from database by session ID
-   */
-  async getSessionRecord(sessionId) {
-    try {
-      return await this.recordingRepository.getSessionById(sessionId);
-    } catch (error) {
-      logger.error('❌ SESSION DB: Failed to get session record:', error.message);
-      return null;
-    }
-  }
-
-  /**
    * Generate a master HLS playlist that combines all segment playlists for seamless playback
    */
   async generateMasterPlaylist(sessionId) {
@@ -252,18 +237,6 @@ class ContinuousRecordingService extends EventEmitter {
     } catch (error) {
       logger.error('❌ Failed to generate master playlist:', error.message);
       return null;
-    }
-  }
-
-  /**
-   * Get all recording sessions from database with optional filters
-   */
-  async getSessionRecords(options = {}) {
-    try {
-      return await this.recordingRepository.listSessions(options);
-    } catch (error) {
-      logger.error('❌ SESSION DB: Failed to get session records:', error.message);
-      return [];
     }
   }
 
@@ -579,7 +552,6 @@ class ContinuousRecordingService extends EventEmitter {
         this.currentStreamIdentity = currentIdentity;
       }
 
-      this.lastStreamCheck = Date.now();
     } catch (error) {
       logger.error('❌ STREAM TRACKING: Error tracking identity change:', error.message);
     }
@@ -819,37 +791,6 @@ class ContinuousRecordingService extends EventEmitter {
       logger.error('❌ CONTINUOUS RECORDING: Failed to start:', error);
       return { success: false, error: error.message };
     }
-  }
-
-  /**
-   * Extract session ID from existing egress info
-   * Now uses date-based session IDs (recording_YYYY-MM-DD)
-   */
-  extractSessionIdFromEgress(egressInfo) {
-    try {
-      // Try to extract from the segmented output filepath
-      if (egressInfo.segmentResults && egressInfo.segmentResults.length > 0) {
-        const filepath = egressInfo.segmentResults[0].playlistName || '';
-
-        // Check for new date-based format: recording_YYYY-MM-DD
-        const dateMatch = filepath.match(/recording_(\d{4}-\d{2}-\d{2})/);
-        if (dateMatch) {
-          return `recording_${dateMatch[1]}`;
-        }
-
-        // Legacy format: session_timestamp
-        const legacyMatch = filepath.match(/session_(\d+)/);
-        if (legacyMatch) {
-          return `session_${legacyMatch[1]}`;
-        }
-      }
-    } catch (err) {
-      // Ignore extraction errors
-    }
-
-    // Default to today's date-based session ID
-    const today = new Date().toISOString().split('T')[0];
-    return `recording_${today}`;
   }
 
   /**

@@ -163,83 +163,9 @@ class VisualFxService extends EventEmitter {
         streamEffects.add(effect);
         this.resourceMonitor.activeEffectCount++;
         
-        // Apply effect based on type - now using stream interception
+        // Apply effect based on type
         try {
-            // Check if we should use stream interception for this effect
-            const useInterception = this.streamInterceptorService && 
-                                  ['resolution', 'bitrate', 'framerate', 'filter'].includes(effectConfig.type) &&
-                                  false; // DISABLED: Stream interception causing instability
-            
-            if (useInterception) {
-                logger.debug(`🎬 VISUALFX: Attempting stream interception for ${effectId}`);
-                
-                try {
-                    // Map effect to interceptor type
-                    let interceptType = 'generic';
-                    const interceptOptions = {
-                        duration: effect.duration,
-                        effectId: effectId,
-                        ...effectConfig.parameters
-                    };
-                    
-                    // Configure specific interception based on effect
-                    switch (effectConfig.type) {
-                        case 'bitrate':
-                            if (effectId === 'bitrate_potato') {
-                                interceptType = 'potato';
-                            } else {
-                                interceptType = 'generic';
-                                interceptOptions.videoBitrate = effectConfig.parameters.videoBitrate;
-                                interceptOptions.audioBitrate = effectConfig.parameters.audioBitrate;
-                            }
-                            break;
-                        case 'resolution':
-                            interceptType = 'generic';
-                            interceptOptions.width = effectConfig.parameters.width;
-                            interceptOptions.height = effectConfig.parameters.height;
-                            break;
-                        case 'framerate':
-                            interceptType = 'generic';
-                            interceptOptions.framerate = effectConfig.parameters.fps;
-                            break;
-                        case 'filter':
-                            if (effectConfig.parameters.filterType === 'blur') {
-                                interceptType = 'blur';
-                            } else if (effectConfig.parameters.filterType === 'pixelate') {
-                                interceptType = 'pixelate';
-                            }
-                            break;
-                    }
-                    
-                    // Apply via stream interception
-                    await this.streamInterceptorService.interceptStream(streamId, interceptType, interceptOptions);
-                    logger.debug(`✅ VISUALFX: Stream interception successful for ${effectId}`);
-                    
-                } catch (interceptError) {
-                    logger.error(`⚠️ VISUALFX: Stream interception failed for ${effectId}:`, interceptError.message);
-                    logger.debug(`🔄 VISUALFX: Falling back to safe methods for ${effectId}`);
-                    
-                    // Always use safe fallback methods
-                    try {
-                        switch (effectConfig.type) {
-                            case 'bitrate':
-                                await this.applySafeBitrateEffect(streamId, effectConfig.parameters);
-                                break;
-                            case 'resolution':
-                                await this.applySafeResolutionEffect(streamId, effectConfig.parameters);
-                                break;
-                            default:
-                                logger.debug(`📡 VISUALFX: Effect ${effectId} will be client-side only`);
-                                break;
-                        }
-                    } catch (fallbackError) {
-                        logger.error(`⚠️ VISUALFX: Safe fallback also failed:`, fallbackError.message);
-                    }
-                }
-                
-            } else {
-                // Fallback to old methods for effects not yet migrated
-                switch (effectConfig.type) {
+            switch (effectConfig.type) {
                     case 'resolution':
                         await this.applyResolutionEffect(streamId, effectConfig.parameters);
                         break;
@@ -275,7 +201,6 @@ class VisualFxService extends EventEmitter {
                         await this.applyResizeEffect(streamId, effectConfig.parameters);
                         break;
                 }
-            }
             
             // Set timeout to remove effect
             setTimeout(() => {
@@ -343,67 +268,6 @@ class VisualFxService extends EventEmitter {
         
         // Return success - the effect is "applied" (as a client-side visual only)
         return;
-    }
-    
-    async applySafeBitrateEffect(streamId, parameters) {
-        logger.debug(`🥔 VISUALFX: Applying SAFE bitrate effect to stream ${streamId}`);
-        logger.debug(`🥔 VISUALFX: Using consumer priority and layer control only`);
-        
-        try {
-            // Get all consumers for this stream
-            const allConsumers = this.mediasoupService.consumers;
-            let consumerCount = 0;
-            
-            for (const [socketId, consumers] of allConsumers) {
-                // Check if consumers is iterable (Map or Array)
-                if (!consumers || typeof consumers[Symbol.iterator] !== 'function') {
-                    logger.debug(`⚠️ Skipping non-iterable consumers for socket ${socketId}`);
-                    continue;
-                }
-                
-                for (const [consumerId, consumer] of consumers) {
-                    if (!consumer.closed && consumer.producerId) {
-                        try {
-                            // Set lowest priority
-                            if (consumer.setPriority) {
-                                await consumer.setPriority(255);
-                                logger.debug(`✅ Set consumer ${consumerId} to priority 255`);
-                            }
-                            
-                            // Try to use preferred layers for simulcast
-                            if (consumer.setPreferredLayers) {
-                                try {
-                                    await consumer.setPreferredLayers({
-                                        spatialLayer: 0,
-                                        temporalLayer: 0
-                                    });
-                                    logger.debug(`✅ Set consumer ${consumerId} to lowest layers`);
-                                } catch (e) {
-                                    // Not a simulcast stream, that's ok
-                                }
-                            }
-                            
-                            consumerCount++;
-                        } catch (err) {
-                            logger.warn(`⚠️ Failed to apply safe effect to consumer ${consumerId}:`, err.message);
-                        }
-                    }
-                }
-            }
-            
-            logger.debug(`✅ VISUALFX: Safe bitrate effect applied to ${consumerCount} consumers`);
-            
-        } catch (error) {
-            logger.error(`❌ VISUALFX: Failed to apply safe bitrate effect:`, error);
-        }
-    }
-    
-    async applySafeResolutionEffect(streamId, parameters) {
-        logger.debug(`📹 VISUALFX: Applying SAFE resolution effect to stream ${streamId}`);
-        logger.debug(`📹 VISUALFX: Using consumer layer control only`);
-        
-        // Similar to bitrate but focus on spatial layers
-        await this.applySafeBitrateEffect(streamId, parameters);
     }
     
     async applyBitrateEffect(streamId, parameters) {
@@ -1014,23 +878,6 @@ class VisualFxService extends EventEmitter {
     }
     
     // Helper methods to get MediaSoup objects
-    getStreamTransport(streamId) {
-        if (!this.mediasoupService) return null;
-        
-        // Simple direct lookup only - no fancy fallbacks that might get wrong transport
-        return this.mediasoupService.transports.get(streamId);
-    }
-    
-    getStreamProducers(streamId) {
-        if (!this.mediasoupService) return [];
-        
-        // Simple direct lookup only
-        const producerMap = this.mediasoupService.producers.get(streamId);
-        if (!producerMap) return [];
-        
-        return Array.from(producerMap.values());
-    }
-    
     getStreamConsumers(streamId) {
         if (!this.mediasoupService) return [];
         
