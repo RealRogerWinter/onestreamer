@@ -5,6 +5,7 @@ const EventEmitter = require('events');
 const { runAsync, getAsync, allAsync } = require('../database/database');
 const UserRepository = require('../database/repository/UserRepository');
 const ContinuousRecordingRepository = require('../database/repository/ContinuousRecordingRepository');
+const { usernameFromStreamUrl } = require('./recording/streamUrlUsername');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ContinuousRecordingService' });
 
@@ -363,56 +364,7 @@ class ContinuousRecordingService extends EventEmitter {
    * @returns {string|null} The extracted username or null if not found
    */
   extractUsernameFromUrl(sourceUrl, platform) {
-    if (!sourceUrl) return null;
-
-    try {
-      // Handle Twitch URLs
-      // Formats: https://twitch.tv/username, https://www.twitch.tv/username
-      const twitchMatch = sourceUrl.match(/(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)/i);
-      if (twitchMatch) {
-        return twitchMatch[1];
-      }
-
-      // Handle Kick URLs
-      // Formats: https://kick.com/username, https://www.kick.com/username
-      const kickMatch = sourceUrl.match(/(?:https?:\/\/)?(?:www\.)?kick\.com\/([a-zA-Z0-9_-]+)/i);
-      if (kickMatch) {
-        return kickMatch[1];
-      }
-
-      // Handle YouTube URLs
-      // Formats: youtube.com/@username, youtube.com/channel/xxx, youtube.com/c/username
-      const youtubeMatch = sourceUrl.match(/(?:https?:\/\/)?(?:www\.)?youtube\.com\/@([a-zA-Z0-9_-]+)/i);
-      if (youtubeMatch) {
-        return youtubeMatch[1];
-      }
-
-      // For AWS IVS URLs (Kick backend), try to extract channel name from query params or return platform name
-      if (sourceUrl.includes('live-video.net') || sourceUrl.includes('playback.')) {
-        // These are CDN URLs, we can't extract username from them
-        return null;
-      }
-
-      // Generic fallback: try to get the last path segment
-      try {
-        const url = new URL(sourceUrl);
-        const pathParts = url.pathname.split('/').filter(Boolean);
-        if (pathParts.length > 0) {
-          const lastPart = pathParts[pathParts.length - 1];
-          // Only return if it looks like a username (alphanumeric, not a file extension)
-          if (/^[a-zA-Z0-9_-]+$/.test(lastPart) && !lastPart.includes('.')) {
-            return lastPart;
-          }
-        }
-      } catch (e) {
-        // URL parsing failed
-      }
-
-      return null;
-    } catch (error) {
-      logger.error('Error extracting username from URL:', error.message);
-      return null;
-    }
+    return usernameFromStreamUrl(sourceUrl, logger);
   }
 
   /**
