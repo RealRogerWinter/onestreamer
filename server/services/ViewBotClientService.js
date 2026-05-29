@@ -8,6 +8,8 @@ const ViewBotInstance = require('./viewbot/ViewBotInstance');
 const { selectWeightedBot } = require('./viewbot/botSelection');
 const BotCooldownTracker = require('./viewbot/BotCooldownTracker');
 const RotationRequestQueue = require('./viewbot/RotationRequestQueue');
+const RotationConfigStore = require('./viewbot/RotationConfigStore');
+const RealStreamerGuard = require('./viewbot/RealStreamerGuard');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ViewBotClientService' });
 
@@ -54,7 +56,17 @@ class ViewBotClientService {
     this.rotationTimer = null; // Timer for automatic rotation
     this.realStreamerActive = false; // Protection flag for real streamers
     this.validationTimer = null; // Timer for real streamer status validation
-    
+
+    // Rotation-settings + real-streamer-protection collaborators (own state stays
+    // on this instance; collaborators mutate owner.<field> as the single source of truth)
+    this.rotationConfigStore = new RotationConfigStore({ owner: this });
+    this.realStreamerGuard = new RealStreamerGuard({
+      streamService: this.streamService,
+      mediasoupService: this.mediasoupService,
+      viewbotService: this.viewbotService,
+      owner: this
+    });
+
     // Load rotation settings from config file or use defaults
     this.loadRotationConfig();
     
@@ -127,93 +139,31 @@ class ViewBotClientService {
   }
 
   /**
-   * Load rotation configuration from file
+   * Load rotation configuration from file (delegates to RotationConfigStore)
    */
   loadRotationConfig() {
-    try {
-      const configPath = path.join(__dirname, '../../viewbot-rotation-config.json');
-      if (fs.existsSync(configPath)) {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        this.rotationProbability = config.rotationProbability || 0.31;
-        this.rotationCheckIntervalMin = config.rotationCheckIntervalMin || 5000;
-        this.rotationCheckIntervalMax = config.rotationCheckIntervalMax || 10000;
-        logger.debug(`📄 Loaded rotation config: ${(this.rotationProbability * 100).toFixed(1)}% probability, ${this.rotationCheckIntervalMin/1000}-${this.rotationCheckIntervalMax/1000}s intervals`);
-      }
-    } catch (error) {
-      logger.debug('⚠️ Could not load rotation config, using defaults:', error.message);
-    }
+    return this.rotationConfigStore.loadRotationConfig();
   }
-  
+
   /**
-   * Save rotation configuration to file
+   * Save rotation configuration to file (delegates to RotationConfigStore)
    */
   saveRotationConfig() {
-    try {
-      const configPath = path.join(__dirname, '../../viewbot-rotation-config.json');
-      const config = {
-        rotationProbability: this.rotationProbability,
-        rotationCheckIntervalMin: this.rotationCheckIntervalMin,
-        rotationCheckIntervalMax: this.rotationCheckIntervalMax,
-        comment: `Rotation settings: ${(this.rotationProbability * 100).toFixed(1)}% probability, ${this.rotationCheckIntervalMin/1000}-${this.rotationCheckIntervalMax/1000} second intervals`
-      };
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-      logger.debug(`💾 Saved rotation config to file`);
-    } catch (error) {
-      logger.error('❌ Could not save rotation config:', error.message);
-    }
+    return this.rotationConfigStore.saveRotationConfig();
   }
 
   /**
-   * Get current rotation settings
+   * Get current rotation settings (delegates to RotationConfigStore)
    */
   getRotationSettings() {
-    return {
-      rotationProbability: this.rotationProbability,
-      rotationCheckIntervalMin: this.rotationCheckIntervalMin,
-      rotationCheckIntervalMax: this.rotationCheckIntervalMax
-    };
+    return this.rotationConfigStore.getRotationSettings();
   }
 
   /**
-   * Update rotation settings
+   * Update rotation settings (delegates to RotationConfigStore)
    */
   updateRotationSettings(settings) {
-    if (settings.rotationProbability !== undefined) {
-      this.rotationProbability = settings.rotationProbability;
-    }
-    if (settings.rotationCheckIntervalMin !== undefined) {
-      this.rotationCheckIntervalMin = settings.rotationCheckIntervalMin;
-    }
-    if (settings.rotationCheckIntervalMax !== undefined) {
-      this.rotationCheckIntervalMax = settings.rotationCheckIntervalMax;
-    }
-    
-    logger.debug(`🔄 Updated rotation settings: ${(this.rotationProbability * 100).toFixed(1)}% probability, ${this.rotationCheckIntervalMin/1000}-${this.rotationCheckIntervalMax/1000}s intervals`);
-    
-    // Save to config file
-    this.saveRotationConfig();
-    
-    // Restart rotation timers with new intervals if any bots are active.
-    // `this.activeBots` is the canonical map (PR 11.1's split surfaced three
-    // typos here: the previous `this.viewBots` lookup TypeError'd, masking
-    // both the broken `this.startRotationCheckTimer(bot.botId)` call below
-    // — that method lives on ViewBotInstance and takes no args — and a
-    // truthy-function-reference filter `bot.isStreaming` that never invoked
-    // the method. `activeBots` can also contain placeholder objects from
-    // `restoreViewBots`, hence the `typeof === 'function'` guard matching
-    // the dominant pattern at lines 1514/1562 below.
-    const activeBots = Array.from(this.activeBots.values()).filter(
-      (bot) => (typeof bot.isStreaming === 'function' ? bot.isStreaming() : bot.streaming)
-    );
-    if (activeBots.length > 0) {
-      logger.debug('🔄 Restarting rotation timers with new settings...');
-      activeBots.forEach(bot => {
-        if (bot.rotationCheckTimer) {
-          clearTimeout(bot.rotationCheckTimer);
-          bot.startRotationCheckTimer();
-        }
-      });
-    }
+    return this.rotationConfigStore.updateRotationSettings(settings);
   }
 
   /**
@@ -1379,117 +1329,31 @@ class ViewBotClientService {
   }
 
   /**
-   * Sets the real streamer status (protects from ViewBot takeover)
+   * Sets the real streamer status (delegates to RealStreamerGuard)
    */
   setRealStreamerStatus(isActive) {
-    const previousStatus = this.realStreamerActive;
-    this.realStreamerActive = isActive;
-    logger.debug(`👤 Real streamer status: ${isActive ? 'ACTIVE' : 'INACTIVE'} (was: ${previousStatus ? 'ACTIVE' : 'INACTIVE'})`);
-    
-    if (isActive) {
-      // Clear any pending takeover timer
-      if (this.pendingTakeoverTimer) {
-        clearTimeout(this.pendingTakeoverTimer);
-        this.pendingTakeoverTimer = null;
-        logger.debug(`🚫 Cancelled pending ViewBot takeover - real streamer is active`);
-      }
-      
-      if (this.currentLiveBot) {
-        // Stop current ViewBot if a real streamer becomes active
-        logger.debug(`🛑 Real streamer active - stopping ViewBot ${this.currentLiveBot}`);
-        this.stopViewBotRotation();
-      }
-    } else {
-      // Real streamer disconnected - schedule ViewBot takeover after delay
-      logger.debug(`🔍 Checking takeover conditions: rotationEnabled=${this.rotationEnabled}, currentLiveBot=${this.currentLiveBot}`);
-      
-      // Only proceed if status actually changed from true to false
-      if (previousStatus === true && isActive === false) {
-        logger.debug(`📉 Real streamer status changed from ACTIVE to INACTIVE`);
-        
-        if (this.rotationEnabled) {
-          if (!this.currentLiveBot) {
-            logger.debug(`✅ No ViewBot currently live - scheduling takeover`);
-            this.scheduleViewBotTakeover();
-          } else {
-            logger.debug(`ℹ️ ViewBot ${this.currentLiveBot} is already live - no takeover needed`);
-          }
-        } else {
-          logger.debug(`❌ Rotation is disabled - no ViewBot takeover`);
-        }
-      } else if (previousStatus === false && isActive === false) {
-        logger.debug(`ℹ️ Real streamer was already inactive - no action needed`);
-        // But still check if we need to maintain presence
-        setTimeout(() => this.maintainViewBotPresence(), 2000);
-      }
-    }
-    
-    return { success: true, realStreamerActive: this.realStreamerActive };
+    return this.realStreamerGuard.setRealStreamerStatus(isActive);
   }
 
   /**
-   * Validates and auto-corrects real streamer status based on actual stream state
-   * This ensures the flag is always accurate and prevents orphaned states
+   * Validates and auto-corrects real streamer status (delegates to RealStreamerGuard)
    */
   validateRealStreamerStatus() {
-    if (!this.realStreamerActive) {
-      return; // If already inactive, no validation needed
-    }
-
-    // Get current streamer from the main services
-    const currentStreamer = this.streamService ? this.streamService.getCurrentStreamer() : 
-                           this.mediasoupService ? this.mediasoupService.getCurrentStreamer() : null;
-    
-    if (!currentStreamer) {
-      // No active streamer at all - clear the real streamer flag
-      logger.debug(`🔍 VALIDATION: No active streamer found, clearing real streamer flag`);
-      this.realStreamerActive = false;
-      return;
-    }
-
-    // Check if current streamer is a ViewBot
-    const isViewbot = this.viewbotService ? this.viewbotService.isViewbotStream(currentStreamer) : 
-                     currentStreamer.includes('viewbot-') || currentStreamer.includes('bot-');
-    
-    if (isViewbot && this.realStreamerActive) {
-      // Current streamer is a ViewBot but real streamer flag is active - this is inconsistent
-      logger.debug(`🔍 VALIDATION: Current streamer ${currentStreamer} is ViewBot, clearing real streamer flag`);
-      this.realStreamerActive = false;
-      return;
-    }
-
-    // If we get here and realStreamerActive is true, there should be a real user streaming
-    logger.debug(`🔍 VALIDATION: Real streamer flag validated - current streamer: ${currentStreamer.substring(0, 12)}...`);
+    return this.realStreamerGuard.validateRealStreamerStatus();
   }
 
   /**
-   * Auto-validation that runs periodically to ensure real streamer status accuracy
+   * Auto-validation that runs periodically (delegates to RealStreamerGuard)
    */
   startAutoValidation() {
-    // Run validation every 30 seconds
-    if (this.validationTimer) {
-      clearInterval(this.validationTimer);
-    }
-    
-    this.validationTimer = setInterval(() => {
-      this.validateRealStreamerStatus();
-      
-      // CRITICAL: Also check if we need to maintain ViewBot presence
-      this.maintainViewBotPresence();
-    }, 30000); // 30 seconds
-    
-    logger.debug(`🔍 VALIDATION: Auto-validation started (30s intervals)`);
+    return this.realStreamerGuard.startAutoValidation();
   }
 
   /**
-   * Stop auto-validation timer
+   * Stop auto-validation timer (delegates to RealStreamerGuard)
    */
   stopAutoValidation() {
-    if (this.validationTimer) {
-      clearInterval(this.validationTimer);
-      this.validationTimer = null;
-      logger.debug(`🔍 VALIDATION: Auto-validation stopped`);
-    }
+    return this.realStreamerGuard.stopAutoValidation();
   }
   
   /**
@@ -1926,68 +1790,17 @@ class ViewBotClientService {
   }
   
   /**
-   * Updates the rotation probability (admin control)
+   * Updates the rotation probability (delegates to RotationConfigStore)
    */
   updateRotationProbability(probability) {
-    if (probability < 0 || probability > 1) {
-      return { success: false, message: 'Probability must be between 0 and 1' };
-    }
-    
-    this.rotationProbability = probability;
-    logger.debug(`🎲 Updated rotation probability to ${(probability * 100).toFixed(1)}%`);
-    
-    // Update all streaming bots with new probability
-    for (const [botId, bot] of this.activeBots.entries()) {
-      if (bot.streaming && bot.rotationCheckTimer) {
-        bot.updateRotationProbability(probability);
-      }
-    }
-    
-    // Save the new probability to config file and database
-    this.saveRotationConfig();
-    this.saveSystemState();
-    
-    return { success: true, probability: this.rotationProbability };
+    return this.rotationConfigStore.updateRotationProbability(probability);
   }
-  
+
   /**
-   * Updates the rotation check interval (admin control)
+   * Updates the rotation check interval (delegates to RotationConfigStore)
    */
   updateRotationInterval(minInterval, maxInterval) {
-    // Validate inputs
-    if (!minInterval || !maxInterval) {
-      return { success: false, message: 'Both minInterval and maxInterval are required' };
-    }
-    
-    if (minInterval < 1000 || maxInterval > 300000) {
-      return { success: false, message: 'Intervals must be between 1 second and 5 minutes' };
-    }
-    
-    if (minInterval > maxInterval) {
-      return { success: false, message: 'Min interval must be less than or equal to max interval' };
-    }
-    
-    this.rotationCheckIntervalMin = minInterval;
-    this.rotationCheckIntervalMax = maxInterval;
-    
-    logger.debug(`⏱️ Updated rotation check interval to ${minInterval/1000}-${maxInterval/1000} seconds`);
-    
-    // Update all streaming bots with new intervals
-    for (const [botId, bot] of this.activeBots.entries()) {
-      if (bot.streaming && bot.rotationCheckTimer) {
-        bot.updateRotationInterval(minInterval, maxInterval);
-      }
-    }
-    
-    // Save the new intervals to config file and database
-    this.saveRotationConfig();
-    this.saveSystemState();
-    
-    return { 
-      success: true, 
-      minInterval: this.rotationCheckIntervalMin,
-      maxInterval: this.rotationCheckIntervalMax
-    };
+    return this.rotationConfigStore.updateRotationInterval(minInterval, maxInterval);
   }
   
   /**
