@@ -14,6 +14,7 @@ const {
 const {
     isBotExpired,
     computeResponseInterval,
+    parsePersonalityTraits,
     buildResponsePersonality,
 } = require('./chatbot/responsePolicy');
 
@@ -1080,25 +1081,15 @@ class ChatBotService {
             }
             
             // Check if this is a temporary bot that has expired
-            if (botInstance.data.is_temporary && botInstance.data.expires_at) {
-                const now = new Date();
-                const expiresAt = new Date(botInstance.data.expires_at);
-                if (now >= expiresAt) {
-                    logger.debug(`🚫 ChatBotService: Bot ${bot.id} (${bot.username}) has expired, cannot send movie comment`);
-                    // Trigger cleanup
-                    this.cleanupExpiredBots();
-                    return { success: false, error: 'Bot has expired' };
-                }
+            if (isBotExpired(botInstance.data)) {
+                logger.debug(`🚫 ChatBotService: Bot ${bot.id} (${bot.username}) has expired, cannot send movie comment`);
+                // Trigger cleanup
+                this.cleanupExpiredBots();
+                return { success: false, error: 'Bot has expired' };
             }
-            
-            // Get bot's personality traits
-            const personality = botInstance.data.personality_traits ? 
-                JSON.parse(botInstance.data.personality_traits) : {};
-            
-            // Add temperature to personality object
-            if (botInstance.data.response_creativity_temperature !== undefined && botInstance.data.response_creativity_temperature !== null) {
-                personality.temperature = botInstance.data.response_creativity_temperature;
-            }
+
+            // Get bot's personality traits (+ creativity temperature)
+            const personality = buildResponsePersonality(botInstance.data);
             
             // Generate response for movie comment with transcript focus
             // The moviePrompt should contain the transcript for the bot to comment on
@@ -1251,18 +1242,12 @@ class ChatBotService {
         if (!botInstance || !botInstance.connected) {
             return { success: false, error: 'Bot not connected' };
         }
-        if (botInstance.data && botInstance.data.is_temporary && botInstance.data.expires_at) {
-            const now = new Date();
-            const expiresAt = new Date(botInstance.data.expires_at);
-            if (now >= expiresAt) {
-                this.cleanupExpiredBots();
-                return { success: false, error: 'Bot has expired' };
-            }
+        if (isBotExpired(botInstance.data || {})) {
+            this.cleanupExpiredBots();
+            return { success: false, error: 'Bot has expired' };
         }
 
-        const personality = botInstance.data && botInstance.data.personality_traits
-            ? JSON.parse(botInstance.data.personality_traits)
-            : {};
+        const personality = parsePersonalityTraits(botInstance.data || {});
 
         // Vision-template-aware bot prompt: combine the bot's own personality
         // prompt with the VisionBot system template (transcription is

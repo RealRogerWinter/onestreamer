@@ -19,12 +19,17 @@ function computeResponseInterval(botData, rng = Math.random) {
   return rng() * (maxInterval - minInterval) + minInterval;
 }
 
-// Parse the bot's personality_traits JSON (or {}), then layer on the
-// configured creativity temperature when present.
+// Parse the bot's personality_traits JSON, or {} when absent. (The vision path
+// uses this directly — it passes temperature to the LLM separately and must NOT
+// have a temperature key folded into the personality object.)
+function parsePersonalityTraits(botData) {
+  return botData.personality_traits ? JSON.parse(botData.personality_traits) : {};
+}
+
+// Parsed personality_traits with the configured creativity temperature layered
+// on when present (the regular chat + MovieBot paths).
 function buildResponsePersonality(botData) {
-  const personality = botData.personality_traits
-    ? JSON.parse(botData.personality_traits)
-    : {};
+  const personality = parsePersonalityTraits(botData);
   if (
     botData.response_creativity_temperature !== undefined &&
     botData.response_creativity_temperature !== null
@@ -34,4 +39,4 @@ function buildResponsePersonality(botData) {
   return personality;
 }
 
-module.exports = { isBotExpired, computeResponseInterval, buildResponsePersonality };
+module.exports = { isBotExpired, computeResponseInterval, parsePersonalityTraits, buildResponsePersonality };

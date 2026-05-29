@@ -1,4 +1,14 @@
-const { isBotExpired, computeResponseInterval, buildResponsePersonality } = require('../../../services/chatbot/responsePolicy');
+const { isBotExpired, computeResponseInterval, parsePersonalityTraits, buildResponsePersonality } = require('../../../services/chatbot/responsePolicy');
+
+describe('parsePersonalityTraits', () => {
+  test('parses JSON traits, never adds temperature', () => {
+    expect(parsePersonalityTraits({ personality_traits: JSON.stringify({ tone: 'wry' }), response_creativity_temperature: 0.8 }))
+      .toEqual({ tone: 'wry' });
+  });
+  test('absent traits -> {}', () => {
+    expect(parsePersonalityTraits({ personality_traits: null })).toEqual({});
+  });
+});
 
 describe('isBotExpired', () => {
   const now = new Date('2026-01-01T00:00:00Z');
