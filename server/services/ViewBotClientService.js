@@ -1,11 +1,9 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const io = require('socket.io-client');
 const ViewBotDatabaseService = require('./ViewBotDatabaseService');
 const ViewBotGStreamerService = require('./ViewBotGStreamerService');
 const processManager = require('./ProcessManager');
-const stateManager = require('./ViewBotStateManager');
 const ViewBotInstance = require('./viewbot/ViewBotInstance');
 const { selectWeightedBot } = require('./viewbot/botSelection');
 const BotCooldownTracker = require('./viewbot/BotCooldownTracker');
