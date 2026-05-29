@@ -7,6 +7,7 @@ const ViewBotGStreamerService = require('./ViewBotGStreamerService');
 const processManager = require('./ProcessManager');
 const stateManager = require('./ViewBotStateManager');
 const ViewBotInstance = require('./viewbot/ViewBotInstance');
+const { selectWeightedBot } = require('./viewbot/botSelection');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ViewBotClientService' });
 
@@ -2124,41 +2125,11 @@ class ViewBotClientService {
    * Select a ViewBot with weighted probability based on cooldowns
    */
   selectViewBotWithCooldown(availableBots) {
-    if (availableBots.length === 0) {
-      return null;
-    }
-    
-    if (availableBots.length === 1) {
-      return availableBots[0];
-    }
-    
-    // Calculate weights for each bot
-    const weights = availableBots.map(bot => ({
-      bot,
-      weight: this.getBotProbabilityMultiplier(bot.botId)
-    }));
-    
-    // Log the weights for debugging
-    logger.debug(`🎲 COOLDOWN: Bot selection weights:`, weights.map(w => 
-      `${w.bot.botId.split('-').pop()}: ${(w.weight * 100).toFixed(0)}%`
-    ).join(', '));
-    
-    // Calculate total weight
-    const totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
-    
-    // Select random value
-    let random = Math.random() * totalWeight;
-    
-    // Find the selected bot
-    for (const { bot, weight } of weights) {
-      random -= weight;
-      if (random <= 0) {
-        return bot;
-      }
-    }
-    
-    // Fallback (shouldn't happen)
-    return availableBots[0];
+    return selectWeightedBot(
+      availableBots,
+      (botId) => this.getBotProbabilityMultiplier(botId),
+      { logger }
+    );
   }
   
   /**
