@@ -9,6 +9,7 @@ const stateManager = require('./ViewBotStateManager');
 const ViewBotInstance = require('./viewbot/ViewBotInstance');
 const { selectWeightedBot } = require('./viewbot/botSelection');
 const BotCooldownTracker = require('./viewbot/BotCooldownTracker');
+const RotationRequestQueue = require('./viewbot/RotationRequestQueue');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ViewBotClientService' });
 
@@ -110,8 +111,10 @@ class ViewBotClientService {
     // Start cooldown cleanup timer
     this.startCooldownCleanup();
     
-    // Rotation queue management for preventing race conditions
-    this.rotationQueue = [];
+    // Rotation queue management for preventing race conditions.
+    // Request storage + admission live in RotationRequestQueue; the processing
+    // lock/timer stay here (they drive handleRotationRequest execution).
+    this.rotationRequestQueue = new RotationRequestQueue({ logger });
     this.rotationLock = false;
     this.rotationProcessTimer = null;
     this.rotationQueueWindow = 500; // Process queue every 500ms
@@ -1561,8 +1564,8 @@ class ViewBotClientService {
     }
     
     // Also check if there's a pending rotation in the queue
-    if (this.rotationQueue.length > 0) {
-      logger.debug(`📋 PRESENCE: Rotation queue has ${this.rotationQueue.length} pending requests - skipping presence maintenance`);
+    if (this.rotationRequestQueue.length > 0) {
+      logger.debug(`📋 PRESENCE: Rotation queue has ${this.rotationRequestQueue.length} pending requests - skipping presence maintenance`);
       return;
     }
     
@@ -1619,42 +1622,19 @@ class ViewBotClientService {
    * This is the new entry point for all rotation requests
    */
   queueRotationRequest(botId, reason) {
-    // Check if rotation is enabled first
-    if (!this.rotationEnabled) {
-      logger.debug(`🔄 Rotation request from ${botId} ignored - rotation disabled`);
-      return { success: false, message: 'Rotation is disabled' };
-    }
-    
-    if (this.realStreamerActive) {
-      logger.debug(`🔄 Rotation request from ${botId} ignored - real streamer active`);
-      return { success: false, message: 'Real streamer is active' };
-    }
-    
-    // Check if this bot already has a pending request
-    const existingRequest = this.rotationQueue.find(req => req.botId === botId);
-    if (existingRequest) {
-      logger.debug(`⏳ ViewBot ${botId}: Rotation request already queued`);
-      return { success: false, message: 'Request already queued' };
-    }
-    
-    // Add to queue with timestamp
-    const request = {
-      botId,
-      reason,
-      timestamp: Date.now()
-    };
-    
-    this.rotationQueue.push(request);
-    logger.debug(`📥 Queued rotation request from ${botId} (${reason}). Queue size: ${this.rotationQueue.length}`);
-    
-    // Start processing timer if not already running
-    if (!this.rotationProcessTimer) {
+    const result = this.rotationRequestQueue.enqueue(botId, reason, {
+      rotationEnabled: this.rotationEnabled,
+      realStreamerActive: this.realStreamerActive,
+    });
+
+    // Start the processing timer only when a request was actually queued.
+    if (result.queued && !this.rotationProcessTimer) {
       this.rotationProcessTimer = setTimeout(() => {
         this.processRotationQueue();
       }, this.rotationQueueWindow);
     }
-    
-    return { success: true, message: 'Rotation request queued' };
+
+    return { success: result.success, message: result.message };
   }
   
   /**
@@ -1675,8 +1655,7 @@ class ViewBotClientService {
     }
     
     // Get all pending requests
-    const requests = [...this.rotationQueue];
-    this.rotationQueue = []; // Clear the queue
+    const requests = this.rotationRequestQueue.drain();
     
     if (requests.length === 0) {
       logger.debug(`📭 Rotation queue empty - nothing to process`);
@@ -1716,7 +1695,7 @@ class ViewBotClientService {
       logger.debug(`🔓 Rotation lock released`);
       
       // Check if more requests came in while processing
-      if (this.rotationQueue.length > 0 && !this.rotationProcessTimer) {
+      if (this.rotationRequestQueue.length > 0 && !this.rotationProcessTimer) {
         logger.debug(`📬 New requests in queue - scheduling next processing`);
         this.rotationProcessTimer = setTimeout(() => {
           this.processRotationQueue();
