@@ -11,18 +11,18 @@
  *   OpenAI:    GET  /admin/openai/status
  *              POST /admin/openai/config
  *
- * Auth: `adminKeyAuth` (legacy X-Admin-Key) on every route.
+ * Auth: `adminKeyAuth` (legacy X-Admin-Key) on the MovieBot/Groq/OpenAI
+ * routes; the VisionBot routes use `adminKeyOrJwt` (X-Admin-Key OR a
+ * JWT) to match the admin UI's VisionBot calls.
  *
- * Both `movieBotService` and `visionBotService` are eager services from
- * the `createServices` destructure — passed directly by value (no
- * getter pattern needed, unlike the lazy services in PR 15B.3.e/h/i).
+ * `movieBotService` and `chatBotService` are eager services from the
+ * `createServices` destructure — passed directly by value. `visionBotService`
+ * is read at request time from `req.app.locals.services` (it can be wired
+ * late), with a JSON-500 short-circuit when absent.
  *
- * Body byte-equivalent except for:
- *   - `app.X(...)` → `router.X(...)` at line starts
- *
- * Deps (`adminKeyAuth`, `movieBotService`, `visionBotService`,
- * `mediasoupService`, `streamService`, `database`, `logger`)
- * destructured from the factory args bag and used verbatim.
+ * Deps (`adminKeyAuth`, `adminKeyOrJwt`, `movieBotService`,
+ * `chatBotService`, `mediasoupService`, `streamService`, `database`,
+ * `logger`) destructured from the factory args bag.
  */
 
 const express = require('express');
@@ -30,8 +30,9 @@ const express = require('express');
 function createAdminAiRouter(deps) {
     const {
         adminKeyAuth,
+        adminKeyOrJwt,
         movieBotService,
-        visionBotService,
+        chatBotService,
         mediasoupService,
         streamService,
         database,
@@ -105,7 +106,7 @@ function createAdminAiRouter(deps) {
     // VisionBot admin endpoints — sibling block to MovieBot above. Mirrors that
     // shape: enable / disable / status / config / logs. Auth via adminKeyAuth
     // to match the existing MovieBot client-side calls from BotsPanel.
-    router.post('/admin/visionbot/enable', adminKeyAuth, async (req, res) => {
+    router.post('/admin/visionbot/enable', adminKeyOrJwt, async (req, res) => {
       try {
         const svc = req.app.locals.services && req.app.locals.services.visionBotService;
         if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
@@ -122,7 +123,7 @@ function createAdminAiRouter(deps) {
       }
     });
 
-    router.post('/admin/visionbot/disable', adminKeyAuth, async (req, res) => {
+    router.post('/admin/visionbot/disable', adminKeyOrJwt, async (req, res) => {
       try {
         const svc = req.app.locals.services && req.app.locals.services.visionBotService;
         if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
@@ -134,7 +135,7 @@ function createAdminAiRouter(deps) {
       }
     });
 
-    router.get('/admin/visionbot/status', adminKeyAuth, async (req, res) => {
+    router.get('/admin/visionbot/status', adminKeyOrJwt, async (req, res) => {
       try {
         const svc = req.app.locals.services && req.app.locals.services.visionBotService;
         if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
@@ -145,7 +146,7 @@ function createAdminAiRouter(deps) {
       }
     });
 
-    router.post('/admin/visionbot/config', adminKeyAuth, async (req, res) => {
+    router.post('/admin/visionbot/config', adminKeyOrJwt, async (req, res) => {
       try {
         const svc = req.app.locals.services && req.app.locals.services.visionBotService;
         if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
@@ -157,7 +158,7 @@ function createAdminAiRouter(deps) {
       }
     });
 
-    router.get('/admin/visionbot/logs', adminKeyAuth, async (req, res) => {
+    router.get('/admin/visionbot/logs', adminKeyOrJwt, async (req, res) => {
       try {
         const svc = req.app.locals.services && req.app.locals.services.visionBotService;
         if (!svc) return res.status(500).json({ success: false, error: 'visionBotService not wired' });
