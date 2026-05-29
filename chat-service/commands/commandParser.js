@@ -29,6 +29,8 @@
 // (VOTE_COOLDOWN_FAILED / VOTE_COOLDOWN_SUCCESS) are passed in via deps so
 // index.js can keep them as the canonical source.
 
+const { formatDuration } = require('./formatters');
+
 /**
  * Create a public-command parser.
  *
@@ -184,19 +186,6 @@ function createCommandParser(deps) {
           if (response.data.success) {
             const stats = response.data.stats;
 
-            const formatDuration = (seconds) => {
-              const hours = Math.floor(seconds / 3600);
-              const minutes = Math.floor((seconds % 3600) / 60);
-
-              if (hours > 0) {
-                return `${hours}h ${minutes}m`;
-              } else if (minutes > 0) {
-                return `${minutes}m`;
-              } else {
-                return '0m';
-              }
-            };
-
             let statsMessage = `📊 Stats for ${whoTargetUsername}: `;
             statsMessage += `Points: ${stats.points_balance || 0} | `;
             statsMessage += `Watch Time: ${formatDuration(stats.total_view_time || 0)} | `;
@@ -247,19 +236,6 @@ function createCommandParser(deps) {
 
           if (response.data.success) {
             const stats = response.data.stats;
-
-            const formatDuration = (seconds) => {
-              const hours = Math.floor(seconds / 3600);
-              const minutes = Math.floor((seconds % 3600) / 60);
-
-              if (hours > 0) {
-                return `${hours}h ${minutes}m`;
-              } else if (minutes > 0) {
-                return `${minutes}m`;
-              } else {
-                return '0m';
-              }
-            };
 
             let statsMessage = `📊 Your stats: `;
             statsMessage += `Points: ${stats.points_balance || 0} | `;
