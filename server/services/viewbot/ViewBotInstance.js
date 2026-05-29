@@ -21,6 +21,7 @@ const io = require('socket.io-client');
 const puppeteer = require('puppeteer');
 const processManager = require('../ProcessManager');
 const stateManager = require('../ViewBotStateManager');
+const { buildVideoRtpParameters, buildAudioRtpParameters } = require('./rtpParameters');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'ViewBotInstance' });
 
@@ -2336,69 +2337,14 @@ class ViewBotInstance {
    * Creates RTP parameters for video
    */
   createVideoRtpParameters() {
-    const ssrc = Math.floor(Math.random() * 1000000);
-    return {
-      codecs: [
-        {
-          mimeType: 'video/VP8',
-          clockRate: 90000,
-          payloadType: 96,
-          parameters: {},
-          rtcpFeedback: [
-            { type: 'nack' },
-            { type: 'nack', parameter: 'pli' },
-            { type: 'ccm', parameter: 'fir' },
-            { type: 'goog-remb' }
-          ]
-        }
-      ],
-      headerExtensions: [],
-      encodings: [
-        {
-          ssrc: ssrc,
-          rtx: {
-            ssrc: ssrc + 1
-          }
-        }
-      ],
-      rtcp: {
-        cname: `viewbot-video-${this.botId}`,
-        reducedSize: true
-      }
-    };
+    return buildVideoRtpParameters(this.botId);
   }
 
   /**
    * Creates RTP parameters for audio
    */
   createAudioRtpParameters() {
-    const ssrc = Math.floor(Math.random() * 1000000);
-    return {
-      codecs: [
-        {
-          mimeType: 'audio/opus',
-          clockRate: 48000,
-          payloadType: 111,
-          channels: 2,
-          parameters: {
-            'sprop-stereo': 1,
-            'useinbandfec': 1
-          },
-          rtcpFeedback: []
-        }
-      ],
-      headerExtensions: [],
-      encodings: [
-        {
-          ssrc: ssrc,
-          dtx: false
-        }
-      ],
-      rtcp: {
-        cname: `viewbot-audio-${this.botId}`,
-        reducedSize: true
-      }
-    };
+    return buildAudioRtpParameters(this.botId);
   }
 
   /**
