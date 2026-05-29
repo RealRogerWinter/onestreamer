@@ -10,6 +10,7 @@ import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../../utils/browse
 import VideoControls from '../video/VideoControls';
 import { useWebRTCConnection } from '../../hooks/useWebRTCConnection';
 import { useStreamSwitch } from '../../hooks/useStreamSwitch';
+import { renderTestPatternFrame } from '../../utils/testPattern';
 import './WebRTCViewer.css';
 
 interface WebRTCViewerProps {
@@ -1683,11 +1684,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       }
     };
 
-    const handleTestStreamRequest = async () => {
-      // console.log('🧪 WEBRTC: Test stream requested via fallback');
-      // The StreamSwitchManager will handle this internally via fallback strategies
-    };
-
     const handleTestPatternStream = async (data: { streamerId: string, testConfig: { pattern: string, resolution: string, frameRate: number }, isViewBot?: boolean }) => {
       // console.log('🎨 WEBRTC: Test pattern stream requested:', data);
       
@@ -1796,7 +1792,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     socket.on('new-streamer', handleStreamSwitch);
     socket.on('stream-ready', handleStreamReady);
     socket.on('stream-switching', handleStreamSwitching);
-    socket.on('test-stream-available', handleTestStreamRequest);
     socket.on('test-pattern-stream', handleTestPatternStream);
     socket.on('stream-ended', handleStreamEnded);
 
@@ -1807,7 +1802,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       socket.off('new-streamer', handleStreamSwitch);
       socket.off('stream-ready', handleStreamReady);
       socket.off('stream-switching', handleStreamSwitching);
-      socket.off('test-stream-available', handleTestStreamRequest);
       socket.off('test-pattern-stream', handleTestPatternStream);
       socket.off('stream-ended', handleStreamEnded);
     };
@@ -1851,37 +1845,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       }
       
       frameCount = currentFrame;
-      
-      // Clear canvas
-      ctx.clearRect(0, 0, width, height);
-      
-      switch (testConfig.pattern) {
-        case 'color-bars':
-          drawColorBars(ctx, width, height);
-          break;
-        case 'moving-text':
-          drawMovingText(ctx, width, height, elapsed);
-          break;
-        case 'clock':
-          drawClock(ctx, width, height);
-          break;
-        case 'noise':
-          drawNoise(ctx, width, height);
-          break;
-        case 'gradient':
-          drawGradient(ctx, width, height, elapsed);
-          break;
-        default:
-          drawSolidColor(ctx, width, height, '#808080');
-      }
-      
-      // Add frame counter and uptime
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(10, 10, 300, 60);
-      ctx.fillStyle = 'white';
-      ctx.font = '16px monospace';
-      ctx.fillText(`OneStreamer Test Pattern`, 20, 30);
-      ctx.fillText(`Frame: ${frameCount} | Uptime: ${Math.floor(elapsed / 1000)}s`, 20, 50);
+
+      renderTestPatternFrame(ctx, testConfig.pattern, width, height, elapsed, frameCount);
     };
     
     // Start animation loop
@@ -1931,77 +1896,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     }
   };
   
-  // Pattern drawing functions
-  const drawColorBars = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    const colors = ['#ffffff', '#ffff00', '#00ffff', '#00ff00', '#ff00ff', '#ff0000', '#0000ff', '#000000'];
-    const barWidth = width / colors.length;
-    
-    colors.forEach((color, index) => {
-      ctx.fillStyle = color;
-      ctx.fillRect(index * barWidth, 0, barWidth, height);
-    });
-  };
-  
-  const drawMovingText = (ctx: CanvasRenderingContext2D, width: number, height: number, elapsed: number) => {
-    ctx.fillStyle = '#000080';
-    ctx.fillRect(0, 0, width, height);
-    
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 48px sans-serif';
-    ctx.textAlign = 'center';
-    
-    const text = `OneStreamer Test • ${Math.floor(elapsed / 1000)}s`;
-    const x = width / 2;
-    const y = height / 2 + Math.sin(elapsed / 1000) * 50;
-    
-    ctx.fillText(text, x, y);
-  };
-  
-  const drawClock = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    ctx.fillStyle = '#001122';
-    ctx.fillRect(0, 0, width, height);
-    
-    const now = new Date();
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 64px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(now.toLocaleTimeString(), width / 2, height / 2 - 20);
-    
-    ctx.font = 'bold 32px monospace';
-    ctx.fillText(now.toLocaleDateString(), width / 2, height / 2 + 40);
-  };
-  
-  const drawNoise = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    const imageData = ctx.createImageData(width, height);
-    const data = imageData.data;
-    
-    for (let i = 0; i < data.length; i += 4) {
-      const noise = Math.random() * 255;
-      data[i] = noise;     // Red
-      data[i + 1] = noise; // Green
-      data[i + 2] = noise; // Blue
-      data[i + 3] = 255;   // Alpha
-    }
-    
-    ctx.putImageData(imageData, 0, 0);
-  };
-  
-  const drawGradient = (ctx: CanvasRenderingContext2D, width: number, height: number, elapsed: number) => {
-    const gradient = ctx.createLinearGradient(0, 0, width, height);
-    const hue = (elapsed / 50) % 360;
-    gradient.addColorStop(0, `hsl(${hue}, 100%, 50%)`);
-    gradient.addColorStop(0.5, `hsl(${(hue + 120) % 360}, 100%, 50%)`);
-    gradient.addColorStop(1, `hsl(${(hue + 240) % 360}, 100%, 50%)`);
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-  };
-  
-  const drawSolidColor = (ctx: CanvasRenderingContext2D, width: number, height: number, color: string) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, width, height);
-  };
-
   const cleanup = async () => {
     // console.log('🧹 WEBRTC: Cleaning up WebRTC viewer');
     
