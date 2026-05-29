@@ -28,6 +28,9 @@ const { buildGstreamerVideoPipeline, buildGstreamerAudioPipeline, gstreamerBinar
 const PipelineHealthMonitor = require('./pipelineHealthMonitor');
 const RotationScheduler = require('./rotationScheduler');
 const { killProcessGroup } = require('./processKill');
+const { attachPipelineStdioMonitor } = require('./gstreamerStdioMonitor');
+const durationProbe = require('./durationProbe');
+const processCleanup = require('./processCleanup');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'ViewBotInstance' });
 
@@ -687,168 +690,22 @@ class ViewBotInstance {
     // Set up duration-based failsafe rotation
     await this.setupDurationBasedRotation(videoFile);
     
-    let videoStarted = false;
-    let audioStarted = false;
-    let videoEOS = false;
-    let audioEOS = false;
-    let videoError = '';
-    let audioError = '';
-    
-    // Monitor video pipeline stderr for state changes and errors
-    this.gstreamerVideoProcess.stderr.on('data', (data) => {
-      const output = data.toString();
-      
-      // Log first few messages for debugging
-      if (!videoStarted) {
-        logger.debug(`📹 ViewBot ${this.botId}: Video stderr: ${output.substring(0, 200)}`);
-      }
-      
-      if (output.includes('ERROR')) {
-        videoError = output.substring(0, 200);
-        logger.error(`❌ ViewBot ${this.botId}: Video pipeline error`);
-        logger.error(output);
-      } else if (output.includes('PLAYING') || output.includes('Setting pipeline to PLAYING')) {
-        if (!videoStarted) {
-          videoStarted = true;
-          logger.debug(`▶️ ViewBot ${this.botId}: Video pipeline playing`);
-        }
-      } else if (output.includes('EOS') || output.includes('end-of-stream') || 
-                 output.includes('Got EOS from element') || output.includes('Posting EOS') ||
-                 output.includes('EOS received') || output.includes('Execution ended')) {
-        if (!videoEOS) {
-          videoEOS = true;
-          logger.debug(`🏁 ViewBot ${this.botId}: Video EOS detected - cleaning up first!`);
-          logger.debug(`   EOS Message: ${output.substring(0, 100)}`);
-          
-          // First cleanup the processes to ensure resources are freed
-          logger.debug(`🧹 ViewBot ${this.botId}: Cleaning up GStreamer processes immediately`);
-          this.cleanupGStreamerProcesses();
-          
-          // Then trigger video end handling after cleanup to avoid conflicts
-          setTimeout(() => {
-            if (!this.stopping && !this.handlingVideoEnd) {
-              logger.debug(`🔄 ViewBot ${this.botId}: Triggering rotation after cleanup`);
-              this.handleVideoEnd();
-            }
-          }, 200); // Small delay to ensure cleanup completes
-        }
-      } else if (output.includes('Setting pipeline to NULL')) {
-        logger.debug(`🔧 ViewBot ${this.botId}: Video pipeline shutting down`);
-      } else if (output.includes('Setting pipeline')) {
-        logger.debug(`🔧 ViewBot ${this.botId}: Video pipeline state change`);
-      } else if (output.includes('caps = video/')) {
-        logger.debug(`📹 ViewBot ${this.botId}: Video stream detected`);
-      } else if (output.includes('Freeing pipeline')) {
-        logger.debug(`🧹 ViewBot ${this.botId}: Video pipeline freed`);
-      }
-    });
-    
-    // Also monitor stdout (GStreamer may output to stdout instead of stderr)
-    this.gstreamerVideoProcess.stdout.on('data', (data) => {
-      const output = data.toString();
-      
-      // Log for debugging
-      if (!videoStarted) {
-        logger.debug(`📹 ViewBot ${this.botId}: Video stdout: ${output.substring(0, 200)}`);
-      }
-      
-      if (output.includes('Setting pipeline') || output.includes('PLAYING')) {
-        logger.debug(`🔧 ViewBot ${this.botId}: Video pipeline state: ${output.trim()}`);
-        if (!videoStarted && (output.includes('PLAYING') || output.includes('Pipeline is PREROLLED'))) {
-          videoStarted = true;
-          logger.debug(`▶️ ViewBot ${this.botId}: Video pipeline playing (from stdout)`);
-        }
-      }
-    });
-    
-    // Monitor audio pipeline stderr for state changes and errors
-    this.gstreamerAudioProcess.stderr.on('data', (data) => {
-      const output = data.toString();
-      
-      if (output.includes('ERROR')) {
-        audioError = output.substring(0, 200);
-        logger.error(`❌ ViewBot ${this.botId}: Audio pipeline error`);
-        logger.error(output);
-      } else if (output.includes('PLAYING') || output.includes('Setting pipeline to PLAYING')) {
-        if (!audioStarted) {
-          audioStarted = true;
-          logger.debug(`▶️ ViewBot ${this.botId}: Audio pipeline playing`);
-        }
-      } else if (output.includes('EOS')) {
-        audioEOS = true;
-        logger.debug(`🏁 ViewBot ${this.botId}: Audio EOS received - complete playback!`);
-      } else if (output.includes('caps = audio/')) {
-        logger.debug(`🔊 ViewBot ${this.botId}: Audio stream detected`);
-      }
-    });
-    
-    // Also monitor stdout (GStreamer may output to stdout instead of stderr)
-    this.gstreamerAudioProcess.stdout.on('data', (data) => {
-      const output = data.toString();
-      
-      // Log for debugging
-      if (!audioStarted) {
-        logger.debug(`🔊 ViewBot ${this.botId}: Audio stdout: ${output.substring(0, 200)}`);
-      }
-      
-      if (output.includes('Setting pipeline') || output.includes('PLAYING')) {
-        logger.debug(`🔧 ViewBot ${this.botId}: Audio pipeline state: ${output.trim()}`);
-        if (!audioStarted && (output.includes('PLAYING') || output.includes('Pipeline is PREROLLED'))) {
-          audioStarted = true;
-          logger.debug(`▶️ ViewBot ${this.botId}: Audio pipeline playing (from stdout)`);
-        }
-      }
-    });
-    
-    this.gstreamerVideoProcess.on('error', (error) => {
-      logger.error(`❌ ViewBot ${this.botId}: Failed to start video pipeline:`, error);
-      throw error;
-    });
-    
-    this.gstreamerAudioProcess.on('error', (error) => {
-      logger.error(`❌ ViewBot ${this.botId}: Failed to start audio pipeline:`, error);
-      // Audio failure is not critical, continue
-    });
-    
-    this.gstreamerVideoProcess.on('exit', (code, signal) => {
-      logger.debug(`🛑 ViewBot ${this.botId}: Video pipeline exited (code: ${code})`);
-      
-      if (videoEOS) {
-        logger.debug(`   ✅ Video played to completion`);
-      } else if (code === 0) {
-        logger.debug(`   ✅ Video pipeline completed normally`);
-      } else if (videoError) {
-        logger.error(`   ❌ Video error: ${videoError}`);
-      }
-      
-      this.gstreamerVideoProcess = null;
-      
-      // Handle video end - trigger rotation after ensuring cleanup
-      if (!this.stopping && !this.handlingVideoEnd && (videoEOS || code === 0)) {
-        logger.debug(`🎬 ViewBot ${this.botId}: Video file reached end (GStreamer EOS: ${videoEOS}, Exit code: ${code})`);
-        // Ensure cleanup then trigger rotation
-        setTimeout(() => {
-          if (!this.stopping && !this.handlingVideoEnd) {
-            this.handleVideoEnd();
-          }
-        }, 500); // Small delay to ensure process cleanup
-      }
-    });
-    
-    this.gstreamerAudioProcess.on('exit', (code, signal) => {
-      logger.debug(`🛑 ViewBot ${this.botId}: Audio pipeline exited (code: ${code})`);
-      
-      if (audioEOS) {
-        logger.debug(`   ✅ Audio played to completion`);
-      } else if (code === 0) {
-        logger.debug(`   ✅ Audio pipeline completed normally`);
-      } else if (audioError) {
-        logger.error(`   ❌ Audio error: ${audioError}`);
-      }
-      
-      this.gstreamerAudioProcess = null;
-    });
-    
+    // Attach the stdout/stderr/exit/error state-machine monitors. The returned
+    // state objects ({ started, eos, error }) replace the videoStarted/audioStarted
+    // locals the pipeline-start Promise below polls.
+    const monitorOpts = {
+      logger,
+      botId: this.botId,
+      isStopping: () => this.stopping,
+      isHandlingVideoEnd: () => this.handlingVideoEnd,
+      cleanupGStreamerProcesses: () => this.cleanupGStreamerProcesses(),
+      handleVideoEnd: () => this.handleVideoEnd(),
+      clearVideoRef: () => { this.gstreamerVideoProcess = null; },
+      clearAudioRef: () => { this.gstreamerAudioProcess = null; },
+    };
+    const videoState = attachPipelineStdioMonitor(this.gstreamerVideoProcess, { kind: 'video', ...monitorOpts });
+    const audioState = attachPipelineStdioMonitor(this.gstreamerAudioProcess, { kind: 'audio', ...monitorOpts });
+
     // Wait for pipelines to start
     await new Promise((resolve, reject) => {
       // Check if processes are actually running even without PLAYING message
@@ -864,33 +721,33 @@ class ViewBotInstance {
         // If processes are running with PIDs, consider them started even without PLAYING message
         if (videoRunning || audioRunning) {
           logger.debug(`⚠️ ViewBot ${this.botId}: Processes running without PLAYING confirmation (Video PID: ${this.gstreamerVideoProcess?.pid}, Audio PID: ${this.gstreamerAudioProcess?.pid})`);
-          videoStarted = videoStarted || videoRunning;
-          audioStarted = audioStarted || audioRunning;
+          videoState.started = videoState.started || videoRunning;
+          audioState.started = audioState.started || audioRunning;
           resolve();
-        } else if (!videoStarted && !audioStarted) {
+        } else if (!videoState.started && !audioState.started) {
           const error = new Error('GStreamer pipelines failed to start');
           logger.error(`❌ ViewBot ${this.botId}: ${error.message}`);
-          
-          if (videoError) {
-            logger.error(`   Video error: ${videoError}`);
+
+          if (videoState.error) {
+            logger.error(`   Video error: ${videoState.error}`);
           }
-          if (audioError) {
-            logger.error(`   Audio error: ${audioError}`);
+          if (audioState.error) {
+            logger.error(`   Audio error: ${audioState.error}`);
           }
-          
+
           this.cleanupGStreamerProcesses();
           reject(error);
         } else {
-          logger.debug(`⚠️ ViewBot ${this.botId}: Partial start (Video: ${videoStarted}, Audio: ${audioStarted})`);
+          logger.debug(`⚠️ ViewBot ${this.botId}: Partial start (Video: ${videoState.started}, Audio: ${audioState.started})`);
           resolve();
         }
       }, 15000);
-      
+
       const checkInterval = setInterval(() => {
-        if (videoStarted || audioStarted) {
+        if (videoState.started || audioState.started) {
           clearTimeout(timeout);
           clearInterval(checkInterval);
-          logger.debug(`✅ ViewBot ${this.botId}: Pipelines started (Video: ${videoStarted}, Audio: ${audioStarted})`);
+          logger.debug(`✅ ViewBot ${this.botId}: Pipelines started (Video: ${videoState.started}, Audio: ${audioState.started})`);
           resolve();
         }
       }, 100);
@@ -905,83 +762,11 @@ class ViewBotInstance {
    * Set up duration-based rotation as a failsafe
    */
   async setupDurationBasedRotation(videoFile) {
-    try {
-      const { execSync } = require('child_process');
-      const duration = execSync(
-        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoFile}"`,
-        { encoding: 'utf8', timeout: 5000 }
-      ).trim();
-      
-      const durationSeconds = parseFloat(duration);
-      if (durationSeconds > 0 && !isNaN(durationSeconds)) {
-        // Add 5 second buffer for processing delays
-        const rotationDelay = (durationSeconds + 5) * 1000;
-        
-        logger.debug(`⏰ ViewBot ${this.botId}: Video duration is ${durationSeconds}s, setting failsafe rotation timer for ${rotationDelay}ms`);
-        
-        this.videoDurationTimer = setTimeout(() => {
-          logger.debug(`⚠️ ViewBot ${this.botId}: Duration-based failsafe triggered - video should have ended by now`);
-          if (!this.handlingVideoEnd && this.streaming) {
-            logger.debug(`🆘 ViewBot ${this.botId}: EOS not detected, forcing cleanup then rotation`);
-            
-            // First force cleanup to free resources
-            this.cleanupGStreamerProcesses();
-            
-            // Then trigger rotation after cleanup
-            setTimeout(() => {
-              if (!this.handlingVideoEnd) {
-                this.handleVideoEnd();
-              }
-            }, 200);
-          }
-        }, rotationDelay);
-      } else {
-        logger.warn(`⚠️ ViewBot ${this.botId}: Could not determine video duration for failsafe`);
-      }
-    } catch (error) {
-      logger.warn(`⚠️ ViewBot ${this.botId}: Failed to set up duration-based rotation:`, error.message);
-    }
+    return durationProbe.setupDurationBasedRotation(this, videoFile, logger);
   }
-  
+
   cleanupGStreamerProcesses() {
-    logger.debug(`🧹🧹🧹 CLEANUP CALLED - ViewBot ${this.botId}: Cleaning up GStreamer processes...`);
-    logger.debug(`   📊 Current process references:`, {
-      video: this.gstreamerVideoProcess ? `PID ${this.gstreamerVideoProcess.pid}` : 'NULL',
-      audio: this.gstreamerAudioProcess ? `PID ${this.gstreamerAudioProcess.pid}` : 'NULL',
-      gstreamer: this.gstreamerProcess ? `PID ${this.gstreamerProcess.pid}` : 'NULL'
-    });
-    
-    // Clear duration timer if set
-    if (this.videoDurationTimer) {
-      clearTimeout(this.videoDurationTimer);
-      this.videoDurationTimer = null;
-    }
-    
-    // Clear health check timer if set
-    this.healthMonitor.stop();
-    
-    // Clear recovery timer if set
-    if (this.recoveryTimer) {
-      clearTimeout(this.recoveryTimer);
-      this.recoveryTimer = null;
-    }
-    
-    // CRITICAL: Kill entire process group to prevent orphaned processes
-    killProcessGroup(this.gstreamerVideoProcess, 'video', logger);
-    killProcessGroup(this.gstreamerAudioProcess, 'audio', logger);
-    killProcessGroup(this.gstreamerProcess, 'gstreamer', logger);
-    
-    // No longer needed - process group killing handles all child processes
-    
-    // Clear references immediately - processes are being killed
-    this.gstreamerVideoProcess = null;
-    this.gstreamerAudioProcess = null;
-    this.gstreamerProcess = null;
-    // CRITICAL: Clear the starting flag to allow future starts
-    this.gstreamerStarting = false;
-    logger.debug(`   🧹 Process references and flags cleared`);
-    
-    logger.debug(`   ✅ Cleanup completed - all processes killed`);
+    return processCleanup.cleanupGStreamerProcesses(this, logger);
   }
   
   /**
@@ -1097,36 +882,7 @@ class ViewBotInstance {
    * Kill all pipeline processes forcefully
    */
   async killAllProcesses() {
-    const processes = [
-      { proc: this.gstreamerVideoProcess, name: 'video' },
-      { proc: this.gstreamerAudioProcess, name: 'audio' },
-      { proc: this.ffmpegProcess, name: 'ffmpeg' }
-    ];
-    
-    for (const { proc, name } of processes) {
-      if (proc && proc.pid) {
-        try {
-          logger.debug(`💀 Killing ${name} process (PID: ${proc.pid})`);
-          proc.kill('SIGKILL');
-        } catch (error) {
-          // Process might already be dead
-        }
-      }
-    }
-    
-    // Also kill any orphaned gst-launch processes
-    try {
-      const { execSync } = require('child_process');
-      execSync(`pkill -f "gst-launch.*${this.videoRtpPort}" || true`, { encoding: 'utf8' });
-      execSync(`pkill -f "gst-launch.*${this.audioRtpPort}" || true`, { encoding: 'utf8' });
-    } catch (error) {
-      // Ignore errors
-    }
-    
-    // Clear references
-    this.gstreamerVideoProcess = null;
-    this.gstreamerAudioProcess = null;
-    this.ffmpegProcess = null;
+    return processCleanup.killAllProcesses(this, logger);
   }
 
   /**
@@ -2002,43 +1758,7 @@ class ViewBotInstance {
    * Gets video duration using ffprobe
    */
   async getVideoDuration(videoPath) {
-    return new Promise((resolve) => {
-      const ffprobe = spawn('ffprobe', [
-        '-v', 'error',
-        '-show_entries', 'format=duration',
-        '-of', 'default=noprint_wrappers=1:nokey=1',
-        videoPath
-      ]);
-      
-      let duration = '';
-      ffprobe.stdout.on('data', (data) => {
-        duration += data.toString();
-      });
-      
-      ffprobe.on('close', (code) => {
-        if (code === 0 && duration) {
-          const durationSeconds = parseFloat(duration.trim());
-          logger.debug(`⏱️ ViewBot ${this.botId}: Video duration: ${durationSeconds} seconds`);
-          this.videoDuration = durationSeconds;
-          
-          // Set up a fallback timer for video end
-          if (durationSeconds > 0 && !isNaN(durationSeconds)) {
-            this.videoEndTimer = setTimeout(() => {
-              logger.debug(`⏰ ViewBot ${this.botId}: Video duration timer expired, triggering rotation`);
-              this.handleVideoEnd();
-            }, (durationSeconds * 1000) + 2000); // Add 2 second buffer
-          }
-        } else {
-          logger.warn(`⚠️ ViewBot ${this.botId}: Could not determine video duration`);
-        }
-        resolve();
-      });
-      
-      ffprobe.on('error', (error) => {
-        logger.error(`❌ ViewBot ${this.botId}: ffprobe error:`, error);
-        resolve();
-      });
-    });
+    return durationProbe.getVideoDuration(this, videoPath, logger);
   }
   
   /**
