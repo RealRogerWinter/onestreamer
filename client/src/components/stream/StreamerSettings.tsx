@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import CookieService, { COOKIE_NAMES } from '../../services/CookieService';
+import { resolutionConstraints } from '../../utils/resolutionConstraints';
 import './StreamerSettings.css';
 
 export interface VideoSettingsConfig {
@@ -354,16 +355,7 @@ const StreamerSettings: React.FC<StreamerSettingsProps> = ({
       // console.log('📹 Starting camera preview...');
       try {
         // Build video constraints based on settings
-        const getResolutionConstraints = () => {
-          switch (settings.video.resolution) {
-            case '480p':
-              return { width: { ideal: 854 }, height: { ideal: 480 } };
-            case '720p':
-              return { width: { ideal: 1280 }, height: { ideal: 720 } };
-            default:
-              return { width: { ideal: 1280 }, height: { ideal: 720 } };
-          }
-        };
+        const getResolutionConstraints = () => resolutionConstraints(settings.video.resolution);
         
         const videoConstraints: any = {
           ...getResolutionConstraints(),
