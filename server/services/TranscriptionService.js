@@ -34,8 +34,6 @@ class TranscriptionService extends EventEmitter {
             model: 'small', // tiny, base, small, medium, large
             language: 'en', // auto-detect if null
             chunkDuration: 5000, // 5 seconds chunks
-            overlapDuration: 500, // 0.5 second overlap
-            maxBufferSize: 30000, // 30 seconds max buffer
             whisperPath: path.join(__dirname, '..', '..', 'whisper'),
             tempDir: path.join(__dirname, '..', '..', 'temp', 'transcription')
         };
@@ -271,18 +269,6 @@ class TranscriptionService extends EventEmitter {
         }
     }
     
-    // Legacy MediaSoup-specific methods - now handled by TranscriptionAudioAdapter
-    // These are kept for backward compatibility but are no longer used
-    async createAudioTransport() {
-        logger.warn('⚠️ TRANSCRIPTION: createAudioTransport() is deprecated, use TranscriptionAudioAdapter instead');
-        return await this.audioAdapter.createMediaSoupAudioCapture('legacy', this.mediasoupService.getCurrentStreamer());
-    }
-
-    async createAudioConsumer(session, audioProducer) {
-        logger.warn('⚠️ TRANSCRIPTION: createAudioConsumer() is deprecated, use TranscriptionAudioAdapter instead');
-        return { success: true, consumer: session.consumer };
-    }
-    
     startTranscriptionProcessing(session) {
         // Process audio from buffer every 5 seconds
         session.transcriptionInterval = setInterval(async () => {
@@ -386,95 +372,6 @@ class TranscriptionService extends EventEmitter {
     
     // Removed processAudioChunk - replaced with startTranscriptionProcessing
     
-    async saveAsWav(audioBuffer, outputPath) {
-        // If the buffer is raw Opus data, decode it first using FFmpeg
-        if (this.isOpusData(audioBuffer)) {
-            logger.debug(`🎵 TRANSCRIPTION: Converting Opus to WAV using FFmpeg`);
-            await this.convertOpusToWav(audioBuffer, outputPath);
-        } else {
-            // Assume PCM data - create WAV header
-            const wavHeader = Buffer.alloc(44);
-            
-            // RIFF header
-            wavHeader.write('RIFF', 0);
-            wavHeader.writeUInt32LE(36 + audioBuffer.length, 4);
-            wavHeader.write('WAVE', 8);
-            
-            // fmt chunk
-            wavHeader.write('fmt ', 12);
-            wavHeader.writeUInt32LE(16, 16); // fmt chunk size
-            wavHeader.writeUInt16LE(1, 20); // PCM format
-            wavHeader.writeUInt16LE(this.audioFormat.channels, 22);
-            wavHeader.writeUInt32LE(this.audioFormat.sampleRate, 24);
-            wavHeader.writeUInt32LE(this.audioFormat.sampleRate * this.audioFormat.channels * 2, 28); // byte rate
-            wavHeader.writeUInt16LE(this.audioFormat.channels * 2, 32); // block align
-            wavHeader.writeUInt16LE(16, 34); // bits per sample
-            
-            // data chunk
-            wavHeader.write('data', 36);
-            wavHeader.writeUInt32LE(audioBuffer.length, 40);
-            
-            // Write WAV file
-            const wavData = Buffer.concat([wavHeader, audioBuffer]);
-            fs.writeFileSync(outputPath, wavData);
-        }
-    }
-    
-    isOpusData(buffer) {
-        // Heuristic: if buffer is larger than expected PCM (which would be much bigger)
-        // and doesn't look like PCM patterns, assume it's Opus
-        return buffer.length > 1000 && buffer.length < 200000;
-    }
-    
-    async convertOpusToWav(opusBuffer, outputPath) {
-        return new Promise((resolve, reject) => {
-            const tempOpusPath = outputPath.replace('.wav', '.opus');
-            
-            try {
-                // Write raw Opus data to temp file
-                fs.writeFileSync(tempOpusPath, opusBuffer);
-                
-                // Use FFmpeg to convert Opus to WAV
-                const ffmpegArgs = [
-                    '-y', // Overwrite output
-                    '-i', tempOpusPath,
-                    '-ar', '16000',  // Whisper sample rate
-                    '-ac', '1',      // Mono
-                    '-f', 'wav',
-                    outputPath
-                ];
-                
-                const { spawn } = require('child_process');
-                const ffmpeg = spawn('ffmpeg', ffmpegArgs);
-                
-                let stderr = '';
-                ffmpeg.stderr.on('data', (data) => {
-                    stderr += data.toString();
-                });
-                
-                ffmpeg.on('close', (code) => {
-                    // Clean up temp file
-                    try {
-                        fs.unlinkSync(tempOpusPath);
-                    } catch (e) {}
-                    
-                    if (code === 0 && fs.existsSync(outputPath)) {
-                        logger.debug(`✅ TRANSCRIPTION: Converted Opus to WAV: ${outputPath}`);
-                        resolve();
-                    } else {
-                        logger.error(`❌ TRANSCRIPTION: FFmpeg failed: ${stderr}`);
-                        reject(new Error(`FFmpeg conversion failed: ${stderr}`));
-                    }
-                });
-                
-                ffmpeg.on('error', reject);
-                
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-    
     async transcribeWithWhisperCpp(audioPath, config) {
         return new Promise((resolve, reject) => {
             const modelPath = path.join(this.config.whisperPath, 'models', `ggml-${config.model}.bin`);
@@ -575,25 +472,6 @@ class TranscriptionService extends EventEmitter {
     }
     
     // Removed demo transcription - using real audio only
-    
-    async transcribeWithNodeWhisper(audioPath, config) {
-        // Use whisper.cpp on Windows
-        logger.debug('🎙️ TRANSCRIPTION: Using whisper.cpp for transcription');
-        logger.debug(`   Audio file: ${audioPath}`);
-        logger.debug(`   Model: ${config.model}`);
-        logger.debug(`   Language: ${config.language}`);
-        
-        try {
-            // Use the same whisper.cpp method
-            const result = await this.transcribeWithWhisperCpp(audioPath, config);
-            logger.debug(`📝 TRANSCRIPTION: Result: "${result}"`);
-            return result;
-        } catch (error) {
-            logger.error('❌ TRANSCRIPTION: Whisper.cpp failed:', error);
-            // Return empty string instead of demo text
-            return '';
-        }
-    }
     
     async stopTranscription(sessionId) {
         logger.debug(`🛑 TRANSCRIPTION: Stopping session ${sessionId}`);
@@ -1090,19 +968,6 @@ class TranscriptionService extends EventEmitter {
             
         } catch (error) {
             logger.error(`❌ TRANSCRIPTION: Error processing timed recording:`, error);
-        }
-    }
-    
-    async cleanupInstantSession(session) {
-        try {
-            if (session.consumer && !session.consumer.closed) {
-                session.consumer.close();
-            }
-            if (session.transport && !session.transport.closed) {
-                session.transport.close();
-            }
-        } catch (error) {
-            logger.error('❌ TRANSCRIPTION: Error cleaning up instant session:', error);
         }
     }
     

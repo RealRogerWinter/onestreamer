@@ -1016,35 +1016,6 @@ class ChatBotService {
         }
     }
 
-    // MovieBot integration methods
-    getActiveBots() {
-        const activeBots = [];
-        const now = new Date();
-        
-        for (const [id, bot] of this.bots) {
-            if (bot.connected && bot.data.is_enabled) {
-                // Check if temporary bot has expired
-                if (bot.data.is_temporary && bot.data.expires_at) {
-                    const expiresAt = new Date(bot.data.expires_at);
-                    if (now >= expiresAt) {
-                        logger.debug(`🚫 Skipping expired bot ${bot.data.id} (${bot.data.name}) from active bots list`);
-                        continue;
-                    }
-                }
-                
-                activeBots.push({
-                    id: bot.data.id,
-                    username: bot.username,
-                    name: bot.data.name,
-                    model: bot.data.llm_model,
-                    moviebot_enabled: bot.data.moviebot_enabled === 1 || bot.data.moviebot_enabled === true,
-                    vision_bot_enabled: bot.data.vision_bot_enabled === 1 || bot.data.vision_bot_enabled === true
-                });
-            }
-        }
-        return activeBots;
-    }
-
     async getMovieBotEnabledBots() {
         try {
             const bots = await this.repo.getMovieBotEnabled();
