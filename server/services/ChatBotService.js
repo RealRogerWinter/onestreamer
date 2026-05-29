@@ -11,6 +11,11 @@ const {
     deleteTemporaryBotRecords,
     quiesceBotInstance,
 } = require('./chatbot/temporaryBotLifecycle');
+const {
+    isBotExpired,
+    computeResponseInterval,
+    buildResponsePersonality,
+} = require('./chatbot/responsePolicy');
 
 class ChatBotService {
     /**
@@ -416,17 +421,13 @@ class ChatBotService {
         }
         
         // Check if this is a temporary bot that has expired
-        if (botInstance.data.is_temporary && botInstance.data.expires_at) {
-            const now = new Date();
-            const expiresAt = new Date(botInstance.data.expires_at);
-            if (now >= expiresAt) {
-                logger.debug(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, not scheduling next response`);
-                // Mark as disabled and trigger cleanup
-                botInstance.data.is_enabled = 0;
-                botInstance.connected = false;
-                this.cleanupExpiredBots();
-                return;
-            }
+        if (isBotExpired(botInstance.data)) {
+            logger.debug(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, not scheduling next response`);
+            // Mark as disabled and trigger cleanup
+            botInstance.data.is_enabled = 0;
+            botInstance.connected = false;
+            this.cleanupExpiredBots();
+            return;
         }
 
         // Skip scheduling regular responses for MovieBot-enabled bots
@@ -445,9 +446,7 @@ class ChatBotService {
             return;
         }
 
-        const minInterval = botInstance.data.response_interval_min * 1000;
-        const maxInterval = botInstance.data.response_interval_max * 1000;
-        const interval = Math.random() * (maxInterval - minInterval) + minInterval;
+        const interval = computeResponseInterval(botInstance.data);
         logger.debug(`🤖 Bot ${botInstance.id} scheduled to send message in ${Math.round(interval/1000)} seconds`);
 
         botInstance.responseTimer = setTimeout(async () => {
@@ -466,22 +465,18 @@ class ChatBotService {
             }
             
             // Check if this is a temporary bot that has expired
-            if (botInstance.data.is_temporary && botInstance.data.expires_at) {
-                const now = new Date();
-                const expiresAt = new Date(botInstance.data.expires_at);
-                if (now >= expiresAt) {
-                    logger.debug(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, stopping message generation`);
-                    // Stop the bot completely
-                    botInstance.data.is_enabled = 0;
-                    botInstance.connected = false;
-                    if (botInstance.responseTimer) {
-                        clearTimeout(botInstance.responseTimer);
-                        botInstance.responseTimer = null;
-                    }
-                    // Trigger cleanup
-                    this.cleanupExpiredBots();
-                    return;
+            if (isBotExpired(botInstance.data)) {
+                logger.debug(`🚫 Bot ${botInstance.id} (${botInstance.data.name}) has expired, stopping message generation`);
+                // Stop the bot completely
+                botInstance.data.is_enabled = 0;
+                botInstance.connected = false;
+                if (botInstance.responseTimer) {
+                    clearTimeout(botInstance.responseTimer);
+                    botInstance.responseTimer = null;
                 }
+                // Trigger cleanup
+                this.cleanupExpiredBots();
+                return;
             }
             
             // Skip regular messages for MovieBot-enabled bots
@@ -491,14 +486,8 @@ class ChatBotService {
                 return;
             }
             
-            const personality = botInstance.data.personality_traits ? 
-                JSON.parse(botInstance.data.personality_traits) : {};
-            
-            // Add temperature to personality object
-            if (botInstance.data.response_creativity_temperature !== undefined && botInstance.data.response_creativity_temperature !== null) {
-                personality.temperature = botInstance.data.response_creativity_temperature;
-            }
-            
+            const personality = buildResponsePersonality(botInstance.data);
+
             const response = await this.llmService.generateResponse(
                 botInstance.data.prompt,
                 botInstance.messageHistory,
