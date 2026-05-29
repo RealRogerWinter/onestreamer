@@ -85,6 +85,9 @@ class ViewBotInstance {
     this.mediaGenerator = null;
     this.ffmpegProcess = null;
 
+    // Recovery rate-limiter state, read/written by handlePipelineCrash.
+    this.pipelineHealth = { lastRecovery: 0, consecutiveFailures: 0 };
+
     // Pipeline health detection (recovery stays on this instance via handlePipelineCrash)
     this.healthMonitor = new PipelineHealthMonitor({
       botId: this.botId,
@@ -625,7 +628,8 @@ class ViewBotInstance {
    */
   async startDirectRTPPipelines(videoFile, width, height, frameRate) {
     const { spawn } = require('child_process');
-    
+    const isWindows = process.platform === 'win32';
+
     // Direct RTP pipelines (no rtpbin) — pure arg construction in gstreamerPipeline.js
     const videoPipeline = buildGstreamerVideoPipeline({
       videoFile, width, height, frameRate,

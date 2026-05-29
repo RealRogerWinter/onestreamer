@@ -9,17 +9,11 @@
  * back-reference; error/end recovery is delegated to owner so behavior is
  * identical to the in-service form.
  *
- * PRESERVED PRE-EXISTING BUG: `_createFFmpegRTMPProcess` calls
- * `buildRtmpFfmpegArgs`, which is intentionally NOT imported (the original
- * service only destructures `buildRtpFfmpegArgs`). The RTMP path therefore
- * throws ReferenceError, exactly as it did before this refactor. Do NOT add
- * the import — a refactor must not silently fix a bug.
- *
  * Deps: { owner, logger }.
  */
 
 const { spawn } = require('child_process');
-const { buildRtpFfmpegArgs } = require('../viewbot/ffmpegArgs');
+const { buildRtpFfmpegArgs, buildRtmpFfmpegArgs } = require('../viewbot/ffmpegArgs');
 
 class FFmpegPipeline {
   constructor(owner, logger) {
