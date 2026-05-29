@@ -373,6 +373,10 @@ describe('lockRotation', () => {
     expect(svc.lockRotation()).toEqual({ success: false, error: 'No rotation scheduled' });
     svc.nextRotationAt = Date.now() - 100;
     expect(svc.lockRotation()).toEqual({ success: false, error: 'Rotation already in progress' });
+    // PR 17.4: the in-progress error path resets remainingTimeWhenLocked to
+    // null rather than leaking the stale negative value into a subsequent
+    // getLockStatus() while isLocked is still false.
+    expect(svc.remainingTimeWhenLocked).toBeNull();
   });
 });
 

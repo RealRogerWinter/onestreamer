@@ -22,6 +22,7 @@ const AnimalNameGenerator = require('./random-stream/AnimalNameGenerator');
 const RotationAnnouncer = require('./random-stream/RotationAnnouncer');
 const PlatformSelector = require('./random-stream/PlatformSelector');
 const RotationScheduler = require('./random-stream/RotationScheduler');
+const RotationTimerController = require('./random-stream/RotationTimerController');
 
 const logger = require('../bootstrap/logger').child({ svc: 'RandomStreamRotationService' });
 
@@ -94,15 +95,9 @@ class RandomStreamRotationService extends EventEmitter {
     // Chat announcement composer (PR 17.1) — extracted.
     this._announcer = new RotationAnnouncer();
 
-    // Extend state tracking
-    this.lastExtendTime = null; // Timestamp of last successful extend
-    this.extendCooldownMs = 5 * 60 * 1000; // 5 minute cooldown between extends
-    this.extendMinutes = 4; // Default extend time (3-5 minutes range, using 4)
-
-    // Lock state - when locked, rotation timer is frozen
-    this.isLocked = false;
-    this.lockedAt = null;
-    this.remainingTimeWhenLocked = null; // Store remaining time when locked
+    // Extend cooldown + lock state (PR 17.4) — moved to RotationTimerController.
+    // `lastExtendTime`, `extendCooldownMs`, `extendMinutes`, `isLocked`,
+    // `lockedAt`, `remainingTimeWhenLocked` are re-exposed below as accessors.
 
     // Platform selector (PR 17.1) — extracted. Holds refs to the inner Twitch
     // + Kick services that the constructor just instantiated.
@@ -119,6 +114,9 @@ class RandomStreamRotationService extends EventEmitter {
     // (lifecycle, manual-control verbs, getStatus, auto-restart monitor) keep
     // working byte-equivalent.
     this._scheduler = new RotationScheduler({ host: this, logger });
+
+    // Manual-control verbs + extend-cooldown/lock state (PR 17.4) — extracted.
+    this._timerController = new RotationTimerController({ host: this, logger });
 
     logger.debug('🎲 RandomStreamRotationService initialized');
 
@@ -148,6 +146,38 @@ class RandomStreamRotationService extends EventEmitter {
   _clearCountdownAnnouncements() { return this._scheduler.clearCountdownAnnouncements(); }
   _scheduleCountdownAnnouncements() { return this._scheduler.scheduleCountdownAnnouncements(); }
   async _executeRotationWithRetry() { return this._scheduler.executeRotationWithRetry(); }
+
+  // ---- PR 17.4: timer-controller state accessors ------------------------
+  // Direct proxies to `this._timerController.*`. Consumers (getStatus, the
+  // auto-restart monitor, the stream-ended listener's probes, the retry
+  // helper's isLocked checks) continue to read/write `this.isLocked` etc.
+  // unchanged.
+  get isLocked() { return this._timerController.isLocked; }
+  set isLocked(v) { this._timerController.isLocked = v; }
+  get lockedAt() { return this._timerController.lockedAt; }
+  set lockedAt(v) { this._timerController.lockedAt = v; }
+  get remainingTimeWhenLocked() { return this._timerController.remainingTimeWhenLocked; }
+  set remainingTimeWhenLocked(v) { this._timerController.remainingTimeWhenLocked = v; }
+  get lastExtendTime() { return this._timerController.lastExtendTime; }
+  set lastExtendTime(v) { this._timerController.lastExtendTime = v; }
+  get extendCooldownMs() { return this._timerController.extendCooldownMs; }
+  set extendCooldownMs(v) { this._timerController.extendCooldownMs = v; }
+  get extendMinutes() { return this._timerController.extendMinutes; }
+  set extendMinutes(v) { this._timerController.extendMinutes = v; }
+
+  // ---- PR 17.4: timer-controller method delegates -----------------------
+  // Public names preserved (chat-service /api/random-stream/* + admin UI +
+  // tests call these). extendRotation→extend, reduceRotation→reduce,
+  // lockRotation→lock, unlockRotation→unlock; the rest keep their names.
+  forceRotate(options = {}) { return this._timerController.forceRotate(options); }
+  extendRotation(minutesToAdd = null) { return this._timerController.extend(minutesToAdd); }
+  adminExtend(minutes = 5) { return this._timerController.adminExtend(minutes); }
+  reduceRotation(minutesToSubtract = null) { return this._timerController.reduce(minutesToSubtract); }
+  adminReduce(minutes = 5) { return this._timerController.adminReduce(minutes); }
+  lockRotation() { return this._timerController.lock(); }
+  unlockRotation() { return this._timerController.unlock(); }
+  getLockStatus() { return this._timerController.getLockStatus(); }
+  getExtendCooldownStatus() { return this._timerController.getExtendCooldownStatus(); }
 
   /**
    * Save enabled state to file for persistence across restarts
@@ -867,474 +897,6 @@ class RandomStreamRotationService extends EventEmitter {
 
     logger.debug('✅ Random stream rotation paused (will auto-restart when streamer ends)');
     return { success: true };
-  }
-
-  /**
-   * Force rotate to next stream immediately
-   */
-  async forceRotate(options = {}) {
-    const { platform = null } = options;
-
-    if (!this.isEnabled) {
-      return { success: false, error: 'Rotation not enabled' };
-    }
-
-    logger.debug(`🔄 Force rotating to new stream...${platform ? ` (platform: ${platform})` : ''}`);
-
-    // If locked, unlock first (force rotate overrides lock)
-    const wasLocked = this.isLocked;
-    if (this.isLocked) {
-      logger.debug('🔓 ROTATION: Force rotate - unlocking timer');
-      this.isLocked = false;
-      this.lockedAt = null;
-      this.remainingTimeWhenLocked = null;
-    }
-
-    // Emit force-rotate event
-    if (this.io) {
-      this.io.emit('random-rotation-force', {
-        previousStream: this.currentStream ? {
-          displayName: this.currentStream.displayName,
-          platform: this.currentStream.platform
-        } : null
-      });
-    }
-
-    // Clear current timer
-    if (this.rotationTimer) {
-      clearTimeout(this.rotationTimer);
-      this.rotationTimer = null;
-    }
-
-    // Rotate (with optional platform override)
-    const result = await this._rotateToNewStream({ forcePlatform: platform });
-
-    if (result.success) {
-      this._scheduleNextRotation();
-      // Emit updated timing after scheduling
-      this._emitRotationTiming();
-
-      // If was locked, emit unlock event so clients update their UI
-      if (wasLocked && this.io) {
-        this.io.emit('rotation-unlocked', {
-          locked: false,
-          remainingMs: this.nextRotationAt - Date.now(),
-          nextRotationAt: this.nextRotationAt,
-          currentStream: this.currentStream
-        });
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * Extend the current rotation by adding time before the next switch
-   * Called when !extend vote passes
-   * @param {number} minutesToAdd - Number of minutes to add (default: 4)
-   * @returns {object} Result with success status
-   */
-  extendRotation(minutesToAdd = null) {
-    if (!this.isEnabled) {
-      return { success: false, error: 'Rotation not enabled' };
-    }
-
-    if (!this.nextRotationAt) {
-      return { success: false, error: 'No rotation scheduled' };
-    }
-
-    // Check cooldown
-    if (this.lastExtendTime) {
-      const timeSinceLastExtend = Date.now() - this.lastExtendTime;
-      if (timeSinceLastExtend < this.extendCooldownMs) {
-        const remainingCooldown = Math.ceil((this.extendCooldownMs - timeSinceLastExtend) / 1000);
-        return {
-          success: false,
-          error: `Extend on cooldown. ${remainingCooldown} seconds remaining.`,
-          cooldownRemaining: remainingCooldown
-        };
-      }
-    }
-
-    // Use provided minutes or default (random between 3-5)
-    const extendMs = (minutesToAdd || (3 + Math.floor(Math.random() * 3))) * 60 * 1000;
-    const extendMinutes = Math.round(extendMs / 60000);
-
-    // Calculate remaining time before current rotation
-    const remainingTime = this.nextRotationAt - Date.now();
-    if (remainingTime <= 0) {
-      return { success: false, error: 'Rotation already in progress' };
-    }
-
-    // Clear current timer
-    if (this.rotationTimer) {
-      clearTimeout(this.rotationTimer);
-      this.rotationTimer = null;
-    }
-
-    // Calculate new interval (remaining time + extension)
-    const newInterval = remainingTime + extendMs;
-
-    logger.debug(`⏰ EXTEND: Adding ${extendMinutes} minutes to rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
-
-    // Record extend time for cooldown
-    this.lastExtendTime = Date.now();
-
-    // Reschedule with the extended time
-    this._scheduleNextRotation(newInterval);
-
-    // Emit extend event
-    if (this.io) {
-      this.io.emit('rotation-extended', {
-        extendedBy: extendMs,
-        extendedByMinutes: extendMinutes,
-        newNextRotationAt: this.nextRotationAt,
-        currentStream: this.currentStream
-      });
-    }
-
-    return {
-      success: true,
-      extendedByMinutes: extendMinutes,
-      newNextRotationAt: this.nextRotationAt,
-      message: `Extended rotation by ${extendMinutes} minutes`
-    };
-  }
-
-  /**
-   * Check if extend is on cooldown
-   * @returns {object} Cooldown status
-   */
-  getExtendCooldownStatus() {
-    if (!this.lastExtendTime) {
-      return { onCooldown: false, remainingSeconds: 0 };
-    }
-
-    const timeSinceLastExtend = Date.now() - this.lastExtendTime;
-    if (timeSinceLastExtend >= this.extendCooldownMs) {
-      return { onCooldown: false, remainingSeconds: 0 };
-    }
-
-    return {
-      onCooldown: true,
-      remainingSeconds: Math.ceil((this.extendCooldownMs - timeSinceLastExtend) / 1000)
-    };
-  }
-
-  /**
-   * Admin extend - immediately adds time without vote or cooldown
-   * @param {number} minutes - Minutes to add (default: 5)
-   * @returns {object} Result with success status
-   */
-  adminExtend(minutes = 5) {
-    if (!this.isEnabled) {
-      return { success: false, error: 'Rotation not enabled' };
-    }
-
-    if (this.isLocked) {
-      return { success: false, error: 'Rotation is locked. Unlock first to extend.' };
-    }
-
-    if (!this.nextRotationAt) {
-      return { success: false, error: 'No rotation scheduled' };
-    }
-
-    const extendMs = minutes * 60 * 1000;
-
-    // Calculate remaining time before current rotation
-    const remainingTime = this.nextRotationAt - Date.now();
-    if (remainingTime <= 0) {
-      return { success: false, error: 'Rotation already in progress' };
-    }
-
-    // Clear current timer
-    if (this.rotationTimer) {
-      clearTimeout(this.rotationTimer);
-      this.rotationTimer = null;
-    }
-
-    // Calculate new interval (remaining time + extension)
-    const newInterval = remainingTime + extendMs;
-
-    logger.debug(`⏰ ADMIN EXTEND: Adding ${minutes} minutes to rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
-
-    // Reschedule with the extended time (no cooldown for admin)
-    this._scheduleNextRotation(newInterval);
-
-    // Emit extend event
-    if (this.io) {
-      this.io.emit('rotation-extended', {
-        extendedBy: extendMs,
-        extendedByMinutes: minutes,
-        newNextRotationAt: this.nextRotationAt,
-        currentStream: this.currentStream,
-        isAdminExtend: true
-      });
-    }
-
-    return {
-      success: true,
-      extendedByMinutes: minutes,
-      newNextRotationAt: this.nextRotationAt,
-      message: `Admin extended rotation by ${minutes} minutes`
-    };
-  }
-
-  /**
-   * Reduce the current rotation by subtracting time before the next switch
-   * Called when !reduce vote passes
-   * @param {number} minutesToSubtract - Number of minutes to subtract (default: random 3-5)
-   * @returns {object} Result with success status
-   */
-  reduceRotation(minutesToSubtract = null) {
-    if (!this.isEnabled) {
-      return { success: false, error: 'Rotation not enabled' };
-    }
-
-    if (!this.nextRotationAt) {
-      return { success: false, error: 'No rotation scheduled' };
-    }
-
-    // Check cooldown (shares cooldown with extend)
-    if (this.lastExtendTime) {
-      const timeSinceLastExtend = Date.now() - this.lastExtendTime;
-      if (timeSinceLastExtend < this.extendCooldownMs) {
-        const remainingCooldown = Math.ceil((this.extendCooldownMs - timeSinceLastExtend) / 1000);
-        return {
-          success: false,
-          error: `Reduce on cooldown. ${remainingCooldown} seconds remaining.`,
-          cooldownRemaining: remainingCooldown
-        };
-      }
-    }
-
-    // Use provided minutes or default (random between 3-5)
-    const reduceMs = (minutesToSubtract || (3 + Math.floor(Math.random() * 3))) * 60 * 1000;
-    const reduceMinutes = Math.round(reduceMs / 60000);
-
-    // Calculate remaining time before current rotation
-    const remainingTime = this.nextRotationAt - Date.now();
-    if (remainingTime <= 0) {
-      return { success: false, error: 'Rotation already in progress' };
-    }
-
-    // Calculate new interval (remaining time - reduction), minimum 30 seconds
-    const minRemainingMs = 30 * 1000; // 30 seconds minimum
-    const newInterval = Math.max(remainingTime - reduceMs, minRemainingMs);
-    const actualReduction = remainingTime - newInterval;
-    const actualReductionMinutes = Math.round(actualReduction / 60000 * 10) / 10;
-
-    // Clear current timer
-    if (this.rotationTimer) {
-      clearTimeout(this.rotationTimer);
-      this.rotationTimer = null;
-    }
-
-    logger.debug(`⏰ REDUCE: Removing ${actualReductionMinutes} minutes from rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
-
-    // Record time for cooldown (shares with extend)
-    this.lastExtendTime = Date.now();
-
-    // Reschedule with the reduced time
-    this._scheduleNextRotation(newInterval);
-
-    // Emit reduce event
-    if (this.io) {
-      this.io.emit('rotation-reduced', {
-        reducedBy: actualReduction,
-        reducedByMinutes: actualReductionMinutes,
-        newNextRotationAt: this.nextRotationAt,
-        currentRotationDuration: this.currentRotationDuration,
-        serverTime: Date.now(),
-        currentStream: this.currentStream
-      });
-    }
-
-    return {
-      success: true,
-      reducedByMinutes: actualReductionMinutes,
-      newNextRotationAt: this.nextRotationAt,
-      message: `Reduced rotation by ${actualReductionMinutes} minutes`
-    };
-  }
-
-  /**
-   * Admin reduce - immediately removes time without vote or cooldown
-   * @param {number} minutes - Minutes to remove (default: 5)
-   * @returns {object} Result with success status
-   */
-  adminReduce(minutes = 5) {
-    if (!this.isEnabled) {
-      return { success: false, error: 'Rotation not enabled' };
-    }
-
-    if (this.isLocked) {
-      return { success: false, error: 'Rotation is locked. Unlock first to reduce.' };
-    }
-
-    if (!this.nextRotationAt) {
-      return { success: false, error: 'No rotation scheduled' };
-    }
-
-    const reduceMs = minutes * 60 * 1000;
-
-    // Calculate remaining time before current rotation
-    const remainingTime = this.nextRotationAt - Date.now();
-    if (remainingTime <= 0) {
-      return { success: false, error: 'Rotation already in progress' };
-    }
-
-    // Calculate new interval (remaining time - reduction), minimum 30 seconds
-    const minRemainingMs = 30 * 1000; // 30 seconds minimum
-    const newInterval = Math.max(remainingTime - reduceMs, minRemainingMs);
-    const actualReduction = remainingTime - newInterval;
-    const actualReductionMinutes = Math.round(actualReduction / 60000 * 10) / 10;
-
-    // Clear current timer
-    if (this.rotationTimer) {
-      clearTimeout(this.rotationTimer);
-      this.rotationTimer = null;
-    }
-
-    logger.debug(`⏰ ADMIN REDUCE: Removing ${actualReductionMinutes} minutes from rotation. New time until switch: ${Math.round(newInterval / 60000 * 10) / 10} minutes`);
-
-    // Reschedule with the reduced time (no cooldown for admin)
-    this._scheduleNextRotation(newInterval);
-
-    // Emit reduce event
-    if (this.io) {
-      this.io.emit('rotation-reduced', {
-        reducedBy: actualReduction,
-        reducedByMinutes: actualReductionMinutes,
-        newNextRotationAt: this.nextRotationAt,
-        currentRotationDuration: this.currentRotationDuration,
-        serverTime: Date.now(),
-        currentStream: this.currentStream,
-        isAdminReduce: true
-      });
-    }
-
-    return {
-      success: true,
-      reducedByMinutes: actualReductionMinutes,
-      newNextRotationAt: this.nextRotationAt,
-      message: `Admin reduced rotation by ${actualReductionMinutes} minutes`
-    };
-  }
-
-  /**
-   * Lock the rotation timer - freezes the countdown
-   * @returns {object} Result with success status
-   */
-  lockRotation() {
-    if (!this.isEnabled) {
-      return { success: false, error: 'Rotation not enabled' };
-    }
-
-    if (this.isLocked) {
-      return { success: false, error: 'Rotation is already locked' };
-    }
-
-    if (!this.nextRotationAt) {
-      return { success: false, error: 'No rotation scheduled' };
-    }
-
-    // Store remaining time
-    this.remainingTimeWhenLocked = this.nextRotationAt - Date.now();
-    if (this.remainingTimeWhenLocked <= 0) {
-      return { success: false, error: 'Rotation already in progress' };
-    }
-
-    // Clear the rotation timer
-    if (this.rotationTimer) {
-      clearTimeout(this.rotationTimer);
-      this.rotationTimer = null;
-    }
-
-    // Also clear any pending retry timer
-    if (this.retryState.currentRetryTimer) {
-      clearTimeout(this.retryState.currentRetryTimer);
-      this.retryState.currentRetryTimer = null;
-      logger.debug('🔒 ROTATION: Also cleared pending retry timer');
-    }
-
-    // Clear countdown announcements
-    this._clearCountdownAnnouncements();
-
-    this.isLocked = true;
-    this.lockedAt = Date.now();
-
-    logger.debug(`🔒 ROTATION LOCKED: Timer frozen with ${Math.round(this.remainingTimeWhenLocked / 1000)} seconds remaining`);
-
-    // Emit lock event
-    if (this.io) {
-      this.io.emit('rotation-locked', {
-        locked: true,
-        remainingMs: this.remainingTimeWhenLocked,
-        currentStream: this.currentStream
-      });
-    }
-
-    return {
-      success: true,
-      remainingMs: this.remainingTimeWhenLocked,
-      message: `Rotation locked with ${Math.round(this.remainingTimeWhenLocked / 1000)} seconds remaining`
-    };
-  }
-
-  /**
-   * Unlock the rotation timer - resumes the countdown
-   * @returns {object} Result with success status
-   */
-  unlockRotation() {
-    if (!this.isEnabled) {
-      return { success: false, error: 'Rotation not enabled' };
-    }
-
-    if (!this.isLocked) {
-      return { success: false, error: 'Rotation is not locked' };
-    }
-
-    const remainingTime = this.remainingTimeWhenLocked;
-
-    // Clear lock state
-    this.isLocked = false;
-    this.lockedAt = null;
-    this.remainingTimeWhenLocked = null;
-
-    logger.debug(`🔓 ROTATION UNLOCKED: Resuming timer with ${Math.round(remainingTime / 1000)} seconds remaining`);
-
-    // Resume the timer with the remaining time
-    this._scheduleNextRotation(remainingTime);
-
-    // Emit unlock event
-    if (this.io) {
-      this.io.emit('rotation-unlocked', {
-        locked: false,
-        remainingMs: remainingTime,
-        nextRotationAt: this.nextRotationAt,
-        currentStream: this.currentStream
-      });
-    }
-
-    return {
-      success: true,
-      remainingMs: remainingTime,
-      nextRotationAt: this.nextRotationAt,
-      message: `Rotation unlocked, resuming with ${Math.round(remainingTime / 1000)} seconds remaining`
-    };
-  }
-
-  /**
-   * Get lock status
-   * @returns {object} Lock status
-   */
-  getLockStatus() {
-    return {
-      isLocked: this.isLocked,
-      lockedAt: this.lockedAt,
-      remainingTimeWhenLocked: this.remainingTimeWhenLocked
-    };
   }
 
   /**
