@@ -4,6 +4,7 @@ const ChatBotRepository = require('../database/repository/ChatBotRepository');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ChatBotService' });
 const { ANIMALS, COLORS } = require('./chatbot/botIdentity');
+const { filterActiveMovieBots } = require('./chatbot/movieBotRoster');
 
 class ChatBotService {
     /**
@@ -1065,32 +1066,7 @@ class ChatBotService {
     async getMovieBotEnabledBots() {
         try {
             const bots = await this.repo.getMovieBotEnabled();
-            
-            const activeBots = [];
-            const now = new Date();
-            
-            for (const bot of bots) {
-                const botInstance = this.bots.get(bot.id);
-                if (botInstance && botInstance.connected) {
-                    // Check if temporary bot has expired
-                    if (bot.is_temporary && bot.expires_at) {
-                        const expiresAt = new Date(bot.expires_at);
-                        if (now >= expiresAt) {
-                            logger.debug(`🚫 Skipping expired bot ${bot.id} (${bot.name}) from MovieBot list`);
-                            continue;
-                        }
-                    }
-                    
-                    activeBots.push({
-                        id: bot.id,
-                        username: botInstance.username,
-                        name: bot.name,
-                        model: bot.llm_model
-                    });
-                }
-            }
-            
-            return activeBots;
+            return filterActiveMovieBots(bots, this.bots, new Date(), logger);
         } catch (error) {
             logger.error('Error getting MovieBot enabled bots:', error);
             return [];
