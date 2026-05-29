@@ -30,6 +30,7 @@
 // index.js can keep them as the canonical source.
 
 const { formatDuration } = require('./formatters');
+const { otherActiveVoteMessage } = require('./voteGuards');
 
 /**
  * Create a public-command parser.
@@ -73,6 +74,16 @@ function createCommandParser(deps) {
     lockVote,
     unlockVote
   } = voteServices;
+
+  // Canonical map for the mutual-exclusion guard (see commands/voteGuards.js).
+  const votes = {
+    skip: skipVote,
+    swap: swapVote,
+    extend: extendVote,
+    reduce: reduceVote,
+    lock: lockVote,
+    unlock: unlockVote,
+  };
 
   const {
     startSkipVote, registerSkipVote, sendSkipVoteMessage
@@ -850,25 +861,10 @@ function createCommandParser(deps) {
           return;
         }
 
-        // Check for other active votes
-        if (swapVote.state.active) {
-          sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (extendVote.state.active) {
-          sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (reduceVote.state.active) {
-          sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (lockVote.state.active) {
-          sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (unlockVote.state.active) {
-          sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
+        // Check for other active votes (mutual exclusion — see commands/voteGuards.js)
+        const otherVoteMsgForSkip = otherActiveVoteMessage('skip', votes);
+        if (otherVoteMsgForSkip) {
+          sendAdminResponse(socket, otherVoteMsgForSkip);
           return;
         }
 
@@ -952,24 +948,9 @@ function createCommandParser(deps) {
         }
 
         // Check if there's an active skip vote (can't have both at once)
-        if (skipVote.state.active) {
-          sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (extendVote.state.active) {
-          sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (reduceVote.state.active) {
-          sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (lockVote.state.active) {
-          sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (unlockVote.state.active) {
-          sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
+        const otherVoteMsgForSwap = otherActiveVoteMessage('swap', votes);
+        if (otherVoteMsgForSwap) {
+          sendAdminResponse(socket, otherVoteMsgForSwap);
           return;
         }
 
@@ -1079,24 +1060,9 @@ function createCommandParser(deps) {
         }
 
         // Check if there's an active skip or swap vote (can't have multiple votes at once)
-        if (skipVote.state.active) {
-          sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (swapVote.state.active) {
-          sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (reduceVote.state.active) {
-          sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (lockVote.state.active) {
-          sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (unlockVote.state.active) {
-          sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
+        const otherVoteMsgForExtend = otherActiveVoteMessage('extend', votes);
+        if (otherVoteMsgForExtend) {
+          sendAdminResponse(socket, otherVoteMsgForExtend);
           return;
         }
 
@@ -1171,24 +1137,9 @@ function createCommandParser(deps) {
         }
 
         // Check if there's an active vote of any kind
-        if (skipVote.state.active) {
-          sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (swapVote.state.active) {
-          sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (extendVote.state.active) {
-          sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (lockVote.state.active) {
-          sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (unlockVote.state.active) {
-          sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
+        const otherVoteMsgForReduce = otherActiveVoteMessage('reduce', votes);
+        if (otherVoteMsgForReduce) {
+          sendAdminResponse(socket, otherVoteMsgForReduce);
           return;
         }
 
@@ -1261,24 +1212,9 @@ function createCommandParser(deps) {
         }
 
         // Check if there's an active vote of any kind
-        if (skipVote.state.active) {
-          sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (swapVote.state.active) {
-          sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (extendVote.state.active) {
-          sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (reduceVote.state.active) {
-          sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (unlockVote.state.active) {
-          sendAdminResponse(socket, '❌ An unlock vote is currently in progress. Please wait for it to finish.');
+        const otherVoteMsgForLock = otherActiveVoteMessage('lock', votes);
+        if (otherVoteMsgForLock) {
+          sendAdminResponse(socket, otherVoteMsgForLock);
           return;
         }
 
@@ -1364,24 +1300,9 @@ function createCommandParser(deps) {
         }
 
         // Check if there's an active vote of any kind
-        if (skipVote.state.active) {
-          sendAdminResponse(socket, '❌ A skip vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (swapVote.state.active) {
-          sendAdminResponse(socket, '❌ A swap vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (extendVote.state.active) {
-          sendAdminResponse(socket, '❌ An extend vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (reduceVote.state.active) {
-          sendAdminResponse(socket, '❌ A reduce vote is currently in progress. Please wait for it to finish.');
-          return;
-        }
-        if (lockVote.state.active) {
-          sendAdminResponse(socket, '❌ A lock vote is currently in progress. Please wait for it to finish.');
+        const otherVoteMsgForUnlock = otherActiveVoteMessage('unlock', votes);
+        if (otherVoteMsgForUnlock) {
+          sendAdminResponse(socket, otherVoteMsgForUnlock);
           return;
         }
 
