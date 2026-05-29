@@ -5,7 +5,9 @@ const EventEmitter = require('events');
 const { runAsync, getAsync, allAsync } = require('../database/database');
 const UserRepository = require('../database/repository/UserRepository');
 const ContinuousRecordingRepository = require('../database/repository/ContinuousRecordingRepository');
-const { usernameFromStreamUrl } = require('./recording/streamUrlUsername');
+const RecordingDiskScanner = require('./recording/RecordingDiskScanner');
+const RoomParticipantInspector = require('./recording/RoomParticipantInspector');
+const RecordingSessionStore = require('./recording/RecordingSessionStore');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ContinuousRecordingService' });
 
@@ -60,6 +62,23 @@ class ContinuousRecordingService extends EventEmitter {
     // inline below — they belong to other domains.
     this.recordingRepository = new ContinuousRecordingRepository({ getAsync, runAsync, allAsync });
 
+    // Collaborators (decomposed seams). The inspector needs roomServiceClient,
+    // which is created in initialize(); it is wired up there.
+    this.diskScanner = new RecordingDiskScanner({
+      outputDir: this.outputDir,
+      segmentDuration: this.segmentDuration,
+      retentionMinutes: this.retentionMinutes,
+      recordingRepository: this.recordingRepository,
+      owner: this,
+    });
+    this.inspector = null;
+    this.sessionStore = new RecordingSessionStore({
+      recordingRepository: this.recordingRepository,
+      userRepository: this.userRepository,
+      inspector: null, // set once the inspector exists in initialize()
+      owner: this,
+    });
+
     // Initialize
     this.initialize();
   }
@@ -78,6 +97,15 @@ class ContinuousRecordingService extends EventEmitter {
       this.egressClient = new EgressClient(this.livekitHost, this.apiKey, this.apiSecret);
       this.roomServiceClient = new RoomServiceClient(this.livekitHost, this.apiKey, this.apiSecret);
       logger.debug('✅ CONTINUOUS RECORDING: Egress and Room clients initialized');
+
+      // Wire up the room inspector now that roomServiceClient exists.
+      this.inspector = new RoomParticipantInspector({
+        roomServiceClient: this.roomServiceClient,
+        roomName: this.roomName,
+        userRepository: this.userRepository,
+        getAsync,
+      });
+      this.sessionStore.inspector = this.inspector;
 
       // Ensure output directory exists
       if (!fs.existsSync(this.outputDir)) {
@@ -104,77 +132,21 @@ class ContinuousRecordingService extends EventEmitter {
    * Create a recording session record in the database
    */
   async createSessionRecord(sessionId, streamerIdentity, startTime, localPath) {
-    try {
-      // Try to get streamer user info if identity looks like a user ID
-      let streamerUserId = null;
-      let streamerUsername = null;
-
-      if (streamerIdentity && streamerIdentity !== 'room') {
-        // Identity might be username or user ID
-        try {
-          const user = await this.userRepository.getByIdOrUsername(
-            streamerIdentity,
-            parseInt(streamerIdentity) || 0
-          );
-          if (user) {
-            streamerUserId = user.id;
-            streamerUsername = user.username;
-          } else {
-            streamerUsername = streamerIdentity;
-          }
-        } catch (e) {
-          streamerUsername = streamerIdentity;
-        }
-      }
-
-      // Use INSERT OR IGNORE to avoid creating duplicates for the same day's recording
-      await this.recordingRepository.insertSessionIfMissing({
-        sessionId, streamerIdentity, streamerUserId, streamerUsername, startTime, localPath,
-      });
-
-      // Update the session to recording status (in case it was marked as ended)
-      await this.recordingRepository.setSessionRecording(sessionId);
-
-      logger.debug(`📝 SESSION DB: Recording session ${sessionId} active for streamer ${streamerUsername || streamerIdentity || 'room'}`);
-      return { success: true };
-    } catch (error) {
-      logger.error('❌ SESSION DB: Failed to create session record:', error.message);
-      return { success: false, error: error.message };
-    }
+    return this.sessionStore.createSessionRecord(sessionId, streamerIdentity, startTime, localPath);
   }
 
   /**
    * Update a recording session record when recording ends
    */
   async updateSessionRecord(sessionId, endTime, segmentCount) {
-    try {
-      const startTime = await this.getSessionStartTime(sessionId);
-      const durationMs = startTime ? (endTime - startTime) : 0;
-
-      // Don't mark as completed - session represents the whole day's recording
-      // Just update the segment count and duration
-      await this.recordingRepository.updateSessionEnd(sessionId, {
-        endTime, durationMs, segmentCount,
-      });
-
-      logger.debug(`📝 SESSION DB: Updated session ${sessionId} - duration: ${Math.floor(durationMs / 1000)}s, added ${segmentCount} segments`);
-      return { success: true };
-    } catch (error) {
-      logger.error('❌ SESSION DB: Failed to update session record:', error.message);
-      return { success: false, error: error.message };
-    }
+    return this.sessionStore.updateSessionRecord(sessionId, endTime, segmentCount);
   }
 
   /**
    * Get session start time from database
    */
   async getSessionStartTime(sessionId) {
-    try {
-      const session = await this.recordingRepository.getSessionStartTime(sessionId);
-      return session ? session.start_time : Date.now();
-    } catch (error) {
-      return Date.now();
-    }
+    return this.sessionStore.getSessionStartTime(sessionId);
   }
 
   /**
@@ -244,35 +216,14 @@ class ContinuousRecordingService extends EventEmitter {
    * Check if a participant is a viewbot (not a real streamer)
    */
   isViewbot(participant) {
-    const identity = participant.identity || '';
-    const name = participant.name || '';
-
-    // Check identity patterns
-    if (identity.startsWith('viewbot-') ||
-        identity.includes('viewbot') ||
-        identity.startsWith('bot-')) {
-      return true;
-    }
-
-    // Check metadata
-    try {
-      const metadata = JSON.parse(participant.metadata || '{}');
-      if (metadata.type === 'viewbot') {
-        return true;
-      }
-    } catch (e) {
-      // Ignore parse errors
-    }
-
-    return false;
+    return this.inspector.isViewbot(participant);
   }
 
   /**
    * Check if a participant is a URL stream relay (not a real person streaming)
    */
   isUrlStreamRelay(participant) {
-    const identity = participant.identity || '';
-    return identity.startsWith('url-stream-');
+    return this.inspector.isUrlStreamRelay(participant);
   }
 
   /**
@@ -280,27 +231,7 @@ class ContinuousRecordingService extends EventEmitter {
    * Returns the participant identity if found, null otherwise
    */
   async findRealStreamer() {
-    try {
-      const participants = await this.roomServiceClient.listParticipants(this.roomName);
-
-      // Find participants with video tracks who are NOT viewbots and NOT URL stream relays
-      const realStreamers = participants.filter(p => {
-        const hasVideo = p.tracks && p.tracks.some(t => t.type === 1 && !t.muted);
-        return hasVideo && !this.isViewbot(p) && !this.isUrlStreamRelay(p);
-      });
-
-      if (realStreamers.length > 0) {
-        // Return the first real streamer found
-        const streamer = realStreamers[0];
-        logger.debug(`🎯 CONTINUOUS RECORDING: Found real streamer: ${streamer.identity}`);
-        return streamer.identity;
-      }
-
-      return null;
-    } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Error finding real streamer:', error.message);
-      return null;
-    }
+    return this.inspector.findRealStreamer();
   }
 
   /**
@@ -308,26 +239,7 @@ class ContinuousRecordingService extends EventEmitter {
    * Returns the participant identity if found, null otherwise
    */
   async findUrlStreamPublisher() {
-    try {
-      const participants = await this.roomServiceClient.listParticipants(this.roomName);
-
-      // Find URL stream relays with video tracks
-      const urlStreamers = participants.filter(p => {
-        const hasVideo = p.tracks && p.tracks.some(t => t.type === 1 && !t.muted);
-        return hasVideo && this.isUrlStreamRelay(p);
-      });
-
-      if (urlStreamers.length > 0) {
-        const streamer = urlStreamers[0];
-        logger.debug(`🎯 CONTINUOUS RECORDING: Found URL stream publisher: ${streamer.identity}`);
-        return streamer.identity;
-      }
-
-      return null;
-    } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Error finding URL stream publisher:', error.message);
-      return null;
-    }
+    return this.inspector.findUrlStreamPublisher();
   }
 
   /**
@@ -337,7 +249,7 @@ class ContinuousRecordingService extends EventEmitter {
    * @returns {string|null} The extracted username or null if not found
    */
   extractUsernameFromUrl(sourceUrl, platform) {
-    return usernameFromStreamUrl(sourceUrl, logger);
+    return this.inspector.extractUsernameFromUrl(sourceUrl, platform);
   }
 
   /**
@@ -345,216 +257,35 @@ class ContinuousRecordingService extends EventEmitter {
    * This determines what's currently being shown (URL stream, real streamer, or viewbot)
    */
   async getCurrentStreamInfo() {
-    try {
-      // Check for real streamers via LiveKit participants first
-      let activePublisher = await this.findRealStreamer();
-
-      // If no real streamer, check for URL stream publishers
-      if (!activePublisher) {
-        activePublisher = await this.findUrlStreamPublisher();
-      }
-
-      if (activePublisher) {
-        // Check if this is a URL stream relay (identity starts with 'url-stream-')
-        if (activePublisher.startsWith('url-stream-')) {
-          // First check the active ViewBotURLService for live stream metadata
-          // This is more reliable since it has the current stream info in memory
-          if (global.viewBotURLService && global.viewBotURLService.activeStreams) {
-            const activeStream = global.viewBotURLService.activeStreams.get(activePublisher);
-            if (activeStream) {
-              // Extract the actual username from the source URL
-              const extractedUsername = this.extractUsernameFromUrl(activeStream.sourceUrl, activeStream.platform);
-              return {
-                identity: activePublisher,
-                type: 'url_stream',
-                displayName: extractedUsername || activeStream.platform || 'URL Stream',
-                platform: activeStream.platform || 'direct',
-                sourceUrl: activeStream.sourceUrl
-              };
-            }
-          }
-
-          // Fallback: Look up the URL stream by its ID in the database
-          const urlStream = await getAsync(`
-            SELECT url_id, source_url, platform, display_name
-            FROM url_streams
-            WHERE url_id = ?
-          `, [activePublisher]);
-
-          if (urlStream) {
-            // Extract the actual username from the source URL
-            const extractedUsername = this.extractUsernameFromUrl(urlStream.source_url, urlStream.platform);
-            return {
-              identity: urlStream.url_id,
-              type: 'url_stream',
-              displayName: extractedUsername || urlStream.platform || 'URL Stream',
-              platform: urlStream.platform || 'unknown',
-              sourceUrl: urlStream.source_url
-            };
-          } else {
-            // URL stream not found anywhere - use the identity
-            return {
-              identity: activePublisher,
-              type: 'url_stream',
-              displayName: 'URL Relay Stream',
-              platform: 'unknown',
-              sourceUrl: null
-            };
-          }
-        }
-
-        // This is a real user streamer - look up user info
-        let displayName = activePublisher;
-        try {
-          // First try streaming_logs which stores socket ID -> username mapping
-          const streamLog = await getAsync(
-            'SELECT streamer_name FROM streaming_logs WHERE streamer_id = ? ORDER BY id DESC LIMIT 1',
-            [activePublisher]
-          );
-          if (streamLog && streamLog.streamer_name) {
-            displayName = streamLog.streamer_name;
-          } else {
-            // Fall back to users table (in case the identity is a username or user ID)
-            const user = await this.userRepository.getByIdOrUsername(
-              activePublisher,
-              parseInt(activePublisher) || 0
-            );
-            if (user) {
-              displayName = user.username;
-            }
-          }
-        } catch (e) {
-          // Use identity as display name
-        }
-
-        return {
-          identity: activePublisher,
-          type: 'real_streamer',
-          displayName: displayName,
-          platform: 'direct',
-          sourceUrl: null
-        };
-      }
-
-      // Check for viewbots as fallback
-      try {
-        const participants = await this.roomServiceClient.listParticipants(this.roomName);
-        const viewbot = participants.find(p => this.isViewbot(p) && p.tracks?.some(t => t.type === 1 && !t.muted));
-        if (viewbot) {
-          return {
-            identity: viewbot.identity,
-            type: 'viewbot',
-            displayName: viewbot.name || viewbot.identity,
-            platform: null,
-            sourceUrl: null
-          };
-        }
-      } catch (e) {
-        // Room might not exist
-      }
-
-      return null;
-    } catch (error) {
-      logger.error('❌ STREAM TRACKING: Error getting current stream info:', error.message);
-      return null;
-    }
+    return this.inspector.getCurrentStreamInfo();
   }
 
   /**
    * Log the start of a new stream segment during recording
    */
   async logStreamSegmentStart(sessionId, streamInfo) {
-    if (!sessionId || !streamInfo) return null;
-
-    try {
-      const now = Date.now();
-
-      const result = await this.recordingRepository.insertStreamSegment({
-        sessionId,
-        streamIdentity: streamInfo.identity,
-        streamType: streamInfo.type,
-        displayName: streamInfo.displayName,
-        platform: streamInfo.platform,
-        sourceUrl: streamInfo.sourceUrl,
-        startedAt: now,
-      });
-
-      logger.debug(`📝 STREAM TRACKING: Started segment for ${streamInfo.type} "${streamInfo.displayName}" at ${new Date(now).toISOString()}`);
-
-      return result.lastID;
-    } catch (error) {
-      logger.error('❌ STREAM TRACKING: Failed to log segment start:', error.message);
-      return null;
-    }
+    return this.sessionStore.logStreamSegmentStart(sessionId, streamInfo);
   }
 
   /**
    * Log the end of a stream segment
    */
   async logStreamSegmentEnd(segmentId) {
-    if (!segmentId) return;
-
-    try {
-      const now = Date.now();
-      await this.recordingRepository.endStreamSegment(segmentId, now);
-
-      logger.debug(`📝 STREAM TRACKING: Ended segment ID ${segmentId} at ${new Date(now).toISOString()}`);
-    } catch (error) {
-      logger.error('❌ STREAM TRACKING: Failed to log segment end:', error.message);
-    }
+    return this.sessionStore.logStreamSegmentEnd(segmentId);
   }
 
   /**
    * End all open segments for a session
    */
   async endAllOpenSegments(sessionId) {
-    if (!sessionId) return;
-
-    try {
-      const now = Date.now();
-      await this.recordingRepository.endAllOpenSegments(sessionId, now);
-
-      logger.debug(`📝 STREAM TRACKING: Ended all open segments for session ${sessionId}`);
-    } catch (error) {
-      logger.error('❌ STREAM TRACKING: Failed to end open segments:', error.message);
-    }
+    return this.sessionStore.endAllOpenSegments(sessionId);
   }
 
   /**
    * Check for stream identity changes and log them
    */
   async trackStreamIdentityChange() {
-    if (!this.isRecording || !this.currentSessionId) {
-      return;
-    }
-
-    try {
-      const streamInfo = await this.getCurrentStreamInfo();
-
-      // Build a comparable identity string
-      const currentIdentity = streamInfo ? `${streamInfo.type}:${streamInfo.identity}` : null;
-
-      // Check if stream identity changed
-      if (currentIdentity !== this.currentStreamIdentity) {
-        logger.debug(`🔄 STREAM TRACKING: Identity changed from "${this.currentStreamIdentity}" to "${currentIdentity}"`);
-
-        // End the previous segment if there was one
-        if (this.currentStreamSegmentId) {
-          await this.logStreamSegmentEnd(this.currentStreamSegmentId);
-          this.currentStreamSegmentId = null;
-        }
-
-        // Start a new segment if there's a new stream
-        if (streamInfo) {
-          this.currentStreamSegmentId = await this.logStreamSegmentStart(this.currentSessionId, streamInfo);
-        }
-
-        this.currentStreamIdentity = currentIdentity;
-      }
-
-    } catch (error) {
-      logger.error('❌ STREAM TRACKING: Error tracking identity change:', error.message);
-    }
+    return this.sessionStore.trackStreamIdentityChange();
   }
 
   /**
@@ -877,31 +608,7 @@ class ContinuousRecordingService extends EventEmitter {
    */
   getStatus() {
     // Also check disk for active recordings in case SDK state is out of sync
-    let isActiveFromDisk = false;
-    let activeSessionFromDisk = null;
-
-    try {
-      const items = fs.readdirSync(this.outputDir);
-      for (const item of items) {
-        if (item.startsWith('session_')) {
-          const itemPath = path.join(this.outputDir, item);
-          const segments = fs.readdirSync(itemPath).filter(f => f.endsWith('.ts'));
-          if (segments.length > 0) {
-            const latestSegment = segments.sort().slice(-1)[0];
-            const latestPath = path.join(itemPath, latestSegment);
-            const stat = fs.statSync(latestPath);
-            const age = Date.now() - stat.mtimeMs;
-            if (age < 30000) { // Active if segment within 30 seconds
-              isActiveFromDisk = true;
-              activeSessionFromDisk = item;
-              break;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore disk check errors
-    }
+    const { isActiveFromDisk, activeSessionFromDisk } = this.diskScanner.getDiskStatus();
 
     return {
       isRecording: this.isRecording || isActiveFromDisk,
@@ -998,126 +705,14 @@ class ContinuousRecordingService extends EventEmitter {
    * Returns sessions sorted by time with their segment info
    */
   async getAvailableRecordings() {
-    const recordings = [];
-
-    try {
-      // Scan for session directories
-      const items = fs.readdirSync(this.outputDir);
-
-      for (const item of items) {
-        const itemPath = path.join(this.outputDir, item);
-        const stat = fs.statSync(itemPath);
-
-        if (stat.isDirectory() && item.startsWith('session_')) {
-          // This is a recording session
-          const sessionId = item;
-          const playlistPath = path.join(itemPath, 'playlist.m3u8');
-          const livePlaylistPath = path.join(itemPath, 'live.m3u8');
-
-          // Check if we have a playlist
-          const hasPlaylist = fs.existsSync(playlistPath) || fs.existsSync(livePlaylistPath);
-
-          if (hasPlaylist) {
-            // Get segment files
-            const segments = fs.readdirSync(itemPath)
-              .filter(f => f.endsWith('.ts'))
-              .sort((a, b) => {
-                // Sort by segment index
-                const aMatch = a.match(/_(\d+)\.ts$/);
-                const bMatch = b.match(/_(\d+)\.ts$/);
-                const aNum = aMatch ? parseInt(aMatch[1]) : 0;
-                const bNum = bMatch ? parseInt(bMatch[1]) : 0;
-                return aNum - bNum;
-              });
-
-            if (segments.length > 0) {
-              // Parse timestamp from session ID
-              const timestampMatch = sessionId.match(/session_(\d+)/);
-              const startTime = timestampMatch ? parseInt(timestampMatch[1]) : stat.mtimeMs;
-
-              // Calculate total duration from segments
-              const totalDuration = segments.length * this.segmentDuration;
-
-              // Check if this session is actively recording by checking latest segment age
-              const latestSegment = segments[segments.length - 1];
-              const latestSegmentPath = path.join(itemPath, latestSegment);
-              const latestSegmentStat = fs.statSync(latestSegmentPath);
-              const segmentAge = Date.now() - latestSegmentStat.mtimeMs;
-              // Consider active if last segment was written within 30 seconds
-              const isActiveFromDisk = segmentAge < 30000;
-
-              recordings.push({
-                sessionId,
-                path: itemPath,
-                startTime,
-                segments,
-                segmentCount: segments.length,
-                duration: totalDuration, // in seconds
-                durationMs: totalDuration * 1000,
-                hasLivePlaylist: fs.existsSync(livePlaylistPath),
-                hasPlaylist: fs.existsSync(playlistPath),
-                isActive: this.currentSessionId === sessionId || isActiveFromDisk,
-                latestSegmentAge: segmentAge
-              });
-            }
-          }
-        }
-      }
-
-      // Sort by start time, most recent first
-      recordings.sort((a, b) => b.startTime - a.startTime);
-
-    } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Failed to list recordings:', error);
-    }
-
-    return recordings;
+    return this.diskScanner.getAvailableRecordings();
   }
 
   /**
    * Get the clippable time range (what's available for clipping)
    */
   async getClippableRange() {
-    const recordings = await this.getAvailableRecordings();
-
-    if (recordings.length === 0) {
-      return { available: false, start: null, end: null, duration: 0 };
-    }
-
-    // Calculate total available duration across all recordings
-    // Filter based on whether the recording has recent content (end time), not just start time
-    // This ensures actively recording sessions remain available even if started long ago
-    const retentionCutoff = Date.now() - (this.retentionMinutes * 60 * 1000);
-    const availableRecordings = recordings.filter(r => {
-      // Calculate recording end time
-      const recordingEndTime = r.startTime + r.durationMs;
-      // Include if still has content within retention window OR is actively recording
-      return recordingEndTime >= retentionCutoff || r.isActive;
-    });
-
-    if (availableRecordings.length === 0) {
-      return { available: false, start: null, end: null, duration: 0 };
-    }
-
-    // Get the time range
-    const oldest = availableRecordings[availableRecordings.length - 1];
-    const newest = availableRecordings[0];
-
-    const start = oldest.startTime;
-    // Use the actual segment-based end time, NOT Date.now()
-    // Segments lag behind real-time, so using Date.now() causes out-of-range clip requests
-    const end = newest.startTime + newest.durationMs;
-
-    const totalDuration = end - start;
-
-    return {
-      available: totalDuration >= 30000, // At least 30 seconds available
-      start,
-      end,
-      duration: totalDuration,
-      recordingCount: availableRecordings.length,
-      totalSegments: availableRecordings.reduce((sum, r) => sum + r.segmentCount, 0)
-    };
+    return this.diskScanner.getClippableRange();
   }
 
   /**
@@ -1126,67 +721,19 @@ class ContinuousRecordingService extends EventEmitter {
    * @param {number} endMs - Clip end time in milliseconds (unix timestamp)
    */
   async findSegmentsForClip(startMs, endMs) {
-    logger.debug(`🔍 CLIP SEARCH: Starting findSegmentsForClip`);
-    logger.debug(`🔍 CLIP SEARCH: outputDir = ${this.outputDir}`);
-
-    const recordings = await this.getAvailableRecordings();
-    const neededSegments = [];
-
-    logger.debug(`🔍 CLIP SEARCH: Looking for segments between ${startMs} and ${endMs}`);
-    logger.debug(`🔍 CLIP SEARCH: Found ${recordings.length} recording sessions`);
-    recordings.forEach(r => {
-      logger.debug(`   Session ${r.sessionId}: start=${r.startTime}, end=${r.startTime + r.durationMs}, segments=${r.segmentCount}`);
-    });
-
-    for (const recording of recordings) {
-      const recordingEndMs = recording.startTime + recording.durationMs;
-
-      // Check if this recording overlaps with the clip time range
-      if (recording.startTime <= endMs && recordingEndMs >= startMs) {
-        // Calculate which segments we need from this recording
-        const segmentDurationMs = this.segmentDuration * 1000;
-
-        for (let i = 0; i < recording.segments.length; i++) {
-          const segmentStartMs = recording.startTime + (i * segmentDurationMs);
-          const segmentEndMs = segmentStartMs + segmentDurationMs;
-
-          // Check if this segment overlaps with the clip
-          if (segmentStartMs < endMs && segmentEndMs > startMs) {
-            neededSegments.push({
-              sessionId: recording.sessionId,
-              segmentFile: recording.segments[i],
-              segmentPath: path.join(recording.path, recording.segments[i]),
-              segmentIndex: i,
-              startMs: segmentStartMs,
-              endMs: segmentEndMs
-            });
-          }
-        }
-      }
-    }
-
-    // Sort by time
-    neededSegments.sort((a, b) => a.startMs - b.startMs);
-
-    logger.debug(`🔍 CLIP SEARCH: Found ${neededSegments.length} matching segments`);
-    if (neededSegments.length === 0) {
-      logger.debug(`⚠️ CLIP SEARCH: No segments found! Requested range: ${new Date(startMs).toISOString()} to ${new Date(endMs).toISOString()}`);
-    }
-
-    return {
-      segments: neededSegments,
-      clipStartMs: startMs,
-      clipEndMs: endMs,
-      clipDurationMs: endMs - startMs
-    };
+    return this.diskScanner.findSegmentsForClip(startMs, endMs);
   }
 
   /**
-   * Start interval to clean up old recordings
+   * Start interval to clean up old recordings.
+   * Routes through this.cleanupOldRecordings() (which delegates to the
+   * scanner) so the call path stays observable via the service's public
+   * method. The interval handle is owned by the scanner so shutdown can
+   * clear it.
    */
   startCleanupInterval() {
     // Run cleanup every minute
-    this.cleanupInterval = setInterval(() => {
+    this.diskScanner.cleanupInterval = setInterval(() => {
       this.cleanupOldRecordings();
     }, 60 * 1000);
 
@@ -1196,108 +743,10 @@ class ContinuousRecordingService extends EventEmitter {
 
   /**
    * Clean up recordings older than retention period.
-   *
-   * PR 2.6: gated on `recording_sessions.b2_file_id IS NOT NULL`. The
-   * production default retention is 10 minutes (bootstrap/services.js)
-   * but `RecordingUploadScheduler.localBufferHours` is 2 hours — so
-   * without a gate, this cleanup *always* deletes local files before
-   * the upload scheduler ever fires. Recording is then permanently
-   * lost: the upload retries every 30 minutes against a missing
-   * `local_path`, status stays at `'completed'`, b2_file_id stays
-   * NULL forever.
-   *
-   * Fix: preload the set of session_ids that have NOT yet been
-   * uploaded (b2_file_id IS NULL) and skip those directories. Both
-   * "pending upload" (status = 'completed') and "currently uploading"
-   * (status = 'processing') match the same predicate, so the gate
-   * covers both. Once the upload pipeline either succeeds (sets
-   * b2_file_id) or is admin-acknowledged as failed (a future cleanup
-   * path can NULL-out the row or hard-fail it), the session falls out
-   * of the pending set and the next cleanup tick is free to delete.
-   *
-   * The single-file `.mp4` / `.json` branch (legacy `room_<ts>.*`
-   * format, no longer produced — grep confirms no caller writes
-   * matching filenames) is left untouched: those aren't tracked in
-   * `recording_sessions`, so there's no gate to apply, and the dead
-   * code is harmless on a production filesystem that doesn't contain
-   * such files.
+   * See RecordingDiskScanner.cleanupOldRecordings for the PR 2.6 gating rationale.
    */
   async cleanupOldRecordings() {
-    try {
-      const cutoffTime = Date.now() - (this.retentionMinutes * 60 * 1000);
-
-      // Build the pending-upload set BEFORE the readdir/stat loop so a
-      // mid-iteration race (an upload completing while we iterate)
-      // can only ever *expand* the deletion window we'd take on the
-      // next tick, never shrink it within this tick.
-      let pendingSessionIds = new Set();
-      try {
-        const pendingRows = await this.recordingRepository.listSessionsPendingUpload();
-        pendingSessionIds = new Set(pendingRows.map((r) => r.session_id));
-      } catch (dbError) {
-        // Fail-closed: if the DB lookup fails, do NOT delete anything
-        // this tick. Better to delay cleanup than to nuke an
-        // unconfirmed upload's source file. Next tick retries.
-        logger.error('❌ CONTINUOUS RECORDING: Cleanup aborted — failed to load pending uploads:', dbError);
-        return;
-      }
-
-      const items = fs.readdirSync(this.outputDir);
-      let deletedCount = 0;
-      let skippedPendingUpload = 0;
-
-      for (const item of items) {
-        const itemPath = path.join(this.outputDir, item);
-        const stat = fs.statSync(itemPath);
-
-        if (stat.isDirectory() && item.startsWith('session_')) {
-          // Don't delete the current active session
-          if (item === this.currentSessionId) {
-            continue;
-          }
-
-          // Parse timestamp from session ID
-          const match = item.match(/session_(\d+)/);
-          if (match) {
-            const timestamp = parseInt(match[1]);
-            if (timestamp < cutoffTime) {
-              // PR 2.6: skip directories whose recording_sessions row
-              // still has b2_file_id = NULL (upload pending or in
-              // flight). Without this gate, we race the uploader.
-              if (pendingSessionIds.has(item)) {
-                skippedPendingUpload++;
-                continue;
-              }
-              // Delete the entire session directory
-              fs.rmSync(itemPath, { recursive: true, force: true });
-              deletedCount++;
-            }
-          }
-        } else if (item.endsWith('.mp4') || item.endsWith('.json')) {
-          // Clean up old single-file recordings too (legacy format —
-          // not produced by current pipeline; left in place for any
-          // historical files that may still exist on disk).
-          const match = item.match(/room_(\d+)\./);
-          if (match) {
-            const timestamp = parseInt(match[1]);
-            if (timestamp < cutoffTime) {
-              fs.unlinkSync(itemPath);
-              deletedCount++;
-            }
-          }
-        }
-      }
-
-      if (deletedCount > 0 || skippedPendingUpload > 0) {
-        const suffix = skippedPendingUpload > 0
-          ? ` (skipped ${skippedPendingUpload} pending B2 upload)`
-          : '';
-        logger.debug(`🧹 CONTINUOUS RECORDING: Cleaned up ${deletedCount} old recording(s)${suffix}`);
-      }
-
-    } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Cleanup error:', error);
-    }
+    return this.diskScanner.cleanupOldRecordings();
   }
 
   // Lifecycle entry point — uniform name across services for the bootstrap
@@ -1312,9 +761,7 @@ class ContinuousRecordingService extends EventEmitter {
   async shutdown() {
     logger.debug('🛑 CONTINUOUS RECORDING: Shutting down...');
 
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-    }
+    this.diskScanner.stopCleanupInterval();
 
     if (this.autoRecordInterval) {
       clearInterval(this.autoRecordInterval);
