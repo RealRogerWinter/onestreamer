@@ -23,7 +23,7 @@ import {
   VideoCodec
 } from 'livekit-client';
 import { Socket } from 'socket.io-client';
-import { isIOSSafari, isIOS, isSafari, isMobile, getBrowserInfo } from '../utils/browserDetection';
+import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../utils/browserDetection';
 
 // Disable all non-essential logging for production
 const DEBUG = false;
@@ -239,16 +239,6 @@ export class LiveKitClient {
     }, delay);
     this.activeTimeouts.add(timeout);
     return timeout;
-  }
-
-  /**
-   * Clear a tracked timeout
-   */
-  private clearTrackedTimeout(timeout: NodeJS.Timeout | null): void {
-    if (timeout) {
-      clearTimeout(timeout);
-      this.activeTimeouts.delete(timeout);
-    }
   }
 
   /**
