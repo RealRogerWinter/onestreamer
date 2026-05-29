@@ -438,6 +438,15 @@ class ChatBotService {
             return;
         }
 
+        // Same pattern for VisionBot: a bot opted into the vision path drives
+        // chat solely on transcription windows (paired with a screenshot).
+        // Without this guard the bot double-posts — one from the regular
+        // response_interval timer here, plus one from VisionBotService.
+        if (botInstance.data.vision_bot_enabled) {
+            logger.debug(`🔍 Bot ${botInstance.id} has VisionBot enabled, skipping regular chat responses`);
+            return;
+        }
+
         const minInterval = botInstance.data.response_interval_min * 1000;
         const maxInterval = botInstance.data.response_interval_max * 1000;
         const interval = Math.random() * (maxInterval - minInterval) + minInterval;

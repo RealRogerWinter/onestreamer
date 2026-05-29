@@ -237,12 +237,19 @@ class EgressFrameCaptureService {
 
     _extractFrame(segmentPath) {
         return new Promise((resolve, reject) => {
+            // No -sseof here: ffmpeg 7.x exits non-zero when seeking from the
+            // end of a short HLS .ts segment with B-frames ("co located POCs
+            // unavailable" → exit 2, no output). First frame is fine for a
+            // "what's playing right now" snapshot — segments are 4 s long.
+            // -pix_fmt yuvj420p is required because the egress encoder emits
+            // limited-range YUV; without the conversion ffmpeg 7's mjpeg
+            // encoder refuses the input ("Non full-range YUV is non-standard").
             const proc = spawn('ffmpeg', [
                 '-hide_banner', '-loglevel', 'error',
-                '-sseof', '-0.5',
                 '-i', segmentPath,
                 '-frames:v', '1',
                 '-vf', `scale='min(384,iw)':-2`,
+                '-pix_fmt', 'yuvj420p',
                 '-q:v', '5',
                 '-f', 'mjpeg',
                 'pipe:1',

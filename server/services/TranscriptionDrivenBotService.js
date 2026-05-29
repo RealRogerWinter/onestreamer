@@ -197,8 +197,23 @@ class TranscriptionDrivenBotService extends EventEmitter {
             }
             const sessionId = result.sessionId;
             this.currentSessions.push(sessionId);
-            this.transcriptionService.once('transcription-stopped', async (data) => {
-                if (data.sessionId !== sessionId) return;
+
+            // Don't use once() with a sessionId filter — it deadlocks the
+            // scheduler. once() consumes the listener on the *first* emitted
+            // event regardless of whether the sessionId matches; if a stale
+            // session's stop event fires first (common during stream rotations
+            // when an earlier session is being torn down), our once handler
+            // returns silently, the listener is gone, and the actual session's
+            // stop event has no listener — scheduleNextTranscription never
+            // runs and both MovieBot + VisionBot stall until restart.
+            // Instead: use on() + manual off() that fires only when the
+            // sessionId matches. Belt-and-suspenders timeout (duration * 4)
+            // ensures we never leak a listener even if transcription-stopped
+            // is dropped entirely.
+            const handler = async (data) => {
+                if (!data || data.sessionId !== sessionId) return;
+                this.transcriptionService.off('transcription-stopped', handler);
+                clearTimeout(safetyTimer);
                 const sessionIndex = this.currentSessions.indexOf(sessionId);
                 if (sessionIndex > -1) this.currentSessions.splice(sessionIndex, 1);
                 let transcription = data.transcription;
@@ -213,7 +228,15 @@ class TranscriptionDrivenBotService extends EventEmitter {
                     }
                 }
                 this.scheduleNextTranscription();
-            });
+            };
+            this.transcriptionService.on('transcription-stopped', handler);
+            const safetyTimer = setTimeout(() => {
+                this.transcriptionService.off('transcription-stopped', handler);
+                const sessionIndex = this.currentSessions.indexOf(sessionId);
+                if (sessionIndex > -1) this.currentSessions.splice(sessionIndex, 1);
+                logger.warn(`⚠️ ${this.botName}: transcription-stopped never arrived for ${sessionId}; rescheduling`);
+                this.scheduleNextTranscription();
+            }, (this.config.transcriptionDuration || 20) * 4 * 1000);
         } catch (error) {
             logger.error(`❌ ${this.botName}: Error capturing transcription:`, error);
             this.scheduleNextTranscription();

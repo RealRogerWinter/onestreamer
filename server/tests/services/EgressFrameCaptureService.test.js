@@ -158,7 +158,12 @@ describe('EgressFrameCaptureService', () => {
         expect(spawn).toHaveBeenCalledTimes(1);
         const callArgs = spawn.mock.calls[0];
         expect(callArgs[0]).toBe('ffmpeg');
-        expect(callArgs[1]).toContain('-sseof');
+        // -sseof was removed: ffmpeg 7.x exits non-zero seeking from the end
+        // of a short HLS .ts segment with B-frames. We grab the first frame
+        // instead, and force -pix_fmt yuvj420p because the egress encoder
+        // emits limited-range YUV that ffmpeg 7's mjpeg encoder rejects.
+        expect(callArgs[1]).not.toContain('-sseof');
+        expect(callArgs[1]).toContain('-pix_fmt');
         expect(callArgs[1]).toContain('-frames:v');
         expect(callArgs[1].some(a => a.endsWith('seg_1000_2.ts'))).toBe(true);
         await svc.stop();

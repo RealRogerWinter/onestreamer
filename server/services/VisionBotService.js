@@ -21,6 +21,7 @@ const SKIP_REASONS = [
     'streamer_changed',
     'duplicate_session',
     'in_backoff',
+    'throttled',
     'unknown',
 ];
 
@@ -75,6 +76,7 @@ class VisionBotService extends TranscriptionDrivenBotService {
 
         this.activeController = null;
         this._recentSessionIds = [];
+        this._lastCycleStartedAt = 0;
         this.MAX_DEDUP_HISTORY = 10;
 
         this.stats = {
@@ -211,7 +213,12 @@ class VisionBotService extends TranscriptionDrivenBotService {
 
     async _handleBusEvent({ streamerId, sessionId, transcription, endTime }) {
         if (!this.isActive) return;
-        if (this.currentStreamerId && streamerId !== this.currentStreamerId) return;
+        // No streamerId guard: OneStreamer is one-streamer-at-a-time, but
+        // MovieBot and VisionBot can be enabled with different identifiers
+        // for the same physical stream (mediasoup socket id vs url-stream id).
+        // The old guard rejected every bus event when those differ. Takeover
+        // safety is enforced downstream via streamGeneration (frame-cache key
+        // + dispatch-time check in ChatBotService.generateVisionCommentForBot).
         await this._runCycle(transcription, endTime, sessionId);
     }
 
@@ -219,6 +226,18 @@ class VisionBotService extends TranscriptionDrivenBotService {
 
     async _runCycle(transcription, endTime, sessionId) {
         this.stats.cycles_attempted += 1;
+
+        // Cadence throttle. With MovieBot also enabled, bus events fire every
+        // ~50 s — without this gate, transcription_frequency_s in
+        // visionbot_config has no effect (admin knob looks decorative). Set
+        // at the top so failed cycles also burn the window; predictable
+        // upper bound on call rate.
+        const freqMs = (this.config.transcription_frequency_s || 120) * 1000;
+        if (this._lastCycleStartedAt && (Date.now() - this._lastCycleStartedAt) < freqMs) {
+            this._recordSkip('throttled');
+            return;
+        }
+        this._lastCycleStartedAt = Date.now();
 
         if (sessionId && this._recentSessionIds.includes(sessionId)) {
             this._recordSkip('duplicate_session');

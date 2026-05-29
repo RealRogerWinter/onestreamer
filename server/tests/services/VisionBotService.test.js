@@ -147,6 +147,11 @@ describe('VisionBotService', () => {
         await Promise.resolve();
         await Promise.resolve();
         await Promise.resolve();
+        // Advance past the cadence-throttle window (transcription_frequency_s,
+        // default 120 s) so the second event isn't dropped as 'throttled'
+        // before it reaches the sessionId-dedup check — we're testing the
+        // dedup path specifically here, not the throttle.
+        jest.advanceTimersByTime((bot.config.transcription_frequency_s + 1) * 1000);
         deps.botEventBus.emit('moviebot-transcription-complete', {
             streamerId: 'streamer-1',
             sessionId: 'sess-dup',
@@ -159,7 +164,14 @@ describe('VisionBotService', () => {
         expect(bot.stats.cycles_dropped.duplicate_session).toBe(1);
     });
 
-    test('ignores bus events for other streamers', async () => {
+    test('processes bus events regardless of streamerId (takeover safety is downstream)', async () => {
+        // The old streamerId guard was removed: MovieBot and VisionBot can be
+        // enabled with different identifiers for the same physical stream
+        // (mediasoup socket id vs url-stream id), and the guard rejected every
+        // bus event when those differ. Takeover safety is now enforced
+        // downstream via streamGeneration (frame-cache key + dispatch-time
+        // check in ChatBotService.generateVisionCommentForBot), so VisionBot
+        // no longer drops on a streamerId mismatch at the bus boundary.
         deps.botEventBus.emit('moviebot-transcription-complete', {
             streamerId: 'someone-else',
             sessionId: 'sess-B',
@@ -168,7 +180,8 @@ describe('VisionBotService', () => {
         });
         await Promise.resolve();
         await Promise.resolve();
-        expect(deps.frameCaptureService.captureFrame).not.toHaveBeenCalled();
+        await Promise.resolve();
+        expect(deps.frameCaptureService.captureFrame).toHaveBeenCalled();
     });
 
     test('VISIONBOT_KILL_SWITCH=1 skips the cycle without spawning anything', async () => {

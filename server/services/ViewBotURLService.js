@@ -952,9 +952,12 @@ class ViewBotURLService extends EventEmitter {
     ffmpegProcess.stderr.on('data', (data) => {
       const output = data.toString();
 
-      // Log errors
+      // Log errors. Pino drops a bare string as the 2nd arg of `error()`
+      // (it expects an object), so the raw stderr we want to see was being
+      // eaten silently — every "❌ FFmpeg error for X:" line had no payload.
+      // Pass it as an object so the stderr lands in the JSON record.
       if (output.includes('Error') || output.includes('error')) {
-        logger.error(`❌ FFmpeg error for ${urlId}:`, output.substring(0, 200));
+        logger.error({ stderr: output.substring(0, 400) }, `❌ FFmpeg error for ${urlId}`);
       }
 
       // Track progress and report to health service
@@ -1006,7 +1009,7 @@ class ViewBotURLService extends EventEmitter {
     });
 
     ffmpegProcess.on('error', (err) => {
-      logger.error(`❌ FFmpeg process error for ${urlId}:`, err);
+      logger.error({ err }, `❌ FFmpeg process error for ${urlId}`);
       this._handleStreamError(urlId, 'ffmpeg', err);
     });
 
@@ -1090,7 +1093,7 @@ class ViewBotURLService extends EventEmitter {
     const streamEntry = this.activeStreams.get(urlId);
     if (!streamEntry) return;
 
-    logger.error(`❌ Stream error for ${urlId} (${source}):`, error.message);
+    logger.error({ source, errMsg: error && error.message, errName: error && error.name }, `❌ Stream error for ${urlId}`);
 
     // CRITICAL: Check if already reconnecting to prevent race conditions
     // Multiple error events (FFmpeg error, streamlink exit, etc.) could fire simultaneously

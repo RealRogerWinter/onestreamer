@@ -741,30 +741,24 @@ class ContinuousRecordingService extends EventEmitter {
     }
 
     try {
-      // Check if there's already an active egress for this room
+      // Stop any existing active egress for this room before creating a new
+      // one. We used to adopt the existing one when targetParticipant was
+      // null, but LiveKit's "active" status includes zombies (egress worker
+      // dead, session-table not updated). Adopting a zombie leaves
+      // isRecording=true with nothing being written to disk. Cleaner to
+      // always stop and recreate — the ~5 s gap on a real restart is cheap
+      // compared to days of silent dataloss.
       const activeEgresses = await this.listActiveEgress();
       if (activeEgresses.length > 0) {
-        // If we need participant egress but room egress is running, stop it first
-        if (targetParticipant) {
-          logger.debug(`🔄 CONTINUOUS RECORDING: Stopping existing room egress to start participant egress for ${targetParticipant}`);
-          for (const egress of activeEgresses) {
-            try {
-              await this.egressClient.stopEgress(egress.egressId);
-            } catch (e) {
-              logger.debug(`⚠️ Could not stop egress ${egress.egressId}: ${e.message}`);
-            }
+        logger.debug(`🔄 CONTINUOUS RECORDING: Stopping ${activeEgresses.length} existing egress(es) before creating new`);
+        for (const egress of activeEgresses) {
+          try {
+            await this.egressClient.stopEgress(egress.egressId);
+          } catch (e) {
+            logger.debug(`⚠️ Could not stop egress ${egress.egressId}: ${e.message}`);
           }
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } else {
-          logger.debug(`⚠️ CONTINUOUS RECORDING: Found ${activeEgresses.length} active egress job(s), using existing`);
-          this.currentEgressId = activeEgresses[0].egressId;
-          this.isRecording = true;
-          this.recordingStartTime = Date.now();
-          this.currentRecordingTarget = 'room';
-          // Try to extract session ID from existing egress
-          this.currentSessionId = this.extractSessionIdFromEgress(activeEgresses[0]);
-          return { success: true, egressId: this.currentEgressId };
         }
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       // Create a unique session ID for this recording
@@ -1036,49 +1030,28 @@ class ContinuousRecordingService extends EventEmitter {
     try {
       const egresses = await this.egressClient.listEgress({ roomName: this.roomName });
       const activeEgresses = egresses.filter(e => e.status === 0 || e.status === 1);
+      if (activeEgresses.length === 0) return;
 
-      if (activeEgresses.length > 0) {
-        // RESUME the active recording instead of stopping it
-        const activeEgress = activeEgresses[0];
-        logger.debug(`🔄 CONTINUOUS RECORDING: Found active egress ${activeEgress.egressId}, resuming state...`);
-
-        this.currentEgressId = activeEgress.egressId;
-        this.isRecording = true;
-        this.recordingStartTime = Date.now();
-        this.currentSessionId = this.extractSessionIdFromEgress(activeEgress);
-
-        // Determine the local path for this session
-        const hostSessionDir = path.join(this.outputDir, this.currentSessionId);
-
-        // Ensure the session record exists in the database
-        await this.createSessionRecord(
-          this.currentSessionId,
-          this.currentRecordingTarget || 'room',
-          this.recordingStartTime,
-          hostSessionDir
-        );
-
-        logger.debug(`✅ CONTINUOUS RECORDING: Resumed recording - session: ${this.currentSessionId}`);
-
-        // Emit recording-started event so chat capture begins
-        this.emit('recording-started', {
-          egressId: this.currentEgressId,
-          sessionId: this.currentSessionId,
-          startTime: this.recordingStartTime,
-          outputPath: hostSessionDir,
-          target: this.currentRecordingTarget || 'room',
-          streamerIdentity: this.currentRecordingTarget || 'room'
-        });
-
-        // If there are multiple active egresses (shouldn't happen), stop the extras
-        for (let i = 1; i < activeEgresses.length; i++) {
-          const extraEgress = activeEgresses[i];
-          try {
-            logger.debug(`🧹 CONTINUOUS RECORDING: Stopping extra egress ${extraEgress.egressId}...`);
-            await this.egressClient.stopEgress(extraEgress.egressId);
-          } catch (err) {
-            logger.debug(`🔍 CONTINUOUS RECORDING: Could not stop extra egress: ${err.message}`);
-          }
+      // Do NOT adopt. LiveKit's status==1 ("active") includes zombies — the
+      // egress worker process has died but LiveKit's session table wasn't
+      // updated. We've seen one stuck active for 3+ weeks. Adopting one
+      // leaves isRecording=true with no segments ever written to disk, so
+      // every downstream consumer (frame capture, clip extraction, vision
+      // bot) silently miss-skips. Force-stop them all on startup; the
+      // polling loop will create a fresh egress within 5 s if there's
+      // actually a publisher in the room.
+      for (const e of activeEgresses) {
+        const startedAtIso = e.startedAt
+          ? new Date(Number(BigInt(e.startedAt) / BigInt(1e6))).toISOString()
+          : '?';
+        logger.warn(`🧹 CONTINUOUS RECORDING: Stopping stale egress ${e.egressId} (started ${startedAtIso})`);
+        try {
+          await this.egressClient.stopEgress(e.egressId);
+        } catch (err) {
+          // Zombie egresses with no worker process to receive the stop
+          // command time out here; that's expected. LiveKit's status will
+          // age out on its own. Our state is clean either way.
+          logger.warn(`   stopEgress timed out / failed for ${e.egressId}: ${err.message}`);
         }
       }
     } catch (error) {
