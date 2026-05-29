@@ -8,6 +8,7 @@ const processManager = require('./ProcessManager');
 const stateManager = require('./ViewBotStateManager');
 const ViewBotInstance = require('./viewbot/ViewBotInstance');
 const { selectWeightedBot } = require('./viewbot/botSelection');
+const BotCooldownTracker = require('./viewbot/BotCooldownTracker');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ViewBotClientService' });
 
@@ -98,12 +99,14 @@ class ViewBotClientService {
     // FFmpeg path detection
     this.ffmpegPath = null;
     
-    // Cooldown system for variety in rotation
-    this.botCooldowns = new Map(); // Map of botId -> { count: number, lastPlayed: Date }
-    this.cooldownWindowMs = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
-    this.cooldownMultiplier = 0.5; // Reduce probability by 50% for each play
-    this.minProbability = 0.1; // Minimum 10% of original probability
-    
+    // Cooldown system for variety in rotation (encapsulated in BotCooldownTracker)
+    this.cooldownTracker = new BotCooldownTracker({
+      windowMs: 2 * 60 * 60 * 1000, // 2 hours
+      decayFactor: 0.5,             // reduce probability 50% per play in window
+      minProbability: 0.1,          // floor at 10% of original
+      logger,
+    });
+
     // Start cooldown cleanup timer
     this.startCooldownCleanup();
     
@@ -2043,21 +2046,10 @@ class ViewBotClientService {
   startCooldownCleanup() {
     // Check every 30 minutes for expired cooldowns
     setInterval(() => {
-      const now = Date.now();
-      const expiredBots = [];
-      
-      for (const [botId, cooldown] of this.botCooldowns.entries()) {
-        if (now - cooldown.lastPlayed.getTime() > this.cooldownWindowMs) {
-          expiredBots.push(botId);
-        }
-      }
-      
-      // Remove expired cooldowns
+      const expiredBots = this.cooldownTracker.sweepExpired();
       for (const botId of expiredBots) {
-        this.botCooldowns.delete(botId);
         logger.debug(`🔄 COOLDOWN: Reset cooldown for ViewBot ${botId} after 2-hour window`);
       }
-      
       if (expiredBots.length > 0) {
         logger.debug(`🧹 COOLDOWN: Cleared ${expiredBots.length} expired cooldowns`);
       }
@@ -2068,57 +2060,14 @@ class ViewBotClientService {
    * Apply cooldown to a bot that just played
    */
   applyBotCooldown(botId) {
-    const existing = this.botCooldowns.get(botId);
-    
-    if (existing) {
-      // Increment play count if within window
-      const now = Date.now();
-      if (now - existing.lastPlayed.getTime() <= this.cooldownWindowMs) {
-        existing.count++;
-        existing.lastPlayed = new Date();
-        logger.debug(`📉 COOLDOWN: ViewBot ${botId} played ${existing.count} times in window`);
-      } else {
-        // Reset if outside window
-        this.botCooldowns.set(botId, {
-          count: 1,
-          lastPlayed: new Date()
-        });
-        logger.debug(`🔄 COOLDOWN: Reset and applied cooldown for ViewBot ${botId}`);
-      }
-    } else {
-      // First play in window
-      this.botCooldowns.set(botId, {
-        count: 1,
-        lastPlayed: new Date()
-      });
-      logger.debug(`📝 COOLDOWN: Applied first cooldown for ViewBot ${botId}`);
-    }
+    this.cooldownTracker.record(botId);
   }
   
   /**
    * Get probability multiplier for a bot based on cooldown
    */
   getBotProbabilityMultiplier(botId) {
-    const cooldown = this.botCooldowns.get(botId);
-    
-    if (!cooldown) {
-      return 1.0; // No cooldown, full probability
-    }
-    
-    const now = Date.now();
-    if (now - cooldown.lastPlayed.getTime() > this.cooldownWindowMs) {
-      // Cooldown expired
-      this.botCooldowns.delete(botId);
-      return 1.0;
-    }
-    
-    // Calculate multiplier based on play count
-    const multiplier = Math.max(
-      this.minProbability,
-      Math.pow(this.cooldownMultiplier, cooldown.count)
-    );
-    
-    return multiplier;
+    return this.cooldownTracker.getMultiplier(botId);
   }
   
   /**
