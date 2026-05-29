@@ -15,6 +15,7 @@ const StreamProbeService = require('./StreamProbeService');
 const AdaptiveEncodingSettings = require('./AdaptiveEncodingSettings');
 const KickRandomService = require('./KickRandomService');
 const { defaultPropsForPlatform } = require('./viewbot/streamDefaults');
+const { buildRtpFfmpegArgs } = require('./viewbot/ffmpegArgs');
 const webrtcConfig = require('../config/webrtc.config');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ViewBotURLService' });
@@ -700,67 +701,7 @@ class ViewBotURLService extends EventEmitter {
     const settings = streamEntry.encodingSettings;
     const useAdaptive = this.adaptiveConfig.enabled && settings;
 
-    // Build video filter if scaling/fps change needed
-    let vfArg = null;
-    if (useAdaptive && settings.scale) {
-      vfArg = settings.scale;
-    }
-
-    const args = [];
-
-    // Input buffer settings for smoother streaming
-    args.push(
-      '-analyzeduration', '3000000',   // 3 seconds - balance between startup speed and stability
-      '-probesize', '10000000',        // 10MB - read more data for format detection
-      '-fflags', '+genpts+discardcorrupt+nobuffer',
-      '-flags', 'low_delay',
-      '-max_delay', '500000'           // 500ms max delay
-    );
-
-    // For direct URLs (not piped), add reconnect options
-    if (input !== '-') {
-      args.push(
-        '-reconnect', '1',
-        '-reconnect_streamed', '1',
-        '-reconnect_delay_max', '5'
-      );
-    } else {
-      // For piped input, add thread queue size for better buffering
-      args.push('-thread_queue_size', '4096');
-    }
-
-    args.push('-re', '-i', input);
-
-    // Add video filter if needed
-    if (vfArg) {
-      args.push('-vf', vfArg);
-    }
-
-    // Video encoding with adaptive or default settings
-    args.push(
-      '-map', '0:v:0',
-      '-c:v', 'libvpx', // VP8 for MediaSoup
-      '-deadline', useAdaptive ? settings.deadline : 'realtime',
-      '-cpu-used', useAdaptive ? String(settings.cpuUsed) : '8',
-      '-b:v', useAdaptive ? `${settings.videoBitrate}k` : '1500k',
-      '-maxrate', useAdaptive ? `${settings.maxrate}k` : '2000k',
-      '-bufsize', useAdaptive ? `${settings.bufsize}k` : '4000k',
-      '-g', useAdaptive ? String(settings.gopSize) : '30',
-      '-keyint_min', useAdaptive ? String(settings.keyintMin) : '30',
-      '-f', 'rtp',
-      `rtp://127.0.0.1:${this.rtpPorts.video}?pkt_size=1200`
-    );
-
-    // Audio encoding
-    args.push(
-      '-map', '0:a:0?', // Optional audio stream
-      '-c:a', 'libopus',
-      '-b:a', useAdaptive && settings.audioBitrate ? `${settings.audioBitrate}k` : '128k',
-      '-ar', '48000',
-      '-ac', useAdaptive ? String(settings.audioChannels || 2) : '2',
-      '-f', 'rtp',
-      `rtp://127.0.0.1:${this.rtpPorts.audio}?pkt_size=1200`
-    );
+    const args = buildRtpFfmpegArgs({ input, settings, useAdaptive, rtpPorts: this.rtpPorts });
 
     const logSettings = useAdaptive
       ? `ADAPTIVE ${settings.width}x${settings.height}@${settings.fps}fps ${settings.videoBitrate}kbps`
