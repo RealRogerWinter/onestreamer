@@ -1,10 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
 const { v4: uuidv4 } = require('uuid');
 const AudioBufferService = require('./AudioBufferService');
 const TranscriptionAudioAdapter = require('./TranscriptionAudioAdapter');
+const TranscriptionRepository = require('./transcription/TranscriptionRepository');
+const WhisperRunner = require('./transcription/WhisperRunner');
+const AudioFileJanitor = require('./transcription/AudioFileJanitor');
 
 const logger = require('../bootstrap/logger').child({ svc: 'TranscriptionService' });
 
@@ -47,7 +49,22 @@ class TranscriptionService extends EventEmitter {
             channels: 1,
             bitDepth: 16
         };
-        
+
+        // Collaborators (extracted seams)
+        this.repository = new TranscriptionRepository({
+            runAsync: this.runAsync,
+            getAsync: this.getAsync,
+            allAsync: this.allAsync
+        });
+        this.whisperRunner = new WhisperRunner({
+            whisperPath: this.config.whisperPath,
+            isWindows: this.isWindows
+        });
+        this.audioFileJanitor = new AudioFileJanitor({
+            tempDir: this.config.tempDir,
+            baseDir: path.join(__dirname, '..', '..')
+        });
+
         // Ensure temp directory exists
         this.initializeDirectories();
         
@@ -62,14 +79,7 @@ class TranscriptionService extends EventEmitter {
     }
     
     initializeDirectories() {
-        if (!fs.existsSync(this.config.tempDir)) {
-            fs.mkdirSync(this.config.tempDir, { recursive: true });
-        }
-        
-        const transcriptsDir = path.join(__dirname, '..', '..', 'transcripts');
-        if (!fs.existsSync(transcriptsDir)) {
-            fs.mkdirSync(transcriptsDir, { recursive: true });
-        }
+        return this.audioFileJanitor.initializeDirectories();
     }
     
     async startTranscription(streamerId, options = {}) {
@@ -373,102 +383,7 @@ class TranscriptionService extends EventEmitter {
     // Removed processAudioChunk - replaced with startTranscriptionProcessing
     
     async transcribeWithWhisperCpp(audioPath, config) {
-        return new Promise((resolve, reject) => {
-            const modelPath = path.join(this.config.whisperPath, 'models', `ggml-${config.model}.bin`);
-            const whisperExe = this.isWindows 
-                ? path.join(this.config.whisperPath, 'Release', 'whisper-cli.exe')
-                : path.join(this.config.whisperPath, 'whisper.cpp', 'main');
-            
-            const args = [
-                '-m', modelPath,
-                '-f', audioPath,
-                '-t', '2', // reduced threads to avoid hanging
-                '--no-timestamps',
-                '-otxt',
-                // PR-M4 (ADR-0013): Whisper hardening for the AI moderation
-                // pipeline. (1) `--temperature 0.0` for deterministic output —
-                // ASR moderation evidence is more credible when re-running
-                // produces the same transcript. (2) `--initial-prompt` steers
-                // Whisper away from its default behaviour of redacting
-                // profanity to `***` — that redaction defeats Stage 1 word-
-                // filter matching. The prompt is short and avoids any
-                // appearance of an instruction that could fight the user's
-                // language choice.
-                '--temperature', '0.0',
-                '--prompt', 'Transcribe verbatim, including any profanity.',
-            ];
-
-            if (config.language && config.language !== 'auto') {
-                args.push('-l', config.language);
-            }
-            
-            logger.debug(`🎙️ WHISPER: Running command: ${whisperExe} ${args.join(' ')}`);
-            const whisperProcess = spawn(whisperExe, args);
-            
-            let output = '';
-            let stderr = '';
-            let timeoutId;
-            
-            // Add timeout to kill hanging whisper process
-            timeoutId = setTimeout(() => {
-                logger.debug('⚠️ WHISPER: Process timeout, killing...');
-                whisperProcess.kill('SIGTERM');
-                setTimeout(() => {
-                    if (!whisperProcess.killed) {
-                        whisperProcess.kill('SIGKILL');
-                    }
-                }, 2000);
-            }, 20000); // 20 second timeout
-            
-            whisperProcess.stdout.on('data', (data) => {
-                output += data.toString();
-            });
-            
-            whisperProcess.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-            
-            whisperProcess.on('close', (code) => {
-                clearTimeout(timeoutId);
-                
-                if (code === 0 || code === null) {
-                    // Read the output text file
-                    const txtPath = audioPath + '.txt';
-                    if (fs.existsSync(txtPath)) {
-                        const transcription = fs.readFileSync(txtPath, 'utf8').trim();
-                        logger.debug(`✅ WHISPER: Transcription from file (${transcription.split(' ').length} words)`);
-                        fs.unlinkSync(txtPath);
-                        resolve(transcription);
-                    } else if (output.trim()) {
-                        // Parse output from stdout if no file
-                        const lines = output.split('\n');
-                        const transcriptionLines = lines.filter(line => 
-                            !line.includes('whisper_') && 
-                            !line.includes('time =') &&
-                            line.trim().length > 0
-                        );
-                        const transcription = transcriptionLines.join(' ').trim();
-                        logger.debug(`✅ WHISPER: Transcription from stdout (${transcription.split(' ').length} words)`);
-                        resolve(transcription);
-                    } else {
-                        logger.debug('⚠️ WHISPER: No transcription output');
-                        resolve('');
-                    }
-                } else if (code === -15 || code === 143) { // SIGTERM
-                    logger.debug('⚠️ WHISPER: Process timed out');
-                    resolve(''); // Return empty string on timeout
-                } else {
-                    logger.error(`❌ WHISPER: Process exited with code ${code}`);
-                    logger.error(`   stderr: ${stderr}`);
-                    reject(new Error(`Whisper process exited with code ${code}`));
-                }
-            });
-            
-            whisperProcess.on('error', (error) => {
-                clearTimeout(timeoutId);
-                reject(error);
-            });
-        });
+        return this.whisperRunner.transcribeWithWhisperCpp(audioPath, config);
     }
     
     // Removed demo transcription - using real audio only
@@ -574,96 +489,21 @@ class TranscriptionService extends EventEmitter {
     
     // Database methods
     async saveTranscriptionToDatabase(session) {
-        try {
-            const sql = `
-                INSERT INTO transcriptions (
-                    id, stream_id, streamer_id, start_time, 
-                    language, model, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-            
-            await this.runAsync(sql, [
-                session.id,
-                session.id, // Using session ID as stream ID for now
-                session.streamerId,
-                session.startTime.toISOString(),
-                session.config.language || 'auto',
-                session.config.model,
-                session.status,
-                new Date().toISOString()
-            ]);
-            
-        } catch (error) {
-            logger.error('❌ TRANSCRIPTION: Failed to save to database:', error);
-        }
+        return this.repository.saveTranscriptionToDatabase(session);
     }
-    
+
     async saveTranscriptionChunk(session, text, chunkNumber) {
-        try {
-            const sql = `
-                INSERT INTO transcription_chunks (
-                    transcription_id, chunk_number, text, 
-                    timestamp, word_count
-                ) VALUES (?, ?, ?, ?, ?)
-            `;
-            
-            await this.runAsync(sql, [
-                session.id,
-                chunkNumber,
-                text,
-                new Date().toISOString(),
-                text.split(/\s+/).length
-            ]);
-            
-        } catch (error) {
-            logger.error('❌ TRANSCRIPTION: Failed to save chunk to database:', error);
-        }
+        return this.repository.saveTranscriptionChunk(session, text, chunkNumber);
     }
-    
+
     async updateTranscriptionInDatabase(session) {
-        try {
-            const duration = session.endTime 
-                ? Math.floor((session.endTime - session.startTime) / 1000)
-                : 0;
-            
-            const sql = `
-                UPDATE transcriptions 
-                SET end_time = ?, duration = ?, word_count = ?, status = ?
-                WHERE id = ?
-            `;
-            
-            await this.runAsync(sql, [
-                session.endTime?.toISOString(),
-                duration,
-                session.wordCount,
-                session.status,
-                session.id
-            ]);
-            
-        } catch (error) {
-            logger.error('❌ TRANSCRIPTION: Failed to update database:', error);
-        }
+        return this.repository.updateTranscriptionInDatabase(session);
     }
-    
+
     async getTranscription(sessionId) {
-        try {
-            const sql = `
-                SELECT t.*, GROUP_CONCAT(tc.text, ' ') as full_text
-                FROM transcriptions t
-                LEFT JOIN transcription_chunks tc ON t.id = tc.transcription_id
-                WHERE t.id = ?
-                GROUP BY t.id
-            `;
-            
-            const result = await this.getAsync(sql, [sessionId]);
-            return result;
-            
-        } catch (error) {
-            logger.error('❌ TRANSCRIPTION: Failed to get transcription:', error);
-            return null;
-        }
+        return this.repository.getTranscription(sessionId);
     }
-    
+
     async getActiveTranscriptions() {
         const active = [];
         for (const [id, session] of this.activeSessions) {
@@ -680,107 +520,13 @@ class TranscriptionService extends EventEmitter {
     }
     
     async getTranscriptionHistory(limit = 50, offset = 0, filters = {}) {
-        try {
-            let sql = `
-                SELECT t.*, 
-                       COUNT(tc.id) as chunk_count,
-                       GROUP_CONCAT(tc.text, ' ') as full_text
-                FROM transcriptions t
-                LEFT JOIN transcription_chunks tc ON t.id = tc.transcription_id
-                WHERE 1=1
-            `;
-            
-            const params = [];
-            
-            // Add filters
-            if (filters.status) {
-                sql += ' AND t.status = ?';
-                params.push(filters.status);
-            }
-            
-            if (filters.streamerId) {
-                sql += ' AND t.streamer_id = ?';
-                params.push(filters.streamerId);
-            }
-            
-            if (filters.startDate) {
-                sql += ' AND DATE(t.start_time) >= DATE(?)';
-                params.push(filters.startDate);
-            }
-            
-            if (filters.endDate) {
-                sql += ' AND DATE(t.start_time) <= DATE(?)';
-                params.push(filters.endDate);
-            }
-            
-            sql += `
-                GROUP BY t.id
-                ORDER BY t.created_at DESC
-                LIMIT ? OFFSET ?
-            `;
-            
-            params.push(limit, offset);
-            
-            const transcriptions = await this.allAsync(sql, params);
-            
-            // Get total count for pagination
-            const countSql = `
-                SELECT COUNT(DISTINCT id) as total 
-                FROM transcriptions 
-                WHERE 1=1
-                ${filters.status ? ' AND status = ?' : ''}
-                ${filters.streamerId ? ' AND streamer_id = ?' : ''}
-                ${filters.startDate ? ' AND DATE(start_time) >= DATE(?)' : ''}
-                ${filters.endDate ? ' AND DATE(start_time) <= DATE(?)' : ''}
-            `;
-            
-            const countParams = params.slice(0, -2); // Remove limit and offset
-            const countResult = await this.getAsync(countSql, countParams);
-            
-            return {
-                transcriptions: transcriptions || [],
-                total: countResult?.total || 0,
-                limit,
-                offset
-            };
-            
-        } catch (error) {
-            logger.error('❌ TRANSCRIPTION: Failed to get history:', error);
-            return {
-                transcriptions: [],
-                total: 0,
-                limit,
-                offset
-            };
-        }
+        return this.repository.getTranscriptionHistory(limit, offset, filters);
     }
-    
+
     async deleteOldTranscriptions(daysOld = 30) {
-        try {
-            const cutoffDate = new Date();
-            cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-            
-            const sql = `
-                DELETE FROM transcriptions 
-                WHERE created_at < ? AND status = 'completed'
-            `;
-            
-            const result = await this.runAsync(sql, [cutoffDate.toISOString()]);
-            
-            return {
-                success: true,
-                deletedCount: result.changes
-            };
-            
-        } catch (error) {
-            logger.error('❌ TRANSCRIPTION: Failed to delete old transcriptions:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
+        return this.repository.deleteOldTranscriptions(daysOld);
     }
-    
+
     // Configuration methods
     enableTranscription() {
         this.config.enableTranscription = true;
@@ -973,60 +719,12 @@ class TranscriptionService extends EventEmitter {
     
     // Clean up old audio files periodically
     async cleanupOldAudioFiles(maxAgeMinutes = 30) {
-        const directories = [
-            this.config.tempDir,
-            path.join(__dirname, '..', '..', 'temp', 'audio'),
-            path.join(__dirname, '..', '..', 'audio-buffers')
-        ];
-        
-        let deletedCount = 0;
-        const cutoffTime = Date.now() - (maxAgeMinutes * 60 * 1000);
-        
-        for (const dir of directories) {
-            if (!fs.existsSync(dir)) continue;
-            
-            try {
-                const files = fs.readdirSync(dir);
-                
-                for (const file of files) {
-                    if (!file.endsWith('.wav')) continue;
-                    
-                    const filePath = path.join(dir, file);
-                    const stats = fs.statSync(filePath);
-                    
-                    if (stats.mtimeMs < cutoffTime) {
-                        try {
-                            fs.unlinkSync(filePath);
-                            deletedCount++;
-                            logger.debug(`🧹 TRANSCRIPTION: Deleted old audio file: ${file} (age: ${Math.round((Date.now() - stats.mtimeMs) / 60000)} minutes)`);
-                        } catch (e) {
-                            logger.error(`⚠️ TRANSCRIPTION: Failed to delete ${file}:`, e.message);
-                        }
-                    }
-                }
-            } catch (error) {
-                logger.error(`⚠️ TRANSCRIPTION: Error cleaning directory ${dir}:`, error.message);
-            }
-        }
-        
-        if (deletedCount > 0) {
-            logger.debug(`✅ TRANSCRIPTION: Cleaned up ${deletedCount} old audio files`);
-        }
-        
-        return { success: true, deletedCount };
+        return this.audioFileJanitor.cleanupOldAudioFiles(maxAgeMinutes);
     }
-    
+
     // Start periodic cleanup (called from constructor or init)
     startPeriodicCleanup(intervalMinutes = 15) {
-        // Run cleanup every N minutes
-        setInterval(() => {
-            this.cleanupOldAudioFiles(30); // Delete files older than 30 minutes
-        }, intervalMinutes * 60 * 1000);
-        
-        // Run initial cleanup
-        this.cleanupOldAudioFiles(30);
-        
-        logger.debug(`🧹 TRANSCRIPTION: Started periodic cleanup (every ${intervalMinutes} minutes)`);
+        return this.audioFileJanitor.startPeriodicCleanup(intervalMinutes);
     }
 }
 
