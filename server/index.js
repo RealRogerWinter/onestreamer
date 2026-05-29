@@ -1,130 +1,8 @@
-// ============================================================================
-// Phase 15B decomposition inventory + closure record (PR 15B.1 → 15B-close).
-//
-// `server/index.js` is the orchestrator. Phases 6–14 carved its services and
-// repositories out into their own modules; Phase 15B finished the job for
-// helpers (15B.2.a/b/c), socket-handler registration (15B.5), shutdown
-// sequence (15B.4), and added section headers for middleware-stays (15B.6).
-// PR 15B.3.a opened the route-cluster extractions with health/root/webrtc-
-// config. Phase 15B closes here with the route-cluster residuals explicitly
-// listed below — each remaining inline cluster is a clean future extraction
-// (the inventory + closure-audit work is the load-bearing piece; the moves
-// themselves are mechanical), but Phase 15's structural success criteria
-// are met without them: a reader landing here cold can see the whole
-// startup sequence in one screen (section headers below), every category
-// of business-logic-bearing work outside `routes/` lives in a clearly-
-// named module, and the inline `getStreamerDisplayName` helper is the
-// explicit Phase 15B residual documented at its own section header.
-//
-// Helpers (lines 432–1121, ~690 LoC) — extracted by PR 15B.2 (helpers go
-// FIRST because routes call them; reversing the order would force a
-// back-import phase). Closure-over-lazy-service hazard documented in the
-// 15B.1 PR description.
-//
-//   [extracted] initializeRedis              → bootstrap/redis.js     (15B.2.b — landed)
-//   [deleted]   getActiveVisualEffects       → dead code (no callers) (15B.2.c)
-//   [deleted]   startVisualEffectSync        → dead code (no callers) (15B.2.c)
-//   [extracted] broadcastGlobalCooldown      → services/StreamOrchestration.js (15B.2.a — landed)
-//   [extracted] cleanupViewbotUsername       → services/viewbot/UsernameCache.js (15B.2.b — landed)
-//   [extracted] generateViewbotUsername      → services/viewbot/UsernameCache.js (15B.2.b — landed)
-//   [residual]  getStreamerDisplayName       → stays inline (15B.2.c maintainer
-//                                              call — lazy-service closure
-//                                              prevents clean extraction; see
-//                                              section header at the inline site)
-//   [extracted] enrichStreamStatus           → services/StreamOrchestration.js (15B.2.a — landed)
-//   [extracted] verifyAndEmitStreamReady     → services/StreamOrchestration.js (15B.2.a — landed)
-//
-// Routes (lines 1123–4598 in the pre-Phase-15B file, 143 inline handlers
-// at the Phase-14 close). PR 15B.3.a opened the cluster extractions with
-// health/root/webrtc-config (→ routes/health.js, 3 handlers). The remaining
-// clusters below are **explicit Phase 15B residuals** — each is a clean
-// mechanical extraction following the 15B.3.a pattern (express.Router,
-// `req.app.locals.<serviceName>` with JSON-500 short-circuit, mount via
-// `app.use(require('./routes/<cluster>'))`), but they don't unblock new
-// work and the orchestrator already navigates cleanly via the section
-// headers below. Future extraction is welcomed; not a Phase-15-blocker.
-//
-// Stateful service deps for any cluster: read from `req.app.locals.<svc>`
-// with the JSON-500 short-circuit pattern from `server/routes/audio.js`.
-// Auth: most clusters use `authenticateAdmin` / `authenticateModerator`
-// (JWT, from `middleware/auth.js`); a few legacy clusters use
-// `adminKeyAuth` (X-Admin-Key) or `viewBotAuth` (combined). The auth
-// middlewares are constructed inline in `index.js` and can either move
-// into the route module or stay on `app.locals.<authName>` for the
-// extracted module to reference.
-//
-//   [extracted] root + health + webrtc cfg   → routes/health.js          (15B.3.a — landed)
-//   [extracted] ViewBot HTTP admin bridge    → routes/viewbot-admin.js   (15B.3.e — landed)
-//                  (52 routes; viewbot/, test-stream/, viewbot-manager,
-//                   viewbot-webrtc, viewbot-client, simple-rotation,
-//                   debug/, streaming-method; lazy services via getters)
-//   [extracted] recordings + continuous       → routes/admin-recordings-ext.js (15B.3.h — landed)
-//                  (19 routes; recordings/start,stop,status,list,stream,
-//                   download,active,system-status,cleanup,settings,
-//                   :id/compress + continuous/{enable,disable,status,
-//                   check-and-start,history/:sessionId})
-//   [extracted] transcription                 → routes/admin-transcription.js (15B.3.i — landed)
-//                  (10 routes; transcription/{start,stop/:id,timed,instant,
-//                   config,status} + /api/transcription{,s}/*; lazy
-//                   transcriptionService via getter)
-//   [extracted] MovieBot/VisionBot/Groq/      → routes/admin-ai.js        (15B.3.j — landed)
-//               OpenAI admin                   (14 routes; both bot services eager)
-//   [extracted] admin moderation/IP-ban/      → routes/admin-moderation.js (15B.3.c — landed)
-//               streaming-logs                 (16 routes from two non-contiguous
-//                                              source blocks; auth=authenticateModerator;
-//                                              streamingLogsService required explicitly
-//                                              in index.js since it's not in the eager
-//                                              `services` bag)
-//   [extracted] admin-ops bundle               → routes/admin-ops.js       (15B.3.f+g — landed)
-//                  (15 routes: stream control + cooldowns + debug/server-state +
-//                   system metrics + uploaded videos; combined sub-PRs because
-//                   they share auth + most deps)
-//   [extracted] custom emoji CRUD + usage      → routes/emojis.js          (15B.3.b — landed)
-//                  (6 routes; serverDir passed as absolute path for the two
-//                   __dirname-relative `path.join` calls inside the body)
-//
-//   [deleted]   visualfx debug static assets — 5 routes deleted as dead code
-//                                              (Phase 15B residual investigation
-//                                              found the debug panel loaded a
-//                                              file via a 404 route since the
-//                                              initial commit — the whole
-//                                              surface was forgotten)
-//
-//   [Phase 15B residual — explicit] route clusters still inline:
-//     - user chat-color get/set            (~2 routes; tiny cluster)
-//     - admin dashboard HTML render        (1 route)
-//
-// Total residual: ~3 inline handlers (down from ~140 at Phase-15-start), ~100 LoC of route bodies.
-// All have a clean destination per the table above; further extractions
-// would be a Phase 16 candidate if scope permits.
-//
-// Lifecycle (lines 4945–5835, ~890 LoC) — non-route inline surfaces:
-//
-//   4945–5556   startServer()                → keeps inline; orchestration spine
-//   [extracted] shutdown() + SIGINT/SIGTERM/ → bootstrap/shutdown.js     (15B.4 — landed)
-//               uncaughtException +
-//               cleanupMediaProcesses
-//
-//   [extracted] io.on('connection', ...)     → bootstrap/register-       (15B.5 — landed)
-//               socket-handler registration    socket-handlers.js
-//
-// Middleware (lines 188–374 pre-Phase-15B) — stays in index.js with section
-// headers per locked decision #7 (15B.6 — landed); pure `app.use(...)`
-// wiring is wiring, and middleware order is load-bearing. Three section
-// headers were added: MIDDLEWARE SETUP, ROUTE MOUNTS, and SERVER INIT.
-//
-// Status: Phase 15B closed. Landed: 15B.1 (inventory), 15B.2.a (orchestration
-// helpers → services/StreamOrchestration.js), 15B.2.b (initializeRedis +
-// viewbot username cache → bootstrap/redis.js + services/viewbot/
-// UsernameCache.js), 15B.2.c (dead-code deletion + residual marker on
-// getStreamerDisplayName), 15B.3.a (health/root/webrtc-cfg →
-// routes/health.js), 15B.3.e (ViewBot HTTP admin bridge →
-// routes/viewbot-admin.js — 52 routes / 783 LoC out of index.js), 15B.4
-// (shutdown → bootstrap/shutdown.js), 15B.5 (io.on('connection') →
-// bootstrap/register-socket-handlers.js), 15B.6 (middleware section-header
-// pass). Remaining 15B.3 route clusters (b/c/d/f/g/h/i/j — ~85 inline
-// handlers) are explicit Phase 15B residuals per the plan's closure clause.
-// ============================================================================
+// Server orchestrator. Services live in services/, route clusters mount from
+// routes/, startup helpers in bootstrap/, middleware in middleware/. Stateful
+// services are instantiated here and exposed via app.locals for route modules;
+// see CLAUDE.md ("Sharing services across route modules"). A small number of
+// route handlers (user chat-color, admin dashboard) are still inline below.
 
 const express = require('express');
 const http = require('http');
@@ -136,7 +14,6 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
-const { createClient } = require('redis');
 const session = require('express-session');
 const passport = require('passport');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
@@ -199,9 +76,7 @@ const registerMediaSoupHandler = require('./sockets/MediaSoupHandler');
 const registerStreamHandler = require('./sockets/StreamHandler');
 const registerViewBotHandler = require('./sockets/ViewBotHandler');
 const database = require('./database/database');
-const { runAsync, getAsync, allAsync } = database;
-const UserRepository = require('./database/repository/UserRepository');
-const userRepository = new UserRepository({ getAsync, runAsync, allAsync });
+const { runAsync } = database;
 
 // =========================================================================
 // SERVER INIT (Phase 15B.6 — express + http/https server objects)
@@ -2193,8 +2068,3 @@ require('./bootstrap/shutdown')({
   getViewBotGStreamerService: () => (typeof viewBotGStreamerService !== 'undefined' ? viewBotGStreamerService : undefined),
   getSimpleMediaStreamService: () => (typeof simpleMediaStreamService !== 'undefined' ? simpleMediaStreamService : undefined),
 });
-
-// Pre-extraction body — the entire shutdown function + handlers + cleanup
-// helper lived here before 15B.4. Kept temporarily during a search-and-
-// destroy pass below; if you see live code below this marker, the extraction
-// is incomplete.
