@@ -27,6 +27,7 @@ const { buildCanvasHTML } = require('./canvasHtml');
 const { buildGstreamerVideoPipeline, buildGstreamerAudioPipeline, gstreamerBinaryPath } = require('./gstreamerPipeline');
 const PipelineHealthMonitor = require('./pipelineHealthMonitor');
 const RotationScheduler = require('./rotationScheduler');
+const { killProcessGroup } = require('./processKill');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'ViewBotInstance' });
 
@@ -965,58 +966,10 @@ class ViewBotInstance {
       this.recoveryTimer = null;
     }
     
-    // Store references for delayed cleanup
-    const processesToKill = [];
-    
     // CRITICAL: Kill entire process group to prevent orphaned processes
-    const killProcess = (proc, name) => {
-      if (proc && proc.pid) {
-        const pid = proc.pid;
-        logger.debug(`   💀💀💀 KILLING ${name} process group (PID: ${pid})`);
-        
-        try {
-          // CRITICAL: Use negative PID to kill entire process group on Linux
-          // This ensures all child processes spawned by GStreamer are killed
-          if (process.platform !== 'win32') {
-            // On Linux, kill the entire process group
-            const { execSync } = require('child_process');
-            try {
-              // Use pkill to kill all processes in the process group
-              logger.debug(`   🔫 Executing: kill -9 -${pid} (kill process group)`);
-              execSync(`kill -9 -${pid}`, { stdio: 'ignore' });
-              logger.debug(`   ✅✅✅ ${name} process group KILLED (PID: -${pid})`);
-            } catch (killError) {
-              // If group kill fails, try to kill the single process
-              logger.debug(`   ⚠️ Group kill failed, trying single process kill`);
-              try {
-                proc.kill('SIGKILL');
-                logger.debug(`   ✅ ${name} single process killed (PID: ${pid})`);
-              } catch (e) {
-                logger.debug(`   ❌ Failed to kill ${name}: ${e.message}`);
-              }
-            }
-          } else {
-            // On Windows, just kill the process normally
-            proc.kill('SIGKILL');
-            logger.debug(`   ✅ ${name} process killed (PID: ${pid})`);
-          }
-        } catch (error) {
-          // Process might already be dead
-          if (error.code !== 'ESRCH') {
-            logger.debug(`   ❌❌❌ ERROR killing ${name}: ${error.message}`);
-          } else {
-            logger.debug(`   ⚠️ ${name} process already dead (ESRCH)`);
-          }
-        }
-      } else {
-        logger.debug(`   ⚠️⚠️⚠️ No ${name} process reference to kill!`);
-      }
-    };
-    
-    // Kill all processes
-    killProcess(this.gstreamerVideoProcess, 'video');
-    killProcess(this.gstreamerAudioProcess, 'audio');
-    killProcess(this.gstreamerProcess, 'gstreamer');
+    killProcessGroup(this.gstreamerVideoProcess, 'video', logger);
+    killProcessGroup(this.gstreamerAudioProcess, 'audio', logger);
+    killProcessGroup(this.gstreamerProcess, 'gstreamer', logger);
     
     // No longer needed - process group killing handles all child processes
     
