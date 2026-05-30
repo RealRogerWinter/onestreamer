@@ -4,20 +4,11 @@ import { EffectEngine } from '../../services/EffectEngine';
 import { debug } from '../../utils/debugLogger';
 import authService from '../../services/AuthService';
 import './CanvasEffectOverlay.css';
-
-interface EffectData {
-  id: string;
-  userId: string;
-  itemId: string;
-  itemName: string;
-  displayName: string;
-  emoji: string;
-  type: string;
-  duration: number;
-  config: any;
-  startTime: number;
-  position: { x: number; y: number };
-}
+import { EffectData } from './canvasEffectOverlay/types';
+import {
+  getEffectConfig,
+  getEffectEmoji,
+} from './canvasEffectOverlay/effectDefinitions';
 
 interface CanvasEffectOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -695,43 +686,6 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
 
     debug.canvas(`Debug click at (${x.toFixed(2)}, ${y.toFixed(2)})`, { effectType: selectedEffectType }, 'verbose');
 
-    // Create effect config based on selected type
-    const getEffectConfig = () => {
-      switch (selectedEffectType) {
-        case 'confetti':
-          return {
-            particleCount: 50,
-            colors: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57'],
-            spread: 60
-          };
-        case 'particles':
-          return {
-            particleCount: 30,
-            colors: ['#ff4444', '#44ff44', '#4444ff'],
-            animation: 'sparkle'
-          };
-        case 'splat':
-        default:
-          return {
-            color: '#ff4444',
-            splashColor: '#cc0000',
-            particles: 12,
-            size: 'large',
-            animation: 'splat',
-            drip: true
-          };
-      }
-    };
-
-    const getEffectEmoji = () => {
-      switch (selectedEffectType) {
-        case 'confetti': return '🎉';
-        case 'particles': return '✨';
-        case 'splat': 
-        default: return '🍅';
-      }
-    };
-
     // Trigger a test effect at click position
     const testEffect: EffectData = {
       id: `test_${Date.now()}`,
@@ -739,10 +693,10 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
       itemId: 'test',
       itemName: selectedEffectType,
       displayName: `Test ${selectedEffectType}`,
-      emoji: getEffectEmoji(),
+      emoji: getEffectEmoji(selectedEffectType),
       type: selectedEffectType,
       duration: 3000,
-      config: getEffectConfig(),
+      config: getEffectConfig(selectedEffectType),
       startTime: Date.now(),
       position: { x, y }
     };
@@ -970,53 +924,16 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
             }}
             onClick={() => {
               if (effectEngineRef.current && canvasRef.current) {
-                // Create effect config based on selected type
-                const getEffectConfig = () => {
-                  switch (selectedEffectType) {
-                    case 'confetti':
-                      return {
-                        particleCount: 50,
-                        colors: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57'],
-                        spread: 60
-                      };
-                    case 'particles':
-                      return {
-                        particleCount: 30,
-                        colors: ['#ff4444', '#44ff44', '#4444ff'],
-                        animation: 'sparkle'
-                      };
-                    case 'splat':
-                    default:
-                      return {
-                        color: '#ff4444',
-                        splashColor: '#cc0000',
-                        particles: 12,
-                        size: 'large',
-                        animation: 'splat',
-                        drip: true
-                      };
-                  }
-                };
-
-                const getEffectEmoji = () => {
-                  switch (selectedEffectType) {
-                    case 'confetti': return '🎉';
-                    case 'particles': return '✨';
-                    case 'splat': 
-                    default: return '🍅';
-                  }
-                };
-                
                 const testEffect: EffectData = {
                   id: `button_test_${Date.now()}`,
                   userId: 'test',
                   itemId: 'test',
                   itemName: selectedEffectType,
                   displayName: `Button Test ${selectedEffectType}`,
-                  emoji: getEffectEmoji(),
+                  emoji: getEffectEmoji(selectedEffectType),
                   type: selectedEffectType,
                   duration: 3000,
-                  config: getEffectConfig(),
+                  config: getEffectConfig(selectedEffectType),
                   startTime: Date.now(),
                   position: { x: 0.5, y: 0.5 } // Center of canvas
                 };
@@ -1044,53 +961,16 @@ const CanvasEffectOverlay: React.FC<CanvasEffectOverlayProps> = ({
             }}
             onClick={() => {
               if (effectEngineRef.current && canvasRef.current) {
-                // Create effect config based on selected type
-                const getEffectConfig = () => {
-                  switch (selectedEffectType) {
-                    case 'confetti':
-                      return {
-                        particleCount: 50,
-                        colors: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57'],
-                        spread: 60
-                      };
-                    case 'particles':
-                      return {
-                        particleCount: 30,
-                        colors: ['#ff4444', '#44ff44', '#4444ff'],
-                        animation: 'sparkle'
-                      };
-                    case 'splat':
-                    default:
-                      return {
-                        color: '#ff4444',
-                        splashColor: '#cc0000',
-                        particles: 12,
-                        size: 'large',
-                        animation: 'splat',
-                        drip: true
-                      };
-                  }
-                };
-
-                const getEffectEmoji = () => {
-                  switch (selectedEffectType) {
-                    case 'confetti': return '🎉';
-                    case 'particles': return '✨';
-                    case 'splat': 
-                    default: return '🍅';
-                  }
-                };
-                
                 const testEffect: EffectData = {
                   id: `corner_test_${Date.now()}`,
                   userId: 'test',
                   itemId: 'test',
                   itemName: selectedEffectType,
                   displayName: `Corner Test ${selectedEffectType}`,
-                  emoji: getEffectEmoji(),
+                  emoji: getEffectEmoji(selectedEffectType),
                   type: selectedEffectType,
                   duration: 3000,
-                  config: getEffectConfig(),
+                  config: getEffectConfig(selectedEffectType),
                   startTime: Date.now(),
                   position: { x: 0.1, y: 0.1 } // Top-left corner area
                 };
