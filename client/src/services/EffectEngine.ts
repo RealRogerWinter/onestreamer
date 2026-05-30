@@ -12,21 +12,12 @@ import { PsychedelicEffect } from './effects/PsychedelicEffect';
 import { BugsEffect } from './effects/BugsEffect';
 import { RainEffect } from './effects/RainEffect';
 import { BaseEffect } from './effects/BaseEffect';
+import { EffectData } from './effectEngine/types';
+import { parseColor } from './effectEngine/color';
 
-export interface EffectData {
-  id: string;
-  userId: string;
-  itemId: string;
-  itemName: string;
-  displayName: string;
-  emoji: string;
-  type: string;
-  duration: number;
-  config: any;
-  startTime: number;
-  position: { x: number; y: number };
-  mainEffectId?: string; // For multi-phase effects to share data
-}
+// Re-exported so existing importers (`import { EffectData } from './EffectEngine'`)
+// keep working unchanged. Canonical definition now lives in effectEngine/types.
+export type { EffectData };
 
 export class EffectEngine extends EventEmitter {
   private canvas: HTMLCanvasElement;
@@ -553,29 +544,9 @@ export class EffectEngine extends EventEmitter {
   }
 
   private parseColor(colorStr: string): { r: number; g: number; b: number } | undefined {
-    // Parse rgba(r, g, b, a) format
-    const rgbaMatch = colorStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)/);
-    if (rgbaMatch) {
-      return {
-        r: parseInt(rgbaMatch[1]),
-        g: parseInt(rgbaMatch[2]),
-        b: parseInt(rgbaMatch[3])
-      };
-    }
-    
-    // Parse hex format
-    const hexMatch = colorStr.match(/^#([a-f\d]{6})$/i);
-    if (hexMatch) {
-      const hex = hexMatch[1];
-      return {
-        r: parseInt(hex.substr(0, 2), 16),
-        g: parseInt(hex.substr(2, 2), 16),
-        b: parseInt(hex.substr(4, 2), 16)
-      };
-    }
-    
-    // Default to gray smoke
-    return { r: 120, g: 120, b: 120 };
+    // Delegates to the pure helper in effectEngine/color. Kept as a thin private
+    // method so existing `this.parseColor(...)` call sites are unchanged.
+    return parseColor(colorStr);
   }
 
   public removeEffect(effectId: string): void {
