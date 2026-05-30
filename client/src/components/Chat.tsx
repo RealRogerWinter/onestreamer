@@ -211,19 +211,6 @@ const Chat: React.FC<ChatProps> = ({ className = '' }) => {
     }
   };
 
-  // More accurate check if user is scrolled near the bottom
-  const isScrolledToBottom = () => {
-    const chatContainer = chatContainerRef.current;
-    if (!chatContainer) return true;
-    
-    const { scrollTop, scrollHeight, clientHeight } = chatContainer;
-    // Dynamic threshold based on viewport height
-    const threshold = Math.min(clientHeight * 0.1, 100); // 10% of viewport or 100px max
-    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
-    
-    return distanceFromBottom <= threshold;
-  };
-
   // Debounced scroll handler with improved logic
   const handleScroll = () => {
     // Ignore programmatic scrolls

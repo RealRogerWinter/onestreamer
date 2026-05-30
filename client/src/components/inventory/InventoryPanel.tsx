@@ -52,7 +52,6 @@ interface InventoryPanelProps {
 const InventoryPanel: React.FC<InventoryPanelProps> = ({
   socket,
   isAuthenticated,
-  userProfile,
   isOpen = false,
   onToggle,
   onToggleShop,
