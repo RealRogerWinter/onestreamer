@@ -1057,16 +1057,6 @@ Respond only with valid JSON, no markdown.`;
         return newEnabled;
     }
 
-    async setAutoSummonInterval(minutes) {
-        await this.updateAutoSummonSettings({ interval_minutes: minutes });
-        // Restart auto-summon with new interval
-        await this.startAutoSummon();
-    }
-
-    async setAutoSummonDuration(seconds) {
-        await this.updateAutoSummonSettings({ bot_duration_seconds: seconds });
-    }
-
     async logAutoSummonedBot(chatbotId, botName, personality, generatedPrompt) {
         return new Promise((resolve, reject) => {
             this.db.run(

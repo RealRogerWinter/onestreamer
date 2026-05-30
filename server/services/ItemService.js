@@ -707,10 +707,6 @@ class ItemService {
         return categories;
     }
 
-    async getItemsByRarity(rarity) {
-        return await this.itemRepository.listByRarity(rarity);
-    }
-
     async updateItem(itemId, updates) {
         const allowedFields = [
             'display_name', 'emoji', 'description', 'base_price',

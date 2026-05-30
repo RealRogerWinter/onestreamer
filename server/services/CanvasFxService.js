@@ -16,10 +16,7 @@ class CanvasFxService extends EventEmitter {
         
         // Track effects that sync with buff duration
         this.buffSyncedEffects = new Map(); // effectId -> buffId
-        
-        // Effect queue for sequential rendering
-        this.effectQueue = [];
-        
+
         // Performance monitoring
         this.effectStats = {
             totalTriggered: 0,
@@ -703,8 +700,7 @@ class CanvasFxService extends EventEmitter {
             
             const mainEffectId = `fx_multi_${userId}_${itemId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const phaseEffects = [];
-            let currentTime = 0;
-            
+
             for (const [phaseIndex, phase] of effectConfig.config.phases.entries()) {
                 const phaseId = `${mainEffectId}_phase${phaseIndex}`;
                 const phaseStartTime = Date.now() + (phase.delay || 0);
