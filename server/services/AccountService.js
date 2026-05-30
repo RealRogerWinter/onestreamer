@@ -5,6 +5,11 @@ const UserRepository = require('../database/repository/UserRepository');
 const AccountStatsRepository = require('../database/repository/AccountStatsRepository');
 const UserSessionRepository = require('../database/repository/UserSessionRepository');
 
+const PointsManager = require('./account/PointsManager');
+const AdminPointsManager = require('./account/AdminPointsManager');
+const AccountProfileManager = require('./account/AccountProfileManager');
+const AccountLifecycleManager = require('./account/AccountLifecycleManager');
+
 const logger = require('../bootstrap/logger').child({ svc: 'AccountService' });
 
 // PR 16.4: typed error used by adminGrantPoints / adminRevokePoints to
@@ -44,6 +49,15 @@ class AccountService {
             || new AccountStatsRepository({ getAsync, runAsync, allAsync });
         this.userSessionRepository = userSessionRepository
             || new UserSessionRepository({ getAsync, runAsync, allAsync });
+
+        // Cohesive collaborators. Each takes an `owner` back-reference; ALL
+        // service state stays on the service instance (single source of
+        // truth via `owner.<field>`), and the public methods below remain
+        // thin delegators with identical signatures.
+        this.pointsManager = new PointsManager(this);
+        this.adminPointsManager = new AdminPointsManager(this);
+        this.profileManager = new AccountProfileManager(this);
+        this.lifecycleManager = new AccountLifecycleManager(this);
     }
 
     async createUser(email, username, password, oauthProvider = null, oauthId = null) {
@@ -247,31 +261,9 @@ class AccountService {
      * @returns {number} New balance
      */
     async addPoints(userId, amount, type, description, metadata = null) {
-        if (amount <= 0) {
-            throw new Error('Amount must be positive');
-        }
-
-        // Atomic relative-arithmetic UPDATE. RETURNING gives us the post-write
-        // balance without a follow-up SELECT, so concurrent callers can't
-        // race on stale reads (ADR-0013a). PR 10.3 routes through the
-        // repo — the SQL is byte-equivalent to the legacy inline form.
-        const updated = await this.accountStatsRepository.atomicAddPoints({ userId, amount });
-
-        let newBalance;
-        if (updated) {
-            newBalance = updated.points_balance;
-        } else {
-            // No stats row yet — INSERT with the amount as the initial balance.
-            await this.accountStatsRepository.insertStatsWithBalance({ userId, balance: amount });
-            newBalance = amount;
-        }
-
-        await this.recordTransaction(userId, amount, newBalance, type, description, metadata);
-
-        logger.debug(`💰 Added ${amount} points to user ${userId} (${type}). New balance: ${newBalance}`);
-        return newBalance;
+        return this.pointsManager.addPoints(userId, amount, type, description, metadata);
     }
-    
+
     /**
      * Subtract points from user's balance
      * @param {number} userId - User ID
@@ -282,66 +274,23 @@ class AccountService {
      * @returns {number} New balance
      */
     async subtractPoints(userId, amount, type, description, metadata = null) {
-        if (amount <= 0) {
-            throw new Error('Amount must be positive');
-        }
-
-        // Atomic guarded UPDATE: only debit if the row exists AND has enough
-        // balance. RETURNING gives us the post-debit balance for the
-        // transaction record; no follow-up SELECT, no race window. PR 10.3
-        // routes through the repo — the SQL is byte-equivalent to the
-        // legacy inline form.
-        const updated = await this.accountStatsRepository.atomicSubtractPoints({ userId, amount });
-
-        if (!updated) {
-            // Either no stats row or insufficient balance — disambiguate
-            // for the error message. The SELECT can race with concurrent
-            // mutations but it's only feeding the error string.
-            const stats = await this.accountStatsRepository.getPointsBalanceByUserId(userId);
-            const currentBalance = stats?.points_balance || 0;
-            throw new Error(`Insufficient points balance. Has: ${currentBalance}, Needs: ${amount}`);
-        }
-
-        const newBalance = updated.points_balance;
-
-        await this.recordTransaction(userId, -amount, newBalance, type, description, metadata);
-
-        logger.debug(`💸 Subtracted ${amount} points from user ${userId} (${type}). New balance: ${newBalance}`);
-        return newBalance;
+        return this.pointsManager.subtractPoints(userId, amount, type, description, metadata);
     }
-    
+
     /**
      * Get user's current points balance
      * @param {number} userId - User ID
      * @returns {number} Current balance
      */
     async getPointsBalance(userId) {
-        const stats = await this.getUserStats(userId);
-        return stats?.points_balance || 0;
+        return this.pointsManager.getPointsBalance(userId);
     }
-    
+
     /**
      * Record a points transaction
      */
     async recordTransaction(userId, amount, balanceAfter, type, description, metadata = null) {
-        await this.accountStatsRepository.insertTransaction({
-            userId,
-            amount,
-            balanceAfter,
-            type,
-            description,
-            metadataJson: metadata ? JSON.stringify(metadata) : null,
-        });
-    }
-    
-    /**
-     * Get transaction history for a user
-     * @param {number} userId - User ID
-     * @param {number} limit - Number of transactions to return
-     * @returns {Array} Transaction history
-     */
-    async getTransactionHistory(userId, limit = 50) {
-        return await this.accountStatsRepository.listTransactionsByUserId(userId, limit);
+        return this.pointsManager.recordTransaction(userId, amount, balanceAfter, type, description, metadata);
     }
 
     /**
@@ -363,33 +312,7 @@ class AccountService {
      *          Same subset the pre-PR handler used to build its 200 body.
      */
     async adminGrantPoints(adminUserId, targetUsername, amount) {
-        const adminUser = await this.getUserById(adminUserId);
-        if (!adminUser || !adminUser.is_admin) {
-            throw new AccountServiceError(403, 'Admin access required');
-        }
-
-        const targetUser = await this.getUserByUsername(targetUsername);
-        if (!targetUser) {
-            throw new AccountServiceError(404, `User '${targetUsername}' not found`);
-        }
-
-        const newBalance = await this.addPoints(
-            targetUser.id,
-            amount,
-            'admin_award',
-            `Admin award by ${adminUser.username}`,
-            { adminId: adminUserId }
-        );
-
-        logger.debug(
-            `💰 ADMIN: ${adminUser.username} awarded ${amount} points to ${targetUsername}. New balance: ${newBalance}`
-        );
-
-        return {
-            newBalance,
-            targetUserId: targetUser.id,
-            targetUsername: targetUser.username,
-        };
+        return this.adminPointsManager.adminGrantPoints(adminUserId, targetUsername, amount);
     }
 
     /**
@@ -406,41 +329,7 @@ class AccountService {
      * @returns {Promise<{ newBalance, targetUserId, targetUsername }>}
      */
     async adminRevokePoints(adminUserId, targetUsername, amount) {
-        const adminUser = await this.getUserById(adminUserId);
-        if (!adminUser || !adminUser.is_admin) {
-            throw new AccountServiceError(403, 'Admin access required');
-        }
-
-        const targetUser = await this.getUserByUsername(targetUsername);
-        if (!targetUser) {
-            throw new AccountServiceError(404, `User '${targetUsername}' not found`);
-        }
-
-        const currentBalance = await this.getPointsBalance(targetUser.id);
-        if (currentBalance < amount) {
-            throw new AccountServiceError(
-                400,
-                `User only has ${currentBalance} points (cannot deduct ${amount})`
-            );
-        }
-
-        const newBalance = await this.subtractPoints(
-            targetUser.id,
-            amount,
-            'admin_deduction',
-            `Admin deduction by ${adminUser.username}`,
-            { adminId: adminUserId }
-        );
-
-        logger.debug(
-            `💸 ADMIN: ${adminUser.username} deducted ${amount} points from ${targetUsername}. New balance: ${newBalance}`
-        );
-
-        return {
-            newBalance,
-            targetUserId: targetUser.id,
-            targetUsername: targetUser.username,
-        };
+        return this.adminPointsManager.adminRevokePoints(adminUserId, targetUsername, amount);
     }
 
     async transferIPSessionToUser(userId, ipAddress, sessionData) {
@@ -471,10 +360,6 @@ class AccountService {
 
     async deleteSession(sessionId) {
         await this.userSessionRepository.deleteSessionById(sessionId);
-    }
-
-    async cleanupExpiredSessions() {
-        await this.userSessionRepository.deleteExpiredSessions();
     }
 
     async promoteToAdmin(userId) {
@@ -514,271 +399,52 @@ class AccountService {
     }
 
     async changeUsername(userId, newUsername) {
-        // Check if user exists and get their current info
-        const user = await this.getUserById(userId);
-        if (!user) {
-            throw new Error('User not found');
-        }
-
-        // Check if they've already changed their username
-        if (user.username_changed === 1 || user.username_changed === true) {
-            throw new Error('Username can only be changed once');
-        }
-
-        // Check if user signed up via OAuth (they get one username change)
-        if (!user.oauth_provider) {
-            throw new Error('Username change is only available for OAuth users');
-        }
-
-        // Validate username format
-        if (!newUsername || newUsername.length < 3 || newUsername.length > 20) {
-            throw new Error('Username must be between 3 and 20 characters');
-        }
-
-        if (!/^[a-zA-Z0-9_]+$/.test(newUsername)) {
-            throw new Error('Username can only contain letters, numbers, and underscores');
-        }
-
-        // Check if new username is already taken
-        const existingUser = await this.getUserByUsername(newUsername);
-        if (existingUser && existingUser.id !== userId) {
-            throw new Error('Username already taken');
-        }
-
-        // Update username and mark as changed (auto-stamps updated_at).
-        await this.userRepository.update(userId, {
-            username: newUsername,
-            username_changed: 1
-        });
-
-        return {
-            success: true,
-            username: newUsername
-        };
+        return this.profileManager.changeUsername(userId, newUsername);
     }
 
     async canChangeUsername(userId) {
-        const user = await this.getUserById(userId);
-        if (!user) {
-            return false;
-        }
-        
-        // User can change username if:
-        // 1. They signed up via OAuth
-        // 2. They haven't changed it yet
-        return user.oauth_provider && (user.username_changed === 0 || user.username_changed === false || user.username_changed === null);
+        return this.profileManager.canChangeUsername(userId);
     }
 
     // Account deletion methods
     async requestDeletion(userId, deletionToken, tokenExpires) {
-        const requestedAtIso = new Date().toISOString();
-        const scheduledForIso = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(); // 15 days from now
-
-        await this.userRepository.requestDeletion(userId, {
-            requestedAtIso,
-            token: deletionToken,
-            tokenExpiresIso: tokenExpires.toISOString(),
-            scheduledForIso
-        });
-
-        // Log the deletion request
-        await this.logDeletionAction(userId, 'deletion_requested');
-        return true;
+        return this.lifecycleManager.requestDeletion(userId, deletionToken, tokenExpires);
     }
 
     async confirmDeletion(token) {
-        let user;
-        try {
-            user = await this.userRepository.findByDeletionToken(token);
-        } catch (err) {
-            return { success: false, error: 'Database error' };
-        }
-
-        if (!user) {
-            return { success: false, error: 'Invalid or expired deletion token' };
-        }
-
-        try {
-            await this.userRepository.confirmDeletion(user.id);
-        } catch (err) {
-            return { success: false, error: 'Failed to confirm deletion' };
-        }
-
-        // Log the confirmation
-        await this.logDeletionAction(user.id, 'deletion_confirmed');
-        return { success: true, userId: user.id };
+        return this.lifecycleManager.confirmDeletion(token);
     }
 
     async restoreAccount(userId) {
-        const result = await this.userRepository.restoreFromDeletion(userId);
-        if (result.changes === 0) {
-            return false; // No rows updated
-        }
-        // Log the restoration
-        await this.logDeletionAction(userId, 'account_restored');
-        return true;
+        return this.lifecycleManager.restoreAccount(userId);
     }
 
     async logDeletionAction(userId, action, ipAddress = null, userAgent = null) {
-        // PR 10.3 (Phase 10): moved off raw `db.run` callback shape onto
-        // the repo's runAsync-backed insertDeletionLog. The legacy code
-        // SWALLOWED audit-log INSERT failures (logged + resolved false
-        // instead of rejecting); the swallow shape is preserved here at
-        // the service level via try/catch.
-        const user = await this.getUserById(userId);
-        if (!user) return false;
-
-        try {
-            await this.userSessionRepository.insertDeletionLog({
-                userId,
-                username: user.username,
-                email: user.email,
-                action,
-                ipAddress,
-                userAgent,
-            });
-            return true;
-        } catch (err) {
-            logger.error('Failed to log deletion action:', err);
-            return false;
-        }
+        return this.lifecycleManager.logDeletionAction(userId, action, ipAddress, userAgent);
     }
 
     async getAccountsPendingDeletion() {
-        const rows = await this.userRepository.listPendingDeletion();
-        return rows || [];
+        return this.lifecycleManager.getAccountsPendingDeletion();
     }
 
     async permanentlyDeleteAccount(userId) {
-        // Log the permanent deletion
-        await this.logDeletionAction(userId, 'data_purged');
-
-        // **Cascade-delete loop stays inline by design** (PR 10.3 / Phase 10).
-        // The enumerated table list IS the audit trail for what
-        // permanent-deletion covers. Replacing it with N
-        // repo-method calls would expand the diff without changing
-        // semantics, and three of the seven tables aren't owned
-        // by any repo yet (`user_inventory` is owned by
-        // UserInventoryRepository but the others aren't). A future
-        // PR can revisit once every table has a repo.
-        const tables = [
-            'user_sessions',
-            'user_stats',
-            'ip_to_user_transfers',
-            'user_inventory',
-            'item_usage_history',
-            'user_points_log',
-            'account_deletion_logs'
-        ];
-
-        for (const table of tables) {
-            await new Promise((res, rej) => {
-                this.db.run(`DELETE FROM ${table} WHERE user_id = ?`, [userId], (err) => {
-                    if (err) rej(err);
-                    else res(true);
-                });
-            });
-        }
-
-        // Finally, mark the user as deleted (keep record for audit)
-        await this.userRepository.purgeAccount(userId);
-        return true;
+        return this.lifecycleManager.permanentlyDeleteAccount(userId);
     }
 
     async verifyUserPassword(userId, password) {
-        try {
-            logger.debug('Verifying password for user:', userId);
-            const user = await this.userRepository.getPasswordHash(userId);
-
-            if (!user || !user.password) {
-                logger.debug('User not found or no password set for user:', userId);
-                return false;
-            }
-
-            const isValid = await bcrypt.compare(password, user.password);
-            logger.debug('Password comparison result for user', userId, ':', isValid);
-            return isValid;
-        } catch (error) {
-            logger.error('Error verifying user password:', error);
-            return false;
-        }
+        return this.profileManager.verifyUserPassword(userId, password);
     }
 
     async changePassword(userId, newPassword) {
-        try {
-            logger.debug('Changing password for user:', userId);
-            const hashedPassword = await bcrypt.hash(newPassword, this.saltRounds);
-            logger.debug('Password hashed successfully');
-
-            // update() auto-stamps updated_at = CURRENT_TIMESTAMP, matching
-            // the legacy inline SQL behavior.
-            const result = await this.userRepository.update(userId, { password: hashedPassword });
-            logger.debug('Database update result:', result);
-
-            return true;
-        } catch (error) {
-            logger.error('Error changing password:', error);
-            throw new Error('Failed to change password');
-        }
+        return this.profileManager.changePassword(userId, newPassword);
     }
 
     async updateProfile(userId, profileData) {
-        try {
-            const { bio, website, location, displayName, avatar_url, description } = profileData;
-
-            // Build the column-map for UserRepository.update only with the
-            // fields the caller actually supplied. update() handles the
-            // empty-map case by short-circuiting, and auto-stamps
-            // updated_at = CURRENT_TIMESTAMP — matching the legacy SQL.
-            const fields = {};
-            if (bio !== undefined) fields.bio = bio;
-            if (website !== undefined) fields.website = website;
-            if (location !== undefined) fields.location = location;
-            if (displayName !== undefined) fields.display_name = displayName;
-            if (avatar_url !== undefined) fields.avatar_url = avatar_url;
-            if (description !== undefined) fields.description = description;
-
-            if (Object.keys(fields).length === 0) {
-                // No fields to update
-                return await this.getUserProfile(userId);
-            }
-
-            await this.userRepository.update(userId, fields);
-
-            // Return the updated profile
-            return await this.getUserProfile(userId);
-        } catch (error) {
-            logger.error('Error updating user profile:', error);
-            throw new Error('Failed to update user profile');
-        }
+        return this.profileManager.updateProfile(userId, profileData);
     }
 
     async getUserProfile(userId) {
-        try {
-            const user = await this.userRepository.getProfileById(userId);
-            
-            if (!user) {
-                throw new Error('User not found');
-            }
-            
-            return {
-                id: user.id,
-                email: user.email,
-                username: user.username,
-                bio: user.bio,
-                website: user.website,
-                location: user.location,
-                displayName: user.display_name || user.username,
-                createdAt: user.created_at,
-                updatedAt: user.updated_at,
-                isVerified: user.is_verified,
-                isAdmin: user.is_admin,
-                isModerator: user.is_moderator
-            };
-        } catch (error) {
-            logger.error('Error getting user profile:', error);
-            throw error;
-        }
+        return this.profileManager.getUserProfile(userId);
     }
 }
 
