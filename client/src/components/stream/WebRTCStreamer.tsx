@@ -10,6 +10,13 @@ import CanvasEffectOverlay from '../canvas/CanvasEffectOverlay';
 import { useStreamerViewManager } from '../../hooks/useStreamerViewManager';
 import { useVisualFxProcessor } from '../../hooks/useVisualFxProcessor';
 import { resolutionConstraints } from '../../utils/resolutionConstraints';
+import {
+  StreamLoadingOverlay,
+  StreamErrorOverlay,
+  StreamIdlePreview,
+} from './webrtcStreamer/StreamStatusOverlays';
+import { ViewModeIndicator } from './webrtcStreamer/ViewModeIndicator';
+import { webrtcVideoStyle } from './webrtcStreamer/videoStyles';
 import './WebRTCViewer.css';
 
 interface WebRTCStreamerProps {
@@ -1101,19 +1108,10 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         />
       )}
       
-      {isLoading && (
-        <div className="webrtc-loading">
-          <div className="loading-spinner"></div>
-          <p>Starting stream...</p>
-        </div>
-      )}
-      
-      {error && (
-        <div className="webrtc-error">
-          <p>⚠️ {error}</p>
-        </div>
-      )}
-      
+      <StreamLoadingOverlay isLoading={isLoading} />
+
+      <StreamErrorOverlay error={error} />
+
       <video
         ref={videoRef}
         className="webrtc-video"
@@ -1124,45 +1122,16 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         webkit-playsinline="true"
         crossOrigin="anonymous"
         preload="auto"
-        style={{
-          width: '100%',
-          height: '100%',
-          backgroundColor: '#000',
-          objectFit: 'contain', // Changed to contain to show full frame without cropping
-          // Removed horizontal flip - streamer now sees themselves as viewers see them
-          // Mobile Chrome specific fixes
-          WebkitTransform: 'translateZ(0)', // Force hardware acceleration without mirror
-          WebkitBackfaceVisibility: 'hidden',
-          backfaceVisibility: 'hidden'
-        }}
+        style={webrtcVideoStyle}
       />
-      
+
       {/* View Mode Indicator */}
-      {isStreaming && viewState.mode === 'self-stream' && (
-        <div style={{
-          position: 'absolute',
-          top: '10px',
-          right: '10px',
-          background: 'rgba(255, 107, 107, 0.9)',
-          color: 'white',
-          padding: '8px 12px',
-          borderRadius: '20px',
-          fontSize: '12px',
-          fontWeight: 'bold',
-          zIndex: 1000,
-          pointerEvents: 'none',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-          animation: 'pulse 2s infinite'
-        }}>
-          🔴 VIEWING PROCESSED STREAM ({viewState.activeEffects.length})
-        </div>
-      )}
-      
-      {!isStreaming && !isLoading && !error && (
-        <div className="webrtc-preview">
-          <p>Click "Start Streaming" to begin broadcasting</p>
-        </div>
-      )}
+      <ViewModeIndicator
+        visible={isStreaming && viewState.mode === 'self-stream'}
+        activeEffectsCount={viewState.activeEffects.length}
+      />
+
+      <StreamIdlePreview show={!isStreaming && !isLoading && !error} />
       
       {/* Audio Level Meter overlay on stream */}
       {isStreaming && streamRef.current && showAudioMeter && (
