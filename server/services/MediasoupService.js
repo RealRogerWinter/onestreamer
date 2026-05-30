@@ -2,6 +2,13 @@ const mediasoup = require('mediasoup');
 
 const logger = require('../bootstrap/logger').child({ svc: 'MediasoupService' });
 
+// Pure, stateless helpers extracted from this service. They do not touch any
+// live mediasoup objects or this service's maps; the lifecycle core stays here.
+const { mediaCodecs } = require('./mediasoup/mediaCodecs');
+const { optimizeRtpCapabilities } = require('./mediasoup/rtpCapabilities');
+const { buildWebRtcTransportConfig } = require('./mediasoup/transportOptions');
+const { buildStats } = require('./mediasoup/stats');
+
 class MediasoupService {
   constructor() {
     this.worker = null;
@@ -77,74 +84,8 @@ class MediasoupService {
     }
 
     // CRITICAL iOS FIX: Optimized codec configuration for iOS Safari compatibility
-    // H264 Baseline (42e01f) is placed first and includes iOS-specific parameters
-    const mediaCodecs = [
-      {
-        kind: 'audio',
-        mimeType: 'audio/opus',
-        clockRate: 48000,
-        channels: 2,
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'transport-cc' }
-        ]
-      },
-      // CRITICAL: H264 Baseline Profile - iOS Safari's REQUIRED codec
-      {
-        kind: 'video',
-        mimeType: 'video/H264', // Capital H for better cross-browser compatibility
-        clockRate: 90000,
-        parameters: {
-          'packetization-mode': 1,
-          'profile-level-id': '42e01f', // Baseline Profile Level 3.1 - iOS preferred
-          'level-asymmetry-allowed': 1,
-          // iOS-specific optimizations
-          'x-google-start-bitrate': 1000, // Help iOS with initial bitrate (1 Mbps)
-          'x-google-max-bitrate': 2500 // Max bitrate 2.5 Mbps
-        },
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'nack', parameter: 'pli' },
-          { type: 'ccm', parameter: 'fir' },
-          { type: 'goog-remb' },
-          { type: 'transport-cc' }
-        ]
-      },
-      // H264 Main Profile for desktop browsers (Chrome, Firefox)
-      {
-        kind: 'video',
-        mimeType: 'video/H264',
-        clockRate: 90000,
-        parameters: {
-          'packetization-mode': 1,
-          'profile-level-id': '4d0032', // Main Profile Level 5.0
-          'level-asymmetry-allowed': 1
-        },
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'nack', parameter: 'pli' },
-          { type: 'ccm', parameter: 'fir' },
-          { type: 'goog-remb' },
-          { type: 'transport-cc' }
-        ]
-      },
-      // VP8 for older browsers (placed after H264 for priority)
-      {
-        kind: 'video',
-        mimeType: 'video/VP8',
-        clockRate: 90000,
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'nack', parameter: 'pli' },
-          { type: 'ccm', parameter: 'fir' },
-          { type: 'goog-remb' },
-          { type: 'transport-cc' }
-        ]
-      }
-      // Removed: H264 High Profile (640032) - iOS doesn't support it well
-      // Removed: VP9 - iOS Safari doesn't support it
-    ];
-
+    // H264 Baseline (42e01f) is placed first and includes iOS-specific parameters.
+    // The codec list lives in ./mediasoup/mediaCodecs.js (pure data).
     this.router = await this.worker.createRouter({ mediaCodecs });
     logger.debug('✅ MEDIASOUP: Router created successfully');
   }
@@ -156,45 +97,9 @@ class MediasoupService {
 
     const capabilities = this.router.rtpCapabilities;
 
-    // CRITICAL iOS FIX: Reorder codecs for iOS/Safari to prefer H264 Baseline
-    if (preferH264 && capabilities.codecs) {
-      logger.debug('📱 MEDIASOUP: Optimizing RTP capabilities for iOS Safari');
-
-      const codecs = [...capabilities.codecs];
-      const videoCodecs = codecs.filter(c => c.kind === 'video');
-      const audioCodecs = codecs.filter(c => c.kind === 'audio');
-
-      // Find H264 Baseline (42e01f) - iOS Safari's preferred codec
-      const h264Baseline = videoCodecs.find(c =>
-        c.mimeType?.toLowerCase() === 'video/h264' &&
-        c.parameters?.['profile-level-id'] === '42e01f'
-      );
-
-      if (h264Baseline) {
-        logger.debug('✅ MEDIASOUP: Found H264 Baseline codec for iOS');
-
-        // Put audio codecs first, then H264 Baseline ONLY for iOS
-        // This simplifies codec negotiation and prevents iOS confusion
-        const optimizedCodecs = [
-          ...audioCodecs,
-          h264Baseline,
-          // Only include Main profile as fallback, skip High profile and VP8/VP9
-          ...videoCodecs.filter(c =>
-            c.mimeType?.toLowerCase() === 'video/h264' &&
-            c.parameters?.['profile-level-id'] === '4d0032'
-          )
-        ];
-
-        return {
-          ...capabilities,
-          codecs: optimizedCodecs
-        };
-      } else {
-        logger.warn('⚠️ MEDIASOUP: H264 Baseline codec not found for iOS');
-      }
-    }
-
-    return capabilities;
+    // CRITICAL iOS FIX: Reorder codecs for iOS/Safari to prefer H264 Baseline.
+    // Pure transformation lives in ./mediasoup/rtpCapabilities.js.
+    return optimizeRtpCapabilities(capabilities, preferH264, logger);
   }
 
   // Add method to get router for debugging
@@ -236,43 +141,10 @@ class MediasoupService {
     logger.debug(`   Client type: ${isMobileClient ? 'MOBILE' : 'Desktop'}`);
     logger.debug(`   TCP enabled: true, UDP enabled: true`);
     
-    // Mobile-optimized transport configuration based on MediaSoup best practices
-    const transportConfig = {
-      ...this.transportOptions,
-      listenIps: [
-        {
-          ip: '0.0.0.0',
-          announcedIp: process.env.ANNOUNCED_IP || '<SERVER_IP>', // IPv4 address
-        },
-        {
-          ip: '::',
-          announcedIp: process.env.ANNOUNCED_IPV6 || '2001:db8::1', // IPv6 address for IPv6 clients
-        },
-      ],
-      // Enable both TCP and UDP for compatibility
-      enableUdp: true,
-      enableTcp: true,
-      preferUdp: true, // Prefer UDP for performance
-      preferTcp: false,
-      // Mobile-optimized bitrate settings as per MediaSoup recommendations
-      initialAvailableOutgoingBitrate: isMobileClient ? 800000 : 1000000, // 800kbps mobile, 1Mbps desktop
-      minimumAvailableOutgoingBitrate: isMobileClient ? 400000 : 100000, // 400kbps min for mobile stability
-      maxIncomingBitrate: isMobileClient ? 2000000 : 3000000, // 2Mbps max mobile, 3Mbps desktop
-      // Extended ICE consent timeout for mobile network instability and cell tower handovers
-      iceConsentTimeout: isMobileClient ? 45 : 12, // 45 seconds mobile (for TURN relay), 12 desktop (default)
-      // Extended DTLS handshake timeout for relay connections
-      dtlsHandshakeTimeoutMs: isMobileClient ? 30000 : 5000, // 30s mobile, 5s desktop
-      // Enable SCTP for data channels
-      enableSctp: true,
-      numSctpStreams: { OS: 1024, MIS: 1024 },
-      // MediaSoup uses ICE-lite - TURN must be configured client-side only
-      appData: {
-        socketId,
-        clientType: isMobileClient ? 'mobile' : 'desktop',
-        createdAt: Date.now()
-      }
-    };
-    
+    // Mobile-optimized transport configuration based on MediaSoup best practices.
+    // The pure builder lives in ./mediasoup/transportOptions.js.
+    const transportConfig = buildWebRtcTransportConfig(this.transportOptions, isMobileClient, socketId);
+
     const transport = await this.router.createWebRtcTransport(transportConfig);
 
     transport.on('dtlsstatechange', (dtlsState) => {
@@ -766,11 +638,11 @@ class MediasoupService {
   hasProducer(socketId, kind) {
     const producerMap = this.producers.get(socketId);
     if (!producerMap) return false;
-    
+
     if (kind) {
       return producerMap.has(kind);
     }
-    
+
     return producerMap.size > 0;
   }
 
@@ -928,13 +800,13 @@ class MediasoupService {
   }
 
   getStats() {
-    const totalProducers = Array.from(this.producers.values()).reduce((total, producerMap) => total + producerMap.size, 0);
-    return {
-      activeStreamer: this.currentStreamer,
-      transportCount: this.transports.size,
-      producerCount: totalProducers,
-      consumerCount: Array.from(this.consumers.values()).reduce((total, consumers) => total + consumers.size, 0),
-    };
+    // Pure shaping over the live-object maps lives in ./mediasoup/stats.js.
+    return buildStats({
+      currentStreamer: this.currentStreamer,
+      transports: this.transports,
+      producers: this.producers,
+      consumers: this.consumers,
+    });
   }
 }
 
