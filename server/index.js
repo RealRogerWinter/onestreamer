@@ -8,6 +8,7 @@ const express = require('express');
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const { safeCompare } = require('./utils/safeCompare');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const multer = require('multer');
@@ -981,10 +982,9 @@ app.use(require('./routes/admin-moderation')({
 
 // Simple admin auth middleware (kept for legacy endpoints that might need admin key)
 const adminKeyAuth = (req, res, next) => {
-  const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
-  const correctKey = ADMIN_KEY;
+  const adminKey = req.headers['x-admin-key'];
 
-  if (adminKey !== correctKey) {
+  if (!safeCompare(adminKey, ADMIN_KEY)) {
     return res.status(401).json({ error: 'Unauthorized - Invalid admin key' });
   }
   next();
@@ -995,8 +995,8 @@ const adminKeyAuth = (req, res, next) => {
 // honoring scripts/automation that send X-Admin-Key. Used by the visionbot
 // routes; safe to widen to MovieBot/Groq when those panels need it too.
 const adminKeyOrJwt = (req, res, next) => {
-  const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
-  if (adminKey && adminKey === ADMIN_KEY) return next();
+  const adminKey = req.headers['x-admin-key'];
+  if (safeCompare(adminKey, ADMIN_KEY)) return next();
   return authenticateAdmin(req, res, next);
 };
 
@@ -1022,19 +1022,18 @@ const viewBotAuth = (req, res, next) => {
   logger.info({
     'x-admin-key': req.headers['x-admin-key'] ? '<redacted>' : undefined,
     'authorization': req.headers['authorization'] ? '<bearer>' : undefined,
-    'admin_key_query': req.query.admin_key ? '<redacted>' : undefined,
   }, '🔐 ViewBot Auth - Headers');
 
   // Check for admin key first (simpler auth for ViewBot operations)
-  const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
-  const correctKey = ADMIN_KEY;
+  const adminKey = req.headers['x-admin-key'];
+  const adminKeyValid = safeCompare(adminKey, ADMIN_KEY);
 
   logger.info({
     provided: !!adminKey,
-    matches: adminKey === correctKey,
+    matches: adminKeyValid,
   }, '🔐 ViewBot Auth - Admin key check');
   
-  if (adminKey === correctKey) {
+  if (adminKeyValid) {
     logger.info('✅ ViewBot: Using admin key authentication');
     // Create a mock user object for compatibility
     req.user = { id: 'admin-key-user' };

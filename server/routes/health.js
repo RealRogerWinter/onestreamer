@@ -21,6 +21,7 @@
  */
 
 const express = require('express');
+const { safeCompare } = require('../utils/safeCompare');
 const router = express.Router();
 
 router.get('/', (req, res) => {
@@ -40,10 +41,9 @@ router.get('/health', (req, res) => {
 });
 
 router.get('/api/admin/webrtc/config', (req, res) => {
-    const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
-    const correctKey = req.app.locals.adminKey;
+    const adminKey = req.headers['x-admin-key'];
 
-    if (adminKey !== correctKey) {
+    if (!safeCompare(adminKey, req.app.locals.adminKey)) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
