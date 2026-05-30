@@ -500,78 +500,11 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
     }
   };
 
-  // Save audio settings when they change
-  const handleAudioSettingsChange = async (newSettings: AudioSettingsConfig) => {
-    const oldSettings = audioSettings;
-    
-    if (externalOnAudioSettingsChange) {
-      externalOnAudioSettingsChange(newSettings);
-    } else {
-      setLocalAudioSettings(newSettings);
-      const current = localStorage.getItem('streamerSettings');
-      const settings = current ? JSON.parse(current) : {};
-      settings.audio = newSettings;
-      localStorage.setItem('streamerSettings', JSON.stringify(settings));
-    }
-    // console.log('🎵 Audio settings saved:', newSettings);
-    
-    // If streaming and any audio setting changed that requires track replacement (for local settings only)
-    if (!externalOnAudioSettingsChange && isStreaming) {
-      // Check if any audio processing setting changed or device changed
-      const processingChanged = 
-        oldSettings.echoCancellation !== newSettings.echoCancellation ||
-        oldSettings.noiseSuppression !== newSettings.noiseSuppression ||
-        oldSettings.autoGainControl !== newSettings.autoGainControl;
-      
-      const deviceChanged = oldSettings.inputDeviceId !== newSettings.inputDeviceId && newSettings.inputDeviceId;
-      
-      if (processingChanged || deviceChanged) {
-        // Use the current device ID or the new one if changed
-        const deviceId = newSettings.inputDeviceId || oldSettings.inputDeviceId;
-        if (deviceId) {
-          await replaceAudioTrack(deviceId);
-        }
-      }
-    }
-  };
-  
-  // Save video settings when they change
-  const handleVideoSettingsChange = async (newSettings: VideoSettingsConfig) => {
-    const oldSettings = videoSettings;
-    
-    // console.log('📹 handleVideoSettingsChange called');
-    // console.log('📹 Old settings:', oldSettings);
-    // console.log('📹 New settings:', newSettings);
-    // console.log('📹 Is streaming:', isStreaming);
-    // console.log('📹 Device changed:', oldSettings.videoDeviceId !== newSettings.videoDeviceId);
-    
-    if (externalOnVideoSettingsChange) {
-      externalOnVideoSettingsChange(newSettings);
-    } else {
-      setLocalVideoSettings(newSettings);
-      const current = localStorage.getItem('streamerSettings');
-      const settings = current ? JSON.parse(current) : {};
-      settings.video = newSettings;
-      localStorage.setItem('streamerSettings', JSON.stringify(settings));
-    }
-    // console.log('📹 Video settings saved:', newSettings);
-    
-    // If streaming and device changed, replace the track in real-time (for local settings only)
-    if (!externalOnVideoSettingsChange && isStreaming && oldSettings.videoDeviceId !== newSettings.videoDeviceId && newSettings.videoDeviceId) {
-      // console.log('📹 Triggering video track replacement...');
-      await replaceVideoTrack(newSettings.videoDeviceId);
-    } else if (externalOnVideoSettingsChange) {
-      // console.log('📹 Using external handler, track replacement will be handled by useEffect');
-    } else {
-      // console.log('📹 Not replacing track - streaming:', isStreaming, 'device changed:', oldSettings.videoDeviceId !== newSettings.videoDeviceId);
-    }
-  };
-
   // Initialize StreamerViewManager for automatic view switching
-  const { viewState, manager } = useStreamerViewManager(videoRef, socket, isStreaming);
-  
+  const { viewState } = useStreamerViewManager(videoRef, socket, isStreaming);
+
   // Initialize Visual FX processor for streamer preview
-  const visualFxProcessor = useVisualFxProcessor(videoRef, socket, true);
+  useVisualFxProcessor(videoRef, socket, true);
 
   useEffect(() => {
     if (isStreaming) {

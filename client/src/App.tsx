@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { SocketProvider, useMainSocket } from './contexts/SocketContext';
 import { useResponsiveLayout } from './hooks/useResponsiveLayout';
 import { useAuthState } from './hooks/useAuthState';
@@ -97,9 +97,6 @@ function AppContent() {
     showMobileStreamerSettings, setShowMobileStreamerSettings,
     showTutorial, setShowTutorial,
     showBugReportModal, setShowBugReportModal,
-    showAbout, setShowAbout,
-    showTerms, setShowTerms,
-    showPrivacy, setShowPrivacy,
   } = useModals({
     initialShowEmailVerification: isEmailVerification,
     initialShowPasswordReset: isPasswordReset,
@@ -438,20 +435,8 @@ function AppContent() {
     await authLogout();
   };
 
-  const handleOpenShop = () => {
-    if (!isAuthenticated) {
-      setShowLogin(true);
-      return;
-    }
-    setIsShopOpen(true);
-  };
-
   const handleCloseShop = () => {
     setIsShopOpen(false);
-  };
-
-  const handlePurchase = async (itemCost: number) => {
-    await fetchUserPoints();
   };
 
 

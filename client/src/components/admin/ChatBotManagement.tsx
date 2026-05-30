@@ -368,7 +368,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
       });
       
       if (response.ok) {
-        const result = await response.json();
+        await response.json();
         if (model) {
           addLog(`Groq model changed to: ${model}`);
         } else {
@@ -430,7 +430,7 @@ const ChatBotManagement: React.FC<ChatBotManagementProps> = ({ addLog }) => {
       // console.log('Response status:', response.status);
       
       if (response.ok) {
-        const result = await response.json();
+        await response.json();
         // console.log('Config update result:', result);
         addLog(`MovieBot config updated: ${key} = ${value}`);
         
