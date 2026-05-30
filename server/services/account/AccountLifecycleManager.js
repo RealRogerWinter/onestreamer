@@ -103,39 +103,81 @@ class AccountLifecycleManager {
 
     async permanentlyDeleteAccount(userId) {
         const owner = this.owner;
-        // Log the permanent deletion
+        // Log the permanent deletion. Written to account_deletion_logs, which is
+        // itself purged below — a GDPR hard delete erases its own audit trail.
         await owner.logDeletionAction(userId, 'data_purged');
 
-        // **Cascade-delete loop stays inline by design** (PR 10.3 / Phase 10).
-        // The enumerated table list IS the audit trail for what
-        // permanent-deletion covers. Replacing it with N
-        // repo-method calls would expand the diff without changing
-        // semantics, and three of the seven tables aren't owned
-        // by any repo yet (`user_inventory` is owned by
-        // UserInventoryRepository but the others aren't). A future
-        // PR can revisit once every table has a repo.
-        const tables = [
+        // Every table keyed on the deleting user by a literal `user_id` column,
+        // verified column-by-column against the live schema. The prior list
+        // named two tables that DO NOT EXIST (`item_usage_history`,
+        // `user_points_log` — real names `item_usage_log` / `points_transactions`),
+        // so the old loop threw "no such table" mid-purge and never completed,
+        // AND it covered only 5 of the user's data tables.
+        const userIdTables = [
             'user_sessions',
             'user_stats',
-            'ip_to_user_transfers',
             'user_inventory',
-            'item_usage_history',
-            'user_points_log',
-            'account_deletion_logs'
+            'ip_to_user_transfers',
+            'item_usage_log',
+            'points_transactions',
+            'item_transactions',
+            'active_buffs',
+            'recordings',
+            'recording_events',
+            'clips',
+            'clip_views',
+            'streaming_logs',
+            'bug_reports',
+            'game_player_state',
+            'game_player_sessions',
+            'account_deletion_logs',
         ];
-
-        for (const table of tables) {
-            await new Promise((res, rej) => {
-                owner.db.run(`DELETE FROM ${table} WHERE user_id = ?`, [userId], (err) => {
-                    if (err) rej(err);
-                    else res(true);
-                });
-            });
+        for (const table of userIdTables) {
+            await this._purgeFrom(`DELETE FROM ${table} WHERE user_id = ?`, [userId], table);
         }
 
-        // Finally, mark the user as deleted (keep record for audit)
+        // Tables that reference the user under a non-`user_id` column.
+        await this._purgeFrom(
+            'DELETE FROM gift_transactions WHERE from_user_id = ? OR to_user_id = ?',
+            [userId, userId],
+            'gift_transactions'
+        );
+        await this._purgeFrom(
+            'DELETE FROM recording_sessions WHERE streamer_user_id = ?',
+            [userId],
+            'recording_sessions'
+        );
+
+        // Intentionally RETAINED: ip_bans (banned_by_user_id),
+        // moderation_events (external_user_id), temporary_bots / chatbots
+        // (summoned_by_user_id) reference this user as an *actor* on
+        // security / moderation / bot records — not as the data subject — so
+        // erasing them would destroy moderation history, not the user's PII.
+        // See the PR description for the retention rationale.
+
+        // Finally, anonymize the users row (scrubs email/username/password/oauth,
+        // keeps an id-only tombstone for referential audit).
         await owner.userRepository.purgeAccount(userId);
         return true;
+    }
+
+    // Run one purge DELETE against owner.db. A table that doesn't exist on this
+    // install is logged LOUDLY and skipped — so a future rename surfaces as an
+    // error in the logs instead of silently wiping nothing (the exact failure
+    // mode of the old hard-coded list) — while any OTHER DB error aborts the
+    // purge so we never falsely report a completed deletion.
+    _purgeFrom(sql, params, table) {
+        const owner = this.owner;
+        return new Promise((resolve, reject) => {
+            owner.db.run(sql, params, (err) => {
+                if (!err) return resolve(true);
+                if (/no such table/i.test(err.message)) {
+                    logger.error(`Account purge: table "${table}" missing on this install — skipped. Investigate schema drift.`);
+                    return resolve(false);
+                }
+                reject(err);
+            });
+        });
     }
 }
 
