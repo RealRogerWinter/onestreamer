@@ -24,6 +24,8 @@ const RotationScheduler = require('./random-stream/RotationScheduler');
 const RotationTimerController = require('./random-stream/RotationTimerController');
 const RotationStatePersistence = require('./random-stream/RotationStatePersistence');
 const RotationRecoveryMonitor = require('./random-stream/RotationRecoveryMonitor');
+const ViewBotCleanupCoordinator = require('./random-stream/ViewBotCleanupCoordinator');
+const RotationDependencyWiring = require('./random-stream/RotationDependencyWiring');
 
 const logger = require('../bootstrap/logger').child({ svc: 'RandomStreamRotationService' });
 
@@ -125,6 +127,16 @@ class RandomStreamRotationService extends EventEmitter {
     this._persistence = new RotationStatePersistence({ host: this, stateFile: STATE_FILE, logger });
     this._recoveryMonitor = new RotationRecoveryMonitor({ host: this, logger });
 
+    // Viewbot teardown coordinator — the comprehensive "stop every viewbot
+    // system" cleanup that runs before rotation takes over. Extracted.
+    this._viewBotCleanup = new ViewBotCleanupCoordinator({ host: this, logger });
+
+    // Dependency-injection / service-registration surface (setViewBotURLService
+    // + the url-stream-ended auto-rotate listener, setViewBotRotation,
+    // setWhitelistService, setSocketIO, setStreamNotifier). Extracted; all
+    // injected refs still live on `this`.
+    this._wiring = new RotationDependencyWiring({ host: this, logger });
+
     logger.debug('🎲 RandomStreamRotationService initialized');
 
     // Load persisted state
@@ -205,7 +217,6 @@ class RandomStreamRotationService extends EventEmitter {
   _calculateRetryDelay() { return this._retryHelper.calculateRetryDelay(); }
   _recordSuccess() { return this._retryHelper.recordSuccess(); }
   _recordFailure() { return this._retryHelper.recordFailure(); }
-  _shouldRetry() { return this._retryHelper.shouldRetry(); }
   async _scheduleRetryWithBackoff(operation, operationName) {
     return this._retryHelper.scheduleRetryWithBackoff(operation, operationName, {
       isLocked: () => this.isLocked,
@@ -236,117 +247,17 @@ class RandomStreamRotationService extends EventEmitter {
     return this.isEnabled || this.shouldAutoRestart;
   }
 
-  /**
-   * Set dependencies
-   */
-  setViewBotURLService(service) {
-    this.viewBotURLService = service;
-    logger.debug('✅ ViewBotURLService registered with RandomStreamRotation');
-
-    // CRITICAL: Listen for URL stream failures to auto-rotate to next stream
-    if (service) {
-      service.on('url-stream-ended', async (data) => {
-        const { urlId, reason } = data;
-        logger.debug(`🔔 ROTATION: URL stream ${urlId} ended (reason: ${reason})`);
-
-        // Only auto-rotate if the stream failed (not manual stop)
-        const shouldRotate = ['error', 'reconnect_failed', 'source_ended', 'health-check', 'http_error'].includes(reason);
-
-        if (shouldRotate && this.isEnabled) {
-          logger.debug(`🔄 ROTATION: Auto-rotating to next stream due to ${reason}...`);
-
-          // Announce to chat that stream disconnected and we're finding a new one
-          this.sendChatAnnouncement('Stream disconnected - finding a new streamer...');
-
-          // Small delay to let cleanup complete (shorter for HTTP errors since no reconnect was attempted)
-          const cleanupDelay = reason === 'http_error' ? 500 : 1500;
-          await new Promise(resolve => setTimeout(resolve, cleanupDelay));
-
-          // CRITICAL: Check if service is busy (reconnecting or starting new stream)
-          if (this.viewBotURLService.isBusy()) {
-            logger.debug('⏳ ROTATION: Service is busy (reconnecting/starting), skipping auto-rotation');
-            return;
-          }
-
-          // Check if already restarting or retry timer pending
-          if (this.isRestarting || this.retryState.currentRetryTimer) {
-            logger.debug('⏳ ROTATION: Already restarting or retry pending, skipping auto-rotation');
-            return;
-          }
-
-          // Check if another stream started in the meantime
-          if (this.viewBotURLService.activeStreams.size === 0) {
-            this.isRestarting = true;
-            try {
-              const result = await this._rotateToNewStream();
-              if (result.success) {
-                logger.debug(`✅ ROTATION: Auto-rotated to new stream: ${result.stream?.displayName}`);
-                this._recordSuccess();
-
-                // Ensure rotation timer is scheduled
-                if (!this.rotationTimer) {
-                  this._scheduleNextRotation();
-                }
-              } else {
-                logger.error(`❌ ROTATION: Auto-rotation failed: ${result.error}`);
-                this._recordFailure();
-                // Auto-restart monitor will handle retry with backoff
-              }
-            } catch (error) {
-              logger.error(`❌ ROTATION: Auto-rotation error:`, error.message);
-              this._recordFailure();
-            } finally {
-              this.isRestarting = false;
-            }
-          } else {
-            logger.debug('⏭️ ROTATION: Another stream already started, skipping auto-rotation');
-            this._recordSuccess(); // Stream recovered on its own
-          }
-        }
-      });
-      logger.debug('✅ URL stream failure listener registered for auto-rotation');
-    }
-  }
-
-  setViewBotRotation(rotation) {
-    this.viewBotRotation = rotation;
-    logger.debug('✅ ViewBotRotation registered with RandomStreamRotation');
-  }
-
-  /**
-   * Inject the WhitelistService (ADR-0010, PR-W3) and fan it out to the
-   * inner Twitch + Kick random services so their candidate filters consult
-   * the same per-platform allow/block lists + CCL gate.
-   */
-  setWhitelistService(whitelistService) {
-    this.whitelistService = whitelistService;
-    if (this.twitchService && typeof this.twitchService.setWhitelistService === 'function') {
-      this.twitchService.setWhitelistService(whitelistService);
-    }
-    if (this.kickService && typeof this.kickService.setWhitelistService === 'function') {
-      this.kickService.setWhitelistService(whitelistService);
-    }
-    logger.debug('✅ WhitelistService registered with RandomStreamRotation');
-  }
-
-  setSocketIO(io) {
-    this.io = io;
-    logger.debug('✅ Socket.IO registered with RandomStreamRotation');
-
-    // Listen for stream-ended events to auto-restart rotation
-    if (io) {
-      // Use a separate handler that checks if we should auto-restart
-      this._setupStreamEndedListener();
-    }
-  }
-
-  /**
-   * Set the StreamNotifier (PR 3.1) for `stream-ended` emits.
-   */
-  setStreamNotifier(streamNotifier) {
-    this.streamNotifier = streamNotifier;
-    logger.debug('✅ StreamNotifier registered with RandomStreamRotation');
-  }
+  // Dependency-injection / service-registration surface extracted to
+  // RotationDependencyWiring. Public method names + signatures preserved as
+  // thin delegates so external callers (server/index.js, bootstrap,
+  // StreamOrchestration, the whitelist-fanout test) keep working unchanged.
+  // The injected refs (viewBotURLService, viewBotRotation, whitelistService,
+  // io, streamNotifier) still live on `this`.
+  setViewBotURLService(service) { return this._wiring.setViewBotURLService(service); }
+  setViewBotRotation(rotation) { return this._wiring.setViewBotRotation(rotation); }
+  setWhitelistService(whitelistService) { return this._wiring.setWhitelistService(whitelistService); }
+  setSocketIO(io) { return this._wiring.setSocketIO(io); }
+  setStreamNotifier(streamNotifier) { return this._wiring.setStreamNotifier(streamNotifier); }
 
   /**
    * Send an announcement to chat via StreamBot
@@ -492,108 +403,9 @@ class RandomStreamRotationService extends EventEmitter {
     return { success: false, error: 'Failed to start initial stream after retries' };
   }
 
-  /**
-   * Comprehensive viewbot cleanup
-   * Stops ALL viewbot systems to ensure clean slate for random rotation
-   * CRITICAL: Must stop every viewbot system to prevent conflicts
-   */
-  async _cleanupAllViewbots() {
-    logger.debug('🧹 Performing comprehensive viewbot cleanup...');
-
-    // 1. Stop SimpleViewBotRotation (primary viewbot system)
-    if (this.viewBotRotation) {
-      logger.debug('🛑 Stopping SimpleViewBotRotation...');
-      // Disable the rotation to prevent auto-restart
-      this.viewBotRotation.settings.enabled = false;
-      // Stop and wait for cleanup
-      await this.viewBotRotation.stopRotation();
-      logger.debug('✅ SimpleViewBotRotation stopped and disabled');
-    }
-
-    // 2. CRITICAL: Stop ViewBotRotationService (global.viewBotRotation)
-    // This is a SEPARATE service from SimpleViewBotRotation!
-    if (global.viewBotRotation && global.viewBotRotation.stopRotation) {
-      logger.debug('🛑 Stopping ViewBotRotationService (global.viewBotRotation)...');
-      try {
-        global.viewBotRotation.enabled = false;
-        await global.viewBotRotation.stopRotation();
-        logger.debug('✅ ViewBotRotationService stopped and disabled');
-      } catch (error) {
-        logger.error('⚠️ Error stopping ViewBotRotationService:', error.message);
-      }
-    }
-
-    // 3. Stop ViewBotManager if it exists (alternative viewbot system)
-    if (global.viewBotManager) {
-      logger.debug('🛑 Stopping ViewBotManager...');
-      try {
-        // Stop rotation first
-        global.viewBotManager.stopRotation();
-        // Then cleanup all bots
-        await global.viewBotManager.cleanup();
-        logger.debug('✅ ViewBotManager cleaned up');
-      } catch (error) {
-        logger.error('⚠️ Error cleaning up ViewBotManager:', error.message);
-      }
-    }
-
-    // 4. Stop UnifiedViewBotRotation if it exists
-    if (global.unifiedViewBotRotation) {
-      logger.debug('🛑 Stopping UnifiedViewBotRotation...');
-      try {
-        if (global.unifiedViewBotRotation.stopRotation) {
-          await global.unifiedViewBotRotation.stopRotation();
-        }
-        logger.debug('✅ UnifiedViewBotRotation stopped');
-      } catch (error) {
-        logger.error('⚠️ Error stopping UnifiedViewBotRotation:', error.message);
-      }
-    }
-
-    // 5. CRITICAL: Stop all LiveKit viewbots and remove them from the room
-    if (global.viewBotLiveKitService) {
-      logger.debug('🛑 Stopping all LiveKit viewbots...');
-      try {
-        await global.viewBotLiveKitService.stopAllViewBots();
-        logger.debug('✅ All LiveKit viewbots stopped');
-      } catch (error) {
-        logger.error('⚠️ Error stopping LiveKit viewbots:', error.message);
-      }
-    }
-
-    // 4. Clear current streamer from StreamService (viewbot was the current streamer)
-    if (global.streamService) {
-      const currentStreamer = global.streamService.getCurrentStreamer();
-      if (currentStreamer && (currentStreamer.startsWith('viewbot-') || currentStreamer.includes('viewbot'))) {
-        logger.debug(`🧹 Clearing viewbot streamer: ${currentStreamer}`);
-        global.streamService.clearStreamer();
-      }
-    }
-
-    // 5. Clear MediasoupService/WebRTCAdapter currentStreamer
-    if (global.mediasoupService && global.mediasoupService.currentStreamer) {
-      const current = global.mediasoupService.currentStreamer;
-      if (current.startsWith('viewbot-') || current.includes('viewbot')) {
-        logger.debug(`🧹 Clearing MediaSoup viewbot streamer: ${current}`);
-        global.mediasoupService.currentStreamer = null;
-      }
-    }
-
-    // 6. Emit stream-ended to notify viewers the current content is ending
-    // PR 3.1: routed through StreamNotifier (single chokepoint).
-    if (this.streamNotifier) {
-      logger.debug('📢 Broadcasting stream-ended to prepare for rotation...');
-      this.streamNotifier.streamEnded({
-        reason: 'random_rotation_starting',
-        isRandomRotation: true,
-      });
-    }
-
-    // Brief pause to allow cleanup to complete
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    logger.debug('✅ Viewbot cleanup complete');
-  }
+  // Comprehensive viewbot cleanup extracted to ViewBotCleanupCoordinator.
+  // Thin delegate kept (start() calls this._cleanupAllViewbots() directly).
+  async _cleanupAllViewbots() { return this._viewBotCleanup.cleanupAll(); }
 
   /**
    * Stop the random stream rotation

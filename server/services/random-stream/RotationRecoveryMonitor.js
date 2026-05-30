@@ -161,13 +161,6 @@ class RotationRecoveryMonitor {
         // There's a real streamer
         return true;
     }
-
-    stop() {
-        if (this.autoRestartMonitor) {
-            clearInterval(this.autoRestartMonitor);
-            this.autoRestartMonitor = null;
-        }
-    }
 }
 
 module.exports = RotationRecoveryMonitor;
