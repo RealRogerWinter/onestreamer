@@ -92,22 +92,29 @@ class InventoryService {
     }
 
     async removeItemFromInventory(userId, itemId, quantity = 1) {
-        const inventoryItem = await this.getInventoryItem(userId, itemId);
-        
-        if (!inventoryItem) {
-            throw new Error('Item not in inventory');
-        }
-        
-        if (inventoryItem.quantity < quantity) {
+        // Atomic guarded decrement (ADR-0013a; mirrors
+        // AccountStatsRepository.atomicSubtractPoints): the UPDATE applies and
+        // RETURNs the new quantity only if the row holds >= quantity, so two
+        // concurrent removes against the same stack can't both succeed — the
+        // loser gets undefined and throws. Closes the item-duplication /
+        // double-use race the prior read-then-update allowed. Single statement,
+        // so it composes safely inside an outer withTransaction scope.
+        const updated = await this.userInventoryRepository.decrementQuantity(userId, itemId, quantity);
+
+        if (!updated) {
+            // Decrement didn't apply. Disambiguate "missing" vs "insufficient"
+            // to preserve the pre-atomic error messages — this read is only for
+            // the message; the mutation decision was already made atomically.
+            const inventoryItem = await this.getInventoryItem(userId, itemId);
+            if (!inventoryItem) {
+                throw new Error('Item not in inventory');
+            }
             throw new Error('Insufficient quantity');
         }
-        
-        const newQuantity = inventoryItem.quantity - quantity;
-        
+
+        const newQuantity = updated.quantity;
         if (newQuantity === 0) {
             await this.userInventoryRepository.deleteItem(userId, itemId);
-        } else {
-            await this.userInventoryRepository.updateQuantity(userId, itemId, newQuantity);
         }
 
         return {
