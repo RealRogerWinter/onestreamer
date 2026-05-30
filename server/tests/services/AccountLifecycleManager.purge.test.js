@@ -31,8 +31,12 @@ function makeDb() {
 const SCHEMAS = {
   user_stats: 'user_id INTEGER, points_balance INTEGER',
   user_inventory: 'user_id INTEGER, item_id INTEGER',
+  item_usage_log: 'user_id INTEGER, item_id INTEGER',
+  points_transactions: 'user_id INTEGER, amount INTEGER',
+  active_buffs: 'user_id INTEGER, applied_by_user_id INTEGER, buff TEXT',
   recordings: 'user_id INTEGER, path TEXT',
   bug_reports: 'user_id INTEGER, body TEXT',
+  clips: 'user_id INTEGER, streamer_user_id INTEGER, path TEXT',
   gift_transactions: 'from_user_id INTEGER, to_user_id INTEGER, item_id INTEGER',
   recording_sessions: 'streamer_user_id INTEGER, started_at TEXT',
   ip_bans: 'banned_by_user_id INTEGER, ip TEXT', // retained
@@ -59,6 +63,14 @@ describe('AccountLifecycleManager.permanentlyDeleteAccount', () => {
     );
     await ctx.run('INSERT INTO recording_sessions (streamer_user_id) VALUES (1), (2)');
     await ctx.run('INSERT INTO ip_bans (banned_by_user_id, ip) VALUES (1, "1.1.1.1"), (2, "2.2.2.2")');
+    await ctx.run('INSERT INTO item_usage_log (user_id, item_id) VALUES (1, 7), (2, 7)');
+    await ctx.run('INSERT INTO points_transactions (user_id, amount) VALUES (1, 50), (2, 50)');
+    // active_buffs: A's own buff (deleted), plus a buff A *applied to user 5*
+    // (actor ref — must survive: actor/subject split).
+    await ctx.run('INSERT INTO active_buffs (user_id, applied_by_user_id, buff) VALUES (1, 9, "a"), (2, 9, "b"), (5, 1, "c")');
+    // clips: A as creator (c1, deleted), B's clip (c2, kept), and a clip user 3
+    // created but A starred in (c3, deleted via streamer_user_id).
+    await ctx.run('INSERT INTO clips (user_id, streamer_user_id, path) VALUES (1, NULL, "/c1"), (2, NULL, "/c2"), (3, 1, "/c3")');
 
     purgeAccount = jest.fn().mockResolvedValue({ changes: 1 });
     const owner = {
@@ -84,6 +96,19 @@ describe('AccountLifecycleManager.permanentlyDeleteAccount', () => {
     expect(await count('recordings WHERE user_id = 1')).toBe(0);
     expect(await count('bug_reports WHERE user_id = 1')).toBe(0);
     expect(await count('recordings WHERE user_id = 2')).toBe(1);
+    expect(await count('item_usage_log WHERE user_id = 1')).toBe(0);
+    expect(await count('points_transactions WHERE user_id = 1')).toBe(0);
+    expect(await count('item_usage_log WHERE user_id = 2')).toBe(1);
+
+    // active_buffs: the subject's own buff is purged, but a buff they APPLIED to
+    // another user (actor reference) is retained — same actor/subject split.
+    expect(await count('active_buffs WHERE user_id = 1')).toBe(0);
+    expect(await count('active_buffs WHERE applied_by_user_id = 1')).toBe(1);
+
+    // clips: deleted whether the subject created it (c1) or starred in it as the
+    // streamer (c3); B's clip (c2) survives.
+    expect(await count('clips WHERE user_id = 1 OR streamer_user_id = 1')).toBe(0);
+    expect(await count('clips')).toBe(1);
 
     // gift_transactions: every row touching A (as sender OR recipient) gone;
     // the 2→3 gift survives.

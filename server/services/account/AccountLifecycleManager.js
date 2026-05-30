@@ -124,7 +124,6 @@ class AccountLifecycleManager {
             'active_buffs',
             'recordings',
             'recording_events',
-            'clips',
             'clip_views',
             'streaming_logs',
             'bug_reports',
@@ -146,6 +145,14 @@ class AccountLifecycleManager {
             'DELETE FROM recording_sessions WHERE streamer_user_id = ?',
             [userId],
             'recording_sessions'
+        );
+        // clips carries both the creator (`user_id`) and, on some paths, the
+        // streamer (`streamer_user_id`) — purge either reference so a clip is
+        // erased whether the subject made it or starred in it.
+        await this._purgeFrom(
+            'DELETE FROM clips WHERE user_id = ? OR streamer_user_id = ?',
+            [userId, userId],
+            'clips'
         );
 
         // Intentionally RETAINED: ip_bans (banned_by_user_id),
