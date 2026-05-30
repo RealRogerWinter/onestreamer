@@ -50,50 +50,74 @@ function createModerationService(deps) {
   const bannedUsersData = new Map();     // username -> { bannedAt, reason, bannedBy }
   const timeoutUsers = new Map();        // username -> { endTime, reason, startTime }
 
-  // Load moderation data from disk
-  function loadModerationData() {
-    try {
-      if (fs.existsSync(moderationDataPath)) {
-        const data = JSON.parse(fs.readFileSync(moderationDataPath, 'utf8'));
+  // Apply a parsed store object to the in-memory Sets/Maps. Extracted so both
+  // the primary store and the `.bak` recovery path share identical load logic.
+  function applyModerationData(data) {
+    // Load banned users
+    if (data.bannedUsers && Array.isArray(data.bannedUsers)) {
+      bannedUsers.clear();
+      bannedUsersData.clear();
+      data.bannedUsers.forEach(user => {
+        bannedUsers.add(user.username);
+        bannedUsersData.set(user.username, {
+          bannedAt: user.bannedAt,
+          reason: user.reason || 'No reason recorded',
+          bannedBy: user.bannedBy
+        });
+      });
+      console.log(`📂 MODERATION: Loaded ${bannedUsers.size} banned users from disk`);
+    }
 
-        // Load banned users
-        if (data.bannedUsers && Array.isArray(data.bannedUsers)) {
-          bannedUsers.clear();
-          bannedUsersData.clear();
-          data.bannedUsers.forEach(user => {
-            bannedUsers.add(user.username);
-            bannedUsersData.set(user.username, {
-              bannedAt: user.bannedAt,
-              reason: user.reason || 'No reason recorded',
-              bannedBy: user.bannedBy
-            });
+    // Load timeout users (only active ones)
+    if (data.timedOutUsers && Array.isArray(data.timedOutUsers)) {
+      const currentTime = Date.now();
+      timeoutUsers.clear();
+      data.timedOutUsers.forEach(user => {
+        if (user.endTime > currentTime) {
+          timeoutUsers.set(user.username, {
+            endTime: user.endTime,
+            reason: user.reason || 'No reason recorded',
+            startTime: user.startTime || currentTime
           });
-          console.log(`📂 MODERATION: Loaded ${bannedUsers.size} banned users from disk`);
         }
-
-        // Load timeout users (only active ones)
-        if (data.timedOutUsers && Array.isArray(data.timedOutUsers)) {
-          const currentTime = Date.now();
-          timeoutUsers.clear();
-          data.timedOutUsers.forEach(user => {
-            if (user.endTime > currentTime) {
-              timeoutUsers.set(user.username, {
-                endTime: user.endTime,
-                reason: user.reason || 'No reason recorded',
-                startTime: user.startTime || currentTime
-              });
-            }
-          });
-          console.log(`📂 MODERATION: Loaded ${timeoutUsers.size} active timeouts from disk`);
-        }
-      }
-    } catch (error) {
-      console.error('❌ MODERATION: Failed to load moderation data:', error);
+      });
+      console.log(`📂 MODERATION: Loaded ${timeoutUsers.size} active timeouts from disk`);
     }
   }
 
-  // Save moderation data to disk
+  // Load moderation data from disk. Tries the primary store first; if it is
+  // missing or corrupt (e.g. a crash truncated it mid-write), falls back to the
+  // last-known-good `.bak` snapshot before giving up — so one bad write can't
+  // silently wipe every ban/timeout on the next restart.
+  function loadModerationData() {
+    const backupPath = `${moderationDataPath}.bak`;
+    try {
+      if (fs.existsSync(moderationDataPath)) {
+        applyModerationData(JSON.parse(fs.readFileSync(moderationDataPath, 'utf8')));
+        return;
+      }
+    } catch (error) {
+      console.error('❌ MODERATION: Primary moderation store unreadable, trying backup:', error);
+      try {
+        if (fs.existsSync(backupPath)) {
+          applyModerationData(JSON.parse(fs.readFileSync(backupPath, 'utf8')));
+          console.log('♻️  MODERATION: Recovered moderation data from .bak backup');
+          return;
+        }
+      } catch (backupError) {
+        console.error('❌ MODERATION: Backup moderation store also unreadable:', backupError);
+      }
+    }
+  }
+
+  // Save moderation data to disk atomically: write to a temp file, snapshot the
+  // current store to `.bak`, then rename the temp over the primary. rename(2) is
+  // atomic on POSIX, so a crash mid-save leaves either the old file or the new
+  // one intact — never a truncated store that loadModerationData would read as
+  // "no bans".
   function saveModerationData() {
+    const tmpPath = `${moderationDataPath}.tmp`;
+    const backupPath = `${moderationDataPath}.bak`;
     try {
       const bannedUsersList = Array.from(bannedUsers).map(username => ({
         username,
@@ -116,7 +140,16 @@ function createModerationService(deps) {
         lastUpdated: new Date().toISOString()
       };
 
-      fs.writeFileSync(moderationDataPath, JSON.stringify(data, null, 2));
+      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+      // Preserve the previous good copy as a backup before swapping in the new one.
+      if (fs.existsSync(moderationDataPath)) {
+        try {
+          fs.copyFileSync(moderationDataPath, backupPath);
+        } catch (backupError) {
+          console.error('⚠️  MODERATION: Could not refresh .bak backup:', backupError);
+        }
+      }
+      fs.renameSync(tmpPath, moderationDataPath);
       console.log(`💾 MODERATION: Saved moderation data to disk (${bannedUsersList.length} bans, ${timedOutUsersList.length} timeouts)`);
     } catch (error) {
       console.error('❌ MODERATION: Failed to save moderation data:', error);
