@@ -2,6 +2,9 @@ const { runAsync, getAsync, allAsync } = require('../database/database');
 const EventEmitter = require('events');
 const ItemRepository = require('../database/repository/ItemRepository');
 const BuffRepository = require('../database/repository/BuffRepository');
+const AnonymousBuffStore = require('./buffdebuff/AnonymousBuffStore');
+const CacheCleaner = require('./buffdebuff/CacheCleaner');
+const BuffFormatter = require('./buffdebuff/BuffFormatter');
 
 const logger = require('../bootstrap/logger').child({ svc: 'BuffDebuffService' });
 
@@ -33,7 +36,15 @@ class BuffDebuffService extends EventEmitter {
         
         // Update interval for streaming-time based duration tracking
         this.updateInterval = null;
-        
+
+        // Cohesive collaborators (all state stays on this service; each holds
+        // an `owner` back-reference). The service remains the EventEmitter —
+        // AnonymousBuffStore emits through `owner.emit(...)` so VisualFxService's
+        // `buffDebuffService.on(...)` listeners still fire on the instance.
+        this.anonymousBuffStore = new AnonymousBuffStore(this);
+        this.cacheCleaner = new CacheCleaner(this);
+        this.buffFormatter = new BuffFormatter(this);
+
         // Initialize the service
         this.initialize();
     }
@@ -58,33 +69,7 @@ class BuffDebuffService extends EventEmitter {
     
     // Periodic cache cleanup to prevent memory leaks
     startCacheCleanup() {
-        this.cacheCleanupInterval = setInterval(() => {
-            const now = Date.now();
-            const entriesToDelete = [];
-            
-            // Remove stale entries
-            for (const [key, value] of this.activeBuffsCache.entries()) {
-                if (value.timestamp && (now - value.timestamp) > this.cacheTTL) {
-                    entriesToDelete.push(key);
-                }
-            }
-            
-            // Delete stale entries
-            entriesToDelete.forEach(key => this.activeBuffsCache.delete(key));
-            
-            // Enforce max size by removing oldest entries
-            if (this.activeBuffsCache.size > this.cacheMaxSize) {
-                const sortedEntries = Array.from(this.activeBuffsCache.entries())
-                    .sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
-                
-                const toRemove = sortedEntries.slice(0, this.activeBuffsCache.size - this.cacheMaxSize);
-                toRemove.forEach(([key]) => this.activeBuffsCache.delete(key));
-            }
-            
-            if (entriesToDelete.length > 0) {
-                logger.debug(`🧹 BUFF: Cleaned ${entriesToDelete.length} stale cache entries`);
-            }
-        }, 60000); // Run every minute
+        return this.cacheCleaner.startCacheCleanup();
     }
 
     // Set dependencies after initialization if needed
@@ -265,36 +250,10 @@ class BuffDebuffService extends EventEmitter {
         logger.debug(`🎭 BUFF: Additional params - appliedByUserId: ${appliedByUserId}, buffType: ${buffType}, metadata: ${metadata}`);
         
         // Check if this is an anonymous/viewbot user (negative ID)
-        if (userId < 0) {
-            logger.debug(`🎭 BUFF: Creating in-memory buff for anonymous user ${userId}`);
-            
-            // Create a synthetic buff ID for anonymous users
-            const buffId = `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            
-            // Store in anonymous cache
-            const anonymousBuff = {
-                id: buffId,
-                user_id: userId,
-                item_id: itemId,
-                applied_by_user_id: appliedByUserId,
-                buff_type: buffType,
-                duration_seconds: duration,
-                remaining_seconds: duration,
-                applied_at: new Date().toISOString(),
-                is_active: true,
-                metadata: metadata
-            };
-            
-            // Add to anonymous cache
-            if (!this.anonymousBuffsCache.has(userId)) {
-                this.anonymousBuffsCache.set(userId, []);
-            }
-            this.anonymousBuffsCache.get(userId).push(anonymousBuff);
-            
-            logger.debug(`🎭 BUFF: Successfully created anonymous buff with ID: ${buffId}`);
-            return buffId;
+        if (this.anonymousBuffStore.isAnonymousUser(userId)) {
+            return this.anonymousBuffStore.createNewBuff(userId, itemId, appliedByUserId, buffType, duration, metadata);
         }
-        
+
         // For regular users, use database
         try {
             logger.debug(`🎭 BUFF: Executing INSERT query with params:`, [userId, itemId, appliedByUserId, buffType, duration, duration, metadata]);
@@ -320,19 +279,10 @@ class BuffDebuffService extends EventEmitter {
     // Update buff duration
     async updateBuffDuration(buffId, newRemainingSeconds) {
         // Check if this is an anonymous buff
-        if (typeof buffId === 'string' && buffId.startsWith('anon_')) {
-            // Update anonymous buff in cache
-            for (const [userId, buffs] of this.anonymousBuffsCache.entries()) {
-                const buff = buffs.find(b => b.id === buffId);
-                if (buff) {
-                    buff.remaining_seconds = newRemainingSeconds;
-                    buff.last_updated = new Date().toISOString();
-                    return;
-                }
-            }
-            return;
+        if (this.anonymousBuffStore.isAnonymousBuffId(buffId)) {
+            return this.anonymousBuffStore.updateBuffDuration(buffId, newRemainingSeconds);
         }
-        
+
         // For regular buffs, update database
         await this.buffRepository.updateRemainingSeconds(buffId, newRemainingSeconds);
 
@@ -347,15 +297,10 @@ class BuffDebuffService extends EventEmitter {
     // Get active buff for specific item and user
     async getActiveBuffByItemForUser(userId, itemId) {
         // Check if this is an anonymous user
-        if (userId < 0) {
-            const anonymousBuffs = this.anonymousBuffsCache.get(userId) || [];
-            return anonymousBuffs.find(buff => 
-                buff.item_id === itemId && 
-                buff.is_active && 
-                buff.remaining_seconds > 0
-            ) || null;
+        if (this.anonymousBuffStore.isAnonymousUser(userId)) {
+            return this.anonymousBuffStore.getActiveBuffByItemForUser(userId, itemId);
         }
-        
+
         // For regular users, check database
         return await this.buffRepository.getActiveByUserAndItem(userId, itemId);
     }
@@ -363,25 +308,10 @@ class BuffDebuffService extends EventEmitter {
     // Get buff by ID with item details
     async getBuffById(buffId) {
         // Check if this is an anonymous buff
-        if (typeof buffId === 'string' && buffId.startsWith('anon_')) {
-            // Search for anonymous buff in cache
-            for (const [userId, buffs] of this.anonymousBuffsCache.entries()) {
-                const buff = buffs.find(b => b.id === buffId);
-                if (buff) {
-                    // Get item details to enrich the buff data
-                    const item = await this.itemRepository.getByIdIncludingInactive(buff.item_id);
-                    if (item) {
-                        buff.item_name = item.name;
-                        buff.display_name = item.display_name;
-                        buff.emoji = item.emoji;
-                        buff.effect_data = item.effect_data;
-                    }
-                    return buff;
-                }
-            }
-            return null;
+        if (this.anonymousBuffStore.isAnonymousBuffId(buffId)) {
+            return this.anonymousBuffStore.getBuffById(buffId);
         }
-        
+
         // For regular buffs, query database
         return await this.buffRepository.getByIdWithItem(buffId);
     }
@@ -389,24 +319,10 @@ class BuffDebuffService extends EventEmitter {
     // Get all active buffs for a user
     async getActiveBuffsForUser(userId) {
         // Check if this is an anonymous user
-        if (userId < 0) {
-            const anonymousBuffs = this.anonymousBuffsCache.get(userId) || [];
-            // Enrich with item details
-            const enrichedBuffs = await Promise.all(anonymousBuffs
-                .filter(buff => buff.is_active && buff.remaining_seconds > 0)
-                .map(async (buff) => {
-                    const item = await this.itemRepository.getByIdIncludingInactive(buff.item_id);
-                    if (item) {
-                        buff.item_name = item.name;
-                        buff.display_name = item.display_name;
-                        buff.emoji = item.emoji;
-                        buff.effect_data = item.effect_data;
-                    }
-                    return buff;
-                }));
-            return enrichedBuffs.map(buff => this.formatBuffForClient(buff));
+        if (this.anonymousBuffStore.isAnonymousUser(userId)) {
+            return this.anonymousBuffStore.getActiveBuffsForUser(userId);
         }
-        
+
         // For regular users, query database
         const buffs = await this.buffRepository.listActiveForUser(userId);
 
@@ -482,34 +398,10 @@ class BuffDebuffService extends EventEmitter {
     async removeBuff(buffId, reason = 'manual') {
         try {
             // Check if this is an anonymous buff
-            if (typeof buffId === 'string' && buffId.startsWith('anon_')) {
-                // Remove anonymous buff from cache
-                for (const [userId, buffs] of this.anonymousBuffsCache.entries()) {
-                    const buffIndex = buffs.findIndex(b => b.id === buffId);
-                    if (buffIndex !== -1) {
-                        const buff = buffs[buffIndex];
-                        buff.is_active = false;
-                        buff.remaining_seconds = 0;
-                        buffs.splice(buffIndex, 1);
-                        
-                        // Emit expiry event for anonymous buff
-                        this.emit('buff-expired', { ...buff, reason });
-                        
-                        // Send real-time update for anonymous users
-                        if (this.io) {
-                            this.io.emit('buff-expired', {
-                                buffId: buffId,
-                                userId: buff.user_id,
-                                reason: reason
-                            });
-                        }
-                        
-                        return true;
-                    }
-                }
-                return false;
+            if (this.anonymousBuffStore.isAnonymousBuffId(buffId)) {
+                return this.anonymousBuffStore.removeBuff(buffId, reason);
             }
-            
+
             // For regular buffs, use database
             const buff = await this.getBuffById(buffId);
             if (!buff) {
@@ -736,22 +628,7 @@ class BuffDebuffService extends EventEmitter {
 
     // Format buff data for client consumption
     formatBuffForClient(buff) {
-        return {
-            id: buff.id,
-            userId: buff.user_id,
-            itemId: buff.item_id,
-            itemName: buff.item_name,
-            displayName: buff.display_name,
-            emoji: buff.emoji,
-            buffType: buff.buff_type,
-            durationSeconds: buff.duration_seconds,
-            remainingSeconds: buff.remaining_seconds,
-            streamingTimeUsed: buff.streaming_time_used,
-            appliedAt: buff.applied_at,
-            appliedByUserId: buff.applied_by_user_id,
-            metadata: buff.metadata ? JSON.parse(buff.metadata) : null,
-            effectData: buff.effect_data ? JSON.parse(buff.effect_data) : null
-        };
+        return this.buffFormatter.formatBuffForClient(buff);
     }
 
     // Get buff statistics
