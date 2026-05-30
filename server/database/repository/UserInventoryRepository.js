@@ -199,6 +199,28 @@ class UserInventoryRepository {
     }
 
     /**
+     * Atomically decrement a (user, item) quantity by `amount`, but ONLY if the
+     * row currently holds at least `amount`, returning the post-write quantity
+     * in a single statement (mirrors AccountStatsRepository.atomicSubtractPoints,
+     * ADR-0013a). Returns `undefined` on no-match — the row is missing OR holds
+     * less than `amount` — so a caller can detect a lost race instead of a
+     * read-modify-write that two concurrent removes could both pass, thereby
+     * double-spending a single stack. Single statement, so it composes safely
+     * inside an outer withTransaction scope (no nested BEGIN).
+     *
+     * **DO NOT** refactor to a read-compute-write. The guard is the fence.
+     */
+    async decrementQuantity(userId, itemId, amount) {
+        return await this.getAsync(
+            `UPDATE user_inventory
+                SET quantity = quantity - ?
+              WHERE user_id = ? AND item_id = ? AND quantity >= ?
+          RETURNING quantity`,
+            [amount, userId, itemId, amount]
+        );
+    }
+
+    /**
      * Stamp last_used_at = CURRENT_TIMESTAMP for a (user, item) row.
      * Called after a useItem invocation succeeds.
      */
