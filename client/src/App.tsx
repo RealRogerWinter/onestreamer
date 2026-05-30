@@ -44,6 +44,16 @@ import { GameOverlay } from './components/game';
 import authService from './services/AuthService';
 import SocketManager from './services/SocketManager';
 import CookieConsentService from './services/CookieConsentService';
+import {
+  isOAuthCallbackPath,
+  isOAuthUsernameSelectionPath,
+  isEmailVerificationPath,
+  isPasswordResetPath,
+  isDeletionConfirmationPath,
+  isClipsGalleryPath,
+  matchClipId,
+} from './app/routing';
+import { TakeoverOverlay, TransitionOverlay } from './app/StreamOverlays';
 import 'vanilla-cookieconsent/dist/cookieconsent.css';
 import './styles/cookieconsent.css';
 
@@ -59,22 +69,14 @@ let appContentInstanceCount = 0;
 function AppContent() {
   const instanceId = useRef(++appContentInstanceCount);
   
-  // Check if we're on the OAuth callback page
-  const isOAuthCallback = window.location.pathname === '/auth/success' || 
-                         window.location.pathname === '/auth/error';
-  
-  // Check if we're on the OAuth username selection page
-  const isOAuthUsernameSelection = window.location.pathname === '/auth/complete-registration';
-  
-  // Check if we're on the email verification page
+  // Path-driven routing flags (pure helpers in ./app/routing — same checks
+  // as before, just extracted). currentPath is read once here and reused.
   const currentPath = window.location.pathname;
-  const isEmailVerification = /^\/verify-email\/[a-fA-F0-9]+$/i.test(currentPath);
-
-  // Check if we're on the password reset page
-  const isPasswordReset = /^\/reset-password\/[a-fA-F0-9]+$/i.test(currentPath);
-
-  // Check if we're on the deletion confirmation page
-  const isDeletionConfirmation = /^\/confirm-deletion\/[a-fA-F0-9]+$/i.test(currentPath);
+  const isOAuthCallback = isOAuthCallbackPath(currentPath);
+  const isOAuthUsernameSelection = isOAuthUsernameSelectionPath(currentPath);
+  const isEmailVerification = isEmailVerificationPath(currentPath);
+  const isPasswordReset = isPasswordResetPath(currentPath);
+  const isDeletionConfirmation = isDeletionConfirmationPath(currentPath);
 
   // Modal visibility state — all ~15 show* / is*Open flags live in useModals.
   // Initial values for the URL-driven verification modals are seeded here;
@@ -637,51 +639,25 @@ function AppContent() {
   }
 
   // If we're on the clips gallery page
-  if (currentPath === '/clips' || currentPath === '/clips/') {
+  if (isClipsGalleryPath(currentPath)) {
     return <ClipsGallery />;
   }
 
   // If we're on a single clip page
-  const clipMatch = currentPath.match(/^\/clips\/([a-f0-9-]+)$/i);
-  if (clipMatch) {
-    return <ClipPlayer clipId={clipMatch[1]} />;
+  const clipId = matchClipId(currentPath);
+  if (clipId) {
+    return <ClipPlayer clipId={clipId} />;
   }
 
   return (
     <div className={`App ${theatreMode ? 'theatre-mode' : ''}`}>
 
       {/* Takeover Overlay - When someone takes over your stream */}
-      {showTakeoverOverlay && (
-        <div className="takeover-overlay">
-          <div className="takeover-content">
-            <div className="takeover-icon">
-              {takeoverMessage.includes('Kill Switch') ? '💥' : 
-               takeoverMessage.includes('Connection') ? '🔌' : '🚫'}
-            </div>
-            <h1 className="takeover-title">
-              {takeoverMessage.includes('Kill Switch') ? 'Kill Switch Activated!' :
-               takeoverMessage.includes('Connection') ? 'Connection Lost!' : 'Stream Takeover!'}
-            </h1>
-            <p className="takeover-message">{takeoverMessage}</p>
-            <div className="takeover-transition-info">
-              <div className="transition-arrow">↓</div>
-              <p className="takeover-countdown">Switching to Viewer Mode...</p>
-            </div>
-          </div>
-        </div>
-      )}
-      
+      <TakeoverOverlay show={showTakeoverOverlay} message={takeoverMessage} />
+
       {/* Transition Overlay - When you successfully take over */}
-      {showTransitionOverlay && (
-        <div className="takeover-overlay takeover-transition">
-          <div className="transition-content">
-            <div className="transition-icon">🎬</div>
-            <h1 className="transition-title">Going Live!</h1>
-            <p className="transition-message">{transitionMessage}</p>
-          </div>
-        </div>
-      )}
-      
+      <TransitionOverlay show={showTransitionOverlay} message={transitionMessage} />
+
       {/* Mobile Header V2 - Hide in landscape */}
       {isMobile && !isLandscape ? (
         <>
