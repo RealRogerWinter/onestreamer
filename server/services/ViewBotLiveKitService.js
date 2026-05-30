@@ -10,6 +10,12 @@ const path = require('path');
 const fs = require('fs');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ViewBotLiveKitService' });
+const {
+  normalizeHost,
+  isViewbotIdentity,
+  buildBotTokenGrant,
+  buildIngressRequest,
+} = require('./viewbotLivekit/helpers');
 
 // Disable all non-essential logging for production
 const DEBUG = false;
@@ -81,9 +87,7 @@ class ViewBotLiveKitService {
 
     // Check if current streamer is NOT a viewbot (viewbots don't block other viewbots)
     // URL streams are already handled above, so we don't need to check here
-    const isViewbot = currentStreamer.startsWith('viewbot-') ||
-                      currentStreamer.includes('viewbot') ||
-                      currentStreamer.startsWith('bot-');
+    const isViewbot = isViewbotIdentity(currentStreamer);
 
     return !isViewbot;
   }
@@ -91,10 +95,8 @@ class ViewBotLiveKitService {
   async initialize() {
     if (!this.roomClient) {
       // Ensure host has protocol
-      const host = this.config.host.startsWith('http') 
-        ? this.config.host 
-        : `http://${this.config.host}`;
-        
+      const host = normalizeHost(this.config.host);
+
       this.roomClient = new RoomServiceClient(
         host,
         this.config.apiKey,
@@ -250,12 +252,7 @@ class ViewBotLiveKitService {
       })
     });
 
-    at.addGrant({ 
-      roomJoin: true, 
-      room: this.config.roomName,
-      canPublish: true,
-      canSubscribe: false
-    });
+    at.addGrant(buildBotTokenGrant(this.config.roomName));
 
     return at.toJwt();
   }
@@ -319,9 +316,7 @@ class ViewBotLiveKitService {
     if (bot.ingressId) {
       try {
         const { IngressClient } = require('livekit-server-sdk');
-        const host = this.config.host.startsWith('http')
-          ? this.config.host
-          : `http://${this.config.host}`;
+        const host = normalizeHost(this.config.host);
         const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
         await ingressClient.deleteIngress(bot.ingressId);
         logger.debug(`🗑️ LIVEKIT VIEWBOT ${bot.id}: Deleted old ingress before video rotation`);
@@ -448,22 +443,20 @@ class ViewBotLiveKitService {
     try {
       const { IngressClient, IngressInput } = require('livekit-server-sdk');
 
-      const host = this.config.host.startsWith('http')
-        ? this.config.host
-        : `http://${this.config.host}`;
+      const host = normalizeHost(this.config.host);
 
       const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
 
       // Use adaptive settings if available, otherwise defaults
-      const { TrackSource, IngressVideoOptions, IngressAudioOptions } = require('livekit-server-sdk');
+      const { TrackSource } = require('livekit-server-sdk');
 
       // Determine video settings - prefer adaptive, fall back to defaults
+      // (kept here for the diagnostic log; the request object is shaped by the
+      // pure buildIngressRequest helper below)
       const videoWidth = encodingSettings?.width || 1280;
       const videoHeight = encodingSettings?.height || 720;
       const videoFps = encodingSettings?.fps || 30;
       const videoBitrate = encodingSettings?.videoBitrate ? encodingSettings.videoBitrate * 1000 : 4000000;
-      const audioBitrate = encodingSettings?.audioBitrate ? encodingSettings.audioBitrate * 1000 : 160000;
-      const audioChannels = encodingSettings?.audioChannels || 2;
 
       // Experimental: set LIVEKIT_INGRESS_BYPASS_TRANSCODING=true to attempt passthrough
       // (skips ingress re-transcoding when the upstream ffmpeg already produces a
@@ -474,49 +467,13 @@ class ViewBotLiveKitService {
 
       logger.debug(`🎬 LIVEKIT INGRESS: Creating with ${videoWidth}x${videoHeight}@${videoFps}fps ${videoBitrate/1000}kbps${bypassTranscoding ? ' [BYPASS TRANSCODING]' : ''}`);
 
-      const ingressRequest = {
-        name: `viewbot-${bot.id}`,
+      const ingressRequest = buildIngressRequest({
+        bot,
         roomName: this.config.roomName,
-        participantIdentity: bot.id,
-        participantName: `ViewBot ${bot.id}`
-      };
-
-      if (!bypassTranscoding) {
-        // Default path: explicit encoding options force LiveKit ingress to transcode
-        // to the specified layer (60% CPU per active ingress on this box).
-        ingressRequest.video = {
-          source: TrackSource.CAMERA,
-          encodingOptions: {
-            case: 'options',
-            value: {
-              videoCodec: 0, // H264
-              frameRate: videoFps,
-              layers: [{
-                quality: 2, // HIGH
-                width: videoWidth,
-                height: videoHeight,
-                bitrate: videoBitrate
-              }]
-            }
-          }
-        };
-        ingressRequest.audio = {
-          source: TrackSource.MICROPHONE,
-          encodingOptions: {
-            case: 'options',
-            value: {
-              audioCodec: 1, // OPUS
-              bitrate: audioBitrate,
-              channels: audioChannels,
-              disableDtx: false
-            }
-          }
-        };
-      } else {
-        // Bypass path: pass through the source codecs as-is. The upstream ffmpeg
-        // (ViewBotURLService._createFFmpegRTMPProcess) must emit H.264 + AAC/Opus.
-        ingressRequest.bypassTranscoding = true;
-      }
+        encodingSettings,
+        bypassTranscoding,
+        TrackSource
+      });
 
       const ingress = await ingressClient.createIngress(IngressInput.RTMP_INPUT, ingressRequest);
 
@@ -536,9 +493,7 @@ class ViewBotLiveKitService {
   async deleteIngress(ingressId) {
     try {
       const { IngressClient } = require('livekit-server-sdk');
-      const host = this.config.host.startsWith('http')
-        ? this.config.host
-        : `http://${this.config.host}`;
+      const host = normalizeHost(this.config.host);
       const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
 
       await ingressClient.deleteIngress(ingressId);
@@ -547,34 +502,6 @@ class ViewBotLiveKitService {
     } catch (error) {
       logger.error(`❌ LIVEKIT: Failed to delete ingress ${ingressId}:`, error.message);
       return false;
-    }
-  }
-
-  /**
-   * Rotate to next video
-   */
-  async rotateVideo(bot) {
-    if (!bot || !bot.running) return;
-    
-    const nextVideo = this.getNextVideoFile();
-    if (!nextVideo) return;
-    
-    logger.debug(`🔄 LIVEKIT VIEWBOT ${bot.id}: Rotating to video: ${path.basename(nextVideo)}`);
-    
-    // Stop current process
-    if (bot.gstreamerProcess) {
-      bot.gstreamerProcess.kill('SIGTERM');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    
-    // Update config with new video
-    bot.config.videoFile = nextVideo;
-    
-    // Start new stream
-    try {
-      await this.startFFmpegStream(bot);
-    } catch (error) {
-      logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Failed to rotate video:`, error);
     }
   }
 
@@ -664,9 +591,7 @@ class ViewBotLiveKitService {
     if (bot.ingressId) {
       try {
         const { IngressClient } = require('livekit-server-sdk');
-        const host = this.config.host.startsWith('http')
-          ? this.config.host
-          : `http://${this.config.host}`;
+        const host = normalizeHost(this.config.host);
         const ingressClient = new IngressClient(host, this.config.apiKey, this.config.apiSecret);
 
         await ingressClient.deleteIngress(bot.ingressId);
@@ -779,107 +704,6 @@ class ViewBotLiveKitService {
       success: true,
       message: 'ViewBot started successfully'
     };
-  }
-
-  /**
-   * FFmpeg fallback - generates test pattern and streams to LiveKit via RTP/WebRTC
-   * This is a simpler approach when GStreamer/WHIP is not available
-   */
-  async startFFmpegFallback(bot) {
-    const { config } = bot;
-
-    logger.debug(`🎬 LIVEKIT VIEWBOT (FFmpeg): Starting test pattern stream for ${bot.id}`);
-
-    return new Promise((resolve, reject) => {
-      // Use FFmpeg to generate test pattern with audio
-      // Stream it as HLS segments that LiveKit can ingest
-      const outputPath = `/tmp/livekit-viewbot-${bot.id}`;
-
-      const ffmpegArgs = [
-        // Video input: test pattern or video file
-        '-re',
-        '-f', 'lavfi',
-        '-i', `testsrc=size=${config.width}x${config.height}:rate=${config.frameRate}`,
-        // Audio input: sine wave
-        '-f', 'lavfi',
-        '-i', 'sine=frequency=1000:sample_rate=48000',
-        // Video encoding
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-tune', 'zerolatency',
-        '-b:v', `${config.videoBitrate}k`,
-        '-maxrate', `${config.videoBitrate}k`,
-        '-bufsize', `${config.videoBitrate * 2}k`,
-        '-pix_fmt', 'yuv420p',
-        '-g', '30',
-        '-keyint_min', '30',
-        '-profile:v', 'baseline',
-        '-level', '3.1',
-        // Audio encoding
-        '-c:a', 'aac',
-        '-b:a', `${config.audioBitrate}k`,
-        '-ar', '48000',
-        '-ac', '2',
-        // HLS output
-        '-f', 'hls',
-        '-hls_time', '2',
-        '-hls_list_size', '3',
-        '-hls_flags', 'delete_segments',
-        `${outputPath}.m3u8`
-      ];
-
-      logger.debug(`🎥 LIVEKIT VIEWBOT (FFmpeg) ${bot.id}: Starting test pattern with HLS output`);
-
-      bot.ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-
-      let streamStarted = false;
-
-      bot.ffmpegProcess.stderr.on('data', (data) => {
-        const output = data.toString();
-
-        if (output.includes('error') || output.includes('Error')) {
-          logger.error(`❌ VIEWBOT ${bot.id} FFmpeg error:`, output);
-          if (!streamStarted) {
-            reject(new Error('FFmpeg error: ' + output));
-          }
-        }
-
-        // Check if streaming started
-        if (output.includes('Opening') || output.includes('muxer')) {
-          if (!streamStarted) {
-            logger.debug(`✅ VIEWBOT ${bot.id}: FFmpeg test pattern streaming`);
-            streamStarted = true;
-            bot.running = true;
-            bot.startTime = Date.now();
-            resolve();
-          }
-        }
-      });
-
-      bot.ffmpegProcess.on('error', (error) => {
-        logger.error(`❌ FFmpeg process error for ${bot.id}:`, error);
-        if (!streamStarted) {
-          reject(error);
-        }
-      });
-
-      bot.ffmpegProcess.on('exit', (code, signal) => {
-        logger.debug(`🛑 FFmpeg process for ${bot.id} exited (code: ${code}, signal: ${signal})`);
-        bot.running = false;
-      });
-
-      // Timeout fallback
-      setTimeout(() => {
-        if (!streamStarted) {
-          logger.debug(`⚠️ VIEWBOT ${bot.id}: FFmpeg may be running but no confirmation received`);
-          bot.running = true;
-          bot.startTime = Date.now();
-          resolve();
-        }
-      }, 3000);
-    });
   }
 
   /**
