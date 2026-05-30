@@ -1,6 +1,9 @@
 const EventEmitter = require('events');
-const https = require('https');
-const axios = require('axios');
+
+const MessageStore = require('./streambot/MessageStore');
+const PeriodicMessageScheduler = require('./streambot/PeriodicMessageScheduler');
+const CharacterGenerator = require('./streambot/CharacterGenerator');
+const AutoSummonManager = require('./streambot/AutoSummonManager');
 
 const logger = require('../bootstrap/logger').child({ svc: 'StreamBotService' });
 class StreamBotService extends EventEmitter {
@@ -249,6 +252,12 @@ class StreamBotService extends EventEmitter {
             'acts like everyone should know their inside jokes',
             'writes messages like tweets with character limits'
         ];
+
+        // Cohesive collaborators (state stays on this service via `owner` back-ref).
+        this.messageStore = new MessageStore(this);
+        this.periodicScheduler = new PeriodicMessageScheduler(this);
+        this.characterGenerator = new CharacterGenerator(this);
+        this.autoSummonManager = new AutoSummonManager(this);
     }
 
     async initialize() {
@@ -278,34 +287,7 @@ class StreamBotService extends EventEmitter {
     }
 
     async startPeriodicMessages() {
-        // Clear any existing interval
-        if (this.intervalId) {
-            clearInterval(this.intervalId);
-        }
-
-        // Get settings
-        const settings = await this.getSettings();
-        
-        if (!settings || !settings.enabled) {
-            logger.debug('🤖 StreamBot periodic messages are disabled');
-            return;
-        }
-
-        logger.debug(`🤖 Starting StreamBot periodic messages (interval: ${settings.interval_minutes} minutes)`);
-        
-        // Send a message immediately if it's been long enough
-        const lastSent = settings.last_sent_at ? new Date(settings.last_sent_at) : null;
-        const now = new Date();
-        const minutesSinceLastSent = lastSent ? (now - lastSent) / 1000 / 60 : Infinity;
-        
-        if (minutesSinceLastSent >= settings.interval_minutes) {
-            await this.sendNextMessage();
-        }
-
-        // Set up the interval
-        this.intervalId = setInterval(async () => {
-            await this.sendNextMessage();
-        }, settings.interval_minutes * 60 * 1000);
+        return this.periodicScheduler.startPeriodicMessages();
     }
 
     // Lifecycle entry point — uniform name across services for the
@@ -317,241 +299,59 @@ class StreamBotService extends EventEmitter {
     }
 
     async stopPeriodicMessages() {
-        if (this.intervalId) {
-            clearInterval(this.intervalId);
-            this.intervalId = null;
-            logger.debug('🤖 StreamBot periodic messages stopped');
-        }
+        return this.periodicScheduler.stopPeriodicMessages();
     }
 
     async sendToChatService(message) {
-        try {
-            const agent = new https.Agent({  
-                rejectUnauthorized: false // Allow self-signed certificates
-            });
-
-            const response = await axios.post(
-                `${this.chatServiceUrl}/api/system-message`,
-                {
-                    message: message,
-                    username: '🤖 StreamBot'
-                },
-                {
-                    httpsAgent: agent,
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (response.data.success) {
-                logger.debug('📨 StreamBot message sent to chat service successfully');
-            }
-        } catch (error) {
-            logger.error('❌ Failed to send StreamBot message to chat:', error.message);
-            // Also emit locally as fallback
-            this.emit('sendMessage', message);
-        }
+        return this.periodicScheduler.sendToChatService(message);
     }
 
     async sendNextMessage() {
-        try {
-            const settings = await this.getSettings();
-            if (!settings || !settings.enabled) return;
-
-            // Get enabled messages ordered by order_index
-            const messages = await this.getEnabledMessages();
-            if (messages.length === 0) {
-                logger.debug('🤖 No enabled StreamBot messages to send');
-                return;
-            }
-
-            // Get the current message index and wrap around if necessary
-            let currentIndex = settings.current_message_index || 0;
-            if (currentIndex >= messages.length) {
-                currentIndex = 0;
-            }
-
-            const message = messages[currentIndex];
-            
-            // Send message to chat service via HTTP
-            await this.sendToChatService(message.message);
-            
-            logger.debug(`🤖 StreamBot sent message ${currentIndex + 1}/${messages.length}: "${message.message.substring(0, 50)}..."`);
-
-            // Update the index and last sent time
-            const nextIndex = (currentIndex + 1) % messages.length;
-            await this.updateSettings({
-                current_message_index: nextIndex,
-                last_sent_at: new Date().toISOString()
-            });
-
-        } catch (error) {
-            logger.error('❌ Error sending StreamBot message:', error);
-        }
+        return this.periodicScheduler.sendNextMessage();
     }
 
     // Database methods
     async getSettings() {
-        return new Promise((resolve, reject) => {
-            this.db.get(
-                'SELECT * FROM streambot_settings LIMIT 1',
-                (err, row) => {
-                    if (err) reject(err);
-                    else resolve(row);
-                }
-            );
-        });
+        return this.messageStore.getSettings();
     }
 
     async updateSettings(updates) {
-        const fields = [];
-        const values = [];
-        
-        for (const [key, value] of Object.entries(updates)) {
-            fields.push(`${key} = ?`);
-            values.push(value);
-        }
-        
-        if (fields.length === 0) return;
-        
-        fields.push('updated_at = CURRENT_TIMESTAMP');
-        
-        return new Promise((resolve, reject) => {
-            this.db.run(
-                `UPDATE streambot_settings SET ${fields.join(', ')} WHERE id = 1`,
-                values,
-                function(err) {
-                    if (err) reject(err);
-                    else resolve(this.changes);
-                }
-            );
-        });
+        return this.messageStore.updateSettings(updates);
     }
 
     async getMessages() {
-        return new Promise((resolve, reject) => {
-            this.db.all(
-                'SELECT * FROM streambot_messages ORDER BY order_index ASC',
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows || []);
-                }
-            );
-        });
+        return this.messageStore.getMessages();
     }
 
     async getEnabledMessages() {
-        return new Promise((resolve, reject) => {
-            this.db.all(
-                'SELECT * FROM streambot_messages WHERE enabled = 1 ORDER BY order_index ASC',
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows || []);
-                }
-            );
-        });
+        return this.messageStore.getEnabledMessages();
     }
 
     async getMessage(id) {
-        return new Promise((resolve, reject) => {
-            this.db.get(
-                'SELECT * FROM streambot_messages WHERE id = ?',
-                [id],
-                (err, row) => {
-                    if (err) reject(err);
-                    else resolve(row);
-                }
-            );
-        });
+        return this.messageStore.getMessage(id);
     }
 
     async createMessage(message, orderIndex = null) {
-        // If no order index provided, add to the end
-        if (orderIndex === null || orderIndex === undefined) {
-            const messages = await this.getMessages();
-            orderIndex = messages.length;
-        }
-
-        return new Promise((resolve, reject) => {
-            this.db.run(
-                'INSERT INTO streambot_messages (message, enabled, order_index) VALUES (?, 1, ?)',
-                [message, orderIndex],
-                function(err) {
-                    if (err) reject(err);
-                    else resolve({ id: this.lastID, message, enabled: 1, order_index: orderIndex });
-                }
-            );
-        });
+        return this.messageStore.createMessage(message, orderIndex);
     }
 
     async updateMessage(id, updates) {
-        const fields = [];
-        const values = [];
-        
-        for (const [key, value] of Object.entries(updates)) {
-            if (key !== 'id') {
-                fields.push(`${key} = ?`);
-                values.push(value);
-            }
-        }
-        
-        if (fields.length === 0) return;
-        
-        fields.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(id);
-        
-        return new Promise((resolve, reject) => {
-            this.db.run(
-                `UPDATE streambot_messages SET ${fields.join(', ')} WHERE id = ?`,
-                values,
-                function(err) {
-                    if (err) reject(err);
-                    else resolve(this.changes);
-                }
-            );
-        });
+        return this.messageStore.updateMessage(id, updates);
     }
 
     async deleteMessage(id) {
-        return new Promise((resolve, reject) => {
-            this.db.run(
-                'DELETE FROM streambot_messages WHERE id = ?',
-                [id],
-                function(err) {
-                    if (err) reject(err);
-                    else {
-                        // Reorder remaining messages
-                        resolve(this.changes);
-                    }
-                }
-            );
-        });
+        return this.messageStore.deleteMessage(id);
     }
 
     async reorderMessages(messageIds) {
-        // Update order_index for all messages based on the array order
-        const promises = messageIds.map((id, index) => {
-            return this.updateMessage(id, { order_index: index });
-        });
-        
-        return Promise.all(promises);
+        return this.messageStore.reorderMessages(messageIds);
     }
 
     async toggleMessage(id) {
-        const message = await this.getMessage(id);
-        if (!message) throw new Error('Message not found');
-
-        return this.updateMessage(id, { enabled: message.enabled ? 0 : 1 });
+        return this.messageStore.toggleMessage(id);
     }
 
     // Settings management
-    async setInterval(minutes) {
-        await this.updateSettings({ interval_minutes: minutes });
-        // Restart the periodic messages with new interval
-        await this.startPeriodicMessages();
-    }
-
     async toggleEnabled() {
         const settings = await this.getSettings();
         const newEnabled = settings.enabled ? 0 : 1;
@@ -572,522 +372,56 @@ class StreamBotService extends EventEmitter {
     // ==========================================
 
     async startAutoSummon() {
-        // Clear any existing interval and timeout
-        if (this.autoSummonIntervalId) {
-            clearInterval(this.autoSummonIntervalId);
-            this.autoSummonIntervalId = null;
-        }
-        if (this.autoSummonTimeoutId) {
-            clearTimeout(this.autoSummonTimeoutId);
-            this.autoSummonTimeoutId = null;
-        }
-
-        // Get auto-summon settings
-        const settings = await this.getAutoSummonSettings();
-
-        if (!settings || !settings.enabled) {
-            logger.debug('🤖 StreamBot: Auto-summon is disabled');
-            return;
-        }
-
-        const intervalMs = settings.interval_minutes * 60 * 1000;
-        logger.debug(`🤖 StreamBot: Starting auto-summon system (interval: ${settings.interval_minutes} minutes)`);
-
-        // Check if we should summon immediately (based on last summon time)
-        const lastSummoned = settings.last_summoned_at ? new Date(settings.last_summoned_at) : null;
-        const now = new Date();
-        const msSinceLastSummon = lastSummoned ? (now - lastSummoned) : Infinity;
-
-        // Helper to start the regular interval
-        const startRegularInterval = () => {
-            this.autoSummonIntervalId = setInterval(async () => {
-                await this.autoSummonBot();
-            }, intervalMs);
-        };
-
-        if (msSinceLastSummon >= intervalMs) {
-            // Summon immediately and start regular interval
-            await this.autoSummonBot();
-            startRegularInterval();
-        } else {
-            // Calculate remaining time until next summon
-            const remainingMs = intervalMs - msSinceLastSummon;
-            const remainingMinutes = Math.round(remainingMs / 1000 / 60);
-            logger.debug(`🤖 StreamBot: Next auto-summon in ${remainingMinutes} minutes`);
-
-            // Set a timeout for the remaining time, then start regular interval
-            this.autoSummonTimeoutId = setTimeout(async () => {
-                await this.autoSummonBot();
-                startRegularInterval();
-            }, remainingMs);
-        }
+        return this.autoSummonManager.startAutoSummon();
     }
 
     async stopAutoSummon() {
-        if (this.autoSummonTimeoutId) {
-            clearTimeout(this.autoSummonTimeoutId);
-            this.autoSummonTimeoutId = null;
-        }
-        if (this.autoSummonIntervalId) {
-            clearInterval(this.autoSummonIntervalId);
-            this.autoSummonIntervalId = null;
-        }
-        logger.debug('🤖 StreamBot: Auto-summon stopped');
+        return this.autoSummonManager.stopAutoSummon();
     }
 
     async autoSummonBot() {
-        try {
-            const settings = await this.getAutoSummonSettings();
-            if (!settings || !settings.enabled) {
-                logger.debug('🤖 StreamBot: Auto-summon disabled, skipping');
-                return;
-            }
-
-            // Check if services are available
-            if (!this.chatBotService) {
-                logger.error('❌ StreamBot: ChatBotService not available for auto-summon');
-                return;
-            }
-
-            logger.debug('🎭 StreamBot: Generating character pair via Groq...');
-
-            // Generate a pair of opposing characters using Groq
-            const pair = await this.generateCharacterPair();
-            if (!pair || !pair.positive || !pair.negative) {
-                logger.error('❌ StreamBot: Failed to generate character pair');
-                return;
-            }
-
-            logger.debug(`🎭 StreamBot: Generated pair - ${pair.positive.name} (positive) & ${pair.negative.name} (negative)`);
-
-            // Create the positive bot
-            const positiveBot = await this.chatBotService.createTemporaryBot({
-                name: pair.positive.name,
-                personalityPrompt: pair.positive.personality,
-                summonedBy: 0,
-                summonedByUsername: 'StreamBot',
-                duration: settings.bot_duration_seconds,
-                itemId: null,
-                llmModel: 'groq',
-                temperature: 0.9
-            });
-
-            // Create the negative bot
-            const negativeBot = await this.chatBotService.createTemporaryBot({
-                name: pair.negative.name,
-                personalityPrompt: pair.negative.personality,
-                summonedBy: 0,
-                summonedByUsername: 'StreamBot',
-                duration: settings.bot_duration_seconds,
-                itemId: null,
-                llmModel: 'groq',
-                temperature: 0.9
-            });
-
-            // Log both auto-summoned bots in history
-            await this.logAutoSummonedBot(positiveBot.id, pair.positive.name, pair.positive.personality, pair.positive.generatedPrompt);
-            await this.logAutoSummonedBot(negativeBot.id, pair.negative.name, pair.negative.personality, pair.negative.generatedPrompt);
-
-            // Update last summoned time and counter (count as 2)
-            await this.updateAutoSummonSettings({
-                last_summoned_at: new Date().toISOString(),
-                total_summoned: (settings.total_summoned || 0) + 2
-            });
-
-            // Send announcement to chat
-            const announcement = `👥 Two new viewers just joined! Welcome ${pair.positive.name} and ${pair.negative.name} to the chat!`;
-            await this.sendToChatService(announcement);
-
-            logger.debug(`✅ StreamBot: Auto-summoned pair ${pair.positive.name} & ${pair.negative.name} successfully!`);
-
-        } catch (error) {
-            logger.error('❌ StreamBot: Error in auto-summon:', error);
-        }
+        return this.autoSummonManager.autoSummonBot();
     }
 
     async generateWhimsicalCharacter() {
-        try {
-            // Check if LLM service is available with Groq
-            if (!this.chatBotLLMService) {
-                logger.debug('⚠️ StreamBot: LLM service not available, using fallback character');
-                return this.generateFallbackCharacter();
-            }
-
-            const groqStatus = this.chatBotLLMService.getGroqStatus();
-            if (!groqStatus.enabled || !groqStatus.hasApiKey) {
-                logger.debug('⚠️ StreamBot: Groq not available, using fallback character');
-                return this.generateFallbackCharacter();
-            }
-
-            // Pick random archetype and personality modifier for variety
-            const archetype = this.characterArchetypes[Math.floor(Math.random() * this.characterArchetypes.length)];
-            const modifier = this.personalityModifiers[Math.floor(Math.random() * this.personalityModifiers.length)];
-
-            const generationPrompt = `You are a creative character designer. Generate a unique character for a stream chat.
-
-Character archetype: ${archetype}
-Personality trait: ${modifier}
-
-Create a character with:
-1. A unique, memorable name that fits their archetype (can be realistic like "Gary" or creative like "Stardust" - whatever fits best, max 20 characters)
-2. A personality description for how they would interact in a stream chat (max 180 characters)
-
-The character should:
-- FULLY embrace their archetype - if they're grumpy, let them be grumpy; if they're dramatic, let them be dramatic
-- Have a distinct voice and perspective that matches who they are
-- Feel like a real personality, not a caricature
-- Be appropriate for all audiences (no explicit content)
-- Their tone can range from silly to serious, warm to sardonic - whatever fits their character
-
-Examples of variety:
-- A "retired teacher" might be patient and encouraging, or exhausted and sarcastic
-- A "conspiracy theorist about mundane things" would be paranoid but about silly stuff
-- A "grumpy old-timer" can complain lovingly while secretly enjoying the stream
-- A "soap opera protagonist" would be dramatically invested in everything
-
-Respond in EXACTLY this JSON format (no other text):
-{"name": "CharacterName", "personality": "Brief personality description for chat behavior"}`;
-
-            const systemPrompt = "You are a diverse character generator capable of creating any type of personality - from whimsical to realistic, silly to serious, grumpy to cheerful. Respond only with valid JSON, no markdown or explanation.";
-
-            const result = await this.chatBotLLMService.callGroqAPI(systemPrompt, generationPrompt);
-
-            if (!result || !result.message) {
-                logger.error('❌ StreamBot: Empty response from Groq');
-                return this.generateFallbackCharacter();
-            }
-
-            // Parse the JSON response
-            let character;
-            try {
-                // Clean up the response in case it has markdown formatting
-                let cleanedResponse = result.message.trim();
-                if (cleanedResponse.startsWith('```json')) {
-                    cleanedResponse = cleanedResponse.replace(/```json\n?/, '').replace(/```$/, '');
-                } else if (cleanedResponse.startsWith('```')) {
-                    cleanedResponse = cleanedResponse.replace(/```\n?/, '').replace(/```$/, '');
-                }
-                character = JSON.parse(cleanedResponse.trim());
-            } catch (parseError) {
-                logger.error('❌ StreamBot: Failed to parse Groq response:', result.message);
-                return this.generateFallbackCharacter();
-            }
-
-            // Validate the response
-            if (!character.name || !character.personality) {
-                logger.error('❌ StreamBot: Invalid character structure from Groq');
-                return this.generateFallbackCharacter();
-            }
-
-            // Truncate if too long
-            character.name = character.name.substring(0, 25);
-            character.personality = character.personality.substring(0, 200);
-            character.generatedPrompt = generationPrompt;
-
-            return character;
-
-        } catch (error) {
-            logger.error('❌ StreamBot: Error generating character via Groq:', error);
-            return this.generateFallbackCharacter();
-        }
+        return this.characterGenerator.generateWhimsicalCharacter();
     }
 
     generateFallbackCharacter() {
-        // Fallback characters with realistic usernames when Groq is unavailable
-        const fallbackCharacters = [
-            { name: 'mike_92', personality: 'Regular guy just hanging out. Makes dry observations about whatever is happening. Chill vibes.' },
-            { name: 'sarah2001', personality: 'College student procrastinating. Enthusiastic about random topics. Types in all lowercase.' },
-            { name: 'dave_chill', personality: 'Night shift worker killing time. Shares random facts. Surprisingly thoughtful questions.' },
-            { name: 'jenny_xo', personality: 'Bubbly and supportive. Uses a lot of exclamation points! Genuinely excited about everything!' },
-            { name: 'grumpycat99', personality: 'Perpetually unimpressed. Judges everything with dry wit but keeps watching anyway.' },
-            { name: 'tom_reviews', personality: 'Self-appointed critic of everything. 3/10 stars but somehow still engaged. Deadpan delivery.' },
-            { name: 'bookworm42', personality: 'Has a random fact for everything. "Actually, did you know..." Loves sharing obscure knowledge.' },
-            { name: 'nightowl_23', personality: 'Insomniac energy. Either very tired or very wired. No in between.' },
-            { name: 'sendhelp_lol', personality: 'Self-deprecating humor. Everything is fine (its not). Relatable chaos.' },
-            { name: 'karen_actual', personality: 'Surprisingly wholesome despite the name. Offers genuine advice. Mom friend energy.' },
-            { name: 'just_lurking', personality: 'Rarely speaks but when they do its weirdly insightful. Mysterious presence.' },
-            { name: 'coffeaddict_', personality: 'Running on caffeine and spite. Sarcastic but friendly. Needs sleep.' }
-        ];
-
-        const character = fallbackCharacters[Math.floor(Math.random() * fallbackCharacters.length)];
-        character.generatedPrompt = 'Fallback character (Groq unavailable)';
-        return character;
+        return this.characterGenerator.generateFallbackCharacter();
     }
 
-    // Fallback pairs for when Groq is unavailable - diverse personalities with contrasting energies
     generateFallbackPair() {
-        const fallbackPairs = [
-            {
-                positive: { name: 'cozy_vibes_only', personality: 'Warmly enthusiastic. Types cozy encouragements. Believes in hot cocoa solutions. Currently mood: blessed.' },
-                negative: { name: 'seen_better_tbh', personality: 'Chronically unimpressed millennial. "its fine i guess." Always tired. Secretly watching intently.' }
-            },
-            {
-                positive: { name: 'caps_lock_carol', personality: 'EVERYTHING IS EXCITING. Uses emotes liberally. Your personal hype squad. LETS GOOOO energy.' },
-                negative: { name: 'lowercase_larry', personality: 'types in all lowercase for the aesthetic. too cool to use caps. still here tho.' }
-            },
-            {
-                positive: { name: 'wholesome_dan_42', personality: 'Genuinely nice dad energy. "Great job, kiddo!" Has snacks to share. Supportive of everything.' },
-                negative: { name: 'actually_karen_lol', personality: 'Plays the villain but lovingly. "I have NOTES." Secretly invested. Sarcastic mom energy.' }
-            },
-            {
-                positive: { name: 'coffee_run_rachel', personality: 'Perpetually caffeinated and chatty. Currently on 3rd coffee. Thinks everyone is doing amazing.' },
-                negative: { name: 'decaf_derek', personality: 'Running on fumes. Gave up caffeine, regrets it. Every message sounds tired but present.' }
-            },
-            {
-                positive: { name: 'first_timer_here', personality: 'Wide-eyed newbie energy. Asks obvious questions genuinely. Easily amazed. Types with exclamation!!' },
-                negative: { name: 'veteran_since_09', personality: '"Oh I remember when..." Gatekeeps gently. Has opinions about the old days. Reluctantly adapts.' }
-            },
-            {
-                positive: { name: 'dog_dad_steve', personality: 'Relates everything to his dog. Shares pet pics unsolicited. Pure golden retriever energy.' },
-                negative: { name: 'cat_stan_nina', personality: 'Cat superiority complex. Judges silently. Only speaks to drop wisdom. Aloof but present.' }
-            },
-            {
-                positive: { name: 'emoji_enthusiast', personality: 'Communicates 50% in emojis. Believes in good vibes. Probably uses sparkle emotes unironically.' },
-                negative: { name: 'no_emoji_policy', personality: 'Refuses emojis on principle. Dry text only. Somehow still expressive. Old school chatter.' }
-            },
-            {
-                positive: { name: 'snack_break_sam', personality: 'Always eating something. Shares what snack theyre on. Comfort creature. Easily pleased.' },
-                negative: { name: 'intermittent_ian', personality: 'Currently fasting (mentions it). Grumpy about food content. Still engaged though. Hangry undertones.' }
-            },
-            {
-                positive: { name: 'early_bird_emma', personality: 'Up at 5am by choice. Aggressively morning person. Perky beyond reason. "rise and grind!"' },
-                negative: { name: 'night_shift_nick', personality: '3am energy at all hours. Questionable sleep schedule. Philosophical at weird times.' }
-            },
-            {
-                positive: { name: 'chaos_goblin_01', personality: 'Thrives in mayhem. "this is fine" as things escalate. Finds everything hilarious. Agent of chaos.' },
-                negative: { name: 'needs_order_nancy', personality: 'Tries to organize chat. Slightly stressed by chaos. Makes lists. "can we focus please?"' }
-            },
-            {
-                positive: { name: 'plant_parent_pat', personality: 'Owns too many plants. Treats them like children. Gentle soul. Easily emotional about nature.' },
-                negative: { name: 'brown_thumb_brad', personality: 'Has killed every plant ever. Suspicious of plant content. "how do they survive." Resigned acceptance.' }
-            },
-            {
-                positive: { name: 'nostalgia_nerd', personality: '"Remember when..." but positively. Collects happy memories. Rose tinted glasses but sweet.' },
-                negative: { name: 'moving_on_mike', personality: '"Thats the past." Future focused to a fault. Impatient with callbacks. Lives in the now.' }
-            }
-        ];
-
-        const pair = fallbackPairs[Math.floor(Math.random() * fallbackPairs.length)];
-        pair.positive.generatedPrompt = 'Fallback pair (Groq unavailable)';
-        pair.negative.generatedPrompt = 'Fallback pair (Groq unavailable)';
-        return pair;
+        return this.characterGenerator.generateFallbackPair();
     }
 
     async generateCharacterPair() {
-        try {
-            // Check if LLM service is available with Groq
-            if (!this.chatBotLLMService) {
-                logger.debug('⚠️ StreamBot: LLM service not available, using fallback pair');
-                return this.generateFallbackPair();
-            }
-
-            const groqStatus = this.chatBotLLMService.getGroqStatus();
-            if (!groqStatus.enabled || !groqStatus.hasApiKey) {
-                logger.debug('⚠️ StreamBot: Groq not available, using fallback pair');
-                return this.generateFallbackPair();
-            }
-
-            // Select random elements for variety - pick 2-3 of each for diversity
-            const opposingPair = this.opposingPairs[Math.floor(Math.random() * this.opposingPairs.length)];
-
-            // Pick 3 random username style inspirations
-            const shuffledCategories = [...this.usernameCategories].sort(() => Math.random() - 0.5);
-            const usernameStyles = shuffledCategories.slice(0, 3).join('\n- ');
-
-            // Pick random moods for each character
-            const positiveMood = this.characterMoods[Math.floor(Math.random() * this.characterMoods.length)];
-            const negativeMood = this.characterMoods[Math.floor(Math.random() * this.characterMoods.length)];
-
-            // Pick random opinions
-            const opinion1 = this.characterOpinions[Math.floor(Math.random() * this.characterOpinions.length)];
-            const opinion2 = this.characterOpinions[Math.floor(Math.random() * this.characterOpinions.length)];
-
-            // Pick random quirks
-            const quirk1 = this.characterQuirks[Math.floor(Math.random() * this.characterQuirks.length)];
-            const quirk2 = this.characterQuirks[Math.floor(Math.random() * this.characterQuirks.length)];
-
-            // Generate a unique seed to encourage variety
-            const uniqueSeed = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
-
-            const generationPrompt = `CREATE TWO UNIQUE STREAM CHATTERS [Seed: ${uniqueSeed}]
-
-You're inventing TWO completely original chat personas who contrast with each other. Make them feel like REAL internet users with distinct personalities, NOT generic chatbot templates.
-
-═══ CORE CONTRAST ═══
-Character 1 vibe: ${opposingPair.positive}
-Character 2 vibe: ${opposingPair.negative}
-
-═══ USERNAME INSPIRATION (pick ONE style, invent a FRESH name) ═══
-- ${usernameStyles}
-
-IMPORTANT: Create BRAND NEW usernames. Do NOT use: mike_92, sarah2001, lazypanda, bookworm42, sunny_day, shadow99, or ANY example usernames. Invent something original that fits the style.
-
-═══ MAKE THEM REAL ═══
-Character 1:
-- Current mood: ${positiveMood}
-- Has this opinion: ${opinion1}
-- Quirk: ${quirk1}
-
-Character 2:
-- Current mood: ${negativeMood}
-- Has this opinion: ${opinion2}
-- Quirk: ${quirk2}
-
-═══ OUTPUT FORMAT ═══
-Create a CONCISE personality prompt for each (max 120 chars). This prompt will instruct a small AI to roleplay as them, so include:
-- Their core vibe/energy
-- Their current mood
-- One specific opinion or quirk
-- How they type (casual, caps, lowercase, emotes, etc.)
-
-Respond ONLY with valid JSON:
-{"positive": {"name": "unique_username", "personality": "concise prompt for AI"}, "negative": {"name": "unique_username2", "personality": "concise prompt for AI"}}`;
-
-            const systemPrompt = `You are a creative character designer who invents unique, realistic internet personas.
-Each character must feel like a real person with genuine quirks, not a generic bot.
-Never repeat usernames you've used before. Every name should be fresh and creative.
-Respond only with valid JSON, no markdown.`;
-
-            // Use the larger, more capable model for character generation
-            const result = await this.chatBotLLMService.callGroqAPIWithModel(
-                systemPrompt,
-                generationPrompt,
-                'llama-3.3-70b-versatile',
-                500,
-                0.95 // High temperature for creativity
-            );
-
-            if (!result || !result.message) {
-                logger.error('❌ StreamBot: Empty response from Groq for pair');
-                return this.generateFallbackPair();
-            }
-
-            logger.debug(`🎭 StreamBot: Generated characters using ${result.model}`);
-
-            // Parse the JSON response
-            let pair;
-            try {
-                let cleanedResponse = result.message.trim();
-                if (cleanedResponse.startsWith('```json')) {
-                    cleanedResponse = cleanedResponse.replace(/```json\n?/, '').replace(/```$/, '');
-                } else if (cleanedResponse.startsWith('```')) {
-                    cleanedResponse = cleanedResponse.replace(/```\n?/, '').replace(/```$/, '');
-                }
-                pair = JSON.parse(cleanedResponse.trim());
-            } catch (parseError) {
-                logger.error('❌ StreamBot: Failed to parse Groq pair response:', result.message);
-                return this.generateFallbackPair();
-            }
-
-            // Validate the response
-            if (!pair.positive || !pair.negative || !pair.positive.name || !pair.negative.name) {
-                logger.error('❌ StreamBot: Invalid pair structure from Groq');
-                return this.generateFallbackPair();
-            }
-
-            // Truncate if too long
-            pair.positive.name = pair.positive.name.substring(0, 25);
-            pair.positive.personality = pair.positive.personality.substring(0, 200);
-            pair.positive.generatedPrompt = generationPrompt;
-
-            pair.negative.name = pair.negative.name.substring(0, 25);
-            pair.negative.personality = pair.negative.personality.substring(0, 200);
-            pair.negative.generatedPrompt = generationPrompt;
-
-            logger.debug(`✨ StreamBot: Created contrasting pair - "${pair.positive.name}" vs "${pair.negative.name}"`);
-
-            return pair;
-
-        } catch (error) {
-            logger.error('❌ StreamBot: Error generating character pair via Groq:', error);
-            return this.generateFallbackPair();
-        }
+        return this.characterGenerator.generateCharacterPair();
     }
 
     // Auto-summon database methods
     async getAutoSummonSettings() {
-        return new Promise((resolve, reject) => {
-            this.db.get(
-                'SELECT * FROM auto_summon_settings WHERE id = 1',
-                (err, row) => {
-                    if (err) reject(err);
-                    else resolve(row);
-                }
-            );
-        });
+        return this.autoSummonManager.getAutoSummonSettings();
     }
 
     async updateAutoSummonSettings(updates) {
-        const fields = [];
-        const values = [];
-
-        for (const [key, value] of Object.entries(updates)) {
-            fields.push(`${key} = ?`);
-            values.push(value);
-        }
-
-        if (fields.length === 0) return;
-
-        fields.push('updated_at = CURRENT_TIMESTAMP');
-
-        return new Promise((resolve, reject) => {
-            this.db.run(
-                `UPDATE auto_summon_settings SET ${fields.join(', ')} WHERE id = 1`,
-                values,
-                function(err) {
-                    if (err) reject(err);
-                    else resolve(this.changes);
-                }
-            );
-        });
+        return this.autoSummonManager.updateAutoSummonSettings(updates);
     }
 
     async toggleAutoSummon() {
-        const settings = await this.getAutoSummonSettings();
-        const newEnabled = settings.enabled ? 0 : 1;
-
-        await this.updateAutoSummonSettings({ enabled: newEnabled });
-
-        if (newEnabled) {
-            await this.startAutoSummon();
-        } else {
-            await this.stopAutoSummon();
-        }
-
-        return newEnabled;
+        return this.autoSummonManager.toggleAutoSummon();
     }
 
     async logAutoSummonedBot(chatbotId, botName, personality, generatedPrompt) {
-        return new Promise((resolve, reject) => {
-            this.db.run(
-                `INSERT INTO auto_summoned_bots (chatbot_id, bot_name, personality_prompt, generated_prompt)
-                 VALUES (?, ?, ?, ?)`,
-                [chatbotId, botName, personality, generatedPrompt],
-                function(err) {
-                    if (err) reject(err);
-                    else resolve({ id: this.lastID });
-                }
-            );
-        });
+        return this.autoSummonManager.logAutoSummonedBot(chatbotId, botName, personality, generatedPrompt);
     }
 
     async getAutoSummonedBotHistory(limit = 20) {
-        return new Promise((resolve, reject) => {
-            this.db.all(
-                `SELECT * FROM auto_summoned_bots ORDER BY summoned_at DESC LIMIT ?`,
-                [limit],
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows || []);
-                }
-            );
-        });
+        return this.autoSummonManager.getAutoSummonedBotHistory(limit);
     }
 
     async triggerManualAutoSummon() {
-        // Force an immediate auto-summon (for testing/manual trigger)
-        logger.debug('🎭 StreamBot: Manual auto-summon triggered');
-        return await this.autoSummonBot();
+        return this.autoSummonManager.triggerManualAutoSummon();
     }
 }
 
