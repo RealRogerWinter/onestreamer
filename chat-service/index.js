@@ -136,6 +136,14 @@ function getAxiosConfig(additionalConfig = {}) {
   if (httpsAgent) {
     config.httpsAgent = httpsAgent;
   }
+  // Identify chat-service → main-server calls as a trusted service, so the
+  // stream-control routes (/api/random-stream/*) can require auth without
+  // breaking vote-driven rotation. Main server matches this against
+  // INTERNAL_API_SECRET (see middleware/streamControlAuth.js).
+  const internalSecret = process.env.INTERNAL_API_SECRET;
+  if (internalSecret) {
+    config.headers = { ...(config.headers || {}), 'X-Internal-Secret': internalSecret };
+  }
   return config;
 }
 

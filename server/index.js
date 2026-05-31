@@ -1588,6 +1588,7 @@ async function startServer() {
       stoppables,
       livekitService,
       viewBotLiveKitService,
+      authenticateAdmin,
     });
 
     // Make viewbotService available to routes

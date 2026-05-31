@@ -66,6 +66,7 @@ const ModerationActionArbiter = require('../services/ModerationActionArbiter');
 const UserRepository = require('../database/repository/UserRepository');
 const urlStreamRoutesFactory = require('../routes/url-stream');
 const randomStreamRoutesFactory = require('../routes/random-stream');
+const { makeStreamControlAuth } = require('../middleware/streamControlAuth');
 
 const logger = require('./logger').child({ svc: 'start-streaming-backend' });
 module.exports = function startStreamingBackend({
@@ -83,6 +84,7 @@ module.exports = function startStreamingBackend({
   stoppables,
   livekitService,
   viewBotLiveKitService,
+  authenticateAdmin,
 }) {
   // Initialize URL Stream ViewBot Service.
   const viewBotURLService = new ViewBotURLService();
@@ -119,8 +121,13 @@ module.exports = function startStreamingBackend({
   global.viewBotURLService = viewBotURLService;
   global.urlStreamHealthService = urlStreamHealthService;
 
+  // Auth gate for the stream-control + URL-ingestion routes (historically
+  // unauthenticated). Permissive until ENFORCE_STREAM_CONTROL_AUTH=true; see
+  // middleware/streamControlAuth.js for the rollout rationale.
+  const streamControlAuth = makeStreamControlAuth(authenticateAdmin, logger);
+
   // Initialize URL Stream API routes
-  app.use('/api/url-stream', urlStreamRoutesFactory(viewBotURLService, urlStreamHealthService));
+  app.use('/api/url-stream', streamControlAuth, urlStreamRoutesFactory(viewBotURLService, urlStreamHealthService));
   logger.debug('✅ URL STREAM: API routes initialized at /api/url-stream');
 
   // Initialize Random Stream Rotation Service.
@@ -180,7 +187,7 @@ module.exports = function startStreamingBackend({
   }
 
   // Initialize Random Stream API routes
-  app.use('/api/random-stream', randomStreamRoutesFactory(randomStreamRotationService));
+  app.use('/api/random-stream', streamControlAuth, randomStreamRoutesFactory(randomStreamRotationService));
   logger.debug('✅ RANDOM STREAM: API routes initialized at /api/random-stream');
 
   // Auto-start random rotation if it was enabled before restart.

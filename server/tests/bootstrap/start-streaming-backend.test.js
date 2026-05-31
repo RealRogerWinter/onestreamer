@@ -129,7 +129,7 @@ describe('startStreamingBackend (MediaSoup branch — livekitService null)', () 
     expect(global.urlStreamHealthService._listeners['source-offline']).toBeInstanceOf(Function);
     expect(global.urlStreamHealthService._listeners['stream-stale']).toBeInstanceOf(Function);
     expect(deps.SimpleViewBotRotation.setURLViewBotService).toHaveBeenCalledWith(global.viewBotURLService);
-    expect(deps.app.use).toHaveBeenCalledWith('/api/url-stream', expect.objectContaining({ _routeFactory: 'url-stream' }));
+    expect(deps.app.use).toHaveBeenCalledWith('/api/url-stream', expect.any(Function), expect.objectContaining({ _routeFactory: 'url-stream' }));
   });
 
   test('constructs RandomStreamRotationService and sets it globally', () => {
@@ -141,7 +141,7 @@ describe('startStreamingBackend (MediaSoup branch — livekitService null)', () 
     expect(global.randomStreamRotationService._calls.setSocketIO).toEqual([deps.io]);
     expect(global.randomStreamRotationService._calls.setStreamNotifier).toEqual([deps.streamNotifier]);
     expect(global.randomStreamRotationService._calls.setWhitelistService).toEqual([deps.whitelistService]);
-    expect(deps.app.use).toHaveBeenCalledWith('/api/random-stream', expect.objectContaining({ _routeFactory: 'random-stream' }));
+    expect(deps.app.use).toHaveBeenCalledWith('/api/random-stream', expect.any(Function), expect.objectContaining({ _routeFactory: 'random-stream' }));
   });
 
   test('wires the ActionArbiter when moderationService is present', () => {
