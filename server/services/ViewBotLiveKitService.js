@@ -16,6 +16,7 @@ const {
   buildBotTokenGrant,
   buildIngressRequest,
 } = require('./viewbotLivekit/helpers');
+const { buildVideoFileRtmpArgs } = require('./viewbot/ffmpegArgs');
 
 // Disable all non-essential logging for production
 const DEBUG = false;
@@ -300,12 +301,12 @@ class ViewBotLiveKitService {
   }
 
   /**
-   * Start RTMP stream to LiveKit ingress using GStreamer
+   * Start RTMP stream to LiveKit ingress using ffmpeg
    */
   async startRTMPStream(bot) {
     const { config } = bot;
 
-    logger.debug(`📹 LIVEKIT VIEWBOT ${bot.id}: Streaming video via RTMP (GStreamer): ${path.basename(config.videoFile)}`);
+    logger.debug(`📹 LIVEKIT VIEWBOT ${bot.id}: Streaming video via RTMP (ffmpeg): ${path.basename(config.videoFile)}`);
 
     // Check if video has audio
     const hasAudio = await this.hasAudioTrack(config.videoFile);
@@ -343,52 +344,42 @@ class ViewBotLiveKitService {
     logger.debug(`🎥 LIVEKIT VIEWBOT ${bot.id}: Streaming to RTMP URL: ${rtmpUrl}`);
 
     return new Promise((resolve, reject) => {
-      // GStreamer pipeline for RTMP streaming - WORKING CONFIGURATION
-      // Increased keyframe frequency (key-int-max=15 = ~0.5s at 30fps) to minimize freeze duration if layer switch occurs
+      // ffmpeg pipeline for RTMP streaming — replaces the former GStreamer
+      // pipeline, mirroring the URL-relay's proven ffmpeg → LiveKit RTMP ingress
+      // path (H.264 baseline, low-latency, frequent keyframes; AAC 48k stereo,
+      // with a silent anullsrc track when the file has no audio). See
+      // viewbot/ffmpegArgs.buildVideoFileRtmpArgs.
+      const args = buildVideoFileRtmpArgs({
+        videoFile: config.videoFile,
+        rtmpUrl,
+        hasAudio,
+        videoBitrate: config.videoBitrate,
+        audioBitrate: config.audioBitrate,
+      });
 
-      // Build audio pipeline based on whether video has audio
-      const audioPipeline = hasAudio
-        ? `d.audio_0 ! queue ! decodebin ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=${config.audioBitrate * 1000} ! queue ! mux.audio`
-        : `audiotestsrc wave=silence ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=${config.audioBitrate * 1000} ! queue ! mux.audio`;
+      logger.debug(`🎬 LIVEKIT VIEWBOT ${bot.id}: Starting ffmpeg RTMP pipeline (audio: ${hasAudio ? 'real' : 'silent'})`);
 
-      const pipelineCmd = `filesrc location="${config.videoFile}" ! qtdemux name=d ` +
-        `d.video_0 ! queue ! decodebin ! videoconvert ! video/x-raw,format=I420 ! ` +
-        `x264enc bitrate=${config.videoBitrate} speed-preset=ultrafast tune=zerolatency key-int-max=15 ! ` +
-        `video/x-h264,profile=baseline ! h264parse ! video/x-h264,stream-format=avc ! ` +
-        `queue ! mux.video ` +
-        audioPipeline + ` ` +
-        `flvmux name=mux streamable=true ! rtmpsink location="${rtmpUrl}"`;
-
-      logger.debug(`🎬 LIVEKIT VIEWBOT ${bot.id}: Starting GStreamer RTMP pipeline (audio: ${hasAudio ? 'real' : 'silent'})`);
-
-      bot.gstreamerProcess = spawn('sh', ['-c', `gst-launch-1.0 -v ${pipelineCmd}`], {
+      bot.ffmpegProcess = spawn('/usr/bin/ffmpeg', args, {
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
-      bot.gstreamerProcess.on('error', (error) => {
-        logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer error:`, error);
+      bot.ffmpegProcess.on('error', (error) => {
+        logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: ffmpeg error:`, error);
         reject(error);
       });
 
       let streamStarted = false;
 
-      // Monitor both stdout and stderr for GStreamer output
+      // ffmpeg writes progress ("frame=") and the stream map to stderr.
       const handleOutput = (data) => {
         const output = data.toString();
 
-        if (output.includes('ERROR')) {
-          logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: GStreamer ERROR:`, output);
-          if (!streamStarted) {
-            reject(new Error('GStreamer error: ' + output));
-          }
-        } else if (output.includes('WARNING')) {
-          logger.warn(`⚠️ LIVEKIT VIEWBOT ${bot.id}: GStreamer WARNING:`, output);
-        } else if (output.includes('PLAYING') || output.includes('Pipeline is PREROLLED')) {
+        if (output.includes('frame=') || output.includes('Stream mapping')) {
           if (!streamStarted) {
             streamStarted = true;
             bot.running = true;
             bot.startTime = Date.now();
-            logger.debug(`✅ LIVEKIT VIEWBOT ${bot.id}: GStreamer RTMP stream started successfully`);
+            logger.debug(`✅ LIVEKIT VIEWBOT ${bot.id}: ffmpeg RTMP stream started successfully`);
 
             // Monitor how long it takes for the track to appear in the room
             this.monitorTrackPublishing(bot.id, bot.id, bot.startTime).catch(err => {
@@ -397,14 +388,16 @@ class ViewBotLiveKitService {
 
             resolve();
           }
+        } else if (/error/i.test(output) && !streamStarted) {
+          logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: ffmpeg error output:`, output.substring(0, 300));
         }
       };
 
-      bot.gstreamerProcess.stdout.on('data', handleOutput);
-      bot.gstreamerProcess.stderr.on('data', handleOutput);
+      bot.ffmpegProcess.stdout.on('data', handleOutput);
+      bot.ffmpegProcess.stderr.on('data', handleOutput);
 
-      bot.gstreamerProcess.on('exit', (code, signal) => {
-        logger.debug(`🎬 LIVEKIT VIEWBOT ${bot.id}: GStreamer process ended (code: ${code}, signal: ${signal})`);
+      bot.ffmpegProcess.on('exit', (code, signal) => {
+        logger.debug(`🎬 LIVEKIT VIEWBOT ${bot.id}: ffmpeg process ended (code: ${code}, signal: ${signal})`);
         bot.running = false;
 
         // Auto-restart on video end if still supposed to be running
@@ -428,7 +421,7 @@ class ViewBotLiveKitService {
 
       setTimeout(() => {
         if (!streamStarted) {
-          reject(new Error('GStreamer RTMP stream startup timeout'));
+          reject(new Error('ffmpeg RTMP stream startup timeout'));
         }
       }, 10000);
     });
@@ -550,7 +543,7 @@ class ViewBotLiveKitService {
           try {
             // First, kill all descendant processes by name (more aggressive)
             const { exec } = require('child_process');
-            exec(`pkill -TERM -f "gst-launch-1.0.*${bot.streamKey || bot.id}"`, () => {});
+            exec(`pkill -TERM -f "ffmpeg.*${bot.streamKey || bot.id}"`, () => {});
 
             // Also try to kill by parent PID
             exec(`pkill -TERM -P ${process.pid}`, () => {});
@@ -570,7 +563,7 @@ class ViewBotLiveKitService {
           try {
             const { exec } = require('child_process');
             // Kill by stream key pattern (most reliable)
-            exec(`pkill -KILL -f "gst-launch-1.0.*${bot.streamKey || bot.id}"`, () => {});
+            exec(`pkill -KILL -f "ffmpeg.*${bot.streamKey || bot.id}"`, () => {});
             // Kill children by PID
             exec(`pkill -KILL -P ${process.pid}`, () => {});
             // Force kill parent
