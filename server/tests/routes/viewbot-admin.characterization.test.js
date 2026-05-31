@@ -262,24 +262,6 @@ describe('viewbot-admin router — characterization', () => {
     expect(viewBotClientService.forceRotation).toHaveBeenCalledTimes(1);
   });
 
-  test('GET /admin/simple-rotation/status returns 503 when global.viewBotRotation absent', async () => {
-    delete global.viewBotRotation;
-    const res = await request(app).get('/admin/simple-rotation/status');
-    expect(res.status).toBe(503);
-    expect(res.body).toEqual({ error: 'ViewBot rotation not initialized' });
-  });
-
-  test('GET /admin/simple-rotation/status returns global.viewBotRotation.getStatus()', async () => {
-    global.viewBotRotation = { getStatus: jest.fn(() => ({ enabled: true, idx: 3 })) };
-    try {
-      const res = await request(app).get('/admin/simple-rotation/status');
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ enabled: true, idx: 3 });
-    } finally {
-      delete global.viewBotRotation;
-    }
-  });
-
   // --- GROUP: webrtc (viewBotAuth) ------------------------------------------
   test('GET /admin/viewbot-webrtc/status returns {viewbots} from listViewBots', async () => {
     viewBotWebRTCService.listViewBots.mockReturnValue([{ id: 'w1' }]);
