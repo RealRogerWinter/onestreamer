@@ -5,11 +5,11 @@
  * - One viewbot streaming at a time
  * - Random rotation intervals
  * - Cooldown system to prevent replays
- * - Supports both MediaSoup (GStreamer) and LiveKit (RTMP ingress) backends
+ * - Streams via LiveKit (RTMP ingress); the legacy MediaSoup/GStreamer backend
+ *   was removed.
  */
 
 const SimpleViewBotSocket = require('./SimpleViewBotSocket');
-const { spawn } = require('child_process');
 const webrtcConfig = require('../config/webrtc.config');
 
 const logger = require('../bootstrap/logger').child({ svc: 'SimpleViewBotRotation' });
@@ -25,7 +25,6 @@ class SimpleViewBotRotation {
     // Core state
     this.currentBot = null;
     this.rotationTimer = null;
-    this.gstreamerProcess = null;
     this.livekitViewBotService = null;
     this.livekitViewBotId = null;
     this.streamService = null; // Reference to StreamService for real streamer protection
@@ -49,12 +48,6 @@ class SimpleViewBotRotation {
       maxRotationInterval: 180000, // 3 minutes maximum
       cooldownDuration: 600000,    // 10 minute cooldown per bot
       enabled: false  // Disabled by default, will be enabled when needed
-    };
-
-    // MediaSoup RTP ports (should match server config)
-    this.rtpPorts = {
-      video: 5004,
-      audio: 5006
     };
 
     // Detect backend
@@ -269,12 +262,12 @@ class SimpleViewBotRotation {
       this.currentBot = bot;
       this.cooldowns.set(bot.id, Date.now());
 
-      // Use LiveKit or MediaSoup based on backend
-      if (this.backend === 'livekit' && this.livekitViewBotService) {
-        await this.startLiveKitBot(bot);
-      } else {
-        await this.startMediaSoupBot(bot);
+      // LiveKit RTMP ingress is the only supported viewbot backend; the former
+      // MediaSoup/GStreamer path was removed.
+      if (!this.livekitViewBotService) {
+        throw new Error('LiveKit viewbot service unavailable (MediaSoup/GStreamer backend was removed)');
       }
+      await this.startLiveKitBot(bot);
 
       logger.debug(`✅ ViewBotRotationService: viewbot-${bot.id} is now streaming`);
 
@@ -311,69 +304,6 @@ class SimpleViewBotRotation {
   }
 
   /**
-   * Start MediaSoup GStreamer bot
-   */
-  async startMediaSoupBot(bot) {
-    logger.debug(`🎥 Starting MediaSoup GStreamer bot: ${bot.id}`);
-
-    // Build GStreamer pipeline
-    const pipeline = this.buildGStreamerPipeline(bot);
-
-    // PR 8.3 (Phase 8): spawn with `detached: true` so the gst-launch
-    // process becomes its own process-group leader. The shutdown reaper
-    // uses negative-PID group kill (`kill -SIG -<pid>`), which is a no-op
-    // — or worse, signals the wrong group — if the child inherits Node's
-    // PGID. Precedent: ViewBotClientService also spawns gst-launch with
-    // `detached: !isWindows` for the same reason.
-    this.gstreamerProcess = spawn('gst-launch-1.0', pipeline.split(' '), {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32'
-    });
-
-    // PR 8.3 (Phase 8): register with the actual ProcessManager singleton.
-    // Previous `global.processManager.trackProcess(...)` calls were no-ops
-    // (the global was never assigned) — the resulting orphan-process leak
-    // is what PR 8.3 is closing.
-    processManager.registerProcess(bot.id, 'gstreamer', this.gstreamerProcess.pid);
-
-    // PR 8.3 (review fix): deregister on natural exit so the registry
-    // doesn't keep a ghost PID. Without this, a gst-launch that exits on
-    // its own (EOS, crash, gracefully killed by a per-bot path) leaves an
-    // entry behind; the shutdown reaper later sends SIGTERM to a dead or
-    // recycled PID. The deregister is fire-and-forget (no await) because
-    // it's inside an event handler.
-    this.gstreamerProcess.once('exit', () => {
-      processManager.onBotStopped(bot.id).catch((err) => {
-        logger.error(`[ProcessManager] onBotStopped(${bot.id}) from exit handler failed:`, err.message);
-      });
-    });
-
-    // Handle process events
-    this.gstreamerProcess.on('error', (error) => {
-      logger.error(`❌ GStreamer error for ${bot.id}:`, error);
-      this.handleBotError(bot);
-    });
-
-    this.gstreamerProcess.on('exit', (code) => {
-      logger.debug(`📤 GStreamer exited for ${bot.id} with code ${code}`);
-      if (code !== 0 && this.currentBot?.id === bot.id) {
-        this.handleBotError(bot);
-      }
-    });
-
-    // Log output for debugging
-    this.gstreamerProcess.stdout.on('data', (data) => {
-      logger.debug(`[GStreamer ${bot.id}]:`, data.toString());
-    });
-
-    this.gstreamerProcess.stderr.on('data', (data) => {
-      if (data.toString().includes('ERROR')) {
-        logger.error(`[GStreamer ERROR ${bot.id}]:`, data.toString());
-      }
-    });
-  }
-  
-  /**
    * Stop the current bot
    */
   async stopCurrentBot() {
@@ -392,23 +322,6 @@ class SimpleViewBotRotation {
       }
     }
 
-    // Kill GStreamer process
-    if (this.gstreamerProcess) {
-      try {
-        this.gstreamerProcess.kill('SIGTERM');
-        // Force kill after timeout
-        setTimeout(() => {
-          if (this.gstreamerProcess && !this.gstreamerProcess.killed) {
-            this.gstreamerProcess.kill('SIGKILL');
-          }
-        }, 2000);
-      } catch (error) {
-        logger.error(`⚠️ Error killing GStreamer for ${botId}:`, error);
-      }
-
-      this.gstreamerProcess = null;
-    }
-
     // PR 8.3 (Phase 8): deregister with the ProcessManager so the
     // shutdown reaper doesn't find this PID still in the registry. The
     // `onBotStopped` path also runs `killBotProcesses` for belt-and-braces
@@ -424,30 +337,6 @@ class SimpleViewBotRotation {
 
     // Clear current bot
     this.currentBot = null;
-  }
-  
-  /**
-   * Build GStreamer pipeline for a bot
-   */
-  buildGStreamerPipeline(bot) {
-    // Use bot's media file or test pattern
-    const videoSource = bot.mediaFile 
-      ? `filesrc location="${bot.mediaFile}" ! decodebin name=decoder`
-      : `videotestsrc pattern=smpte ! video/x-raw,width=1280,height=720,framerate=30/1`;
-    
-    const audioSource = bot.mediaFile
-      ? `decoder. ! audioconvert ! audioresample`
-      : `audiotestsrc wave=sine freq=440`;
-    
-    // Build pipeline for RTP streaming to MediaSoup
-    const videoPipeline = `${videoSource} ! videoconvert ! x264enc tune=zerolatency bitrate=1000 ! rtph264pay config-interval=1 pt=102 ! udpsink host=127.0.0.1 port=${this.rtpPorts.video}`;
-    
-    const audioPipeline = `${audioSource} ! opusenc ! rtpopuspay pt=101 ! udpsink host=127.0.0.1 port=${this.rtpPorts.audio}`;
-    
-    // Combine pipelines
-    return bot.mediaFile 
-      ? `${videoSource} decoder. ! videoconvert ! x264enc tune=zerolatency bitrate=1000 ! rtph264pay config-interval=1 pt=102 ! udpsink host=127.0.0.1 port=${this.rtpPorts.video} ${audioPipeline}`
-      : `${videoPipeline} ${audioPipeline}`;
   }
   
   /**
