@@ -54,6 +54,10 @@ function makeUserInventoryRepo({ inventoryByUser = {} } = {}) {
       if (!row || row.quantity < amount) return Promise.resolve(undefined);
       return Promise.resolve({ quantity: row.quantity - amount });
     }),
+    incrementQuantity: jest.fn().mockImplementation((userId, itemId, delta) => {
+      const row = (inventoryByUser[userId] || []).find((x) => x.item_id === itemId);
+      return Promise.resolve({ quantity: (row ? row.quantity : 0) + delta });
+    }),
     insertItem: jest.fn().mockResolvedValue(undefined),
     deleteItem: jest.fn().mockResolvedValue(undefined),
     findRecentlyUsed: jest.fn().mockResolvedValue([]),
@@ -93,7 +97,7 @@ describe('InventoryService.giftItem', () => {
     const result = await svc.giftItem(42, 99, 7, 2);
 
     expect(userInventoryRepository.decrementQuantity).toHaveBeenCalledWith(42, 7, 2); // guarded remove 2 of 5
-    expect(userInventoryRepository.insertItem).toHaveBeenCalledWith(99, 7, 2);
+    expect(userInventoryRepository.incrementQuantity).toHaveBeenCalledWith(99, 7, 2, 0);
     expect(mockRunAsync).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO gift_transactions'),
       [42, 99, 7, 2]
@@ -171,7 +175,7 @@ describe('InventoryService.giftItem', () => {
     await svc.giftItem(42, 99, 7);
 
     expect(userInventoryRepository.decrementQuantity).toHaveBeenCalledWith(42, 7, 1); // default guarded remove 1
-    expect(userInventoryRepository.insertItem).toHaveBeenCalledWith(99, 7, 1);
+    expect(userInventoryRepository.incrementQuantity).toHaveBeenCalledWith(99, 7, 1, 0);
     expect(mockRunAsync).toHaveBeenCalledWith(expect.any(String), [42, 99, 7, 1]);
   });
 });
