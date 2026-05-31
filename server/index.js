@@ -344,16 +344,6 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// ViewBot Manager routes (WebRTC/Plain RTP toggle)
-app.use('/api/viewbot-manager', (req, res, next) => {
-  if (global.viewBotManager) {
-    const viewBotManagerRoutes = require('./routes/viewbot-manager');
-    viewBotManagerRoutes(global.viewBotManager)(req, res, next);
-  } else {
-    res.status(503).json({ error: 'ViewBot Manager not initialized' });
-  }
-});
-
 // API routes
 app.use('/api/admin', adminRoutes);
 app.use('/api', itemRoutes);
@@ -1681,113 +1671,17 @@ async function startServer() {
       }
     }
     
-    // Initialize NEW ViewBot Rotation System with Socket.IO clients
-    logger.info('🚀 VIEWBOT ROTATION: Starting initialization...');
+    // Port Monitor Service (was nested in the now-removed viewbot rotation
+    // block; depends only on mediasoupService).
     try {
-      const ViewBotRotationService = require('./services/ViewBotRotationService');
-      logger.info('✅ VIEWBOT ROTATION: Service module loaded');
-      
-      const viewBotRotation = new ViewBotRotationService('https://127.0.0.1:8443');
-      logger.info('✅ VIEWBOT ROTATION: Service instance created');
-
-      // PR 3.1: stop-bot's `stream-ended` emit now goes through the chokepoint.
-      viewBotRotation.setStreamNotifier(streamNotifier);
-
-      // Register LiveKit service if available
-      if (global.viewBotLiveKitService) {
-        viewBotRotation.setLiveKitService(global.viewBotLiveKitService);
-        logger.info('✅ VIEWBOT ROTATION: LiveKit service registered');
-      } else {
-        logger.info('⚠️ VIEWBOT ROTATION: LiveKit service not available, will use MediaSoup');
-      }
-
-      // Store globally for admin routes
-      global.viewBotRotation = viewBotRotation;
-      global.viewBotRotationService = viewBotRotation; // Also store with this name for PortMonitor
-
-      // Initialize with media files
-      await viewBotRotation.initialize();
-      logger.info('✅ VIEWBOT ROTATION: Service initialized');
-      
-      // Initialize Unified ViewBot Rotation with WebRTC support
-      logger.info('🌐 Initializing WebRTC ViewBot support...');
-      try {
-        const UnifiedViewBotRotation = require('./services/UnifiedViewBotRotation');
-        const ViewBotManager = require('./services/ViewBotManager');
-        const viewBotConfig = fs.existsSync(path.join(__dirname, 'config', 'viewbot-config.json')) 
-          ? require('./config/viewbot-config.json') 
-          : { viewbots: { useWebRTCViewBots: false } };
-        
-        // Create ViewBot Manager for WebRTC/Plain RTP toggle
-        const viewBotManager = new ViewBotManager(viewBotConfig.viewbots);
-        await viewBotManager.initialize();
-        global.viewBotManager = viewBotManager;
-        stoppables.push(viewBotManager);
-        
-        // Create Unified Rotation controller
-        const unifiedRotation = new UnifiedViewBotRotation(io, streamService, mediasoupService, livekitService, streamNotifier);
-        const videoFiles = await getVideoFiles();
-        await unifiedRotation.initialize(videoFiles);
-        global.unifiedViewBotRotation = unifiedRotation;
-        
-        // Set initial mode based on config
-        if (viewBotConfig.viewbots.useWebRTCViewBots) {
-          await unifiedRotation.setMode('webrtc');
-          logger.info('✅ WebRTC ViewBot mode enabled (mobile compatible)');
-        } else {
-          // CRITICAL: Explicitly set mode to plainrtp - default is 'webrtc' which would cause failures
-          await unifiedRotation.setMode('plainrtp');
-          logger.info('ℹ️ Using Plain RTP ViewBot mode (desktop only)');
-        }
-        
-        logger.info('✅ Unified ViewBot Rotation initialized');
-      } catch (error) {
-        logger.warn({ err: error }, '⚠️ WebRTC ViewBot support not available');
-        logger.info('ℹ️ Continuing with Plain RTP viewbots only');
-      }
-      
-      // Update settings to achieve ~3.5 minute average
-      // Average = (min + max) / 2, so for 3.5 min avg: min + max = 7 min
-      // Using 1 min minimum and 6 min maximum gives 3.5 min average
-      viewBotRotation.updateSettings({
-        minRotationInterval: 60000,   // 1 minute minimum
-        maxRotationInterval: 360000,  // 6 minutes maximum (avg = 3.5 min)
-        cooldownDuration: 600000      // 10 minutes
-      });
-      
-      // Initialize Port Monitor Service
       const PortMonitorService = require('./services/PortMonitorService');
       const portMonitor = new PortMonitorService(mediasoupService);
       global.portMonitor = portMonitor;
       portMonitor.startMonitoring();
       stoppables.push(portMonitor);
       logger.info('✅ PORT MONITOR: Service started');
-      
-      // Enable rotation
-      viewBotRotation.enabled = true;
-      logger.info(`🔍 VIEWBOT ROTATION: Enabled set to ${viewBotRotation.enabled}`);
-
-      // Delay rotation start to ensure server is fully ready.
-      // PR 4.2: routed through LifecycleManager so SIGTERM during the 10 s
-      // grace window cancels the rotation start against a torn-down
-      // mediasoup / viewbot stack.
-      logger.info('⏰ VIEWBOT ROTATION: Scheduling rotation start in 10 seconds...');
-      lifecycleManager.schedule('viewbot-rotation-start', async () => {
-        try {
-          logger.info('🚀 VIEWBOT ROTATION: Starting rotation after delay...');
-          await viewBotRotation.startRotation();
-          logger.info('✅ VIEWBOT ROTATION: Rotation started successfully');
-        } catch (error) {
-          logger.error({ err: error }, '❌ VIEWBOT ROTATION: Failed to start rotation');
-        }
-      }, 10000);
-      logger.info('✅ VIEWBOT ROTATION: schedule registered');
-      
-      logger.info('✅ VIEWBOT ROTATION: New Socket.IO-based rotation system initialized');
-
     } catch (error) {
-      logger.error({ err: error }, '❌ VIEWBOT ROTATION: Failed to initialize');
-      logger.error(error.stack);
+      logger.error({ err: error }, '❌ PORT MONITOR: Failed to start');
     }
     
     // ViewBots are now persisted in database and restored automatically
@@ -1796,12 +1690,9 @@ async function startServer() {
     
     // Initialize ViewBot API routes with the service instance
     const viewbotApiRoutesFactory = require('./routes/viewbot-api');
-    const viewbotVideoApi = require('./routes/viewbot-video-api');
     viewbotApiRoutes = viewbotApiRoutesFactory(viewBotClientService);
     app.use('/api', viewbotApiRoutes);
     
-    // Add new video management API routes
-    app.use('/admin/viewbot', viewbotVideoApi);
     logger.info('✅ VIEWBOT API: Routes initialized with service instance');
   } catch (error) {
     logger.error({ err: error }, '❌ MEDIASOUP: Initialization failed');
