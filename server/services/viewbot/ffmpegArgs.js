@@ -146,4 +146,38 @@ function buildRtmpFfmpegArgs({ input, rtmpUrl, settings, useAdaptive, streamCopy
   return args;
 }
 
-module.exports = { buildRtpFfmpegArgs, buildRtmpFfmpegArgs };
+// RTMP output for a local VIDEO FILE (the LiveKit-backend viewbot filler) — the
+// ffmpeg replacement for the former GStreamer pipeline in ViewBotLiveKitService.
+// Mirrors that pipeline: H.264 baseline + low-latency + frequent keyframes (the
+// old x264enc ultrafast/zerolatency/key-int-max=15), AAC 48k stereo, FLV → RTMP.
+// A file with no audio gets a silent stereo track (anullsrc) so the ingress
+// always receives audio (the old pipeline used audiotestsrc wave=silence).
+// `-re` streams at playback speed; `-shortest` ends with the (finite) video.
+function buildVideoFileRtmpArgs({ videoFile, rtmpUrl, hasAudio, videoBitrate, audioBitrate }) {
+  const args = ['-re', '-i', videoFile];
+  if (!hasAudio) {
+    args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
+  }
+  args.push(
+    '-map', '0:v:0',
+    '-map', hasAudio ? '0:a:0' : '1:a:0',
+    '-c:v', 'libx264',
+    '-profile:v', 'baseline',
+    '-preset', 'ultrafast',
+    '-tune', 'zerolatency',
+    '-pix_fmt', 'yuv420p',
+    '-g', '15',
+    '-b:v', `${videoBitrate}k`,
+    '-c:a', 'aac',
+    '-b:a', `${audioBitrate}k`,
+    '-ar', '48000',
+    '-ac', '2',
+    '-shortest',
+    '-f', 'flv',
+    '-flvflags', 'no_duration_filesize',
+    rtmpUrl
+  );
+  return args;
+}
+
+module.exports = { buildRtpFfmpegArgs, buildRtmpFfmpegArgs, buildVideoFileRtmpArgs };

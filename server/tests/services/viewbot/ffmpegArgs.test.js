@@ -1,4 +1,4 @@
-const { buildRtpFfmpegArgs, buildRtmpFfmpegArgs } = require('../../../services/viewbot/ffmpegArgs');
+const { buildRtpFfmpegArgs, buildRtmpFfmpegArgs, buildVideoFileRtmpArgs } = require('../../../services/viewbot/ffmpegArgs');
 
 const rtpPorts = { video: 5004, audio: 5006 };
 
@@ -7,6 +7,35 @@ function valAfter(args, flag) {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : undefined;
 }
+
+describe('buildVideoFileRtmpArgs (LiveKit viewbot, ffmpeg port of the gst pipeline)', () => {
+  const base = { videoFile: '/v/clip.mp4', rtmpUrl: 'rtmp://127.0.0.1:1935/live/key', videoBitrate: 2500, audioBitrate: 128 };
+
+  test('with audio: -re file input, x264 baseline/zerolatency, AAC, maps real audio, flv→rtmp', () => {
+    const args = buildVideoFileRtmpArgs({ ...base, hasAudio: true });
+    expect(args.slice(0, 3)).toEqual(['-re', '-i', '/v/clip.mp4']);
+    expect(args).not.toContain('anullsrc=channel_layout=stereo:sample_rate=48000');
+    expect(valAfter(args, '-c:v')).toBe('libx264');
+    expect(valAfter(args, '-profile:v')).toBe('baseline');
+    expect(valAfter(args, '-tune')).toBe('zerolatency');
+    expect(valAfter(args, '-g')).toBe('15');
+    expect(valAfter(args, '-b:v')).toBe('2500k');
+    expect(valAfter(args, '-c:a')).toBe('aac');
+    expect(valAfter(args, '-b:a')).toBe('128k');
+    expect(args.join(' ')).toContain('-map 0:v:0');
+    expect(args.join(' ')).toContain('-map 0:a:0');
+    expect(args).toContain('-shortest');
+    expect(args.slice(-3)).toEqual(['-flvflags', 'no_duration_filesize', 'rtmp://127.0.0.1:1935/live/key']);
+  });
+
+  test('no audio: injects a silent anullsrc input and maps it (1:a:0)', () => {
+    const args = buildVideoFileRtmpArgs({ ...base, hasAudio: false, audioBitrate: 96 });
+    expect(args).toContain('anullsrc=channel_layout=stereo:sample_rate=48000');
+    expect(args.join(' ')).toContain('-map 0:v:0');
+    expect(args.join(' ')).toContain('-map 1:a:0');
+    expect(valAfter(args, '-b:a')).toBe('96k');
+  });
+});
 
 describe('buildRtpFfmpegArgs', () => {
   test('non-adaptive direct URL: fixed defaults, reconnect, VP8/Opus, RTP ports', () => {
