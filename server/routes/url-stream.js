@@ -7,6 +7,7 @@
 const express = require('express');
 const URLStreamDatabaseService = require('../services/URLStreamDatabaseService');
 const KickRandomService = require('../services/KickRandomService');
+const { assertSafeUrl } = require('../utils/ssrfGuard');
 
 const logger = require('../bootstrap/logger').child({ svc: 'url-stream' });
 /**
@@ -23,6 +24,20 @@ module.exports = function(viewBotURLService, healthService = null) {
   dbService.initialize().catch(err => {
     logger.error('Failed to initialize URL stream database:', err);
   });
+
+  // SSRF guard: validate a user-supplied URL before streamlink/yt-dlp fetch it.
+  // Writes a 400 and returns false if the URL targets a private/reserved
+  // address (directly or via DNS); returns true if it's safe to ingest.
+  async function ensureSafeUrl(res, url) {
+    try {
+      await assertSafeUrl(url);
+      return true;
+    } catch (ssrfErr) {
+      logger.warn({ err: ssrfErr.message }, '🛡️ URL STREAM: blocked unsafe ingestion URL');
+      res.status(400).json({ error: ssrfErr.message });
+      return false;
+    }
+  }
 
   // ==================== STREAM MANAGEMENT ====================
 
@@ -63,6 +78,9 @@ module.exports = function(viewBotURLService, healthService = null) {
           });
         }
       }
+
+      // SSRF guard on the resolved URL (after any Kick playback-URL swap).
+      if (!(await ensureSafeUrl(res, url))) return;
 
       // Start the stream
       const result = await viewBotURLService.startURLStream(url, {
@@ -154,6 +172,8 @@ module.exports = function(viewBotURLService, healthService = null) {
       if (!url) {
         return res.status(400).json({ error: 'URL is required' });
       }
+
+      if (!(await ensureSafeUrl(res, url))) return;
 
       const result = await viewBotURLService.validateURL(url);
 
@@ -279,6 +299,8 @@ module.exports = function(viewBotURLService, healthService = null) {
         return res.status(400).json({ error: 'URL is required' });
       }
 
+      if (!(await ensureSafeUrl(res, url))) return;
+
       const props = await viewBotURLService.probeStreamSource(url, quality || 'best');
 
       // Also calculate what encoding settings would be used
@@ -397,6 +419,8 @@ module.exports = function(viewBotURLService, healthService = null) {
       if (!preset) {
         return res.status(404).json({ error: 'Preset not found' });
       }
+
+      if (!(await ensureSafeUrl(res, preset.source_url))) return;
 
       // Start stream using preset config
       const result = await viewBotURLService.startURLStream(preset.source_url, {
