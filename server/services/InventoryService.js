@@ -63,32 +63,25 @@ class InventoryService {
             throw new Error('Item not found');
         }
 
-        const existingInventory = await this.getInventoryItem(userId, itemId);
-        
-        if (existingInventory) {
-            const newQuantity = item.max_stack === 0 ? existingInventory.quantity + quantity : Math.min(
-                existingInventory.quantity + quantity,
-                item.max_stack
-            );
+        // Pre-read only to report `added` in the return shape; the write itself
+        // is the atomic upsert below, so two concurrent adds can no longer
+        // lost-update (the stored quantity is always exact — `added` is
+        // best-effort under a race, exact otherwise).
+        const before = (await this.getInventoryItem(userId, itemId))?.quantity ?? 0;
 
-            await this.userInventoryRepository.updateQuantity(userId, itemId, newQuantity);
+        const updated = await this.userInventoryRepository.incrementQuantity(
+            userId,
+            itemId,
+            quantity,
+            item.max_stack
+        );
+        const newQuantity = updated.quantity;
 
-            return {
-                itemId,
-                quantity: newQuantity,
-                added: newQuantity - existingInventory.quantity
-            };
-        } else {
-            const finalQuantity = item.max_stack === 0 ? quantity : Math.min(quantity, item.max_stack);
-
-            await this.userInventoryRepository.insertItem(userId, itemId, finalQuantity);
-
-            return {
-                itemId,
-                quantity: finalQuantity,
-                added: finalQuantity
-            };
-        }
+        return {
+            itemId,
+            quantity: newQuantity,
+            added: newQuantity - before
+        };
     }
 
     async removeItemFromInventory(userId, itemId, quantity = 1) {

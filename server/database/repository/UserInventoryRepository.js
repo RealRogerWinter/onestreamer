@@ -221,6 +221,37 @@ class UserInventoryRepository {
     }
 
     /**
+     * Atomically add `delta` to a (user, item) quantity, inserting the row if it
+     * doesn't exist, clamping to `maxStack` IN SQL (maxStack === 0 means
+     * unlimited), and returning the post-write quantity via RETURNING. A single
+     * INSERT … ON CONFLICT … upsert closes the lost-update race that the prior
+     * read-then-updateQuantity allowed two concurrent adds to hit. Requires the
+     * UNIQUE(user_id, item_id) constraint on user_inventory (it exists).
+     *
+     * **DO NOT** refactor to a read-compute-write.
+     */
+    async incrementQuantity(userId, itemId, delta, maxStack) {
+        if (maxStack && maxStack > 0) {
+            return await this.getAsync(
+                `INSERT INTO user_inventory (user_id, item_id, quantity)
+                      VALUES (?, ?, MIN(?, ?))
+                 ON CONFLICT(user_id, item_id)
+                 DO UPDATE SET quantity = MIN(quantity + ?, ?)
+                   RETURNING quantity`,
+                [userId, itemId, delta, maxStack, delta, maxStack]
+            );
+        }
+        return await this.getAsync(
+            `INSERT INTO user_inventory (user_id, item_id, quantity)
+                  VALUES (?, ?, ?)
+             ON CONFLICT(user_id, item_id)
+             DO UPDATE SET quantity = quantity + ?
+               RETURNING quantity`,
+            [userId, itemId, delta, delta]
+        );
+    }
+
+    /**
      * Stamp last_used_at = CURRENT_TIMESTAMP for a (user, item) row.
      * Called after a useItem invocation succeeds.
      */
