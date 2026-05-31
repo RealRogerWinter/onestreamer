@@ -10,19 +10,14 @@
  *     POST /admin/viewbot-client/rotation/force
  *     POST /admin/viewbot-client/real-streamer-status
  *
- *   global.viewBotRotation simple-rotation (viewBotAuth):
- *     GET/POST /admin/simple-rotation/{status,start,stop,force,settings}
- *
- *   global.viewBotRotation modern rotation (viewBotAuth):
- *     GET/POST /admin/viewbot/rotation/{status,force,enable,disable}
- *
  *   Unauthenticated / key-checked diagnostics:
  *     GET /debug/rotation-status        (no auth)
  *     GET /admin/test-rotation-auth     (inline X-Admin-Key check)
  *
- * Handler bodies are VERBATIM from the parent. global.viewBotRotation,
- * global.portMonitor, and the lazy ViewBotClientService getter keep their
- * original access forms.
+ * Handler bodies are VERBATIM from the parent; the lazy ViewBotClientService
+ * getter keeps its original access form. (The dead global.viewBotRotation
+ * simple-rotation / modern-rotation routes were removed with the viewbot
+ * graveyard.)
  */
 
 const express = require('express');
@@ -173,95 +168,6 @@ function createRotationRouter(deps) {
       // Use the new forceRotation method
       const result = await getViewBotClientService().forceRotation();
       res.json(result);
-    });
-
-    // ViewBot Rotation endpoints (new Socket.IO-based system)
-    router.get('/admin/simple-rotation/status', viewBotAuth, (req, res) => {
-      // Use new rotation service
-      if (!global.viewBotRotation) {
-        return res.status(503).json({ error: 'ViewBot rotation not initialized' });
-      }
-      res.json(global.viewBotRotation.getStatus());
-    });
-
-    router.post('/admin/simple-rotation/start', viewBotAuth, async (req, res) => {
-      if (!global.viewBotRotation) {
-        return res.status(503).json({ error: 'ViewBot rotation not initialized' });
-      }
-      await global.viewBotRotation.startRotation();
-      res.json({ success: true, message: 'ViewBot rotation started' });
-    });
-
-    router.post('/admin/simple-rotation/stop', viewBotAuth, async (req, res) => {
-      if (!global.viewBotRotation) {
-        return res.status(503).json({ error: 'ViewBot rotation not initialized' });
-      }
-      await global.viewBotRotation.stopRotation();
-      res.json({ success: true, message: 'ViewBot rotation stopped' });
-    });
-
-    router.post('/admin/simple-rotation/force', viewBotAuth, async (req, res) => {
-      if (!global.viewBotRotation) {
-        return res.status(503).json({ error: 'ViewBot rotation not initialized' });
-      }
-      await global.viewBotRotation.forceRotation();
-      res.json({ success: true, message: 'Rotation forced' });
-    });
-
-    router.post('/admin/simple-rotation/settings', viewBotAuth, (req, res) => {
-      if (!global.viewBotRotation) {
-        return res.status(503).json({ error: 'ViewBot rotation not initialized' });
-      }
-      global.viewBotRotation.updateSettings(req.body);
-      res.json({ success: true, settings: global.viewBotRotation.settings });
-    });
-
-    // Modern ViewBot rotation endpoints (used by UI)
-    router.get('/admin/viewbot/rotation/status', viewBotAuth, async (req, res) => {
-      if (!global.viewBotRotation) {
-        return res.status(503).json({ error: 'ViewBot rotation not initialized' });
-      }
-      const status = global.viewBotRotation.getStatus();
-
-      // Add port monitor status if available
-      let portStatus = null;
-      if (global.portMonitor) {
-        portStatus = await global.portMonitor.getStatus();
-      }
-
-      res.json({
-        success: true,
-        status: {
-          ...status,
-          totalVideos: global.viewBotRotation.bots.length,
-          nextRotationIn: 60000, // Placeholder
-          portMonitor: portStatus
-        }
-      });
-    });
-
-    router.post('/admin/viewbot/rotation/force', viewBotAuth, async (req, res) => {
-      if (!global.viewBotRotation) {
-        return res.status(503).json({ error: 'ViewBot rotation not initialized' });
-      }
-      await global.viewBotRotation.forceRotation();
-      res.json({ success: true, message: 'Forced rotation to next video' });
-    });
-
-    router.post('/admin/viewbot/rotation/enable', viewBotAuth, async (req, res) => {
-      if (!global.viewBotRotation) {
-        return res.status(503).json({ error: 'ViewBot rotation not initialized' });
-      }
-      await global.viewBotRotation.startRotation();
-      res.json({ success: true, message: 'ViewBot rotation enabled' });
-    });
-
-    router.post('/admin/viewbot/rotation/disable', viewBotAuth, async (req, res) => {
-      if (!global.viewBotRotation) {
-        return res.status(503).json({ error: 'ViewBot rotation not initialized' });
-      }
-      await global.viewBotRotation.stopRotation();
-      res.json({ success: true, message: 'ViewBot rotation disabled' });
     });
 
     return router;

@@ -156,23 +156,6 @@ function createViewbotsRouter(deps) {
       res.json(health);
     });
 
-    // ViewBotWebRTCService endpoints (for mobile 5G/TURN support)
-    // ViewBotManager mode toggle endpoint
-    router.post('/admin/viewbot-manager/toggle-mode', viewBotAuth, async (req, res) => {
-      if (!global.viewBotManager) {
-        return res.status(503).json({ error: 'ViewBot Manager not initialized' });
-      }
-
-      try {
-        const { useWebRTC } = req.body;
-        const result = await global.viewBotManager.toggleMode(useWebRTC);
-        res.json(result);
-      } catch (error) {
-        logger.error({ err: error }, 'Error toggling viewbot mode');
-        res.status(500).json({ error: 'Failed to toggle mode' });
-      }
-    });
-
     return router;
 }
 
