@@ -40,7 +40,7 @@ class RecordingDiskScanner {
     const items = fs.readdirSync(this.outputDir);
 
     for (const item of items) {
-      if (!item.startsWith('session_')) {
+      if (this._parseSessionDir(item) === null) {
         continue;
       }
       const itemPath = path.join(this.outputDir, item);
@@ -101,7 +101,7 @@ class RecordingDiskScanner {
 
     try {
       for (const entry of this._scanSessionDirs()) {
-        const { sessionId, itemPath, stat } = entry;
+        const { sessionId, itemPath } = entry;
         const playlistPath = path.join(itemPath, 'playlist.m3u8');
         const livePlaylistPath = path.join(itemPath, 'live.m3u8');
 
@@ -109,32 +109,29 @@ class RecordingDiskScanner {
         const hasPlaylist = fs.existsSync(playlistPath) || fs.existsSync(livePlaylistPath);
 
         if (hasPlaylist) {
-          // Get segment files
-          const segments = entry.segments
-            .slice()
-            .sort((a, b) => {
-              // Sort by segment index
-              const aMatch = a.match(/_(\d+)\.ts$/);
-              const bMatch = b.match(/_(\d+)\.ts$/);
-              const aNum = aMatch ? parseInt(aMatch[1]) : 0;
-              const bNum = bMatch ? parseInt(bMatch[1]) : 0;
-              return aNum - bNum;
-            });
+          // Stat every segment for its mtime — the segment file's completion
+          // time is the only reliable per-segment timestamp now that egress
+          // writes per-DAY `recording_<date>` buckets (the dir name is a date,
+          // not a start time, and segments aren't start-aligned). A finished
+          // segment covers roughly [mtime - segmentDuration, mtime].
+          const segDurMs = this.segmentDuration * 1000;
+          const segMeta = entry.segments
+            .map((file) => {
+              try {
+                return { file, mtimeMs: fs.statSync(path.join(itemPath, file)).mtimeMs };
+              } catch (_) {
+                return null;
+              }
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.mtimeMs - b.mtimeMs);
 
-          if (segments.length > 0) {
-            // Parse timestamp from session ID
-            const timestampMatch = sessionId.match(/session_(\d+)/);
-            const startTime = timestampMatch ? parseInt(timestampMatch[1]) : stat.mtimeMs;
-
-            // Calculate total duration from segments
-            const totalDuration = segments.length * this.segmentDuration;
-
-            // Check if this session is actively recording by checking latest segment age
-            const latestSegment = segments[segments.length - 1];
-            const latestSegmentPath = path.join(itemPath, latestSegment);
-            const latestSegmentStat = fs.statSync(latestSegmentPath);
-            const segmentAge = Date.now() - latestSegmentStat.mtimeMs;
-            // Consider active if last segment was written within 30 seconds
+          if (segMeta.length > 0) {
+            const segments = segMeta.map((s) => s.file);
+            const startTime = segMeta[0].mtimeMs - segDurMs; // first segment's media start
+            const endTime = segMeta[segMeta.length - 1].mtimeMs;
+            const durationMs = Math.max(0, endTime - startTime);
+            const segmentAge = Date.now() - endTime;
             const isActiveFromDisk = segmentAge < 30000;
 
             recordings.push({
@@ -142,9 +139,10 @@ class RecordingDiskScanner {
               path: itemPath,
               startTime,
               segments,
+              segMeta, // per-segment {file, mtimeMs} for findSegmentsForClip
               segmentCount: segments.length,
-              duration: totalDuration, // in seconds
-              durationMs: totalDuration * 1000,
+              duration: Math.round(durationMs / 1000), // in seconds
+              durationMs,
               hasLivePlaylist: fs.existsSync(livePlaylistPath),
               hasPlaylist: fs.existsSync(playlistPath),
               isActive: this.owner.currentSessionId === sessionId || isActiveFromDisk,
@@ -228,29 +226,32 @@ class RecordingDiskScanner {
       logger.debug(`   Session ${r.sessionId}: start=${r.startTime}, end=${r.startTime + r.durationMs}, segments=${r.segmentCount}`);
     });
 
+    const segmentDurationMs = this.segmentDuration * 1000;
     for (const recording of recordings) {
       const recordingEndMs = recording.startTime + recording.durationMs;
 
-      // Check if this recording overlaps with the clip time range
-      if (recording.startTime <= endMs && recordingEndMs >= startMs) {
-        // Calculate which segments we need from this recording
-        const segmentDurationMs = this.segmentDuration * 1000;
+      // Skip recordings whose overall span doesn't overlap the clip window.
+      if (recording.startTime > endMs || recordingEndMs < startMs) {
+        continue;
+      }
 
-        for (let i = 0; i < recording.segments.length; i++) {
-          const segmentStartMs = recording.startTime + (i * segmentDurationMs);
-          const segmentEndMs = segmentStartMs + segmentDurationMs;
-
-          // Check if this segment overlaps with the clip
-          if (segmentStartMs < endMs && segmentEndMs > startMs) {
-            neededSegments.push({
-              sessionId: recording.sessionId,
-              segmentFile: recording.segments[i],
-              segmentPath: path.join(recording.path, recording.segments[i]),
-              segmentIndex: i,
-              startMs: segmentStartMs,
-              endMs: segmentEndMs
-            });
-          }
+      // Map each segment by its REAL mtime, not startTime + index*duration: the
+      // per-day bucket can contain gaps (stream stop/restart within the day)
+      // that the index math silently mis-times. A finished segment covers
+      // roughly [mtime - segmentDuration, mtime].
+      const meta = recording.segMeta || [];
+      for (let i = 0; i < meta.length; i++) {
+        const segmentEndMs = meta[i].mtimeMs;
+        const segmentStartMs = segmentEndMs - segmentDurationMs;
+        if (segmentStartMs < endMs && segmentEndMs > startMs) {
+          neededSegments.push({
+            sessionId: recording.sessionId,
+            segmentFile: meta[i].file,
+            segmentPath: path.join(recording.path, meta[i].file),
+            segmentIndex: i,
+            startMs: segmentStartMs,
+            endMs: segmentEndMs
+          });
         }
       }
     }
