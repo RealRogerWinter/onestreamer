@@ -272,6 +272,28 @@ class RecordingDiskScanner {
   }
 
   /**
+   * Recognize a recording session directory and return its start timestamp in
+   * ms, or null if the name isn't a session dir. Handles the current egress
+   * format `recording_<YYYY-MM-DD>` (a per-day bucket; the date parses to that
+   * day's UTC midnight) and the legacy `session_<unix-ms>` format older builds
+   * wrote. The previous code matched ONLY `session_`, so against today's
+   * `recording_<date>` dirs every cleanup scan found nothing — the root cause
+   * of the unbounded disk growth.
+   */
+  _parseSessionDir(item) {
+    let m = item.match(/^recording_(\d{4}-\d{2}-\d{2})$/);
+    if (m) {
+      const ts = Date.parse(`${m[1]}T00:00:00Z`);
+      return Number.isNaN(ts) ? null : ts;
+    }
+    m = item.match(/^session_(\d+)$/);
+    if (m) {
+      return parseInt(m[1], 10);
+    }
+    return null;
+  }
+
+  /**
    * Clean up recordings older than retention period.
    *
    * PR 2.6: gated on `recording_sessions.b2_file_id IS NOT NULL`. The
@@ -327,30 +349,29 @@ class RecordingDiskScanner {
         const itemPath = path.join(this.outputDir, item);
         const stat = fs.statSync(itemPath);
 
-        if (stat.isDirectory() && item.startsWith('session_')) {
+        // Recognize both `recording_<YYYY-MM-DD>` (current egress buckets) and
+        // legacy `session_<unix-ms>` dirs. The old code matched only `session_`,
+        // so it never matched today's dirs and never deleted anything.
+        const sessionTs = stat.isDirectory() ? this._parseSessionDir(item) : null;
+        if (sessionTs !== null) {
           // Don't delete the current active session
           if (item === this.owner.currentSessionId) {
             continue;
           }
 
-          // Parse timestamp from session ID
-          const match = item.match(/session_(\d+)/);
-          if (match) {
-            const timestamp = parseInt(match[1]);
-            if (timestamp < cutoffTime) {
-              // PR 2.6: skip directories whose recording_sessions row
-              // still has b2_file_id = NULL (upload pending or in
-              // flight). Without this gate, we race the uploader.
-              if (pendingSessionIds.has(item)) {
-                skippedPendingUpload++;
-                continue;
-              }
-              // Delete the entire session directory
-              fs.rmSync(itemPath, { recursive: true, force: true });
-              deletedCount++;
+          if (sessionTs < cutoffTime) {
+            // PR 2.6: skip directories whose recording_sessions row
+            // still has b2_file_id = NULL (upload pending or in
+            // flight). Without this gate, we race the uploader.
+            if (pendingSessionIds.has(item)) {
+              skippedPendingUpload++;
+              continue;
             }
+            // Delete the entire session directory
+            fs.rmSync(itemPath, { recursive: true, force: true });
+            deletedCount++;
           }
-        } else if (item.endsWith('.mp4') || item.endsWith('.json')) {
+        } else if (!stat.isDirectory() && (item.endsWith('.mp4') || item.endsWith('.json'))) {
           // Clean up old single-file recordings too (legacy format —
           // not produced by current pipeline; left in place for any
           // historical files that may still exist on disk).
