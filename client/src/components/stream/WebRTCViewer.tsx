@@ -146,7 +146,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     // Only initialize if we don't already have a working connection
     // This prevents destroying working connections when dependencies change
     if (mediasoupClientRef.current && isConnected) {
-      // console.log('📺 WEBRTC: Skipping init - already connected');
       return;
     }
 
@@ -495,7 +494,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   useEffect(() => {
     const video = videoRef.current;
     if (video && userInteracted && volume > 0) {
-      // console.log('📺 WEBRTC: User interacted, unmuting video with volume:', volume);
       video.muted = false;
     }
   }, [userInteracted, volume]);
@@ -592,7 +590,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     
     // Prevent multiple simultaneous initializations
     if (isInitializingRef.current) {
-      // console.log('📺 WEBRTC: Already initializing, waiting for completion...');
       // Wait for current initialization to complete
       let waitTime = 0;
       const maxWaitTime = browserInfo.isIOS ? 15000 : 10000; // iOS needs more time
@@ -604,7 +601,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         console.error('📺 WEBRTC: Previous initialization stuck, forcing reset');
         isInitializingRef.current = false;
       } else {
-        // console.log('📺 WEBRTC: Previous initialization completed');
         return;
       }
     }
@@ -617,7 +613,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     const timeSinceLastInit = now - lastInitTimeRef.current;
     const minInterval = (forceInitialize || forceInit) ? 50 : 200; // Same for all platforms
     if (timeSinceLastInit < minInterval && !forceInitialize && !forceInit) {
-      // console.log(`📺 WEBRTC: Rate limiting init (${timeSinceLastInit}ms < ${minInterval}ms), skipping...`);
       return;
     }
     lastInitTimeRef.current = now;
@@ -646,19 +641,15 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       // Create new client with connection recovery callbacks
       // Use the correct server URL from environment or default to HTTPS
       const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}`;
-      // console.log('🌐 WEBRTC: Creating MediasoupClient with server URL:', serverUrl);
-      // console.log('🌐 WEBRTC: Using HTTPS for transport connection');
       
       mediasoupClientRef.current = new WebRTCClientAdapter({
         socket,
         serverUrl,
         onConnectionLost: () => {
-          // console.log('📡 WEBRTC: MediaSoup connection lost');
           setConnectionState('disconnected');
           setError('Connection lost - attempting recovery...');
         },
         onConnectionRecovered: async () => {
-          // console.log('🎉 WEBRTC: MediaSoup connection recovered');
           setConnectionState('reconnecting');
           setError(null);
         },
@@ -811,12 +802,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       // Set StreamSwitchManager callbacks
       streamSwitchManagerRef.current.setCallbacks({
         onSwitchStart: () => {
-          // console.log('🔄 WEBRTC: Stream switch starting');
           setSwitchState('switching');
           setError('Switching stream...');
         },
         onSwitchSuccess: (result) => {
-          // console.log('✅ WEBRTC: Stream switch successful:', result);
           setSwitchState('idle');
           setIsFallbackMode(result.fallbackActivated);
           setError(result.fallbackActivated ? 'Running in fallback mode' : null);
@@ -832,7 +821,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           setError(`Fallback mode: ${reason}`);
         },
         onRetryAttempt: (attempt, maxAttempts) => {
-          // console.log(`🔄 WEBRTC: Retry attempt ${attempt}/${maxAttempts}`);
           setSwitchState('retrying');
           setError(`Retrying stream switch (${attempt}/${maxAttempts})...`);
         },
@@ -856,12 +844,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       while (!stream && consumeAttempts < maxConsumeAttempts) {
         // Check if operation was cancelled
         if (abortControllerRef.current?.signal.aborted) {
-          // console.log('🛑 WEBRTC: Initialization cancelled');
           throw new Error('Operation cancelled');
         }
         
         consumeAttempts++;
-        // console.log(`📺 WEBRTC: Consume attempt ${consumeAttempts}/${maxConsumeAttempts}`);
         
         try {
           // Verify MediaSoup client is still valid before attempting consume
@@ -878,7 +864,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
               stream = null;
               throw new Error('Stream has no tracks');
             }
-            // console.log(`✅ WEBRTC: Stream consumption successful with ${tracks.length} tracks`);
             break;
           } else {
             throw new Error('Consume returned null stream');
@@ -892,7 +877,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           
           // No active streamer - give up quickly
           if (errorMessage.includes('No active streamer') && consumeAttempts >= 2) {
-            // console.log('🛑 WEBRTC: No active streamer after multiple attempts, stopping retries');
             break;
           }
           
@@ -922,12 +906,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
                             lastError?.message?.includes('initializing') ||
                             lastError?.message?.includes('preparing') ? 1500 : 0;
           const delay = baseDelay + extraDelay;
-          // console.log(`⏳ WEBRTC: Waiting ${delay}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, delay));
           
           // Check if we were cancelled during the wait
           if ((!isActive && !forceInit) || !socket?.connected || abortControllerRef.current?.signal.aborted) {
-            // console.log('🛑 WEBRTC: Consume cancelled during wait (inactive, disconnected, or aborted)');
             break;
           }
         }
@@ -944,7 +926,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       if (mediasoupClientRef.current) {
         const currentStreamer = mediasoupClientRef.current.getCurrentStreamer();
         if (currentStreamer) {
-          // console.log(`📝 WEBRTC: Setting currentStreamIdRef to ${currentStreamer} after successful consumption`);
           currentStreamIdRef.current = currentStreamer;
         }
       }
@@ -1055,10 +1036,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
         // Restart viewing session for points tracking
         socket.emit('join-as-viewer');
-        // console.log('🎯 WEBRTC: Started viewing session for points tracking');
       } else {
         setError('No active stream available');
-        // console.log('⚠️ WEBRTC: No stream to consume');
       }
       
       setIsLoading(false);
@@ -1073,10 +1052,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       
       // Retry initialization for certain types of errors
       if (errorMessage.includes('No active stream') || errorMessage.includes('consume')) {
-        // console.log(`🔄 WEBRTC: Will retry initialization in 3 seconds...`);
         setTimeout(() => {
           if (isActive && !isInitializingRef.current && !isSwitchingRef.current) {
-            // console.log('🔄 WEBRTC: Retrying initialization...');
             initializeViewer(true); // Force retry
           }
         }, 3000);
@@ -1123,31 +1100,26 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') {
           // Strategy 3: Try muted autoplay if unmuted failed
           if (attempts === 1 && !video.muted) {
-            // console.log('🔇 WEBRTC: Unmuted autoplay failed, trying muted...');
             video.muted = true;
             try {
               await video.play();
               setPlaybackState('playing');
-              // console.log('✅ WEBRTC: Muted autoplay successful, user interaction needed for audio');
               // Don't return false, playback is working just muted
               return true;
             } catch (mutedError) {
               console.warn('⚠️ WEBRTC: Even muted autoplay failed:', mutedError);
               setPlaybackState('paused');
-              // console.log('📺 WEBRTC: User interaction required for playback');
               return false;
             }
           }
           
           // Strategy 4: User interaction required
           setPlaybackState('paused');
-          // console.log('📺 WEBRTC: User interaction required for playback');
           return false;
           
         } else if (error.name === 'AbortError') {
           // Strategy 5: Retry after brief delay for AbortError
           if (attempts < maxAttempts) {
-            // console.log('🔄 WEBRTC: Retrying playback after AbortError...');
             await new Promise(resolve => setTimeout(resolve, 200 + (attempts * 100)));
             return tryPlay();
           } else {
@@ -1159,7 +1131,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         } else {
           // Strategy 6: Other errors - retry with exponential backoff
           if (attempts < maxAttempts) {
-            // console.log('🔄 WEBRTC: Retrying playback after error...');
             await new Promise(resolve => setTimeout(resolve, 500 * attempts));
             return tryPlay();
           } else {
@@ -1208,7 +1179,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           setPlaybackState('playing');
           
           
-          // console.log('✅ WEBRTC: Video playback started after user interaction');
         } catch (error) {
           console.error('❌ WEBRTC: Playback failed even after user interaction:', error);
           setPlaybackState('failed');
@@ -1308,11 +1278,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   useEffect(() => {
     if (!socket) return;
     
-    // console.log('🔧 WEBRTC: Setting up event listeners for socket:', socket.id);
 
     const handleStreamSwitch = async (data: { newStreamId: string, streamerId: string, streamType?: string, isTestStream?: boolean, isWebRTC?: boolean }) => {
-      // console.log('🔄 WEBRTC: Received legacy stream switch request:', data);
-      // console.log('⚠️ WEBRTC: Using legacy new-streamer event - recommend upgrading to stream-ready');
       
       // Process as stream-ready for backward compatibility
       return handleStreamReady({
@@ -1334,19 +1301,14 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       streamType?: string,
       timestamp?: number
     }) => {
-      // console.log('🔄 WEBRTC: Takeover started, preparing for stream switch:', data);
-      // console.log(`🔄 WEBRTC: Viewer isActive: ${isActive}, will force activation`);
-      // console.log(`🔄 WEBRTC: Current viewer state - isConnected: ${isConnected}, isLoading: ${isLoading}, switchState: ${switchState}`);
       
       // Skip if already processing this stream
       if (currentStreamIdRef.current === data.newStreamerId) {
-        // console.log('✅ WEBRTC: Already targeting this stream for switch');
         return;
       }
       
       // Force activation for takeover even if viewer was inactive
       if (!isActive) {
-        // console.log('🔄 WEBRTC: Forcing viewer activation for takeover (was inactive)');
         // The parent component should handle this, but we can prepare the UI
       }
       
@@ -1358,12 +1320,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       
       // Ensure we exit any "waiting for stream" state
       if (!isConnected && !isLoading) {
-        // console.log('🔄 WEBRTC: Activating viewer from idle state for takeover');
       }
       
       // Clean up current connection immediately
       if (mediasoupClientRef.current) {
-        // console.log('🧹 WEBRTC: Pre-cleaning connection for takeover');
         await mediasoupClientRef.current.cleanup();
         mediasoupClientRef.current = null;
       }
@@ -1388,17 +1348,13 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       // Clear "no stream active" by ensuring we show loading state
       setError(null); // Clear any previous "no active stream" errors
       
-      // console.log('✅ WEBRTC: Ready for stream-ready event from new streamer');
       
       // Set up fallback timeout in case stream-ready never comes
       const fallbackTimer = setTimeout(async () => {
         // Check current state, not captured state
         if (currentStreamIdRef.current === data.newStreamerId) {
-          // console.log('⚠️ WEBRTC: stream-ready timeout after takeover, checking current state...');
-          // console.log(`⚠️ WEBRTC: Current switchState: ${switchState}, isConnected: ${isConnected}`);
           
           if (!isConnected) {
-            // console.log('⚠️ WEBRTC: Attempting fallback connection after stream-ready timeout');
             setError('Stream producer delay, attempting direct connection...');
             setSwitchState('retrying');
             
@@ -1406,7 +1362,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
               await initializeViewer(true); // Force fallback init
               setSwitchState('idle');
               setError(null);
-              // console.log('✅ WEBRTC: Fallback connection successful');
             } catch (error) {
               console.error('❌ WEBRTC: Fallback connection failed:', error);
               setSwitchState('failed');
@@ -1414,7 +1369,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
               
               // Try one more time after additional delay
               setTimeout(async () => {
-                // console.log('🔄 WEBRTC: Final retry attempt...');
                 try {
                   await initializeViewer(true); // Force final retry
                   setSwitchState('idle');
@@ -1593,7 +1547,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           setPlaybackState('loading');
         } else {
           // This is expected from takeover-started, just update status
-          // console.log('🎬 WEBRTC: Expected stream-ready from takeover, proceeding with connection');
           setError(`Connecting to stream${data.producerVerified ? ' (verified)' : ''}...`);
         }
         
@@ -1659,7 +1612,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         
         // Final fallback retry after longer delay
         setTimeout(async () => {
-          // console.log('🔄 WEBRTC: Final fallback retry...');
           setSwitchState('retrying');
           setError('Final retry attempt...');
           
@@ -1667,11 +1619,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             await initializeViewer(true); // Force fallback retry
             setSwitchState('idle');
             setError(null);
-            // console.log('✅ WEBRTC: Fallback retry succeeded');
             
             // Restart viewing session for points tracking
             socket.emit('join-as-viewer');
-            // console.log('🎯 WEBRTC: Restarted viewing session for points tracking (fallback)');
           } catch (retryError) {
             console.error('❌ WEBRTC: Final retry failed:', retryError);
             setSwitchState('failed');
@@ -1682,17 +1632,14 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     };
 
     const handleTestPatternStream = async (data: { streamerId: string, testConfig: { pattern: string, resolution: string, frameRate: number }, isViewBot?: boolean }) => {
-      // console.log('🎨 WEBRTC: Test pattern stream requested:', data);
       
       try {
         // Skip if already processing this stream
         if (currentStreamIdRef.current === data.streamerId) {
-          // console.log('✅ WEBRTC: Already displaying this test pattern');
           return;
         }
         
         const streamType = data.isViewBot ? 'ViewBot' : 'Test pattern';
-        // console.log(`🎨 WEBRTC: Starting client-side ${streamType} generation`);
         setSwitchState('switching');
         setError(`Generating ${streamType.toLowerCase()}...`);
         // ViewBot streams are now real WebRTC streams, not fallback patterns
@@ -1703,7 +1650,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         
         // Clean up existing MediaSoup connection
         if (mediasoupClientRef.current) {
-          // console.log(`🧹 WEBRTC: Cleaning up MediaSoup connection for ${streamType}`);
           await mediasoupClientRef.current.cleanup();
           mediasoupClientRef.current = null;
         }
@@ -1714,7 +1660,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         setIsConnected(true);
         setSwitchState('idle');
         setError(null);
-        // console.log(`✅ WEBRTC: ${streamType} generation completed`);
         
       } catch (error) {
         console.error(`❌ WEBRTC: ${data.isViewBot ? 'ViewBot' : 'Test pattern'} generation failed:`, error);
@@ -1792,10 +1737,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     socket.on('test-pattern-stream', handleTestPatternStream);
     socket.on('stream-ended', handleStreamEnded);
 
-    // console.log('✅ WEBRTC: Event listeners registered (simple mode)');
 
     return () => {
-      // console.log('🧹 WEBRTC: Cleaning up event listeners');
       socket.off('new-streamer', handleStreamSwitch);
       socket.off('stream-ready', handleStreamReady);
       socket.off('stream-switching', handleStreamSwitching);
@@ -1805,7 +1748,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   }, [socket]); // Remove isActive dependency so events are always listened to
 
   const generateTestPattern = async (testConfig: { pattern: string, resolution: string, frameRate: number }) => {
-    // console.log('🎨 WEBRTC: Generating test pattern:', testConfig);
     
     if (!videoRef.current) {
       throw new Error('Video element not available');
@@ -1827,7 +1769,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       throw new Error('Cannot get canvas context');
     }
     
-    // console.log(`🎨 WEBRTC: Creating ${testConfig.pattern} pattern at ${width}x${height} @ ${frameRate}fps`);
     
     // Generate different patterns based on configuration
     let frameCount = 0;
@@ -1885,7 +1826,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     try {
       await video.play();
       setPlaybackState('playing');
-      // console.log('✅ WEBRTC: Test pattern video playing');
     } catch (error) {
       console.warn('⚠️ WEBRTC: Test pattern autoplay failed, requiring user interaction');
       setPlaybackState('paused');
@@ -1894,7 +1834,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   };
   
   const cleanup = async () => {
-    // console.log('🧹 WEBRTC: Cleaning up WebRTC viewer');
     
     // Clear any pending initialization
     if (initTimeoutRef.current) {
@@ -1920,7 +1859,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       if ((videoRef.current as any)._testPatternAnimation) {
         clearInterval((videoRef.current as any)._testPatternAnimation);
         (videoRef.current as any)._testPatternAnimation = null;
-        // console.log('🧹 WEBRTC: Test pattern animation cleaned up');
       }
       
       // Pause before clearing to avoid play interruption errors
@@ -1945,7 +1883,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   };
 
   const cleanupSync = () => {
-    // console.log('🧹 WEBRTC: Synchronous cleanup WebRTC viewer');
     
     // Clear any pending initialization
     if (initTimeoutRef.current) {
@@ -1968,7 +1905,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       if ((videoRef.current as any)._testPatternAnimation) {
         clearInterval((videoRef.current as any)._testPatternAnimation);
         (videoRef.current as any)._testPatternAnimation = null;
-        // console.log('🧹 WEBRTC: Test pattern animation cleaned up (sync)');
       }
       
       // Pause before clearing to avoid play interruption errors
@@ -2104,14 +2040,12 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
   const handleExitFallback = async () => {
     if (streamSwitchManagerRef.current && isFallbackMode) {
-      // console.log('🔧 WEBRTC: Attempting to exit fallback mode');
       
       try {
         const success = await streamSwitchManagerRef.current.exitFallbackMode();
         if (success) {
           setIsFallbackMode(false);
           setError(null);
-          // console.log('✅ WEBRTC: Successfully exited fallback mode');
           
           // Reinitialize viewer with normal operation
           await initializeViewer(true); // Force init for fallback exit

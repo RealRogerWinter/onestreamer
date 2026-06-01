@@ -16,8 +16,7 @@ import type { User } from '../services/AuthService';
  *   - Admin: showAdminPanel + adminPanelTab
  *   - Shop: isShopOpen
  *   - Mobile-only: showMobileChat, showMobileStreamerSettings
- *   - Misc info: showTutorial, showBugReportModal, showAbout, showTerms,
- *     showPrivacy
+ *   - Misc info: showTutorial, showBugReportModal
  *
  * Initial-route awareness (e.g. /verify-email/:token opening the
  * verification modal on mount) is preserved by accepting initial values
@@ -80,12 +79,6 @@ export interface ModalsState {
   setShowTutorial: (value: boolean) => void;
   showBugReportModal: boolean;
   setShowBugReportModal: (value: boolean) => void;
-  showAbout: boolean;
-  setShowAbout: (value: boolean) => void;
-  showTerms: boolean;
-  setShowTerms: (value: boolean) => void;
-  showPrivacy: boolean;
-  setShowPrivacy: (value: boolean) => void;
 }
 
 export interface UseModalsOptions {
@@ -131,9 +124,6 @@ export function useModals(options: UseModalsOptions = {}): ModalsState {
   // Info / help
   const [showTutorial, setShowTutorial] = useState(false);
   const [showBugReportModal, setShowBugReportModal] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
-  const [showTerms, setShowTerms] = useState(false);
-  const [showPrivacy, setShowPrivacy] = useState(false);
 
   return {
     showLogin,
@@ -173,11 +163,5 @@ export function useModals(options: UseModalsOptions = {}): ModalsState {
     setShowTutorial,
     showBugReportModal,
     setShowBugReportModal,
-    showAbout,
-    setShowAbout,
-    showTerms,
-    setShowTerms,
-    showPrivacy,
-    setShowPrivacy,
   };
 }
