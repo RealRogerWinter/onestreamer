@@ -11,7 +11,7 @@ const AudioFileJanitor = require('./transcription/AudioFileJanitor');
 const logger = require('../bootstrap/logger').child({ svc: 'TranscriptionService' });
 
 class TranscriptionService extends EventEmitter {
-    constructor(database, webrtcService, recordingService = null) {
+    constructor(database, webrtcService) {
         super();
         this.database = database;
         this.db = database.db;
@@ -19,7 +19,6 @@ class TranscriptionService extends EventEmitter {
         this.getAsync = database.getAsync;
         this.allAsync = database.allAsync;
         this.webrtcService = webrtcService;
-        this.recordingService = recordingService;
 
         // Create audio adapter for backend-agnostic audio capture
         this.audioAdapter = new TranscriptionAudioAdapter(webrtcService);
@@ -42,13 +41,6 @@ class TranscriptionService extends EventEmitter {
         
         // Platform detection
         this.isWindows = process.platform === 'win32';
-        
-        // Audio format settings
-        this.audioFormat = {
-            sampleRate: 16000,
-            channels: 1,
-            bitDepth: 16
-        };
 
         // Collaborators (extracted seams)
         this.repository = new TranscriptionRepository({

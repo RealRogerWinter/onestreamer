@@ -735,7 +735,7 @@ class ModerationService extends EventEmitter {
       stream_session_id: String(streamGeneration),
       streamer_id: chunk.streamerId || null,
       stream_type: streamType,
-      transcript_chunk_id: chunk.chunkId || null,
+      transcript_chunk_id: chunk.chunkNumber || null,
       transcript_excerpt: chunk.text,
       surrounding_context: surroundingContext,
       matched_terms_json: matchedTermsJson,

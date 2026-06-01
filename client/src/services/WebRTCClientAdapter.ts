@@ -138,21 +138,6 @@ export class WebRTCClientAdapter {
     return Promise.resolve();
   }
 
-  async attemptReconnection(): Promise<void> {
-    await this.ensureInitialized();
-    return (this.client as any).attemptReconnection();
-  }
-
-  async handleConnectionRecovery(): Promise<void> {
-    await this.ensureInitialized();
-    return (this.client as any).handleConnectionRecovery();
-  }
-
-  async restartIce(): Promise<void> {
-    await this.ensureInitialized();
-    return (this.client as any).restartIce();
-  }
-
   async reset(): Promise<void> {
     await this.ensureInitialized();
     return (this.client as any).reset();
@@ -174,11 +159,10 @@ export class WebRTCClientAdapter {
   }
 
   async forceReconnection(): Promise<void> {
+    await this.ensureInitialized();
     if (this.client && 'forceReconnection' in this.client) {
       return (this.client as any).forceReconnection();
     }
-    // Fallback to attemptReconnection
-    return this.attemptReconnection();
   }
 
   async recreateTransports(): Promise<void> {
@@ -241,22 +225,6 @@ export class WebRTCClientAdapter {
     }
     // Default to checking if client exists and is initialized
     return this.client !== null && !this.isDestroyed;
-  }
-
-  get sendTransport(): any {
-    return (this.client as any)?.sendTransport;
-  }
-
-  get recvTransport(): any {
-    return (this.client as any)?.recvTransport;
-  }
-
-  get videoProducer(): any {
-    return (this.client as any)?.videoProducer;
-  }
-
-  get audioProducer(): any {
-    return (this.client as any)?.audioProducer;
   }
 
   get hasAudioProducer(): boolean {

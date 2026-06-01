@@ -129,27 +129,6 @@ class ContinuousRecordingService extends EventEmitter {
   }
 
   /**
-   * Create a recording session record in the database
-   */
-  async createSessionRecord(sessionId, streamerIdentity, startTime, localPath) {
-    return this.sessionStore.createSessionRecord(sessionId, streamerIdentity, startTime, localPath);
-  }
-
-  /**
-   * Update a recording session record when recording ends
-   */
-  async updateSessionRecord(sessionId, endTime, segmentCount) {
-    return this.sessionStore.updateSessionRecord(sessionId, endTime, segmentCount);
-  }
-
-  /**
-   * Get session start time from database
-   */
-  async getSessionStartTime(sessionId) {
-    return this.sessionStore.getSessionStartTime(sessionId);
-  }
-
-  /**
    * Generate a master HLS playlist that combines all segment playlists for seamless playback
    */
   async generateMasterPlaylist(sessionId) {
@@ -213,82 +192,6 @@ class ContinuousRecordingService extends EventEmitter {
   }
 
   /**
-   * Check if a participant is a viewbot (not a real streamer)
-   */
-  isViewbot(participant) {
-    return this.inspector.isViewbot(participant);
-  }
-
-  /**
-   * Check if a participant is a URL stream relay (not a real person streaming)
-   */
-  isUrlStreamRelay(participant) {
-    return this.inspector.isUrlStreamRelay(participant);
-  }
-
-  /**
-   * Find the real (non-viewbot, non-URL-stream) streamer with video tracks
-   * Returns the participant identity if found, null otherwise
-   */
-  async findRealStreamer() {
-    return this.inspector.findRealStreamer();
-  }
-
-  /**
-   * Find any URL stream relay that is publishing video
-   * Returns the participant identity if found, null otherwise
-   */
-  async findUrlStreamPublisher() {
-    return this.inspector.findUrlStreamPublisher();
-  }
-
-  /**
-   * Extract username from a streaming platform URL
-   * @param {string} sourceUrl - The source URL (e.g., https://twitch.tv/xqc)
-   * @param {string} platform - The platform type (twitch, kick, etc.)
-   * @returns {string|null} The extracted username or null if not found
-   */
-  extractUsernameFromUrl(sourceUrl, platform) {
-    return this.inspector.extractUsernameFromUrl(sourceUrl, platform);
-  }
-
-  /**
-   * Get the current active stream info from the database
-   * This determines what's currently being shown (URL stream, real streamer, or viewbot)
-   */
-  async getCurrentStreamInfo() {
-    return this.inspector.getCurrentStreamInfo();
-  }
-
-  /**
-   * Log the start of a new stream segment during recording
-   */
-  async logStreamSegmentStart(sessionId, streamInfo) {
-    return this.sessionStore.logStreamSegmentStart(sessionId, streamInfo);
-  }
-
-  /**
-   * Log the end of a stream segment
-   */
-  async logStreamSegmentEnd(segmentId) {
-    return this.sessionStore.logStreamSegmentEnd(segmentId);
-  }
-
-  /**
-   * End all open segments for a session
-   */
-  async endAllOpenSegments(sessionId) {
-    return this.sessionStore.endAllOpenSegments(sessionId);
-  }
-
-  /**
-   * Check for stream identity changes and log them
-   */
-  async trackStreamIdentityChange() {
-    return this.sessionStore.trackStreamIdentityChange();
-  }
-
-  /**
    * Check if room has active publishers and auto-start/stop recording
    * Prioritizes real streamers over viewbots
    */
@@ -302,7 +205,7 @@ class ContinuousRecordingService extends EventEmitter {
       );
 
       // Find real streamer (non-viewbot)
-      const realStreamer = await this.findRealStreamer();
+      const realStreamer = await this.inspector.findRealStreamer();
 
       // Check if recording target changed (room -> participant, participant -> room, or participant identity changed)
       const targetChanged = this.isRecording && (
@@ -332,7 +235,7 @@ class ContinuousRecordingService extends EventEmitter {
 
       // Track stream identity changes (check what's actually being shown)
       if (this.isRecording) {
-        await this.trackStreamIdentityChange();
+        await this.sessionStore.trackStreamIdentityChange();
       }
     } catch (error) {
       // Room might not exist yet, that's ok
@@ -494,7 +397,7 @@ class ContinuousRecordingService extends EventEmitter {
       logger.debug(`   Segments: ${hostSessionDir}/`);
 
       // Create database record for this session
-      await this.createSessionRecord(
+      await this.sessionStore.createSessionRecord(
         this.currentSessionId,
         this.currentRecordingTarget,
         this.recordingStartTime,
@@ -555,10 +458,10 @@ class ContinuousRecordingService extends EventEmitter {
       }
 
       // Update database record
-      await this.updateSessionRecord(this.currentSessionId, endTime, segmentCount);
+      await this.sessionStore.updateSessionRecord(this.currentSessionId, endTime, segmentCount);
 
       // End any open stream segments
-      await this.endAllOpenSegments(this.currentSessionId);
+      await this.sessionStore.endAllOpenSegments(this.currentSessionId);
 
       this.emit('recording-stopped', {
         egressId: this.currentEgressId,
@@ -587,7 +490,7 @@ class ContinuousRecordingService extends EventEmitter {
       // Even if stop failed, end open stream segments to keep timeline accurate
       if (this.currentSessionId) {
         try {
-          await this.endAllOpenSegments(this.currentSessionId);
+          await this.sessionStore.endAllOpenSegments(this.currentSessionId);
         } catch (e) {
           logger.error('❌ CONTINUOUS RECORDING: Failed to end segments on error:', e.message);
         }
