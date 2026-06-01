@@ -7,14 +7,13 @@ Operational tooling for OneStreamer. **Run all scripts from the repo root** (e.g
 | Directory | Purpose | When to use |
 |-----------|---------|-------------|
 | [`setup/`](setup/) | One-time setup for a fresh checkout — bootstrapping the SQLite schema, downloading the Whisper model, seeding emojis. | First time you clone the repo or stand up a new instance. |
-| [`ops/`](ops/) | Day-to-day operational tools against a running instance — promote an admin, recompute points, reset cooldowns, switch the WebRTC backend. | Live ops on a deployed box. |
+| [`ops/`](ops/) | Day-to-day operational tools against a running instance — promote an admin, recompute points, reset cooldowns. | Live ops on a deployed box. |
 | [`deploy/`](deploy/) | Deployment helpers — production startup with PM2 + nginx + cert checks. | When deploying or recovering a production node. |
 | [`migrations/`](migrations/) | Idempotent schema-evolution scripts (the historical `add-*.js` set). Safe to re-run; check for existing columns/tables before adding. | When bringing an older DB up to current schema on a fork. |
 
 ## Conventions
 
 - **Database path.** SQLite scripts resolve `path.join(__dirname, '..', '..', 'server', 'data', 'onestreamer.db')`. Run from the repo root or from any subdirectory — `__dirname` anchors them correctly.
-- **Shell scripts.** `enable-dual-stack.sh` and `switch-backend.sh` read/write the repo-root `.env`. Run from the repo root.
 - **No fallbacks for secrets.** Scripts use `process.env.*` directly. If a required env var is missing, they should fail-fast rather than fall back to a default.
 
 ## Adding a new script

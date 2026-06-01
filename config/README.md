@@ -6,7 +6,6 @@ Each `*.example.*` file here is a reference template for a per-deploy config tha
 |------|--------------------|-------------|
 | `livekit-config.example.yaml` | `./livekit-config.yaml` (root, gitignored) | LiveKit server (`livekit-server -config`) — dormant per [ADR-0002](../docs/architecture/adr/0002-mediasoup-primary-livekit-dormant.md) |
 | `livekit-ssl.example.yaml` | `./livekit-ssl.yaml` (root, gitignored) | LiveKit server's TLS-only profile — dormant |
-| `viewbot-rotation-config.example.json` | `./viewbot-rotation-config.json` (root, gitignored) | `server/services/ViewBotClientService.js` |
 | `youtube-cookies.example.txt` | `./youtube-cookies.txt` (root, gitignored) — or wherever `YOUTUBE_COOKIES_PATH` env points (see #22) | `server/services/URLStreamExtractorService.js` for YouTube ingress |
 
 ## Convention

@@ -69,16 +69,9 @@ async function setupWhisper() {
             console.log('✅ Model already exists');
         }
         
-        // For Windows, we'll use a Node.js implementation as fallback
-        console.log('\n🔧 Setting up Node.js-based transcription as fallback...');
-        console.log('Installing @xenova/transformers for Whisper support...');
-        
-        try {
-            await execAsync('npm install @xenova/transformers');
-            console.log('✅ Node.js Whisper alternative installed');
-        } catch (error) {
-            console.log('⚠️  Could not install @xenova/transformers');
-        }
+        // Windows has no Node.js transcription fallback; whisper.cpp (built on the
+        // Unix branch below) is the real transcription engine.
+        console.log('\n⚠️  Windows: build whisper.cpp via WSL/Unix for transcription support.');
         
     } else {
         console.log('🐧 Unix-like system detected - building whisper.cpp from source...');
