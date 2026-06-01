@@ -6,8 +6,8 @@ const logger = require('../bootstrap/logger').child({ svc: 'ProcessManager' });
  * Centralized Process Manager for ViewBot media processes
  *
  * Tracks PIDs spawned by ViewBot services and provides:
- *   - per-bot kill paths (`killBotProcesses`, `prepareForStreaming`,
- *     `onBotStopped`) for steady-state lifecycle, AND
+ *   - per-bot kill paths (`killBotProcesses`, `onBotStopped`) for
+ *     steady-state lifecycle, AND
  *   - PR 8.3 (Phase 8): a shutdown-time `reapAll()` / `stop()` path that
  *     sends SIGTERM, waits a grace period, then SIGKILL to anything still
  *     alive. Registered as a stoppable in `server/bootstrap/services.js`
@@ -24,9 +24,6 @@ class ProcessManager {
 
     // Single streaming bot tracking
     this.currentStreamingBot = null;
-
-    // Lock to prevent concurrent operations
-    this.operationLock = false;
 
     logger.debug('🔧 ProcessManager: Initialized centralized process management');
   }
@@ -80,38 +77,6 @@ class ProcessManager {
 
     // Remove from tracking
     this.activeProcesses.delete(botId);
-  }
-
-  /**
-   * Ensure only one bot can stream at a time
-   */
-  async prepareForStreaming(botId) {
-    // Wait if another operation is in progress
-    while (this.operationLock) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    this.operationLock = true;
-
-    try {
-      logger.debug(`🎬 ProcessManager: Preparing for bot ${botId} to stream`);
-
-      // If another bot is streaming, kill it first
-      if (this.currentStreamingBot && this.currentStreamingBot !== botId) {
-        logger.debug(`⚠️ ProcessManager: Bot ${this.currentStreamingBot} is currently streaming, killing it first`);
-        await this.killBotProcesses(this.currentStreamingBot);
-      }
-
-      // Kill any existing processes for this bot (in case of duplicates)
-      await this.killBotProcesses(botId);
-
-      // Set as current streaming bot
-      this.currentStreamingBot = botId;
-
-      logger.debug(`✅ ProcessManager: Bot ${botId} is now clear to stream`);
-    } finally {
-      this.operationLock = false;
-    }
   }
 
   /**

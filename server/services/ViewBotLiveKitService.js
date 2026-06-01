@@ -531,10 +531,10 @@ class ViewBotLiveKitService {
   async cleanup(bot) {
     bot.running = false;
 
-    // Kill streaming process (GStreamer or FFmpeg)
-    if (bot.gstreamerProcess || bot.ffmpegProcess) {
-      const process = bot.gstreamerProcess || bot.ffmpegProcess;
-      const processName = bot.gstreamerProcess ? 'GStreamer' : 'FFmpeg';
+    // Kill streaming process (ffmpeg)
+    if (bot.ffmpegProcess) {
+      const process = bot.ffmpegProcess;
+      const processName = 'FFmpeg';
 
       try {
         logger.debug(`🛑 LIVEKIT VIEWBOT ${bot.id}: Stopping ${processName} process (PID: ${process.pid})...`);
@@ -576,7 +576,6 @@ class ViewBotLiveKitService {
       } catch (error) {
         logger.error(`❌ LIVEKIT VIEWBOT ${bot.id}: Error killing ${processName}:`, error.message);
       }
-      bot.gstreamerProcess = null;
       bot.ffmpegProcess = null;
     }
 
@@ -625,8 +624,7 @@ class ViewBotLiveKitService {
       config: bot.config,
       uptime: uptime,
       participantId: bot.participantId,
-      processActive: (bot.gstreamerProcess && !bot.gstreamerProcess.killed) || 
-                     (bot.ffmpegProcess && !bot.ffmpegProcess.killed),
+      processActive: !!(bot.ffmpegProcess && !bot.ffmpegProcess.killed),
       videoFile: bot.config.videoFile || 'none'
     };
   }
