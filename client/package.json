@@ -15,7 +15,6 @@
     "crypto-js": "^4.2.0",
     "hls.js": "^1.4.12",
     "lucide-react": "^0.539.0",
-    "mediasoup-client": "^3.7.18",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-scripts": "5.0.1",
