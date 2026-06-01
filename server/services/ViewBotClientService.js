@@ -2,7 +2,6 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const ViewBotDatabaseService = require('./ViewBotDatabaseService');
-const ViewBotGStreamerService = require('./ViewBotGStreamerService');
 const processManager = require('./ProcessManager');
 const ViewBotInstance = require('./viewbot/ViewBotInstance');
 const { selectWeightedBot } = require('./viewbot/botSelection');
@@ -41,10 +40,7 @@ class ViewBotClientService {
     // Database service for persistence
     this.dbService = new ViewBotDatabaseService();
     this.dbInitialized = false;
-    
-    // GStreamer service for improved video streaming
-    this.gstreamerService = new ViewBotGStreamerService();
-    
+
     // ViewBot state management
     this.activeBots = new Map(); // Map<botId, botInstance>
     // Remove ViewBot limits - allow unlimited ViewBots
@@ -106,7 +102,7 @@ class ViewBotClientService {
     };
     
     // Global streaming method setting (applies to all bots)
-    this.globalStreamingMethod = 'gstreamer'; // 'ffmpeg' or 'gstreamer' - GStreamer is now default
+    this.globalStreamingMethod = 'ffmpeg'; // ffmpeg is the only supported method
     
     // FFmpeg path detection
     this.ffmpegPath = null;
@@ -283,7 +279,6 @@ class ViewBotClientService {
       if (bot.isConnected && !bot.streaming && bot.lastError) {
         // List of errors that can be safely cleared after some time
         const clearableErrors = [
-          'GStreamer',
           'FFmpeg',
           'pipelines failed',
           'global_cooldown',
@@ -479,19 +474,7 @@ class ViewBotClientService {
 
     const botId = `viewbot-${Date.now()}-${this.botIdCounter++}`;
     const botConfig = { ...this.defaultConfig, ...config };
-    
-    // Apply global streaming method setting
-    // Default to GStreamer for video files unless explicitly set to false
-    if (botConfig.contentType === 'videoFile') {
-      // Only use FFmpeg if explicitly requested, otherwise use GStreamer
-      if (botConfig.useGStreamer !== false) {
-        botConfig.useGStreamer = true; // Default to GStreamer
-        logger.debug(`🎬 VIEWBOT CLIENT: Using GSTREAMER for video file streaming (default)`);
-      } else {
-        logger.debug(`🎬 VIEWBOT CLIENT: Using FFMPEG for video file streaming (explicitly requested)`);
-      }
-    }
-    
+
     // Convert streamDuration (minutes) to timeAllotment (milliseconds) if provided
     if (config.streamDuration && config.streamDuration > 0) {
       botConfig.timeAllotment = config.streamDuration * 60 * 1000; // Convert minutes to milliseconds
@@ -1028,13 +1011,7 @@ class ViewBotClientService {
       
       // Stop auto-validation
       this.stopAutoValidation();
-      
-      // Stop all GStreamer processes
-      if (this.gstreamerService) {
-        logger.debug('   Stopping GStreamer service...');
-        await this.gstreamerService.stopAll();
-      }
-      
+
       // Destroy all bots (this will close individual Puppeteer instances)
       logger.debug('   Destroying all ViewBot clients...');
       await this.destroyAllBots();
@@ -1368,38 +1345,24 @@ class ViewBotClientService {
   getStreamingMethod() {
     return {
       method: this.globalStreamingMethod,
-      supported: ['ffmpeg', 'gstreamer']
+      supported: ['ffmpeg']
     };
   }
 
   /**
    * Sets the global streaming method for all ViewBots
-   * @param {string} method - 'ffmpeg' or 'gstreamer'
+   * @param {string} method - only 'ffmpeg' is supported
    */
   async setStreamingMethod(method) {
-    if (method !== 'ffmpeg' && method !== 'gstreamer') {
-      throw new Error(`Invalid streaming method: ${method}. Must be 'ffmpeg' or 'gstreamer'`);
-    }
-
-    // Check GStreamer availability if switching to it
-    if (method === 'gstreamer') {
-      const gstreamerAvailable = await ViewBotInstance.checkGStreamerAvailability();
-      if (!gstreamerAvailable) {
-        logger.warn('⚠️ GStreamer is not installed. Install GStreamer for this method to work.');
-        logger.warn('   ViewBots will fall back to FFmpeg when GStreamer fails.');
-      }
+    if (method !== 'ffmpeg') {
+      throw new Error(`Invalid streaming method: ${method}. Must be 'ffmpeg'`);
     }
 
     const previousMethod = this.globalStreamingMethod;
-    this.globalStreamingMethod = method;
-    
-    // Update config for all existing bots
-    for (const [botId, bot] of this.activeBots) {
-      bot.config.useGStreamer = (method === 'gstreamer');
-    }
-    
-    logger.debug(`🎬 Global streaming method changed from ${previousMethod} to ${method}`);
-    
+    this.globalStreamingMethod = 'ffmpeg';
+
+    logger.debug(`🎬 Global streaming method set to ${method}`);
+
     // Save to database if available
     if (this.dbInitialized) {
       try {
@@ -1408,12 +1371,12 @@ class ViewBotClientService {
         logger.error('Failed to save streaming method to database:', error);
       }
     }
-    
+
     return {
       success: true,
       previousMethod,
-      newMethod: method,
-      message: `Streaming method changed to ${method.toUpperCase()} for all ViewBots`
+      newMethod: 'ffmpeg',
+      message: `Streaming method changed to FFMPEG for all ViewBots`
     };
   }
 }

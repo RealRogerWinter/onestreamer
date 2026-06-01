@@ -40,12 +40,6 @@ jest.mock('../../services/ViewBotDatabaseService', () => {
     };
 });
 
-jest.mock('../../services/ViewBotGStreamerService', () => {
-    return class ViewBotGStreamerServiceStub {
-        constructor() {}
-    };
-});
-
 jest.mock('../../services/ProcessManager', () => ({
     killBotProcesses: jest.fn(async () => {}),
     killAllGStreamerProcesses: jest.fn(async () => {}),
@@ -110,7 +104,7 @@ ViewBotClientService.checkFFmpegAvailability = jest.fn(async () => ({
 /**
  * Build a fake ViewBotInstance shaped to match what the rotation code reads:
  * `.streaming`, `.isConnected`, `.botId`, `.isStreaming()`, `.stopStreaming()`,
- * `.startStreaming()`, `.startRotationCheckTimer()`, `.cleanupGStreamerProcesses()`,
+ * `.startStreaming()`, `.startRotationCheckTimer()`, `.cleanupMediaGeneration()`,
  * and `.socket`.
  */
 function fakeBot(botId, overrides = {}) {
@@ -126,7 +120,7 @@ function fakeBot(botId, overrides = {}) {
         stopStreaming: jest.fn(async () => {}),
         startStreaming: jest.fn(async () => {}),
         startRotationCheckTimer: jest.fn(),
-        cleanupGStreamerProcesses: jest.fn(),
+        cleanupMediaGeneration: jest.fn(),
         ...overrides,
     };
 }

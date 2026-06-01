@@ -1843,6 +1843,5 @@ require('./bootstrap/shutdown')({
   getTimeTrackingService: () => timeTrackingService,
   getResourceMonitor: () => resourceMonitor,
   getSessionService: () => sessionService,
-  getViewBotGStreamerService: () => (typeof viewBotGStreamerService !== 'undefined' ? viewBotGStreamerService : undefined),
   getSimpleMediaStreamService: () => (typeof simpleMediaStreamService !== 'undefined' ? simpleMediaStreamService : undefined),
 });

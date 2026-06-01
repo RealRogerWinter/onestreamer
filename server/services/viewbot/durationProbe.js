@@ -8,7 +8,7 @@
 // `owner` is the ViewBotInstance: these read/write owner.botId, owner.streaming,
 // owner.handlingVideoEnd, owner.videoDuration, owner.videoEndTimer,
 // owner.videoDurationTimer and call owner.handleVideoEnd() /
-// owner.cleanupGStreamerProcesses() — preserving the original control flow.
+// owner.cleanupMediaGeneration() — preserving the original control flow.
 
 const { spawn } = require('child_process');
 
@@ -83,7 +83,7 @@ async function setupDurationBasedRotation(owner, videoFile, logger) {
           logger.debug(`🆘 ViewBot ${owner.botId}: EOS not detected, forcing cleanup then rotation`);
 
           // First force cleanup to free resources
-          owner.cleanupGStreamerProcesses();
+          owner.cleanupMediaGeneration();
 
           // Then trigger rotation after cleanup
           setTimeout(() => {

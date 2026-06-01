@@ -41,10 +41,10 @@
  *   6. `server.close()` LAST — once it returns, the process exits.
  *
  * Risk surfaces flagged in the closure audit:
- *   - `viewBotGStreamerService` and `simpleMediaStreamService` are
- *     referenced via `typeof X !== 'undefined'` guards (pre-existing
- *     pattern — those services may or may not exist depending on
- *     env / feature flags). Preserved verbatim here.
+ *   - `simpleMediaStreamService` is referenced via a
+ *     `typeof X !== 'undefined'` guard (pre-existing pattern — that
+ *     service may or may not exist depending on env / feature flags).
+ *     Preserved verbatim here.
  *   - `global.viewBotURLService` / `global.unifiedViewBotRotation` /
  *     `global.viewBotManager` are read from the global namespace
  *     (assigned inside `bootstrap/start-streaming-backend.js`). They
@@ -68,7 +68,6 @@ function registerShutdownHandlers(deps) {
         getTimeTrackingService,
         getResourceMonitor,
         getSessionService,
-        getViewBotGStreamerService,
         getSimpleMediaStreamService,
     } = deps;
 
@@ -106,29 +105,13 @@ function registerShutdownHandlers(deps) {
                 socket.disconnect(true);
             }
 
-            // 2. Stop all media streams (GStreamer and FFmpeg)
+            // 2. Stop all media streams (FFmpeg)
             // NOTE: services with stop() are already drained above via stoppables —
             // this block intentionally remains as belt-and-braces for processes
-            // not yet wrapped (viewBotGStreamerService, ffmpeg children on
-            // RecordingService.activeRecordings, etc.). A follow-up PR can prune
-            // entries that overlap with stoppables once the iterator is proven.
+            // not yet wrapped (ffmpeg children on RecordingService.activeRecordings,
+            // etc.). A follow-up PR can prune entries that overlap with stoppables
+            // once the iterator is proven.
             logger.info('🎬 Stopping all media streams...');
-
-            const viewBotGStreamerService = getViewBotGStreamerService ? getViewBotGStreamerService() : undefined;
-            if (viewBotGStreamerService) {
-                logger.info('   Stopping ViewBot GStreamer streams...');
-                if (viewBotGStreamerService.stopAll) {
-                    await viewBotGStreamerService.stopAll();
-                } else if (viewBotGStreamerService.activeStreams) {
-                    for (const [botId, stream] of viewBotGStreamerService.activeStreams) {
-                        if (stream.process && !stream.process.killed) {
-                            logger.info(`   - Killing GStreamer for bot ${botId}`);
-                            stream.process.kill('SIGTERM');
-                        }
-                    }
-                    viewBotGStreamerService.activeStreams.clear();
-                }
-            }
 
             const viewBotClientService = getViewBotClientService();
             if (viewBotClientService) {

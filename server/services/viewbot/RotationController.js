@@ -483,7 +483,7 @@ class RotationController {
         found: !!currentBot,
         isPlaceholder: currentBot?.isPlaceholder,
         hasStopStreaming: !!(currentBot?.stopStreaming),
-        hasCleanup: !!(currentBot?.cleanupGStreamerProcesses)
+        hasCleanup: !!(currentBot?.cleanupMediaGeneration)
       });
 
       // CRITICAL: Even if it's a placeholder, we need to check for orphaned processes
@@ -492,10 +492,10 @@ class RotationController {
           logger.debug(`🛑🛑🛑 ROTATION: Calling stopStreaming() on real bot ${botId}...`);
           await currentBot.stopStreaming();
           logger.debug(`✅ ROTATION: stopStreaming() completed for ${botId}`);
-        } else if (currentBot.cleanupGStreamerProcesses) {
+        } else if (currentBot.cleanupMediaGeneration) {
           // If it has cleanup method but is a placeholder, still cleanup!
           logger.debug(`⚠️⚠️⚠️ ROTATION: Bot ${botId} is placeholder but has cleanup method - cleaning up orphaned processes`);
-          currentBot.cleanupGStreamerProcesses();
+          currentBot.cleanupMediaGeneration();
         } else {
           logger.debug(`❌❌❌ ROTATION: Bot ${botId} is placeholder with no cleanup - ORPHANED PROCESSES LIKELY!`);
         }

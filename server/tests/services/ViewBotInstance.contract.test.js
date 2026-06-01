@@ -79,13 +79,12 @@ describe('ViewBotInstance — post-extraction constructor + pure helpers (PR 11.
             expect(bot.nextCheckTime).toBeNull();
 
             // FFmpeg / RTP transport fields — initially null, populated
-            // when the server allocates ports.
+            // when the server allocates ports. (videoSSRC/audioSSRC were
+            // gst-only and removed with the MediaSoup/GStreamer video-file path.)
             expect(bot.videoFFmpeg).toBeNull();
             expect(bot.audioFFmpeg).toBeNull();
             expect(bot.videoRtpPort).toBeNull();
             expect(bot.audioRtpPort).toBeNull();
-            expect(bot.videoSSRC).toBeNull();
-            expect(bot.audioSSRC).toBeNull();
 
             // Database session fields — populated when ViewBotDatabaseService
             // opens a session.
