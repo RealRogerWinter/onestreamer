@@ -26,7 +26,6 @@
 //   buffDebuffService          ──  io, streamService, timeTrackingService, sessionService
 //   canvasFxService            ──  io, itemService, buffDebuffService
 //   soundFxService             ──  no deps
-//   plainTransportService      ──  mediasoupService
 //
 //   ── PR-I2 additions (recording/transcription/game/effects clusters) ──
 //   recordingStorageService    ──  database
@@ -105,7 +104,6 @@ const GameMechanicsService = require('../services/GameMechanicsService');
 const BuffDebuffService = require('../services/BuffDebuffService');
 const CanvasFxService = require('../services/CanvasFxService');
 const SoundFxService = require('../services/SoundFxService');
-const MediasoupPlainTransportService = require('../services/MediasoupPlainTransportService');
 const StreamNotifier = require('../services/StreamNotifier');
 const ViewerCountNotifier = require('../services/ViewerCountNotifier');
 const BuffNotifier = require('../services/BuffNotifier');
@@ -260,9 +258,6 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
   const buffDebuffService = new BuffDebuffService(io, streamService, timeTrackingService, sessionService, { buffNotifier });
   const canvasFxService = new CanvasFxService(io, itemService, buffDebuffService);
   const soundFxService = new SoundFxService();
-
-  // Plain RTP transport sits on top of the pre-built mediasoup service.
-  const plainTransportService = new MediasoupPlainTransportService(mediasoupService);
 
   // ── PR-I2: recording cluster ────────────────────────────────────────────
   const recordingStorageService = new RecordingStorageService(database);
@@ -427,7 +422,6 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
     buffDebuffService,
     canvasFxService,
     soundFxService,
-    plainTransportService,
     // PR-I2:
     recordingStorageService,
     fileCompressionService,

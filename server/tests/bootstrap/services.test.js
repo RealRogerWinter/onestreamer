@@ -13,7 +13,7 @@
 //   2. Each returned value is an instance of the (mocked) class for that key.
 //   3. Dep-graph identity checks for representative services:
 //        takeoverService, inventoryService, shopService, buffDebuffService,
-//        canvasFxService, plainTransportService,
+//        canvasFxService,
 //        clipService,
 //        transcriptionService, gameStreamService.
 //   4. Factory does NOT throw when `io` is missing but forwards undefined —
@@ -43,7 +43,6 @@ jest.mock('../../services/GameMechanicsService', () => class { constructor(...ar
 jest.mock('../../services/BuffDebuffService', () => class { constructor(...args) { this._args = args; this._stubName = 'BuffDebuffService'; } });
 jest.mock('../../services/CanvasFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'CanvasFxService'; } });
 jest.mock('../../services/SoundFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'SoundFxService'; } });
-jest.mock('../../services/MediasoupPlainTransportService', () => class { constructor(...args) { this._args = args; this._stubName = 'MediasoupPlainTransportService'; } });
 jest.mock('../../services/StreamNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamNotifier'; } });
 jest.mock('../../services/ViewerCountNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'ViewerCountNotifier'; } });
 jest.mock('../../services/BuffNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'BuffNotifier'; } });
@@ -184,7 +183,6 @@ const GameMechanicsService = require('../../services/GameMechanicsService');
 const BuffDebuffService = require('../../services/BuffDebuffService');
 const CanvasFxService = require('../../services/CanvasFxService');
 const SoundFxService = require('../../services/SoundFxService');
-const MediasoupPlainTransportService = require('../../services/MediasoupPlainTransportService');
 const StreamNotifier = require('../../services/StreamNotifier');
 const ViewerCountNotifier = require('../../services/ViewerCountNotifier');
 const BuffNotifier = require('../../services/BuffNotifier');
@@ -238,7 +236,7 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 43 expected keys (no more, no less)', () => {
+  test('returns all 40 expected keys (no more, no less)', () => {
     const { services } = createServices(buildDeps());
 
     const expectedKeys = [
@@ -268,7 +266,6 @@ describe('server/bootstrap/services factory', () => {
       'buffDebuffService',
       'canvasFxService',
       'soundFxService',
-      'plainTransportService',
       // PR-I2 additions
       'recordingStorageService',
       'fileCompressionService',
@@ -298,7 +295,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(41);
+    expect(expectedKeys).toHaveLength(40);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -321,7 +318,6 @@ describe('server/bootstrap/services factory', () => {
     expect(s.buffDebuffService).toBeInstanceOf(BuffDebuffService);
     expect(s.canvasFxService).toBeInstanceOf(CanvasFxService);
     expect(s.soundFxService).toBeInstanceOf(SoundFxService);
-    expect(s.plainTransportService).toBeInstanceOf(MediasoupPlainTransportService);
     expect(s.streamNotifier).toBeInstanceOf(StreamNotifier);
     expect(s.viewerCountNotifier).toBeInstanceOf(ViewerCountNotifier);
     expect(s.buffNotifier).toBeInstanceOf(BuffNotifier);
@@ -422,14 +418,6 @@ describe('server/bootstrap/services factory', () => {
     expect(s.canvasFxService._args[0]).toBe(deps.io);
     expect(s.canvasFxService._args[1]).toBe(s.itemService);
     expect(s.canvasFxService._args[2]).toBe(s.buffDebuffService);
-  });
-
-  test('plainTransportService is constructed with the passed-in mediasoupService', () => {
-    const deps = buildDeps();
-    const { services: s } = createServices(deps);
-
-    expect(s.plainTransportService._args).toHaveLength(1);
-    expect(s.plainTransportService._args[0]).toBe(deps.mediasoupService);
   });
 
   // PR 3.1: streamNotifier is the single `stream-ended` emit chokepoint.
