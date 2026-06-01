@@ -30,7 +30,6 @@
     "@aws-sdk/client-s3": "^3.966.0",
     "@aws-sdk/s3-request-presigner": "^3.966.0",
     "@livekit/rtc-node": "^0.13.20",
-    "@roamhq/wrtc": "^0.9.0",
     "@types/dompurify": "^3.2.0",
     "@xenova/transformers": "^2.17.2",
     "axios": "^1.11.0",

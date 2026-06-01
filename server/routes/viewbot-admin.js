@@ -9,44 +9,37 @@
  *
  * Route families and the sub-module each lives in:
  *
- *   viewbots.js          /admin/viewbot/{start,stop,status,config,spawn,
- *                          :viewbotId,health}, /admin/viewbot-manager/toggle-mode
  *   test-stream.js       /admin/test-stream/{start,stop,status,config,frame}
- *   webrtc.js            /admin/viewbot-webrtc/{create,:botId/start,:botId/stop,
- *                          status}
  *
  * NOTE: the admin viewbot-CLIENT fleet sub-routers (viewbot-client.js,
  * rotation.js, debug.js, streaming-method.js) and the standalone
  * viewbot-api.js / viewbot-diagnostics.js were deleted along with
- * ViewBotClientService — that fleet is dead under LiveKit. The LIVE
- * viewbot path (ViewBotURLService + SimpleViewBotRotation +
- * ViewBotLiveKitService + RandomStreamRotationService) is unaffected.
+ * ViewBotClientService — that fleet is dead under LiveKit. The ViewbotService
+ * CREATION/STREAMING half (the viewbots.js sub-router:
+ * start/stop/status/config/spawn/health) and the ViewBotWebRTCService backend
+ * (webrtc.js sub-router) were likewise removed — live viewbots run via
+ * SimpleViewBotRotation → ViewBotLiveKitService, never through
+ * ViewbotService.startViewbot. The LIVE viewbot path (ViewBotURLService +
+ * SimpleViewBotRotation + ViewBotLiveKitService + RandomStreamRotationService)
+ * is unaffected.
  *
- * Auth: a mix of `adminKeyAuth` (legacy X-Admin-Key), `viewBotAuth`
- * (combined JWT-or-key), and `authenticateAdmin` (JWT only). All three
- * middleware functions are passed in via the factory's deps bag — they
- * are defined inline in `server/index.js` and shared across the rest
- * of the admin surface that hasn't been extracted yet.
- *
- * Lazy services (`viewbotService`, `viewBotWebRTCService`) are assigned
- * inside `startServer()`. The factory accepts getter functions for each
- * and the sub-routers inline `getX()` at every original reference site.
+ * Auth: the surviving test-stream routes use `adminKeyAuth` (legacy
+ * X-Admin-Key), defined inline in `server/index.js` and passed via the
+ * factory's deps bag. The lazy `viewbotService` is assigned inside
+ * `startServer()`; test-stream.js reaches it through `getViewbotService()`
+ * (for the `isViewbotStream` classification in its /stop handler).
  */
 
 const express = require('express');
 
-const createViewbotsRouter = require('./viewbot-admin/viewbots');
 const createTestStreamRouter = require('./viewbot-admin/test-stream');
-const createWebRTCRouter = require('./viewbot-admin/webrtc');
 
 function createViewBotAdminRouter(deps) {
     const router = express.Router();
 
-    // Mounted at the SAME base path ('/') so every path/method/auth is
-    // identical once the parent is mounted at the app root in index.js.
-    router.use(createViewbotsRouter(deps));
+    // Mounted at the base path ('/') so once the parent is mounted at the app
+    // root in index.js the paths/methods/auth are identical to the original.
     router.use(createTestStreamRouter(deps));
-    router.use(createWebRTCRouter(deps));
 
     return router;
 }

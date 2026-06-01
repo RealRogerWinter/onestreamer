@@ -30,8 +30,8 @@ logger.info({
     fromEmail: process.env.FROM_EMAIL || 'NOT SET',
 }, 'Environment check on server start');
 
-// ViewBot stack: the named services (ViewbotService,
-// ViewBotWebRTCService, ViewBotLiveKitService) are
+// ViewBot stack: the named services (ViewbotService, ViewBotLiveKitService)
+// are
 // constructed by server/bootstrap/services.js::createViewBotServices (PR-I4)
 // inside startServer() once the mediasoup worker is ready.
 // PR 9.3 (Phase 9): ViewBotURLService, URLStreamHealthService,
@@ -665,7 +665,6 @@ app.use('/api/internal', require('./routes/internal'));
 
 // Initialize ViewbotService after MediasoupService
 let viewbotService;
-let viewBotWebRTCService;
 
 // Track which streamers have already been notified to prevent duplicates
 const notifiedStreamers = new Set();
@@ -963,9 +962,10 @@ const viewBotAuth = (req, res, next) => {
 // user chat-color routes.)
 
 // Phase 15B.3.e — ViewBot HTTP admin bridge extracted to routes/viewbot-admin.js.
-// 52 routes spanning the viewbot/, test-stream/, viewbot-manager,
-// viewbot-webrtc, viewbot-client, simple-rotation, debug/, and
-// streaming-method path families. Lazy services pass via getters.
+// Now only the test-stream/ path family survives: the viewbot/, viewbot-webrtc,
+// viewbot-client, simple-rotation, debug/, streaming-method, and viewbot-manager
+// families were removed with the ViewbotService creation half + ViewBotWebRTCService
+// + the viewbot-client fleet. Lazy services pass via getters.
 app.use(require("./routes/viewbot-admin")({
   adminKeyAuth, viewBotAuth, authenticateAdmin,
   streamService, webrtcService, sessionService, testStreamService,
@@ -973,7 +973,6 @@ app.use(require("./routes/viewbot-admin")({
   cleanupViewbotUsername, broadcastGlobalCooldown, notifyViewersStreamEnded,
   io, ADMIN_KEY, upload, uploadsDir, path, logger,
   getViewbotService: () => viewbotService,
-  getViewBotWebRTCService: () => viewBotWebRTCService,
 }));
 
 // Phase 15B.3.f+g — admin-ops bundle (stream control + cooldowns + debug
@@ -1255,8 +1254,7 @@ async function startServer() {
       streamService,
     });
     viewbotService = viewBotBag.viewbotService;
-    viewBotWebRTCService = viewBotBag.viewBotWebRTCService;
-    const viewBotLiveKitService = viewBotBag.viewBotLiveKitService; // null on MediaSoup branch.
+    const viewBotLiveKitService = viewBotBag.viewBotLiveKitService; // null without LiveKit.
 
     // Push livekit BEFORE viewbot stoppables so reverse-iteration stops the
     // viewbot services (which consume livekit) before the livekit client
@@ -1267,11 +1265,6 @@ async function startServer() {
     }
     stoppables.push(...viewBotStoppables);
     logger.info('✅ VIEWBOT: ViewbotService initialized');
-    if (viewBotWebRTCService) {
-      logger.info('✅ VIEWBOT: ViewBotWebRTCService initialized for mobile 5G/TURN support');
-    } else {
-      logger.info('ℹ️ VIEWBOT: Skipping ViewBotWebRTCService (using LiveKit backend)');
-    }
     if (viewBotLiveKitService) {
       logger.info('✅ VIEWBOT: ViewBotLiveKitService initialized for LiveKit RTMP ingress');
     }

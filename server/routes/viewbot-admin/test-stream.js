@@ -8,8 +8,8 @@
  *   POST /admin/test-stream/config  (adminKeyAuth)
  *   GET  /admin/test-stream/frame   (adminKeyAuth)
  *
- * Handler bodies are VERBATIM from the parent. The /stop handler also reaches
- * the lazy ViewbotService (legacy fallback) through its getter.
+ * Handler bodies are VERBATIM from the parent, all backed by the legacy
+ * TestStreamService (client-side pattern generation).
  */
 
 const express = require('express');
@@ -19,18 +19,14 @@ function createTestStreamRouter(deps) {
         adminKeyAuth,
         streamService,
         webrtcService,
-        sessionService,
         testStreamService,
         mediaStreamService,
-        buffNotifier,
         streamNotifier,
         viewerCountNotifier,
-        cleanupViewbotUsername,
         broadcastGlobalCooldown,
         notifyViewersStreamEnded,
         io,
         logger,
-        getViewbotService,
     } = deps;
 
     const router = express.Router();
@@ -79,45 +75,10 @@ function createTestStreamRouter(deps) {
     router.post('/admin/test-stream/stop', adminKeyAuth, async (req, res) => {
       logger.info('🧪 LEGACY TEST: Stopping test stream');
 
-      // Try to stop ViewbotService first (if it was used for the test stream)
-      if (getViewbotService()) {
-        const currentStreamer = streamService.getCurrentStreamer();
-        if (currentStreamer && getViewbotService().isViewbotStream(currentStreamer)) {
-          logger.info('🧪 LEGACY TEST: Stopping ViewbotService test stream');
-          const viewbotResult = await getViewbotService().stopViewbot();
-
-          if (viewbotResult.success) {
-            // Clean up viewbot username cache
-            cleanupViewbotUsername(viewbotResult.streamId);
-
-            // Clean up synthetic user mapping for viewbot
-            sessionService.linkUserToSocket(viewbotResult.streamId, null);
-            logger.info(`🎭 BUFF: Cleaned up synthetic user mapping for legacy stopped viewbot ${viewbotResult.streamId}`);
-
-            if (streamService.getCurrentStreamer() === viewbotResult.streamId) {
-              streamService.clearStreamer();
-              webrtcService.currentStreamer = null;
-              logger.info(`🧹 VIEWBOT LEGACY STOP: Cleared ${viewbotResult.streamId} from both services`);
-
-              // Clear streamer buff display when viewbot streaming ends
-              logger.info(`🎭 BUFF: Clearing streamer buffs display (viewbot legacy ended)`);
-              buffNotifier.streamerBuffsUpdate({ buffs: [] });
-
-              streamNotifier.streamEnded({ reason: 'viewbot_legacy_stopped' });
-          notifyViewersStreamEnded();
-              viewerCountNotifier.broadcast();
-            }
-          }
-
-          return res.json({
-            success: viewbotResult.success,
-            message: 'Test stream (ViewbotService) stopped',
-            streamId: viewbotResult.streamId
-          });
-        }
-      }
-
-      // Fallback to legacy test stream service
+      // NOTE: the prior ViewbotService.stopViewbot() short-circuit here was
+      // removed with the ViewbotService creation half — live viewbots are
+      // never started through it under LiveKit, so this endpoint now only
+      // stops the legacy TestStreamService pattern.
       const result = testStreamService.stopTestStream();
 
       if (result.success) {

@@ -152,9 +152,6 @@ jest.mock('../../services/ViewbotService', () => class {
     this._stubName = 'ViewbotService';
   }
 });
-jest.mock('../../services/ViewBotWebRTCService', () => class {
-  constructor(...args) { this._args = args; this._stubName = 'ViewBotWebRTCService'; }
-});
 jest.mock('../../services/ViewBotLiveKitService', () => class {
   constructor(...args) {
     this._args = args;
@@ -214,7 +211,6 @@ const LifecycleManager = require('../../services/LifecycleManager');
 
 // PR-I4 additions
 const ViewbotService = require('../../services/ViewbotService');
-const ViewBotWebRTCService = require('../../services/ViewBotWebRTCService');
 const ViewBotLiveKitService = require('../../services/ViewBotLiveKitService');
 
 const createServices = require('../../bootstrap/services');
@@ -677,12 +673,13 @@ describe('server/bootstrap/services factory', () => {
 // webrtcService.initialize() resolves, and it branches on whether a
 // LiveKit backend is in play. Tests assert:
 //   1. The factory is exposed on the main createServices export.
-//   2. Always-constructed service: viewbotService.
-//   3. MediaSoup branch (no livekitService): builds viewBotWebRTCService,
-//      leaves viewBotLiveKitService null.
+//   2. Always-constructed service: viewbotService (now stateless —
+//      isViewbotStream only; the creation half + ViewBotWebRTCService were
+//      removed under LiveKit).
+//   3. No-LiveKit branch: builds only viewbotService, leaves
+//      viewBotLiveKitService null.
 //   4. LiveKit branch (livekitService present): builds + initializes
-//      viewBotLiveKitService, wires streamService, leaves viewBotWebRTCService
-//      null.
+//      viewBotLiveKitService and wires streamService.
 //   5. Constructor arg identity for each service matches the inline original.
 
 describe('server/bootstrap/services :: createViewBotServices', () => {
@@ -699,26 +696,24 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     expect(typeof createViewBotServices).toBe('function');
   });
 
-  test('MediaSoup branch (livekitService null): builds Viewbot + WebRTC; leaves LiveKit null', async () => {
+  test('no-LiveKit branch (livekitService null): builds Viewbot only; leaves LiveKit null', async () => {
     const deps = buildViewBotDeps();
     const { services: bag } = await createViewBotServices(deps);
 
     expect(Object.keys(bag).sort()).toEqual(
-      ['viewBotLiveKitService', 'viewBotWebRTCService', 'viewbotService'].sort()
+      ['viewBotLiveKitService', 'viewbotService'].sort()
     );
 
     expect(bag.viewbotService).toBeInstanceOf(ViewbotService);
-    expect(bag.viewBotWebRTCService).toBeInstanceOf(ViewBotWebRTCService);
     expect(bag.viewBotLiveKitService).toBeNull();
   });
 
-  test('LiveKit branch (livekitService present): builds + initializes LiveKit + wires streamService; leaves WebRTC null', async () => {
+  test('LiveKit branch (livekitService present): builds + initializes LiveKit + wires streamService', async () => {
     const livekitService = { _kind: 'livekit' };
     const deps = buildViewBotDeps({ livekitService });
     const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewbotService).toBeInstanceOf(ViewbotService);
-    expect(bag.viewBotWebRTCService).toBeNull();
     expect(bag.viewBotLiveKitService).toBeInstanceOf(ViewBotLiveKitService);
 
     // LiveKit branch must await initialize() AND register streamService.
@@ -743,14 +738,6 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     expect(bag.viewbotService._args[1]).toBeNull();
   });
 
-  test('viewBotWebRTCService is constructed with (webrtcService)', async () => {
-    const deps = buildViewBotDeps();
-    const { services: bag } = await createViewBotServices(deps);
-
-    expect(bag.viewBotWebRTCService._args).toHaveLength(1);
-    expect(bag.viewBotWebRTCService._args[0]).toBe(deps.webrtcService);
-  });
-
   test('viewBotLiveKitService is constructed with (livekitService)', async () => {
     const livekitService = { _kind: 'livekit' };
     const deps = buildViewBotDeps({ livekitService });
@@ -763,12 +750,10 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
   // ── PR 2.3: fail-fast guard for the ViewBot factory ─────────────────────
   //
   // Same intent as the main-factory guard above, but the ViewBot bag is
-  // branched: the inactive backend leaves either viewBotWebRTCService or
-  // viewBotLiveKitService as `null` on the bag. We skip nulls (intentional).
-  // Two test cases — one per branch — because each branch constructs a
-  // different service via a different `new` site.
+  // branched: without LiveKit, viewBotLiveKitService is left `null` on the
+  // bag. We skip nulls (intentional). Two test cases — one per branch.
 
-  test('MediaSoup branch: no ViewBot ctor arg is undefined (PR 2.3 fail-fast guard)', async () => {
+  test('no-LiveKit branch: no ViewBot ctor arg is undefined (PR 2.3 fail-fast guard)', async () => {
     const deps = buildViewBotDeps();
     const { services: bag } = await createViewBotServices(deps);
 
