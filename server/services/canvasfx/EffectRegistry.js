@@ -16,6 +16,15 @@ class EffectRegistry {
     }
 
     // Check if an item has visual effects
+    //
+    // NOTE: this list is INTENTIONALLY narrower than the keys of
+    // CANVAS_EFFECT_MAPPINGS. It deliberately omits the buff/debuff items
+    // (slow_mode, speed_boost, golden_mic) and the auto-trigger items (fart,
+    // thunderstorm) even though those have effect mappings — their visuals are
+    // driven through the buff-application / auto-trigger paths, not this gate
+    // (used by BuffEffectBridge to decide whether a buff item also gets a
+    // generic visual). Do NOT derive this from `name in CANVAS_EFFECT_MAPPINGS`:
+    // that would flip those 5 items to true and start firing extra visuals.
     hasVisualEffect(item) {
         const visualEffectItems = [
             'tomato',
@@ -55,6 +64,13 @@ class EffectRegistry {
     }
 
     // Check if an item requires interactive behavior (click-to-throw)
+    //
+    // NOTE: this list mirrors the click-to-throw / click-to-draw entries of
+    // CANVAS_INTERACTION_CONFIGS but INTENTIONALLY omits 'fart' — fart's
+    // interaction config is `mode: 'auto-trigger'`, so it must not be treated
+    // as interactive (it would change the ItemUseService dispatch and the
+    // ThrowingService notification-suppression flag). Do NOT derive this from
+    // `name in CANVAS_INTERACTION_CONFIGS`: that would flip 'fart' to true.
     isInteractiveItem(item) {
         const interactiveItems = [
             'tomato',

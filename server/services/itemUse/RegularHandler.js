@@ -15,7 +15,7 @@ class RegularHandler {
         const {
             user, userId, itemId, item, streamId, services, io, sessionService, sendSystemMessage, buffNotifier
         } = ctx;
-        const { inventoryService, canvasFxService, streamService, soundFxService } = services;
+        const { inventoryService, canvasFxService, streamService } = services;
 
         logger.debug(`🎯 ITEMS: Taking regular item path for ${item.display_name}`);
         // For non-interactive, non-cooldown-modifier items, use the original flow
@@ -23,46 +23,10 @@ class RegularHandler {
         const result = await inventoryService.useItem(userId, itemId, streamId);
         logger.debug(`🔍 ITEMS DEBUG: inventoryService.useItem completed for ${item.display_name}, result:`, result);
 
-        // Special handling for Fart item (automatic sound + visual)
-        if (item.name === 'fart') {
-            logger.debug(`💨 ITEMS: Fart item activated by ${user.username}`);
-
-            // Trigger the sound effect automatically
-            if (soundFxService) {
-                try {
-                    await soundFxService.queue101Soundboard(
-                        userId,
-                        user.username,
-                        'https://www.101soundboards.com/sounds/23972494-fart-reverb',
-                        { streamId }
-                    );
-                    logger.debug(`🔊 ITEMS: Fart sound effect queued`);
-                } catch (error) {
-                    logger.error('❌ ITEMS: Failed to play fart sound:', error);
-                }
-            }
-
-            // Wait 2 seconds then trigger the visual effect
-            setTimeout(() => {
-                if (canvasFxService) {
-                    canvasFxService.triggerItemEffect(
-                        userId,
-                        result.item.id,
-                        streamId,
-                        {
-                            position: { x: 0.5, y: 0.7 } // Center-bottom of screen
-                        }
-                    ).then(() => {
-                        logger.debug(`💨 ITEMS: Fart visual effect triggered (after 2 second delay)`);
-                    }).catch(error => {
-                        logger.error('❌ ITEMS: Failed to trigger fart visual:', error);
-                    });
-                }
-            }, 2000); // 2 second delay to sync with sound
-
-            // Send chat message
-            await sendSystemMessage(`💨 ${user.username} let one rip!`, '🤖 StreamBot');
-        }
+        // NOTE: 'fart' is force-auto-triggered upstream (ItemUseService sets
+        // isAutoTrigger for 'fart'), so it never reaches this regular path —
+        // its sound/visual/chat handling lives in AutoTriggerHandler. The old
+        // dead fart branch that used to sit here was removed.
 
         // Special handling for Kill Switch after item consumption
         if (item.name === 'kill_switch') {

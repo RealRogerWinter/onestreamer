@@ -1,4 +1,5 @@
 const logger = require('../../bootstrap/logger').child({ svc: 'ItemUseService' });
+const { FART_SOUNDBOARD_URL, fartChatMessage } = require('./fartConstants');
 
 // server/services/itemUse/AutoTriggerHandler.js
 //
@@ -29,7 +30,7 @@ class AutoTriggerHandler {
                 soundFxService.queue101Soundboard(
                     userId,
                     user.username,
-                    'https://www.101soundboards.com/sounds/23972494-fart-reverb',
+                    FART_SOUNDBOARD_URL,
                     { streamId }
                 ).then(() => {
                     logger.debug(`🔊 ITEMS: Fart sound effect queued`);
@@ -57,7 +58,7 @@ class AutoTriggerHandler {
             }, 2000); // 2 second delay to sync with sound
 
             // Send chat message
-            await sendSystemMessage(`💨 ${user.username} let one rip!`, '🤖 StreamBot');
+            await sendSystemMessage(fartChatMessage(user.username), '🤖 StreamBot');
         }
 
         // Special handling for Thunderstorm item

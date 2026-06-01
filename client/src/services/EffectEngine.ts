@@ -416,7 +416,20 @@ export class EffectEngine extends EventEmitter {
           overlayType: 'aura',
           color: effectData.config.color || '#ffd700'
         });
-      
+
+      case 'timeWarp':
+        // Slow-motion / time-warp wash (e.g. slow_mode). Rendered as a basic
+        // full-screen colour tint via OverlayEffect's default overlay path.
+        // The server config supplies a translucent colour (e.g.
+        // 'rgba(0, 0, 255, 0.2)'); `warpEffect`/`speed` are advisory hints that
+        // the static tint approximates without a dedicated warp shader.
+        return new OverlayEffect({
+          ...commonConfig,
+          overlayType: 'timeWarp',
+          color: effectData.config.color || 'rgba(0, 0, 255, 0.2)',
+          opacity: effectData.config.opacity ?? 0.6
+        });
+
       case 'drawing':
         // console.log('✏️ ENGINE: Creating DrawingEffect for drawing phase', effectData.config);
         // Check for shared drawing data key based on main effect ID

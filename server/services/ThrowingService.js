@@ -1,4 +1,5 @@
 const logger = require('../bootstrap/logger').child({ svc: 'ThrowingService' });
+const resolveCurrentStreamerUserId = require('./item/resolveCurrentStreamerUserId');
 
 // server/services/ThrowingService.js
 //
@@ -102,28 +103,15 @@ class ThrowingService {
                 logger.debug(`🎯 THROW: Item ${fullItem.name} is a buff/debuff, applying after throw`);
 
                 if (buffDebuffService) {
-                    // Get the current streamer to determine target
-                    // Try StreamService first (works for MediaSoup and synced LiveKit)
-                    let currentStreamerSocketId = streamService.getCurrentStreamer();
-
-                    // LIVEKIT FIX: Fallback to webrtcService/webrtcAdapter if StreamService has no streamer
-                    // This handles LiveKit mode where LiveKitService tracks currentStreamer but StreamService might not be synced
-                    if (!currentStreamerSocketId && webrtcService) {
-                        currentStreamerSocketId = webrtcService.getCurrentStreamer();
-                        if (currentStreamerSocketId) {
-                            logger.debug(`🎯 THROW: Using webrtcService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
-                        }
-                    }
-
-                    let targetUserId = null;
-
-                    if (currentStreamerSocketId && sessionService) {
-                        const session = sessionService.getSessionBySocketId(currentStreamerSocketId);
-                        if (session && session.userId) {
-                            targetUserId = session.userId;
-                            logger.debug(`🎯 THROW: Found current streamer userId: ${targetUserId}`);
-                        }
-                    }
+                    // Resolve the current streamer's userId (StreamService →
+                    // webrtcService fallback → session lookup). Shared with
+                    // BuffDebuffHandler.
+                    const targetUserId = resolveCurrentStreamerUserId({
+                        streamService,
+                        webrtcService,
+                        sessionService,
+                        logger,
+                    });
 
                     if (targetUserId) {
                         try {
