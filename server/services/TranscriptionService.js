@@ -110,12 +110,7 @@ class TranscriptionService extends EventEmitter {
 
             if (!audioProducer) {
                 logger.error(`❌ TRANSCRIPTION: No audio producer found for ${effectiveStreamerId}`);
-                if (this.audioAdapter.isMediaSoup()) {
-                    const producerMap = this.webrtcService.producers.get(effectiveStreamerId);
-                    logger.debug(`   Available producers:`, producerMap ? Array.from(producerMap.keys()) : 'none');
-                } else {
-                    logger.debug(`   LiveKit: No participants with audio found in room`);
-                }
+                logger.debug(`   LiveKit: No participants with audio found in room`);
                 return { success: false, error: 'No audio producer available' };
             }
 
@@ -162,12 +157,6 @@ class TranscriptionService extends EventEmitter {
             session.consumer = captureResult.consumer;
             session.captureInfo = captureResult;
 
-            // For MediaSoup, store RTP ports
-            if (captureResult.ffmpegRtpPort) {
-                session.ffmpegRtpPort = captureResult.ffmpegRtpPort;
-                session.ffmpegRtcpPort = captureResult.ffmpegRtcpPort;
-            }
-            
             // Start audio buffering using the adapter
             const bufferResult = await this.audioAdapter.startAudioBuffering(
                 session,
@@ -185,13 +174,8 @@ class TranscriptionService extends EventEmitter {
             // Give FFmpeg a moment to be ready
             await new Promise(resolve => setTimeout(resolve, 300));
 
-            // Resume the consumer to start audio flow (MediaSoup only)
-            if (this.audioAdapter.isMediaSoup() && session.consumer && typeof session.consumer.resume === 'function') {
-                logger.debug(`▶️ TRANSCRIPTION: Starting audio flow (MediaSoup)...`);
-                await session.consumer.resume();
-            } else if (this.audioAdapter.isLiveKit()) {
-                logger.debug(`▶️ TRANSCRIPTION: Audio capture active (LiveKit)...`);
-            }
+            // LiveKit RTC capture is already flowing once subscribed (no consumer to resume).
+            logger.debug(`▶️ TRANSCRIPTION: Audio capture active (LiveKit)...`);
             
             session.status = 'active';
             

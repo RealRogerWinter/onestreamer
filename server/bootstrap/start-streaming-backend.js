@@ -217,10 +217,8 @@ module.exports = function startStreamingBackend({
     SimpleViewBotRotation.setLiveKitService(viewBotLiveKitService);
     logger.debug('✅ VIEWBOT: Registered LiveKit service with SimpleViewBotRotation');
 
-    // LiveKit-only cross-wire: ViewBotURLService uses livekit-ingress
-    // (RTMP) when `livekitService` exists; the MediaSoup branch has no
-    // equivalent (the dormant `_startMediaSoupStream` path is called
-    // out in ADR-0008 as non-functional today).
+    // LiveKit-only cross-wire: ViewBotURLService relays via livekit-ingress
+    // (RTMP). LiveKit is the sole backend (ADR-0024).
     viewBotURLService.setLiveKitService(viewBotLiveKitService);
 
     // CRITICAL: Register URL ViewBot service with LiveKit ViewBot service for protection

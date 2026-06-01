@@ -16,56 +16,6 @@ const BASE_INPUT_BUFFER_ARGS = [
   '-max_delay', '500000',
 ];
 
-// RTP output (MediaSoup path): VP8 video + Opus audio to local RTP ports.
-function buildRtpFfmpegArgs({ input, settings, useAdaptive, rtpPorts }) {
-  let vfArg = null;
-  if (useAdaptive && settings.scale) {
-    vfArg = settings.scale;
-  }
-
-  const args = [...BASE_INPUT_BUFFER_ARGS];
-
-  if (input !== '-') {
-    args.push('-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5');
-  } else {
-    args.push('-thread_queue_size', '4096');
-  }
-
-  args.push('-re', '-i', input);
-
-  if (vfArg) {
-    args.push('-vf', vfArg);
-  }
-
-  // Video encoding (VP8 for MediaSoup)
-  args.push(
-    '-map', '0:v:0',
-    '-c:v', 'libvpx',
-    '-deadline', useAdaptive ? settings.deadline : 'realtime',
-    '-cpu-used', useAdaptive ? String(settings.cpuUsed) : '8',
-    '-b:v', useAdaptive ? `${settings.videoBitrate}k` : '1500k',
-    '-maxrate', useAdaptive ? `${settings.maxrate}k` : '2000k',
-    '-bufsize', useAdaptive ? `${settings.bufsize}k` : '4000k',
-    '-g', useAdaptive ? String(settings.gopSize) : '30',
-    '-keyint_min', useAdaptive ? String(settings.keyintMin) : '30',
-    '-f', 'rtp',
-    `rtp://127.0.0.1:${rtpPorts.video}?pkt_size=1200`
-  );
-
-  // Audio encoding (Opus)
-  args.push(
-    '-map', '0:a:0?',
-    '-c:a', 'libopus',
-    '-b:a', useAdaptive && settings.audioBitrate ? `${settings.audioBitrate}k` : '128k',
-    '-ar', '48000',
-    '-ac', useAdaptive ? String(settings.audioChannels || 2) : '2',
-    '-f', 'rtp',
-    `rtp://127.0.0.1:${rtpPorts.audio}?pkt_size=1200`
-  );
-
-  return args;
-}
-
 // RTMP output (LiveKit path): H.264 + AAC to an RTMP URL. `streamCopy` is the
 // caller's resolved flag (env VIEWBOT_STREAM_COPY && direct input) — when set,
 // the source is passed through without re-encoding.
@@ -180,4 +130,4 @@ function buildVideoFileRtmpArgs({ videoFile, rtmpUrl, hasAudio, videoBitrate, au
   return args;
 }
 
-module.exports = { buildRtpFfmpegArgs, buildRtmpFfmpegArgs, buildVideoFileRtmpArgs };
+module.exports = { buildRtmpFfmpegArgs, buildVideoFileRtmpArgs };

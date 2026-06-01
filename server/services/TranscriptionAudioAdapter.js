@@ -1,10 +1,9 @@
 /**
  * Transcription Audio Adapter
- * Provides a unified interface for capturing audio for transcription
- * Supports both MediaSoup and LiveKit backends
+ * Provides a unified interface for capturing audio for transcription.
+ * LiveKit is the sole backend (ADR-0024).
  */
 
-const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { RoomServiceClient, IngressClient, AccessToken } = require('livekit-server-sdk');
@@ -20,20 +19,13 @@ class TranscriptionAudioAdapter {
     }
 
     detectBackend() {
-        // Check if the service exposes getBackendType (the LiveKit backend shim)
+        // LiveKit is the sole backend (ADR-0024). The service may expose
+        // getBackendType (the LiveKit backend shim); honor it, otherwise
+        // assume LiveKit.
         if (typeof this.webrtcService.getBackendType === 'function') {
             return this.webrtcService.getBackendType();
         }
-        // Check if it's a LiveKit service
-        if (this.webrtcService.constructor.name === 'LiveKitService') {
-            return 'livekit';
-        }
-        // Default to mediasoup
-        return 'mediasoup';
-    }
-
-    isMediaSoup() {
-        return this.backendType === 'mediasoup';
+        return 'livekit';
     }
 
     isLiveKit() {
@@ -52,68 +44,62 @@ class TranscriptionAudioAdapter {
      * Returns null if not available (or a placeholder for LiveKit)
      */
     async getAudioProducer(streamerId) {
-        if (this.isMediaSoup()) {
-            const producerMap = this.webrtcService.producers.get(streamerId);
-            return producerMap?.get('audio') || null;
-        } else if (this.isLiveKit()) {
-            // For LiveKit, query the room directly since viewbots publish via WHIP
-            // not through the produce() API
-            try {
-                const config = require('../config/webrtc.config').livekit;
-                const { RoomServiceClient } = require('livekit-server-sdk');
+        // For LiveKit, query the room directly since viewbots publish via WHIP
+        // not through the produce() API
+        try {
+            const config = require('../config/webrtc.config').livekit;
+            const { RoomServiceClient } = require('livekit-server-sdk');
 
-                const host = config.host.startsWith('http')
-                    ? config.host
-                    : `http://${config.host}`;
+            const host = config.host.startsWith('http')
+                ? config.host
+                : `http://${config.host}`;
 
-                const roomClient = new RoomServiceClient(
-                    host,
-                    config.apiKey,
-                    config.apiSecret
+            const roomClient = new RoomServiceClient(
+                host,
+                config.apiKey,
+                config.apiSecret
+            );
+
+            const participants = await roomClient.listParticipants(config.roomName);
+            const TRACK_TYPE_AUDIO = 0;
+
+            logger.debug(`🔍 TranscriptionAudioAdapter: Looking for audio for streamer: ${streamerId}`);
+            logger.debug(`   Found ${participants.length} participants in LiveKit room`);
+
+            // In LiveKit mode, streamerId might be a socket ID that doesn't match participant identity
+            // Try to find by identity first, then fall back to any participant with audio
+            let participant = participants.find(p => p.identity === streamerId);
+
+            if (!participant) {
+                logger.debug(`   Streamer ID ${streamerId} not found, searching for any participant with audio...`);
+                // Find any participant with audio tracks
+                participant = participants.find(p =>
+                    p.tracks && p.tracks.some(t => t.type === TRACK_TYPE_AUDIO)
                 );
 
-                const participants = await roomClient.listParticipants(config.roomName);
-                const TRACK_TYPE_AUDIO = 0;
-
-                logger.debug(`🔍 TranscriptionAudioAdapter: Looking for audio for streamer: ${streamerId}`);
-                logger.debug(`   Found ${participants.length} participants in LiveKit room`);
-
-                // In LiveKit mode, streamerId might be a socket ID that doesn't match participant identity
-                // Try to find by identity first, then fall back to any participant with audio
-                let participant = participants.find(p => p.identity === streamerId);
-
-                if (!participant) {
-                    logger.debug(`   Streamer ID ${streamerId} not found, searching for any participant with audio...`);
-                    // Find any participant with audio tracks
-                    participant = participants.find(p =>
-                        p.tracks && p.tracks.some(t => t.type === TRACK_TYPE_AUDIO)
-                    );
-
-                    if (participant) {
-                        logger.debug(`   Using participant ${participant.identity} with audio`);
-                    }
+                if (participant) {
+                    logger.debug(`   Using participant ${participant.identity} with audio`);
                 }
-
-                if (participant && participant.tracks) {
-                    const audioTrack = participant.tracks.find(t => t.type === TRACK_TYPE_AUDIO);
-                    if (audioTrack) {
-                        logger.debug(`✅ Found audio track ${audioTrack.sid} from ${participant.identity}`);
-                        // Return a MediaSoup-compatible producer object
-                        return {
-                            id: audioTrack.sid,
-                            kind: 'audio',
-                            participantSid: participant.sid,
-                            participantIdentity: participant.identity,
-                            livekit: true
-                        };
-                    }
-                } else {
-                    logger.debug(`   No participants with audio tracks found`);
-                }
-            } catch (error) {
-                logger.error('❌ TranscriptionAudioAdapter: Failed to query LiveKit participants:', error.message);
             }
-            return null;
+
+            if (participant && participant.tracks) {
+                const audioTrack = participant.tracks.find(t => t.type === TRACK_TYPE_AUDIO);
+                if (audioTrack) {
+                    logger.debug(`✅ Found audio track ${audioTrack.sid} from ${participant.identity}`);
+                    // Return a producer-shaped object the transcription path expects
+                    return {
+                        id: audioTrack.sid,
+                        kind: 'audio',
+                        participantSid: participant.sid,
+                        participantIdentity: participant.identity,
+                        livekit: true
+                    };
+                }
+            } else {
+                logger.debug(`   No participants with audio tracks found`);
+            }
+        } catch (error) {
+            logger.error('❌ TranscriptionAudioAdapter: Failed to query LiveKit participants:', error.message);
         }
         return null;
     }
@@ -123,80 +109,7 @@ class TranscriptionAudioAdapter {
      * Returns transport, consumer, and audio capture info
      */
     async createAudioCapture(sessionId, streamerId) {
-        if (this.isMediaSoup()) {
-            return await this.createMediaSoupAudioCapture(sessionId, streamerId);
-        } else if (this.isLiveKit()) {
-            return await this.createLiveKitAudioCapture(sessionId, streamerId);
-        }
-        throw new Error(`Unsupported backend: ${this.backendType}`);
-    }
-
-    /**
-     * MediaSoup audio capture implementation
-     */
-    async createMediaSoupAudioCapture(sessionId, streamerId) {
-        logger.debug(`📡 TranscriptionAudioAdapter: Creating MediaSoup audio capture for ${streamerId}`);
-
-        // Get the audio producer
-        const producerMap = this.webrtcService.producers.get(streamerId);
-        const audioProducer = producerMap?.get('audio');
-
-        if (!audioProducer) {
-            return { success: false, error: 'No audio producer available' };
-        }
-
-        // Create MediaSoup plain transport
-        const router = this.webrtcService.router;
-        if (!router) {
-            return { success: false, error: 'MediaSoup router not available' };
-        }
-
-        // Choose dynamic port for FFmpeg
-        const ffmpegRtpPort = 5004 + Math.floor(Math.random() * 100) * 2;
-        const ffmpegRtcpPort = ffmpegRtpPort + 1;
-
-        const transport = await router.createPlainTransport({
-            listenIp: {
-                ip: '0.0.0.0',
-                announcedIp: '127.0.0.1'
-            },
-            rtcpMux: false,
-            comedia: false
-        });
-
-        await transport.connect({
-            ip: '127.0.0.1',
-            port: ffmpegRtpPort,
-            rtcpPort: ffmpegRtcpPort
-        });
-
-        // Create audio consumer
-        const rtpCapabilities = {
-            codecs: [{
-                kind: 'audio',
-                mimeType: 'audio/opus',
-                clockRate: 48000,
-                channels: 2,
-                parameters: {},
-                rtcpFeedback: [{ type: 'transport-cc' }]
-            }],
-            headerExtensions: []
-        };
-
-        const consumer = await transport.consume({
-            producerId: audioProducer.id,
-            rtpCapabilities: rtpCapabilities,
-            paused: true
-        });
-
-        return {
-            success: true,
-            transport,
-            consumer,
-            ffmpegRtpPort,
-            ffmpegRtcpPort,
-            captureType: 'mediasoup-rtp'
-        };
+        return await this.createLiveKitAudioCapture(sessionId, streamerId);
     }
 
     /**
@@ -291,16 +204,7 @@ class TranscriptionAudioAdapter {
      * Start audio buffering with FFmpeg
      */
     async startAudioBuffering(session, captureInfo, audioBufferService) {
-        if (captureInfo.captureType === 'mediasoup-rtp') {
-            // Use existing AudioBufferService for MediaSoup
-            return await audioBufferService.startBuffering(
-                session.id,
-                captureInfo.transport,
-                captureInfo.consumer,
-                captureInfo.ffmpegRtpPort,
-                captureInfo.ffmpegRtcpPort
-            );
-        } else if (captureInfo.captureType === 'livekit-rtc') {
+        if (captureInfo.captureType === 'livekit-rtc') {
             // Use RTC client SDK for LiveKit
             return await this.startLiveKitRTCCapture(session, captureInfo, audioBufferService);
         }
@@ -547,114 +451,6 @@ class TranscriptionAudioAdapter {
     }
 
     /**
-     * Fallback method - Subscribe with headless Chrome + FFmpeg
-     */
-    async fallbackFFmpegCapture(session, captureInfo, bufferFile) {
-        logger.debug(`🔄 TranscriptionAudioAdapter: Using Puppeteer + FFmpeg fallback`);
-
-        try {
-            // Use Puppeteer to subscribe to LiveKit audio in headless browser
-            // Then capture system audio with FFmpeg
-            const puppeteer = require('puppeteer');
-
-            logger.debug(`🌐 Launching headless browser to subscribe to LiveKit audio...`);
-
-            const browser = await puppeteer.launch({
-                headless: true,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--use-fake-ui-for-media-stream',
-                    '--use-fake-device-for-media-stream',
-                    '--autoplay-policy=no-user-gesture-required'
-                ]
-            });
-
-            const page = await browser.newPage();
-
-            // Create a simple HTML page that connects to LiveKit
-            const html = `
-<!DOCTYPE html>
-<html>
-<head>
-    <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js"></script>
-</head>
-<body>
-    <audio id="audio" autoplay></audio>
-    <script>
-        const connect = async () => {
-            const room = new LivekitClient.Room();
-
-            room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                if (track.kind === 'audio') {
-                    const audioElement = document.getElementById('audio');
-                    track.attach(audioElement);
-                    logger.debug('Audio track attached');
-                }
-            });
-
-            await room.connect('${captureInfo.wsUrl}', '${captureInfo.token}');
-            logger.debug('Connected to LiveKit room');
-        };
-
-        connect().catch((err) => logger.error({ err }, "connect failed"));
-    </script>
-</body>
-</html>
-            `;
-
-            await page.setContent(html);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-
-            // Close browser and use simpler approach
-            await browser.close();
-
-            logger.debug(`⚠️ Browser-based capture complex, using silent placeholder`);
-            return this.createSilentPlaceholder(session, bufferFile);
-
-        } catch (error) {
-            logger.error(`❌ Puppeteer fallback failed:`, error);
-            return this.createSilentPlaceholder(session, bufferFile);
-        }
-    }
-
-    /**
-     * Create silent audio file as placeholder
-     */
-    async createSilentPlaceholder(session, bufferFile) {
-        logger.debug(`🔇 Creating silent audio placeholder`);
-
-        try {
-            // Generate 20 seconds of silence at 16kHz mono
-            const ffmpegArgs = [
-                '-f', 'lavfi',
-                '-i', 'anullsrc=r=16000:cl=mono',
-                '-t', '20',
-                '-f', 'wav',
-                '-y',
-                bufferFile
-            ];
-
-            const ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
-
-            ffmpegProcess.on('close', () => {
-                logger.debug(`✅ Silent placeholder created (transcription will show no words)`);
-            });
-
-            session.audioProcess = ffmpegProcess;
-            session.bufferFile = bufferFile;
-
-            return {
-                success: true,
-                bufferFile: bufferFile,
-                isSilent: true
-            };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-
-    /**
      * Cleanup resources
      */
     async cleanup(session) {
@@ -674,17 +470,8 @@ class TranscriptionAudioAdapter {
             await this.finalizeLiveKitCapture(session);
         }
 
-        // Stop any audio capture processes (FFmpeg for MediaSoup RTP)
-        if (session.audioProcess) {
-            try {
-                session.audioProcess.kill('SIGTERM');
-                logger.debug(`   ✅ Stopped audio capture process`);
-            } catch (error) {
-                logger.error(`   ⚠️ Error stopping audio process:`, error.message);
-            }
-        }
-
-        // Close MediaSoup transport and consumer (if present)
+        // Close transport and consumer if they expose a close() (the LiveKit
+        // capture path stores inert placeholders that don't, so this no-ops).
         if (session.transport && !session.transport.closed) {
             if (typeof session.transport.close === 'function') {
                 try {

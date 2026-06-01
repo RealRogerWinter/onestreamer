@@ -5,7 +5,7 @@
  * onto onestreamer. URL viewbots are treated like "real streamers" - other viewbots
  * cannot interrupt them.
  *
- * Pipeline: URL -> streamlink/yt-dlp -> FFmpeg -> RTP/RTMP -> MediaSoup/LiveKit -> Viewers
+ * Pipeline: URL -> streamlink/yt-dlp -> FFmpeg -> RTMP -> LiveKit -> Viewers
  */
 
 const EventEmitter = require('events');
@@ -39,12 +39,6 @@ class ViewBotURLService extends EventEmitter {
 
     // Active URL streams
     this.activeStreams = new Map(); // urlId -> stream info
-
-    // RTP ports for MediaSoup
-    this.rtpPorts = {
-      video: 5004,
-      audio: 5006
-    };
 
     // Backend is LiveKit-only (ADR-0024)
     this.backend = webrtcConfig.backend;
@@ -252,13 +246,10 @@ class ViewBotURLService extends EventEmitter {
   /**
    * Start the streaming pipeline for the active backend.
    * Shared dispatch used by startURLStream, reconnect, and Kick token refresh.
+   * LiveKit is the sole backend (ADR-0024).
    */
   async _startPipeline(urlId, streamEntry) {
-    if (this.backend === 'livekit' && this.livekitService) {
-      await this._startLiveKitStream(urlId, streamEntry);
-    } else {
-      await this._startMediaSoupStream(urlId, streamEntry);
-    }
+    await this._startLiveKitStream(urlId, streamEntry);
   }
 
   /**
@@ -528,57 +519,6 @@ class ViewBotURLService extends EventEmitter {
   }
 
   /**
-   * Start MediaSoup RTP stream pipeline
-   * Uses: streamlink -> FFmpeg -> RTP -> MediaSoup
-   */
-  async _startMediaSoupStream(urlId, streamEntry) {
-    const { sourceUrl, quality, streamInfo } = streamEntry;
-
-    logger.debug(`🎥 Starting MediaSoup pipeline for ${urlId}`);
-
-    let ffmpegProcess;
-
-    if (streamInfo.pipeMode) {
-      // Pipe mode: streamlink stdout -> FFmpeg stdin
-      const streamlinkProcess = this.extractorService.createStreamPipe(sourceUrl, quality);
-      streamEntry.processes.push({ type: 'streamlink', process: streamlinkProcess });
-
-      // FFmpeg reads from stdin
-      ffmpegProcess = this.ffmpegPipeline.createRTPProcess('-', streamEntry);
-      streamEntry.processes.push({ type: 'ffmpeg', process: ffmpegProcess });
-
-      // Pipe streamlink to FFmpeg
-      streamlinkProcess.stdout.pipe(ffmpegProcess.stdin);
-
-      // Handle streamlink errors
-      streamlinkProcess.on('error', (err) => {
-        logger.error(`❌ Streamlink error for ${urlId}:`, err);
-        this._handleStreamError(urlId, 'streamlink', err);
-      });
-
-      streamlinkProcess.on('exit', (code) => {
-        logger.debug(`📤 Streamlink exited for ${urlId} with code ${code}`);
-        if (code !== 0) {
-          this._handleStreamError(urlId, 'streamlink', new Error(`Exit code ${code}`));
-        }
-      });
-
-    } else {
-      // Direct URL mode: FFmpeg reads from URL directly
-      ffmpegProcess = this.ffmpegPipeline.createRTPProcess(streamInfo.streamUrl, streamEntry);
-      streamEntry.processes.push({ type: 'ffmpeg', process: ffmpegProcess });
-    }
-
-    // Handle FFmpeg events
-    this.ffmpegPipeline.setupHandlers(urlId, ffmpegProcess);
-
-    // Wait for FFmpeg to start producing
-    await this.ffmpegPipeline.waitForStream(ffmpegProcess, 15000);  // 15s timeout for analyzeduration
-
-    logger.debug(`✅ MediaSoup pipeline started for ${urlId}`);
-  }
-
-  /**
    * Start LiveKit RTMP stream pipeline
    * Uses: streamlink -> FFmpeg -> RTMP -> LiveKit
    */
@@ -648,14 +588,6 @@ class ViewBotURLService extends EventEmitter {
     await this.ffmpegPipeline.waitForStream(ffmpegProcess, 15000);  // 15s timeout for analyzeduration
 
     logger.debug(`✅ LiveKit pipeline started for ${urlId}`);
-  }
-
-  /**
-   * Create FFmpeg process for RTP output (MediaSoup)
-   * Uses adaptive encoding settings when available
-   */
-  _createFFmpegRTPProcess(input, streamEntry) {
-    return this.ffmpegPipeline.createRTPProcess(input, streamEntry);
   }
 
   /**

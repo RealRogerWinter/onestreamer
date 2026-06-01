@@ -2,9 +2,9 @@
  * FFmpegPipeline.js - FFmpeg process spawn/handlers/wait/stop for URL streams,
  * extracted from ViewBotURLService.
  *
- * Builds RTP (MediaSoup) and RTMP (LiveKit) FFmpeg processes, wires stderr
+ * Builds the RTMP (LiveKit) FFmpeg process, wires stderr
  * progress/health/error parsing, waits for first output, and tears down
- * processes. Reads owner.adaptiveConfig, owner.ffmpegPath, owner.rtpPorts,
+ * processes. Reads owner.adaptiveConfig, owner.ffmpegPath,
  * owner.activeStreams and global.urlStreamHealthService via the `owner`
  * back-reference; error/end recovery is delegated to owner so behavior is
  * identical to the in-service form.
@@ -13,37 +13,12 @@
  */
 
 const { spawn } = require('child_process');
-const { buildRtpFfmpegArgs, buildRtmpFfmpegArgs } = require('../viewbot/ffmpegArgs');
+const { buildRtmpFfmpegArgs } = require('../viewbot/ffmpegArgs');
 
 class FFmpegPipeline {
   constructor(owner, logger) {
     this.owner = owner;
     this.logger = logger;
-  }
-
-  /**
-   * Create FFmpeg process for RTP output (MediaSoup)
-   * Uses adaptive encoding settings when available
-   */
-  createRTPProcess(input, streamEntry) {
-    const owner = this.owner;
-    const logger = this.logger;
-    const settings = streamEntry.encodingSettings;
-    const useAdaptive = owner.adaptiveConfig.enabled && settings;
-
-    const args = buildRtpFfmpegArgs({ input, settings, useAdaptive, rtpPorts: owner.rtpPorts });
-
-    const logSettings = useAdaptive
-      ? `ADAPTIVE ${settings.width}x${settings.height}@${settings.fps}fps ${settings.videoBitrate}kbps`
-      : 'FIXED 720p 1500kbps';
-
-    logger.debug(`🎬 FFmpeg RTP (${logSettings}): ${owner.ffmpegPath} ${args.slice(0, 5).join(' ')}...`);
-
-    const process = spawn(owner.ffmpegPath, args, {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    return process;
   }
 
   /**
