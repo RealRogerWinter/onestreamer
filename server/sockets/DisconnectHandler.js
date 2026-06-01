@@ -19,10 +19,10 @@
  *                               (3 s rotation restart, 1 s real-streamer-
  *                               status validation) route through it so
  *                               SIGTERM during the window cancels them.
- *   - webrtcService          Plain-RTP transport bookkeeping for the
- *                               socket; cascading `cleanup(socketId)` at the
- *                               end. Also has its `currentStreamer` cleared
- *                               directly when the current streamer leaves.
+ *   - webrtcService          Cascading `cleanup(socketId)` at the end of
+ *                               the disconnect path. Also has its
+ *                               `currentStreamer` cleared directly when the
+ *                               current streamer leaves.
  *   - sessionService            IP/session lookup, socket→user resolution,
  *                               and `unregisterSocket()` for the IP map.
  *   - timeTrackingService       `handleUserDisconnect` flush for authed
@@ -78,27 +78,6 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
   } = deps;
 
   socket.on('disconnect', async () => {
-    // Clean up ViewBot Plain RTP transports if exist (in case cleanup wasn't called)
-    if (webrtcService.transports?.has(socket.id)) {
-      const transports = webrtcService.transports.get(socket.id);
-      try {
-        // Handle both single transport and dual transport cases
-        if (transports.video && transports.audio) {
-          // Dual transport case (ViewBots)
-          if (!transports.video.closed) transports.video.close();
-          if (!transports.audio.closed) transports.audio.close();
-          logger.info(`🧹 SERVER: Closed Plain RTP transports (video & audio) for socket ${socket.id}`);
-        } else if (typeof transports.close === 'function' && !transports.closed) {
-          // Single transport case
-          transports.close();
-          logger.info(`🧹 SERVER: Closed Plain RTP transport for socket ${socket.id}`);
-        }
-      } catch (e) {
-        logger.error({ err: e }, 'Error closing transports');
-      }
-      webrtcService.transports.delete(socket.id);
-    }
-
     // Handle time tracking cleanup for authenticated users
     const ip = sessionService.getIpAddress(socket);
     const session = sessionService.getSessionByIp(ip);

@@ -15,30 +15,21 @@
  *                      streamer, emits stream-ended/streaming-approved, opens
  *                      logging/time-tracking sessions, and for ViewBots emits
  *                      stream-ready immediately.
- *   - stream-offer      Streamer -> specific viewer signalling pass-through
- *                      (legacy WebRTC P2P; the modern path uses MediaSoup).
- *   - stream-answer     Viewer  -> streamer signalling pass-through.
  *   - stop-streaming    The active streamer voluntarily ends their session.
  *                      Persists disconnect time, ends log + time-tracking
  *                      sessions, applies individual cooldown, broadcasts
  *                      stream-ended, clears viewbot protection, and (after a
  *                      delay) restarts viewbot rotation.
- *   - request-stream    Viewer-side ask: relayed to the named streamer socket
- *                      as `viewer-requesting-stream`. Pure pass-through; no
- *                      services touched. Moved here in Phase 4's inline-
- *                      listener sweep because it pairs with stream-offer /
- *                      stream-answer (the streamer's response cycle).
  *   - request-test-stream  Viewer-side graceful-degradation request. If no
  *                      ViewbotService is wired, falls back to the legacy
  *                      TestStreamService. Otherwise auto-starts a ViewBot
  *                      with synthetic-user-id linkage so the buff system
  *                      treats it as a streamer. Broadcasts new-streamer +
- *                      bumps the viewer count. Moved here in Phase 4 for
- *                      the same reason as request-stream — it's the
- *                      fallback half of the stream-acquisition flow.
+ *                      bumps the viewer count. The fallback half of the
+ *                      stream-acquisition flow.
  *
  * Note: `stream-ready` is emitted by the server (e.g., by request-to-stream
- * for ViewBots, and from MediaSoup producer-created paths in index.js); there
+ * for ViewBots, and from the LiveKit stream-ready paths in index.js); there
  * is no `socket.on('stream-ready', ...)` to register, so it is not listed
  * here as a handler — it remains an outbound event only.
  *
@@ -92,28 +83,17 @@
  * suite at server/tests/sockets/StreamHandler.characterization.test.js):
  *   join-as-viewer        -> viewers.js
  *   request-to-stream     -> takeover.js
- *   stream-offer          -> signaling.js (registerOfferAnswer)
- *   stream-answer         -> signaling.js (registerOfferAnswer)
  *   stop-streaming        -> lifecycle.js
- *   request-stream        -> signaling.js (registerRequestStream)
  *   request-test-stream   -> testStream.js
- *
- * `stream-offer`/`stream-answer` and `request-stream` straddle
- * `stop-streaming` in the original ordering, so signaling.js exposes two
- * registration functions that are interleaved here to keep the `socket.on`
- * sequence byte-identical.
  */
 const registerViewers = require('./streamHandler/viewers');
 const registerTakeover = require('./streamHandler/takeover');
-const { registerOfferAnswer, registerRequestStream } = require('./streamHandler/signaling');
 const registerLifecycle = require('./streamHandler/lifecycle');
 const registerTestStream = require('./streamHandler/testStream');
 
 module.exports = function registerStreamHandler(io, socket, deps) {
   registerViewers(io, socket, deps);
   registerTakeover(io, socket, deps);
-  registerOfferAnswer(io, socket, deps);
   registerLifecycle(io, socket, deps);
-  registerRequestStream(io, socket, deps);
   registerTestStream(io, socket, deps);
 };

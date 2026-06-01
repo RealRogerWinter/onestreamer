@@ -204,10 +204,7 @@ describe('sockets/StreamHandler characterization', () => {
       expect(events).toEqual([
         'join-as-viewer',
         'request-to-stream',
-        'stream-offer',
-        'stream-answer',
         'stop-streaming',
-        'request-stream',
         'request-test-stream',
       ]);
     });
@@ -412,40 +409,6 @@ describe('sockets/StreamHandler characterization', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // stream-offer / stream-answer / request-stream (pure signalling pass-through)
-  // -------------------------------------------------------------------------
-  describe('signalling pass-through', () => {
-    test('stream-offer relays offer to the target viewer with fromStreamerId', () => {
-      const { io, handlers } = register();
-      handlers['stream-offer']({ offer: { sdp: 'X' }, toViewerId: 'viewer-9' });
-
-      const emit = io._toEmit.mock.calls.find((c) => c[1] === 'stream-offer');
-      expect(emit).toBeDefined();
-      expect(emit[0]).toBe('viewer-9');
-      expect(emit[2]).toEqual({ offer: { sdp: 'X' }, fromStreamerId: 'socket-streamer-1' });
-    });
-
-    test('stream-answer relays answer to the target streamer with fromViewerId', () => {
-      const { io, handlers } = register();
-      handlers['stream-answer']({ answer: { sdp: 'Y' }, toStreamerId: 'streamer-3' });
-
-      const emit = io._toEmit.mock.calls.find((c) => c[1] === 'stream-answer');
-      expect(emit).toBeDefined();
-      expect(emit[0]).toBe('streamer-3');
-      expect(emit[2]).toEqual({ answer: { sdp: 'Y' }, fromViewerId: 'socket-streamer-1' });
-    });
-
-    test('request-stream relays viewer-requesting-stream to the named streamer', () => {
-      const { io, handlers } = register();
-      handlers['request-stream']({ streamerId: 'streamer-3' });
-
-      const emit = io._toEmit.mock.calls.find((c) => c[1] === 'viewer-requesting-stream');
-      expect(emit).toBeDefined();
-      expect(emit[0]).toBe('streamer-3');
-      expect(emit[2]).toEqual({ viewerId: 'socket-streamer-1' });
-    });
-  });
 
   // -------------------------------------------------------------------------
   // stop-streaming

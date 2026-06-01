@@ -10,10 +10,10 @@ const logger = require('../bootstrap/logger').child({ svc: 'StreamOrchestration'
  *   broadcastGlobalCooldown   coordinates TakeoverService + Socket.IO
  *   enrichStreamStatus        reads display name (UserService surface) and
  *                             returns enriched status
- *   verifyAndEmitStreamReady  coordinates MediasoupService (via the adapter
- *                             interface — `verifyParticipantTracks` /
- *                             `isLiveKit`) + UserService display name +
- *                             Socket.IO emit + module-scope dedup state
+ *   verifyAndEmitStreamReady  coordinates LiveKitService (via
+ *                             `verifyParticipantTracks`) + UserService
+ *                             display name + Socket.IO emit + module-scope
+ *                             dedup state
  *
  * The helpers were inline in `server/index.js` at the Phase 15B.1 close —
  * at lines 915 (broadcastGlobalCooldown), 1095 (enrichStreamStatus), and
@@ -104,8 +104,7 @@ function createStreamOrchestration({
   };
 
   /**
-   * Verify tracks are publishing (for LiveKit) or skip verification
-   * (MediaSoup, which is synchronous at producer-create time) and emit
+   * Verify the streamer's tracks are publishing in LiveKit, then emit
    * `stream-ready` to every connected socket. Dedups within a 2-second
    * window per streamerId — shared `lastEmittedStreamReady` state with
    * `server/sockets/StreamHandler.js` so the two emit paths cooperate.
@@ -123,56 +122,31 @@ function createStreamOrchestration({
     }
     logger.info(`🔍 STREAM-READY: Verifying tracks for ${streamerId} before emitting...`);
 
-    const isLiveKit = webrtcService.isLiveKit && webrtcService.isLiveKit();
+    try {
+      const verification = await webrtcService.verifyParticipantTracks(streamerId, {
+        requireVideo: true,
+        requireAudio: false,
+        maxAttempts: 10,
+        retryDelay: 500,
+      });
 
-    if (isLiveKit && webrtcService.verifyParticipantTracks) {
-      try {
-        const verification = await webrtcService.verifyParticipantTracks(streamerId, {
-          requireVideo: true,
-          requireAudio: false,
-          maxAttempts: 10,
-          retryDelay: 500,
-        });
-
-        if (!verification.verified) {
-          logger.error(`❌ STREAM-READY: Track verification failed for ${streamerId} after ${verification.attempt} attempts`);
-          return false;
-        }
-
-        logger.info(`✅ STREAM-READY: Tracks verified for ${streamerId} (video: ${verification.hasVideo}, audio: ${verification.hasAudio}) after ${verification.attempt} attempts`);
-
-        const streamerDisplayName = await getStreamerDisplayName(streamerId);
-        const emitTimestamp = Date.now();
-        io.emit('stream-ready', {
-          streamerId,
-          newStreamId: streamerId,
-          isWebRTC: true,
-          hasVideo: verification.hasVideo,
-          hasAudio: verification.hasAudio,
-          producerVerified: true,
-          trackCount: verification.trackCount,
-          timestamp: emitTimestamp,
-          streamerDisplayName,
-          ...streamData,
-        });
-
-        lastEmittedStreamReady.streamerId = streamerId;
-        lastEmittedStreamReady.timestamp = emitTimestamp;
-        logger.info(`📡 STREAM-READY: Emitted verified stream-ready for ${streamerId}`);
-        return true;
-      } catch (error) {
-        logger.error({ err: error }, `❌ STREAM-READY: Error verifying tracks for ${streamerId}`);
+      if (!verification.verified) {
+        logger.error(`❌ STREAM-READY: Track verification failed for ${streamerId} after ${verification.attempt} attempts`);
         return false;
       }
-    } else {
-      // MediaSoup: producers are synchronous, ready when created
+
+      logger.info(`✅ STREAM-READY: Tracks verified for ${streamerId} (video: ${verification.hasVideo}, audio: ${verification.hasAudio}) after ${verification.attempt} attempts`);
+
       const streamerDisplayName = await getStreamerDisplayName(streamerId);
       const emitTimestamp = Date.now();
       io.emit('stream-ready', {
         streamerId,
         newStreamId: streamerId,
         isWebRTC: true,
+        hasVideo: verification.hasVideo,
+        hasAudio: verification.hasAudio,
         producerVerified: true,
+        trackCount: verification.trackCount,
         timestamp: emitTimestamp,
         streamerDisplayName,
         ...streamData,
@@ -180,8 +154,11 @@ function createStreamOrchestration({
 
       lastEmittedStreamReady.streamerId = streamerId;
       lastEmittedStreamReady.timestamp = emitTimestamp;
-      logger.info(`📡 STREAM-READY: Emitted stream-ready for ${streamerId} (MediaSoup/no verification needed)`);
+      logger.info(`📡 STREAM-READY: Emitted verified stream-ready for ${streamerId}`);
       return true;
+    } catch (error) {
+      logger.error({ err: error }, `❌ STREAM-READY: Error verifying tracks for ${streamerId}`);
+      return false;
     }
   };
 

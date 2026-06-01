@@ -30,10 +30,7 @@ class AdaptiveEncodingSettings {
       minFps: options.minFps || 24,
 
       // Quality mode: 'quality', 'balanced', 'performance'
-      mode: options.mode || 'balanced',
-
-      // Backend type: 'mediasoup' (VP8/RTP) or 'livekit' (H.264/RTMP)
-      backend: options.backend || 'livekit'
+      mode: options.mode || 'balanced'
     };
 
     // Preset profiles - ALL use fast encoding for real-time streaming
@@ -83,10 +80,8 @@ class AdaptiveEncodingSettings {
     // Calculate audio bitrate
     const audioBitrate = this._calculateAudioBitrate(sourceProps);
 
-    // Determine codec-specific settings
-    const codecSettings = this.config.backend === 'mediasoup'
-      ? this._getVpxSettings(preset, resolution, fps)
-      : this._getX264Settings(preset, resolution, fps);
+    // Determine codec-specific settings (H.264/x264 for LiveKit)
+    const codecSettings = this._getX264Settings(preset, resolution, fps);
 
     // Build the complete settings object
     const settings = {
@@ -120,8 +115,7 @@ class AdaptiveEncodingSettings {
       sourceHeight: sourceProps.height,
       sourceFps: sourceProps.fps,
       sourceBitrate: sourceProps.videoBitrate,
-      adaptiveMode: this.config.mode,
-      backend: this.config.backend
+      adaptiveMode: this.config.mode
     };
 
     logger.debug(`🎯 Adaptive Settings: ${sourceProps.width}x${sourceProps.height}@${sourceProps.fps}fps → ` +
@@ -281,18 +275,6 @@ class AdaptiveEncodingSettings {
   }
 
   /**
-   * Get VP8/VP9 specific settings for MediaSoup
-   */
-  _getVpxSettings(preset, resolution, fps) {
-    return {
-      codec: 'libvpx',
-      deadline: 'realtime',
-      cpuUsed: preset.vpxCpuUsed,
-      audioCodec: 'libopus'
-    };
-  }
-
-  /**
    * Get H.264 specific settings for LiveKit
    */
   _getX264Settings(preset, resolution, fps) {
@@ -317,105 +299,6 @@ class AdaptiveEncodingSettings {
       audioCodec: 'aac',
       scThreshold: 0 // Disable scene change detection for consistent keyframes
     };
-  }
-
-  /**
-   * Build FFmpeg video filter string
-   */
-  buildVideoFilter(settings) {
-    const filters = [];
-
-    // Scaling filter (if needed)
-    if (settings.scale) {
-      filters.push(settings.scale);
-    }
-
-    // FPS filter (if source fps differs significantly)
-    if (settings.sourceFps && Math.abs(settings.sourceFps - settings.fps) > 2) {
-      filters.push(`fps=${settings.fps}`);
-    }
-
-    return filters.length > 0 ? filters.join(',') : null;
-  }
-
-  /**
-   * Build complete FFmpeg arguments for the calculated settings
-   */
-  buildFFmpegArgs(settings, input, output, options = {}) {
-    const args = [];
-
-    // Input flags
-    args.push('-fflags', '+genpts+discardcorrupt');
-
-    if (input !== '-' && !options.noRe) {
-      args.push('-re');
-    }
-
-    args.push('-i', input);
-
-    // Video filter (scaling/fps)
-    const vf = this.buildVideoFilter(settings);
-    if (vf) {
-      args.push('-vf', vf);
-    }
-
-    // Video encoding
-    if (settings.codec === 'libvpx') {
-      // VP8 for MediaSoup
-      args.push(
-        '-map', '0:v:0',
-        '-c:v', settings.codec,
-        '-deadline', settings.deadline,
-        '-cpu-used', String(settings.cpuUsed),
-        '-b:v', `${settings.videoBitrate}k`,
-        '-maxrate', `${settings.maxrate}k`,
-        '-bufsize', `${settings.bufsize}k`,
-        '-g', String(settings.gopSize),
-        '-keyint_min', String(settings.keyintMin)
-      );
-    } else {
-      // H.264 for LiveKit
-      args.push(
-        '-c:v', settings.codec,
-        '-preset', settings.preset,
-        '-profile:v', settings.profile,
-        '-level', settings.level,
-        '-b:v', `${settings.videoBitrate}k`,
-        '-maxrate', `${settings.maxrate}k`,
-        '-bufsize', `${settings.bufsize}k`,
-        '-pix_fmt', settings.pixFmt,
-        '-r', String(settings.fps),
-        '-g', String(settings.gopSize),
-        '-keyint_min', String(settings.keyintMin),
-        '-sc_threshold', String(settings.scThreshold)
-      );
-    }
-
-    // Audio encoding
-    if (settings.audioBitrate > 0) {
-      args.push(
-        settings.codec === 'libvpx' ? '-map' : null,
-        settings.codec === 'libvpx' ? '0:a:0?' : null,
-        '-c:a', settings.audioCodec,
-        '-b:a', `${settings.audioBitrate}k`,
-        '-ar', String(settings.audioSampleRate),
-        '-ac', String(settings.audioChannels)
-      ).filter(Boolean);
-    } else {
-      args.push('-an'); // No audio
-    }
-
-    // Output format and destination
-    if (output.format === 'rtp') {
-      args.push('-f', 'rtp', output.videoUrl);
-      if (settings.audioBitrate > 0) {
-        args.push('-f', 'rtp', output.audioUrl);
-      }
-    } else if (output.format === 'flv') {
-      args.push('-f', 'flv', output.url);
-    }
-
-    return args;
   }
 
   /**
