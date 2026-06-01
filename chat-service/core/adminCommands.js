@@ -42,7 +42,14 @@ const createAdminCommands = (deps) => {
     voteServices
   } = deps;
 
-  const { bannedUsers, bannedUsersData, timeoutUsers, saveModerationData } = moderationService;
+  const {
+    bannedUsers,
+    bannedUsersData,
+    timeoutUsers,
+    saveModerationData,
+    banUserWithSideEffects,
+    timeoutUserWithSideEffects
+  } = moderationService;
   const { startClaimEvent } = claimEventService;
   const { parseStreamUrl } = voteServices.swapVote;
 
@@ -128,53 +135,28 @@ const createAdminCommands = (deps) => {
       }
 
       const targetUsername = args.join(' ');
-      bannedUsers.add(targetUsername);
-      bannedUsersData.set(targetUsername, {
-        bannedAt: new Date().toISOString(),
+
+      // Canonical ban side effect (state + save + message-splice +
+      // 'delete-messages' emit + socket disconnect), shared with POST /api/ban.
+      // The two '🔨 BAN:' diagnostic logs print the post-add ban list, so they
+      // run via onAfterRecord (after record+save, before splicing). The public
+      // broadcast stays here so it lands after disconnect, as it did before.
+      const { messagesDeleted, disconnectedCount } = banUserWithSideEffects({
+        io,
+        chatMessages,
+        connectedUsers,
+        username: targetUsername,
         reason: 'Banned via admin command',
-        bannedBy: userInfo.username
-      });
-
-      // Save to disk
-      saveModerationData();
-
-      console.log(`🔨 BAN: Adding "${targetUsername}" to ban list`);
-      console.log(`🔨 BAN: Current banned users:`, Array.from(bannedUsers));
-
-      // Delete all messages from the banned user
-      const messagesToDelete = [];
-      const lowerTargetUsername = targetUsername.toLowerCase();
-
-      // Find all message IDs from the banned user
-      for (let i = chatMessages.length - 1; i >= 0; i--) {
-        if (chatMessages[i].username && chatMessages[i].username.toLowerCase() === lowerTargetUsername) {
-          messagesToDelete.push(chatMessages[i].id);
-          chatMessages.splice(i, 1); // Remove from array
-        }
-      }
-
-      // Emit event to delete messages from all clients
-      if (messagesToDelete.length > 0) {
-        io.emit('delete-messages', { messageIds: messagesToDelete, reason: 'user_banned' });
-        console.log(`🔨 BAN: Deleted ${messagesToDelete.length} messages from ${targetUsername}`);
-      }
-
-      // Disconnect all sockets with this username (case-insensitive)
-      let disconnectedCount = 0;
-      connectedUsers.forEach((user, socketId) => {
-        if (user.username.toLowerCase() === lowerTargetUsername) {
-          const targetSocket = io.sockets.sockets.get(socketId);
-          if (targetSocket) {
-            console.log(`🔨 BAN: Disconnecting socket ${socketId} for user ${user.username}`);
-            targetSocket.emit('banned', { reason: 'You have been banned by an administrator' });
-            targetSocket.disconnect(true);
-            disconnectedCount++;
-          }
+        bannedBy: userInfo.username,
+        logPrefix: 'BAN',
+        onAfterRecord: () => {
+          console.log(`🔨 BAN: Adding "${targetUsername}" to ban list`);
+          console.log(`🔨 BAN: Current banned users:`, Array.from(bannedUsers));
         }
       });
 
       sendSystemMessage(`User ${targetUsername} has been banned and their messages have been removed`, io);
-      sendAdminResponse(socket, `✅ Banned ${targetUsername}, deleted ${messagesToDelete.length} messages, and disconnected ${disconnectedCount} connection(s)`);
+      sendAdminResponse(socket, `✅ Banned ${targetUsername}, deleted ${messagesDeleted} messages, and disconnected ${disconnectedCount} connection(s)`);
     },
 
     unban: (socket, args, userInfo, io) => {
@@ -214,31 +196,20 @@ const createAdminCommands = (deps) => {
         return;
       }
 
-      const startTime = Date.now();
-      const endTime = startTime + (duration * 1000);
-      timeoutUsers.set(targetUsername, {
-        endTime,
+      // Canonical timeout side effect (state + save + per-socket 'timeout'
+      // notify), shared with POST /api/timeout. The two '⏱️ TIMEOUT:'
+      // diagnostic logs print the post-set timeout list, so they run via
+      // onAfterRecord (after record+save, before per-socket notifies).
+      timeoutUserWithSideEffects({
+        io,
+        connectedUsers,
+        username: targetUsername,
+        durationSeconds: duration,
         reason: 'Timed out by administrator',
-        startTime: startTime
-      });
-
-      // Save to disk
-      saveModerationData();
-
-      console.log(`⏱️ TIMEOUT: Adding "${targetUsername}" to timeout list for ${duration}s`);
-      console.log(`⏱️ TIMEOUT: Current timed out users:`, Array.from(timeoutUsers.keys()));
-
-      // Send timeout notification to affected users
-      connectedUsers.forEach((user, socketId) => {
-        if (user.username === targetUsername) {
-          const targetSocket = io.sockets.sockets.get(socketId);
-          if (targetSocket) {
-            targetSocket.emit('timeout', {
-              duration: duration,
-              endTime: endTime,
-              reason: 'You have been timed out by an administrator'
-            });
-          }
+        notifySockets: true,
+        onAfterRecord: () => {
+          console.log(`⏱️ TIMEOUT: Adding "${targetUsername}" to timeout list for ${duration}s`);
+          console.log(`⏱️ TIMEOUT: Current timed out users:`, Array.from(timeoutUsers.keys()));
         }
       });
 

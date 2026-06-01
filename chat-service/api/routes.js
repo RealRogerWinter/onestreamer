@@ -49,7 +49,9 @@ function createApiRouter(deps) {
     bannedUsers,
     bannedUsersData,
     timeoutUsers,
-    saveModerationData
+    saveModerationData,
+    banUserWithSideEffects,
+    timeoutUserWithSideEffects
   } = moderationService;
 
   const router = express.Router();
@@ -127,68 +129,41 @@ function createApiRouter(deps) {
         return res.status(400).json({ error: 'Username is required' });
       }
 
-      bannedUsers.add(username);
-      bannedUsersData.set(username, {
-        bannedAt: new Date().toISOString(),
+      // Canonical ban side effect (state + save + message-splice +
+      // 'delete-messages' emit + socket disconnect). The ban notification is
+      // broadcast via the hook so it lands at the original point: after
+      // 'delete-messages' and before the disconnects.
+      const { messagesDeleted, disconnectedCount } = banUserWithSideEffects({
+        io,
+        chatMessages,
+        connectedUsers,
+        username,
         reason: reason || 'No reason provided',
-        bannedBy: bannedBy || 'Admin'
-      });
+        bannedBy: bannedBy || 'Admin',
+        logPrefix: 'MODERATION',
+        onAfterDeleteMessages: () => {
+          // Notify all clients about the ban
+          const banMessage = {
+            id: `ban_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            username: '🔨 MODERATION',
+            color: '#FF0000',
+            message: `${username} has been banned from chat and their messages have been removed${reason ? `: ${reason}` : ''}`,
+            timestamp: formatTime(),
+            fullTimestamp: new Date().toISOString(),
+            isSystem: true
+          };
 
-      // Save to disk
-      saveModerationData();
-
-      // Delete all messages from the banned user
-      const messagesToDelete = [];
-      const lowerUsername = username.toLowerCase();
-
-      // Find all message IDs from the banned user
-      for (let i = chatMessages.length - 1; i >= 0; i--) {
-        if (chatMessages[i].username && chatMessages[i].username.toLowerCase() === lowerUsername) {
-          messagesToDelete.push(chatMessages[i].id);
-          chatMessages.splice(i, 1); // Remove from array
-        }
-      }
-
-      // Emit event to delete messages from all clients
-      if (messagesToDelete.length > 0) {
-        io.emit('delete-messages', { messageIds: messagesToDelete, reason: 'user_banned' });
-        console.log(`🔨 MODERATION: Deleted ${messagesToDelete.length} messages from ${username}`);
-      }
-
-      // Notify all clients about the ban
-      const banMessage = {
-        id: `ban_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        username: '🔨 MODERATION',
-        color: '#FF0000',
-        message: `${username} has been banned from chat and their messages have been removed${reason ? `: ${reason}` : ''}`,
-        timestamp: formatTime(),
-        fullTimestamp: new Date().toISOString(),
-        isSystem: true
-      };
-
-      chatMessages.push(banMessage);
-      if (chatMessages.length > MAX_CHAT_HISTORY) {
-        chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
-      }
-
-      io.emit('new-message', banMessage);
-
-      // Disconnect all sockets with this username (case-insensitive)
-      let disconnectedCount = 0;
-      connectedUsers.forEach((user, socketId) => {
-        if (user.username.toLowerCase() === lowerUsername) {
-          const targetSocket = io.sockets.sockets.get(socketId);
-          if (targetSocket) {
-            console.log(`🔨 MODERATION: Disconnecting socket ${socketId} for user ${user.username}`);
-            targetSocket.emit('banned', { reason: 'You have been banned by an administrator' });
-            targetSocket.disconnect(true);
-            disconnectedCount++;
+          chatMessages.push(banMessage);
+          if (chatMessages.length > MAX_CHAT_HISTORY) {
+            chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
           }
+
+          io.emit('new-message', banMessage);
         }
       });
 
-      console.log(`🔨 MODERATION: ${username} banned by ${bannedBy || 'admin'}, deleted ${messagesToDelete.length} messages, disconnected ${disconnectedCount} connection(s)`);
-      res.json({ success: true, message: `${username} has been banned, ${messagesToDelete.length} messages deleted` });
+      console.log(`🔨 MODERATION: ${username} banned by ${bannedBy || 'admin'}, deleted ${messagesDeleted} messages, disconnected ${disconnectedCount} connection(s)`);
+      res.json({ success: true, message: `${username} has been banned, ${messagesDeleted} messages deleted` });
     } catch (error) {
       console.error('Error banning user:', error);
       res.status(500).json({ error: 'Failed to ban user' });
@@ -227,16 +202,17 @@ function createApiRouter(deps) {
         return res.status(400).json({ error: 'Username and duration are required' });
       }
 
-      const startTime = Date.now();
-      const endTime = startTime + (duration * 1000);
-      timeoutUsers.set(username, {
-        endTime,
+      // Canonical timeout side effect (state + save). The HTTP route never
+      // emitted per-socket 'timeout' events, so notifySockets is false; the
+      // public broadcast below is unchanged.
+      timeoutUserWithSideEffects({
+        io,
+        connectedUsers,
+        username,
+        durationSeconds: duration,
         reason: reason || 'No reason provided',
-        startTime: startTime
+        notifySockets: false
       });
-
-      // Save to disk
-      saveModerationData();
 
       // Notify all clients
       const timeoutMessage = {

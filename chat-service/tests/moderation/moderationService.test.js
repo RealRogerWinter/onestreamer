@@ -8,6 +8,26 @@ function tmpStore() {
   return path.join(dir, 'moderation_data.json');
 }
 
+// Minimal stubs for the side-effect deps banUserWithSideEffects needs. These
+// tests only care about the persistence (state mutation + atomic save), so the
+// socket / message-ring effects are no-ops with no connected users.
+const noopIo = { emit() {}, sockets: { sockets: new Map() } };
+
+// Record a ban purely for its persistence side effect (mirrors what the HTTP
+// route / admin command do, minus broadcasts/disconnects since no users are
+// connected here).
+function banForTest(svc, username, reason, bannedBy) {
+  svc.banUserWithSideEffects({
+    io: noopIo,
+    chatMessages: [],
+    connectedUsers: new Map(),
+    username,
+    reason: reason || 'No reason recorded',
+    bannedBy: bannedBy || 'Unknown',
+    logPrefix: 'MODERATION'
+  });
+}
+
 describe('moderationService persistence (atomic write + .bak recovery)', () => {
   let storePath;
   let logSpy;
@@ -27,11 +47,11 @@ describe('moderationService persistence (atomic write + .bak recovery)', () => {
   test('save is atomic (no leftover .tmp) and snapshots the prior state to .bak', () => {
     const svc = createModerationService({ moderationDataPath: storePath });
 
-    svc.banUser('Alice', 'spam', 'admin'); // first save: no prior file -> no .bak
+    banForTest(svc, 'Alice', 'spam', 'admin'); // first save: no prior file -> no .bak
     expect(fs.existsSync(storePath)).toBe(true);
     expect(fs.existsSync(`${storePath}.bak`)).toBe(false);
 
-    svc.banUser('Bob'); // second save: prior {Alice} copied to .bak
+    banForTest(svc, 'Bob'); // second save: prior {Alice} copied to .bak
     expect(fs.existsSync(`${storePath}.tmp`)).toBe(false); // temp renamed away
     const primary = JSON.parse(fs.readFileSync(storePath, 'utf8'));
     expect(primary.bannedUsers.map((u) => u.username).sort()).toEqual(['Alice', 'Bob']);
@@ -41,8 +61,8 @@ describe('moderationService persistence (atomic write + .bak recovery)', () => {
 
   test('load recovers bans from .bak when the primary store is corrupt', () => {
     const svc = createModerationService({ moderationDataPath: storePath });
-    svc.banUser('Carol', 'abuse', 'mod'); // save #1: primary {Carol}
-    svc.banUser('Dave'); // save #2: .bak {Carol}, primary {Carol, Dave}
+    banForTest(svc, 'Carol', 'abuse', 'mod'); // save #1: primary {Carol}
+    banForTest(svc, 'Dave'); // save #2: .bak {Carol}, primary {Carol, Dave}
 
     fs.writeFileSync(storePath, '{ this is not valid json'); // simulate crash mid-write
 

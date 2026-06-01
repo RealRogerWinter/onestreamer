@@ -12,10 +12,12 @@
 //   - Same lazy expiry: isUserTimedOut removes the entry on a stale hit.
 //   - Same console-log lines (callers grep these in operations).
 //
-// State is exposed both via mutation helpers (banUser, unbanUser, etc.) and
-// via the raw bannedUsers/bannedUsersData/timeoutUsers handles so that legacy
-// call sites in the command parser and HTTP API (PR-K3/K4/K5) can keep
-// mutating the same instances unchanged until they migrate.
+// Ban + timeout (the heavy paths that were duplicated between the HTTP API and
+// the command parser) are exposed via side-effecting helpers
+// (banUserWithSideEffects, timeoutUserWithSideEffects) so both call sites run
+// identical logic. Unban / remove-timeout / the moderation listing stay on the
+// raw bannedUsers/bannedUsersData/timeoutUsers handles, which are also read by
+// the socket layer (core/socketHandlers.js) on every connect / message.
 
 const fs = require('fs');
 
@@ -29,10 +31,8 @@ const fs = require('fs');
  *   saveModerationData: () => void,
  *   isUserBanned: (username: string) => boolean,
  *   isUserTimedOut: (username: string) => boolean,
- *   banUser: (username: string, reason?: string, bannedBy?: string) => void,
- *   unbanUser: (username: string) => boolean,
- *   timeoutUser: (username: string, durationMs: number, reason?: string, startedBy?: string) => { endTime: number, startTime: number },
- *   removeTimeout: (username: string) => boolean,
+ *   banUserWithSideEffects: (opts: object) => { messagesDeleted: number, disconnectedCount: number, messageIds: string[] },
+ *   timeoutUserWithSideEffects: (opts: object) => { endTime: number, startTime: number, notifiedCount: number },
  *   bannedUsers: Set<string>,
  *   bannedUsersData: Map<string, object>,
  *   timeoutUsers: Map<string, object>
@@ -187,51 +187,164 @@ function createModerationService(deps) {
     return false;
   }
 
-  // Mutation helpers. Callers that need to drive surrounding effects
-  // (deleting messages, disconnecting sockets, broadcasting bans) should
-  // perform those alongside the helper — these only touch state + disk.
-  function banUser(username, reason, bannedBy) {
+  // Canonical ban side effect. Both the HTTP API (POST /api/ban) and the
+  // /ban admin command route through this so the two paths are byte-identical.
+  // It performs the full ban side effect that was previously duplicated:
+  //   1. record the ban in bannedUsers / bannedUsersData,
+  //   2. persist to disk (saveModerationData),
+  //   3. backward-splice every message from the target out of `chatMessages`,
+  //   4. broadcast 'delete-messages' for those IDs (only if any were removed),
+  //   5. disconnect every connected socket whose username matches
+  //      (case-insensitive), emitting 'banned' and forcing disconnect.
+  // The ban-notification broadcast and the admin/HTTP response are NOT done
+  // here — callers differ in how they announce the ban (the HTTP route pushes
+  // a '🔨 MODERATION' system message into the ring; the admin command calls
+  // sendSystemMessage) — so each caller keeps that bit unchanged. Because the
+  // HTTP route originally broadcast its notification BETWEEN the
+  // 'delete-messages' emit and the socket disconnects, an optional
+  // `onAfterDeleteMessages` hook is invoked at exactly that point so the HTTP
+  // event ordering is preserved byte-for-byte. The admin command broadcasts
+  // AFTER disconnect, so it passes no hook and calls sendSystemMessage itself
+  // once the helper returns.
+  //
+  // Log lines for the delete + disconnect steps are emitted here with a
+  // caller-supplied `logPrefix` ('MODERATION' for HTTP, 'BAN' for the command)
+  // so the exact log strings each path produced are preserved.
+  //
+  // @param {object} opts
+  // @param {object} opts.io                socket.io server
+  // @param {Array<object>} opts.chatMessages  shared message ring
+  // @param {Map} opts.connectedUsers       socketId -> user info
+  // @param {string} opts.username          target username
+  // @param {string} opts.reason            reason stored in bannedUsersData
+  // @param {string} opts.bannedBy          actor stored in bannedUsersData
+  // @param {string} opts.logPrefix         '🔨 <logPrefix>:' log namespace
+  // @param {() => void} [opts.onAfterRecord]
+  //        invoked after the ban is recorded + saved, before message-splicing
+  //        (the /ban command's two 'Adding...'/'Current banned users' logs)
+  // @param {(messageIds: string[]) => void} [opts.onAfterDeleteMessages]
+  //        invoked after the 'delete-messages' emit and before disconnects
+  // @returns {{ messagesDeleted: number, disconnectedCount: number, messageIds: string[] }}
+  function banUserWithSideEffects(opts) {
+    const { io, chatMessages, connectedUsers, username, reason, bannedBy, logPrefix, onAfterRecord, onAfterDeleteMessages } = opts;
+
     bannedUsers.add(username);
     bannedUsersData.set(username, {
       bannedAt: new Date().toISOString(),
-      reason: reason || 'No reason recorded',
-      bannedBy: bannedBy || 'Unknown'
+      reason,
+      bannedBy
     });
-    saveModerationData();
-  }
 
-  function unbanUser(username) {
-    if (!bannedUsers.has(username)) {
-      return false;
+    // Save to disk
+    saveModerationData();
+
+    // Caller hook: ran after record+save, before message-splicing.
+    if (typeof onAfterRecord === 'function') {
+      onAfterRecord();
     }
-    bannedUsers.delete(username);
-    bannedUsersData.delete(username);
-    saveModerationData();
-    return true;
+
+    // Delete all messages from the banned user
+    const messagesToDelete = [];
+    const lowerUsername = username.toLowerCase();
+
+    // Find all message IDs from the banned user
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].username && chatMessages[i].username.toLowerCase() === lowerUsername) {
+        messagesToDelete.push(chatMessages[i].id);
+        chatMessages.splice(i, 1); // Remove from array
+      }
+    }
+
+    // Emit event to delete messages from all clients
+    if (messagesToDelete.length > 0) {
+      io.emit('delete-messages', { messageIds: messagesToDelete, reason: 'user_banned' });
+      console.log(`🔨 ${logPrefix}: Deleted ${messagesToDelete.length} messages from ${username}`);
+    }
+
+    // Caller hook: broadcast the ban notification at the canonical point the
+    // HTTP route used (after delete-messages, before disconnects).
+    if (typeof onAfterDeleteMessages === 'function') {
+      onAfterDeleteMessages(messagesToDelete);
+    }
+
+    // Disconnect all sockets with this username (case-insensitive)
+    let disconnectedCount = 0;
+    connectedUsers.forEach((user, socketId) => {
+      if (user.username.toLowerCase() === lowerUsername) {
+        const targetSocket = io.sockets.sockets.get(socketId);
+        if (targetSocket) {
+          console.log(`🔨 ${logPrefix}: Disconnecting socket ${socketId} for user ${user.username}`);
+          targetSocket.emit('banned', { reason: 'You have been banned by an administrator' });
+          targetSocket.disconnect(true);
+          disconnectedCount++;
+        }
+      }
+    });
+
+    return { messagesDeleted: messagesToDelete.length, disconnectedCount, messageIds: messagesToDelete };
   }
 
-  function timeoutUser(username, durationMs, reason, startedBy) {
+  // Canonical timeout side effect. Both POST /api/timeout and the /timeout
+  // admin command route through this. It:
+  //   1. records the timeout in timeoutUsers (startTime + endTime),
+  //   2. persists to disk (saveModerationData),
+  //   3. emits a 'timeout' socket event to every connected socket whose
+  //      username matches the target (the admin command's behavior).
+  // The public broadcast + response differ per caller and stay in the callers.
+  //
+  // Socket matching here is EXACT-case to preserve the /timeout command's
+  // prior behavior (`user.username === targetUsername`). The HTTP route never
+  // emitted per-socket 'timeout' events, so it passes `notifySockets: false`.
+  //
+  // @param {object} opts
+  // @param {object} opts.io                socket.io server
+  // @param {Map} opts.connectedUsers       socketId -> user info
+  // @param {string} opts.username          target username
+  // @param {number} opts.durationSeconds   timeout length in seconds
+  // @param {string} opts.reason            reason stored in timeoutUsers
+  // @param {boolean} opts.notifySockets    emit per-socket 'timeout' events
+  // @param {() => void} [opts.onAfterRecord]
+  //        invoked after the timeout is recorded + saved, before per-socket
+  //        notifies (the /timeout command's two diagnostic logs)
+  // @returns {{ endTime: number, startTime: number, notifiedCount: number }}
+  function timeoutUserWithSideEffects(opts) {
+    const { io, connectedUsers, username, durationSeconds, reason, notifySockets, onAfterRecord } = opts;
+
     const startTime = Date.now();
-    const endTime = startTime + durationMs;
+    const endTime = startTime + (durationSeconds * 1000);
     timeoutUsers.set(username, {
       endTime,
-      reason: reason || 'No reason recorded',
-      startTime,
-      // startedBy is informational; legacy on-disk format doesn't persist it
-      // but callers can pass it for logging consistency.
-      ...(startedBy ? { startedBy } : {})
+      reason,
+      startTime: startTime
     });
-    saveModerationData();
-    return { endTime, startTime };
-  }
 
-  function removeTimeout(username) {
-    if (!timeoutUsers.has(username)) {
-      return false;
-    }
-    timeoutUsers.delete(username);
+    // Save to disk
     saveModerationData();
-    return true;
+
+    // Caller hook: ran after record+save, before per-socket notifies.
+    if (typeof onAfterRecord === 'function') {
+      onAfterRecord();
+    }
+
+    // Send timeout notification to affected users (exact-case match)
+    let notifiedCount = 0;
+    if (notifySockets) {
+      connectedUsers.forEach((user, socketId) => {
+        if (user.username === username) {
+          const targetSocket = io.sockets.sockets.get(socketId);
+          if (targetSocket) {
+            targetSocket.emit('timeout', {
+              duration: durationSeconds,
+              endTime: endTime,
+              reason: 'You have been timed out by an administrator'
+            });
+            notifiedCount++;
+          }
+        }
+      });
+    }
+
+    return { endTime, startTime, notifiedCount };
   }
 
   return {
@@ -239,13 +352,13 @@ function createModerationService(deps) {
     saveModerationData,
     isUserBanned,
     isUserTimedOut,
-    banUser,
-    unbanUser,
-    timeoutUser,
-    removeTimeout,
-    // Direct state handles for legacy call sites (parser + HTTP API) that
-    // mutate alongside other side effects. PR-K3/K4/K5 will migrate those
-    // to use the helpers above.
+    banUserWithSideEffects,
+    timeoutUserWithSideEffects,
+    // Direct state handles. The HTTP API (api/routes.js) drives unban /
+    // remove-timeout / moderation-listing directly off these (an unconditional
+    // delete + save that intentionally differs from a membership-checked
+    // helper), and the socket layer (core/socketHandlers.js) reads
+    // isUserBanned/isUserTimedOut + timeoutUsers on every connect / message.
     bannedUsers,
     bannedUsersData,
     timeoutUsers
