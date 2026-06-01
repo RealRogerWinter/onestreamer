@@ -7,70 +7,16 @@ const AuthService = require('../services/AuthService');
 const authService = new AuthService();
 const { db, getAsync, runAsync, allAsync } = require('../database/database');
 const UserRepository = require('../database/repository/UserRepository');
+// Canonical auth middleware — sets req.userRecord and enforces the is_banned
+// 403 (a banned moderator/admin is blocked). Replaces the former inline
+// authenticate/authenticateModerator/authenticateAdmin closures, which set
+// req.currentUser and skipped the is_banned check (privilege gap).
+const { authenticateModerator, authenticateAdmin } = require('../middleware/auth');
 
 // Module-scoped repository — matches the PR-Q pattern used inside
 // AccountService / admin.js (stateless services re-instantiated at module
 // scope per CLAUDE.md).
 const userRepository = new UserRepository({ getAsync, runAsync, allAsync });
-
-// Middleware to check if user is authenticated
-const authenticate = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    
-    logger.debug('🔐 Moderation auth check - Header:', authHeader);
-    logger.debug('🔐 Moderation auth check - Token:', token ? `${token.substring(0, 20)}...` : 'No token');
-    
-    if (!token) {
-        return res.status(401).json({ error: 'Unauthorized - No token provided' });
-    }
-    
-    try {
-        const decoded = authService.verifyToken(token);
-        if (!decoded) {
-            logger.debug('❌ Token verification returned null');
-            return res.status(403).json({ error: 'Invalid token - verification failed' });
-        }
-        logger.debug('✅ Moderation auth successful for user:', decoded.id);
-        req.user = decoded;
-        next();
-    } catch (err) {
-        logger.debug('❌ Token verification error:', err.message);
-        return res.status(403).json({ error: `Invalid token: ${err.message}` });
-    }
-};
-
-// Middleware to check if user is moderator or admin
-const authenticateModerator = async (req, res, next) => {
-    authenticate(req, res, async () => {
-        try {
-            const user = await authService.accountService.getUserById(req.user.id);
-            if (!user || (!user.is_moderator && !user.is_admin)) {
-                return res.status(403).json({ error: 'Insufficient permissions' });
-            }
-            req.currentUser = user;
-            next();
-        } catch (err) {
-            return res.status(500).json({ error: 'Failed to verify permissions' });
-        }
-    });
-};
-
-// Middleware to check if user is admin
-const authenticateAdmin = async (req, res, next) => {
-    authenticate(req, res, async () => {
-        try {
-            const user = await authService.accountService.getUserById(req.user.id);
-            if (!user || !user.is_admin) {
-                return res.status(403).json({ error: 'Admin access required' });
-            }
-            req.currentUser = user;
-            next();
-        } catch (err) {
-            return res.status(500).json({ error: 'Failed to verify permissions' });
-        }
-    });
-};
 
 // Ban user from chat
 router.post('/ban-chat', authenticateModerator, async (req, res) => {
@@ -109,7 +55,7 @@ router.post('/ban-chat', authenticateModerator, async (req, res) => {
             }
             
             // Don't allow moderators to ban other moderators (only admins can)
-            if (user.is_moderator && !req.currentUser.is_admin) {
+            if (user.is_moderator && !req.userRecord.is_admin) {
                 return res.status(403).json({ error: 'Only administrators can ban moderators' });
             }
         }
@@ -122,7 +68,7 @@ router.post('/ban-chat', authenticateModerator, async (req, res) => {
                 db.run(
                     `INSERT OR REPLACE INTO banned_usernames (username, banned_by, banned_at, ban_type) 
                      VALUES (?, ?, CURRENT_TIMESTAMP, 'chat')`,
-                    [username, req.currentUser.id],
+                    [username, req.userRecord.id],
                     (err) => {
                         if (err) reject(err);
                         else resolve();
@@ -131,7 +77,7 @@ router.post('/ban-chat', authenticateModerator, async (req, res) => {
             });
         } else {
             // Update user's chat_banned status for registered users
-            await userRepository.banFromChat(user.id, req.currentUser.id);
+            await userRepository.banFromChat(user.id, req.userRecord.id);
         }
         
         // Log the moderation action
@@ -139,7 +85,7 @@ router.post('/ban-chat', authenticateModerator, async (req, res) => {
             db.run(
                 `INSERT INTO moderation_logs (moderator_id, moderator_username, target_user_id, target_username, action, reason, created_at) 
                  VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-                [req.currentUser.id, req.currentUser.username, user ? user.id : null, username, 'chat_ban', 'Banned from chat via user profile', ],
+                [req.userRecord.id, req.userRecord.username, user ? user.id : null, username, 'chat_ban', 'Banned from chat via user profile', ],
                 (err) => {
                     if (err) reject(err);
                     else resolve();
@@ -175,7 +121,7 @@ router.post('/timeout', authenticateModerator, async (req, res) => {
         }
         
         // Don't allow moderators to timeout other moderators (only admins can)
-        if (user.is_moderator && !req.currentUser.is_admin) {
+        if (user.is_moderator && !req.userRecord.is_admin) {
             return res.status(403).json({ error: 'Only administrators can timeout moderators' });
         }
         
@@ -201,14 +147,14 @@ router.post('/timeout', authenticateModerator, async (req, res) => {
         const timeoutUntil = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
         
         // Update user's timeout status
-        await userRepository.setChatTimeout(user.id, req.currentUser.id, timeoutUntil);
+        await userRepository.setChatTimeout(user.id, req.userRecord.id, timeoutUntil);
         
         // Log the moderation action
         await new Promise((resolve, reject) => {
             db.run(
                 `INSERT INTO moderation_logs (moderator_id, moderator_username, target_user_id, target_username, action, reason, created_at) 
                  VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-                [req.currentUser.id, req.currentUser.username, user.id, username, 'chat_timeout', `Timeout for ${duration}`, ],
+                [req.userRecord.id, req.userRecord.username, user.id, username, 'chat_timeout', `Timeout for ${duration}`, ],
                 (err) => {
                     if (err) reject(err);
                     else resolve();
@@ -244,14 +190,14 @@ router.post('/ban-streamer', authenticateAdmin, async (req, res) => {
         }
         
         // Update user's streaming_banned status
-        await userRepository.banFromStreaming(user.id, req.currentUser.id);
+        await userRepository.banFromStreaming(user.id, req.userRecord.id);
         
         // Log the moderation action
         await new Promise((resolve, reject) => {
             db.run(
                 `INSERT INTO moderation_logs (moderator_id, moderator_username, target_user_id, target_username, action, reason, created_at) 
                  VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-                [req.currentUser.id, req.currentUser.username, user.id, username, 'streaming_ban', 'Banned from streaming via user profile', ],
+                [req.userRecord.id, req.userRecord.username, user.id, username, 'streaming_ban', 'Banned from streaming via user profile', ],
                 (err) => {
                     if (err) reject(err);
                     else resolve();
