@@ -245,7 +245,6 @@ describe('MovieBotService inheritance', () => {
         // via setTimeout that would leak into the next test.
         expect(typeof MovieBotService.prototype.processTranscriptionWithBatching).toBe('function');
         expect(typeof MovieBotService.prototype.buildMoviePrompt).toBe('function');
-        expect(typeof MovieBotService.prototype.assignBotsToCategories).toBe('function');
         expect(typeof MovieBotService.prototype.getStatus).toBe('function');
         expect(typeof MovieBotService.prototype.updateConfig).toBe('function');
     });

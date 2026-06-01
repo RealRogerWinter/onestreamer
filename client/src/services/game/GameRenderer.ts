@@ -670,9 +670,8 @@ export class GameRenderer {
    * Adjust color brightness based on variant
    */
   private adjustColor(color: string, variant: number): string {
-    // Simple brightness adjustment based on variant
-    const adjustment = (variant % 3 - 1) * 10;
-    return color; // TODO: Implement actual color adjustment
+    // Player-color variants are not yet differentiated; return the base color.
+    return color;
   }
 
   /**

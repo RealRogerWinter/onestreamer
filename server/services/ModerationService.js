@@ -841,7 +841,7 @@ class ModerationService extends EventEmitter {
       return 'url-relay';
     }
     const t = this.streamService.getStreamType();
-    if (t === 'viewbot' || t === 'webrtc-viewbot') return 'viewbot';
+    if (t === 'viewbot') return 'viewbot';
     if (t === 'url-relay') return 'url-relay';
     return 'webcam';
   }

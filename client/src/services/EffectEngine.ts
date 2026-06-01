@@ -410,32 +410,12 @@ export class EffectEngine extends EventEmitter {
           animation: 'speedLines'
         });
       
-      case 'filter':
-        return new OverlayEffect({
-          ...commonConfig,
-          filterType: effectData.config.filterType || 'rainbow'
-        });
-      
       case 'aura':
         return new OverlayEffect({
           ...commonConfig,
           overlayType: 'aura',
           color: effectData.config.color || '#ffd700'
         });
-      
-      case 'composite':
-        // Create multiple effects for composite type
-        if (effectData.config.effects) {
-          effectData.config.effects.forEach((subEffect: string, index: number) => {
-            const subEffectData = {
-              ...effectData,
-              id: `${effectData.id}_${subEffect}_${index}`,
-              type: subEffect
-            };
-            this.triggerEffect(subEffectData);
-          });
-        }
-        return null;
       
       case 'drawing':
         // console.log('✏️ ENGINE: Creating DrawingEffect for drawing phase', effectData.config);

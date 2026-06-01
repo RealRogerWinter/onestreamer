@@ -20,24 +20,6 @@ class MovieBotService extends TranscriptionDrivenBotService {
 
 [TRANSCRIPTION_DATA]`;
 
-        // Categorization is dormant — processTranscriptionWithBatching dispatches
-        // to every enabled MovieBot regardless of category. Fields preserved so
-        // any external observer of this.botCategories / this.preferredBotCategories
-        // (admin tooling, tests) keeps working.
-        this.botCategories = {
-            'quick_reactors': [],
-            'deep_thinkers': [],
-            'creative_minds': [],
-        };
-        this.preferredBotCategories = {
-            'TheComedian': 'quick_reactors',
-            'TheInventor': 'quick_reactors',
-            'TheScholar': 'deep_thinkers',
-            'TheMystic': 'deep_thinkers',
-            'TheArtist': 'creative_minds',
-            'TheStrategist': 'creative_minds',
-        };
-
         // 100 ms delay to let the database wrapper finish initialization
         // before we issue the first SELECT against moviebot_config.
         setTimeout(() => this.loadConfigFromDatabase(), 100);
@@ -156,75 +138,6 @@ class MovieBotService extends TranscriptionDrivenBotService {
     }
 
     // ── MovieBot-specific dispatch & prompting ─────────────────────────
-
-    assignBotsToCategories(availableBots) {
-        this.botCategories = {
-            'quick_reactors': [],
-            'deep_thinkers': [],
-            'creative_minds': [],
-        };
-        const unassignedBots = [];
-        for (const bot of availableBots) {
-            const preferredCategory = this.preferredBotCategories[bot.name];
-            if (preferredCategory) {
-                this.botCategories[preferredCategory].push(bot.name);
-            } else {
-                unassignedBots.push(bot.name);
-            }
-        }
-        const categories = Object.keys(this.botCategories);
-        for (const botName of unassignedBots) {
-            let minCategory = categories[0];
-            let minCount = this.botCategories[minCategory].length;
-            for (const category of categories) {
-                if (this.botCategories[category].length < minCount) {
-                    minCount = this.botCategories[category].length;
-                    minCategory = category;
-                }
-            }
-            this.botCategories[minCategory].push(botName);
-        }
-        return this.botCategories;
-    }
-
-    async processTranscription(transcriptionText) {
-        const validation = this.validateMeaningfulTranscription(transcriptionText);
-        if (!validation) {
-            logger.debug(`⚠️ MovieBotService: Transcription invalid or lacks meaningful content, skipping`);
-            return;
-        }
-        const { cleanText } = validation;
-        try {
-            const chatHistory = await this.getChatHistory(this.config.chatHistoryLimit);
-            const movieBotEnabledBots = await this.chatBotService.getMovieBotEnabledBots();
-            if (movieBotEnabledBots.length === 0) {
-                logger.debug('⚠️ MovieBotService: No chatbots with MovieBot enabled');
-                return;
-            }
-            const moviePrompt = this.buildMoviePrompt(cleanText, chatHistory);
-            for (const bot of movieBotEnabledBots) {
-                try {
-                    this.logPrompt(bot.username, moviePrompt, cleanText);
-                    const response = await this.chatBotService.generateMovieComment(bot, moviePrompt, chatHistory);
-                    if (response && response.success && response.message) {
-                        this.logBotResponse(bot.username, cleanText, response.message);
-                        this.emit('moviebot-comment', {
-                            bot: bot.username,
-                            transcription: cleanText,
-                            comment: response.message,
-                            timestamp: new Date(),
-                        });
-                    } else {
-                        this.logBotError(bot.username, cleanText, response?.error || 'No response generated');
-                    }
-                } catch (error) {
-                    this.logBotError(bot.username, cleanText, error.message);
-                }
-            }
-        } catch (error) {
-            logger.error('❌ MovieBotService: Error processing transcription:', error);
-        }
-    }
 
     async processTranscriptionWithBatching(transcriptionText, cycleIndex) {
         const validation = this.validateMeaningfulTranscription(transcriptionText);
