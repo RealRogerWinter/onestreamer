@@ -59,68 +59,32 @@ class RotationController {
       // Get the real bot instance after connection
       bot = owner.activeBots.get(owner.currentLiveBot);
 
-      // CRITICAL: After server restart, we need to handle the case where
-      // GStreamer processes are already running from before the restart
-
-      // Check if GStreamer processes are already running
-      const { execSync } = require('child_process');
-      let gstreamerRunning = false;
+      // After server restart, no media is carried over — start streaming normally.
       try {
-        const psOutput = execSync('ps aux | grep -E "gst-launch.*filesrc" | grep -v grep', { encoding: 'utf8' });
-        gstreamerRunning = psOutput.trim().length > 0;
-        if (gstreamerRunning) {
-          logger.debug(`🎬 VIEWBOT CLIENT: Detected existing GStreamer processes running`);
-        }
-      } catch (e) {
-        // No processes found
-        gstreamerRunning = false;
-      }
+        logger.debug(`🎬 VIEWBOT CLIENT: Starting fresh stream for ${owner.currentLiveBot}`);
+        const result = await bot.startStreaming();
 
-      if (gstreamerRunning) {
-        // GStreamer is already running - just set up the bot state properly
-        logger.debug(`✅ VIEWBOT CLIENT: Media already streaming - setting up rotation system`);
+        if (result.success) {
+          // Start rotation check timer after successful start
+          bot.startRotationCheckTimer();
+          logger.debug(`✅ VIEWBOT CLIENT: Stream started with rotation timer`);
+        } else if (!result.success && result.message === 'Already streaming') {
+          // Bot thinks it's streaming but it isn't - fix the state
+          logger.debug(`🔧 VIEWBOT CLIENT: Fixing inconsistent state - bot thinks it's streaming but it's not`);
+          bot.streaming = false;
+          bot.isStartingStream = false;
 
-        // Mark bot as streaming
-        bot.streaming = true;
-        bot.isStartingStream = false;
-
-        // Start rotation check timer
-        bot.startRotationCheckTimer();
-
-        // Set up failsafe timer if video file is configured
-        if (bot.config && bot.config.videoFile) {
-          await bot.setupDurationBasedRotation(bot.config.videoFile);
-        }
-
-        logger.debug(`✅ VIEWBOT CLIENT: Rotation system restored for ${owner.currentLiveBot}`);
-      } else {
-        // No media running - start streaming normally
-        try {
-          logger.debug(`🎬 VIEWBOT CLIENT: Starting fresh stream for ${owner.currentLiveBot}`);
-          const result = await bot.startStreaming();
-
-          if (result.success) {
-            // Start rotation check timer after successful start
+          // Try starting again
+          const retryResult = await bot.startStreaming();
+          if (retryResult.success) {
             bot.startRotationCheckTimer();
-            logger.debug(`✅ VIEWBOT CLIENT: Stream started with rotation timer`);
-          } else if (!result.success && result.message === 'Already streaming') {
-            // Bot thinks it's streaming but GStreamer isn't running - fix the state
-            logger.debug(`🔧 VIEWBOT CLIENT: Fixing inconsistent state - bot thinks it's streaming but it's not`);
-            bot.streaming = false;
-            bot.isStartingStream = false;
-
-            // Try starting again
-            const retryResult = await bot.startStreaming();
-            if (retryResult.success) {
-              bot.startRotationCheckTimer();
-              logger.debug(`✅ VIEWBOT CLIENT: Stream started after state fix`);
-            }
+            logger.debug(`✅ VIEWBOT CLIENT: Stream started after state fix`);
           }
-        } catch (error) {
-          logger.error(`❌ VIEWBOT CLIENT: Failed to restart ${owner.currentLiveBot}:`, error);
-          owner.currentLiveBot = null;
-          await owner.startViewBotRotation();
         }
+      } catch (error) {
+        logger.error(`❌ VIEWBOT CLIENT: Failed to restart ${owner.currentLiveBot}:`, error);
+        owner.currentLiveBot = null;
+        await owner.startViewBotRotation();
       }
     } else {
       logger.debug(`🔄 VIEWBOT CLIENT: No previous bot, starting fresh rotation`);
@@ -437,18 +401,6 @@ class RotationController {
 
     logger.debug(`🔄 Processing rotation request from ${botId} (reason: ${reason})`);
 
-    // Clean up any orphaned GStreamer processes before rotation
-    try {
-      const { execSync } = require('child_process');
-      const orphanedCount = execSync('pgrep -f gst-launch | wc -l', { encoding: 'utf8' }).trim();
-      if (parseInt(orphanedCount) > 1) {
-        logger.debug(`🧹 Cleaning up ${orphanedCount} orphaned GStreamer processes before rotation`);
-        execSync('pkill -9 -f gst-launch 2>/dev/null || true', { stdio: 'ignore' });
-      }
-    } catch (e) {
-      // Ignore errors
-    }
-
     // Find the next available ViewBot to rotate to
     // Include placeholders and lazy-loaded bots
     const availableBots = Array.from(owner.activeBots.values()).filter(bot =>
@@ -659,7 +611,7 @@ class RotationController {
     }
 
     if (owner.rotationEnabled && !owner.realStreamerActive) {
-      // CRITICAL: Wait for GStreamer cleanup to fully complete (2.5s for SIGKILL + reference clearing)
+      // CRITICAL: Wait for process cleanup to fully complete (2.5s for SIGKILL + reference clearing)
       const cleanupDelay = 3000; // 3 second delay to ensure processes are killed and references cleared
       logger.debug(`⏳ Waiting ${cleanupDelay}ms for complete cleanup before rotation...`);
 

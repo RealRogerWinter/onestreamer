@@ -515,7 +515,7 @@ module.exports = function registerTakeover(io, socket, deps) {
         }
 
         // Check if ViewBot has producers ready
-        // CRITICAL FIX: ViewBots use GStreamer, not MediaSoup producers
+        // CRITICAL FIX: ViewBots stream via LiveKit/ffmpeg, not MediaSoup producers
         // Always treat ViewBot producers as ready since they stream via RTP/FFmpeg
         const producerMap = mediasoupService.producers.get(socket.id);
         const hasVideo = data.isViewBot ? true : (producerMap && producerMap.has('video'));
@@ -525,7 +525,7 @@ module.exports = function registerTakeover(io, socket, deps) {
         if ((data.isViewBot || (hasVideo && hasAudio)) && !notifiedStreamers.has(socket.id)) {
           notifiedStreamers.add(socket.id);
 
-          logger.info(`🎬 TAKEOVER: ViewBot ${socket.id} ready - notifying viewers immediately (GStreamer mode)`);
+          logger.info(`🎬 TAKEOVER: ViewBot ${socket.id} ready - notifying viewers immediately (LiveKit mode)`);
           const streamerDisplayName = await getStreamerDisplayName(socket.id);
           const emitTimestamp = Date.now();
 
@@ -540,8 +540,8 @@ module.exports = function registerTakeover(io, socket, deps) {
               isWebRTC: true,
               streamType: 'viewbot',
               isViewBot: true,
-              hasVideo: true,  // ViewBots always have video via GStreamer
-              hasAudio: true,  // ViewBots always have audio via GStreamer
+              hasVideo: true,  // ViewBots always have video via LiveKit
+              hasAudio: true,  // ViewBots always have audio via LiveKit
               producerVerified: true,
               streamStartTime: emitTimestamp,
               timestamp: emitTimestamp,

@@ -42,7 +42,6 @@ jest.mock('../../services/ViewBotDatabaseService', () => {
 
 jest.mock('../../services/ProcessManager', () => ({
     killBotProcesses: jest.fn(async () => {}),
-    killAllGStreamerProcesses: jest.fn(async () => {}),
     registerProcess: jest.fn(),
     reapAll: jest.fn(async () => ({ tracked: 0 })),
     stop: jest.fn(async () => {}),

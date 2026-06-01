@@ -182,7 +182,7 @@ class TranscriptionService extends EventEmitter {
             
             session.bufferFile = bufferResult.bufferFile;
             
-            // Give FFmpeg/GStreamer a moment to be ready
+            // Give FFmpeg a moment to be ready
             await new Promise(resolve => setTimeout(resolve, 300));
 
             // Resume the consumer to start audio flow (MediaSoup only)

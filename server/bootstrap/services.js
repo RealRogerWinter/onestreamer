@@ -144,7 +144,7 @@ const BotEventBus = require('../services/BotEventBus');
 const LifecycleManager = require('../services/LifecycleManager');
 
 // PR 8.3 (Phase 8): ProcessManager singleton — registry for ViewBot
-// gst-launch / chrome child PIDs. Exposes a stoppable.stop() that reaps
+// ffmpeg / chrome child PIDs. Exposes a stoppable.stop() that reaps
 // any tracked PIDs not already cleaned up by their owning service's
 // stop() path. See ADR-0011 (lifecycle contract) and the runbook
 // `viewbot-fleet-misbehaving.md` for the orphan-process hazard this

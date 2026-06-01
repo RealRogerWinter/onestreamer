@@ -1597,7 +1597,7 @@ async function startServer() {
     // failure (and that pattern is too entangled to lift cleanly).
     logger.info('🚀 VIEWBOT CLIENT: ViewBotClientService constructed by factory');
 
-    // Set global reference for ViewBotClientService (needed for GStreamer WebRTC)
+    // Set global reference for ViewBotClientService (needed for ViewBot WebRTC wiring)
     global.viewBotClientService = viewBotClientService;
 
     // CRITICAL: Wire ViewBotClientService to ViewBotURLService for real streamer protection
