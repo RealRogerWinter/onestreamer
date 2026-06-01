@@ -4,7 +4,7 @@
  * These are stateless, side-effect-free shaping/parsing functions extracted
  * verbatim from ViewBotLiveKitService so they can be unit-tested in isolation
  * and reused across the LiveKit ingress/room call sites. The risky core
- * (GStreamer/FFmpeg spawning + the live ingress/room lifecycle) stays in the
+ * (FFmpeg spawning + the live ingress/room lifecycle) stays in the
  * parent service — only the deterministic argument/config shaping lives here.
  */
 

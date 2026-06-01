@@ -172,17 +172,6 @@ function registerShutdownHandlers(deps) {
                 exec('taskkill /F /IM ffmpeg.exe 2>nul', (err) => {
                     if (!err) logger.info('   - Killed remaining FFmpeg processes');
                 });
-                exec('taskkill /F /IM gst-launch-1.0.exe 2>nul', (err) => {
-                    if (!err) logger.info('   - Killed remaining GStreamer (gst-launch-1.0) processes');
-                });
-                exec('taskkill /F /IM gst-launch.exe 2>nul', (err) => {
-                    if (!err) logger.info('   - Killed remaining GStreamer (gst-launch) processes');
-                });
-                exec('taskkill /F /IM gst-play-1.0.exe 2>nul', () => {});
-                exec('taskkill /F /IM gst-inspect-1.0.exe 2>nul', () => {});
-                exec('wmic process where "CommandLine like \'%gstreamer%\'" delete 2>nul', (err) => {
-                    if (!err) logger.info('   - Killed processes with gstreamer in command line');
-                });
                 exec('taskkill /F /IM chrome.exe /FI "COMMANDLINE like *puppeteer*" 2>nul', (err) => {
                     if (!err) logger.info('   - Killed Puppeteer Chrome processes');
                 });
@@ -191,11 +180,6 @@ function registerShutdownHandlers(deps) {
                 exec('pkill -TERM ffmpeg 2>/dev/null', (err) => {
                     if (!err) logger.info('   - Killed remaining FFmpeg processes');
                 });
-                exec('pkill -TERM gst-launch 2>/dev/null', (err) => {
-                    if (!err) logger.info('   - Killed remaining GStreamer processes');
-                });
-                exec('pkill -f "gst-launch-1.0" 2>/dev/null', () => {});
-                exec('pkill -f "gstreamer" 2>/dev/null', () => {});
                 exec('pkill -f "puppeteer.*chrome" 2>/dev/null', (err) => {
                     if (!err) logger.info('   - Killed Puppeteer Chrome processes');
                 });
@@ -264,11 +248,8 @@ function registerShutdownHandlers(deps) {
         try {
             if (process.platform === 'win32') {
                 execSync('taskkill /F /IM ffmpeg.exe 2>nul', { stdio: 'ignore' });
-                execSync('taskkill /F /IM gst-launch-1.0.exe 2>nul', { stdio: 'ignore' });
-                execSync('taskkill /F /IM gst-launch.exe 2>nul', { stdio: 'ignore' });
             } else {
                 execSync('pkill -9 ffmpeg 2>/dev/null', { stdio: 'ignore' });
-                execSync('pkill -9 gst-launch 2>/dev/null', { stdio: 'ignore' });
             }
         } catch (e) {
             // Ignore errors in emergency cleanup

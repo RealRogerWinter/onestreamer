@@ -3,7 +3,7 @@ const fs = require('fs');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ProcessManager' });
 /**
- * Centralized Process Manager for ViewBot GStreamer processes
+ * Centralized Process Manager for ViewBot media processes
  *
  * Tracks PIDs spawned by ViewBot services and provides:
  *   - per-bot kill paths (`killBotProcesses`, `prepareForStreaming`,
@@ -50,7 +50,7 @@ class ProcessManager {
   /**
    * Kill ALL processes for a specific bot (steady-state per-bot cleanup,
    * not shutdown). Uses process-group kill via SIGKILL to bring down
-   * gst-launch + any of its children together.
+   * the process and any of its children together.
    */
   async killBotProcesses(botId) {
     const processes = this.activeProcesses.get(botId);
@@ -83,24 +83,6 @@ class ProcessManager {
   }
 
   /**
-   * Kill ALL GStreamer processes system-wide (nuclear option)
-   */
-  async killAllGStreamerProcesses() {
-    logger.debug('☢️ ProcessManager: NUCLEAR CLEANUP - Killing ALL GStreamer processes');
-
-    try {
-      // Kill all gst-launch processes
-      execSync("pkill -9 -f gst-launch", { stdio: 'ignore' });
-    } catch (error) {
-      // No processes to kill
-    }
-
-    // Clear all tracking
-    this.activeProcesses.clear();
-    this.currentStreamingBot = null;
-  }
-
-  /**
    * Ensure only one bot can stream at a time
    */
   async prepareForStreaming(botId) {
@@ -122,9 +104,6 @@ class ProcessManager {
 
       // Kill any existing processes for this bot (in case of duplicates)
       await this.killBotProcesses(botId);
-
-      // Nuclear option: Kill ALL GStreamer processes to ensure clean state
-      await this.killAllGStreamerProcesses();
 
       // Set as current streaming bot
       this.currentStreamingBot = botId;

@@ -8,10 +8,7 @@
  * Approach (mock-based, no real socket.io server):
  *   - Build mock `io` / `socket` objects whose `.on`/`.emit` are jest.fn().
  *   - Invoke `registerViewBotHandler(io, socket, deps)` with mocked services.
- *   - CAPTURE the registered handlers from `socket.on.mock.calls`. NOTE the
- *     handler registers TWO listeners for `viewbot-create-webrtc-transport`
- *     (a legacy one taking `(data)` and a modern one taking `(data, callback)`)
- *     — both are captured and asserted independently.
+ *   - CAPTURE the registered handlers from `socket.on.mock.calls`.
  *   - INVOKE representative handlers with sample payloads and assert on:
  *       emitted events + targets, service methods called with args,
  *       state transitions, and ack/callback behaviour.
@@ -51,11 +48,6 @@ function makeDeps(overrides = {}) {
   const transports = new Map();
 
   const mediasoupService = {
-    router: {
-      createPlainTransport: jest.fn(),
-    },
-    createWebRtcTransport: jest.fn(),
-    createProducer: jest.fn(),
     cleanupSocketResources: jest.fn().mockResolvedValue(undefined),
     producers,
     transports,
@@ -105,8 +97,7 @@ function makeDeps(overrides = {}) {
 /**
  * Register the handler and return a lookup over the captured listeners.
  * `get(event)` returns the FIRST listener; `getAll(event)` returns every
- * listener registered for that event (matters for the dual
- * `viewbot-create-webrtc-transport`).
+ * listener registered for that event.
  */
 function register(io, socket, deps) {
   registerViewBotHandler(io, socket, deps);
@@ -131,203 +122,19 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('ViewBotHandler — registration', () => {
-  test('registers the full set of viewbot events (with dual webrtc-transport listener)', () => {
+  test('registers the surviving set of viewbot events', () => {
     const io = makeIo();
     const socket = makeSocket();
     const handlers = register(io, socket, makeDeps());
 
     // PIN: every event name the handler wires, in registration order.
     expect(handlers.events).toEqual([
-      'viewbot-create-plain-bridge',
-      'viewbot-create-webrtc-transport',
-      'viewbot-create-plain-transport',
       'stop-stream',
-      'viewbot-create-webrtc-transport',
-      'viewbot-create-transport',
-      'viewbot-webrtc-produce',
-      'viewbot-create-producers',
       'viewbot-stream-ready',
       'viewbot-rotation-request',
       'viewbot-video-ended',
       'viewbot-cleanup-transports',
     ]);
-
-    // PIN: two distinct listeners share the webrtc-transport event name.
-    expect(handlers.getAll('viewbot-create-webrtc-transport')).toHaveLength(2);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// viewbot-create-plain-bridge
-// ---------------------------------------------------------------------------
-
-describe('ViewBotHandler — viewbot-create-plain-bridge', () => {
-  test('creates a plain transport, stores it under botId-kind, acks with port + fixed video ssrc', async () => {
-    const io = makeIo();
-    const socket = makeSocket();
-    const deps = makeDeps();
-    deps.mediasoupService.router.createPlainTransport.mockResolvedValue({
-      tuple: { localPort: 40100 },
-    });
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-create-plain-bridge')(
-      { botId: 'bot1', producerId: 'p1', kind: 'video', rtpParameters: {} },
-      callback,
-    );
-
-    expect(deps.mediasoupService.router.createPlainTransport).toHaveBeenCalledTimes(1);
-    // PIN: bridge stored under the `${botId}-${kind}` key.
-    expect(deps.mediasoupService.plainBridges.get('bot1-video')).toEqual({
-      tuple: { localPort: 40100 },
-    });
-    // PIN: fixed video SSRC 11111111 + the listen port returned to caller.
-    expect(callback).toHaveBeenCalledWith({
-      success: true,
-      rtpPort: 40100,
-      ssrc: 11111111,
-    });
-  });
-
-  test('uses fixed audio ssrc 22222222 for audio kind', async () => {
-    const io = makeIo();
-    const socket = makeSocket();
-    const deps = makeDeps();
-    deps.mediasoupService.router.createPlainTransport.mockResolvedValue({
-      tuple: { localPort: 40200 },
-    });
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-create-plain-bridge')(
-      { botId: 'bot1', kind: 'audio' },
-      callback,
-    );
-
-    expect(callback).toHaveBeenCalledWith({
-      success: true,
-      rtpPort: 40200,
-      ssrc: 22222222,
-    });
-  });
-
-  test('acks failure with error message on createPlainTransport throw', async () => {
-    const io = makeIo();
-    const socket = makeSocket();
-    const deps = makeDeps();
-    deps.mediasoupService.router.createPlainTransport.mockRejectedValue(new Error('boom'));
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-create-plain-bridge')({ botId: 'bot1', kind: 'video' }, callback);
-
-    expect(callback).toHaveBeenCalledWith({ success: false, error: 'boom' });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// viewbot-create-webrtc-transport (legacy, first listener — takes (data))
-// ---------------------------------------------------------------------------
-
-describe('ViewBotHandler — viewbot-create-webrtc-transport (legacy)', () => {
-  test('creates transport + producer, emits viewbot-producer-created with transport options', async () => {
-    const io = makeIo();
-    const socket = makeSocket();
-    const deps = makeDeps();
-
-    const transportOptions = {
-      id: 'tx-legacy',
-      iceParameters: { i: 1 },
-      iceCandidates: [{ c: 1 }],
-      dtlsParameters: { d: 1 },
-    };
-    deps.mediasoupService.createWebRtcTransport.mockResolvedValue(transportOptions);
-
-    const producer = { id: 'prod-legacy', appData: {} };
-    const transport = { produce: jest.fn().mockResolvedValue(producer) };
-    // The legacy handler looks the transport up under `viewbot-<botId>-<kind>`.
-    deps.mediasoupService.transports.set('viewbot-bot1-video', transport);
-
-    const handlers = register(io, socket, deps);
-    const legacy = handlers.getAll('viewbot-create-webrtc-transport')[0];
-    await legacy({ botId: 'bot1', kind: 'video', rtpParameters: { r: 1 } });
-
-    // PIN: transport created with the `viewbot-<botId>-<kind>` key.
-    expect(deps.mediasoupService.createWebRtcTransport).toHaveBeenCalledWith('viewbot-bot1-video');
-    // PIN: producer produced on that transport with passed rtpParameters.
-    expect(transport.produce).toHaveBeenCalledWith({
-      kind: 'video',
-      rtpParameters: { r: 1 },
-      paused: false,
-      appData: { isViewBot: true, botId: 'bot1' },
-    });
-    // PIN: success emit carries producer + ICE/DTLS details and rtpPort 0.
-    expect(socket.emit).toHaveBeenCalledWith('viewbot-producer-created', {
-      botId: 'bot1',
-      kind: 'video',
-      producerId: 'prod-legacy',
-      transportId: 'tx-legacy',
-      iceParameters: { i: 1 },
-      iceCandidates: [{ c: 1 }],
-      dtlsParameters: { d: 1 },
-      rtpPort: 0,
-    });
-  });
-
-  test('emits viewbot-producer-error when transport missing after creation', async () => {
-    const io = makeIo();
-    const socket = makeSocket();
-    const deps = makeDeps();
-    deps.mediasoupService.createWebRtcTransport.mockResolvedValue({ id: 'tx' });
-    // Do NOT seed transports map → "Transport not found after creation".
-
-    const handlers = register(io, socket, deps);
-    const legacy = handlers.getAll('viewbot-create-webrtc-transport')[0];
-    await legacy({ botId: 'bot1', kind: 'video', rtpParameters: {} });
-
-    expect(socket.emit).toHaveBeenCalledWith('viewbot-producer-error', {
-      botId: 'bot1',
-      kind: 'video',
-      error: 'Transport not found after creation',
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// viewbot-create-webrtc-transport (modern, second listener — takes (data, cb))
-// ---------------------------------------------------------------------------
-
-describe('ViewBotHandler — viewbot-create-webrtc-transport (modern)', () => {
-  test('creates transport under socket.id (non-producing) and acks transportOptions', async () => {
-    const io = makeIo();
-    const socket = makeSocket('socket-xyz');
-    const deps = makeDeps();
-    const transportOptions = { id: 'tx-modern', iceCandidates: [1, 2] };
-    deps.mediasoupService.createWebRtcTransport.mockResolvedValue(transportOptions);
-
-    const handlers = register(io, socket, deps);
-    const modern = handlers.getAll('viewbot-create-webrtc-transport')[1];
-    const callback = jest.fn();
-    await modern({ botId: 'bot1' }, callback);
-
-    // PIN: modern variant uses socket.id and the (id, false) signature.
-    expect(deps.mediasoupService.createWebRtcTransport).toHaveBeenCalledWith('socket-xyz', false);
-    expect(callback).toHaveBeenCalledWith({ success: true, transportOptions });
-  });
-
-  test('acks failure on transport creation error', async () => {
-    const io = makeIo();
-    const socket = makeSocket();
-    const deps = makeDeps();
-    deps.mediasoupService.createWebRtcTransport.mockRejectedValue(new Error('no-tx'));
-
-    const handlers = register(io, socket, deps);
-    const modern = handlers.getAll('viewbot-create-webrtc-transport')[1];
-    const callback = jest.fn();
-    await modern({ botId: 'bot1' }, callback);
-
-    expect(callback).toHaveBeenCalledWith({ success: false, error: 'no-tx' });
   });
 });
 
@@ -372,198 +179,6 @@ describe('ViewBotHandler — stop-stream', () => {
     expect(deps.notifyViewersStreamEnded).toHaveBeenCalledTimes(1);
     // Plain transport cleanup skipped (not a viewbot).
     expect(deps.plainTransportService.cleanup).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// viewbot-create-transport (paired plain RTP / LiveKit branch)
-// ---------------------------------------------------------------------------
-
-describe('ViewBotHandler — viewbot-create-transport', () => {
-  test('mediasoup path: creates paired video+audio transports, stores under socket.id, acks ports', async () => {
-    const io = makeIo();
-    const socket = makeSocket('vb-sock');
-    const deps = makeDeps();
-
-    const videoTransport = { id: 'vtx', tuple: { localPort: 5001 } };
-    const audioTransport = { id: 'atx', tuple: { localPort: 5002 } };
-    deps.mediasoupService.router.createPlainTransport
-      .mockResolvedValueOnce(videoTransport)
-      .mockResolvedValueOnce(audioTransport);
-
-    const prevAdapter = process.env.USE_WEBRTC_ADAPTER;
-    delete process.env.USE_WEBRTC_ADAPTER;
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-create-transport')({ botId: 'bot1' }, callback);
-
-    if (prevAdapter === undefined) delete process.env.USE_WEBRTC_ADAPTER;
-    else process.env.USE_WEBRTC_ADAPTER = prevAdapter;
-
-    expect(deps.mediasoupService.router.createPlainTransport).toHaveBeenCalledTimes(2);
-    // PIN: paired transports stored under socket.id with botId tag.
-    expect(deps.mediasoupService.transports.get('vb-sock')).toEqual({
-      video: videoTransport,
-      audio: audioTransport,
-      botId: 'bot1',
-    });
-    expect(callback).toHaveBeenCalledWith({
-      videoTransportId: 'vtx',
-      audioTransportId: 'atx',
-      videoPort: 5001,
-      audioPort: 5002,
-    });
-  });
-
-  test('livekit path: returns useLiveKit ack with token + whipUrl, no plain transports created', async () => {
-    const io = makeIo();
-    const socket = makeSocket();
-    const deps = makeDeps();
-
-    const prevAdapter = process.env.USE_WEBRTC_ADAPTER;
-    const prevBackend = process.env.WEBRTC_BACKEND;
-    process.env.USE_WEBRTC_ADAPTER = 'true';
-    process.env.WEBRTC_BACKEND = 'livekit';
-
-    const generateToken = jest.fn().mockResolvedValue('lk-token');
-    global.webrtcAdapter = { _backend: { generateToken } };
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-create-transport')({ botId: 'bot1' }, callback);
-
-    // restore env / global
-    if (prevAdapter === undefined) delete process.env.USE_WEBRTC_ADAPTER;
-    else process.env.USE_WEBRTC_ADAPTER = prevAdapter;
-    if (prevBackend === undefined) delete process.env.WEBRTC_BACKEND;
-    else process.env.WEBRTC_BACKEND = prevBackend;
-    delete global.webrtcAdapter;
-
-    expect(generateToken).toHaveBeenCalledWith('bot1', {
-      canPublish: true,
-      canSubscribe: false,
-      canPublishData: false,
-    });
-    expect(callback).toHaveBeenCalledWith({
-      useLiveKit: true,
-      token: 'lk-token',
-      whipUrl: 'https://onestreamer.live/livekit/rtc',
-      message: 'Use LiveKit GStreamer pipeline with whipsink',
-    });
-    // PIN: LiveKit branch short-circuits before creating plain transports.
-    expect(deps.mediasoupService.router.createPlainTransport).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// viewbot-webrtc-produce (priority gating)
-// ---------------------------------------------------------------------------
-
-describe('ViewBotHandler — viewbot-webrtc-produce', () => {
-  test('blocks when a real streamer is active', async () => {
-    const io = makeIo();
-    const socket = makeSocket();
-    const deps = makeDeps();
-    deps._viewBotClientService.realStreamerActive = true;
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-webrtc-produce')({ botId: 'bot1' }, callback);
-
-    expect(callback).toHaveBeenCalledWith({
-      success: false,
-      error: 'Real streamer is active - viewbot creation blocked',
-    });
-    expect(deps.mediasoupService.createProducer).not.toHaveBeenCalled();
-  });
-
-  test('blocks when a url-stream is the current streamer', async () => {
-    const io = makeIo();
-    const socket = makeSocket('vb-sock');
-    const deps = makeDeps();
-    deps.streamService.getCurrentStreamer.mockReturnValue('url-stream-99');
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-webrtc-produce')({ botId: 'bot1' }, callback);
-
-    expect(callback).toHaveBeenCalledWith({
-      success: false,
-      error: 'URL stream is active - viewbot creation blocked',
-    });
-  });
-
-  test('creates video + audio producers and acks their ids when not blocked', async () => {
-    const io = makeIo();
-    const socket = makeSocket('vb-sock');
-    const deps = makeDeps();
-    deps.mediasoupService.transports.set('vb-sock', { /* truthy transport */ id: 'tx' });
-    deps.mediasoupService.createProducer
-      .mockResolvedValueOnce({ producer: { id: 'vprod', appData: {} } })
-      .mockResolvedValueOnce({ producer: { id: 'aprod', appData: {} } });
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-webrtc-produce')({ botId: 'bot1' }, callback);
-
-    expect(deps.mediasoupService.createProducer).toHaveBeenCalledTimes(2);
-    // PIN: producers created against socket.id with kind labels.
-    expect(deps.mediasoupService.createProducer.mock.calls[0][0]).toBe('vb-sock');
-    expect(deps.mediasoupService.createProducer.mock.calls[0][2]).toBe('video');
-    expect(deps.mediasoupService.createProducer.mock.calls[1][2]).toBe('audio');
-    expect(callback).toHaveBeenCalledWith({
-      success: true,
-      videoProducerId: 'vprod',
-      audioProducerId: 'aprod',
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// viewbot-create-producers
-// ---------------------------------------------------------------------------
-
-describe('ViewBotHandler — viewbot-create-producers', () => {
-  test('produces video+audio on paired transports and acks producer ids', async () => {
-    const io = makeIo();
-    const socket = makeSocket('vb-sock');
-    const deps = makeDeps();
-
-    const videoProducer = { id: 'vp' };
-    const audioProducer = { id: 'ap' };
-    const videoT = { produce: jest.fn().mockResolvedValue(videoProducer) };
-    const audioT = { produce: jest.fn().mockResolvedValue(audioProducer) };
-    deps.mediasoupService.transports.set('vb-sock', { video: videoT, audio: audioT });
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-create-producers')({ botId: 'bot1' }, callback);
-
-    expect(videoT.produce).toHaveBeenCalledTimes(1);
-    expect(audioT.produce).toHaveBeenCalledTimes(1);
-    // PIN: producers stored under socket.id keyed by kind.
-    const stored = deps.mediasoupService.producers.get('vb-sock');
-    expect(stored.get('video')).toBe(videoProducer);
-    expect(stored.get('audio')).toBe(audioProducer);
-    expect(callback).toHaveBeenCalledWith({
-      success: true,
-      videoProducerId: 'vp',
-      audioProducerId: 'ap',
-    });
-  });
-
-  test('acks error when paired transports are missing', async () => {
-    const io = makeIo();
-    const socket = makeSocket('vb-sock');
-    const deps = makeDeps();
-    // No transports seeded → "Transports not found".
-
-    const handlers = register(io, socket, deps);
-    const callback = jest.fn();
-    await handlers.get('viewbot-create-producers')({ botId: 'bot1' }, callback);
-
-    expect(callback).toHaveBeenCalledWith({ error: 'Transports not found' });
   });
 });
 

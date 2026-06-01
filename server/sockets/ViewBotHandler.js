@@ -6,34 +6,9 @@
  * GameHandler, StreamHandler, MediaSoupHandler).
  *
  * Handlers (all logic byte-equivalent to the original inline versions):
- *   - viewbot-create-plain-bridge      Create a Plain RTP bridge transport so
- *                                      FFmpeg/GStreamer can pipe RTP into a
- *                                      WebRTC producer.
- *   - viewbot-create-webrtc-transport  (Two listeners, both preserved.) The
- *                                      first is the legacy variant that also
- *                                      auto-creates a producer + transport
- *                                      under a `viewbot-<botId>-<kind>` key.
- *                                      The second is the modern mobile-friendly
- *                                      variant that just returns
- *                                      transport options to the caller.
- *   - viewbot-create-plain-transport   Create a Plain RTP transport for a
- *                                      single kind and immediately produce on
- *                                      it with fixed SSRCs / RTP parameters.
  *   - stop-stream                      ViewBot-rotation-specific stream stop
  *                                      (NOT the user-facing stop-streaming —
  *                                      that one is in StreamHandler).
- *   - viewbot-create-transport         Create paired Plain RTP transports
- *                                      (video + audio) for a ViewBot. Branches
- *                                      to LiveKit-mode response when the
- *                                      adapter is configured for LiveKit.
- *   - viewbot-webrtc-produce           Create video + audio producers on the
- *                                      ViewBot's WebRTC transport with the
- *                                      canned RTP parameters that GStreamer
- *                                      will send. Includes real-streamer-vs-
- *                                      viewbot priority gating.
- *   - viewbot-create-producers         Same idea but on the paired Plain RTP
- *                                      transports created by
- *                                      viewbot-create-transport.
  *   - viewbot-stream-ready             ViewBot reports media is flowing; emit
  *                                      stream-ready with the same dedup as the
  *                                      MediaSoup path.
@@ -80,32 +55,21 @@
  * cohesive sub-modules under `server/sockets/viewBotHandler/`, each exporting
  * a registration fn with the SAME `(io, socket, deps)` signature. This parent
  * is now a thin orchestrator that calls each sub-registration in the original
- * `socket.on` order — event names, payloads, emit targets, and the dual
- * `viewbot-create-webrtc-transport` listener are all preserved byte-for-byte:
+ * `socket.on` order — event names, payloads, and emit targets are all
+ * preserved:
  *
- *   1. registerTransportCreation     viewbot-create-plain-bridge,
- *                                    viewbot-create-webrtc-transport (legacy),
- *                                    viewbot-create-plain-transport
- *   2. registerStopStream            stop-stream
- *   3. registerProducerCreation      viewbot-create-webrtc-transport (modern),
- *                                    viewbot-create-transport,
- *                                    viewbot-webrtc-produce,
- *                                    viewbot-create-producers
- *   4. registerRotationAndCleanup    viewbot-stream-ready,
+ *   1. registerStopStream            stop-stream
+ *   2. registerRotationAndCleanup    viewbot-stream-ready,
  *                                    viewbot-rotation-request,
  *                                    viewbot-video-ended,
  *                                    viewbot-cleanup-transports
  */
-const registerTransportCreation = require('./viewBotHandler/registerTransportCreation');
 const registerStopStream = require('./viewBotHandler/registerStopStream');
-const registerProducerCreation = require('./viewBotHandler/registerProducerCreation');
 const registerRotationAndCleanup = require('./viewBotHandler/registerRotationAndCleanup');
 
 module.exports = function registerViewBotHandler(io, socket, deps) {
   // Sub-registrations are invoked in the same order the events were originally
   // registered inline, so `socket.on` call ordering is identical.
-  registerTransportCreation(io, socket, deps);
   registerStopStream(io, socket, deps);
-  registerProducerCreation(io, socket, deps);
   registerRotationAndCleanup(io, socket, deps);
 };
