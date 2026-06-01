@@ -1560,12 +1560,6 @@ async function startServer() {
     // Set global reference for ViewBotClientService (needed for ViewBot WebRTC wiring)
     global.viewBotClientService = viewBotClientService;
 
-    // CRITICAL: Wire ViewBotClientService to ViewBotURLService for real streamer protection
-    if (global.viewBotURLService) {
-      global.viewBotURLService.setViewBotClientService(viewBotClientService);
-      logger.info('✅ VIEWBOT CLIENT: Linked to ViewBotURLService for real streamer protection');
-    }
-
     // CRITICAL: Initialize the service to restore state from database
     try {
       logger.info('🚀 VIEWBOT CLIENT: Initializing ViewBotClientService...');

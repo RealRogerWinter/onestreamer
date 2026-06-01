@@ -27,7 +27,6 @@ module.exports = function registerTakeover(io, socket, deps) {
     viewbotSocketIds,
     lastEmittedStreamReady,
     getViewbotService,
-    getViewBotClientService,
     enrichStreamStatus,
     getStreamerDisplayName,
     notifyViewersStreamStarted,
@@ -111,7 +110,6 @@ module.exports = function registerTakeover(io, socket, deps) {
       // in index.js (post-startServer), so they may be null at registration
       // time but populated by the time a real client fires this event.
       const viewbotService = getViewbotService();
-      const viewBotClientService = getViewBotClientService();
 
       // Check if this is a viewbot or real user (already checked above for permissions)
       const isRealUser = !isViewBot;
@@ -166,12 +164,6 @@ module.exports = function registerTakeover(io, socket, deps) {
         logger.info(`🤖 COOLDOWN: Skipping cooldown check for viewbot ${socket.id} - viewbots bypass all cooldowns`);
       }
 
-      // If real user is taking over, set the realStreamerActive flag
-      if (isRealUser && viewBotClientService) {
-        logger.info(`✅ PRIORITY: Real user ${socket.id} starting stream - protecting from viewbot interruption`);
-        viewBotClientService.setRealStreamerStatus(true);
-      }
-
       if (currentStreamer) {
         logger.info(`📢 TAKEOVER: Notifying current streamer ${currentStreamer} of takeover by ${socket.id}`);
 
@@ -203,33 +195,9 @@ module.exports = function registerTakeover(io, socket, deps) {
                 await SimpleViewBotRotation.stopRotation();
                 logger.info('✅ TAKEOVER: SimpleViewBotRotation stopped');
               }
-
-              // Also stop via ViewBotClientService if available
-              if (viewBotClientService && viewBotClientService.stopViewBotRotation) {
-                viewBotClientService.stopViewBotRotation();
-                logger.info('✅ TAKEOVER: ViewBotClientService rotation stopped');
-              }
-
-              // Stop via global viewBotRotation if available
-              if (global.viewBotRotation && global.viewBotRotation.stopRotation) {
-                await global.viewBotRotation.stopRotation();
-                logger.info('✅ TAKEOVER: global.viewBotRotation stopped');
-              }
-
-              // Stop via unified rotation if available
-              if (global.unifiedViewBotRotation && global.unifiedViewBotRotation.stopRotation) {
-                await global.unifiedViewBotRotation.stopRotation();
-                logger.info('✅ TAKEOVER: unifiedViewBotRotation stopped');
-              }
             } catch (viewbotStopError) {
               logger.error({ err: viewbotStopError }, '❌ TAKEOVER: Error stopping viewbot');
             }
-          }
-
-          // Set protection for real user taking over from viewbot
-          if (isRealUser && viewBotClientService) {
-            viewBotClientService.setRealStreamerStatus(true);
-            logger.info('✅ TAKEOVER: Set real streamer status to protect from viewbot interruption');
           }
         } else {
           // Current streamer is a real user (not a viewbot)
