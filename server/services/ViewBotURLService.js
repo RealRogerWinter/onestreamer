@@ -46,8 +46,8 @@ class ViewBotURLService extends EventEmitter {
       audio: 5006
     };
 
-    // Backend detection
-    this.backend = webrtcConfig.backend || 'mediasoup';
+    // Backend is LiveKit-only (ADR-0024)
+    this.backend = webrtcConfig.backend;
 
     // Stream counter for unique IDs
     this.streamCounter = 0;

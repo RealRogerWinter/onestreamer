@@ -49,8 +49,8 @@ class SimpleViewBotRotation {
       enabled: false  // Disabled by default, will be enabled when needed
     };
 
-    // Detect backend
-    this.backend = webrtcConfig.backend || 'mediasoup';
+    // Backend is LiveKit-only (ADR-0024)
+    this.backend = webrtcConfig.backend;
     logger.debug(`🎯 SimpleViewBotRotation: Initialized (backend: ${this.backend})`);
   }
 
