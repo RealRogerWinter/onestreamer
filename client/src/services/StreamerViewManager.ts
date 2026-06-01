@@ -169,51 +169,6 @@ export class StreamerViewManager {
 
   private setupSocketListeners() {
     // console.log('🎬 STREAMER VIEW: Setting up socket listeners for socket:', this.socket.id);
-    
-    // Listen for ALL visual effects being applied (for debugging)
-    this.socket.onAny((eventName, ...args) => {
-      if (eventName.includes('visual-effect')) {
-        // console.log('🎬 STREAMER VIEW: Received socket event:', eventName, 'Data:', args[0]);
-        // console.log('🎬 STREAMER VIEW: Event data structure:', JSON.stringify(args[0], null, 2));
-        
-        // IMPORTANT: Process the events here since the specific listeners aren't always working
-        if (eventName === 'visual-effect-applied' && args[0]) {
-          const data = args[0];
-          // console.log('🎬 STREAMER VIEW: Processing from onAny - isStreamerPreview:', data.isStreamerPreview);
-          if (data.isStreamerPreview) {
-            // console.log('🎬 STREAMER VIEW: Effect is for streamer preview, handling:', data.effectId);
-            this.handleEffectApplied(data.effectId, data.duration || 15000);
-          }
-        } else if (eventName === 'visual-effects-cleared') {
-          // console.log('🎬 STREAMER VIEW: Processing clear all effects from onAny');
-          this.handleAllEffectsCleared();
-        } else if (eventName === 'visual-effect-removed' && args[0]) {
-          // console.log('🎬 STREAMER VIEW: Processing effect removal from onAny:', args[0].effectInstanceId);
-          this.handleEffectRemoved(args[0].effectInstanceId);
-        }
-      }
-    });
-    
-    // Also try to set up specific listener (keeping for compatibility)
-    this.socket.on('visual-effect-applied', (data: any) => {
-      // console.log('🎬 STREAMER VIEW: SPECIFIC HANDLER - visual-effect-applied handler triggered!', data);
-      if (data && data.isStreamerPreview) {
-        // console.log('🎬 STREAMER VIEW: SPECIFIC HANDLER - Effect is for streamer preview, handling:', data.effectId);
-        this.handleEffectApplied(data.effectId, data.duration || 15000);
-      } else {
-        // console.log('🎬 STREAMER VIEW: SPECIFIC HANDLER - Effect not for streamer preview, ignoring', data);
-      }
-    });
-
-    // Listen for visual effects being removed
-    this.socket.on('visual-effect-removed', (data) => {
-      this.handleEffectRemoved(data.effectInstanceId);
-    });
-
-    // Listen for all effects being cleared
-    this.socket.on('visual-effects-cleared', () => {
-      this.handleAllEffectsCleared();
-    });
 
     // Listen for stream status changes
     this.socket.on('stream-status', (data) => {
@@ -680,9 +635,6 @@ export class StreamerViewManager {
     this.removeStreamViewIndicator();
     
     // Remove socket listeners
-    this.socket.off('visual-effect-applied');
-    this.socket.off('visual-effect-removed');
-    this.socket.off('visual-effects-cleared');
     this.socket.off('stream-status');
   }
 

@@ -4,7 +4,6 @@ import { WebRTCClientAdapter } from '../../services/WebRTCClientAdapter';
 import PerformanceMonitorComponent from '../PerformanceMonitor';
 import { StreamSwitchManager } from '../../services/StreamSwitchManager';
 import CanvasEffectOverlay from '../canvas/CanvasEffectOverlay';
-import { useVisualFxProcessor } from '../../hooks/useVisualFxProcessor';
 import CookieService, { COOKIE_NAMES } from '../../services/CookieService';
 import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../../utils/browserDetection';
 import VideoControls from '../video/VideoControls';
@@ -38,8 +37,6 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const [userInteracted, setUserInteracted] = useState(false);
   const [autoPlayAttempts, setAutoPlayAttempts] = useState(0);
 
-  // Initialize Visual FX processor for viewer
-  const visualFxProcessor = useVisualFxProcessor(videoRef, socket, false);
   const playRetryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // WebRTC connection observability state (extracted to useWebRTCConnection).
