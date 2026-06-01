@@ -14,7 +14,7 @@
  * that wires all four `process.on(...)` handlers and contains
  * byte-equivalent shutdown + cleanup bodies. Lazy-init services
  * (`viewbotService`, `viewBotClientService`, `recordingService`,
- * `visualFxService`, etc.) are passed via
+ * etc.) are passed via
  * getter functions so the lookup happens at signal-time (always after
  * `startServer()` has wired them — or `undefined` if the signal arrives
  * during startup, in which case the relevant cleanup steps no-op).
@@ -30,7 +30,7 @@
  *   1. Run stoppables registry in reverse-construction order (PR 1.2).
  *   2. Disconnect all live sockets BEFORE media-process termination so
  *      the per-disconnect cleanup paths don't race the kill loop.
- *   3. Service-level cleanup (ViewBot/Recording/VisualFx) BEFORE the
+ *   3. Service-level cleanup (ViewBot/Recording) BEFORE the
  *      `pkill -TERM ffmpeg` safety net — services with stop() get a
  *      clean exit; the safety net catches strays.
  *   4. MediaSoup `cleanupAll()` AFTER stream-level cleanup so the SFU
@@ -63,7 +63,6 @@ function registerShutdownHandlers(deps) {
         getViewbotService,
         getViewBotClientService,
         getRecordingService,
-        getVisualFxService,
         getTimeTrackingService,
         getResourceMonitor,
         getSessionService,
@@ -149,17 +148,6 @@ function registerShutdownHandlers(deps) {
                     if (recording.ffmpegProcess && !recording.ffmpegProcess.killed) {
                         logger.info(`   - Stopping recording ${id}`);
                         recording.ffmpegProcess.kill('SIGTERM');
-                    }
-                }
-            }
-
-            const visualFxService = getVisualFxService();
-            if (visualFxService && visualFxService.activePipelines) {
-                logger.info('   Stopping Visual FX pipelines...');
-                for (const [id, pipeline] of visualFxService.activePipelines) {
-                    if (pipeline.ffmpegProcess && !pipeline.ffmpegProcess.killed) {
-                        logger.info(`   - Stopping visual FX pipeline ${id}`);
-                        pipeline.ffmpegProcess.kill('SIGTERM');
                     }
                 }
             }
