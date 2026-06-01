@@ -9,7 +9,6 @@
  *   was removed.
  */
 
-const SimpleViewBotSocket = require('./SimpleViewBotSocket');
 const webrtcConfig = require('../config/webrtc.config');
 
 const logger = require('../bootstrap/logger').child({ svc: 'SimpleViewBotRotation' });
