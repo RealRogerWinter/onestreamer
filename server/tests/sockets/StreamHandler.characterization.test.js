@@ -113,9 +113,6 @@ function makeDeps(overrides = {}) {
     startSession: jest.fn(async () => {}),
     endSession: jest.fn(async () => {}),
   };
-  const recordingService = {
-    handleStreamEnd: jest.fn(async () => {}),
-  };
   const SimpleViewBotRotation = {
     stopRotation: jest.fn(async () => {}),
     startRotation: jest.fn(async () => {}),
@@ -143,7 +140,6 @@ function makeDeps(overrides = {}) {
     timeTrackingService,
     buffDebuffService,
     streamingLogsService,
-    recordingService,
     SimpleViewBotRotation,
     IPBanService,
     notifiedStreamers,
@@ -450,8 +446,9 @@ describe('sockets/StreamHandler characterization', () => {
         expect.objectContaining({ reason: 'user_stopped_streaming', previousStreamer: 'socket-streamer-1' })
       );
 
-      // recording finalisation invoked
-      expect(deps.recordingService.handleStreamEnd).toHaveBeenCalledWith('socket-streamer-1');
+      // (Recording finalisation on stream-end was removed with ADR-0024 —
+      // the MediaSoup-era RecordingService is gone; LiveKit egress stops
+      // automatically when the publisher leaves the room.)
     });
   });
 

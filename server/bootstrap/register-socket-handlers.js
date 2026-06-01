@@ -19,7 +19,6 @@
  * registration time:
  *
  *   getViewbotService          → returns module-scope `viewbotService`
- *   getRecordingService        → returns module-scope `recordingService`
  *   getTranscriptionService    → returns module-scope `transcriptionService`
  *
  * The body below is byte-equivalent to the pre-PR inline version — same
@@ -89,11 +88,10 @@ function registerSocketHandlers(io, deps) {
         https,
 
         // Per-handler deps — LAZY service getters (resolved at call time
-        // because viewbotService / recordingService / transcriptionService
+        // because viewbotService / transcriptionService
         // are assigned inside startServer() — see server/index.js' PR-15B.1
         // closure-audit notes).
         getViewbotService,
-        getRecordingService,
         getTranscriptionService,
     } = deps;
 
@@ -163,7 +161,6 @@ function registerSocketHandlers(io, deps) {
             timeTrackingService,
             buffDebuffService,
             streamingLogsService,
-            recordingService: getRecordingService(),
             SimpleViewBotRotation,
             IPBanService,
             notifiedStreamers,

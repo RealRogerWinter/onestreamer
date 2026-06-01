@@ -13,8 +13,7 @@
  * The post-PR shape is `registerShutdownHandlers(deps)` — a single factory
  * that wires all four `process.on(...)` handlers and contains
  * byte-equivalent shutdown + cleanup bodies. Lazy-init services
- * (`recordingService`,
- * etc.) are passed via
+ * (`webrtcService`, `viewbotService`, etc.) are passed via
  * getter functions so the lookup happens at signal-time (always after
  * `startServer()` has wired them — or `undefined` if the signal arrives
  * during startup, in which case the relevant cleanup steps no-op).
@@ -59,7 +58,6 @@ function registerShutdownHandlers(deps) {
         server,
         getRedisClient,
         getWebrtcService,
-        getRecordingService,
         getTimeTrackingService,
         getResourceMonitor,
         getSessionService,
@@ -103,9 +101,8 @@ function registerShutdownHandlers(deps) {
             // 2. Stop all media streams (FFmpeg)
             // NOTE: services with stop() are already drained above via stoppables —
             // this block intentionally remains as belt-and-braces for processes
-            // not yet wrapped (ffmpeg children on RecordingService.activeRecordings,
-            // etc.). A follow-up PR can prune entries that overlap with stoppables
-            // once the iterator is proven.
+            // not yet wrapped. A follow-up PR can prune entries that overlap with
+            // stoppables once the iterator is proven.
             logger.info('🎬 Stopping all media streams...');
 
             // NOTE: the ViewbotService FFmpeg-process / cleanup() teardown was
@@ -126,16 +123,10 @@ function registerShutdownHandlers(deps) {
                 }
             }
 
-            const recordingService = getRecordingService();
-            if (recordingService && recordingService.activeRecordings) {
-                logger.info('   Stopping Recording Service FFmpeg processes...');
-                for (const [id, recording] of recordingService.activeRecordings) {
-                    if (recording.ffmpegProcess && !recording.ffmpegProcess.killed) {
-                        logger.info(`   - Stopping recording ${id}`);
-                        recording.ffmpegProcess.kill('SIGTERM');
-                    }
-                }
-            }
+            // (The MediaSoup-era RecordingService ffmpeg-drain was removed with
+            // ADR-0024. LiveKit egress recordings are server-side jobs stopped
+            // via continuousRecordingService.stop() in the stoppables registry,
+            // not local ffmpeg children — so there's nothing to SIGTERM here.)
 
             // Safety-net pkill for any strays
             logger.info('🔍 Checking for any remaining media processes...');

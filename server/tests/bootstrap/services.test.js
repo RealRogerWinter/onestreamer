@@ -49,9 +49,6 @@ jest.mock('../../services/BuffNotifier', () => class { constructor(...args) { th
 jest.mock('../../services/ModerationNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'ModerationNotifier'; } });
 
 // PR-I2 additions
-jest.mock('../../services/RecordingStorageService', () => class { constructor(...args) { this._args = args; this._stubName = 'RecordingStorageService'; } });
-jest.mock('../../services/FileCompressionService', () => class { constructor(...args) { this._args = args; this._stubName = 'FileCompressionService'; } });
-jest.mock('../../services/RecordingService', () => class { constructor(...args) { this._args = args; this._stubName = 'RecordingService'; } });
 jest.mock('../../services/ClipStorageService', () => class { constructor(...args) { this._args = args; this._stubName = 'ClipStorageService'; } });
 jest.mock('../../services/ClipProcessorService', () => class { constructor(...args) { this._args = args; this._stubName = 'ClipProcessorService'; } });
 jest.mock('../../services/ContinuousRecordingService', () => class { constructor(...args) { this._args = args; this._stubName = 'ContinuousRecordingService'; } });
@@ -186,9 +183,6 @@ const BuffNotifier = require('../../services/BuffNotifier');
 const ModerationNotifier = require('../../services/ModerationNotifier');
 
 // PR-I2 additions
-const RecordingStorageService = require('../../services/RecordingStorageService');
-const FileCompressionService = require('../../services/FileCompressionService');
-const RecordingService = require('../../services/RecordingService');
 const ClipStorageService = require('../../services/ClipStorageService');
 const ClipProcessorService = require('../../services/ClipProcessorService');
 const ContinuousRecordingService = require('../../services/ContinuousRecordingService');
@@ -263,9 +257,6 @@ describe('server/bootstrap/services factory', () => {
       'canvasFxService',
       'soundFxService',
       // PR-I2 additions
-      'recordingStorageService',
-      'fileCompressionService',
-      'recordingService',
       'clipStorageService',
       'clipProcessorService',
       'continuousRecordingService',
@@ -291,7 +282,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(40);
+    expect(expectedKeys).toHaveLength(37);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -320,9 +311,6 @@ describe('server/bootstrap/services factory', () => {
     // PR-M1
     expect(s.moderationNotifier).toBeInstanceOf(ModerationNotifier);
     // PR-I2
-    expect(s.recordingStorageService).toBeInstanceOf(RecordingStorageService);
-    expect(s.fileCompressionService).toBeInstanceOf(FileCompressionService);
-    expect(s.recordingService).toBeInstanceOf(RecordingService);
     expect(s.clipStorageService).toBeInstanceOf(ClipStorageService);
     expect(s.clipProcessorService).toBeInstanceOf(ClipProcessorService);
     expect(s.continuousRecordingService).toBeInstanceOf(ContinuousRecordingService);
@@ -466,16 +454,6 @@ describe('server/bootstrap/services factory', () => {
 
   // ── PR-I2 dep-graph identity checks ───────────────────────────────────
 
-  test('recordingService receives (database, webrtcService, recordingStorageService)', () => {
-    const deps = buildDeps();
-    const { services: s } = createServices(deps);
-
-    expect(s.recordingService._args).toHaveLength(3);
-    expect(s.recordingService._args[0]).toBe(deps.database);
-    expect(s.recordingService._args[1]).toBe(deps.webrtcService);
-    expect(s.recordingService._args[2]).toBe(s.recordingStorageService);
-  });
-
   test('clipProcessorService receives the factory-built clipStorageService', () => {
     const { services: s } = createServices(buildDeps());
     expect(s.clipProcessorService._args[0]).toBe(s.clipStorageService);
@@ -492,14 +470,13 @@ describe('server/bootstrap/services factory', () => {
     expect(s.clipService._args[3]).toBe(s.continuousRecordingService);
   });
 
-  test('transcriptionService receives (database, webrtcService, recordingService)', () => {
+  test('transcriptionService receives (database, webrtcService)', () => {
     const deps = buildDeps();
     const { services: s } = createServices(deps);
 
-    expect(s.transcriptionService._args).toHaveLength(3);
+    expect(s.transcriptionService._args).toHaveLength(2);
     expect(s.transcriptionService._args[0]).toBe(deps.database);
     expect(s.transcriptionService._args[1]).toBe(deps.webrtcService);
-    expect(s.transcriptionService._args[2]).toBe(s.recordingService);
   });
 
   test('gameStreamService receives (io, gameService, takeoverService, streamService)', () => {

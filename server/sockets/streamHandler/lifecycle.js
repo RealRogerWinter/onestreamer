@@ -19,7 +19,6 @@ module.exports = function registerLifecycle(io, socket, deps) {
     webrtcService,
     timeTrackingService,
     streamingLogsService,
-    recordingService,
     SimpleViewBotRotation,
     IPBanService,
     notifyViewersStreamEnded,
@@ -64,12 +63,10 @@ module.exports = function registerLifecycle(io, socket, deps) {
       streamService.clearStreamer();
       webrtcService.currentStreamer = null;
 
-      // Handle continuous recording for stream end
-      if (recordingService) {
-        recordingService.handleStreamEnd(socket.id).catch(error => {
-          logger.error({ err: error }, '❌ RECORDING: Error handling stream end');
-        });
-      }
+      // (Continuous recording is automatic via LiveKit egress — the
+      // ContinuousRecordingService egress poller stops on its own when the
+      // publisher leaves the room. The MediaSoup-era RecordingService
+      // stream-end hook was removed with ADR-0024.)
 
       // Clear streamer buff display when streaming ends
       logger.info(`🎭 BUFF: Clearing streamer buffs display (streaming ended)`);

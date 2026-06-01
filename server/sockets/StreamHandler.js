@@ -43,7 +43,6 @@
  *   - timeTrackingService      Viewing/streaming session bookkeeping.
  *   - buffDebuffService        Streamer-buff lookup on new-stream broadcast.
  *   - streamingLogsService     Per-session streaming log (start/end).
- *   - recordingService         Stream-end recording finalisation (may be null).
  *   - SimpleViewBotRotation    Module with stopRotation/startRotation.
  *   - IPBanService             Static helpers for IP fingerprint + ban lookup.
  *   - notifiedStreamers        Shared Set<string> of socket IDs the server has

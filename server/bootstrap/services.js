@@ -28,10 +28,6 @@
 //   soundFxService             ──  no deps
 //
 //   ── PR-I2 additions (recording/transcription/game/effects clusters) ──
-//   recordingStorageService    ──  database
-//   fileCompressionService     ──  database
-//   recordingService           ──  database, webrtcService,
-//                                  recordingStorageService
 //   clipStorageService         ──  no deps
 //   clipProcessorService       ──  clipStorageService
 //   continuousRecordingService ──  config bag (env-derived)
@@ -40,7 +36,7 @@
 //   sessionChatCaptureService  ──  config bag (env-derived)
 //   recordingUploadScheduler   ──  config bag
 //   recordingCleanupScheduler  ──  no deps
-//   transcriptionService       ──  database, webrtcService, recordingService
+//   transcriptionService       ──  database, webrtcService
 //   gameService                ──  io, database
 //   gameStreamService          ──  io, gameService, takeoverService
 //
@@ -111,9 +107,6 @@ const ModerationNotifier = require('../services/ModerationNotifier');
 
 const logger = require('./logger').child({ svc: 'services' });
 // PR-I2 additions
-const RecordingStorageService = require('../services/RecordingStorageService');
-const FileCompressionService = require('../services/FileCompressionService');
-const RecordingService = require('../services/RecordingService');
 const ClipStorageService = require('../services/ClipStorageService');
 const ClipProcessorService = require('../services/ClipProcessorService');
 const ContinuousRecordingService = require('../services/ContinuousRecordingService');
@@ -259,9 +252,10 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
   const soundFxService = new SoundFxService();
 
   // ── PR-I2: recording cluster ────────────────────────────────────────────
-  const recordingStorageService = new RecordingStorageService(database);
-  const fileCompressionService = new FileCompressionService(database);
-  const recordingService = new RecordingService(database, webrtcService, recordingStorageService);
+  // The MediaSoup-era RecordingService / RecordingStorageService /
+  // FileCompressionService cluster was retired with ADR-0024 (LiveKit-only).
+  // Live recording is the LiveKit egress path (continuousRecordingService +
+  // the recordingUpload/Cleanup schedulers over the recording_sessions table).
 
   // Clip cluster.
   const clipStorageService = new ClipStorageService();
@@ -306,8 +300,11 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
 
   const recordingCleanupScheduler = new RecordingCleanupScheduler();
 
-  // ── PR-I2: transcription (depends on recordingService) ──────────────────
-  const transcriptionService = new TranscriptionService(database, webrtcService, recordingService);
+  // ── PR-I2: transcription ─────────────────────────────────────────────────
+  // The legacy recordingService 3rd arg was never used by TranscriptionService
+  // (it pulls audio from the egress path); dropped with the RecordingService
+  // retirement (ADR-0024).
+  const transcriptionService = new TranscriptionService(database, webrtcService);
 
   // ── PR-I2: game cluster ─────────────────────────────────────────────────
   const gameService = new GameService(io, database);
@@ -422,9 +419,6 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
     canvasFxService,
     soundFxService,
     // PR-I2:
-    recordingStorageService,
-    fileCompressionService,
-    recordingService,
     clipStorageService,
     clipProcessorService,
     continuousRecordingService,

@@ -464,9 +464,6 @@ const {
   canvasFxService,
   soundFxService,
   // PR-I2:
-  recordingStorageService,
-  fileCompressionService,
-  recordingService,
   clipStorageService,
   clipProcessorService,
   continuousRecordingService,
@@ -986,17 +983,16 @@ app.use(require("./routes/admin-ops")({
 }));
 
 // ================================
-// RECORDING ADMIN API ENDPOINTS
+// CONTINUOUS RECORDING ADMIN API ENDPOINTS
 // ================================
 
-// Start recording
-// Phase 15B.3.h — recordings + continuous-recordings cluster extracted to
-// routes/admin-recordings-ext.js. 19 routes. Lazy services via getters;
-// recordingsDir passed as absolute path (resolves to <repo>/recordings).
+// routes/admin-recordings-ext.js — the /admin/recordings/continuous/{enable,
+// disable,status} controls, wired to the LiveKit egress recorder
+// (continuousRecordingService). The MediaSoup-era recorder routes that used to
+// live here were retired with ADR-0024; the live recording surface is
+// /admin/review/* (routes/admin-recordings.js, recording_sessions table).
 app.use(require("./routes/admin-recordings-ext")({
-  authenticateAdmin, database, path, fs, logger, io,
-  recordingsDir: path.join(__dirname, "..", "recordings"),
-  getRecordingService: () => recordingService,
+  authenticateAdmin, logger,
   getContinuousRecordingService: () => continuousRecordingService,
 }));
 
@@ -1112,7 +1108,7 @@ movieBotService.on('prompt-logged', (data) => {
 
 // Phase 15B.5 — io.on('connection', ...) registration extracted to
 // bootstrap/register-socket-handlers.js. The lazy-service getters
-// (viewbotService / recordingService / transcriptionService) are passed
+// (viewbotService / transcriptionService) are passed
 // via getter functions so they resolve at connection-callback time
 // (always after startServer's lazy inits).
 require('./bootstrap/register-socket-handlers')(io, {
@@ -1175,7 +1171,6 @@ require('./bootstrap/register-socket-handlers')(io, {
 
   // Lazy-service getters (resolved at connection-callback time)
   getViewbotService: () => viewbotService,
-  getRecordingService: () => recordingService,
   getTranscriptionService: () => transcriptionService,
 });
 
@@ -1664,7 +1659,6 @@ require('./bootstrap/shutdown')({
   getRedisClient: () => redisClient,
   getWebrtcService: () => webrtcService,
   getViewbotService: () => viewbotService,
-  getRecordingService: () => recordingService,
   getTimeTrackingService: () => timeTrackingService,
   getResourceMonitor: () => resourceMonitor,
   getSessionService: () => sessionService,

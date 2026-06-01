@@ -16,6 +16,7 @@ const ContinuousRecordingRepository = require('../../database/repository/Continu
 const SessionChatMessageRepository = require('../../database/repository/SessionChatMessageRepository');
 const AdminReviewSettingsRepository = require('../../database/repository/AdminReviewSettingsRepository');
 const b2Storage = require('../../services/B2StorageService');
+const { usernameFromStreamUrl } = require('../../services/recording/streamUrlUsername');
 
 // PR 10.1 (Phase 10): module-scoped repositories own the single-table
 // SQL surface for the recording/settings/chat tables this route hits.
@@ -28,49 +29,15 @@ const sessionChatMessageRepository = new SessionChatMessageRepository({ getAsync
 const adminReviewSettingsRepository = new AdminReviewSettingsRepository({ getAsync, runAsync, allAsync });
 
 /**
- * Extract username from a streaming platform URL
+ * Extract username from a streaming platform URL.
+ * Thin wrapper over the canonical helper in
+ * services/recording/streamUrlUsername.js (single source of truth, shared
+ * with RoomParticipantInspector / ContinuousRecordingService).
  * @param {string} sourceUrl - The source URL (e.g., https://twitch.tv/xqc)
  * @returns {string|null} The extracted username or null if not found
  */
 function extractUsernameFromUrl(sourceUrl) {
-    if (!sourceUrl) return null;
-
-    try {
-        // Handle Twitch URLs
-        const twitchMatch = sourceUrl.match(/(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)/i);
-        if (twitchMatch) return twitchMatch[1];
-
-        // Handle Kick URLs
-        const kickMatch = sourceUrl.match(/(?:https?:\/\/)?(?:www\.)?kick\.com\/([a-zA-Z0-9_-]+)/i);
-        if (kickMatch) return kickMatch[1];
-
-        // Handle YouTube URLs
-        const youtubeMatch = sourceUrl.match(/(?:https?:\/\/)?(?:www\.)?youtube\.com\/@([a-zA-Z0-9_-]+)/i);
-        if (youtubeMatch) return youtubeMatch[1];
-
-        // For AWS IVS URLs (Kick backend), can't extract username
-        if (sourceUrl.includes('live-video.net') || sourceUrl.includes('playback.')) {
-            return null;
-        }
-
-        // Generic fallback: try to get the last path segment
-        try {
-            const url = new URL(sourceUrl);
-            const pathParts = url.pathname.split('/').filter(Boolean);
-            if (pathParts.length > 0) {
-                const lastPart = pathParts[pathParts.length - 1];
-                if (/^[a-zA-Z0-9_-]+$/.test(lastPart) && !lastPart.includes('.')) {
-                    return lastPart;
-                }
-            }
-        } catch (e) {
-            // URL parsing failed
-        }
-
-        return null;
-    } catch (error) {
-        return null;
-    }
+    return usernameFromStreamUrl(sourceUrl, logger);
 }
 
 // Runtime services set by the server when mounting the routes
