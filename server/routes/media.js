@@ -1,7 +1,7 @@
 // server/routes/media.js
 //
-// Companion to routes/mediasoup.js — covers the rest of the /api/* media /
-// streaming surface that PR-G3 extracts from server/index.js:
+// Covers the /api/* media / streaming surface that PR-G3 extracts from
+// server/index.js:
 //
 //   /api/media/start-ingestion
 //   /api/media/stop-ingestion

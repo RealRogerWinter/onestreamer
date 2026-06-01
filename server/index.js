@@ -71,7 +71,6 @@ const registerBuffHandler = require('./sockets/BuffHandler');
 const registerDisconnectHandler = require('./sockets/DisconnectHandler');
 const registerDrawingHandler = require('./sockets/DrawingHandler');
 const registerGameHandler = require('./sockets/GameHandler');
-const registerMediaSoupHandler = require('./sockets/MediaSoupHandler');
 const registerStreamHandler = require('./sockets/StreamHandler');
 const registerViewBotHandler = require('./sockets/ViewBotHandler');
 const database = require('./database/database');
@@ -359,7 +358,6 @@ app.use('/admin/review', adminRecordingsRoutes);
 // before PR-G; they read services from app.locals where state-sharing matters).
 app.use('/api/tutorial', require('./routes/tutorial'));
 app.use('/api/audio', require('./routes/audio'));
-app.use('/api/mediasoup', require('./routes/mediasoup'));
 // /api/media + /api/stream/* + /api/webrtc/backend + /api/livekit/token
 // share the streamService/mediasoupService/adapter wiring, so they're all
 // in routes/media.js mounted at /api (PR-G3).
@@ -529,7 +527,7 @@ app.locals.audioOptimizationService = audioOptimizationService;
 
 // mediasoupService isn't part of the PR-I services factory (it branches on
 // USE_WEBRTC_ADAPTER before the factory runs and assigns to globals). Expose
-// it here so server/routes/mediasoup.js + server/routes/media.js can read
+// it here so server/routes/media.js can read
 // it via req.app.locals.mediasoupService (PR-G3).
 app.locals.mediasoupService = mediasoupService;
 app.locals.usingAdapter = usingAdapter;
@@ -543,9 +541,9 @@ app.locals.generateTurnCredentials = generateTurnCredentials;
 // dead code. Discovered during the extraction prep: startVisualEffectSync()
 // has zero callers (verified by `grep -rn "startVisualEffectSync" server/
 // client/ chat-service/`). getActiveVisualEffects was only called from
-// inside startVisualEffectSync. The only remaining references are two
-// commented-out blocks in sockets/MediaSoupHandler.js:306 and sockets/
-// StreamHandler.js:159 (visual-effects-sync-pulse paths disabled to debug
+// inside startVisualEffectSync. The only remaining reference is a
+// commented-out block in sockets/StreamHandler.js:159 (visual-effects-sync-pulse
+// path disabled to debug
 // rotate_90). The "Sync will be started after server initialization"
 // comment lines below those helpers also no-op'd because the boot code
 // never invoked the function. Removed rather than extracted — the truest
@@ -871,9 +869,9 @@ const { broadcastGlobalCooldown, enrichStreamStatus, verifyAndEmitStreamReady } 
 // (covers GET /, GET /health, GET /api/admin/webrtc/config).
 app.use(require('./routes/health'));
 
-// /api/stream/status, /api/stream/active, /api/media/*, /api/mediasoup/*,
+// /api/stream/status, /api/stream/active, /api/media/*,
 // /api/webrtc/backend, and /api/livekit/token live in
-// server/routes/mediasoup.js and server/routes/media.js (mounted above).
+// server/routes/media.js (mounted above).
 // PR-G3.
 
 // Import JWT admin authentication middleware
@@ -1177,7 +1175,6 @@ require('./bootstrap/register-socket-handlers')(io, {
 
   // Per-handler register functions
   registerStreamHandler,
-  registerMediaSoupHandler,
   registerViewBotHandler,
   registerBuffHandler,
   registerDrawingHandler,
