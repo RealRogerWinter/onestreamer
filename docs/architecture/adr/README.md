@@ -58,12 +58,13 @@ What else we looked at and why we did not pick it.
 | 0014 | [better-sqlite3 adapter behind an env flag](0014-better-sqlite3-adapter.md) | accepted |
 | 0015 | [Transaction shape for multi-statement DB operations](0015-transaction-shape-for-multi-statement.md) | accepted |
 | 0016 | [Tick-loop watchdog pattern (observability only)](0016-tick-loop-watchdog-observability-only.md) | accepted |
-| 0017 | [MediaSoup/LiveKit branch alignment plan](0017-mediasoup-livekit-alignment-plan.md) | accepted |
+| 0017 | [MediaSoup/LiveKit branch alignment plan](0017-mediasoup-livekit-alignment-plan.md) | superseded by 0024 |
 | 0018 | [VisionBot — multi-modal screenshot commentary](0018-visionbot-screenshot-comments.md) | accepted |
 | 0019 | [ViewBotClientService decomposition outcome](0019-viewbot-instance-extraction.md) | accepted |
 | 0020 | [Namespaced logging with pino](0020-namespaced-logging-with-pino.md) | accepted |
 | 0021 | [Omni image moderation pipeline](0021-omni-image-moderation.md) | accepted |
 | 0022 | [Schema migrations layout (light-weight, no framework)](0022-schema-migrations-layout.md) | accepted |
+| 0024 | [Retire MediaSoup; LiveKit is the sole WebRTC backend](0024-retire-mediasoup-livekit-only.md) | accepted |
 
 ### Note on the 0013a slug
 
