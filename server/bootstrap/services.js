@@ -29,7 +29,6 @@
 //   plainTransportService      ──  mediasoupService
 //
 //   ── PR-I2 additions (recording/transcription/game/effects clusters) ──
-//   visualFxService            ──  mediasoupService, buffDebuffService
 //   recordingStorageService    ──  database
 //   fileCompressionService     ──  database
 //   recordingService           ──  database, mediasoupService,
@@ -114,7 +113,6 @@ const ModerationNotifier = require('../services/ModerationNotifier');
 
 const logger = require('./logger').child({ svc: 'services' });
 // PR-I2 additions
-const VisualFxService = require('../services/VisualFxService');
 const RecordingStorageService = require('../services/RecordingStorageService');
 const FileCompressionService = require('../services/FileCompressionService');
 const RecordingService = require('../services/RecordingService');
@@ -266,9 +264,6 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
 
   // Plain RTP transport sits on top of the pre-built mediasoup service.
   const plainTransportService = new MediasoupPlainTransportService(mediasoupService);
-
-  // ── PR-I2: visual fx chain ──────────────────────────────────────────────
-  const visualFxService = new VisualFxService(mediasoupService, buffDebuffService);
 
   // ── PR-I2: recording cluster ────────────────────────────────────────────
   const recordingStorageService = new RecordingStorageService(database);
@@ -435,7 +430,6 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
     soundFxService,
     plainTransportService,
     // PR-I2:
-    visualFxService,
     recordingStorageService,
     fileCompressionService,
     recordingService,
@@ -466,7 +460,7 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
   // handler iterates this in reverse with a per-stop timeout. Only includes
   // services that actually expose stop() today — pure-data services
   // (StreamService, SessionService, etc.) don't need one, and services
-  // with leaked anonymous intervals (visualFxService, chatBotService,
+  // with leaked anonymous intervals (chatBotService,
   // movieBotService, transcriptionService) are deferred to later PRs
   // that store their handles before adding stop(). PR 1.3 covers
   // ChatBot/MovieBot via the BotEventBus; Phase 2 covers VisualFx /

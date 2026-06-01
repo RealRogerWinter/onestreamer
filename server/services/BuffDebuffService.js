@@ -39,8 +39,8 @@ class BuffDebuffService extends EventEmitter {
 
         // Cohesive collaborators (all state stays on this service; each holds
         // an `owner` back-reference). The service remains the EventEmitter —
-        // AnonymousBuffStore emits through `owner.emit(...)` so VisualFxService's
-        // `buffDebuffService.on(...)` listeners still fire on the instance.
+        // AnonymousBuffStore emits through `owner.emit(...)` so buff-event
+        // consumers (CanvasFX + the client) still see events fire on the instance.
         this.anonymousBuffStore = new AnonymousBuffStore(this);
         this.cacheCleaner = new CacheCleaner(this);
         this.buffFormatter = new BuffFormatter(this);
@@ -155,7 +155,7 @@ class BuffDebuffService extends EventEmitter {
             this.activeBuffsCache.set(buffId, buffData);
 
             // Emit event for other services to hook into
-            // Include stream_id in the event data for VisualFxService
+            // Include stream_id in the event data for buff-event consumers
             const eventData = {
                 ...buffData,
                 stream_id: streamId

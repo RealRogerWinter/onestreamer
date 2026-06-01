@@ -2,9 +2,10 @@
 //
 // Pins the externally-observable behaviour BEFORE the service is decomposed
 // into collaborators under server/services/buffdebuff/. The service is an
-// EventEmitter consumed by VisualFxService (`buffDebuffService.on('buff-applied')`
-// / `'buff-expired'`), so these tests attach real listeners and assert the
-// service instance itself emits the expected events with the expected payloads.
+// EventEmitter whose buff events (`buffDebuffService.on('buff-applied')`
+// / `'buff-expired'`) are consumed by CanvasFX + the client, so these tests
+// attach real listeners and assert the service instance itself emits the
+// expected events with the expected payloads.
 //
 // What's pinned:
 //   - applyBuff: looks up item, creates a buff, tracks it in cache, emits
@@ -128,7 +129,7 @@ afterEach(() => {
 });
 
 describe('BuffDebuffService characterization', () => {
-  test('is an EventEmitter (VisualFxService contract)', () => {
+  test('is an EventEmitter (buff-event contract)', () => {
     const { svc } = makeService();
     expect(typeof svc.on).toBe('function');
     expect(typeof svc.emit).toBe('function');

@@ -54,7 +54,6 @@ const moderationRoutes = require('./routes/moderation');
 const itemRoutes = require('./routes/items');
 const buffRoutes = require('./routes/buffs');
 const soundfxRoutes = require('./routes/soundfx');
-const visualfxRoutes = require('./routes/visualfx');
 const { router: chatbotRoutes, initializeChatBotRoutes } = require('./routes/chatbots');
 const streambotRoutes = require('./routes/streambot');
 // ViewBot API routes will be initialized after services are created
@@ -71,7 +70,6 @@ const registerAdminHandler = require('./sockets/AdminHandler');
 const registerBuffHandler = require('./sockets/BuffHandler');
 const registerDisconnectHandler = require('./sockets/DisconnectHandler');
 const registerDrawingHandler = require('./sockets/DrawingHandler');
-const registerEffectHandler = require('./sockets/EffectHandler');
 const registerGameHandler = require('./sockets/GameHandler');
 const registerMediaSoupHandler = require('./sockets/MediaSoupHandler');
 const registerStreamHandler = require('./sockets/StreamHandler');
@@ -350,7 +348,6 @@ app.use('/api', itemRoutes);
 app.use('/api/buffs', buffRoutes);
 app.use('/api/soundfx', soundfxRoutes);
 // ViewBot API routes will be added after services are initialized
-app.use('/api/visualfx', visualfxRoutes);
 app.use('/api/chatbots', chatbotRoutes);
 app.use('/api/streambot', streambotRoutes);
 app.use('/api/bug-reports', bugReportsRoutes);
@@ -487,7 +484,6 @@ const {
   soundFxService,
   plainTransportService,
   // PR-I2:
-  visualFxService,
   recordingStorageService,
   fileCompressionService,
   recordingService,
@@ -585,8 +581,8 @@ buffDebuffService.on('buff-applied', async (buffData) => {
     logger.error({ err: error }, '❌ VISUAL FX: Error syncing buff-applied visual effect');
   }
 });
-// visualFxService built by the services factory (PR-I2). chatBotService /
-// streamBotService / movieBotService also built there. setMovieBotService was
+// chatBotService / streamBotService / movieBotService built by the services
+// factory (PR-I2). setMovieBotService was
 // eliminated in PR 1.3 by the BotEventBus; remaining post-construction setters
 // (setIoInstance, setChatBotService, setChatBotLLMService) are still
 // factory-internal.
@@ -649,9 +645,6 @@ inventoryService.setStreamAndSessionServices(streamService, sessionService);
 // Set dependencies for canvas fx service
 canvasFxService.setDependencies(io, itemService, buffDebuffService, streamService, sessionService);
 
-// Set dependencies for visual fx service
-visualFxService.setDependencies(mediasoupService, buffDebuffService, streamService, io, sessionService);
-
 // streamBotService.setChatBotService / setChatBotLLMService now happen inside
 // the services factory (PR-I3).
 
@@ -679,7 +672,6 @@ app.locals.streamService = streamService;
 app.set('io', io);
 app.set('canvasFxService', canvasFxService);
 app.set('soundFxService', soundFxService);
-app.set('visualFxService', visualFxService);
 app.set('transcriptionService', transcriptionService);
 app.set('clipStorageService', clipStorageService);
 app.set('clipProcessorService', clipProcessorService);
@@ -1222,11 +1214,9 @@ require('./bootstrap/register-socket-handlers')(io, {
   registerAdminHandler,
   registerGameHandler,
   registerDisconnectHandler,
-  registerEffectHandler,
 
   // Connection-level service touches
   canvasFxService,
-  visualFxService,
 
   // Eager per-handler service deps
   streamService,
@@ -1807,7 +1797,6 @@ require('./bootstrap/shutdown')({
   getViewbotService: () => viewbotService,
   getViewBotClientService: () => viewBotClientService,
   getRecordingService: () => recordingService,
-  getVisualFxService: () => visualFxService,
   getTimeTrackingService: () => timeTrackingService,
   getResourceMonitor: () => resourceMonitor,
   getSessionService: () => sessionService,

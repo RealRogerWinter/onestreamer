@@ -46,11 +46,9 @@ function registerSocketHandlers(io, deps) {
         registerAdminHandler,
         registerGameHandler,
         registerDisconnectHandler,
-        registerEffectHandler,
 
         // Connection-level service touches
         canvasFxService,
-        visualFxService,
 
         // Per-handler deps — service refs (eager)
         streamService,
@@ -231,9 +229,6 @@ function registerSocketHandlers(io, deps) {
         // Canvas effects handlers
         canvasFxService.handleClientConnection(socket);
 
-        // Visual effects handlers - sync active visual effects to new clients
-        visualFxService.handleClientConnection(socket);
-
         // Drawing path broadcast handlers (no deps bag).
         registerDrawingHandler(io, socket);
 
@@ -265,12 +260,6 @@ function registerSocketHandlers(io, deps) {
             SimpleViewBotRotation,
             getViewbotService,
             getViewBotClientService,
-        });
-
-        registerEffectHandler(io, socket, {
-            visualFxService,
-            streamService,
-            sessionService,
         });
     });
 }
