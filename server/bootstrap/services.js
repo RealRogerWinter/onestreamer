@@ -58,8 +58,8 @@
 //                                  defined inline in the factory.
 //
 // ── PR-I4: late ViewBot stack (separate export, not part of createServices) ──
-// The named ViewBot services (ViewbotService, ViewBotWebRTCService,
-// ViewBotLiveKitService) are constructed by the
+// The named ViewBot services (ViewbotService, ViewBotLiveKitService) are
+// constructed by the
 // dedicated `createViewBotServices` factory exported alongside the main
 // one. They live in their own function (rather than being folded into
 // createServices) because:
@@ -149,7 +149,6 @@ const processManager = require('../services/ProcessManager');
 
 // PR-I4: late ViewBot stack — see createViewBotServices below.
 const ViewbotService = require('../services/ViewbotService');
-const ViewBotWebRTCService = require('../services/ViewBotWebRTCService');
 const ViewBotLiveKitService = require('../services/ViewBotLiveKitService');
 
 /**
@@ -502,15 +501,13 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
  * stack reaches into the live mediasoup worker (transports/producers maps)
  * or — on the LiveKit branch — depends on the adapter's resolved backend.
  *
- * Behavior preserved from the previous inline block (server/index.js lines
- * ~5149-5350):
- *   - viewbotService is ALWAYS constructed.
- *   - viewBotWebRTCService is constructed ONLY when no livekitService is
- *     present (i.e. MediaSoup-backed adapter or direct MediaSoup mode).
- *     Inline original: gated by `if (!livekitService)`.
+ * Behavior:
+ *   - viewbotService is ALWAYS constructed. Under LiveKit it provides only the
+ *     stateless `isViewbotStream` predicate (its creation/streaming half and
+ *     the ViewBotWebRTCService backend were removed — see ViewbotService.js).
  *   - viewBotLiveKitService is constructed ONLY when livekitService IS
- *     present (LiveKit-backed adapter mode), then awaited via initialize(),
- *     then handed a streamService reference for real-streamer protection.
+ *     present (the production path), then awaited via initialize(), then
+ *     handed a streamService reference for real-streamer protection.
  *
  * NOT handled here (kept inline in server/index.js because each item is
  * orchestration rather than service construction — see the deferred-list
@@ -523,30 +520,26 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
  * @param {object}  deps.webrtcService  Already-initialized mediasoup
  *                                         service (or adapter forwarding to
  *                                         one). Required.
- * @param {object?} deps.livekitService    LiveKit backend instance, or null
- *                                         when running MediaSoup. Selects
- *                                         the WebRTC vs LiveKit branch.
+ * @param {object?} deps.livekitService    LiveKit backend instance (the
+ *                                         production path; null only in a
+ *                                         no-LiveKit fallback).
  * @param {object}  deps.streamService     For ViewBotLiveKitService's real-
  *                                         streamer-protection wiring.
  * @returns {Promise<object>} ViewBot service bag:
  *                            {
  *                              viewbotService,
- *                              viewBotWebRTCService,  // null on LiveKit branch
- *                              viewBotLiveKitService, // null on MediaSoup branch
+ *                              viewBotLiveKitService, // null without LiveKit
  *                            }
  */
 async function createViewBotServices({ webrtcService, livekitService, streamService }) {
-  // ViewbotService: takes both potential backends; chooses internally.
+  // ViewbotService is now stateless (only isViewbotStream); the constructor
+  // signature is retained for call-site compatibility but the args are unused.
   const viewbotService = new ViewbotService(webrtcService, livekitService);
 
-  let viewBotWebRTCService = null;
   let viewBotLiveKitService = null;
 
-  if (!livekitService) {
-    // MediaSoup branch — needs WebRTC viewbot for mobile 5G/TURN support.
-    viewBotWebRTCService = new ViewBotWebRTCService(webrtcService);
-  } else {
-    // LiveKit branch — needs RTMP-ingress viewbot.
+  if (livekitService) {
+    // LiveKit branch (production) — needs RTMP-ingress viewbot.
     viewBotLiveKitService = new ViewBotLiveKitService(livekitService);
     await viewBotLiveKitService.initialize();
     // Real-streamer protection. The inline original also called this; the
@@ -557,16 +550,13 @@ async function createViewBotServices({ webrtcService, livekitService, streamServ
 
   const services = {
     viewbotService,
-    viewBotWebRTCService,
     viewBotLiveKitService,
   };
 
-  // PR 1.2: viewbot stoppables in construction order. viewBotWebRTCService
-  // doesn't own background work (teardown happens per-bot via callers).
-  // viewBotLiveKitService is omitted until PR 1.3-or-later adds a real
-  // stop() — its current shape only exposes initialize() with no graceful
-  // shutdown path for the LiveKit ingress connection.
-  const stoppables = [viewbotService].filter(Boolean);
+  // The ViewBot bag owns no background work that needs draining at shutdown:
+  // viewbotService is stateless, and viewBotLiveKitService has no graceful
+  // stop() (its only lifecycle method is initialize()).
+  const stoppables = [];
 
   return { services, stoppables };
 }

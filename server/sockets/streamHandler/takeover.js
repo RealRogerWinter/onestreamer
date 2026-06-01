@@ -180,11 +180,12 @@ module.exports = function registerTakeover(io, socket, deps) {
         if (currentIsViewbot) {
           logger.info(`🤖 TAKEOVER: Current streamer ${currentStreamer} is a viewbot, stopping it`);
 
-          // Stop OLD viewbot system
-          if (isOldViewBot && viewbotService) {
-            logger.info('🤖 TAKEOVER: Stopping old viewbot service');
-            await viewbotService.handleTakeover(socket.id);
-          }
+          // NOTE: the ViewbotService.handleTakeover() call was removed with the
+          // ViewbotService creation half — it only acted when a viewbot had been
+          // started via the (now-deleted) startViewbot path, so under LiveKit it
+          // was a no-op. Live viewbots are torn down via SimpleViewBotRotation
+          // below (isLiveKitViewBot/isNewViewBot). The isOldViewBot prefix check
+          // is retained above only to keep classifying the current streamer.
 
           // CRITICAL: Stop LiveKit/SimpleViewBotRotation viewbot
           if (isLiveKitViewBot || isNewViewBot) {
@@ -476,11 +477,11 @@ module.exports = function registerTakeover(io, socket, deps) {
         sessionService.linkUserToSocket(socket.id, syntheticUserId);
         logger.info(`🎭 VIEWBOT: Registered synthetic user ID ${syntheticUserId} for socket ${socket.id}`);
 
-        // CRITICAL FIX: Update ViewbotService configuration with ViewBot's streamConfig
-        if (data.streamConfig && viewbotService) {
-          logger.info({ streamConfig: data.streamConfig }, `🎨 VIEWBOT CONFIG: Updating ViewbotService with config from ${socket.id}`);
-          viewbotService.updateViewbotConfig(data.streamConfig);
-        }
+        // NOTE: the ViewbotService.updateViewbotConfig(data.streamConfig) call
+        // was removed with the ViewbotService creation half — it only mutated
+        // that service's internal viewbotConfig, which nothing reads under
+        // LiveKit (live viewbot config flows through ViewBotLiveKitService /
+        // SimpleViewBotRotation). Removing it has no behavioural effect.
 
         // Check if ViewBot has producers ready
         // CRITICAL FIX: ViewBots stream via LiveKit/ffmpeg, not MediaSoup producers

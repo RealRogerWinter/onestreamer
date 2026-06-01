@@ -127,12 +127,12 @@ function makeDeps(overrides = {}) {
   const notifiedStreamers = new Set();
   const viewbotSocketIds = new Set();
   const lastEmittedStreamReady = { streamerId: null, timestamp: 0 };
+  // ViewbotService is now stateless under LiveKit — only isViewbotStream
+  // survives (the creation/streaming half was removed). The takeover/
+  // request-test-stream handlers no longer call start/stop/handleTakeover/
+  // updateViewbotConfig/getViewbotStatus.
   const viewbotService = {
     isViewbotStream: jest.fn(() => false),
-    handleTakeover: jest.fn(async () => {}),
-    updateViewbotConfig: jest.fn(),
-    getViewbotStatus: jest.fn(() => ({ isActive: false })),
-    startViewbot: jest.fn(async () => ({ success: true, streamId: 'viewbot-stream-1' })),
   };
   const deps = {
     streamService,
@@ -495,10 +495,14 @@ describe('sockets/StreamHandler characterization', () => {
   // -------------------------------------------------------------------------
   // request-test-stream (graceful degradation)
   // -------------------------------------------------------------------------
+  // The handler now always uses the legacy TestStreamService — the prior
+  // ViewbotService auto-start branch was removed with the creation half (dead
+  // under LiveKit, and it emitted events the fallback client never listened
+  // for). TestStreamService emits `test-stream-available`, which is exactly
+  // what the client's StreamSwitchManager fallback waits on.
   describe('request-test-stream', () => {
-    test('no ViewbotService -> falls back to test stream, sets streamer, emits test-stream-available io-wide', async () => {
+    test('idle -> starts test stream, sets streamer, emits test-stream-available io-wide', async () => {
       const { io, deps, handlers } = register();
-      deps.getViewbotService.mockReturnValue(null);
 
       await handlers['request-test-stream']();
 
@@ -507,33 +511,14 @@ describe('sockets/StreamHandler characterization', () => {
       expect(io.emit).toHaveBeenCalledWith('test-stream-available', { streamId: 'test-stream-1' });
     });
 
-    test('ViewbotService present & idle -> auto-starts viewbot, sets streamer, broadcasts new-streamer', async () => {
-      const { io, deps, handlers } = register();
-      // ensure startViewbot returns a parseable streamId for the synthetic-id hash
-      deps._viewbotService.startViewbot.mockResolvedValue({ success: true, streamId: 'viewbot-abcd1234' });
-
-      await handlers['request-test-stream']();
-
-      expect(deps._viewbotService.startViewbot).toHaveBeenCalledTimes(1);
-      expect(deps.streamService.setStreamer).toHaveBeenCalledWith('viewbot-abcd1234', 'viewbot');
-      expect(deps.broadcastGlobalCooldown).toHaveBeenCalledWith('viewbot-abcd1234');
-
-      const newStreamer = io.emit.mock.calls.find((c) => c[0] === 'new-streamer');
-      expect(newStreamer).toBeDefined();
-      expect(newStreamer[1].isViewbot).toBe(true);
-      expect(newStreamer[1].streamerId).toBe('viewbot-abcd1234');
-    });
-
-    test('ViewbotService present & active -> only notifies caller with viewbot-available', async () => {
+    test('already active -> notifies caller with existing test-stream-available; does not restart', async () => {
       const { socket, deps, handlers } = register();
-      deps._viewbotService.getViewbotStatus.mockReturnValue({ isActive: true, streamId: 'viewbot-live' });
+      deps.testStreamService.getTestStreamStatus.mockReturnValue({ isActive: true, streamId: 'test-live' });
 
       await handlers['request-test-stream']();
 
-      const avail = socket.emit.mock.calls.find((c) => c[0] === 'viewbot-available');
-      expect(avail).toBeDefined();
-      expect(avail[1]).toEqual({ streamId: 'viewbot-live' });
-      expect(deps._viewbotService.startViewbot).not.toHaveBeenCalled();
+      expect(socket.emit).toHaveBeenCalledWith('test-stream-available', { streamId: 'test-live' });
+      expect(deps.testStreamService.startTestStream).not.toHaveBeenCalled();
     });
   });
 });

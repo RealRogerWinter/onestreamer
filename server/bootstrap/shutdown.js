@@ -13,7 +13,7 @@
  * The post-PR shape is `registerShutdownHandlers(deps)` — a single factory
  * that wires all four `process.on(...)` handlers and contains
  * byte-equivalent shutdown + cleanup bodies. Lazy-init services
- * (`viewbotService`, `recordingService`,
+ * (`recordingService`,
  * etc.) are passed via
  * getter functions so the lookup happens at signal-time (always after
  * `startServer()` has wired them — or `undefined` if the signal arrives
@@ -60,7 +60,6 @@ function registerShutdownHandlers(deps) {
         server,
         getRedisClient,
         getWebrtcService,
-        getViewbotService,
         getRecordingService,
         getTimeTrackingService,
         getResourceMonitor,
@@ -110,16 +109,10 @@ function registerShutdownHandlers(deps) {
             // once the iterator is proven.
             logger.info('🎬 Stopping all media streams...');
 
-            const viewbotService = getViewbotService();
-            if (viewbotService) {
-                logger.info('   Stopping main Viewbot service...');
-                if (viewbotService.viewbotProcess && !viewbotService.viewbotProcess.killed) {
-                    logger.info('   - Killing Viewbot FFmpeg process');
-                    viewbotService.viewbotProcess.kill('SIGTERM');
-                }
-                // Always cleanup to ensure WebRTC service is stopped
-                await viewbotService.cleanup();
-            }
+            // NOTE: the ViewbotService FFmpeg-process / cleanup() teardown was
+            // removed here along with the ViewbotService creation half — the
+            // service is now stateless (only isViewbotStream) and owns no
+            // process or background work to drain.
 
             if (global.viewBotURLService) {
                 logger.info('   Stopping URL Stream ViewBot service...');
