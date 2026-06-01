@@ -3,6 +3,7 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const applyPragmas = require('./applyPragmas');
 const migrationRunner = require('../migrations/_runner');
+const { DEFAULT_GLOBAL_PROMPT } = require('../services/llm/modelCatalog');
 
 const logger = require('../bootstrap/logger').child({ svc: 'database' });
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
@@ -310,21 +311,24 @@ function initializeDatabase() {
             )
         `);
 
-        // Global ChatBot Configuration
+        // Global ChatBot Configuration. The global_prompt default is the
+        // single-source-of-truth DEFAULT_GLOBAL_PROMPT shared with
+        // ChatBotLLMService (escaped for the DDL DEFAULT clause, which can't be
+        // parameterized).
         db.run(`
             CREATE TABLE IF NOT EXISTS chatbot_config (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
-                global_prompt TEXT DEFAULT 'You are participating in a live stream chat. Be friendly, engaging, and keep responses concise (under 100 characters). Avoid repeating what others have said. Do not use quotes, asterisks for actions, or roleplay formatting.',
+                global_prompt TEXT DEFAULT '${DEFAULT_GLOBAL_PROMPT.replace(/'/g, "''")}',
                 llm_model TEXT DEFAULT 'mistral',
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        
+
         // Insert default config if it doesn't exist
-        db.run(`
-            INSERT OR IGNORE INTO chatbot_config (id, global_prompt) 
-            VALUES (1, 'You are participating in a live stream chat. Be friendly, engaging, and keep responses concise (under 100 characters). Avoid repeating what others have said. Do not use quotes, asterisks for actions, or roleplay formatting.')
-        `);
+        db.run(
+            'INSERT OR IGNORE INTO chatbot_config (id, global_prompt) VALUES (1, ?)',
+            [DEFAULT_GLOBAL_PROMPT]
+        );
 
         // Recording System Tables
         db.run(`

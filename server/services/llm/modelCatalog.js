@@ -195,6 +195,14 @@ const OLLAMA_MODELS = [
             }
         ];
 
+// Single source of truth for the admin-configurable global chatbot prompt's
+// default. Seeded into chatbot_config.global_prompt (schema + INSERT) and used
+// as the in-memory fallback by ChatBotLLMService when the DB value is
+// missing/empty. Keep this byte-for-byte in sync with the DB seed — they are
+// the same string by design (referenced from database.js, not re-typed there
+// only because the CREATE TABLE / INSERT run as raw SQL strings).
+const DEFAULT_GLOBAL_PROMPT = 'You are participating in a live stream chat. Be friendly, engaging, and keep responses concise (under 100 characters). Avoid repeating what others have said. Do not use quotes, asterisks for actions, or roleplay formatting.';
+
 const FALLBACK_RESPONSES = [
             "That's interesting!",
             "I see what you mean.",
@@ -218,4 +226,4 @@ const FALLBACK_RESPONSES = [
             "Exactly!"
         ];
 
-module.exports = { GROQ_MODELS, OLLAMA_MODELS, FALLBACK_RESPONSES };
+module.exports = { GROQ_MODELS, OLLAMA_MODELS, FALLBACK_RESPONSES, DEFAULT_GLOBAL_PROMPT };

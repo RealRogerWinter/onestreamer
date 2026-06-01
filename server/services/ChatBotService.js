@@ -56,16 +56,11 @@ class ChatBotService {
         this.botBulkAdmin = new BotBulkAdmin({ owner: this });
         this.botMessageDispatch = new BotMessageDispatch({ owner: this });
 
-        // Auto-initialize after a short delay to ensure server is ready
-        setTimeout(() => {
-            if (!this.isInitialized) {
-                logger.debug('🤖 AUTO-INIT: Starting delayed ChatBot initialization...');
-                this.initialize().catch(err => {
-                    logger.error('❌ AUTO-INIT: Failed to auto-initialize ChatBots:', err);
-                });
-            }
-        }, 10000); // 10 second delay to let server stabilize
-        
+        // Initialization is triggered explicitly during bootstrap
+        // (server/index.js awaits chatBotService.initialize()). initialize()
+        // early-returns when already initialized, so the bootstrap call is the
+        // single canonical trigger — no constructor-side setTimeout fallback.
+
         // Animal names for random usernames (matching chat service)
         this.ANIMALS = ANIMALS;
         
@@ -562,23 +557,12 @@ class ChatBotService {
         }
     }
     
-    getGlobalPrompt() {
-        // Return the global prompt that's used for all bots
-        // This could be configured, but for now use a default
-        return this.globalPrompt || "You are a helpful chat participant. Be engaging and conversational.";
-    }
-    
     async generateMovieComment(bot, moviePrompt, chatHistory) {
         return this.botMessageDispatch.generateMovieComment(bot, moviePrompt, chatHistory);
     }
 
     async generateVisionCommentForBot(opts) {
         return this.botMessageDispatch.generateVisionCommentForBot(opts);
-    }
-
-    setGlobalPrompt(prompt) {
-        this.globalPrompt = prompt;
-        logger.debug('🤖 ChatBotService: Global prompt updated');
     }
 
     shutdown() {

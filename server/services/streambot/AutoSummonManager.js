@@ -109,7 +109,11 @@ class AutoSummonManager {
 
             logger.debug(`🎭 StreamBot: Generated pair - ${pair.positive.name} (positive) & ${pair.negative.name} (negative)`);
 
-            // Create the positive bot
+            // Create the positive bot. llmModel: null = "use the global default
+            // model"; the Groq transport (when enabled) is chosen by
+            // ChatBotLLMService.groqEnabled, not by a per-bot model id. 'groq'
+            // was never a real model id and fell through to canned fallbacks
+            // when Groq was off.
             const positiveBot = await owner.chatBotService.createTemporaryBot({
                 name: pair.positive.name,
                 personalityPrompt: pair.positive.personality,
@@ -117,7 +121,7 @@ class AutoSummonManager {
                 summonedByUsername: 'StreamBot',
                 duration: settings.bot_duration_seconds,
                 itemId: null,
-                llmModel: 'groq',
+                llmModel: null,
                 temperature: 0.9
             });
 
@@ -129,7 +133,7 @@ class AutoSummonManager {
                 summonedByUsername: 'StreamBot',
                 duration: settings.bot_duration_seconds,
                 itemId: null,
-                llmModel: 'groq',
+                llmModel: null,
                 temperature: 0.9
             });
 

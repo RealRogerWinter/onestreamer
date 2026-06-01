@@ -2,7 +2,7 @@ const { Ollama } = require('ollama');
 const database = require('../database/database');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ChatBotLLMService' });
-const { GROQ_MODELS, OLLAMA_MODELS, FALLBACK_RESPONSES } = require('./llm/modelCatalog');
+const { GROQ_MODELS, OLLAMA_MODELS, FALLBACK_RESPONSES, DEFAULT_GLOBAL_PROMPT } = require('./llm/modelCatalog');
 const promptBuilders = require('./chatbot/llm/promptBuilders');
 const groqConfigStore = require('./chatbot/llm/groqConfigStore');
 const { OllamaQueue } = require('./chatbot/llm/ollamaQueue');
@@ -257,6 +257,10 @@ class ChatBotLLMService {
         return this.ollamaQueue.getModelConfig(modelName);
     }
 
+    // Single load path for the DB-backed chatbot config. Reads both the global
+    // prompt and the default LLM model in one query so the prompt is loaded in
+    // exactly one place. On a DB error, falls back to the shared
+    // DEFAULT_GLOBAL_PROMPT constant (the same default seeded into the schema).
     async loadConfiguration() {
         try {
             const config = await database.getAsync('SELECT global_prompt, llm_model FROM chatbot_config WHERE id = 1');
@@ -267,25 +271,23 @@ class ChatBotLLMService {
             }
         } catch (error) {
             logger.error('Failed to load LLM configuration:', error);
-            this.globalPrompt = 'You are participating in a live stream chat. Be friendly, engaging, and keep responses concise (under 100 characters). Avoid repeating what others have said. Do not use quotes, asterisks for actions, or roleplay formatting.';
+            this.globalPrompt = DEFAULT_GLOBAL_PROMPT;
         }
     }
 
+    // Thin alias retained for the getGlobalPrompt() lazy-load callsite. Delegates
+    // to loadConfiguration so there is one query / one default.
     async loadGlobalPrompt() {
-        try {
-            const config = await database.getAsync('SELECT global_prompt FROM chatbot_config WHERE id = 1');
-            this.globalPrompt = config?.global_prompt || '';
-        } catch (error) {
-            logger.error('Failed to load global prompt:', error);
-            this.globalPrompt = 'You are participating in a live stream chat. Be friendly, engaging, and keep responses concise (under 100 characters). Avoid repeating what others have said. Do not use quotes, asterisks for actions, or roleplay formatting.';
-        }
+        return this.loadConfiguration();
     }
 
     async getGlobalPrompt() {
         if (!this.globalPrompt) {
             await this.loadGlobalPrompt();
         }
-        return this.globalPrompt;
+        // If the DB value is missing/empty, fall back to the shared default so
+        // chat and MovieBot always have a usable global prompt.
+        return this.globalPrompt || DEFAULT_GLOBAL_PROMPT;
     }
 
     async buildMovieSystemPrompt(basePrompt, personality, botUsername) {

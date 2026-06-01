@@ -54,7 +54,12 @@ class TemporaryBotManager {
                 summoned_by_user_id: data.summonedBy,
                 expires_at: expiresAt.toISOString(),
                 summon_item_id: data.itemId || null,
-                llm_model: data.llmModel || 'openai',
+                // null = "use the global default model". The Groq transport is
+                // selected by the groqEnabled flag in ChatBotLLMService, not by
+                // a per-bot model id; storing a transport-name sentinel here
+                // ('openai') was never a real model and only caused canned
+                // fallbacks when Groq was off.
+                llm_model: data.llmModel || null,
                 response_creativity_temperature: data.temperature || 0.8,
             });
 

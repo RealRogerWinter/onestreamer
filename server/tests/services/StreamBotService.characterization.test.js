@@ -447,7 +447,7 @@ describe('StreamBotService characterization', () => {
 
             expect(createTemporaryBot).toHaveBeenCalledTimes(2);
             expect(createTemporaryBot.mock.calls[0][0]).toEqual(
-                expect.objectContaining({ name: 'pos', llmModel: 'groq', duration: 120 })
+                expect.objectContaining({ name: 'pos', llmModel: null, duration: 120 })
             );
             expect(logSpy).toHaveBeenCalledTimes(2);
             expect(updateSpy).toHaveBeenCalledWith(

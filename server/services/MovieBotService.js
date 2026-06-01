@@ -156,7 +156,7 @@ class MovieBotService extends TranscriptionDrivenBotService {
                 return;
             }
             const targetBots = allMovieBotEnabledBots;
-            const moviePrompt = this.buildMoviePrompt(cleanText, chatHistory);
+            const moviePrompt = await this.buildMoviePrompt(cleanText, chatHistory);
 
             // Stagger responses so the chat doesn't get a thundering herd of bot
             // messages — each subsequent bot waits messageDelay.min..max ms more
@@ -195,8 +195,12 @@ class MovieBotService extends TranscriptionDrivenBotService {
         }
     }
 
-    buildMoviePrompt(transcriptionText, chatHistory) {
-        const globalPrompt = this.chatBotService.getGlobalPrompt();
+    async buildMoviePrompt(transcriptionText, chatHistory) {
+        // Single source of truth: the DB-backed global prompt owned by
+        // ChatBotLLMService. This is the same admin-configured prompt chat bots
+        // use (and falls back to DEFAULT_GLOBAL_PROMPT when the DB value is
+        // empty), so MovieBot and chat stay aligned.
+        const globalPrompt = await this.chatBotService.llmService.getGlobalPrompt();
         let chatContext = '';
         if (chatHistory && chatHistory.length > 0) {
             chatContext = '\n\nRecent chat messages:\n';
