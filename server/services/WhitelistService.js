@@ -2,11 +2,18 @@
  * WhitelistService.js — content filter for URL relay (Twitch + Kick).
  *
  * See docs/architecture/adr/0010-url-relay-whitelist-mode.md for the design and
- * docs/architecture/plans/url-relay-whitelist-mode.md for the phased rollout.
+ * docs/architecture/plans/url-relay-whitelist-mode.md for the rollout history.
  *
- * This is Phase 0 (scaffolding). The service reads from the DB and answers
- * policy questions; it is not yet consulted by the URL relay or rotation
- * services — those wirings come in Phases 1–3.
+ * The service reads from the DB and answers policy questions. It is now live
+ * and consulted across the URL-relay stack:
+ *   - Submission gate: urlstream/WhitelistGate.check → checkAllowed, run by
+ *     ViewBotURLService.startURLStream on each manual/admin submission.
+ *   - Rotation filtering: KickRandomService and TwitchRandomService call
+ *     filterCandidates(platform, …) to drop disallowed streams before picking.
+ *   - Drift enforcement: WhitelistEnforcer calls isStillAllowed on the live
+ *     streamer's fresh snapshot, and chooseFallback when none qualifies.
+ *   - Moderation: ModerationActionArbiter inserts auto-block entries via
+ *     addEntry({ list: 'block', … }) when AI moderation acts on a streamer.
  */
 
 const sqlite3 = require('sqlite3').verbose();
@@ -330,7 +337,8 @@ class WhitelistService extends EventEmitter {
   /**
    * Returns { fallbackCategory, fallbackEvergreen, evergreenCandidates }
    * for the orchestrator to consult when no whitelisted streamer is live.
-   * Phase 2 wires this into RandomStreamRotationService.
+   * Consulted by WhitelistEnforcer (drift enforcement) when the live streamer
+   * no longer qualifies and a fallback target must be chosen.
    */
   chooseFallback(platform) {
     this._ensureCache();

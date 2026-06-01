@@ -269,18 +269,6 @@ class KickRandomService {
   }
 
   /**
-   * Check if a streamer is currently live
-   */
-  async isStreamerLive(username) {
-    try {
-      const channel = await this.getChannelInfo(username);
-      return channel && channel.livestream !== null;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
    * PR-W4: snapshot of the current Kick stream state for drift checks.
    * Returns null when offline. Shape matches what WhitelistService.checkAllowed
    * expects for Kick — login + currentGameName + hasMatureContent.
@@ -316,14 +304,6 @@ class KickRandomService {
       logger.error(`❌ Kick drift check failed for ${username}:`, error.message);
       return null;
     }
-  }
-
-  /**
-   * Clear recent streamers cache
-   */
-  clearRecentCache() {
-    this.recentStreamers = [];
-    logger.debug('🧹 Kick recent streamers cache cleared');
   }
 
   /**

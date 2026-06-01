@@ -83,137 +83,26 @@ class URLStreamExtractorService extends EventEmitter {
   }
 
   /**
-   * Get available stream qualities
+   * Validate if URL is a live stream.
+   *
+   * @param {string} url
+   * @param {object} [opts]
+   * @param {boolean} [opts.forceRefresh=false] Skip the 5-min cache read and
+   *   re-probe the source. The health monitor uses this so a long-running
+   *   relay's cached submission-time result can't mask a source going offline.
+   *   The fresh result is still written back to the cache.
+   * @returns {Promise<{valid:boolean,isLive:boolean,platform:string,title:?string,qualities?:string[],tool?:string,error?:?string,isHLS?:boolean}>}
    */
-  async getStreamQualities(url) {
+  async validateStream(url, { forceRefresh = false } = {}) {
     const platform = this.detectPlatform(url);
 
-    try {
-      // Try streamlink first
-      const qualities = await this._getStreamlinkQualities(url);
-      if (qualities.length > 0) {
-        return { success: true, platform, qualities, tool: 'streamlink' };
-      }
-    } catch (err) {
-      logger.debug(`⚠️ Streamlink quality check failed for ${url}:`, err.message);
-    }
-
-    try {
-      // Fallback to yt-dlp
-      const qualities = await this._getYtdlpQualities(url);
-      if (qualities.length > 0) {
-        return { success: true, platform, qualities, tool: 'yt-dlp' };
-      }
-    } catch (err) {
-      logger.debug(`⚠️ yt-dlp quality check failed for ${url}:`, err.message);
-    }
-
-    return { success: false, platform, qualities: [], error: 'No streams found' };
-  }
-
-  /**
-   * Get stream qualities via streamlink
-   */
-  async _getStreamlinkQualities(url) {
-    return new Promise((resolve, reject) => {
-      const process = spawn(this.streamlinkPath, ['--json', url], {
-        timeout: 30000
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      process.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      process.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      process.on('close', (code) => {
-        if (code === 0 && stdout) {
-          try {
-            const info = JSON.parse(stdout);
-            const qualities = Object.keys(info.streams || {});
-            resolve(qualities);
-          } catch (e) {
-            reject(new Error('Failed to parse streamlink output'));
-          }
-        } else {
-          reject(new Error(stderr || 'Streamlink failed'));
-        }
-      });
-
-      process.on('error', reject);
-    });
-  }
-
-  /**
-   * Get stream qualities via yt-dlp
-   */
-  async _getYtdlpQualities(url) {
-    return new Promise((resolve, reject) => {
-      const platform = this.detectPlatform(url);
-      const args = ['-F', '--no-playlist'];
-
-      // Add YouTube cookies if available
-      if (platform === 'youtube' && this.hasYoutubeCookies) {
-        args.push('--cookies', this.youtubeCookiesPath);
-      }
-      args.push(url);
-
-      const process = spawn(this.ytdlpPath, args, {
-        timeout: 30000
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      process.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      process.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      process.on('close', (code) => {
-        if (stdout) {
-          // Parse format listing
-          const qualities = [];
-          const lines = stdout.split('\n');
-          for (const line of lines) {
-            const match = line.match(/^(\d+)\s+(\w+)\s+(\d+x\d+|\d+p)/);
-            if (match) {
-              qualities.push(`${match[3]} (${match[2]})`);
-            }
-          }
-          // Add common selectors
-          if (qualities.length > 0) {
-            qualities.unshift('best', 'worst');
-          }
-          resolve(qualities);
-        } else {
-          reject(new Error(stderr || 'yt-dlp failed'));
-        }
-      });
-
-      process.on('error', reject);
-    });
-  }
-
-  /**
-   * Validate if URL is a live stream
-   */
-  async validateStream(url) {
-    const platform = this.detectPlatform(url);
-
-    // Check cache first
+    // Check cache first (unless the caller forces a fresh probe)
     const cacheKey = `validate:${url}`;
-    const cached = this.streamInfoCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < this.cacheTTL) {
-      return cached.data;
+    if (!forceRefresh) {
+      const cached = this.streamInfoCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp) < this.cacheTTL) {
+        return cached.data;
+      }
     }
 
     let result = {

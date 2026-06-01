@@ -288,13 +288,6 @@ class ViewBotURLService extends EventEmitter {
   }
 
   /**
-   * Broadcast new-streamer event to all viewers
-   */
-  _broadcastNewStreamer(urlId, streamEntry, validation) {
-    return this.viewerNotifier.broadcastNewStreamer(urlId, streamEntry, validation);
-  }
-
-  /**
    * Check if a URL stream is currently active
    */
   isURLStreamActive() {
@@ -591,29 +584,6 @@ class ViewBotURLService extends EventEmitter {
   }
 
   /**
-   * Create FFmpeg process for RTMP output (LiveKit)
-   * Uses adaptive encoding settings when available, falls back to fixed 720p
-   */
-  _createFFmpegRTMPProcess(input, rtmpUrl, streamEntry) {
-    return this.ffmpegPipeline.createRTMPProcess(input, rtmpUrl, streamEntry);
-  }
-
-  /**
-   * Setup FFmpeg process event handlers
-   */
-  _setupFFmpegHandlers(urlId, ffmpegProcess) {
-    return this.ffmpegPipeline.setupHandlers(urlId, ffmpegProcess);
-  }
-
-  /**
-   * Wait for FFmpeg to start producing output
-   * Fails fast if FFmpeg exits early (e.g., HTTP 404, connection refused)
-   */
-  _waitForStream(ffmpegProcess, timeout) {
-    return this.ffmpegPipeline.waitForStream(ffmpegProcess, timeout);
-  }
-
-  /**
    * Handle stream errors with optional reconnection
    * CRITICAL: Uses mutex to prevent multiple simultaneous reconnect attempts
    */
@@ -626,15 +596,6 @@ class ViewBotURLService extends EventEmitter {
    */
   async _handleStreamEnd(urlId, reason) {
     return this.streamReconnector.handleStreamEnd(urlId, reason);
-  }
-
-  /**
-   * Refresh Kick token and restart stream with new playback URL
-   * Used when a Kick stream gets 403 Forbidden (token expired)
-   * @returns {boolean} true if refresh succeeded, false otherwise
-   */
-  async _refreshKickTokenAndRestart(urlId, streamEntry) {
-    return this.streamReconnector.refreshKickTokenAndRestart(urlId, streamEntry);
   }
 
   /**
@@ -712,16 +673,6 @@ class ViewBotURLService extends EventEmitter {
     this.ingressJanitor.killOrphans();
 
     logger.debug('✅ All URL streams stopped');
-  }
-
-  /**
-   * CRITICAL: Clean up ALL URL stream ingresses and participants from LiveKit
-   * This handles orphaned streams that aren't tracked in activeStreams
-   * (e.g., from server restarts or failed cleanup)
-   * @param {string} excludeUrlId - Optional URL ID to exclude from cleanup (for the new stream being started)
-   */
-  async _cleanupAllURLStreamIngresses(excludeUrlId = null) {
-    return this.ingressJanitor.cleanupAll(excludeUrlId);
   }
 
   /**

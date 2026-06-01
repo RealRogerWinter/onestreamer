@@ -9,7 +9,6 @@
  */
 
 const EventEmitter = require('events');
-const { spawn } = require('child_process');
 
 const logger = require('../bootstrap/logger').child({ svc: 'URLStreamHealthService' });
 class URLStreamHealthService extends EventEmitter {
@@ -150,55 +149,24 @@ class URLStreamHealthService extends EventEmitter {
   }
 
   /**
-   * Check if source URL is still live
+   * Check if source URL is still live.
+   *
+   * Delegates to the extractor's validateStream (with forceRefresh so the
+   * 30s poll never reads a stale cache entry) instead of re-spawning streamlink
+   * here. This keeps the binary path + direct-HLS / yt-dlp fallback handling in
+   * one place (URLStreamExtractorService). Returns the { isLive, title } subset
+   * that _checkStreamHealth consumes.
    */
   async _checkSourceLive(url) {
-    return new Promise((resolve, reject) => {
-      // Quick check using streamlink
-      const process = spawn('streamlink', ['--json', url], {
-        timeout: 15000
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      process.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      process.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      process.on('close', (code) => {
-        if (stdout) {
-          try {
-            const info = JSON.parse(stdout);
-            const isLive = Object.keys(info.streams || {}).length > 0;
-            resolve({
-              isLive,
-              title: info.metadata?.title || 'Unknown'
-            });
-          } catch (e) {
-            resolve({ isLive: false, title: null });
-          }
-        } else {
-          resolve({ isLive: false, title: null });
-        }
-      });
-
-      process.on('error', (err) => {
-        reject(err);
-      });
-
-      // Timeout fallback
-      setTimeout(() => {
-        if (!process.killed) {
-          process.kill();
-          resolve({ isLive: false, title: null });
-        }
-      }, 15000);
-    });
+    const extractor = this.urlService && this.urlService.extractorService;
+    if (!extractor) {
+      throw new Error('extractorService unavailable for source liveness check');
+    }
+    const result = await extractor.validateStream(url, { forceRefresh: true });
+    return {
+      isLive: !!result.isLive,
+      title: result.title || null
+    };
   }
 
   /**

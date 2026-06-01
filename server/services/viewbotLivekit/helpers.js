@@ -108,7 +108,7 @@ function buildIngressRequest({ bot, roomName, encodingSettings, bypassTranscodin
     };
   } else {
     // Bypass path: pass through the source codecs as-is. The upstream ffmpeg
-    // (ViewBotURLService._createFFmpegRTMPProcess) must emit H.264 + AAC/Opus.
+    // (urlstream/FFmpegPipeline.createRTMPProcess) must emit H.264 + AAC/Opus.
     ingressRequest.bypassTranscoding = true;
   }
 
