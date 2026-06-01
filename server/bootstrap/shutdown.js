@@ -14,7 +14,7 @@
  * that wires all four `process.on(...)` handlers and contains
  * byte-equivalent shutdown + cleanup bodies. Lazy-init services
  * (`viewbotService`, `viewBotClientService`, `recordingService`,
- * `streamInterceptorService`, `visualFxService`, etc.) are passed via
+ * `visualFxService`, etc.) are passed via
  * getter functions so the lookup happens at signal-time (always after
  * `startServer()` has wired them — or `undefined` if the signal arrives
  * during startup, in which case the relevant cleanup steps no-op).
@@ -64,7 +64,6 @@ function registerShutdownHandlers(deps) {
         getViewBotClientService,
         getRecordingService,
         getVisualFxService,
-        getStreamInterceptorService,
         getTimeTrackingService,
         getResourceMonitor,
         getSessionService,
@@ -117,18 +116,6 @@ function registerShutdownHandlers(deps) {
             if (viewBotClientService) {
                 logger.info('   Cleaning up ViewBot Client Service...');
                 await viewBotClientService.cleanup();
-            }
-
-            const streamInterceptorService = getStreamInterceptorService();
-            if (streamInterceptorService && streamInterceptorService.activeIntercepts) {
-                logger.info('   Stopping Stream Interceptor GStreamer processes...');
-                for (const [streamId, intercept] of streamInterceptorService.activeIntercepts) {
-                    if (intercept.processor && !intercept.processor.killed) {
-                        logger.info(`   - Killing GStreamer interceptor for stream ${streamId}`);
-                        intercept.processor.kill('SIGTERM');
-                    }
-                }
-                streamInterceptorService.activeIntercepts.clear();
             }
 
             const viewbotService = getViewbotService();

@@ -29,9 +29,7 @@
 //   plainTransportService      ──  mediasoupService
 //
 //   ── PR-I2 additions (recording/transcription/game/effects clusters) ──
-//   streamInterceptorService   ──  mediasoupService, plainTransportService
-//   visualFxService            ──  mediasoupService, buffDebuffService,
-//                                  streamInterceptorService
+//   visualFxService            ──  mediasoupService, buffDebuffService
 //   recordingStorageService    ──  database
 //   fileCompressionService     ──  database
 //   recordingService           ──  database, mediasoupService,
@@ -116,7 +114,6 @@ const ModerationNotifier = require('../services/ModerationNotifier');
 
 const logger = require('./logger').child({ svc: 'services' });
 // PR-I2 additions
-const StreamInterceptorService = require('../services/StreamInterceptorService');
 const VisualFxService = require('../services/VisualFxService');
 const RecordingStorageService = require('../services/RecordingStorageService');
 const FileCompressionService = require('../services/FileCompressionService');
@@ -270,9 +267,8 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
   // Plain RTP transport sits on top of the pre-built mediasoup service.
   const plainTransportService = new MediasoupPlainTransportService(mediasoupService);
 
-  // ── PR-I2: stream-interception + visual fx chain ────────────────────────
-  const streamInterceptorService = new StreamInterceptorService(mediasoupService, plainTransportService);
-  const visualFxService = new VisualFxService(mediasoupService, buffDebuffService, streamInterceptorService);
+  // ── PR-I2: visual fx chain ──────────────────────────────────────────────
+  const visualFxService = new VisualFxService(mediasoupService, buffDebuffService);
 
   // ── PR-I2: recording cluster ────────────────────────────────────────────
   const recordingStorageService = new RecordingStorageService(database);
@@ -439,7 +435,6 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
     soundFxService,
     plainTransportService,
     // PR-I2:
-    streamInterceptorService,
     visualFxService,
     recordingStorageService,
     fileCompressionService,

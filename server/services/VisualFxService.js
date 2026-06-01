@@ -15,11 +15,10 @@ const BuffBridge = require('./visualfx/BuffBridge');
 const ConsumerControl = require('./visualfx/ConsumerControl');
 
 class VisualFxService extends EventEmitter {
-    constructor(mediasoupService = null, buffDebuffService = null, streamInterceptorService = null) {
+    constructor(mediasoupService = null, buffDebuffService = null) {
         super();
         this.mediasoupService = mediasoupService;
         this.buffDebuffService = buffDebuffService;
-        this.streamInterceptorService = streamInterceptorService;
         
         // Effect Registry
         this.effectRegistry = new Map();
@@ -58,13 +57,12 @@ class VisualFxService extends EventEmitter {
         logger.debug('🎬 VISUALFX: Service initialized');
     }
     
-    setDependencies(mediasoupService, buffDebuffService, streamService = null, io = null, sessionService = null, streamInterceptorService = null) {
+    setDependencies(mediasoupService, buffDebuffService, streamService = null, io = null, sessionService = null) {
         this.mediasoupService = mediasoupService;
         this.buffDebuffService = buffDebuffService;
         this.streamService = streamService;
         this.io = io;
         this.sessionService = sessionService;
-        this.streamInterceptorService = streamInterceptorService;
         logger.debug(`🎬 VISUALFX: Dependencies set - io: ${!!io}, sessionService: ${!!sessionService}`);
         logger.debug(`🎬 VISUALFX: Socket.io instance:`, this.io ? `Connected (${this.io.engine?.clientsCount || 0} clients)` : 'NOT SET');
         logger.debug(`🎬 VISUALFX: Socket.io object type:`, typeof this.io);
@@ -406,20 +404,7 @@ class VisualFxService extends EventEmitter {
         if (!effect) return;
         
         logger.debug(`🎬 VISUALFX: Removing effect ${effect.effectId} from stream ${streamId}`);
-        
-        // Check if this effect is using stream interception
-        if (this.streamInterceptorService) {
-            const activeInterceptions = this.streamInterceptorService.getActiveInterceptions();
-            const hasInterception = activeInterceptions.some(i => 
-                i.streamId === streamId && i.effectType === effect.effectId
-            );
-            
-            if (hasInterception) {
-                logger.debug(`🎬 VISUALFX: Stopping stream interception for ${effect.effectId}`);
-                await this.streamInterceptorService.stopInterception(streamId);
-            }
-        }
-        
+
         // Clean up based on effect type
         const effectConfig = effect.config;
         
