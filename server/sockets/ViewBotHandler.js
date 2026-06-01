@@ -2,7 +2,7 @@
  * ViewBotHandler
  *
  * Registers ViewBot socket events on a per-connection basis. Continuation of
- * PR-H's socket-extraction pattern (see AdminHandler, EffectHandler,
+ * PR-H's socket-extraction pattern (see AdminHandler,
  * GameHandler, StreamHandler, MediaSoupHandler).
  *
  * Handlers (all logic byte-equivalent to the original inline versions):

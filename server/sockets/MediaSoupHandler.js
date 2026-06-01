@@ -3,7 +3,7 @@
  *
  * Registers MediaSoup WebRTC SFU signalling events on a per-connection basis.
  * Continuation of PR-H's socket-extraction pattern (see AdminHandler,
- * EffectHandler, GameHandler, StreamHandler).
+ * GameHandler, StreamHandler).
  *
  * Handlers (all logic byte-equivalent to the original inline versions):
  *   - mediasoup:get-rtp-capabilities     Send router RTP capabilities to caller.

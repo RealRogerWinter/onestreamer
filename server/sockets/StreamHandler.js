@@ -3,7 +3,7 @@
  *
  * Registers the core streaming/takeover socket events on a per-connection
  * basis. Continuation of PR-H's socket-extraction pattern (see AdminHandler,
- * EffectHandler, GameHandler).
+ * GameHandler).
  *
  * Handlers (all logic byte-equivalent to the original inline versions):
  *   - join-as-viewer    A client opts in to receive the stream. Adds to the

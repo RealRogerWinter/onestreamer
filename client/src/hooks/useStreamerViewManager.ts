@@ -81,11 +81,6 @@ export const useStreamerViewManager = (
         managerRef.current.forceLocalPreview();
       }
     },
-    forceSelfStream: () => {
-      if (managerRef.current) {
-        managerRef.current.forceSelfStream();
-      }
-    },
     getStats: () => {
       if (managerRef.current) {
         return managerRef.current.getStats();
