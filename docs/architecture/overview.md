@@ -2,6 +2,8 @@
 
 _Last verified: 2026-05-23 against commit 4a1d325._
 
+> **⚠️ Streaming details below are partly superseded by [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md) (2026-06-01).** MediaSoup has been fully retired — **LiveKit is the sole WebRTC backend**. References below to the "MediaSoup SFU", the `50000–50199` UDP range, `mediasoup:produce`, `mediasoup-client`, and MediaSoup consumers are historical; media now flows browser ↔ **LiveKit** (`livekit-server` on `:7882`, plus ingress/egress). The non-streaming sections (chat split, SQLite, local AI, Strapi, process management) remain accurate.
+
 The README has a top-level "what talks to what" diagram. This page goes deeper: the layers, the trust boundaries, the lifecycle of a request, and the rationale for the major splits.
 
 ## The layered view
