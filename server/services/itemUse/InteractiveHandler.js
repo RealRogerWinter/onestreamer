@@ -19,8 +19,8 @@ class InteractiveHandler {
 
         // Check if there's an active stream for interactive items
         // Allow anonymous streamers too - check both hasActiveStream and MediaSoup
-        const mediasoupService = services.mediasoupService;
-        const hasMediaSoupStreamer = mediasoupService && mediasoupService.currentStreamer;
+        const webrtcService = services.webrtcService;
+        const hasMediaSoupStreamer = webrtcService && webrtcService.currentStreamer;
 
         if (!streamStatus.hasActiveStream && !hasMediaSoupStreamer) {
             logger.debug(`❌ ITEMS: No active stream for interactive item ${item.display_name}`);

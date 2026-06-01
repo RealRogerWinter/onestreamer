@@ -18,7 +18,7 @@ function createTestStreamRouter(deps) {
     const {
         adminKeyAuth,
         streamService,
-        mediasoupService,
+        webrtcService,
         sessionService,
         testStreamService,
         mediaStreamService,
@@ -96,7 +96,7 @@ function createTestStreamRouter(deps) {
 
             if (streamService.getCurrentStreamer() === viewbotResult.streamId) {
               streamService.clearStreamer();
-              mediasoupService.currentStreamer = null;
+              webrtcService.currentStreamer = null;
               logger.info(`🧹 VIEWBOT LEGACY STOP: Cleared ${viewbotResult.streamId} from both services`);
 
               // Clear streamer buff display when viewbot streaming ends
@@ -124,7 +124,7 @@ function createTestStreamRouter(deps) {
         // Clear the test stream from active streamer
         if (streamService.getCurrentStreamer() === result.streamId) {
           streamService.clearStreamer();
-          mediasoupService.currentStreamer = null;
+          webrtcService.currentStreamer = null;
           logger.info(`🧹 TEST STREAM STOP: Cleared ${result.streamId} from both services`);
 
           // Also stop media ingestion

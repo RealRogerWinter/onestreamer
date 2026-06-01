@@ -17,7 +17,7 @@ module.exports = function registerTakeover(io, socket, deps) {
     streamService,
     sessionService,
     takeoverService,
-    mediasoupService,
+    webrtcService,
     timeTrackingService,
     buffDebuffService,
     streamingLogsService,
@@ -255,7 +255,7 @@ module.exports = function registerTakeover(io, socket, deps) {
         await new Promise(resolve => setTimeout(resolve, 200));
 
         logger.info(`🧹 TAKEOVER: Cleaning up resources for previous streamer ${currentStreamer}`);
-        mediasoupService.cleanup(currentStreamer);
+        webrtcService.cleanup(currentStreamer);
 
         // Clear from notified streamers to allow fresh notifications
         notifiedStreamers.delete(currentStreamer);
@@ -266,7 +266,7 @@ module.exports = function registerTakeover(io, socket, deps) {
 
       streamService.setStreamer(socket.id, data.streamType);
       // CRITICAL FIX: Sync MediasoupService currentStreamer with StreamService immediately
-      mediasoupService.currentStreamer = socket.id;
+      webrtcService.currentStreamer = socket.id;
 
       // Ensure the new streamer is also cleared from notifiedStreamers to allow fresh notifications
       notifiedStreamers.delete(socket.id);
@@ -485,7 +485,7 @@ module.exports = function registerTakeover(io, socket, deps) {
         // Check if ViewBot has producers ready
         // CRITICAL FIX: ViewBots stream via LiveKit/ffmpeg, not MediaSoup producers
         // Always treat ViewBot producers as ready since they stream via RTP/FFmpeg
-        const producerMap = mediasoupService.producers.get(socket.id);
+        const producerMap = webrtcService.producers.get(socket.id);
         const hasVideo = data.isViewBot ? true : (producerMap && producerMap.has('video'));
         const hasAudio = data.isViewBot ? true : (producerMap && producerMap.has('audio'));
 

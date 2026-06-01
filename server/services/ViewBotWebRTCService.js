@@ -10,8 +10,8 @@ const logger = require('../bootstrap/logger').child({ svc: 'ViewBotWebRTCService
  * This provides perfect A/V sync by generating media in a single pipeline
  */
 class ViewBotWebRTCService {
-  constructor(mediasoupService) {
-    this.mediasoupService = mediasoupService;
+  constructor(webrtcService) {
+    this.webrtcService = webrtcService;
     this.activeBots = new Map();
     this.frameRate = 30;
     this.sampleRate = 48000;

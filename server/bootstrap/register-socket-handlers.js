@@ -50,7 +50,7 @@ function registerSocketHandlers(io, deps) {
         // Per-handler deps — service refs (eager)
         streamService,
         takeoverService,
-        mediasoupService,
+        webrtcService,
         testStreamService,
         timeTrackingService,
         buffDebuffService,
@@ -158,7 +158,7 @@ function registerSocketHandlers(io, deps) {
             streamService,
             sessionService,
             takeoverService,
-            mediasoupService,
+            webrtcService,
             testStreamService,
             timeTrackingService,
             buffDebuffService,
@@ -212,7 +212,7 @@ function registerSocketHandlers(io, deps) {
 
         registerDisconnectHandler(io, socket, {
             lifecycleManager,
-            mediasoupService,
+            webrtcService,
             sessionService,
             timeTrackingService,
             notifiedStreamers,

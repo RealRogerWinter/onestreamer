@@ -21,7 +21,7 @@
  * late), with a JSON-500 short-circuit when absent.
  *
  * Deps (`adminKeyAuth`, `adminKeyOrJwt`, `movieBotService`,
- * `chatBotService`, `mediasoupService`, `streamService`, `database`,
+ * `chatBotService`, `webrtcService`, `streamService`, `database`,
  * `logger`) destructured from the factory args bag.
  */
 
@@ -33,7 +33,7 @@ function createAdminAiRouter(deps) {
         adminKeyOrJwt,
         movieBotService,
         chatBotService,
-        mediasoupService,
+        webrtcService,
         streamService,
         database,
         logger,
@@ -47,7 +47,7 @@ function createAdminAiRouter(deps) {
     
         if (!streamerId) {
           // Try to get current streamer
-          const currentStreamer = mediasoupService.getCurrentStreamer();
+          const currentStreamer = webrtcService.getCurrentStreamer();
           if (!currentStreamer) {
             return res.status(400).json({ error: 'No active stream to monitor' });
           }

@@ -55,7 +55,7 @@ const streamService = {
   clearStreamer: jest.fn(),
 };
 const sessionService = { linkUserToSocket: jest.fn(), getUserIdBySocketId: jest.fn() };
-const mediasoupService = { currentStreamer: null };
+const webrtcService = { currentStreamer: null };
 const testStreamService = {
   startTestStream: jest.fn(),
   stopTestStream: jest.fn(),
@@ -85,7 +85,7 @@ function buildApp() {
       viewBotAuth,
       authenticateAdmin,
       streamService,
-      mediasoupService,
+      webrtcService,
       sessionService,
       testStreamService,
       mediaStreamService,

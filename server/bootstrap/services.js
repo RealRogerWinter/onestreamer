@@ -14,7 +14,7 @@
 //   takeoverService            ──  redisClient, sessionService
 //   testStreamService          ──  no deps
 //   mediaStreamService         ──  no deps
-//   (mediasoupService is built in server/index.js because it branches on
+//   (webrtcService is built in server/index.js because it branches on
 //    USE_WEBRTC_ADAPTER env flag and assigns to globals; it's PASSED IN here)
 //   audioOptimizationService   ──  no deps
 //   resourceMonitor            ──  no deps
@@ -30,7 +30,7 @@
 //   ── PR-I2 additions (recording/transcription/game/effects clusters) ──
 //   recordingStorageService    ──  database
 //   fileCompressionService     ──  database
-//   recordingService           ──  database, mediasoupService,
+//   recordingService           ──  database, webrtcService,
 //                                  recordingStorageService
 //   clipStorageService         ──  no deps
 //   clipProcessorService       ──  clipStorageService
@@ -40,7 +40,7 @@
 //   sessionChatCaptureService  ──  config bag (env-derived)
 //   recordingUploadScheduler   ──  config bag
 //   recordingCleanupScheduler  ──  no deps
-//   transcriptionService       ──  database, mediasoupService, recordingService
+//   transcriptionService       ──  database, webrtcService, recordingService
 //   gameService                ──  io, database
 //   gameStreamService          ──  io, gameService, takeoverService
 //
@@ -63,7 +63,7 @@
 // dedicated `createViewBotServices` factory exported alongside the main
 // one. They live in their own function (rather than being folded into
 // createServices) because:
-//   (1) they depend on `mediasoupService.initialize()` having completed
+//   (1) they depend on `webrtcService.initialize()` having completed
 //       successfully — that only happens inside startServer()'s try block,
 //       well after the synchronous service bag is built;
 //   (2) they branch on `livekitService` which is derived from
@@ -162,7 +162,7 @@ const ViewBotLiveKitService = require('../services/ViewBotLiveKitService');
  *                                     handles the null case internally).
  * @param {object}  deps.database      SQLite database wrapper.
  * @param {object}  deps.env           process.env (or a subset thereof).
- * @param {object}  deps.mediasoupService  Pre-built mediasoup service
+ * @param {object}  deps.webrtcService  Pre-built mediasoup service
  *                                     (adapter or direct — server/index.js
  *                                     picks based on USE_WEBRTC_ADAPTER).
  * @param {Map}     deps.userBonusCooldowns  Shared Map<userId, lastClaimEpochMs>
@@ -177,7 +177,7 @@ const ViewBotLiveKitService = require('../services/ViewBotLiveKitService');
  *                   substitute for the previous inline `new XService(...)`
  *                   block.
  */
-function createServices({ io, redisClient, database, env, mediasoupService, userBonusCooldowns }) {
+function createServices({ io, redisClient, database, env, webrtcService, userBonusCooldowns }) {
   // No-dep singletons first.
   const streamService = new StreamService();
   const sessionService = new SessionService();
@@ -262,7 +262,7 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
   // ── PR-I2: recording cluster ────────────────────────────────────────────
   const recordingStorageService = new RecordingStorageService(database);
   const fileCompressionService = new FileCompressionService(database);
-  const recordingService = new RecordingService(database, mediasoupService, recordingStorageService);
+  const recordingService = new RecordingService(database, webrtcService, recordingStorageService);
 
   // Clip cluster.
   const clipStorageService = new ClipStorageService();
@@ -308,7 +308,7 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
   const recordingCleanupScheduler = new RecordingCleanupScheduler();
 
   // ── PR-I2: transcription (depends on recordingService) ──────────────────
-  const transcriptionService = new TranscriptionService(database, mediasoupService, recordingService);
+  const transcriptionService = new TranscriptionService(database, webrtcService, recordingService);
 
   // ── PR-I2: game cluster ─────────────────────────────────────────────────
   const gameService = new GameService(io, database);
@@ -498,7 +498,7 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
  * Build the late ViewBot service stack (PR-I4).
  *
  * Called from server/index.js inside startServer() AFTER
- * mediasoupService.initialize() has resolved, because every service in this
+ * webrtcService.initialize() has resolved, because every service in this
  * stack reaches into the live mediasoup worker (transports/producers maps)
  * or — on the LiveKit branch — depends on the adapter's resolved backend.
  *
@@ -520,7 +520,7 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
  * ViewBotRotationService, and the various setTimeout-driven autostarts.
  *
  * @param {object}  deps
- * @param {object}  deps.mediasoupService  Already-initialized mediasoup
+ * @param {object}  deps.webrtcService  Already-initialized mediasoup
  *                                         service (or adapter forwarding to
  *                                         one). Required.
  * @param {object?} deps.livekitService    LiveKit backend instance, or null
@@ -535,16 +535,16 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
  *                              viewBotLiveKitService, // null on MediaSoup branch
  *                            }
  */
-async function createViewBotServices({ mediasoupService, livekitService, streamService }) {
+async function createViewBotServices({ webrtcService, livekitService, streamService }) {
   // ViewbotService: takes both potential backends; chooses internally.
-  const viewbotService = new ViewbotService(mediasoupService, livekitService);
+  const viewbotService = new ViewbotService(webrtcService, livekitService);
 
   let viewBotWebRTCService = null;
   let viewBotLiveKitService = null;
 
   if (!livekitService) {
     // MediaSoup branch — needs WebRTC viewbot for mobile 5G/TURN support.
-    viewBotWebRTCService = new ViewBotWebRTCService(mediasoupService);
+    viewBotWebRTCService = new ViewBotWebRTCService(webrtcService);
   } else {
     // LiveKit branch — needs RTMP-ingress viewbot.
     viewBotLiveKitService = new ViewBotLiveKitService(livekitService);

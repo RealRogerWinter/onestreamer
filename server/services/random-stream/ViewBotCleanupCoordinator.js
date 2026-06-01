@@ -14,7 +14,7 @@
  *   host.viewBotRotation, host.streamNotifier
  *   global.viewBotRotation, global.viewBotManager,
  *   global.unifiedViewBotRotation, global.viewBotLiveKitService,
- *   global.streamService, global.mediasoupService
+ *   global.streamService, global.webrtcService
  *
  * The shared `logger` is the RandomStreamRotationService child, so log lines
  * keep their `svc: 'RandomStreamRotationService'` binding.
@@ -103,11 +103,11 @@ class ViewBotCleanupCoordinator {
     }
 
     // 5. Clear MediasoupService/WebRTCAdapter currentStreamer
-    if (global.mediasoupService && global.mediasoupService.currentStreamer) {
-      const current = global.mediasoupService.currentStreamer;
+    if (global.webrtcService && global.webrtcService.currentStreamer) {
+      const current = global.webrtcService.currentStreamer;
       if (current.startsWith('viewbot-') || current.includes('viewbot')) {
         logger.debug(`🧹 Clearing MediaSoup viewbot streamer: ${current}`);
-        global.mediasoupService.currentStreamer = null;
+        global.webrtcService.currentStreamer = null;
       }
     }
 

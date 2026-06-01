@@ -12,14 +12,14 @@
 //   /api/livekit/token
 //
 // Mounted at /api so each handler keeps the original path. Routes live in
-// the same file because they share infrastructure (mediasoupService +
+// the same file because they share infrastructure (webrtcService +
 // streamService + the adapter / TURN credential plumbing) and none of the
 // sub-trees has enough mass to warrant its own file.
 //
 // Service access:
 //   - streamService / sessionService / mediaStreamService come from
 //     req.app.locals.services (PR-I factory bag).
-//   - mediasoupService is read off req.app.locals.mediasoupService (the
+//   - webrtcService is read off req.app.locals.webrtcService (the
 //     LiveKit backend; lives at module scope in server/index.js because the
 //     services factory consumes it).
 //   - generateTurnCredentials is exposed on app.locals so we don't
@@ -36,9 +36,9 @@ const database = require('../database/database');
 const { authenticateAdmin } = require('../middleware/auth');
 
 function getMediasoup(req, res) {
-  const service = req.app.locals.mediasoupService;
+  const service = req.app.locals.webrtcService;
   if (!service) {
-    res.status(500).json({ error: 'mediasoupService not initialized' });
+    res.status(500).json({ error: 'webrtcService not initialized' });
     return null;
   }
   return service;
@@ -48,14 +48,14 @@ function getMediasoup(req, res) {
 
 router.get('/stream/status', (req, res) => {
   const { streamService, mediaStreamService } = req.app.locals.services;
-  const mediasoupService = req.app.locals.mediasoupService;
+  const webrtcService = req.app.locals.webrtcService;
   const status = streamService.getStreamStatus();
   const mediaInfo = mediaStreamService.getStreamInfo();
 
   // Add MediaSoup producer info if available
   let producerInfo = null;
-  if (mediasoupService && mediasoupService.currentStreamer) {
-    const producers = mediasoupService.producers.get(mediasoupService.currentStreamer);
+  if (webrtcService && webrtcService.currentStreamer) {
+    const producers = webrtcService.producers.get(webrtcService.currentStreamer);
     if (producers) {
       producerInfo = {
         videoProducerId: producers.get('video')?.id || null,
@@ -152,14 +152,14 @@ router.get('/media/info', (req, res) => {
 // ── /api/webrtc/* — Backend management (only meaningful when adapter on) ────
 
 router.get('/webrtc/backend', (req, res) => {
-  const mediasoupService = getMediasoup(req, res);
-  if (!mediasoupService) return;
+  const webrtcService = getMediasoup(req, res);
+  if (!webrtcService) return;
 
   res.json({
     backend: 'livekit',
     adapterEnabled: false,
-    info: mediasoupService.getBackendInfo(),
-    stats: mediasoupService.getStats(),
+    info: webrtcService.getBackendInfo(),
+    stats: webrtcService.getStats(),
   });
 });
 

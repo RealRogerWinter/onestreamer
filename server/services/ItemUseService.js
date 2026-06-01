@@ -81,7 +81,7 @@ class ItemUseService {
      * @param {object} [opts.services.buffDebuffService]
      * @param {object} [opts.services.takeoverService]
      * @param {object} [opts.services.soundFxService]
-     * @param {object} [opts.services.mediasoupService]
+     * @param {object} [opts.services.webrtcService]
      * @param {object} [opts.io]
      * @param {object} [opts.sessionService]
      * @param {Function} opts.sendSystemMessage  async (message, username?) -> void

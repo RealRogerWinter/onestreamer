@@ -272,9 +272,9 @@ class ViewBotURLService extends EventEmitter {
       if (streamerLog) logger.debug(streamerLog);
       this.streamService.setStreamer(urlId);
     }
-    if (global.mediasoupService) {
+    if (global.webrtcService) {
       if (mediasoupLog) logger.debug(mediasoupLog);
-      global.mediasoupService.currentStreamer = urlId;
+      global.webrtcService.currentStreamer = urlId;
     }
   }
 

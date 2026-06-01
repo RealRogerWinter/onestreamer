@@ -19,7 +19,7 @@
  *                               (3 s rotation restart, 1 s real-streamer-
  *                               status validation) route through it so
  *                               SIGTERM during the window cancels them.
- *   - mediasoupService          Plain-RTP transport bookkeeping for the
+ *   - webrtcService          Plain-RTP transport bookkeeping for the
  *                               socket; cascading `cleanup(socketId)` at the
  *                               end. Also has its `currentStreamer` cleared
  *                               directly when the current streamer leaves.
@@ -61,7 +61,7 @@ const logger = require('../bootstrap/logger').child({ svc: 'DisconnectHandler' }
 module.exports = function registerDisconnectHandler(io, socket, deps) {
   const {
     lifecycleManager,
-    mediasoupService,
+    webrtcService,
     sessionService,
     timeTrackingService,
     notifiedStreamers,
@@ -79,8 +79,8 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
 
   socket.on('disconnect', async () => {
     // Clean up ViewBot Plain RTP transports if exist (in case cleanup wasn't called)
-    if (mediasoupService.transports?.has(socket.id)) {
-      const transports = mediasoupService.transports.get(socket.id);
+    if (webrtcService.transports?.has(socket.id)) {
+      const transports = webrtcService.transports.get(socket.id);
       try {
         // Handle both single transport and dual transport cases
         if (transports.video && transports.audio) {
@@ -96,7 +96,7 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
       } catch (e) {
         logger.error({ err: e }, 'Error closing transports');
       }
-      mediasoupService.transports.delete(socket.id);
+      webrtcService.transports.delete(socket.id);
     }
 
     // Handle time tracking cleanup for authenticated users
@@ -126,7 +126,7 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
     }
 
     // Clean up mediasoup resources
-    mediasoupService.cleanup(socket.id);
+    webrtcService.cleanup(socket.id);
 
     if (streamService.getCurrentStreamer() === socket.id) {
       // Check if disconnecting streamer was a real user (not viewbot)
@@ -180,7 +180,7 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
 
       streamService.clearStreamer();
       // CRITICAL FIX: Also clear MediasoupService currentStreamer
-      mediasoupService.currentStreamer = null;
+      webrtcService.currentStreamer = null;
       logger.info(`🧹 DISCONNECT: Cleared ${socket.id} from both services`);
 
       streamNotifier.streamEnded({ reason: 'streamer_disconnected', previousStreamer: socket.id });

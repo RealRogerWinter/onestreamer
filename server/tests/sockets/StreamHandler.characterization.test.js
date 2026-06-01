@@ -91,7 +91,7 @@ function makeDeps(overrides = {}) {
     getCooldownSeconds: jest.fn(() => 60),
     recordTakeover: jest.fn(async () => {}),
   };
-  const mediasoupService = {
+  const webrtcService = {
     cleanup: jest.fn(),
     currentStreamer: null,
     producers: new Map(),
@@ -138,7 +138,7 @@ function makeDeps(overrides = {}) {
     streamService,
     sessionService,
     takeoverService,
-    mediasoupService,
+    webrtcService,
     testStreamService,
     timeTrackingService,
     buffDebuffService,
@@ -309,7 +309,7 @@ describe('sockets/StreamHandler characterization', () => {
 
       // streamer state set in both services
       expect(deps.streamService.setStreamer).toHaveBeenCalledWith('socket-streamer-1', 'webcam');
-      expect(deps.mediasoupService.currentStreamer).toBe('socket-streamer-1');
+      expect(deps.webrtcService.currentStreamer).toBe('socket-streamer-1');
 
       // room transition
       expect(socket.join).toHaveBeenCalledWith('streamer');
@@ -381,7 +381,7 @@ describe('sockets/StreamHandler characterization', () => {
       );
 
       // mediasoup cleanup for the previous streamer
-      expect(deps.mediasoupService.cleanup).toHaveBeenCalledWith('real-streamer-2');
+      expect(deps.webrtcService.cleanup).toHaveBeenCalledWith('real-streamer-2');
     });
 
     test('viewbot start: emits stream-ready (io-wide), tracks socket id, links synthetic negative userId, no recordTakeover', async () => {
@@ -473,7 +473,7 @@ describe('sockets/StreamHandler characterization', () => {
 
       // streamer cleared in both services
       expect(deps.streamService.clearStreamer).toHaveBeenCalledTimes(1);
-      expect(deps.mediasoupService.currentStreamer).toBeNull();
+      expect(deps.webrtcService.currentStreamer).toBeNull();
 
       // streaming log + streaming time tracking ended
       expect(deps.streamingLogsService.endSession).toHaveBeenCalledWith('socket-streamer-1', 'voluntary_stop');

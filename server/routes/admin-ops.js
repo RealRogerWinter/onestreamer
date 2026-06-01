@@ -42,7 +42,7 @@ function createAdminOpsRouter(deps) {
         accountService,
         itemService,
         timeTrackingService,
-        mediasoupService,
+        webrtcService,
         resourceMonitor,
         streamNotifier,
         viewerCountNotifier,
@@ -95,7 +95,7 @@ function createAdminOpsRouter(deps) {
 
     router.post('/admin/clear-stream', authenticateAdmin, (req, res) => {
       const clearedStreamer = streamService.clearStreamer();
-      mediasoupService.currentStreamer = null;
+      webrtcService.currentStreamer = null;
       logger.info(`🧹 ADMIN CLEAR: Cleared ${clearedStreamer} from both services`);
 
       streamNotifier.streamEnded({ reason: 'admin_clear', previousStreamer: clearedStreamer });
@@ -269,12 +269,12 @@ function createAdminOpsRouter(deps) {
 
     router.get('/debug/server-state', (req, res) => {
       try {
-        const currentStreamer = mediasoupService.getCurrentStreamer();
+        const currentStreamer = webrtcService.getCurrentStreamer();
         const producers = {};
         const notifiedList = Array.from(notifiedStreamers);
     
         // Get producer info for all streamers
-        for (const [socketId, producerMap] of mediasoupService.producers.entries()) {
+        for (const [socketId, producerMap] of webrtcService.producers.entries()) {
           producers[socketId] = {
             count: producerMap.size,
             types: Array.from(producerMap.keys())
@@ -342,7 +342,7 @@ function createAdminOpsRouter(deps) {
         };
 
         // Get mediasoup statistics
-        const mediasoupStats = mediasoupService.getStats();
+        const mediasoupStats = webrtcService.getStats();
 
         // Update resource monitor with current stats
         resourceMonitor.updateConnectionMetrics(socketStats);

@@ -39,7 +39,7 @@ class ThrowingService {
      * @param {object} opts.services.itemService
      * @param {object} opts.services.streamService
      * @param {object} [opts.services.buffDebuffService]
-     * @param {object} [opts.services.mediasoupService]
+     * @param {object} [opts.services.webrtcService]
      * @param {object} [opts.io]                 socket.io server (optional — events skipped if absent)
      * @param {object} [opts.sessionService]     used to look up the current streamer's userId and to
      *                                           fan inventory-updated out to the thrower's sockets
@@ -61,7 +61,7 @@ class ThrowingService {
             itemService,
             streamService,
             buffDebuffService,
-            mediasoupService
+            webrtcService
         } = services;
 
         const streamStatus = streamService.getStreamStatus();
@@ -106,12 +106,12 @@ class ThrowingService {
                     // Try StreamService first (works for MediaSoup and synced LiveKit)
                     let currentStreamerSocketId = streamService.getCurrentStreamer();
 
-                    // LIVEKIT FIX: Fallback to mediasoupService/webrtcAdapter if StreamService has no streamer
+                    // LIVEKIT FIX: Fallback to webrtcService/webrtcAdapter if StreamService has no streamer
                     // This handles LiveKit mode where LiveKitService tracks currentStreamer but StreamService might not be synced
-                    if (!currentStreamerSocketId && mediasoupService) {
-                        currentStreamerSocketId = mediasoupService.getCurrentStreamer();
+                    if (!currentStreamerSocketId && webrtcService) {
+                        currentStreamerSocketId = webrtcService.getCurrentStreamer();
                         if (currentStreamerSocketId) {
-                            logger.debug(`🎯 THROW: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                            logger.debug(`🎯 THROW: Using webrtcService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
                         }
                     }
 

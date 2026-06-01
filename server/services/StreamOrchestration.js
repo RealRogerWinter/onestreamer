@@ -48,13 +48,13 @@ const logger = require('../bootstrap/logger').child({ svc: 'StreamOrchestration'
 function createStreamOrchestration({
   io,
   takeoverService,
-  mediasoupService,
+  webrtcService,
   getStreamerDisplayName,
   lastEmittedStreamReady,
 }) {
   if (!io) throw new Error('StreamOrchestration requires `io`');
   if (!takeoverService) throw new Error('StreamOrchestration requires `takeoverService`');
-  if (!mediasoupService) throw new Error('StreamOrchestration requires `mediasoupService`');
+  if (!webrtcService) throw new Error('StreamOrchestration requires `webrtcService`');
   if (typeof getStreamerDisplayName !== 'function') {
     throw new Error('StreamOrchestration requires `getStreamerDisplayName` function');
   }
@@ -123,11 +123,11 @@ function createStreamOrchestration({
     }
     logger.info(`🔍 STREAM-READY: Verifying tracks for ${streamerId} before emitting...`);
 
-    const isLiveKit = mediasoupService.isLiveKit && mediasoupService.isLiveKit();
+    const isLiveKit = webrtcService.isLiveKit && webrtcService.isLiveKit();
 
-    if (isLiveKit && mediasoupService.verifyParticipantTracks) {
+    if (isLiveKit && webrtcService.verifyParticipantTracks) {
       try {
-        const verification = await mediasoupService.verifyParticipantTracks(streamerId, {
+        const verification = await webrtcService.verifyParticipantTracks(streamerId, {
           requireVideo: true,
           requireAudio: false,
           maxAttempts: 10,

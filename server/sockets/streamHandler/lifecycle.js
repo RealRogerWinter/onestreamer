@@ -16,7 +16,7 @@ module.exports = function registerLifecycle(io, socket, deps) {
     streamService,
     sessionService,
     takeoverService,
-    mediasoupService,
+    webrtcService,
     timeTrackingService,
     streamingLogsService,
     recordingService,
@@ -62,7 +62,7 @@ module.exports = function registerLifecycle(io, socket, deps) {
       logger.info(`🔒 COOLDOWN: Applied individual cooldown to ${socket.id} for voluntary stream end`);
 
       streamService.clearStreamer();
-      mediasoupService.currentStreamer = null;
+      webrtcService.currentStreamer = null;
 
       // Handle continuous recording for stream end
       if (recordingService) {

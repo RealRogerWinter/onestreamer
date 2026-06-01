@@ -28,8 +28,8 @@ class StreamService {
     this.viewers.delete(socketId);
 
     // SYNC: Keep MediasoupService in sync to prevent dual-source-of-truth issues
-    if (global.mediasoupService) {
-      global.mediasoupService.currentStreamer = socketId;
+    if (global.webrtcService) {
+      global.webrtcService.currentStreamer = socketId;
     }
   }
 
@@ -49,8 +49,8 @@ class StreamService {
     this.streamGeneration += 1;
 
     // SYNC: Keep MediasoupService in sync to prevent dual-source-of-truth issues
-    if (global.mediasoupService) {
-      global.mediasoupService.currentStreamer = null;
+    if (global.webrtcService) {
+      global.webrtcService.currentStreamer = null;
     }
 
     if (previousStreamer) {
@@ -97,8 +97,8 @@ class StreamService {
     
     // Fallback to MediaSoup service if we don't have a currentStreamer
     // This handles cases where anonymous streamers might not properly sync
-    if (!hasActiveStream && global.mediasoupService) {
-      const mediasoupStreamer = global.mediasoupService.currentStreamer;
+    if (!hasActiveStream && global.webrtcService) {
+      const mediasoupStreamer = global.webrtcService.currentStreamer;
       if (mediasoupStreamer) {
         logger.debug(`⚠️ STREAM: Using MediaSoup fallback for stream status (found: ${mediasoupStreamer})`);
         hasActiveStream = true;

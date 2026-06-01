@@ -11,18 +11,18 @@ const AudioFileJanitor = require('./transcription/AudioFileJanitor');
 const logger = require('../bootstrap/logger').child({ svc: 'TranscriptionService' });
 
 class TranscriptionService extends EventEmitter {
-    constructor(database, mediasoupService, recordingService = null) {
+    constructor(database, webrtcService, recordingService = null) {
         super();
         this.database = database;
         this.db = database.db;
         this.runAsync = database.runAsync;
         this.getAsync = database.getAsync;
         this.allAsync = database.allAsync;
-        this.mediasoupService = mediasoupService;
+        this.webrtcService = webrtcService;
         this.recordingService = recordingService;
 
         // Create audio adapter for backend-agnostic audio capture
-        this.audioAdapter = new TranscriptionAudioAdapter(mediasoupService);
+        this.audioAdapter = new TranscriptionAudioAdapter(webrtcService);
         
         // Initialize AudioBufferService
         this.audioBufferService = new AudioBufferService();
@@ -111,7 +111,7 @@ class TranscriptionService extends EventEmitter {
             if (!audioProducer) {
                 logger.error(`❌ TRANSCRIPTION: No audio producer found for ${effectiveStreamerId}`);
                 if (this.audioAdapter.isMediaSoup()) {
-                    const producerMap = this.mediasoupService.producers.get(effectiveStreamerId);
+                    const producerMap = this.webrtcService.producers.get(effectiveStreamerId);
                     logger.debug(`   Available producers:`, producerMap ? Array.from(producerMap.keys()) : 'none');
                 } else {
                     logger.debug(`   LiveKit: No participants with audio found in room`);

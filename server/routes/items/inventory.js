@@ -54,7 +54,7 @@ module.exports = function createInventoryRouter({ logger, drawingService, throwi
                     buffDebuffService: req.app.get('buffDebuffService'),
                     takeoverService: req.app.get('takeoverService'),
                     soundFxService: req.app.get('soundFxService'),
-                    mediasoupService: req.app.get('mediasoupService')
+                    webrtcService: req.app.get('webrtcService')
                 },
                 io: req.app.get('io'),
                 sessionService: req.app.get('sessionService'),
@@ -179,7 +179,7 @@ module.exports = function createInventoryRouter({ logger, drawingService, throwi
                     itemService: req.app.get('itemService'),
                     streamService: req.app.get('streamService'),
                     buffDebuffService: req.app.get('buffDebuffService'),
-                    mediasoupService: req.app.get('mediasoupService')
+                    webrtcService: req.app.get('webrtcService')
                 },
                 io: req.app.get('io'),
                 sessionService: req.app.get('sessionService'),
