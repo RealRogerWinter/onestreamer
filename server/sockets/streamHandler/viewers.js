@@ -58,31 +58,6 @@ module.exports = function registerViewers(io, socket, deps) {
       }
     }
 
-    // Visual effects sync temporarily disabled to debug rotate_90 issue
-    // try {
-    //   const activeVisualEffects = await getActiveVisualEffects();
-    //   if (activeVisualEffects.length > 0) {
-    //     logger.info(`🎨 VISUAL FX: Sending ${activeVisualEffects.length} active effects to new viewer ${socket.id}`);
-    //
-    //     // Send each effect to the viewer with a small delay to prevent overwhelming
-    //     activeVisualEffects.forEach((buff, index) => {
-    //       setTimeout(() => {
-    //         socket.emit('visual-effect-sync', {
-    //           effectId: buff.item_name,
-    //           itemName: buff.item_name,
-    //           displayName: buff.display_name,
-    //           duration: buff.remaining_seconds * 1000,
-    //           remainingSeconds: buff.remaining_seconds,
-    //           effectData: buff.effect_data,
-    //           isSyncEvent: true
-    //         });
-    //       }, index * 100); // 100ms between each effect
-    //     });
-    //   }
-    // } catch (error) {
-    //   logger.error({ err: error }, `❌ VISUAL FX: Error sending effects to viewer ${socket.id}`);
-    // }
-
     // Emit unique viewer count based on IPs (PR 3.2 chokepoint).
     viewerCountNotifier.broadcast();
 

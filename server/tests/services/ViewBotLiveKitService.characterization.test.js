@@ -315,8 +315,7 @@ describe('ViewBotLiveKitService characterization', () => {
       running: true,
       config: { videoFile: '/v.mp4' },
       startTime: Date.now(),
-      gstreamerProcess: makeFakeProc(),
-      ffmpegProcess: null,
+      ffmpegProcess: makeFakeProc(),
       participantId: null,
     });
     const status = svc.getViewBotStatus('bot-x');
