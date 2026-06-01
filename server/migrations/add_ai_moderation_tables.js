@@ -10,8 +10,7 @@
  * The schema is idempotent (CREATE TABLE IF NOT EXISTS / INSERT OR IGNORE),
  * so this can run on every boot. The actual bootstrap path will eventually be
  * called from server/database/database.js alongside the other schemas; this
- * standalone script exists for the same reason add_streaming_logs.js does:
- * manual / one-off application during dev.
+ * standalone script exists for manual / one-off application during dev.
  *
  * See docs/architecture/adr/0013-ai-moderation-pipeline.md.
  */

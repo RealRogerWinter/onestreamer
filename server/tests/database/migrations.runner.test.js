@@ -100,12 +100,22 @@ describe('migration runner — filename discovery', () => {
 
     it('does NOT pick up legacy ad-hoc migration scripts', () => {
         const files = migrationRunner.listMigrationFiles();
-        // Names from the pre-Phase-14 inventory that must stay legacy.
+        // Names from the pre-Phase-14 inventory that must stay legacy. The
+        // first group still lives in server/migrations/ (one-off data
+        // backfills / schema appliers, run manually). The second group was the
+        // set of load-bearing table creators promoted into database.js in the
+        // C1 schema reconciliation and DELETED — the runner must never have
+        // matched them either (they lack the 2026MMDDHHMM- prefix).
         const legacy = [
-            'add-avatar-description.js',
             'add_ai_moderation_tables.js',
-            'setup-viewbot-tables.js',
             'migrate-points-system.js',
+            'setup-recording-tables.js',
+            // Promoted into database.js + deleted (C1):
+            'add_streamer_connections.js',
+            'add_streaming_logs.js',
+            'add_bug_reports.js',
+            'create_streambot_messages.sql',
+            'create_chatbots_table.sql',
         ];
         for (const name of legacy) {
             expect(files).not.toContain(name);
@@ -359,10 +369,13 @@ describe('migration runner — idempotency on fresh DB', () => {
 
 describe('migration runner — bit-identical bootstrap', () => {
     // The committed fixture is a snapshot of the `database.js` bootstrap
-    // (CREATE TABLE + inline ALTERs) producing 33 tables. The post-PR
+    // (CREATE TABLE + inline ALTERs) producing 38 tables. The post-PR
     // bootstrap (CREATE TABLE + migration runner) must produce the same
     // PRAGMA shape. (The fixture was re-baselined when the dead viewbot_*
-    // tables were dropped from the bootstrap — see the viewbot removal.)
+    // tables were dropped from the bootstrap — see the viewbot removal — and
+    // again in the C1 schema reconciliation, which promoted 5 load-bearing
+    // tables into the bootstrap: bug_reports, streambot_messages,
+    // streambot_settings, streamer_connections, streaming_logs.)
     //
     // Strategy: boot database.js against an in-memory DB by monkey-patching
     // sqlite3.Database before requiring the module, wait for the bootstrap

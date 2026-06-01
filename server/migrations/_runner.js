@@ -14,7 +14,13 @@
  * The 12-digit prefix is what gives lexicographic = chronological ordering.
  * Legacy pre-PR-14.1 scripts (e.g. add-X.js, setup-X-tables.js, migrate-X.js)
  * are deliberately NOT picked up — they had their own ad-hoc invocation
- * pattern and their effects are already baked into deployed databases.
+ * pattern. Every table they CREATE that the running code still reads has been
+ * promoted into the boot path (server/database/database.js, or the
+ * recording-schema.sql loaded by index.js), so a fresh clone is fully
+ * provisioned without them. The remaining legacy scripts are either one-shot
+ * data backfills (migrate-points-system.js, add-summon-bot-item.js, …) or
+ * supersedes-applied schema that deployed DBs already carry; they are kept for
+ * historical reference / manual re-run only and are NOT part of the boot path.
  *
  * Why no schema_migrations tracking table: every migration here is idempotent
  * (uses `IF NOT EXISTS` or catches "duplicate column"). Re-running them on a

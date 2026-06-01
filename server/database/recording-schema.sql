@@ -1,25 +1,15 @@
 -- Recording System Database Schema
 -- Creates tables for managing recording sessions and events
-
--- Main recordings table
-CREATE TABLE IF NOT EXISTS recordings (
-    id TEXT PRIMARY KEY,
-    stream_id TEXT NOT NULL,
-    streamer_id TEXT NOT NULL,
-    start_time DATETIME NOT NULL,
-    end_time DATETIME,
-    duration INTEGER, -- duration in seconds
-    file_path TEXT,
-    file_size INTEGER, -- file size in bytes
-    quality_profile TEXT DEFAULT '720p', -- '720p', '1080p', '480p'
-    format TEXT DEFAULT 'webm', -- 'webm', 'mp4'
-    status TEXT DEFAULT 'recording', -- 'recording', 'processing', 'completed', 'failed', 'archived'
-    compression_status TEXT DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed'
-    thumbnail_path TEXT,
-    metadata_json TEXT, -- JSON string for additional metadata
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+--
+-- NOTE: the `recordings` table itself is owned by server/database/database.js
+-- (the single source of truth — it runs first at boot, with a DIFFERENT shape:
+-- recording_id / quality / is_continuous). The old CREATE TABLE here used a
+-- conflicting shape (TEXT id, streamer_id, quality_profile, ...) and was a
+-- guaranteed silent no-op on any DB database.js had already touched, so it has
+-- been removed (along with its update_recordings_timestamp trigger and the
+-- recordings-specific indexes). This file remains the boot-time creator of
+-- recording_events + recording_settings, both loaded via
+-- server/migrations/setup-recording-tables.js from server/index.js.
 
 -- Recording events table for audit trail
 CREATE TABLE IF NOT EXISTS recording_events (
@@ -41,6 +31,10 @@ CREATE TABLE IF NOT EXISTS recording_settings (
 );
 
 -- Insert default recording settings
+-- NOTE: recording_settings.retention_days ('30') is a SEPARATE key from
+-- admin_review_settings.retention_days ('7' in database.js); they configure
+-- different subsystems (legacy recording auto-cleanup vs admin B2 review), so
+-- there is nothing to reconcile.
 INSERT OR IGNORE INTO recording_settings (key, value, description) VALUES
 ('max_concurrent_recordings', '3', 'Maximum number of concurrent recordings allowed'),
 ('max_recording_duration', '3600000', 'Maximum recording duration in milliseconds (1 hour)'),
@@ -53,18 +47,8 @@ INSERT OR IGNORE INTO recording_settings (key, value, description) VALUES
 ('thumbnail_generation', 'true', 'Enable thumbnail generation for recordings');
 
 -- Indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_recordings_streamer_id ON recordings(streamer_id);
-CREATE INDEX IF NOT EXISTS idx_recordings_created_at ON recordings(created_at);
-CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status);
-CREATE INDEX IF NOT EXISTS idx_recordings_quality_profile ON recordings(quality_profile);
+-- (recordings-table indexes live in database.js alongside the table; only the
+-- recording_events indexes belong here.)
 CREATE INDEX IF NOT EXISTS idx_recording_events_recording_id ON recording_events(recording_id);
 CREATE INDEX IF NOT EXISTS idx_recording_events_timestamp ON recording_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_recording_events_event_type ON recording_events(event_type);
-
--- Create trigger to update updated_at timestamp
-CREATE TRIGGER IF NOT EXISTS update_recordings_timestamp 
-    AFTER UPDATE ON recordings
-    FOR EACH ROW
-BEGIN
-    UPDATE recordings SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-END;

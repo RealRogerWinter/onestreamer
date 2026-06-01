@@ -468,6 +468,134 @@ function initializeDatabase() {
 
         db.run(`CREATE INDEX IF NOT EXISTS idx_ip_bans_ip ON ip_bans(ip_address)`);
 
+        // ============================================
+        // Streamer Connection / Streaming Log Tracking
+        // (promoted from server/migrations/add_streamer_connections.js
+        // and add_streaming_logs.js — those legacy ad-hoc scripts were
+        // never auto-run by the numbered migration runner, so a fresh
+        // clone was missing these LIVE tables. Readers: streamHandler
+        // takeover/lifecycle, admin-moderation, StreamingLogsService,
+        // ContinuousRecording*, admin-recordings, AccountLifecycleManager.)
+        // ============================================
+        db.run(`
+            CREATE TABLE IF NOT EXISTS streamer_connections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                streamer_id TEXT NOT NULL,
+                streamer_name TEXT,
+                ip_address TEXT NOT NULL,
+                connected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                disconnected_at DATETIME,
+                stream_duration INTEGER,
+                connection_type TEXT,
+                user_agent TEXT,
+                was_banned BOOLEAN DEFAULT 0,
+                disconnect_reason TEXT
+            )
+        `);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_streamer_connections_ip ON streamer_connections(ip_address)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_streamer_connections_streamer ON streamer_connections(streamer_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_streamer_connections_connected ON streamer_connections(connected_at DESC)`);
+
+        db.run(`
+            CREATE TABLE IF NOT EXISTS streaming_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT UNIQUE NOT NULL,
+                streamer_id TEXT NOT NULL,
+                streamer_name TEXT,
+                user_id INTEGER,
+                ip_address TEXT NOT NULL,
+                user_agent TEXT,
+                stream_type TEXT,
+                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                ended_at DATETIME,
+                duration INTEGER,
+                viewer_peak INTEGER DEFAULT 0,
+                is_viewbot BOOLEAN DEFAULT 0,
+                is_banned BOOLEAN DEFAULT 0,
+                disconnect_reason TEXT,
+                country TEXT,
+                city TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        `);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_streaming_logs_ip ON streaming_logs(ip_address)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_streaming_logs_started ON streaming_logs(started_at DESC)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_streaming_logs_user ON streaming_logs(user_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_streaming_logs_session ON streaming_logs(session_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_streaming_logs_viewbot ON streaming_logs(is_viewbot)`);
+
+        // ============================================
+        // Bug Reports (promoted from server/migrations/add_bug_reports.js —
+        // routes/bug-reports.js has no CREATE TABLE of its own, so a fresh
+        // clone was missing this LIVE table.)
+        // ============================================
+        db.run(`
+            CREATE TABLE IF NOT EXISTS bug_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                username TEXT,
+                ip_address TEXT,
+                description TEXT NOT NULL,
+                session_data TEXT,
+                user_agent TEXT,
+                url TEXT,
+                status TEXT DEFAULT 'new',
+                priority TEXT DEFAULT 'medium',
+                admin_notes TEXT,
+                resolved_at DATETIME,
+                resolved_by INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                FOREIGN KEY (resolved_by) REFERENCES users (id)
+            )
+        `);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_bug_reports_user_id ON bug_reports(user_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_bug_reports_status ON bug_reports(status)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_bug_reports_created_at ON bug_reports(created_at)`);
+
+        // ============================================
+        // StreamBot periodic messages + settings (promoted from
+        // server/migrations/create_streambot_messages.sql — readers:
+        // services/streambot/MessageStore.js reads BOTH tables, and
+        // getSettings() expects a default row, so seed it here too. The
+        // SQL file was never run at boot, so a fresh clone was missing
+        // these LIVE tables.)
+        // ============================================
+        db.run(`
+            CREATE TABLE IF NOT EXISTS streambot_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message TEXT NOT NULL,
+                enabled BOOLEAN DEFAULT 1,
+                order_index INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        db.run(`
+            CREATE TABLE IF NOT EXISTS streambot_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                interval_minutes INTEGER DEFAULT 15,
+                enabled BOOLEAN DEFAULT 1,
+                current_message_index INTEGER DEFAULT 0,
+                last_sent_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        // Seed the singleton settings row + default Discord message (only
+        // when empty — mirrors the WHERE NOT EXISTS guards in the old SQL).
+        db.run(`
+            INSERT INTO streambot_settings (interval_minutes, enabled, current_message_index)
+            SELECT 15, 1, 0
+            WHERE NOT EXISTS (SELECT 1 FROM streambot_settings)
+        `);
+        db.run(`
+            INSERT INTO streambot_messages (message, enabled, order_index)
+            SELECT '📢 Join the OneStreamer Discord community! Connect with other streamers, get support, and stay updated: https://discord.gg/As5CA3ekYA', 1, 0
+            WHERE NOT EXISTS (SELECT 1 FROM streambot_messages)
+        `);
+
         // Create indexes for recording tables after a delay to ensure columns exist
         setTimeout(() => {
             db.run(`CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status)`, (err) => {

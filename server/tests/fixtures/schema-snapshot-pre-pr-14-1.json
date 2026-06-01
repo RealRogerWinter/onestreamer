@@ -115,6 +115,113 @@
       "pk": 0
     }
   ],
+  "bug_reports": [
+    {
+      "name": "admin_notes",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "created_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": "CURRENT_TIMESTAMP",
+      "pk": 0
+    },
+    {
+      "name": "description",
+      "type": "TEXT",
+      "notnull": 1,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "id",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 1
+    },
+    {
+      "name": "ip_address",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "priority",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": "'medium'",
+      "pk": 0
+    },
+    {
+      "name": "resolved_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "resolved_by",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "session_data",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "status",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": "'new'",
+      "pk": 0
+    },
+    {
+      "name": "updated_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": "CURRENT_TIMESTAMP",
+      "pk": 0
+    },
+    {
+      "name": "url",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "user_agent",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "user_id",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "username",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    }
+  ],
   "chatbot_config": [
     {
       "name": "global_prompt",
@@ -1739,6 +1846,301 @@
       "type": "INTEGER",
       "notnull": 0,
       "dflt_value": "-1",
+      "pk": 0
+    }
+  ],
+  "streambot_messages": [
+    {
+      "name": "created_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": "CURRENT_TIMESTAMP",
+      "pk": 0
+    },
+    {
+      "name": "enabled",
+      "type": "BOOLEAN",
+      "notnull": 0,
+      "dflt_value": "1",
+      "pk": 0
+    },
+    {
+      "name": "id",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 1
+    },
+    {
+      "name": "message",
+      "type": "TEXT",
+      "notnull": 1,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "order_index",
+      "type": "INTEGER",
+      "notnull": 1,
+      "dflt_value": "0",
+      "pk": 0
+    },
+    {
+      "name": "updated_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": "CURRENT_TIMESTAMP",
+      "pk": 0
+    }
+  ],
+  "streambot_settings": [
+    {
+      "name": "created_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": "CURRENT_TIMESTAMP",
+      "pk": 0
+    },
+    {
+      "name": "current_message_index",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": "0",
+      "pk": 0
+    },
+    {
+      "name": "enabled",
+      "type": "BOOLEAN",
+      "notnull": 0,
+      "dflt_value": "1",
+      "pk": 0
+    },
+    {
+      "name": "id",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 1
+    },
+    {
+      "name": "interval_minutes",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": "15",
+      "pk": 0
+    },
+    {
+      "name": "last_sent_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "updated_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": "CURRENT_TIMESTAMP",
+      "pk": 0
+    }
+  ],
+  "streamer_connections": [
+    {
+      "name": "connected_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": "CURRENT_TIMESTAMP",
+      "pk": 0
+    },
+    {
+      "name": "connection_type",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "disconnect_reason",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "disconnected_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "id",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 1
+    },
+    {
+      "name": "ip_address",
+      "type": "TEXT",
+      "notnull": 1,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "stream_duration",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "streamer_id",
+      "type": "TEXT",
+      "notnull": 1,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "streamer_name",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "user_agent",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "was_banned",
+      "type": "BOOLEAN",
+      "notnull": 0,
+      "dflt_value": "0",
+      "pk": 0
+    }
+  ],
+  "streaming_logs": [
+    {
+      "name": "city",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "country",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "disconnect_reason",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "duration",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "ended_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "id",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 1
+    },
+    {
+      "name": "ip_address",
+      "type": "TEXT",
+      "notnull": 1,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "is_banned",
+      "type": "BOOLEAN",
+      "notnull": 0,
+      "dflt_value": "0",
+      "pk": 0
+    },
+    {
+      "name": "is_viewbot",
+      "type": "BOOLEAN",
+      "notnull": 0,
+      "dflt_value": "0",
+      "pk": 0
+    },
+    {
+      "name": "session_id",
+      "type": "TEXT",
+      "notnull": 1,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "started_at",
+      "type": "DATETIME",
+      "notnull": 0,
+      "dflt_value": "CURRENT_TIMESTAMP",
+      "pk": 0
+    },
+    {
+      "name": "stream_type",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "streamer_id",
+      "type": "TEXT",
+      "notnull": 1,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "streamer_name",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "user_agent",
+      "type": "TEXT",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "user_id",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": null,
+      "pk": 0
+    },
+    {
+      "name": "viewer_peak",
+      "type": "INTEGER",
+      "notnull": 0,
+      "dflt_value": "0",
       "pk": 0
     }
   ],
