@@ -348,7 +348,6 @@ Bot-on/off, message frequency.
 
 ViewBot fleet configuration — see [`viewbot-fleet.md`](viewbot-fleet.md). Schema files in [`server/database/`](../../server/database/):
 - `viewbot-schema.sql`
-- `viewbot-enhanced-schema.sql`
 
 ### `url_streams`
 
@@ -405,7 +404,7 @@ There is no migration framework. Schema is created programmatically in [`server/
 | `add_bug_reports.js` | `bug_reports` |
 | `create_chatbots_table.sql` | Chatbot tables |
 | `create_streambot_messages.sql` | StreamBot tables |
-| `add-summon-bot-support.js`, `add-auto-summon-bot.js`, `add-avatar-description.js`, etc. | Per-feature column additions |
+| `add-summon-bot-support.js`, `add-auto-summon-bot.js`, etc. | Per-feature column additions |
 
 Operators run new migrations manually after upgrades. There is no rollback tooling — back up the DB first.
 

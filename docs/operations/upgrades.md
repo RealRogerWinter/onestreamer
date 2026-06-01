@@ -63,9 +63,9 @@ Examples by category:
 
 | Category | Examples |
 |----------|----------|
-| Schema additions | `add_ip_bans.js`, `add_streaming_logs.js`, `add-account-deletion-tables.js`, `add_bug_reports.js`, `add-summon-bot-support.js`, `add-auto-summon-bot.js`, `add-avatar-description.js`, `add-global-prompt-table.js`, `add-llm-model-column.js` |
+| Schema additions | `add_ip_bans.js`, `add_streaming_logs.js`, `add-account-deletion-tables.js`, `add_bug_reports.js`, `add-summon-bot-support.js`, `add-auto-summon-bot.js`, `add-global-prompt-table.js`, `add-llm-model-column.js` |
 | Table creation | `setup-transcription-tables.js`, `setup-clips-tables.js`, `setup-viewbot-tables.js`, `setup-recording-tables.js`, `create_chatbots_table.sql`, `create_streambot_messages.sql` |
-| Data migrations | `migrate-points-system.js` (calculated → balance), `migrate_stock_unlimited.js`, `migrate_unlimited_stacks.js` |
+| Data migrations | `migrate-points-system.js` (calculated → balance) |
 | Item seeding | `add-101soundboards-item.js`, `add-megaphone-item.js`, `add-heart-swarm.js`, `add-stream-reducer-item.js`, `add-visualfx-items.js`, `add-sample-emojis.js` |
 
 After running any migration, **restart the main server** so it re-reads the schema on boot.
