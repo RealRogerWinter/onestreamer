@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import authService from '../services/AuthService';
 import './StreamBotManager.css';
 
 interface StreamBotMessage {
@@ -35,7 +36,7 @@ const StreamBotManager: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
+      const token = authService.getToken();
       
       // Load settings
       const settingsRes = await fetch('/api/streambot/settings', {
@@ -71,7 +72,7 @@ const StreamBotManager: React.FC = () => {
 
   const toggleStreamBot = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = authService.getToken();
       const res = await fetch('/api/streambot/toggle', {
         method: 'POST',
         headers: {
@@ -95,7 +96,7 @@ const StreamBotManager: React.FC = () => {
 
   const updateInterval = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = authService.getToken();
       const res = await fetch('/api/streambot/settings', {
         method: 'PUT',
         headers: {
@@ -121,7 +122,7 @@ const StreamBotManager: React.FC = () => {
     if (!newMessage.trim()) return;
     
     try {
-      const token = localStorage.getItem('token');
+      const token = authService.getToken();
       const res = await fetch('/api/streambot/messages', {
         method: 'POST',
         headers: {
@@ -148,7 +149,7 @@ const StreamBotManager: React.FC = () => {
     if (!editingMessage || !editText.trim()) return;
     
     try {
-      const token = localStorage.getItem('token');
+      const token = authService.getToken();
       const res = await fetch(`/api/streambot/messages/${editingMessage.id}`, {
         method: 'PUT',
         headers: {
@@ -176,7 +177,7 @@ const StreamBotManager: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this message?')) return;
     
     try {
-      const token = localStorage.getItem('token');
+      const token = authService.getToken();
       const res = await fetch(`/api/streambot/messages/${id}`, {
         method: 'DELETE',
         headers: {
@@ -197,7 +198,7 @@ const StreamBotManager: React.FC = () => {
 
   const toggleMessage = async (id: number) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = authService.getToken();
       const res = await fetch(`/api/streambot/messages/${id}/toggle`, {
         method: 'POST',
         headers: {
@@ -229,7 +230,7 @@ const StreamBotManager: React.FC = () => {
     [newMessages[index], newMessages[newIndex]] = [newMessages[newIndex], newMessages[index]];
     
     try {
-      const token = localStorage.getItem('token');
+      const token = authService.getToken();
       const messageIds = newMessages.map(m => m.id);
       
       const res = await fetch('/api/streambot/messages/reorder', {
@@ -253,7 +254,7 @@ const StreamBotManager: React.FC = () => {
 
   const sendTestMessage = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = authService.getToken();
       const res = await fetch('/api/streambot/test', {
         method: 'POST',
         headers: {

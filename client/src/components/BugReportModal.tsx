@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import CloudflareTurnstile from './CloudflareTurnstile';
 import { TURNSTILE_SITE_KEY } from '../config/turnstile';
+import authService from '../services/AuthService';
 import './BugReportModal.css';
 
 interface BugReportModalProps {
@@ -58,7 +59,7 @@ const BugReportModal: React.FC<BugReportModalProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': isAuthenticated ? `Bearer ${localStorage.getItem('token')}` : ''
+          'Authorization': isAuthenticated ? `Bearer ${authService.getToken()}` : ''
         },
         body: JSON.stringify({
           description: bugDescription,

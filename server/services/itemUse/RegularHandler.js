@@ -5,12 +5,6 @@ const logger = require('../../bootstrap/logger').child({ svc: 'ItemUseService' }
 // Regular consumed items (incl. kill_switch and the fart-from-regular-path) —
 // consume, trigger the visual effect, broadcast item-used, and handle the
 // kill-switch force-disconnect. Extracted verbatim from ItemUseService.
-//
-// NOTE — KNOWN LATENT BUG PRESERVED AS-IS: the inventory-update forEach blocks
-// below reference a bare `buffNotifier` that is neither a parameter nor carried
-// on ctx, so they throw a synchronous ReferenceError whenever reached (the
-// kill-switch path, and the regular path when io AND sessionService are both
-// present). MUST NOT be fixed here.
 
 class RegularHandler {
     constructor(owner) {
@@ -19,7 +13,7 @@ class RegularHandler {
 
     async _applyRegular(ctx) {
         const {
-            user, userId, itemId, item, streamId, services, io, sessionService, sendSystemMessage
+            user, userId, itemId, item, streamId, services, io, sessionService, sendSystemMessage, buffNotifier
         } = ctx;
         const { inventoryService, canvasFxService, streamService, soundFxService } = services;
 

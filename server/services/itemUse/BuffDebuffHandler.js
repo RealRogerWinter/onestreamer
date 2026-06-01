@@ -5,12 +5,6 @@ const logger = require('../../bootstrap/logger').child({ svc: 'ItemUseService' }
 // Buff/debuff items targeting the current streamer — resolve the target,
 // consume, apply the effect, and broadcast. Extracted verbatim from
 // ItemUseService.
-//
-// NOTE — KNOWN LATENT BUG PRESERVED AS-IS: the inventory-update forEach below
-// references a bare `buffNotifier` that is neither a parameter nor carried on
-// ctx, so it throws a synchronous ReferenceError whenever this branch reaches
-// it (io AND sessionService both present). This matches the original handler
-// and MUST NOT be fixed here.
 
 class BuffDebuffHandler {
     constructor(owner) {
@@ -18,7 +12,7 @@ class BuffDebuffHandler {
     }
 
     async _applyBuffOrDebuff(ctx) {
-        const { user, userId, itemId, item, streamId, services, io, sessionService, sendSystemMessage } = ctx;
+        const { user, userId, itemId, item, streamId, services, io, sessionService, sendSystemMessage, buffNotifier } = ctx;
         const { inventoryService, itemService, streamService } = services;
 
         logger.debug(`🎭 ITEMS: Taking buff/debuff path for ${item.display_name}`);

@@ -616,10 +616,15 @@ class TranscriptionService extends EventEmitter {
                     logger.debug(`✅ TRANSCRIPTION: Complete transcription (${session.wordCount} words)`);
                     logger.debug(`📝 TRANSCRIPTION: "${transcription.substring(0, 100)}${transcription.length > 100 ? '...' : ''}"`);
 
-                    // Emit transcription event
+                    // Emit transcription event. Carry `text` (and chunkNumber)
+                    // alongside `transcription` so every emit site exposes a
+                    // consistent `text` field — the client Live-Transcription
+                    // panel and ModerationService both key on `text`.
                     this.emit('transcription-chunk', {
                         sessionId: session.id,
                         streamerId: session.streamerId,
+                        chunkNumber: session.chunkCount,
+                        text: transcription,
                         transcription: transcription,
                         wordCount: session.wordCount,
                         isComplete: true

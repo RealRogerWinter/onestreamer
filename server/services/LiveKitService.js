@@ -353,17 +353,35 @@ class LiveKitService {
 
   async cleanup(socketId) {
     logger.debug(`🧹 LIVEKIT: Cleaning up resources for ${socketId}`);
-    
+
     // Remove from all tracking maps
     this.transports.delete(socketId);
     this.producers.delete(socketId);
     this.consumers.delete(socketId);
     this.participants.delete(socketId);
-    
+
     // Clear current streamer if it was this socket
     if (this.currentStreamer === socketId) {
       this.currentStreamer = null;
       logger.debug(`👑 LIVEKIT: Cleared current streamer`);
+    }
+  }
+
+  /**
+   * Tear down all active sessions. Called by the graceful-shutdown path
+   * (server/bootstrap/shutdown.js). Idempotent — snapshots the transport
+   * socket keys and awaits cleanup(socketId) for each inside a try/catch so
+   * one failing teardown can't abort the loop.
+   */
+  async cleanupAll() {
+    const socketIds = [...this.transports.keys()];
+    logger.debug(`🧹 LIVEKIT: Cleaning up all sessions (${socketIds.length})`);
+    for (const socketId of socketIds) {
+      try {
+        await this.cleanup(socketId);
+      } catch (err) {
+        logger.error(`❌ LIVEKIT: Error cleaning up ${socketId}:`, err && err.message);
+      }
     }
   }
 

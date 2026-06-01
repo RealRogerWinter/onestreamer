@@ -37,7 +37,7 @@ function makeDeps(overrides = {}) {
     };
 
     const continuousRecordingService = { isRecording: true, currentSessionId: 'sess', outputDir: '/tmp', segmentDuration: 4 };
-    const streamService = { streamGeneration: 1, getCurrentStreamType: jest.fn(() => 'live') };
+    const streamService = { streamGeneration: 1 };
     const frameCaptureService = {
         captureFrame: jest.fn(async () => ({
             streamerId: 'streamer-1',
@@ -213,10 +213,12 @@ describe('VisionBotService', () => {
     });
 
     test('refuses URL-relay streams unless allow_url_relay is on', async () => {
-        deps.streamService.getCurrentStreamType = jest.fn(() => 'url-relay');
+        // URL-relay is detected off the streamer-id prefix (url-stream-*),
+        // not a streamType field — see _runCycle in VisionBotService.
+        bot.currentStreamerId = 'url-stream-1-1';
         bot.config.allow_url_relay = false;
         deps.botEventBus.emit('moviebot-transcription-complete', {
-            streamerId: 'streamer-1',
+            streamerId: 'url-stream-1-1',
             sessionId: 'sess-U',
             transcription: 'x',
             endTime: new Date(),
@@ -228,10 +230,10 @@ describe('VisionBotService', () => {
     });
 
     test('allows URL-relay streams when allow_url_relay is on', async () => {
-        deps.streamService.getCurrentStreamType = jest.fn(() => 'url-relay');
+        bot.currentStreamerId = 'url-stream-1-2';
         bot.config.allow_url_relay = true;
         deps.botEventBus.emit('moviebot-transcription-complete', {
-            streamerId: 'streamer-1',
+            streamerId: 'url-stream-1-2',
             sessionId: 'sess-U2',
             transcription: 'x',
             endTime: new Date(),

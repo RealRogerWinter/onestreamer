@@ -5,11 +5,6 @@ const logger = require('../../bootstrap/logger').child({ svc: 'ItemUseService' }
 // Cooldown-modifier items (guard / weapon) — consume, apply the global/individual
 // cooldown effects via takeoverService, and broadcast a cooldown-status update.
 // Extracted verbatim from ItemUseService.
-//
-// NOTE — KNOWN LATENT BUG PRESERVED AS-IS: the inventory-update forEach below
-// references a bare `buffNotifier` that is neither a parameter nor carried on
-// ctx, so it throws a synchronous ReferenceError whenever this branch reaches
-// it (io AND sessionService both present). MUST NOT be fixed here.
 
 class CooldownModifierHandler {
     constructor(owner) {
@@ -17,7 +12,7 @@ class CooldownModifierHandler {
     }
 
     async _applyCooldownModifier(ctx) {
-        const { user, userId, itemId, item, streamId, services, io, sessionService, sendSystemMessage } = ctx;
+        const { user, userId, itemId, item, streamId, services, io, sessionService, sendSystemMessage, buffNotifier } = ctx;
         const { inventoryService, itemService } = services;
 
         logger.debug(`🛡️⚔️ ITEMS: Taking cooldown modifier path for ${item.display_name}`);

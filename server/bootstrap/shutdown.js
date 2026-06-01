@@ -162,8 +162,8 @@ function registerShutdownHandlers(deps) {
 
             await new Promise((resolve) => setTimeout(resolve, 500));
 
-            // 3. Clean up MediaSoup resources
-            logger.info('🧹 Cleaning up MediaSoup resources...');
+            // 3. Clean up LiveKit resources
+            logger.info('🧹 Cleaning up LiveKit resources...');
             const webrtcService = getWebrtcService();
             if (webrtcService) {
                 webrtcService.cleanupAll();

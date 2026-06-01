@@ -145,7 +145,7 @@ class ItemUseService {
 
             const ctx = {
                 user, userId, itemId, item, streamId, streamStatus,
-                services, io, sessionService, sendSystemMessage
+                services, io, sessionService, sendSystemMessage, buffNotifier
             };
 
             // IMPORTANT: Check auto-trigger FIRST, then interactive items

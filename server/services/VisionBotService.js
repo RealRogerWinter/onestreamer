@@ -258,10 +258,14 @@ class VisionBotService extends TranscriptionDrivenBotService {
             this._recordSkip('no_egress');
             return;
         }
-        const streamType = this.streamService && typeof this.streamService.getCurrentStreamType === 'function'
-            ? this.streamService.getCurrentStreamType()
-            : null;
-        if (streamType === 'url-relay' && !this.config.allow_url_relay) {
+        // URL-relay streams register themselves on StreamService via
+        // setStreamer(urlId) WITHOUT a streamType, so getStreamType() would
+        // report the 'webcam' default rather than 'url-relay'. Detect the
+        // relay reliably off the streamer id prefix instead — ViewBotURLService
+        // mints these as `url-stream-<ts>-<n>` (see _registerAsCurrentStreamer).
+        const isUrlRelay = typeof this.currentStreamerId === 'string'
+            && this.currentStreamerId.startsWith('url-stream-');
+        if (isUrlRelay && !this.config.allow_url_relay) {
             this._recordSkip('url_relay_disallowed');
             return;
         }

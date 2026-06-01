@@ -13,15 +13,10 @@
  *   - Sub-methods read collaborators off opts.services, so the mocks only need
  *     the methods each branch touches.
  *
- * KNOWN LATENT BUG — PINNED AS-IS (do NOT fix):
- *   buffNotifier is destructured in useItem() but the inventory-update forEach
- *   in the sub-methods references a `buffNotifier` that is NOT in their scope
- *   and is NOT carried on ctx. Whenever a branch reaches that forEach (io AND
- *   sessionService both present), evaluating `if (buffNotifier)` throws a
- *   synchronous ReferenceError. Because useItem dispatches with
- *   `return this._applyX(ctx)` (no await), the rejection escapes useItem's own
- *   try/catch and rejects the returned promise. These tests pin that exact
- *   behavior; the decomposition must preserve it.
+ * buffNotifier is destructured in useItem() AND carried on ctx, so the
+ * inventory-update forEach in the sub-methods resolves it correctly and the
+ * notifier is invoked (io AND sessionService both present). The buff/debuff
+ * and regular-path tests below assert that fixed behavior.
  */
 
 jest.mock('../../bootstrap/logger', () => {
@@ -262,15 +257,19 @@ describe('ItemUseService characterization', () => {
             expect(itemService.applyBuffDebuffItem).toHaveBeenCalled();
         });
 
-        it('PINNED BUG: with io AND sessionService present, the buffNotifier ReferenceError rejects useItem()', async () => {
+        it('with io AND sessionService present, notifies via buffNotifier.inventoryUpdated and returns ok:true', async () => {
             const item = makeItem({ name: 'spd', item_type: 'buff' });
             const inventoryService = makeInventory();
             const itemService = makeItemService(item, { isBuffOrDebuffItem: jest.fn(() => true) });
             const sessionService = { getSessionBySocketId: jest.fn(() => ({ userId: 9 })), getSocketsByUserId: jest.fn(() => ['sa']) };
             const io = { emit: jest.fn(), to: jest.fn(() => ({ emit: jest.fn() })) };
-            await expect(call(svc(), { inventoryService, itemService, streamService: activeStream(), buffDebuffService: {} },
-                { io, sessionService, buffNotifier: { inventoryUpdated: jest.fn() } }))
-                .rejects.toThrow('buffNotifier is not defined');
+            const buffNotifier = { inventoryUpdated: jest.fn() };
+            const res = await call(svc(), { inventoryService, itemService, streamService: activeStream(), buffDebuffService: {} },
+                { io, sessionService, buffNotifier });
+            expect(res.ok).toBe(true);
+            expect(buffNotifier.inventoryUpdated).toHaveBeenCalledWith(expect.objectContaining({
+                toSocketId: 'sa', action: 'use', itemId: 5, remainingQuantity: 2,
+            }));
         });
     });
 
@@ -285,16 +284,20 @@ describe('ItemUseService characterization', () => {
             expect(inventoryService.useItem).toHaveBeenCalledWith(1, 5, 's1');
         });
 
-        it('PINNED BUG: regular path with io AND sessionService rejects useItem() via buffNotifier ReferenceError', async () => {
+        it('regular path with io AND sessionService notifies via buffNotifier.inventoryUpdated and returns ok:true', async () => {
             const item = makeItem({ name: 'pizza' });
             const inventoryService = makeInventory();
             const itemService = makeItemService(item);
             const canvasFxService = { isInteractiveItem: jest.fn(() => false), triggerItemEffect: jest.fn(async () => ({})) };
             const io = { emit: jest.fn() };
             const sessionService = { getSocketsByUserId: jest.fn(() => ['sa']) };
-            await expect(call(svc(), { inventoryService, itemService, streamService: activeStream(), canvasFxService },
-                { io, sessionService, buffNotifier: { inventoryUpdated: jest.fn() } }))
-                .rejects.toThrow('buffNotifier is not defined');
+            const buffNotifier = { inventoryUpdated: jest.fn() };
+            const res = await call(svc(), { inventoryService, itemService, streamService: activeStream(), canvasFxService },
+                { io, sessionService, buffNotifier });
+            expect(res.ok).toBe(true);
+            expect(buffNotifier.inventoryUpdated).toHaveBeenCalledWith(expect.objectContaining({
+                toSocketId: 'sa', action: 'use', itemId: 5, remainingQuantity: 2,
+            }));
         });
     });
 
