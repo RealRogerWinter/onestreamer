@@ -2,8 +2,8 @@
  * BuffHandler
  *
  * Registers buff/debuff socket events on a per-connection basis.
- * Continuation of PR-H's socket-extraction pattern (see EffectHandler).
- * Carved out separately from EffectHandler in PR-H6 because the buff
+ * Continuation of PR-H's socket-extraction pattern.
+ * Carved out separately in PR-H6 because the buff
  * system has a distinct dependency surface (6 services) and includes
  * viewbot-target translation logic that doesn't belong with visual FX.
  *
