@@ -4,8 +4,8 @@ Each `*.example.*` file here is a reference template for a per-deploy config tha
 
 | File | Real path expected | Consumed by |
 |------|--------------------|-------------|
-| `livekit-config.example.yaml` | `./livekit-config.yaml` (root, gitignored) | LiveKit server (`livekit-server -config`) — dormant per [ADR-0002](../docs/architecture/adr/0002-mediasoup-primary-livekit-dormant.md) |
-| `livekit-ssl.example.yaml` | `./livekit-ssl.yaml` (root, gitignored) | LiveKit server's TLS-only profile — dormant |
+| `livekit-config.example.yaml` | `./livekit-config.yaml` (root, gitignored) | LiveKit server (`livekit-server -config`) — the sole WebRTC backend per [ADR-0024](../docs/architecture/adr/0024-retire-mediasoup-livekit-only.md) |
+| `livekit-ssl.example.yaml` | `./livekit-ssl.yaml` (root, gitignored) | LiveKit server's TLS-only profile |
 | `youtube-cookies.example.txt` | `./youtube-cookies.txt` (root, gitignored) — or wherever `YOUTUBE_COOKIES_PATH` env points (see #22) | `server/services/URLStreamExtractorService.js` for YouTube ingress |
 
 ## Convention

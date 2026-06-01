@@ -112,7 +112,6 @@ check_service "Main Server (HTTPS)" 8443
 check_service "Main Server (HTTP)" 8080
 check_service "Chat Service (HTTPS)" 8444
 check_service "Chat Service (HTTP)" 8081
-check_service "React Client" 3443
 check_service "Nginx (HTTPS)" 443
 
 # Show PM2 status
@@ -147,7 +146,6 @@ echo -e "\nAccess the application at: ${GREEN}https://onestreamer.live${NC}"
 echo -e "\nMonitor logs with:"
 echo "  pm2 logs onestreamer-server"
 echo "  pm2 logs onestreamer-chat"
-echo "  pm2 logs onestreamer-client"
 echo -e "\nStop all services with:"
 echo "  pm2 stop all"
 echo -e "\nRestart services with:"
