@@ -1,6 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
-const ViewBotWebRTCService = require('./ViewBotWebRTCService');
 const ViewBotLiveKitService = require('./ViewBotLiveKitService');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ViewbotService' });
@@ -27,21 +26,9 @@ class ViewbotService {
     // Remove ViewBot limits - allow unlimited ViewBots
     this.maxViewbots = Infinity;
 
-    // Detect which backend to use
-    const useAdapter = process.env.USE_WEBRTC_ADAPTER === 'true';
-    const backend = process.env.WEBRTC_BACKEND || 'mediasoup';
-    
-    if (useAdapter && backend === 'livekit' && livekitService) {
-      // Use LiveKit ViewBot service
-      this.webrtcService = new ViewBotLiveKitService(livekitService);
-      this.backendType = 'livekit';
-      logger.debug('🤖 VIEWBOT: Using LiveKit backend for ViewBots');
-    } else {
-      // Use MediaSoup ViewBot service (default)
-      this.webrtcService = new ViewBotWebRTCService(mediasoupService);
-      this.backendType = 'mediasoup';
-      logger.debug('🤖 VIEWBOT: Using MediaSoup backend for ViewBots');
-    }
+    // LiveKit is the sole WebRTC backend (ADR-0024): RTMP-ingress viewbot.
+    this.webrtcService = new ViewBotLiveKitService(livekitService);
+    this.backendType = 'livekit';
     
     this.useWebRTC = true; // Use WebRTC mode for proper integration
   }

@@ -152,7 +152,6 @@ const processManager = require('../services/ProcessManager');
 // PR-I4: late ViewBot stack — see createViewBotServices below.
 const ViewbotService = require('../services/ViewbotService');
 const ViewBotClientService = require('../services/ViewBotClientService');
-const ViewBotWebRTCService = require('../services/ViewBotWebRTCService');
 const ViewBotLiveKitService = require('../services/ViewBotLiveKitService');
 
 /**
@@ -554,21 +553,12 @@ async function createViewBotServices({ mediasoupService, livekitService, streamS
   // ViewbotService: takes both potential backends; chooses internally.
   const viewbotService = new ViewbotService(mediasoupService, livekitService);
 
-  let viewBotWebRTCService = null;
-  let viewBotLiveKitService = null;
-
-  if (!livekitService) {
-    // MediaSoup branch — needs WebRTC viewbot for mobile 5G/TURN support.
-    viewBotWebRTCService = new ViewBotWebRTCService(mediasoupService);
-  } else {
-    // LiveKit branch — needs RTMP-ingress viewbot.
-    viewBotLiveKitService = new ViewBotLiveKitService(livekitService);
-    await viewBotLiveKitService.initialize();
-    // Real-streamer protection. The inline original also called this; the
-    // ordering (after initialize, before any setter from SimpleViewBotRotation)
-    // is preserved.
-    viewBotLiveKitService.setStreamService(streamService);
-  }
+  // LiveKit is the sole backend (ADR-0024): RTMP-ingress viewbot.
+  const viewBotLiveKitService = new ViewBotLiveKitService(livekitService);
+  await viewBotLiveKitService.initialize();
+  // Real-streamer protection. Ordering (after initialize, before any setter
+  // from SimpleViewBotRotation) is preserved.
+  viewBotLiveKitService.setStreamService(streamService);
 
   // ViewBotClientService: constructor takes (serverUrl, mediasoupService,
   // streamService, viewbotService). serverUrl is null so the service falls
@@ -586,7 +576,9 @@ async function createViewBotServices({ mediasoupService, livekitService, streamS
 
   const services = {
     viewbotService,
-    viewBotWebRTCService,
+    // ViewBotWebRTCService removed (ADR-0024); kept as null so the bag shape +
+    // the (now permanently-503) /api/viewbot-admin/webrtc routes are unaffected.
+    viewBotWebRTCService: null,
     viewBotLiveKitService,
     viewBotClientService,
   };
