@@ -46,10 +46,9 @@
  * Notes on global state intentionally NOT in the deps bag:
  *   - `process.env.ANNOUNCED_IP`, `process.env.USE_WEBRTC_ADAPTER`, and
  *     `process.env.WEBRTC_BACKEND` are read directly (same as inline).
- *   - `global.webrtcAdapter` and `global.viewBotRotation` are accessed
- *     directly to preserve byte-equivalent runtime behaviour. These are
- *     long-lived singletons set up during startServer and the inline code
- *     reaches into them the same way.
+ *   - `global.viewBotRotation` is accessed directly to preserve
+ *     byte-equivalent runtime behaviour. It's a long-lived singleton set up
+ *     during startServer and the inline code reaches into it the same way.
  *
  * PR (this refactor): the verbatim handler bodies have been split into
  * cohesive sub-modules under `server/sockets/viewBotHandler/`, each exporting
