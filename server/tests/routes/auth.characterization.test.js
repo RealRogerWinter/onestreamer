@@ -15,10 +15,10 @@
  *     verifyToken, generateToken, ...) AND a nested `accountService` used by
  *     the profile / admin handlers. Both are replaced with a jest.mock factory
  *     so the HTTP contract can be pinned deterministically.
- *   - Auth middleware (authenticateToken / authenticateAdmin) and the turnstile
- *     middleware live in separate modules and are mocked to pass-through stubs
- *     that ALSO let a single test force a rejection, pinning the gating
- *     contract without exercising real JWT/captcha logic.
+ *   - Auth middleware (authenticateToken) and the turnstile middleware live in
+ *     separate modules and are mocked to pass-through stubs that ALSO let a
+ *     single test force a rejection, pinning the gating contract without
+ *     exercising real JWT/captcha logic.
  *   - passport is mocked so the module-load-time `passport.authenticate(...)`
  *     calls for the Google OAuth routes resolve to inert middleware.
  *   - JWT_SECRET / TURNSTILE_SECRET_KEY are required at module load via
@@ -68,13 +68,6 @@ const mockAccount = {
   changePassword: jest.fn(),
   updateProfile: jest.fn(),
   restoreAccount: jest.fn(),
-  searchUsers: jest.fn(),
-  getAllUsers: jest.fn(),
-  promoteToAdmin: jest.fn(),
-  demoteFromAdmin: jest.fn(),
-  banUser: jest.fn(),
-  unbanUser: jest.fn(),
-  deleteUser: jest.fn(),
 };
 
 jest.mock('../../services/AuthService', () =>
@@ -101,7 +94,7 @@ jest.mock('../../services/AuthService', () =>
 jest.mock('../../services/SessionService', () => jest.fn().mockImplementation(() => ({})));
 
 // --- Auth + turnstile middleware stubs --------------------------------------
-const authState = { rejectToken: false, rejectAdmin: false };
+const authState = { rejectToken: false };
 
 jest.mock('../../middleware/auth', () => ({
   authenticateToken: jest.fn((req, _res, next) => {
@@ -109,13 +102,6 @@ jest.mock('../../middleware/auth', () => ({
       return _res.status(401).json({ error: 'Access token required' });
     }
     req.user = { id: 7, userId: 7, username: 'tester' };
-    next();
-  }),
-  authenticateAdmin: jest.fn((req, _res, next) => {
-    if (authState.rejectAdmin) {
-      return _res.status(403).json({ error: 'Admin access required' });
-    }
-    req.user = { id: 99, userId: 99, username: 'admin' };
     next();
   }),
 }));
@@ -150,7 +136,6 @@ function buildApp() {
 
 beforeEach(() => {
   authState.rejectToken = false;
-  authState.rejectAdmin = false;
   turnstileState.reject = false;
   jest.clearAllMocks();
   mockGenerateToken.mockReturnValue('gen-token');
@@ -520,41 +505,7 @@ describe('routes/auth characterization', () => {
     });
   });
 
-  // ---- Admin user management -----------------------------------------------
-  describe('admin user management', () => {
-    test('GET /auth/admin/users returns users (admin-gated)', async () => {
-      const auth = require('../../middleware/auth');
-      mockAccount.getAllUsers.mockResolvedValue([{ id: 1 }, { id: 2 }]);
-      const res = await request(buildApp()).get('/auth/admin/users');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ users: [{ id: 1 }, { id: 2 }] });
-      expect(auth.authenticateAdmin).toHaveBeenCalled();
-      expect(mockAccount.getAllUsers).toHaveBeenCalledWith(50);
-    });
-
-    test('GET /auth/admin/users 403 when admin auth rejects', async () => {
-      authState.rejectAdmin = true;
-      const res = await request(buildApp()).get('/auth/admin/users');
-      expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: 'Admin access required' });
-      expect(mockAccount.getAllUsers).not.toHaveBeenCalled();
-    });
-
-    test('POST /auth/admin/users/:id/promote 400 when targeting self', async () => {
-      // admin stub injects req.user.id = 99; target the same id.
-      const res = await request(buildApp()).post('/auth/admin/users/99/promote');
-      expect(res.status).toBe(400);
-      expect(res.body).toEqual({ error: 'Cannot modify your own admin status' });
-      expect(mockAccount.promoteToAdmin).not.toHaveBeenCalled();
-    });
-
-    test('POST /auth/admin/users/:id/ban bans a different user', async () => {
-      mockAccount.banUser.mockResolvedValue(true);
-      const res = await request(buildApp()).post('/auth/admin/users/5/ban');
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ message: 'User banned' });
-      expect(mockAccount.banUser).toHaveBeenCalledWith(5);
-    });
-  });
+  // NOTE: Admin user-management lived under /auth/admin/* (server/routes/auth/admin.js)
+  // and duplicated the canonical /api/admin surface (server/routes/admin.js). The
+  // duplicate was removed; those endpoints are characterized by the /api/admin suite.
 });

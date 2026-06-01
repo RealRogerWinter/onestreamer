@@ -1,20 +1,19 @@
 // server/routes/internal/callbacks.js
 //
 // Sub-route module of the /api/internal/* router. Holds the chat-service
-// callbacks, the viewbot test endpoint, and the public read endpoints
-// (leaderboard, stream uptime, user-stats, admin-status checks). Handler
-// bodies are VERBATIM from the former monolithic server/routes/internal.js;
-// the parent mounts this at the SAME base path so every path/method/auth
-// order is byte-for-byte identical.
+// callbacks and the public read endpoints (leaderboard, stream uptime,
+// user-stats, admin-status checks). Handler bodies are VERBATIM from the
+// former monolithic server/routes/internal.js; the parent mounts this at the
+// SAME base path so every path/method/auth order is byte-for-byte identical.
 
 const express = require('express');
 
 const AccountService = require('../../services/AccountService');
 
 /**
- * @param {{ logger: import('pino').Logger, authService: object }} deps
+ * @param {{ logger: import('pino').Logger }} deps
  */
-module.exports = function createCallbacksRouter({ logger, authService }) {
+module.exports = function createCallbacksRouter({ logger }) {
   const router = express.Router();
 
   // API endpoint for chat service to track messages
@@ -71,43 +70,6 @@ module.exports = function createCallbacksRouter({ logger, authService }) {
     } catch (error) {
       logger.error('❌ API: Error syncing chat username:', error);
       res.status(500).json({ error: 'Internal server error' });
-    }
-  });
-
-  // Test endpoint to verify viewbot username generation
-  router.post('/test-viewbot-username', express.json(), async (req, res) => {
-    const { streamerId } = req.body;
-
-    if (!streamerId) {
-      return res.status(400).json({ error: 'streamerId is required' });
-    }
-
-    logger.debug(`🧪 TEST API: Testing viewbot username generation for ${streamerId}`);
-
-    try {
-      const viewbotService = req.app.locals.viewbotService;
-      const viewbotSocketIds = req.app.locals.viewbotSocketIds;
-      const viewbotUsernameCache = req.app.locals.viewbotUsernameCache;
-      const getStreamerDisplayName = req.app.locals.getStreamerDisplayName;
-
-      const displayName = await getStreamerDisplayName(streamerId);
-
-      res.json({
-        success: true,
-        streamerId,
-        displayName,
-        isViewbot: viewbotService ? viewbotService.isViewbotStream(streamerId) : false,
-        isViewbotSocket: viewbotSocketIds.has(streamerId),
-        usedCache: viewbotUsernameCache.has(streamerId),
-        cacheSize: viewbotUsernameCache.size,
-        viewbotSocketCount: viewbotSocketIds.size
-      });
-    } catch (error) {
-      logger.error('❌ TEST API: Error testing viewbot username:', error);
-      res.status(500).json({
-        error: error.message,
-        streamerId
-      });
     }
   });
 
@@ -241,37 +203,6 @@ module.exports = function createCallbacksRouter({ logger, authService }) {
         success: false,
         error: 'Failed to fetch user stats'
       });
-    }
-  });
-
-  // API endpoint to verify admin status for debug panel
-  router.get('/verify-admin', async (req, res) => {
-    try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ isAdmin: false, error: 'No token provided' });
-      }
-
-      const token = authHeader.substring(7);
-
-      try {
-        const decoded = authService.verifyToken(token);
-        const accountService = new AccountService();
-        const user = await accountService.getUserById(decoded.id);
-
-        const isAdmin = !!(user && user.is_admin);
-
-        res.json({
-          isAdmin: isAdmin,
-          userId: decoded.id,
-          username: user?.username
-        });
-      } catch (tokenError) {
-        res.status(401).json({ isAdmin: false, error: 'Invalid token' });
-      }
-    } catch (error) {
-      logger.error('❌ API: Error verifying admin status:', error);
-      res.status(500).json({ isAdmin: false, error: 'Internal server error' });
     }
   });
 

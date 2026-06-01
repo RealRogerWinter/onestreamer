@@ -11,7 +11,7 @@
 // itself mounted at '/api/internal' in server/index.js — every path, method,
 // middleware/auth order, and handler body is byte-for-byte identical to the
 // prior monolithic router. Sub-modules:
-//   - callbacks.js — chat-service callbacks, viewbot test, public reads
+//   - callbacks.js — chat-service callbacks, public reads
 //                    (leaderboard / uptime / user-stats / admin-status checks).
 //   - points.js    — point economy + game mechanics (award/transfer points,
 //                    gamble, slots, chat-bonus, bonus-status, admin grant/revoke).

@@ -15,7 +15,6 @@
 //   - `disconnect` listener (cleanup + user-count rebroadcast).
 //   - `update-user-color` listener (validates hex, persists for
 //     authenticated users via the main-server REST endpoint).
-//   - `ping` listener (lightweight liveness probe used by the client).
 //
 // Behavior must remain byte-equivalent to the inline implementation that
 // existed before this extraction. In particular:
@@ -731,14 +730,6 @@ function createSocketHandlers(deps) {
           console.error('❌ CHAT: Failed to save color to database:', error.message || error);
         }
       }
-
-      // Emit confirmation back to the user
-      socket.emit('color-updated', { color });
-    });
-
-    // Handle ping for connection testing
-    socket.on('ping', () => {
-      socket.emit('pong', { timestamp: new Date().toISOString() });
     });
   }
 

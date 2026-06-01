@@ -79,7 +79,6 @@ const createPasswordRouter = require('./auth/password');
 const createSessionRouter = require('./auth/session');
 const createOAuthRouter = require('./auth/oauth');
 const createAccountRouter = require('./auth/account');
-const createAdminRouter = require('./auth/admin');
 
 // Mounted in the same relative order the routes were declared in the prior
 // monolithic file. The sub-routers carry non-overlapping path namespaces, so
@@ -91,6 +90,5 @@ router.use(createPasswordRouter({ logger, authService }));
 router.use(createSessionRouter({ logger, authService, upload }));
 router.use(createOAuthRouter({ logger, authService, JWT_SECRET }));
 router.use(createAccountRouter({ logger, authService }));
-router.use(createAdminRouter({ logger, authService }));
 
 module.exports = router;

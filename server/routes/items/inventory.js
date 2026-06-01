@@ -34,9 +34,6 @@ module.exports = function createInventoryRouter({ logger, drawingService, throwi
     });
 
     router.post('/inventory/use/:itemId', authenticateToken, async (req, res) => {
-        logger.debug(`🚨🚨🚨 FART DEBUG: Request received at /inventory/use/${req.params.itemId}`);
-        logger.debug(`🚨🚨🚨 FART DEBUG: User: ${req.user?.username || 'unknown'}, Method: ${req.method}`);
-        logger.debug(`🚨🚨🚨 FART DEBUG: Headers:`, req.headers);
         logger.debug(`🚀 ITEMS: ===== ITEM USAGE REQUEST RECEIVED =====`);
         const userId = req.user.userId || req.user.id;
         logger.debug(`🚀 ITEMS: Starting item usage for item ID ${req.params.itemId} by user ${userId} (${req.user.username})`);

@@ -22,15 +22,6 @@ const drawingService = new DrawingService();
 const throwingService = new ThrowingService();
 const itemUseService = new ItemUseService();
 
-// Debug middleware for all item routes
-router.use((req, res, next) => {
-    if (req.path.includes('/inventory/use/')) {
-        logger.debug(`🔴🔴🔴 FART DEBUG MIDDLEWARE: ${req.method} ${req.path}`);
-        logger.debug(`🔴🔴🔴 FART DEBUG: Full URL: ${req.originalUrl}`);
-    }
-    next();
-});
-
 // Item/shop/inventory HTTP routes were decomposed into cohesive sub-route
 // modules. The parent mounts them at the SAME base path ('/') so that, once
 // this router is itself mounted at '/api' in server/index.js, every path,

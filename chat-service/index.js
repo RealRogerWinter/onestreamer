@@ -333,19 +333,15 @@ app.use(express.json());
 // HTTP API routes — moved into ./api/routes.js (PR-K5).
 // The router shares the same moderationService, chatMessages ring, and
 // connectedUsers map instances that the socket layer and command parser
-// mutate, so behavior is unchanged. verifyToken + JWT_SECRET are passed
-// through purely so /debug/test-token can keep reporting JWT validity;
-// no other API route checks auth (chat-service trusts the main server
-// reaching it over private networking).
+// mutate, so behavior is unchanged. No API route checks auth (chat-service
+// trusts the main server reaching it over private networking).
 app.use(createApiRouter({
   io,
   moderationService,
   chatMessages,
   MAX_CHAT_HISTORY,
   formatTime,
-  connectedUsers,
-  verifyToken,
-  JWT_SECRET
+  connectedUsers
 }));
 
 /*
@@ -392,41 +388,6 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.CHAT_PORT || 8081;
-
-// Initialize StreamBot integration
-const StreamBotService = require('../server/services/StreamBotService');
-const sqlite3 = require('sqlite3').verbose();
-const dbPath = path.join(__dirname, '..', 'server', 'database.db');
-const database = new sqlite3.Database(dbPath);
-const streamBotService = new StreamBotService(database);
-
-// Listen for StreamBot messages
-streamBotService.on('sendMessage', (message) => {
-  console.log('🤖 STREAMBOT: Sending periodic message:', message);
-
-  // Send the message as a system message
-  const systemMessage = {
-    id: `streambot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    username: '🤖 StreamBot',
-    color: '#FF6B35',
-    message: message,
-    timestamp: formatTime(),
-    fullTimestamp: new Date().toISOString(),
-    isSystem: true
-  };
-
-  chatMessages.push(systemMessage);
-  if (chatMessages.length > MAX_CHAT_HISTORY) {
-    chatMessages.splice(0, chatMessages.length - MAX_CHAT_HISTORY);
-  }
-
-  io.emit('new-message', systemMessage);
-});
-
-// Initialize StreamBot service
-streamBotService.initialize().catch(err => {
-  console.error('❌ Failed to initialize StreamBot service:', err);
-});
 
 // Load moderation data on startup
 loadModerationData();

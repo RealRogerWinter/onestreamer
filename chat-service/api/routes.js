@@ -9,7 +9,6 @@
 //   POST /api/remove-timeout     — clear an active timeout
 //   POST /api/system-message     — main-server bot/system message broadcast
 //   GET  /api/chat-history       — clip-replay window of chat history
-//   GET  /debug/test-token       — JWT validation debug endpoint
 //
 // Behavior must remain byte-equivalent to the inline implementation in
 // chat-service/index.js prior to PR-K5:
@@ -19,17 +18,8 @@
 //     moderationService, so command-parser / socket call sites are unaffected).
 //   - Same chatMessages ring (push + MAX_CHAT_HISTORY trim) for ban / timeout
 //     / system-message broadcasts.
-//   - Same auth posture: none of these routes guard with JWT today (the main
-//     server is the only caller and reaches them over private networking) —
-//     PR-K5 does NOT add auth gates. The only route that even looks at a
-//     token is /debug/test-token, which uses verifyToken purely to report
-//     validity back to the caller.
-//
-// Auth note: `verifyToken` is injected rather than re-implemented so the JWT
-// secret stays in chat-service/index.js's bootstrap (which already errors out
-// if JWT_SECRET is unset). The socket connection handler in index.js also
-// uses verifyToken, so the function's home stays there until PR-K6 extracts
-// the socket layer.
+//   - Same auth posture: none of these routes guard with JWT (the main
+//     server is the only caller and reaches them over private networking).
 
 const express = require('express');
 
@@ -43,8 +33,6 @@ const express = require('express');
  * @param {number} deps.MAX_CHAT_HISTORY            ring size
  * @param {() => string} deps.formatTime            "HH:MM" formatter
  * @param {Map<string, object>} deps.connectedUsers socketId -> user info (for /health count + ban disconnect)
- * @param {(token: string) => object|null} deps.verifyToken  JWT verifier (debug endpoint)
- * @param {string} deps.JWT_SECRET                  JWT secret (for /debug/test-token's prefix hint)
  * @returns {import('express').Router}
  */
 function createApiRouter(deps) {
@@ -54,9 +42,7 @@ function createApiRouter(deps) {
     chatMessages,
     MAX_CHAT_HISTORY,
     formatTime,
-    connectedUsers,
-    verifyToken,
-    JWT_SECRET
+    connectedUsers
   } = deps;
 
   const {
@@ -411,24 +397,6 @@ function createApiRouter(deps) {
       console.error('❌ CHAT: Error fetching chat history:', error);
       res.status(500).json({ error: 'Failed to fetch chat history' });
     }
-  });
-
-  // Debug endpoint to test token validation
-  router.get('/debug/test-token', (req, res) => {
-    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
-
-    if (!token) {
-      return res.json({ error: 'No token provided' });
-    }
-
-    const user = verifyToken(token);
-
-    res.json({
-      token: token.substring(0, 20) + '...',
-      valid: !!user,
-      user: user ? { id: user.id, username: user.username } : null,
-      jwtSecret: JWT_SECRET.substring(0, 10) + '...'
-    });
   });
 
   return router;

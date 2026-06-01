@@ -81,7 +81,6 @@ module.exports = function registerLifecycle(io, socket, deps) {
 
       streamNotifier.streamEnded({ reason: 'user_stopped_streaming', previousStreamer: socket.id });
       notifyViewersStreamEnded();
-      notifyViewersStreamEnded();
       viewerCountNotifier.broadcast();
 
       logger.info(`Stream ended by: ${socket.id}`);

@@ -93,7 +93,6 @@ function createTestStreamRouter(deps) {
 
           streamNotifier.streamEnded({ reason: 'test_stream_stopped' });
           notifyViewersStreamEnded();
-          notifyViewersStreamEnded();
           viewerCountNotifier.broadcast();
         }
       }

@@ -1605,8 +1605,7 @@ async function startServer() {
       '/auth/complete-oauth-registration', // API endpoint
       '/auth/request-deletion',
       '/auth/confirm-deletion',
-      '/auth/restore-account',
-      '/auth/admin/'
+      '/auth/restore-account'
     ];
     
     // Check if this is an auth API endpoint
