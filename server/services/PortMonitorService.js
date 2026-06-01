@@ -1,36 +1,40 @@
 /**
- * PortMonitorService - Monitors MediaSoup port usage and provides recovery mechanisms
+ * PortMonitorService - Periodic sweep of orphaned LiveKit transports/producers.
+ *
+ * History: under MediaSoup this service ALSO polled `ss -tuln` for UDP RTP
+ * port exhaustion (this process owned the RTP ports) and force-closed all
+ * transports at a critical threshold. Under LiveKit (ADR-0024) the media plane
+ * runs in its own container on :7882 — this process no longer owns the RTP UDP
+ * ports — so the port-exhaustion polling and the force-cleanup-all path were
+ * removed.
+ *
+ * What remains is the orphaned-transport/producer sweep: on a 30s interval it
+ * walks `webrtcService.transports` / `.producers` (LiveKitService's Maps) and
+ * closes any keyed to a socket id that is no longer connected, so dangling
+ * per-socket entries don't accumulate after abrupt disconnects.
  */
 
-const { exec } = require('child_process');
-const util = require('util');
-
 const logger = require('../bootstrap/logger').child({ svc: 'PortMonitorService' });
-
-const execPromise = util.promisify(exec);
 
 class PortMonitorService {
   constructor(webrtcService) {
     this.webrtcService = webrtcService;
     this.monitorInterval = null;
-    this.lastPortCount = 0;
-    this.portExhaustionThreshold = 180; // Alert when 180+ ports are used (90% of 200)
-    this.criticalThreshold = 195; // Force cleanup at 195+ ports
-    this.checkIntervalMs = 30000; // Check every 30 seconds
+    this.checkIntervalMs = 30000; // Sweep every 30 seconds
   }
 
   /**
-   * Start monitoring port usage
+   * Start the periodic orphaned-transport sweep.
    */
   startMonitoring() {
-    logger.debug('🔍 PORT MONITOR: Starting port usage monitoring...');
-    
-    // Initial check
-    this.checkPortUsage();
-    
-    // Set up periodic monitoring
+    logger.debug('🔍 PORT MONITOR: Starting orphaned-transport sweep...');
+
+    // Initial sweep
+    this.cleanupOrphanedTransports();
+
+    // Set up periodic sweep
     this.monitorInterval = setInterval(() => {
-      this.checkPortUsage();
+      this.cleanupOrphanedTransports();
     }, this.checkIntervalMs);
   }
 
@@ -52,45 +56,14 @@ class PortMonitorService {
   }
 
   /**
-   * Check current port usage
-   */
-  async checkPortUsage() {
-    try {
-      // Count UDP ports on localhost (MediaSoup uses UDP for RTP)
-      const { stdout } = await execPromise('ss -tuln | grep "127.0.0.1:" | grep "udp" | wc -l');
-      const portCount = parseInt(stdout.trim(), 10);
-      
-      // Log if port usage changed significantly
-      if (Math.abs(portCount - this.lastPortCount) > 10) {
-        logger.debug(`📊 PORT MONITOR: UDP ports in use: ${portCount}/200`);
-        this.lastPortCount = portCount;
-      }
-      
-      // Check thresholds
-      if (portCount >= this.criticalThreshold) {
-        logger.error(`🚨 PORT MONITOR: CRITICAL - ${portCount} ports in use! Forcing cleanup...`);
-        await this.forceCleanup();
-      } else if (portCount >= this.portExhaustionThreshold) {
-        logger.warn(`⚠️ PORT MONITOR: WARNING - ${portCount} ports in use (${Math.round(portCount/2)}% of capacity)`);
-        await this.cleanupOrphanedTransports();
-      }
-      
-      return portCount;
-    } catch (error) {
-      logger.error('❌ PORT MONITOR: Error checking port usage:', error);
-      return -1;
-    }
-  }
-
-  /**
    * Clean up orphaned transports (transports without active connections)
    */
   async cleanupOrphanedTransports() {
     if (!this.webrtcService.transports) return;
-    
+
     logger.debug('🧹 PORT MONITOR: Checking for orphaned transports...');
     let cleanedCount = 0;
-    
+
     // Get all connected socket IDs
     const connectedSocketIds = new Set();
     if (global.io) {
@@ -100,13 +73,13 @@ class PortMonitorService {
         }
       }
     }
-    
+
     // Check each transport
     for (const [socketId, transport] of this.webrtcService.transports) {
       // If socket is not connected, clean up the transport
       if (!connectedSocketIds.has(socketId)) {
         logger.debug(`🧹 PORT MONITOR: Cleaning orphaned transport for disconnected socket ${socketId}`);
-        
+
         try {
           if (transport.video && transport.audio) {
             // ViewBot dual transport
@@ -118,15 +91,15 @@ class PortMonitorService {
         } catch (e) {
           logger.error(`❌ PORT MONITOR: Error closing transport for ${socketId}:`, e);
         }
-        
+
         this.webrtcService.transports.delete(socketId);
         cleanedCount++;
       }
     }
-    
+
     if (cleanedCount > 0) {
       logger.debug(`✅ PORT MONITOR: Cleaned up ${cleanedCount} orphaned transports`);
-      
+
       // Also clean up associated producers
       this.cleanupOrphanedProducers(connectedSocketIds);
     }
@@ -137,12 +110,12 @@ class PortMonitorService {
    */
   cleanupOrphanedProducers(connectedSocketIds) {
     if (!this.webrtcService.producers) return;
-    
+
     let cleanedCount = 0;
     for (const [socketId, producers] of this.webrtcService.producers) {
       if (!connectedSocketIds.has(socketId)) {
         logger.debug(`🧹 PORT MONITOR: Cleaning orphaned producers for ${socketId}`);
-        
+
         if (producers instanceof Map) {
           for (const [kind, producer] of producers) {
             if (!producer.closed) {
@@ -150,77 +123,15 @@ class PortMonitorService {
             }
           }
         }
-        
+
         this.webrtcService.producers.delete(socketId);
         cleanedCount++;
       }
     }
-    
+
     if (cleanedCount > 0) {
       logger.debug(`✅ PORT MONITOR: Cleaned up producers for ${cleanedCount} sockets`);
     }
-  }
-
-  /**
-   * Force cleanup of all transports (emergency recovery)
-   */
-  async forceCleanup() {
-    logger.debug('🚨 PORT MONITOR: Forcing cleanup of all transports...');
-    
-    if (!this.webrtcService.transports) return;
-    
-    let cleanedCount = 0;
-    for (const [socketId, transport] of this.webrtcService.transports) {
-      try {
-        if (transport.video && transport.audio) {
-          if (!transport.video.closed) transport.video.close();
-          if (!transport.audio.closed) transport.audio.close();
-        } else if (typeof transport.close === 'function' && !transport.closed) {
-          transport.close();
-        }
-        cleanedCount++;
-      } catch (e) {
-        logger.error(`❌ Error force-closing transport for ${socketId}:`, e);
-      }
-    }
-    
-    // Clear all transport references
-    this.webrtcService.transports.clear();
-    
-    // Also clear all producers
-    if (this.webrtcService.producers) {
-      for (const [socketId, producers] of this.webrtcService.producers) {
-        if (producers instanceof Map) {
-          for (const [kind, producer] of producers) {
-            if (!producer.closed) {
-              producer.close();
-            }
-          }
-        }
-      }
-      this.webrtcService.producers.clear();
-    }
-    
-    logger.debug(`✅ PORT MONITOR: Force cleaned ${cleanedCount} transports and all producers`);
-  }
-
-  /**
-   * Get current status
-   */
-  async getStatus() {
-    const portCount = await this.checkPortUsage();
-    const transportCount = this.webrtcService.transports ? this.webrtcService.transports.size : 0;
-    const producerCount = this.webrtcService.producers ? this.webrtcService.producers.size : 0;
-    
-    return {
-      portsInUse: portCount,
-      portCapacity: 200,
-      portUsagePercent: Math.round((portCount / 200) * 100),
-      activeTransports: transportCount,
-      activeProducers: producerCount,
-      isHealthy: portCount < this.portExhaustionThreshold,
-      isCritical: portCount >= this.criticalThreshold
-    };
   }
 }
 

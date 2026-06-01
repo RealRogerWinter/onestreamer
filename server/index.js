@@ -30,10 +30,11 @@ logger.info({
     fromEmail: process.env.FROM_EMAIL || 'NOT SET',
 }, 'Environment check on server start');
 
-// ViewBot stack: the named services (ViewbotService, ViewBotLiveKitService)
-// are
-// constructed by server/bootstrap/services.js::createViewBotServices (PR-I4)
-// inside startServer() once the mediasoup worker is ready.
+// ViewBot stack: ViewBotLiveKitService is constructed by
+// server/bootstrap/services.js::createViewBotServices (PR-I4) inside
+// startServer() once the LiveKit backend is ready. The former ViewbotService
+// is now the stateless `isViewbotStream` predicate, bound directly to
+// `viewbotService` at that point.
 // PR 9.3 (Phase 9): ViewBotURLService, URLStreamHealthService,
 // RandomStreamRotationService, WhitelistEnforcer, and ModerationActionArbiter
 // are now constructed inside server/bootstrap/start-streaming-backend.js.
@@ -1221,7 +1222,11 @@ async function startServer() {
       livekitService,
       streamService,
     });
-    viewbotService = viewBotBag.viewbotService;
+    // ViewbotService was demoted to the stateless `isViewbotStream` predicate
+    // (no longer in the ViewBot bag). Bind the module directly so the existing
+    // `viewbotService.isViewbotStream(...)` call sites (routes, socket handlers,
+    // InventoryService) keep working unchanged.
+    viewbotService = require('./services/ViewbotService');
     const viewBotLiveKitService = viewBotBag.viewBotLiveKitService; // null without LiveKit.
 
     // Push livekit BEFORE viewbot stoppables so reverse-iteration stops the
@@ -1232,7 +1237,7 @@ async function startServer() {
       stoppables.push(livekitService);
     }
     stoppables.push(...viewBotStoppables);
-    logger.info('✅ VIEWBOT: ViewbotService initialized');
+    logger.info('✅ VIEWBOT: isViewbotStream predicate bound');
     if (viewBotLiveKitService) {
       logger.info('✅ VIEWBOT: ViewBotLiveKitService initialized for LiveKit RTMP ingress');
     }

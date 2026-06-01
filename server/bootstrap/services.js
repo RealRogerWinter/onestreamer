@@ -14,8 +14,8 @@
 //   takeoverService            ──  redisClient, sessionService
 //   testStreamService          ──  no deps
 //   mediaStreamService         ──  no deps
-//   (webrtcService is built in server/index.js because it branches on
-//    USE_WEBRTC_ADAPTER env flag and assigns to globals; it's PASSED IN here)
+//   (webrtcService — the LiveKit-backed WebRTC service — is built in
+//    server/index.js because it assigns to globals; it's PASSED IN here)
 //   audioOptimizationService   ──  no deps
 //   resourceMonitor            ──  no deps
 //   accountService             ──  no deps
@@ -54,19 +54,16 @@
 //                                  defined inline in the factory.
 //
 // ── PR-I4: late ViewBot stack (separate export, not part of createServices) ──
-// The named ViewBot services (ViewbotService, ViewBotLiveKitService) are
-// constructed by the
-// dedicated `createViewBotServices` factory exported alongside the main
-// one. They live in their own function (rather than being folded into
-// createServices) because:
-//   (1) they depend on `webrtcService.initialize()` having completed
-//       successfully — that only happens inside startServer()'s try block,
-//       well after the synchronous service bag is built;
-//   (2) they branch on `livekitService` which is derived from
-//       `global.webrtcAdapter._backend` at runtime (USE_WEBRTC_ADAPTER +
-//       WEBRTC_BACKEND=livekit), and isn't part of the main services bag;
-//   (3) ViewBotLiveKitService requires `await initialize()` before any of
-//       its setters fire.
+// ViewBotLiveKitService is constructed by the dedicated
+// `createViewBotServices` factory exported alongside the main one. It lives in
+// its own function (rather than being folded into createServices) because it
+// branches on `livekitService` (the runtime LiveKit backend, not part of the
+// main services bag) and requires `await initialize()` before any of its
+// setters fire.
+//
+// The former sibling `ViewbotService` was demoted to a stateless
+// `isViewbotStream` predicate (server/services/ViewbotService.js) and is no
+// longer constructed/bagged here.
 //
 // The auxiliary orchestration that surrounded those constructors — URL
 // stream services (ViewBotURLService + URLStreamHealthService + their
@@ -141,7 +138,9 @@ const LifecycleManager = require('../services/LifecycleManager');
 const processManager = require('../services/ProcessManager');
 
 // PR-I4: late ViewBot stack — see createViewBotServices below.
-const ViewbotService = require('../services/ViewbotService');
+// ViewbotService was demoted to the stateless `isViewbotStream` predicate
+// (server/services/ViewbotService.js) and is no longer constructed here; it's
+// bound directly to `viewbotService` in server/index.js.
 const ViewBotLiveKitService = require('../services/ViewBotLiveKitService');
 
 /**
@@ -154,9 +153,10 @@ const ViewBotLiveKitService = require('../services/ViewBotLiveKitService');
  *                                     handles the null case internally).
  * @param {object}  deps.database      SQLite database wrapper.
  * @param {object}  deps.env           process.env (or a subset thereof).
- * @param {object}  deps.webrtcService  Pre-built mediasoup service
- *                                     (adapter or direct — server/index.js
- *                                     picks based on USE_WEBRTC_ADAPTER).
+ * @param {object}  deps.webrtcService  Pre-built LiveKit-backed WebRTC
+ *                                     service (built in server/index.js and
+ *                                     passed in). Consumed by
+ *                                     transcriptionService.
  * @param {Map}     deps.userBonusCooldowns  Shared Map<userId, lastClaimEpochMs>
  *                                     for /claim-chat-bonus + /bonus-status.
  *                                     Created in server/index.js and exposed
@@ -490,30 +490,29 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
 /**
  * Build the late ViewBot service stack (PR-I4).
  *
- * Called from server/index.js inside startServer() AFTER
- * webrtcService.initialize() has resolved, because every service in this
- * stack reaches into the live mediasoup worker (transports/producers maps)
- * or — on the LiveKit branch — depends on the adapter's resolved backend.
+ * Called from server/index.js inside startServer() AFTER the LiveKit backend
+ * is in play, because viewBotLiveKitService awaits initialize() before any of
+ * its setters fire.
  *
  * Behavior:
- *   - viewbotService is ALWAYS constructed. Under LiveKit it provides only the
- *     stateless `isViewbotStream` predicate (its creation/streaming half and
- *     the ViewBotWebRTCService backend were removed — see ViewbotService.js).
  *   - viewBotLiveKitService is constructed ONLY when livekitService IS
  *     present (the production path), then awaited via initialize(), then
  *     handed a streamService reference for real-streamer protection.
+ *   - The former always-constructed `viewbotService` is gone: it was demoted
+ *     to the stateless `isViewbotStream` predicate (server/services/
+ *     ViewbotService.js), bound directly in server/index.js — no construction
+ *     and no bag entry here.
  *
  * NOT handled here (kept inline in server/index.js because each item is
  * orchestration rather than service construction — see the deferred-list
  * note above): ViewBotURLService, URLStreamHealthService, the URL stream
  * /random stream route mounts, SimpleViewBotRotation setter wiring,
- * ViewBotManager / UnifiedViewBotRotation, PortMonitorService,
- * ViewBotRotationService, and the various setTimeout-driven autostarts.
+ * RandomStreamRotationService, PortMonitorService, and the various
+ * setTimeout-driven autostarts.
  *
  * @param {object}  deps
- * @param {object}  deps.webrtcService  Already-initialized mediasoup
- *                                         service (or adapter forwarding to
- *                                         one). Required.
+ * @param {object}  deps.webrtcService     Retained for call-site
+ *                                         compatibility; currently unused.
  * @param {object?} deps.livekitService    LiveKit backend instance (the
  *                                         production path; null only in a
  *                                         no-LiveKit fallback).
@@ -521,15 +520,13 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
  *                                         streamer-protection wiring.
  * @returns {Promise<object>} ViewBot service bag:
  *                            {
- *                              viewbotService,
  *                              viewBotLiveKitService, // null without LiveKit
  *                            }
  */
 async function createViewBotServices({ webrtcService, livekitService, streamService }) {
-  // ViewbotService is now stateless (only isViewbotStream); the constructor
-  // signature is retained for call-site compatibility but the args are unused.
-  const viewbotService = new ViewbotService(webrtcService, livekitService);
-
+  // NOTE: the `webrtcService` dep is retained on the signature for call-site
+  // compatibility; it's unused now that ViewbotService is gone (the
+  // stateless `isViewbotStream` predicate it was demoted to needs nothing).
   let viewBotLiveKitService = null;
 
   if (livekitService) {
@@ -543,13 +540,12 @@ async function createViewBotServices({ webrtcService, livekitService, streamServ
   }
 
   const services = {
-    viewbotService,
     viewBotLiveKitService,
   };
 
   // The ViewBot bag owns no background work that needs draining at shutdown:
-  // viewbotService is stateless, and viewBotLiveKitService has no graceful
-  // stop() (its only lifecycle method is initialize()).
+  // viewBotLiveKitService has no graceful stop() (its only lifecycle method is
+  // initialize()).
   const stoppables = [];
 
   return { services, stoppables };

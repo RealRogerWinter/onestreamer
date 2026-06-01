@@ -143,12 +143,9 @@ jest.mock('../../services/MovieBotService', () => class {
 // branches on whether LiveKit is the active backend. Mocks here mirror the
 // real constructor signatures and record setter / init invocations so the
 // tests can assert the cross-wiring and the LiveKit-branch await flow.
-jest.mock('../../services/ViewbotService', () => class {
-  constructor(...args) {
-    this._args = args;
-    this._stubName = 'ViewbotService';
-  }
-});
+// ViewbotService was demoted to a stateless `isViewbotStream` predicate and is
+// no longer constructed by createViewBotServices (it's bound directly in
+// server/index.js), so there's nothing to mock for it here.
 jest.mock('../../services/ViewBotLiveKitService', () => class {
   constructor(...args) {
     this._args = args;
@@ -203,8 +200,8 @@ const MovieBotService = require('../../services/MovieBotService');
 // PR 4.2
 const LifecycleManager = require('../../services/LifecycleManager');
 
-// PR-I4 additions
-const ViewbotService = require('../../services/ViewbotService');
+// PR-I4 additions — ViewbotService is now a stateless module (no class to
+// import for instanceof checks).
 const ViewBotLiveKitService = require('../../services/ViewBotLiveKitService');
 
 const createServices = require('../../bootstrap/services');
@@ -646,18 +643,17 @@ describe('server/bootstrap/services factory', () => {
 
 // ── PR-I4: createViewBotServices (late-init helper) ─────────────────────────
 //
-// Separate factory because it's only called inside startServer() after
-// webrtcService.initialize() resolves, and it branches on whether a
-// LiveKit backend is in play. Tests assert:
+// Separate factory because it's only called inside startServer() once the
+// LiveKit backend is in play, and it branches on whether LiveKit is present.
+// ViewbotService was demoted to the stateless `isViewbotStream` predicate and
+// is no longer constructed/bagged here. Tests assert:
 //   1. The factory is exposed on the main createServices export.
-//   2. Always-constructed service: viewbotService (now stateless —
-//      isViewbotStream only; the creation half + ViewBotWebRTCService were
-//      removed under LiveKit).
-//   3. No-LiveKit branch: builds only viewbotService, leaves
-//      viewBotLiveKitService null.
-//   4. LiveKit branch (livekitService present): builds + initializes
+//   2. No-LiveKit branch: bag has viewBotLiveKitService === null and nothing
+//      else.
+//   3. LiveKit branch (livekitService present): builds + initializes
 //      viewBotLiveKitService and wires streamService.
-//   5. Constructor arg identity for each service matches the inline original.
+//   4. Constructor arg identity for viewBotLiveKitService matches the inline
+//      original.
 
 describe('server/bootstrap/services :: createViewBotServices', () => {
   function buildViewBotDeps(overrides = {}) {
@@ -673,15 +669,11 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     expect(typeof createViewBotServices).toBe('function');
   });
 
-  test('no-LiveKit branch (livekitService null): builds Viewbot only; leaves LiveKit null', async () => {
+  test('no-LiveKit branch (livekitService null): bag has only viewBotLiveKitService === null', async () => {
     const deps = buildViewBotDeps();
     const { services: bag } = await createViewBotServices(deps);
 
-    expect(Object.keys(bag).sort()).toEqual(
-      ['viewBotLiveKitService', 'viewbotService'].sort()
-    );
-
-    expect(bag.viewbotService).toBeInstanceOf(ViewbotService);
+    expect(Object.keys(bag)).toEqual(['viewBotLiveKitService']);
     expect(bag.viewBotLiveKitService).toBeNull();
   });
 
@@ -690,7 +682,6 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     const deps = buildViewBotDeps({ livekitService });
     const { services: bag } = await createViewBotServices(deps);
 
-    expect(bag.viewbotService).toBeInstanceOf(ViewbotService);
     expect(bag.viewBotLiveKitService).toBeInstanceOf(ViewBotLiveKitService);
 
     // LiveKit branch must await initialize() AND register streamService.
@@ -698,21 +689,12 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     expect(bag.viewBotLiveKitService._streamServiceArg).toBe(deps.streamService);
   });
 
-  test('viewbotService is constructed with (webrtcService, livekitService)', async () => {
+  test('viewbotService is no longer constructed/bagged (demoted to stateless predicate)', async () => {
     const livekitService = { _kind: 'livekit' };
     const deps = buildViewBotDeps({ livekitService });
     const { services: bag } = await createViewBotServices(deps);
 
-    expect(bag.viewbotService._args).toHaveLength(2);
-    expect(bag.viewbotService._args[0]).toBe(deps.webrtcService);
-    expect(bag.viewbotService._args[1]).toBe(livekitService);
-  });
-
-  test('viewbotService receives null as livekitService on MediaSoup branch', async () => {
-    const deps = buildViewBotDeps();
-    const { services: bag } = await createViewBotServices(deps);
-
-    expect(bag.viewbotService._args[1]).toBeNull();
+    expect(bag).not.toHaveProperty('viewbotService');
   });
 
   test('viewBotLiveKitService is constructed with (livekitService)', async () => {

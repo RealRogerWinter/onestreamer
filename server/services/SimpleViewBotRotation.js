@@ -1,47 +1,36 @@
 /**
- * SimpleViewBotRotation.js - Dead simple viewbot rotation system
+ * SimpleViewBotRotation.js - viewbot rotation gating
  *
- * Features:
- * - One viewbot streaming at a time
- * - Random rotation intervals
- * - Cooldown system to prevent replays
- * - Streams via LiveKit (RTMP ingress); the legacy MediaSoup/GStreamer backend
- *   was removed.
+ * Live surface used by the rest of the server:
+ * - Real-streamer / URL-stream protection (`isRealStreamerActive`,
+ *   `isURLStreamActive`) so viewbots never interrupt a live streamer.
+ * - Rotation enable/disable + start/stop (`updateSettings`, `startRotation`,
+ *   `stopRotation`, `shutdown`) wired from the URL/random rotation services and
+ *   the stream/disconnect socket handlers.
+ * - Status reporting (`getStatus`).
+ *
+ * The actual bot-POOL half (an `availableBots` pool loaded via `initialize()`,
+ * per-bot selection/start/stop, cooldowns) was inert — `initialize()` had no
+ * live caller, so the pool was always empty and rotation never started a bot.
+ * It was removed; `rotateToNextBot()` is now a safe no-op kept only because
+ * `startRotation()` still calls it. Live viewbots run via the LiveKit RTMP
+ * ingress path (SimpleViewBotRotation → ViewBotLiveKitService is no longer the
+ * driver; the legacy MediaSoup/GStreamer backend was removed — ADR-0024).
  */
 
-const webrtcConfig = require('../config/webrtc.config');
-
 const logger = require('../bootstrap/logger').child({ svc: 'SimpleViewBotRotation' });
-// PR 8.3 (Phase 8): the actual ProcessManager singleton. The previous
-// `global.processManager.trackProcess(...)` paths in this file were
-// no-ops — `global.processManager` was never assigned. Importing the
-// singleton directly makes the registry populate so the shutdown reaper
-// can find these PIDs. See ADR-0011 and PR 8.3 in CHANGELOG.
-const processManager = require('./ProcessManager');
 
 class SimpleViewBotRotation {
   constructor() {
     // Core state
-    this.currentBot = null;
     this.rotationTimer = null;
     this.livekitViewBotService = null;
-    this.livekitViewBotId = null;
     this.streamService = null; // Reference to StreamService for real streamer protection
     this.urlViewBotService = null; // Reference to ViewBotURLService for URL stream protection
 
-    // PR 8.2 (Phase 8 — see ADR-0016): observability hook for the watchdog
-    // owned by UnifiedViewBotRotation. Updated at the entry of every
-    // `rotateToNextBot()` invocation; the watchdog reads it to detect a
-    // stalled tick chain.
-    this.lastTickAt = null;
-
-    // Bot pool - these should be loaded from config/database
-    this.availableBots = [];
-
-    // Cooldowns - Map of botId -> lastPlayedTimestamp
-    this.cooldowns = new Map();
-
-    // Settings
+    // Settings — `enabled` is read/written by the URL + random rotation
+    // services (see ViewBotURLService / RandomStreamRotationService /
+    // ViewBotCleanupCoordinator) to pause/resume viewbots around real streams.
     this.settings = {
       minRotationInterval: 30000,  // 30 seconds minimum
       maxRotationInterval: 180000, // 3 minutes maximum
@@ -49,9 +38,7 @@ class SimpleViewBotRotation {
       enabled: false  // Disabled by default, will be enabled when needed
     };
 
-    // Backend is LiveKit-only (ADR-0024)
-    this.backend = webrtcConfig.backend;
-    logger.debug(`🎯 SimpleViewBotRotation: Initialized (backend: ${this.backend})`);
+    logger.debug('🎯 SimpleViewBotRotation: Initialized');
   }
 
   /**
@@ -129,19 +116,7 @@ class SimpleViewBotRotation {
     this.livekitViewBotService = livekitViewBotService;
     logger.debug('✅ LiveKit ViewBot service registered with rotation system');
   }
-  
-  /**
-   * Initialize the rotation system with available bots
-   */
-  async initialize(bots) {
-    this.availableBots = bots;
-    logger.debug(`📦 Loaded ${bots.length} viewbots into rotation pool`);
-    
-    if (this.settings.enabled && this.availableBots.length > 0) {
-      await this.startRotation();
-    }
-  }
-  
+
   /**
    * Start the rotation system
    */
@@ -166,264 +141,59 @@ class SimpleViewBotRotation {
    */
   async stopRotation() {
     logger.debug('⏹️ Stopping viewbot rotation');
-    
+
     // Clear rotation timer
     if (this.rotationTimer) {
       clearTimeout(this.rotationTimer);
       this.rotationTimer = null;
     }
-    
-    // Stop current bot
-    await this.stopCurrentBot();
   }
-  
+
   /**
-   * Rotate to the next viewbot
+   * Rotate to the next viewbot.
+   *
+   * No-op: the bot-pool half (selection/start/stop, cooldowns) was inert and
+   * removed. Kept as a safe no-op because `startRotation()` still calls it and
+   * external callers may still reach `startRotation`. It intentionally does NOT
+   * throw and schedules no follow-up tick.
    */
   async rotateToNextBot() {
-    // PR 8.2: record tick attempt BEFORE the early-return guards so the
-    // watchdog also detects "blocked-by-real-streamer" wedges (where the
-    // loop returns without scheduling the next tick). The watchdog
-    // distinguishes wedge causes via its rotation-state context.
-    this.lastTickAt = Date.now();
-    logger.debug('🔄 Rotating to next viewbot');
-
-    // Check if random rotation is active - it takes priority
-    if (global.randomStreamRotationService && global.randomStreamRotationService.isRandomRotationActive()) {
-      logger.debug('🛡️ VIEWBOT ROTATION BLOCKED: Random stream rotation is active - viewbots disabled');
-      return;
-    }
-
-    // CRITICAL: Check if real streamer is active before rotation
-    if (this.isRealStreamerActive()) {
-      logger.debug('🛡️ VIEWBOT ROTATION BLOCKED: Real streamer is active - will not rotate');
-      // Don't schedule next rotation - wait for real streamer to disconnect
-      return;
-    }
-
-    // Stop current bot
-    await this.stopCurrentBot();
-
-    // Select next bot
-    const nextBot = this.selectNextBot();
-
-    if (!nextBot) {
-      logger.debug('⚠️ No available bots for rotation (all on cooldown?)');
-      // Retry in 30 seconds
-      this.scheduleNextRotation(30000);
-      return;
-    }
-
-    // Start the new bot
-    await this.startBot(nextBot);
-
-    // Schedule next rotation at random interval
-    const interval = this.getRandomInterval();
-    this.scheduleNextRotation(interval);
-  }
-  
-  /**
-   * Select next bot respecting cooldowns
-   */
-  selectNextBot() {
-    const now = Date.now();
-    
-    // Filter available bots (not on cooldown)
-    const availableBots = this.availableBots.filter(bot => {
-      const lastPlayed = this.cooldowns.get(bot.id);
-      if (!lastPlayed) return true;
-      return (now - lastPlayed) > this.settings.cooldownDuration;
-    });
-    
-    if (availableBots.length === 0) {
-      return null;
-    }
-    
-    // Random selection
-    const randomIndex = Math.floor(Math.random() * availableBots.length);
-    return availableBots[randomIndex];
-  }
-  
-  /**
-   * Start a specific bot streaming
-   */
-  async startBot(bot) {
-    try {
-      // CRITICAL SAFETY CHECK: Verify no real streamer before starting
-      if (this.isRealStreamerActive()) {
-        logger.debug(`🛡️ VIEWBOT START BLOCKED: Real streamer is active - cannot start ${bot.id}`);
-        return;
-      }
-
-      logger.debug(`🚀 Starting viewbot: ${bot.id} (backend: ${this.backend})`);
-
-      // Update state
-      this.currentBot = bot;
-      this.cooldowns.set(bot.id, Date.now());
-
-      // LiveKit RTMP ingress is the only supported viewbot backend; the former
-      // MediaSoup/GStreamer path was removed.
-      if (!this.livekitViewBotService) {
-        throw new Error('LiveKit viewbot service unavailable (MediaSoup/GStreamer backend was removed)');
-      }
-      await this.startLiveKitBot(bot);
-
-      logger.debug(`✅ ViewBotRotationService: viewbot-${bot.id} is now streaming`);
-
-      // Emit event for other systems
-      this.emitEvent('viewbot-started', { botId: bot.id });
-
-    } catch (error) {
-      logger.error(`❌ Failed to start bot ${bot.id}:`, error);
-      this.handleBotError(bot);
-    }
+    // Intentionally empty — see method doc and the file header.
   }
 
   /**
-   * Start LiveKit RTMP ingress bot
-   */
-  async startLiveKitBot(bot) {
-    logger.debug(`🎥 Starting LiveKit RTMP ingress bot: ${bot.id}`);
-
-    if (!bot.mediaFile) {
-      logger.warn(`⚠️ Bot ${bot.id} has no media file, skipping`);
-      throw new Error('No media file for LiveKit bot');
-    }
-
-    const result = await this.livekitViewBotService.createViewBot({
-      videoFile: bot.mediaFile
-    });
-
-    if (!result.success) {
-      throw new Error(result.message || 'Failed to create LiveKit viewbot');
-    }
-
-    this.livekitViewBotId = result.botId;
-    logger.debug(`✅ LiveKit viewbot created: ${this.livekitViewBotId}`);
-  }
-
-  /**
-   * Stop the current bot
-   */
-  async stopCurrentBot() {
-    if (!this.currentBot) return;
-
-    const botId = this.currentBot.id;
-    logger.debug(`⏹️ Stopping viewbot: ${botId} (backend: ${this.backend})`);
-
-    // Stop LiveKit bot
-    if (this.backend === 'livekit' && this.livekitViewBotId && this.livekitViewBotService) {
-      try {
-        await this.livekitViewBotService.stopViewBot(this.livekitViewBotId);
-        this.livekitViewBotId = null;
-      } catch (error) {
-        logger.error(`⚠️ Error stopping LiveKit viewbot ${botId}:`, error);
-      }
-    }
-
-    // PR 8.3 (Phase 8): deregister with the ProcessManager so the
-    // shutdown reaper doesn't find this PID still in the registry. The
-    // `onBotStopped` path also runs `killBotProcesses` for belt-and-braces
-    // (process-group SIGKILL on top of the per-handle SIGTERM above).
-    try {
-      await processManager.onBotStopped(botId);
-    } catch (err) {
-      logger.error(`⚠️ ProcessManager.onBotStopped(${botId}) failed:`, err.message);
-    }
-
-    // Emit event
-    this.emitEvent('viewbot-stopped', { botId });
-
-    // Clear current bot
-    this.currentBot = null;
-  }
-  
-  /**
-   * Get random rotation interval
-   */
-  getRandomInterval() {
-    const { minRotationInterval, maxRotationInterval } = this.settings;
-    const interval = Math.floor(Math.random() * (maxRotationInterval - minRotationInterval)) + minRotationInterval;
-    logger.debug(`⏱️ Next rotation in ${Math.round(interval / 1000)} seconds`);
-    return interval;
-  }
-  
-  /**
-   * Schedule next rotation
-   */
-  scheduleNextRotation(interval) {
-    if (this.rotationTimer) {
-      clearTimeout(this.rotationTimer);
-    }
-    
-    if (!this.settings.enabled) {
-      logger.debug('🚫 Rotation disabled, not scheduling next rotation');
-      return;
-    }
-    
-    this.rotationTimer = setTimeout(() => {
-      this.rotateToNextBot();
-    }, interval);
-  }
-  
-  /**
-   * Handle bot streaming error
-   */
-  handleBotError(bot) {
-    logger.error(`🔧 Handling error for bot ${bot.id}`);
-    
-    // Mark bot with extended cooldown
-    this.cooldowns.set(bot.id, Date.now() + this.settings.cooldownDuration);
-    
-    // Delay before rotating to prevent CPU spike from rapid retries
-    setTimeout(() => {
-      this.rotateToNextBot();
-    }, 5000); // Wait 5 seconds before retry
-  }
-  
-  /**
-   * Update rotation settings
+   * Update rotation settings.
+   *
+   * Toggling `enabled` is the live behaviour the URL/random rotation services
+   * rely on; with the bot pool removed, `startRotation()`/`stopRotation()` are
+   * side-effect-safe (start clears+no-op-rotates, stop clears the timer).
    */
   updateSettings(newSettings) {
     this.settings = { ...this.settings, ...newSettings };
     logger.debug('⚙️ Updated rotation settings:', this.settings);
-    
+
     // Restart rotation if enabled state changed
     if (newSettings.enabled !== undefined) {
-      if (newSettings.enabled && this.availableBots.length > 0) {
+      if (newSettings.enabled) {
         this.startRotation();
-      } else if (!newSettings.enabled) {
+      } else {
         this.stopRotation();
       }
     }
   }
-  
+
   /**
    * Get current status
    */
   getStatus() {
     return {
       enabled: this.settings.enabled,
-      currentBot: this.currentBot?.id || null,
-      totalBots: this.availableBots.length,
-      availableNow: this.availableBots.filter(bot => {
-        const lastPlayed = this.cooldowns.get(bot.id);
-        if (!lastPlayed) return true;
-        return (Date.now() - lastPlayed) > this.settings.cooldownDuration;
-      }).length,
+      currentBot: null,
       settings: this.settings,
       nextRotation: this.rotationTimer ? 'scheduled' : 'none'
     };
   }
-  
-  /**
-   * Simple event emitter for integration
-   */
-  emitEvent(event, data) {
-    // This can be replaced with actual event emitter or socket.io emission
-    logger.debug(`📡 Event: ${event}`, data);
-  }
-  
+
   /**
    * Clean shutdown
    */
