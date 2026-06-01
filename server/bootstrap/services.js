@@ -59,8 +59,8 @@
 //                                  defined inline in the factory.
 //
 // ── PR-I4: late ViewBot stack (separate export, not part of createServices) ──
-// The four named ViewBot services (ViewbotService, ViewBotWebRTCService,
-// ViewBotClientService, ViewBotLiveKitService) are constructed by the
+// The named ViewBot services (ViewbotService, ViewBotWebRTCService,
+// ViewBotLiveKitService) are constructed by the
 // dedicated `createViewBotServices` factory exported alongside the main
 // one. They live in their own function (rather than being folded into
 // createServices) because:
@@ -151,7 +151,6 @@ const processManager = require('../services/ProcessManager');
 
 // PR-I4: late ViewBot stack — see createViewBotServices below.
 const ViewbotService = require('../services/ViewbotService');
-const ViewBotClientService = require('../services/ViewBotClientService');
 const ViewBotWebRTCService = require('../services/ViewBotWebRTCService');
 const ViewBotLiveKitService = require('../services/ViewBotLiveKitService');
 
@@ -518,13 +517,6 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
  *   - viewBotLiveKitService is constructed ONLY when livekitService IS
  *     present (LiveKit-backed adapter mode), then awaited via initialize(),
  *     then handed a streamService reference for real-streamer protection.
- *   - viewBotClientService is ALWAYS constructed, then back-references are
- *     wired both ways: viewbotService.viewBotClientService = viewBotClientService.
- *     Its async initialize() (state restore from DB) is NOT awaited here —
- *     server/index.js still does that inside its own try/catch so a restore
- *     failure can null out the local without bringing down the whole
- *     ViewBot stack. That control flow is too entangled with the existing
- *     error handling to pull into the factory cleanly.
  *
  * NOT handled here (kept inline in server/index.js because each item is
  * orchestration rather than service construction — see the deferred-list
@@ -547,7 +539,6 @@ function createServices({ io, redisClient, database, env, mediasoupService, user
  *                              viewbotService,
  *                              viewBotWebRTCService,  // null on LiveKit branch
  *                              viewBotLiveKitService, // null on MediaSoup branch
- *                              viewBotClientService,
  *                            }
  */
 async function createViewBotServices({ mediasoupService, livekitService, streamService }) {
@@ -570,25 +561,10 @@ async function createViewBotServices({ mediasoupService, livekitService, streamS
     viewBotLiveKitService.setStreamService(streamService);
   }
 
-  // ViewBotClientService: constructor takes (serverUrl, mediasoupService,
-  // streamService, viewbotService). serverUrl is null so the service falls
-  // back to env vars (matches inline original at server/index.js:5347).
-  const viewBotClientService = new ViewBotClientService(
-    null,
-    mediasoupService,
-    streamService,
-    viewbotService
-  );
-
-  // Cross-wire: ViewbotService needs a reference to ViewBotClientService for
-  // rotation handling (preserved from inline original).
-  viewbotService.viewBotClientService = viewBotClientService;
-
   const services = {
     viewbotService,
     viewBotWebRTCService,
     viewBotLiveKitService,
-    viewBotClientService,
   };
 
   // PR 1.2: viewbot stoppables in construction order. viewBotWebRTCService
@@ -596,7 +572,7 @@ async function createViewBotServices({ mediasoupService, livekitService, streamS
   // viewBotLiveKitService is omitted until PR 1.3-or-later adds a real
   // stop() — its current shape only exposes initialize() with no graceful
   // shutdown path for the LiveKit ingress connection.
-  const stoppables = [viewbotService, viewBotClientService].filter(Boolean);
+  const stoppables = [viewbotService].filter(Boolean);
 
   return { services, stoppables };
 }

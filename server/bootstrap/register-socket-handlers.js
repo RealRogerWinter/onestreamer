@@ -19,7 +19,6 @@
  * registration time:
  *
  *   getViewbotService          → returns module-scope `viewbotService`
- *   getViewBotClientService    → returns module-scope `viewBotClientService`
  *   getRecordingService        → returns module-scope `recordingService`
  *   getTranscriptionService    → returns module-scope `transcriptionService`
  *
@@ -39,7 +38,6 @@ function registerSocketHandlers(io, deps) {
 
         // Per-handler register functions
         registerStreamHandler,
-        registerViewBotHandler,
         registerBuffHandler,
         registerDrawingHandler,
         registerAdminHandler,
@@ -92,11 +90,10 @@ function registerSocketHandlers(io, deps) {
         https,
 
         // Per-handler deps — LAZY service getters (resolved at call time
-        // because viewbotService / viewBotClientService / recordingService /
-        // transcriptionService are assigned inside startServer() — see
-        // server/index.js' PR-15B.1 closure-audit notes).
+        // because viewbotService / recordingService / transcriptionService
+        // are assigned inside startServer() — see server/index.js' PR-15B.1
+        // closure-audit notes).
         getViewbotService,
-        getViewBotClientService,
         getRecordingService,
         getTranscriptionService,
     } = deps;
@@ -174,7 +171,6 @@ function registerSocketHandlers(io, deps) {
             viewbotSocketIds,
             lastEmittedStreamReady,
             getViewbotService,
-            getViewBotClientService,
             enrichStreamStatus,
             getStreamerDisplayName,
             notifyViewersStreamStarted,
@@ -187,17 +183,6 @@ function registerSocketHandlers(io, deps) {
             streamNotifier,
             viewerCountNotifier,
             buffNotifier,
-        });
-
-        registerViewBotHandler(io, socket, {
-            mediasoupService,
-            streamService,
-            plainTransportService,
-            lastEmittedStreamReady,
-            notifyViewersStreamEnded,
-            getViewBotClientService,
-            getViewbotService,
-            streamNotifier,
         });
 
         registerBuffHandler(io, socket, {
@@ -243,7 +228,6 @@ function registerSocketHandlers(io, deps) {
             viewerCountNotifier,
             SimpleViewBotRotation,
             getViewbotService,
-            getViewBotClientService,
         });
     });
 }

@@ -53,7 +53,7 @@ class ViewbotService {
     if (newConfig) {
       logger.debug('🎨 VIEWBOT: Updating configuration with:', newConfig);
       
-      // Map ViewBotClientService config to ViewbotService format
+      // Map incoming admin config to ViewbotService format
       const mappedConfig = {
         type: 'viewbot',
         width: newConfig.width || 1280,
@@ -463,48 +463,6 @@ class ViewbotService {
       uptime: this.streamStartTime ? Date.now() - this.streamStartTime : 0,
       viewbotCount: this.currentViewbots.size
     };
-  }
-  /**
-   * Handle video end from a ViewBot - trigger rotation
-   * This method is called by ViewBotClientService when a video ends
-   */
-  handleVideoEnd(botId) {
-    logger.debug(`🎬 ViewbotService: Handling video end for bot ${botId}`);
-    
-    // Always trigger rotation on video end - rotation is enabled by default
-    logger.debug(`🔄 ViewbotService: Triggering rotation after video end for ${botId}`);
-    
-    // Use ViewBotClientService's rotation mechanism directly
-    if (this.viewBotClientService && this.viewBotClientService.handleRotation) {
-      logger.debug(`📤 ViewbotService: Delegating rotation to ViewBotClientService`);
-      this.viewBotClientService.handleRotation(botId);
-    } else {
-      // Fallback: stop current bot and start another
-      logger.debug(`🔀 ViewbotService: Using fallback rotation mechanism`);
-      
-      if (this.viewBotClientService) {
-        // Stop the current bot
-        const bot = this.viewBotClientService.bots.get(botId);
-        if (bot) {
-          logger.debug(`🛑 ViewbotService: Stopping bot ${botId}`);
-          bot.stopStreaming();
-        }
-        
-        // Start another random bot after a short delay
-        setTimeout(() => {
-          const availableBots = Array.from(this.viewBotClientService.bots.values())
-            .filter(b => !b.streaming && b.connected && b.botId !== botId);
-          
-          if (availableBots.length > 0) {
-            const randomBot = availableBots[Math.floor(Math.random() * availableBots.length)];
-            logger.debug(`🎲 ViewbotService: Starting random bot ${randomBot.botId} for rotation`);
-            randomBot.requestToStream();
-          } else {
-            logger.debug(`⚠️ ViewbotService: No available bots for rotation`);
-          }
-        }, 2000);
-      }
-    }
   }
 }
 
