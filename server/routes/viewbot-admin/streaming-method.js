@@ -42,9 +42,9 @@ function createStreamingMethodRouter(deps) {
 
       const { method } = req.body;
 
-      if (!method || (method !== 'ffmpeg' && method !== 'gstreamer')) {
+      if (method !== 'ffmpeg') {
         return res.status(400).json({
-          error: 'Invalid streaming method. Must be "ffmpeg" or "gstreamer"'
+          error: 'Invalid streaming method. Must be "ffmpeg"'
         });
       }
 

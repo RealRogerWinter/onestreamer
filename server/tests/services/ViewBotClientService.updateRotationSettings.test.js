@@ -20,8 +20,8 @@
  *
  * Construction strategy: ViewBotClientService's constructor fires
  * `initialize()` (DB + state restore), schedules a 10s `setTimeout`, and
- * sets a 30-min `setInterval` cooldown cleanup. We mock the two heavy
- * sub-services (`ViewBotDatabaseService`, `ViewBotGStreamerService`),
+ * sets a 30-min `setInterval` cooldown cleanup. We mock the heavy
+ * sub-service (`ViewBotDatabaseService`),
  * stub `fs.writeFileSync` / `fs.readFileSync` for the rotation config,
  * and run under fake timers so the long-lived intervals don't leak past
  * the test.
@@ -34,12 +34,6 @@ jest.mock('../../services/ViewBotDatabaseService', () => {
         async getAllBots() { return []; }
         async getSystemState() { return {}; }
         async saveSystemState() {}
-    };
-});
-
-jest.mock('../../services/ViewBotGStreamerService', () => {
-    return class ViewBotGStreamerServiceStub {
-        constructor() {}
     };
 });
 

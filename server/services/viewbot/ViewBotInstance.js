@@ -23,13 +23,8 @@ const processManager = require('../ProcessManager');
 const stateManager = require('../ViewBotStateManager');
 const { buildTestPatternVideoArgs, buildTestPatternAudioArgs } = require('./testPatternFfmpegArgs');
 const { buildCanvasHTML } = require('./canvasHtml');
-const { buildGstreamerVideoPipeline, buildGstreamerAudioPipeline, gstreamerBinaryPath } = require('./gstreamerPipeline');
-const PipelineHealthMonitor = require('./pipelineHealthMonitor');
 const RotationScheduler = require('./rotationScheduler');
-const { killProcessGroup } = require('./processKill');
-const { attachPipelineStdioMonitor } = require('./gstreamerStdioMonitor');
 const durationProbe = require('./durationProbe');
-const processCleanup = require('./processCleanup');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'ViewBotInstance' });
 
@@ -72,30 +67,15 @@ class ViewBotInstance {
     this.transportInfo = null;
     this.rtpCapabilities = null;
 
-    // FFmpeg processes and ports
+    // FFmpeg processes and RTP ports (read by the test-pattern ffmpeg arg builders)
     this.videoFFmpeg = null;
     this.audioFFmpeg = null;
     this.videoRtpPort = null;
     this.audioRtpPort = null;
-    this.videoSSRC = null;
-    this.audioSSRC = null;
 
     // Legacy properties (kept for backward compatibility)
     this.mediaGenerator = null;
     this.ffmpegProcess = null;
-
-    // Recovery rate-limiter state, read/written by handlePipelineCrash.
-    this.pipelineHealth = { lastRecovery: 0, consecutiveFailures: 0 };
-
-    // Pipeline health detection (recovery stays on this instance via handlePipelineCrash)
-    this.healthMonitor = new PipelineHealthMonitor({
-      botId: this.botId,
-      logger,
-      getVideoProcess: () => this.gstreamerVideoProcess,
-      getAudioProcess: () => this.gstreamerAudioProcess,
-      shouldRun: () => !this.stopping && !this.handlingVideoEnd && this.streaming,
-      onCrash: (type) => this.handlePipelineCrash(type),
-    });
 
     // Rotation-check scheduling (the rotate action stays here in requestRotation)
     this.rotationScheduler = new RotationScheduler({
@@ -407,14 +387,9 @@ class ViewBotInstance {
     }
     
     try {
-      // Original media pipeline code (currently failing)
-      if (this.config.contentType === 'videoFile' && this.config.videoFile) {
-        logger.debug(`🎬 ViewBot ${this.botId}: Starting GStreamer video pipeline: ${this.config.videoFile}`);
-        await this.startGStreamerVideoFileStreaming();
-      } else {
-        logger.debug(`🎬 ViewBot ${this.botId}: Content type ${this.config.contentType} - starting media generation`);
-        await this.initializeMediaGeneration();
-      }
+      // admin video-file streaming (MediaSoup/GStreamer) was removed — dead under backend=livekit
+      logger.debug(`🎬 ViewBot ${this.botId}: Content type ${this.config.contentType} - starting media generation`);
+      await this.initializeMediaGeneration();
       
       // Confirm streaming is active
       this.streaming = true;
@@ -457,434 +432,13 @@ class ViewBotInstance {
       }
     }
   }
-
-  /**
-   * Starts GStreamer-based video file streaming without rtpbin
-   * Uses direct RTP streaming to avoid rtpbin's EOS issues
-   * ENHANCED WITH EXTENSIVE DEBUGGING
-   */
-  async startGStreamerVideoFileStreaming() {
-    // CRITICAL: Prevent multiple calls
-    if (this.gstreamerStarting || this.gstreamerVideoProcess || this.gstreamerAudioProcess) {
-      logger.debug(`⚠️ ViewBot ${this.botId}: GStreamer already starting/running - skipping duplicate call`);
-      logger.debug(`   Starting: ${this.gstreamerStarting}, Video PID: ${this.gstreamerVideoProcess?.pid}, Audio PID: ${this.gstreamerAudioProcess?.pid}`);
-      return;
-    }
-    this.gstreamerStarting = true;
-    
-    logger.debug(`🎬 ViewBot ${this.botId}: Starting GStreamer-based video file streaming (ENHANCED)`);
-    logger.debug(`📂 Video file: ${this.config.videoFile}`);
-    logger.debug(`🔍 STACK TRACE:`, new Error().stack.split('\n').slice(1, 5).join('\n'));
-    
-    const { width = 1280, height = 720, frameRate = 30 } = this.config;
-    logger.debug(`📐 Resolution: ${width}x${height} @ ${frameRate}fps`);
-    
-    // Check file exists first
-    if (!fs.existsSync(this.config.videoFile)) {
-      logger.error(`❌ ViewBot ${this.botId}: Video file not found: ${this.config.videoFile}`);
-      throw new Error(`Video file not found: ${this.config.videoFile}`);
-    }
-    
-    // Get file info
-    const stats = fs.statSync(this.config.videoFile);
-    logger.debug(`📊 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
-    
-    // Get video duration using ffprobe for fallback timer
-    await this.getVideoDuration(this.config.videoFile);
-    
-    // Generate fixed SSRCs that will be used by both GStreamer and MediaSoup
-    const videoSSRC = 11111111;
-    const audioSSRC = 22222222;
-    
-    logger.debug(`🔑 Using SSRCs - Video: ${videoSSRC}, Audio: ${audioSSRC}`);
-    
-    // Create RTP parameters with the EXACT SSRCs we'll use
-    const videoRtpParams = {
-      codecs: [{
-        mimeType: 'video/VP8',
-        payloadType: 96,
-        clockRate: 90000,
-        parameters: {},
-        rtcpFeedback: [
-          { type: 'nack' },
-          { type: 'nack', parameter: 'pli' },
-          { type: 'ccm', parameter: 'fir' },
-          { type: 'goog-remb' }
-        ]
-      }],
-      encodings: [{
-        ssrc: videoSSRC
-      }]
-    };
-    
-    const audioRtpParams = {
-      codecs: [{
-        mimeType: 'audio/opus',
-        payloadType: 111,
-        clockRate: 48000,
-        channels: 2,
-        parameters: {
-          'minptime': '10',
-          'useinbandfec': '1'
-        },
-        rtcpFeedback: []
-      }],
-      encodings: [{
-        ssrc: audioSSRC
-      }]
-    };
-    
-    // Create MediaSoup producers using socket events
-    logger.debug(`📡 ViewBot ${this.botId}: Creating MediaSoup PlainTransport producers...`);
-    logger.debug(`   Step 1: Creating video producer...`);
-    
-    // Store SSRCs for use in GStreamer
-    this.videoSSRC = videoSSRC;
-    this.audioSSRC = audioSSRC;
-    
-    try {
-      await this.createWebRTCProducer('video', videoRtpParams);
-      logger.debug(`   ✅ Video producer created`);
-    } catch (err) {
-      logger.error(`   ❌ Failed to create video producer:`, err.message);
-      throw err;
-    }
-    
-    try {
-      logger.debug(`   Step 2: Creating audio producer...`);
-      await this.createWebRTCProducer('audio', audioRtpParams);
-      logger.debug(`   ✅ Audio producer created`);
-    } catch (err) {
-      logger.error(`   ❌ Failed to create audio producer:`, err.message);
-      throw err;
-    }
-    
-    // Wait for transports to be ready
-    logger.debug(`⏳ Waiting for transports to be ready...`);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    if (!this.videoRtpPort || !this.audioRtpPort) {
-      logger.error(`❌ ViewBot ${this.botId}: Failed to get RTP ports from server`);
-      logger.error(`   Video port: ${this.videoRtpPort}, Audio port: ${this.audioRtpPort}`);
-      throw new Error('Failed to get RTP ports from server');
-    }
-    
-    logger.debug(`✅ ViewBot ${this.botId}: MediaSoup PlainTransport ready`);
-    logger.debug(`   Video: RTP port ${this.videoRtpPort}, SSRC ${videoSSRC}`);
-    logger.debug(`   Audio: RTP port ${this.audioRtpPort}, SSRC ${audioSSRC}`);
-    
-    try {
-      // IMPORTANT: Use forward slashes for Windows paths in GStreamer
-      const videoFile = this.config.videoFile.replace(/\\/g, '/');
-      logger.debug(`📁 Converted path for GStreamer: ${videoFile}`);
-      
-      // Start separate pipelines without rtpbin
-      logger.debug(`🚀 Starting GStreamer pipelines...`);
-      await this.startDirectRTPPipelines(videoFile, width, height, frameRate);
-      
-      // Mark as using GStreamer
-      this.useGStreamer = true;
-      
-      logger.debug(`✅ ViewBot ${this.botId}: GStreamer streaming started successfully`);
-      
-      // Clear the starting flag
-      this.gstreamerStarting = false;
-      
-    } catch (error) {
-      logger.error(`❌ ViewBot ${this.botId}: GStreamer launch failed:`, error.message);
-      logger.error(`   Full error:`, error);
-      
-      // Clear the starting flag
-      this.gstreamerStarting = false;
-      
-      // Clean up any started processes
-      this.cleanupGStreamerProcesses();
-      
-      // Fallback to FFmpeg if GStreamer fails
-      logger.debug(`⚠️ ViewBot ${this.botId}: Falling back to FFmpeg method`);
-      this.config.useGStreamer = false;
-      
-      if (typeof this.startFFmpegVideoFileStreaming === 'function') {
-        await this.startFFmpegVideoFileStreaming();
-        // Clear the error if FFmpeg works as fallback
-        this.lastError = null;
-      } else {
-        throw new Error('FFmpeg fallback not available');
-      }
-    }
-  }
-  
-  /**
-   * Start GStreamer pipelines without rtpbin for complete playback
-   * Uses separate video and audio pipelines with direct RTP streaming
-   * ENHANCED WITH EXTENSIVE DEBUGGING
-   */
-  
-  /**
-   * Start GStreamer pipelines without rtpbin for complete playback
-   * Uses separate video and audio pipelines with direct RTP streaming
-   * FIXED: Use shell: true on Windows for GStreamer to work properly
-   */
-  async startDirectRTPPipelines(videoFile, width, height, frameRate) {
-    const { spawn } = require('child_process');
-    const isWindows = process.platform === 'win32';
-
-    // Direct RTP pipelines (no rtpbin) — pure arg construction in gstreamerPipeline.js
-    const videoPipeline = buildGstreamerVideoPipeline({
-      videoFile, width, height, frameRate,
-      videoSSRC: this.videoSSRC, videoRtpPort: this.videoRtpPort,
-    });
-    const audioPipeline = buildGstreamerAudioPipeline({
-      videoFile, audioSSRC: this.audioSSRC, audioRtpPort: this.audioRtpPort,
-    });
-    const gstreamerPath = gstreamerBinaryPath();
-    
-    logger.debug(`🎥 ViewBot ${this.botId}: Starting video pipeline (no rtpbin)`);
-    logger.debug(`🎥 ViewBot ${this.botId}: GStreamer path: ${gstreamerPath}`);
-    logger.debug(`🎥 ViewBot ${this.botId}: Video file: ${videoFile}`);
-    logger.debug(`🎥 ViewBot ${this.botId}: Pipeline args count: ${videoPipeline.length}`);
-    
-    // Debug: Log the actual command being run
-    logger.debug(`🎥 ViewBot ${this.botId}: Full command: ${gstreamerPath} ${videoPipeline.join(' ')}`);
-    
-    // CRITICAL: Ensure clean state before starting
-    await processManager.prepareForStreaming(this.botId);
-    
-    // Only use shell: true on Windows, it breaks argument parsing on Linux
-    this.gstreamerVideoProcess = spawn(gstreamerPath, videoPipeline, {
-      shell: isWindows,  // Only required for Windows
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: !isWindows  // CRITICAL: Create new process group on Linux for proper cleanup
-    });
-    
-    // Check if process started
-    if (!this.gstreamerVideoProcess || !this.gstreamerVideoProcess.pid) {
-      logger.error(`❌ ViewBot ${this.botId}: Failed to spawn video process`);
-      throw new Error('Failed to spawn GStreamer video process');
-    }
-    
-    logger.debug(`🎥 ViewBot ${this.botId}: Video process started, PID: ${this.gstreamerVideoProcess.pid}`);
-    
-    // Register with ProcessManager
-    processManager.registerProcess(this.botId, 'video', this.gstreamerVideoProcess.pid);
-    
-    logger.debug(`🔊 ViewBot ${this.botId}: Starting audio pipeline (no rtpbin)`);
-    
-    // Only use shell: true on Windows, it breaks argument parsing on Linux
-    this.gstreamerAudioProcess = spawn(gstreamerPath, audioPipeline, {
-      shell: isWindows,  // Only required for Windows
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: !isWindows  // CRITICAL: Create new process group on Linux for proper cleanup
-    });
-    
-    // Check if process started
-    if (!this.gstreamerAudioProcess || !this.gstreamerAudioProcess.pid) {
-      logger.error(`❌ ViewBot ${this.botId}: Failed to spawn audio process`);
-      throw new Error('Failed to spawn GStreamer audio process');
-    }
-    
-    // Register with ProcessManager
-    processManager.registerProcess(this.botId, 'audio', this.gstreamerAudioProcess.pid);
-    
-    logger.debug(`🔊 ViewBot ${this.botId}: Audio process started, PID: ${this.gstreamerAudioProcess.pid}`);
-    
-    // Set up duration-based failsafe rotation
-    await this.setupDurationBasedRotation(videoFile);
-    
-    // Attach the stdout/stderr/exit/error state-machine monitors. The returned
-    // state objects ({ started, eos, error }) replace the videoStarted/audioStarted
-    // locals the pipeline-start Promise below polls.
-    const monitorOpts = {
-      logger,
-      botId: this.botId,
-      isStopping: () => this.stopping,
-      isHandlingVideoEnd: () => this.handlingVideoEnd,
-      cleanupGStreamerProcesses: () => this.cleanupGStreamerProcesses(),
-      handleVideoEnd: () => this.handleVideoEnd(),
-      clearVideoRef: () => { this.gstreamerVideoProcess = null; },
-      clearAudioRef: () => { this.gstreamerAudioProcess = null; },
-    };
-    const videoState = attachPipelineStdioMonitor(this.gstreamerVideoProcess, { kind: 'video', ...monitorOpts });
-    const audioState = attachPipelineStdioMonitor(this.gstreamerAudioProcess, { kind: 'audio', ...monitorOpts });
-
-    // Wait for pipelines to start
-    await new Promise((resolve, reject) => {
-      // Check if processes are actually running even without PLAYING message
-      const checkProcesses = () => {
-        const videoRunning = this.gstreamerVideoProcess && this.gstreamerVideoProcess.pid && !this.gstreamerVideoProcess.killed;
-        const audioRunning = this.gstreamerAudioProcess && this.gstreamerAudioProcess.pid && !this.gstreamerAudioProcess.killed;
-        return { videoRunning, audioRunning };
-      };
-      
-      const timeout = setTimeout(() => {
-        const { videoRunning, audioRunning } = checkProcesses();
-        
-        // If processes are running with PIDs, consider them started even without PLAYING message
-        if (videoRunning || audioRunning) {
-          logger.debug(`⚠️ ViewBot ${this.botId}: Processes running without PLAYING confirmation (Video PID: ${this.gstreamerVideoProcess?.pid}, Audio PID: ${this.gstreamerAudioProcess?.pid})`);
-          videoState.started = videoState.started || videoRunning;
-          audioState.started = audioState.started || audioRunning;
-          resolve();
-        } else if (!videoState.started && !audioState.started) {
-          const error = new Error('GStreamer pipelines failed to start');
-          logger.error(`❌ ViewBot ${this.botId}: ${error.message}`);
-
-          if (videoState.error) {
-            logger.error(`   Video error: ${videoState.error}`);
-          }
-          if (audioState.error) {
-            logger.error(`   Audio error: ${audioState.error}`);
-          }
-
-          this.cleanupGStreamerProcesses();
-          reject(error);
-        } else {
-          logger.debug(`⚠️ ViewBot ${this.botId}: Partial start (Video: ${videoState.started}, Audio: ${audioState.started})`);
-          resolve();
-        }
-      }, 15000);
-
-      const checkInterval = setInterval(() => {
-        if (videoState.started || audioState.started) {
-          clearTimeout(timeout);
-          clearInterval(checkInterval);
-          logger.debug(`✅ ViewBot ${this.botId}: Pipelines started (Video: ${videoState.started}, Audio: ${audioState.started})`);
-          resolve();
-        }
-      }, 100);
-    });
-  }
-
-  
-  /**
-   * Clean up GStreamer processes
-   */
   /**
    * Set up duration-based rotation as a failsafe
    */
   async setupDurationBasedRotation(videoFile) {
     return durationProbe.setupDurationBasedRotation(this, videoFile, logger);
   }
-
-  cleanupGStreamerProcesses() {
-    return processCleanup.cleanupGStreamerProcesses(this, logger);
-  }
   
-  /**
-   * Start health monitoring for GStreamer pipelines
-   * Checks pipeline status every 5 seconds and recovers if needed
-   */
-  startPipelineHealthCheck() {
-    this.healthMonitor.start();
-  }
-  
-  /**
-   * Handle pipeline crash and attempt recovery
-   */
-  async handlePipelineCrash(type) {
-    // Prevent multiple recovery attempts
-    if (this.recovering || this.stopping || this.handlingVideoEnd) {
-      logger.debug(`🔄 ViewBot ${this.botId}: Recovery blocked (recovering=${this.recovering}, stopping=${this.stopping})`);
-      return;
-    }
-    
-    // Rate limit recovery attempts
-    const now = Date.now();
-    const timeSinceLastRecovery = now - (this.pipelineHealth?.lastRecovery || 0);
-    if (timeSinceLastRecovery < 5000) {
-      logger.debug(`⏳ ViewBot ${this.botId}: Delaying recovery (only ${timeSinceLastRecovery}ms since last)`);
-      return;
-    }
-    
-    this.recovering = true;
-    this.recoveryAttempts = (this.recoveryAttempts || 0) + 1;
-    
-    if (this.pipelineHealth) {
-      this.pipelineHealth.lastRecovery = now;
-    }
-    
-    logger.debug(`🚨 ViewBot ${this.botId}: Pipeline crash detected (${type}), attempt ${this.recoveryAttempts}/3`);
-    
-    // If too many recovery attempts or consecutive failures, rotate to next video
-    if (this.recoveryAttempts > 3 || (this.pipelineHealth?.consecutiveFailures > 5)) {
-      logger.error(`❌ ViewBot ${this.botId}: Too many failures, forcing rotation`);
-      this.recoveryAttempts = 0;
-      this.recovering = false;
-      
-      // Force cleanup and rotation
-      await this.killAllProcesses();
-      
-      if (!this.handlingVideoEnd) {
-        await this.handleVideoEnd();
-      }
-      return;
-    }
-    
-    try {
-      // Kill all processes forcefully first
-      logger.debug(`🛑 ViewBot ${this.botId}: Force stopping all pipelines...`);
-      await this.killAllProcesses();
-      
-      // Wait for processes to die
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Clean up resources
-      logger.debug(`🧹 ViewBot ${this.botId}: Cleaning up resources...`);
-      this.cleanupGStreamerProcesses();
-      
-      // Check if we should still recover
-      if (this.stopping || this.handlingVideoEnd) {
-        logger.debug(`🚫 ViewBot ${this.botId}: Aborting recovery - bot is stopping`);
-        this.recovering = false;
-        return;
-      }
-      
-      // Restart pipelines with exponential backoff
-      const backoffDelay = Math.min(1000 * Math.pow(1.5, this.recoveryAttempts - 1), 10000);
-      logger.debug(`⏰ ViewBot ${this.botId}: Waiting ${backoffDelay/1000}s before restart...`);
-      await new Promise(resolve => setTimeout(resolve, backoffDelay));
-      
-      logger.debug(`🔄 ViewBot ${this.botId}: Restarting pipelines...`);
-      
-      if (this.config.videoFile) {
-        const { width = 1280, height = 720, frameRate = 30 } = this.config;
-        const videoFile = this.config.videoFile.replace(/\\/g, '/');
-
-        await this.startDirectRTPPipelines(videoFile, width, height, frameRate);
-        
-        // Reset recovery counter on success
-        this.recoveryAttempts = 0;
-        
-        // Start health monitoring again
-        this.startPipelineHealthCheck();
-        
-        logger.debug(`✅ ViewBot ${this.botId}: Pipeline recovery successful`);
-      }
-    } catch (error) {
-      logger.error(`❌ ViewBot ${this.botId}: Pipeline recovery failed:`, error.message);
-      
-      // Exponential backoff for retries
-      const retryDelay = Math.min(3000 * Math.pow(2, this.recoveryAttempts - 1), 30000);
-      logger.debug(`⏰ ViewBot ${this.botId}: Retrying recovery in ${retryDelay/1000}s`);
-      
-      this.recoveryTimer = setTimeout(() => {
-        this.recovering = false;
-        this.handlePipelineCrash(type);
-      }, retryDelay);
-    } finally {
-      this.recovering = false;
-    }
-  }
-  
-  /**
-   * Kill all pipeline processes forcefully
-   */
-  async killAllProcesses() {
-    return processCleanup.killAllProcesses(this, logger);
-  }
-
   /**
    * Creates FFmpeg arguments for video test pattern generation
    */
@@ -907,68 +461,6 @@ class ViewBotInstance {
       config: this.config,
       botId: this.botId,
       logger,
-    });
-  }
-
-  /**
-   * Creates MediaSoup plain RTP transport and producer for FFmpeg RTP stream
-   */
-  async createWebRTCProducer(kind, rtpParameters) {
-    logger.debug(`📡 ViewBot ${this.botId}: Creating plain RTP transport for ${kind}...`);
-    
-    return new Promise((resolve, reject) => {
-      // Request server to create plain RTP transport that will listen for FFmpeg RTP data
-      this.socket.emit('viewbot-create-plain-transport', {
-        botId: this.botId,
-        kind: kind,
-        rtpParameters: rtpParameters
-      });
-      
-      // Listen for producer creation confirmation
-      const handleProducerCreated = (data) => {
-        if (data.botId === this.botId && data.kind === kind) {
-          logger.debug(`✅ ViewBot ${this.botId}: Plain RTP ${kind} producer created:`, data.producerId);
-          logger.debug(`📡 ViewBot ${this.botId}: Server allocated port ${data.rtpPort} for ${kind} RTP`);
-          
-          // Store the allocated port for FFmpeg
-          if (kind === 'video') {
-            this.videoRtpPort = data.rtpPort;
-          } else {
-            this.audioRtpPort = data.rtpPort;
-          }
-          
-          // CRITICAL FIX: Check if socket still exists before removing listeners
-          if (this.socket) {
-            this.socket.off('viewbot-producer-created', handleProducerCreated);
-          }
-          resolve(data.producerId);
-        }
-      };
-      
-      const handleProducerError = (data) => {
-        if (data.botId === this.botId && data.kind === kind) {
-          logger.error(`❌ ViewBot ${this.botId}: Plain RTP ${kind} producer creation failed:`, data.error);
-          // CRITICAL FIX: Check if socket still exists before removing listeners
-          if (this.socket) {
-            this.socket.off('viewbot-producer-error', handleProducerError);
-            this.socket.off('viewbot-producer-created', handleProducerCreated);
-          }
-          reject(new Error(data.error));
-        }
-      };
-      
-      this.socket.on('viewbot-producer-created', handleProducerCreated);
-      this.socket.on('viewbot-producer-error', handleProducerError);
-      
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        // CRITICAL FIX: Check if socket still exists before trying to remove listeners
-        if (this.socket) {
-          this.socket.off('viewbot-producer-created', handleProducerCreated);
-          this.socket.off('viewbot-producer-error', handleProducerError);
-        }
-        reject(new Error(`Plain RTP ${kind} producer creation timeout`));
-      }, 10000);
     });
   }
 
@@ -1306,10 +798,7 @@ class ViewBotInstance {
       
       // CRITICAL: Use ProcessManager for guaranteed cleanup
       await processManager.killBotProcesses(this.botId);
-      
-      // CRITICAL: Clear the GStreamer starting flag to allow next bot to start
-      this.gstreamerStarting = false;
-      
+
       logger.debug(`✅ ViewBot ${this.botId}: Streaming stopped (duration: ${duration}ms)`);
       
       return {
@@ -1431,59 +920,7 @@ class ViewBotInstance {
       }
       this.browser = null;
     }
-    
-    // Clean up GStreamer processes if they exist
-    if (this.gstreamerVideoProcess && !this.gstreamerVideoProcess.killed) {
-      logger.debug(`🛑 ViewBot ${this.botId}: Killing GStreamer video process`);
-      this.gstreamerVideoProcess.kill('SIGTERM');
-      this.gstreamerVideoProcess = null;
-    }
-    
-    if (this.gstreamerAudioProcess && !this.gstreamerAudioProcess.killed) {
-      logger.debug(`🛑 ViewBot ${this.botId}: Killing GStreamer audio process`);
-      this.gstreamerAudioProcess.kill('SIGTERM');
-      this.gstreamerAudioProcess = null;
-    }
-    
-    // Original cleanup for single process with aggressive killing
-    if (this.gstreamerProcess) {
-      const pid = this.gstreamerProcess.pid;
-      logger.debug(`🛑 ViewBot ${this.botId}: Killing GStreamer process (PID: ${pid})`);
-      
-      try {
-        // First try SIGTERM
-        this.gstreamerProcess.kill('SIGTERM');
-        
-        // Set timeout for SIGKILL if process doesn't die
-        setTimeout(() => {
-          if (this.gstreamerProcess && !this.gstreamerProcess.killed) {
-            logger.debug(`⚠️ ViewBot ${this.botId}: Force killing GStreamer with SIGKILL`);
-            this.gstreamerProcess.kill('SIGKILL');
-            // Also try to kill the process group
-            try {
-              process.kill(-pid, 'SIGKILL');
-            } catch (e) {
-              // Process may already be dead
-            }
-          }
-        }, 2000);
-      } catch (error) {
-        logger.debug(`⚠️ ViewBot ${this.botId}: Error killing GStreamer:`, error.message);
-      }
-      
-      this.gstreamerProcess = null;
-      this.useGStreamer = false;
-    }
-    
-    // Kill any orphaned gst-launch processes for this bot
-    try {
-      const { execSync } = require('child_process');
-      // Kill any gst-launch processes that might be orphaned
-      execSync(`pkill -f "gst-launch.*${this.mediaFile}" 2>/dev/null || true`, { stdio: 'ignore' });
-    } catch (e) {
-      // Ignore errors - process might not exist
-    }
-    
+
     // Clean up Puppeteer resources (no longer used but kept for safety)
     if (this.page) {
       await this.page.close();
@@ -1738,24 +1175,21 @@ class ViewBotInstance {
       clearTimeout(this.videoEndTimer);
       this.videoEndTimer = null;
     }
-    
-    this.healthMonitor.stop();
-    
+
     if (this.recoveryTimer) {
       clearTimeout(this.recoveryTimer);
       this.recoveryTimer = null;
     }
-    
+
     if (this.videoDurationTimer) {
       clearTimeout(this.videoDurationTimer);
       this.videoDurationTimer = null;
     }
-    
-    // CRITICAL: Only call cleanup once - killAllProcesses is redundant
-    // cleanupGStreamerProcesses already handles killing with SIGTERM then SIGKILL
-    this.cleanupGStreamerProcesses();
-    
-    // Wait for cleanup to complete (2.5s for SIGKILL + reference clearing)
+
+    // Clean up media generation (Puppeteer/ffmpeg) before rotating
+    await this.cleanupMediaGeneration();
+
+    // Wait for cleanup to complete
     await new Promise(resolve => setTimeout(resolve, 3000));
     
     const parentService = this.getParentService();
