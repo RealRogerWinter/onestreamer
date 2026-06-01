@@ -419,7 +419,7 @@ let redisClient;
 const { initializeRedis: bootInitializeRedis } = require('./bootstrap/redis');
 
 // WebRTC backend. LiveKit is the sole backend (ADR-0024). Built BEFORE the
-// service factory because the factory's plainTransportService consumes it as
+// service factory because the recording/transcription services consume it as
 // a dep. The local is still named `mediasoupService` — the historical name
 // threaded through the service factory + socket handlers; a rename is a
 // deferred cosmetic follow-up.
@@ -463,7 +463,6 @@ const {
   buffDebuffService,
   canvasFxService,
   soundFxService,
-  plainTransportService,
   // PR-I2:
   recordingStorageService,
   fileCompressionService,
@@ -509,7 +508,7 @@ global.streamService = streamService;
 app.locals.audioOptimizationService = audioOptimizationService;
 
 // The WebRTC backend (LiveKit, ADR-0024) is built before the PR-I services
-// factory because plainTransportService consumes it. Exposed here so
+// factory because the recording/transcription services consume it. Exposed here so
 // server/routes/media.js + routes/health.js can read it via
 // req.app.locals.mediasoupService.
 app.locals.mediasoupService = mediasoupService;
@@ -1170,7 +1169,6 @@ require('./bootstrap/register-socket-handlers')(io, {
   buffDebuffService,
   streamingLogsService,
   SimpleViewBotRotation,
-  plainTransportService,
   lifecycleManager,
   itemService,
   inventoryService,

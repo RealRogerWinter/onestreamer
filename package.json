@@ -48,7 +48,6 @@
     "jsonwebtoken": "^9.0.2",
     "livekit-client": "^2.15.7",
     "livekit-server-sdk": "^2.13.3",
-    "mediasoup": "^3.14.16",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.5",
     "ollama": "^0.5.17",
