@@ -487,7 +487,6 @@ const {
   soundFxService,
   plainTransportService,
   // PR-I2:
-  streamInterceptorService,
   visualFxService,
   recordingStorageService,
   fileCompressionService,
@@ -586,41 +585,11 @@ buffDebuffService.on('buff-applied', async (buffData) => {
     logger.error({ err: error }, '❌ VISUAL FX: Error syncing buff-applied visual effect');
   }
 });
-// streamInterceptorService + visualFxService built by the services factory
-// (PR-I2). chatBotService / streamBotService / movieBotService also built
-// there. setMovieBotService was eliminated in PR 1.3 by the BotEventBus;
-// remaining post-construction setters (setIoInstance, setChatBotService,
-// setChatBotLLMService) are still factory-internal.
-
-// Set up stream interceptor event handlers
-streamInterceptorService.on('stream-intercepted', async (data) => {
-    const { streamId, processedProducerId } = data;
-    logger.info(`🎬 SERVER: Stream intercepted for ${streamId}, switching viewers...`);
-    
-    // DON'T notify the streamer - they should keep producing to the original transport
-    // Only notify viewers so they can switch to the processed stream
-    // For now, we'll skip the client notification entirely since the client doesn't handle it
-    // In a full implementation, viewers would reconnect to consume from the processed producers
-    
-    // TODO: Implement viewer switching logic
-    // This would involve:
-    // 1. Finding all viewers consuming from the original stream
-    // 2. Having them create new consumers for the processed producers
-    // 3. Switching their video/audio to the new consumers
-    
-    logger.info(`🎬 SERVER: Stream interception complete - GStreamer is processing the stream`);
-});
-
-streamInterceptorService.on('stream-restored', (data) => {
-    const { streamId } = data;
-    logger.info(`🎬 SERVER: Stream restored for ${streamId}`);
-    
-    // Notify all clients about restoration
-    io.emit('stream-restored', {
-        streamId,
-        timestamp: Date.now()
-    });
-});
+// visualFxService built by the services factory (PR-I2). chatBotService /
+// streamBotService / movieBotService also built there. setMovieBotService was
+// eliminated in PR 1.3 by the BotEventBus; remaining post-construction setters
+// (setIoInstance, setChatBotService, setChatBotLLMService) are still
+// factory-internal.
 
 // Recording + clip + admin-review services are all built by the services
 // factory (PR-I2). See server/bootstrap/services.js for the dep graph.
@@ -681,7 +650,7 @@ inventoryService.setStreamAndSessionServices(streamService, sessionService);
 canvasFxService.setDependencies(io, itemService, buffDebuffService, streamService, sessionService);
 
 // Set dependencies for visual fx service
-visualFxService.setDependencies(mediasoupService, buffDebuffService, streamService, io, sessionService, streamInterceptorService);
+visualFxService.setDependencies(mediasoupService, buffDebuffService, streamService, io, sessionService);
 
 // streamBotService.setChatBotService / setChatBotLLMService now happen inside
 // the services factory (PR-I3).
@@ -1839,7 +1808,6 @@ require('./bootstrap/shutdown')({
   getViewBotClientService: () => viewBotClientService,
   getRecordingService: () => recordingService,
   getVisualFxService: () => visualFxService,
-  getStreamInterceptorService: () => streamInterceptorService,
   getTimeTrackingService: () => timeTrackingService,
   getResourceMonitor: () => resourceMonitor,
   getSessionService: () => sessionService,

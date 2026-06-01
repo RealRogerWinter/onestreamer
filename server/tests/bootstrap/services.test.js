@@ -14,7 +14,7 @@
 //   3. Dep-graph identity checks for representative services:
 //        takeoverService, inventoryService, shopService, buffDebuffService,
 //        canvasFxService, plainTransportService,
-//        streamInterceptorService, visualFxService, clipService,
+//        visualFxService, clipService,
 //        transcriptionService, gameStreamService.
 //   4. Factory does NOT throw when `io` is missing but forwards undefined —
 //      documents current behavior so a future tightening (required-dep
@@ -50,7 +50,6 @@ jest.mock('../../services/BuffNotifier', () => class { constructor(...args) { th
 jest.mock('../../services/ModerationNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'ModerationNotifier'; } });
 
 // PR-I2 additions
-jest.mock('../../services/StreamInterceptorService', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamInterceptorService'; } });
 jest.mock('../../services/VisualFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'VisualFxService'; } });
 jest.mock('../../services/RecordingStorageService', () => class { constructor(...args) { this._args = args; this._stubName = 'RecordingStorageService'; } });
 jest.mock('../../services/FileCompressionService', () => class { constructor(...args) { this._args = args; this._stubName = 'FileCompressionService'; } });
@@ -197,7 +196,6 @@ const BuffNotifier = require('../../services/BuffNotifier');
 const ModerationNotifier = require('../../services/ModerationNotifier');
 
 // PR-I2 additions
-const StreamInterceptorService = require('../../services/StreamInterceptorService');
 const VisualFxService = require('../../services/VisualFxService');
 const RecordingStorageService = require('../../services/RecordingStorageService');
 const FileCompressionService = require('../../services/FileCompressionService');
@@ -279,7 +277,6 @@ describe('server/bootstrap/services factory', () => {
       'soundFxService',
       'plainTransportService',
       // PR-I2 additions
-      'streamInterceptorService',
       'visualFxService',
       'recordingStorageService',
       'fileCompressionService',
@@ -309,7 +306,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(43);
+    expect(expectedKeys).toHaveLength(42);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -339,7 +336,6 @@ describe('server/bootstrap/services factory', () => {
     // PR-M1
     expect(s.moderationNotifier).toBeInstanceOf(ModerationNotifier);
     // PR-I2
-    expect(s.streamInterceptorService).toBeInstanceOf(StreamInterceptorService);
     expect(s.visualFxService).toBeInstanceOf(VisualFxService);
     expect(s.recordingStorageService).toBeInstanceOf(RecordingStorageService);
     expect(s.fileCompressionService).toBeInstanceOf(FileCompressionService);
@@ -495,23 +491,13 @@ describe('server/bootstrap/services factory', () => {
 
   // ── PR-I2 dep-graph identity checks ───────────────────────────────────
 
-  test('streamInterceptorService receives (mediasoupService, plainTransportService)', () => {
+  test('visualFxService receives (mediasoupService, buffDebuffService)', () => {
     const deps = buildDeps();
     const { services: s } = createServices(deps);
 
-    expect(s.streamInterceptorService._args).toHaveLength(2);
-    expect(s.streamInterceptorService._args[0]).toBe(deps.mediasoupService);
-    expect(s.streamInterceptorService._args[1]).toBe(s.plainTransportService);
-  });
-
-  test('visualFxService receives (mediasoupService, buffDebuffService, streamInterceptorService)', () => {
-    const deps = buildDeps();
-    const { services: s } = createServices(deps);
-
-    expect(s.visualFxService._args).toHaveLength(3);
+    expect(s.visualFxService._args).toHaveLength(2);
     expect(s.visualFxService._args[0]).toBe(deps.mediasoupService);
     expect(s.visualFxService._args[1]).toBe(s.buffDebuffService);
-    expect(s.visualFxService._args[2]).toBe(s.streamInterceptorService);
   });
 
   test('recordingService receives (database, mediasoupService, recordingStorageService)', () => {
