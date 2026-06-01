@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import AdminDashboardV3 from './AdminDashboardV3';
 import UserManagement from './UserManagement';
 import ConnectionMonitor from '../ConnectionMonitor';
-import ViewBotTab from './ViewBotTab';
 import URLStreamManagement from '../URLStreamManagement';
 import WhitelistManagement from './WhitelistManagement';
 import AIModerationManagement from './AIModerationManagement';
@@ -52,7 +51,6 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
     { id: 'game', label: 'Game Control', icon: '🎮', category: 'Overview' },
     { id: 'users', label: 'User Management', icon: '👥', category: 'Users & Access' },
     { id: 'connections', label: 'Connections', icon: '🔗', category: 'Monitoring' },
-    { id: 'viewbot', label: 'ViewBot Control', icon: '🤖', category: 'Services' },
     { id: 'urlstream', label: 'URL Stream Relay', icon: '📡', category: 'Services' },
     { id: 'whitelist', label: 'Relay Whitelist', icon: '🛡️', category: 'Services' },
     { id: 'items', label: 'Items & Shop', icon: '🛍️', category: 'Content' },
@@ -215,9 +213,6 @@ const AdminPanelV3: React.FC<AdminPanelProps> = ({ isVisible, onClose, initialTa
         return <UserManagement addLog={addLog} />;
       case 'connections':
         return <ConnectionMonitor makeApiCall={makeApiCall} addLog={addLog} />;
-      case 'viewbot':
-        // console.log('Rendering ViewBotTab in AdminPanelV3');
-        return <ViewBotTab makeApiCall={makeApiCall} addLog={addLog} />;
       case 'urlstream':
         return <URLStreamManagement makeApiCall={makeApiCall} addLog={addLog} />;
       case 'whitelist':
