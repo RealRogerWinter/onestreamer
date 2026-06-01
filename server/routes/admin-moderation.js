@@ -6,7 +6,7 @@
  * blocks land in this one router because they share auth
  * (`authenticateModerator`) and the same dep surface
  * (`IPBanService`, `streamService`, `streamingLogsService`,
- * `mediasoupService`, `streamNotifier`, `io`, `axios`, `https`,
+ * `webrtcService`, `streamNotifier`, `io`, `axios`, `https`,
  * `logger`, `express.json()` middleware on the chat-mod POSTs).
  *
  * Routes:
@@ -45,7 +45,7 @@ function createAdminModerationRouter(deps) {
         IPBanService,
         streamService,
         streamingLogsService,
-        mediasoupService,
+        webrtcService,
         streamNotifier,
         io,
         axios,
@@ -224,10 +224,10 @@ function createAdminModerationRouter(deps) {
       
           // Clear the streamer
           streamService.clearStreamer();
-          mediasoupService.currentStreamer = null;
+          webrtcService.currentStreamer = null;
       
           // Cleanup MediaSoup resources
-          mediasoupService.cleanup(streamerId);
+          webrtcService.cleanup(streamerId);
       
           // Notify the streamer they've been disconnected
           socket.emit('stream-disconnected-by-admin', { 
@@ -299,8 +299,8 @@ function createAdminModerationRouter(deps) {
         const currentStreamer = streamService.getCurrentStreamer();
         if (currentStreamer === streamerId) {
           streamService.clearStreamer();
-          mediasoupService.currentStreamer = null;
-          mediasoupService.cleanup(streamerId);
+          webrtcService.currentStreamer = null;
+          webrtcService.cleanup(streamerId);
       
           if (socket) {
             socket.emit('banned', { 

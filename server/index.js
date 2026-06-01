@@ -355,7 +355,7 @@ app.use('/admin/review', adminRecordingsRoutes);
 app.use('/api/tutorial', require('./routes/tutorial'));
 app.use('/api/audio', require('./routes/audio'));
 // /api/media + /api/stream/* + /api/webrtc/backend + /api/livekit/token
-// share the streamService/mediasoupService/adapter wiring, so they're all
+// share the streamService/webrtcService/adapter wiring, so they're all
 // in routes/media.js mounted at /api (PR-G3).
 app.use('/api', require('./routes/media'));
 
@@ -420,11 +420,11 @@ const { initializeRedis: bootInitializeRedis } = require('./bootstrap/redis');
 
 // WebRTC backend. LiveKit is the sole backend (ADR-0024). Built BEFORE the
 // service factory because the recording/transcription services consume it as
-// a dep. The local is still named `mediasoupService` — the historical name
+// a dep. The local is still named `webrtcService` — the historical name
 // threaded through the service factory + socket handlers; a rename is a
 // deferred cosmetic follow-up.
 const LiveKitService = require('./services/LiveKitService');
-const mediasoupService = new LiveKitService();
+const webrtcService = new LiveKitService();
 logger.info('🎬 WebRTC backend: LiveKit (ADR-0024)');
 
 // PR 16.1: userBonusCooldowns is the shared Map<userId, lastClaimEpochMs>
@@ -439,7 +439,7 @@ const userBonusCooldowns = new Map();
 // server/bootstrap/services.js for the dependency graph and PR-I2 scope.
 const createServices = require('./bootstrap/services');
 const { createViewBotServices } = createServices; // PR-I4 late-init helper.
-const { services, stoppables: coreStoppables } = createServices({ io, redisClient, database, env: process.env, mediasoupService, userBonusCooldowns });
+const { services, stoppables: coreStoppables } = createServices({ io, redisClient, database, env: process.env, webrtcService, userBonusCooldowns });
 
 // PR 1.2: accumulator for graceful-shutdown iteration. Construction order;
 // the SIGINT handler reverses at shutdown time so newer services stop first.
@@ -510,8 +510,8 @@ app.locals.audioOptimizationService = audioOptimizationService;
 // The WebRTC backend (LiveKit, ADR-0024) is built before the PR-I services
 // factory because the recording/transcription services consume it. Exposed here so
 // server/routes/media.js + routes/health.js can read it via
-// req.app.locals.mediasoupService.
-app.locals.mediasoupService = mediasoupService;
+// req.app.locals.webrtcService.
+app.locals.webrtcService = webrtcService;
 app.locals.adminKey = ADMIN_KEY; // for routes/health.js admin-config endpoint
 // generateTurnCredentials is a top-level helper in server/index.js; expose
 // it for server/routes/media.js (used by /api/livekit/token).
@@ -838,7 +838,7 @@ const { createStreamOrchestration } = require('./services/StreamOrchestration');
 const streamOrchestration = createStreamOrchestration({
   io,
   takeoverService,
-  mediasoupService,
+  webrtcService,
   getStreamerDisplayName,
   lastEmittedStreamReady,
 });
@@ -870,7 +870,7 @@ app.use(require('./routes/admin-moderation')({
   IPBanService,
   streamService,
   streamingLogsService,
-  mediasoupService,
+  webrtcService,
   streamNotifier,
   io,
   axios,
@@ -968,7 +968,7 @@ const viewBotAuth = (req, res, next) => {
 // streaming-method path families. Lazy services pass via getters.
 app.use(require("./routes/viewbot-admin")({
   adminKeyAuth, viewBotAuth, authenticateAdmin,
-  streamService, mediasoupService, sessionService, testStreamService,
+  streamService, webrtcService, sessionService, testStreamService,
   mediaStreamService, buffNotifier, streamNotifier, viewerCountNotifier,
   cleanupViewbotUsername, broadcastGlobalCooldown, notifyViewersStreamEnded,
   io, ADMIN_KEY, upload, uploadsDir, path, logger,
@@ -982,7 +982,7 @@ app.use(require("./routes/viewbot-admin")({
 app.use(require("./routes/admin-ops")({
   authenticateAdmin, adminKeyAuth,
   sessionService, streamService, takeoverService, accountService,
-  itemService, timeTrackingService, mediasoupService, resourceMonitor,
+  itemService, timeTrackingService, webrtcService, resourceMonitor,
   streamNotifier, viewerCountNotifier,
   database, io, fs, path, upload, uploadsDir, logger,
 }));
@@ -1077,7 +1077,7 @@ function notifyViewersStreamEnded() {
 // Phase 15B.3.i — transcription cluster extracted to routes/admin-transcription.js.
 // 10 routes; transcriptionService passed via getter.
 app.use(require("./routes/admin-transcription")({
-  authenticateAdmin, streamService, mediasoupService, io, logger,
+  authenticateAdmin, streamService, webrtcService, io, logger,
   getTranscriptionService: () => transcriptionService,
 }));
 
@@ -1085,7 +1085,7 @@ app.use(require("./routes/admin-transcription")({
 app.use(require('./routes/admin-ai')({
   adminKeyAuth, adminKeyOrJwt,
   movieBotService, chatBotService,
-  mediasoupService, streamService, database, logger,
+  webrtcService, streamService, database, logger,
 }));
 
 // Forward transcription events to clients
@@ -1163,7 +1163,7 @@ require('./bootstrap/register-socket-handlers')(io, {
   // Eager per-handler service deps
   streamService,
   takeoverService,
-  mediasoupService,
+  webrtcService,
   testStreamService,
   timeTrackingService,
   buffDebuffService,
@@ -1234,7 +1234,7 @@ async function startServer() {
   
   // Initialize the WebRTC backend (LiveKit, ADR-0024).
   try {
-    await mediasoupService.initialize();
+    await webrtcService.initialize();
     logger.info('✅ WEBRTC: LiveKit backend initialized');
     
     // ── PR-I4: late ViewBot service construction ───────────────────────────
@@ -1244,13 +1244,13 @@ async function startServer() {
     // orchestration (URL/Random services, SimpleViewBotRotation setters,
     // route mounts, autostarts) that stays inline — see the deferred-list
     // note in bootstrap/services.js for the rationale.
-    // LiveKit is the sole WebRTC backend (ADR-0024); mediasoupService IS the
+    // LiveKit is the sole WebRTC backend (ADR-0024); webrtcService IS the
     // LiveKitService. Kept as a named local because the downstream LiveKit
     // cross-wires + the start-streaming-backend branch key off it.
-    const livekitService = mediasoupService;
+    const livekitService = webrtcService;
 
     const { services: viewBotBag, stoppables: viewBotStoppables } = await createViewBotServices({
-      mediasoupService,
+      webrtcService,
       livekitService,
       streamService,
     });
@@ -1544,10 +1544,10 @@ async function startServer() {
     }
     
     // Port Monitor Service (was nested in the now-removed viewbot rotation
-    // block; depends only on mediasoupService).
+    // block; depends only on webrtcService).
     try {
       const PortMonitorService = require('./services/PortMonitorService');
-      const portMonitor = new PortMonitorService(mediasoupService);
+      const portMonitor = new PortMonitorService(webrtcService);
       global.portMonitor = portMonitor;
       portMonitor.startMonitoring();
       stoppables.push(portMonitor);
@@ -1697,7 +1697,7 @@ require('./bootstrap/shutdown')({
   io,
   server,
   getRedisClient: () => redisClient,
-  getMediasoupService: () => mediasoupService,
+  getWebrtcService: () => webrtcService,
   getViewbotService: () => viewbotService,
   getRecordingService: () => recordingService,
   getTimeTrackingService: () => timeTrackingService,

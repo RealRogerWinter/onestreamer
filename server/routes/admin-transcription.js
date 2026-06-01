@@ -25,7 +25,7 @@
  *   - `transcriptionService` → `getTranscriptionService()` at each
  *     reference site
  *
- * Other deps (`authenticateAdmin`, `streamService`, `mediasoupService`,
+ * Other deps (`authenticateAdmin`, `streamService`, `webrtcService`,
  * `io`, `logger`) destructured from the factory args bag and used verbatim.
  */
 
@@ -35,7 +35,7 @@ function createAdminTranscriptionRouter(deps) {
     const {
         authenticateAdmin,
         streamService,
-        mediasoupService,
+        webrtcService,
         io,
         logger,
         getTranscriptionService,
@@ -110,7 +110,7 @@ function createAdminTranscriptionRouter(deps) {
         logger.info(`⏱️ ADMIN: Timed transcription requested for ${streamerId} (${duration}s)`);
     
         // Verify stream is active
-        const currentStreamer = mediasoupService.getCurrentStreamer();
+        const currentStreamer = webrtcService.getCurrentStreamer();
         if (!currentStreamer || currentStreamer !== streamerId) {
           return res.status(400).json({ 
             success: false, 

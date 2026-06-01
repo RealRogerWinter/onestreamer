@@ -6,8 +6,8 @@ const ViewBotLiveKitService = require('./ViewBotLiveKitService');
 const logger = require('../bootstrap/logger').child({ svc: 'ViewbotService' });
 
 class ViewbotService {
-  constructor(mediasoupService, livekitService) {
-    this.mediasoupService = mediasoupService;
+  constructor(webrtcService, livekitService) {
+    this.webrtcService = webrtcService;
     this.livekitService = livekitService;
     this.isViewbotActive = false;
     this.viewbotStreamId = null;
@@ -38,7 +38,7 @@ class ViewbotService {
       logger.debug('🤖 VIEWBOT: Using LiveKit backend for ViewBots');
     } else {
       // Use MediaSoup ViewBot service (default)
-      this.webrtcService = new ViewBotWebRTCService(mediasoupService);
+      this.webrtcService = new ViewBotWebRTCService(webrtcService);
       this.backendType = 'mediasoup';
       logger.debug('🤖 VIEWBOT: Using MediaSoup backend for ViewBots');
     }
@@ -255,9 +255,9 @@ class ViewbotService {
     }
     
     // Clean up MediaSoup resources
-    if (this.viewbotStreamId && this.mediasoupService) {
+    if (this.viewbotStreamId && this.webrtcService) {
       try {
-        await this.mediasoupService.cleanupSocketResources(this.viewbotStreamId);
+        await this.webrtcService.cleanupSocketResources(this.viewbotStreamId);
         logger.debug('✅ VIEWBOT: MediaSoup resources cleaned up');
       } catch (error) {
         logger.warn('⚠️ VIEWBOT: Error cleaning up MediaSoup resources:', error);
@@ -317,7 +317,7 @@ class ViewbotService {
       config: this.viewbotConfig,
       activeViewbots: this.currentViewbots.size,
       maxViewbots: '∞', // Unlimited ViewBots
-      hasMediaSoupProducer: this.isViewbotActive && this.mediasoupService && this.mediasoupService.hasActiveProducer(),
+      hasMediaSoupProducer: this.isViewbotActive && this.webrtcService && this.webrtcService.hasActiveProducer(),
       processStatus: processStatus,
       mode: this.useWebRTC ? 'webrtc' : 'hls',
       webrtcStatus: webrtcStatus
@@ -459,7 +459,7 @@ class ViewbotService {
       processRunning: isProcessHealthy,
       simulationMode: !this.viewbotProcess && !!this.simulationTimer,
       ffmpegMode: this.viewbotProcess && !this.viewbotProcess.killed,
-      mediasoupConnected: this.mediasoupService && this.mediasoupService.hasActiveProducer(),
+      mediasoupConnected: this.webrtcService && this.webrtcService.hasActiveProducer(),
       uptime: this.streamStartTime ? Date.now() - this.streamStartTime : 0,
       viewbotCount: this.currentViewbots.size
     };

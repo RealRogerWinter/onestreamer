@@ -82,12 +82,12 @@ class RegularHandler {
             // Get current streamer
             let currentStreamerSocketId = streamService.getCurrentStreamer();
 
-            // LIVEKIT FIX: Fallback to mediasoupService/webrtcAdapter if StreamService has no streamer
-            const mediasoupServiceForKillSwitch = services.mediasoupService;
-            if (!currentStreamerSocketId && mediasoupServiceForKillSwitch) {
-                currentStreamerSocketId = mediasoupServiceForKillSwitch.getCurrentStreamer();
+            // LIVEKIT FIX: Fallback to webrtcService/webrtcAdapter if StreamService has no streamer
+            const webrtcServiceForKillSwitch = services.webrtcService;
+            if (!currentStreamerSocketId && webrtcServiceForKillSwitch) {
+                currentStreamerSocketId = webrtcServiceForKillSwitch.getCurrentStreamer();
                 if (currentStreamerSocketId) {
-                    logger.debug(`💥 KILL SWITCH: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                    logger.debug(`💥 KILL SWITCH: Using webrtcService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
                 }
             }
 

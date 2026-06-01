@@ -32,12 +32,12 @@ class BuffDebuffHandler {
         // Try StreamService first (works for MediaSoup and synced LiveKit)
         let currentStreamerSocketId = streamService.getCurrentStreamer();
 
-        // LIVEKIT FIX: Fallback to mediasoupService/webrtcAdapter if StreamService has no streamer
-        const mediasoupService = services.mediasoupService;
-        if (!currentStreamerSocketId && mediasoupService) {
-            currentStreamerSocketId = mediasoupService.getCurrentStreamer();
+        // LIVEKIT FIX: Fallback to webrtcService/webrtcAdapter if StreamService has no streamer
+        const webrtcService = services.webrtcService;
+        if (!currentStreamerSocketId && webrtcService) {
+            currentStreamerSocketId = webrtcService.getCurrentStreamer();
             if (currentStreamerSocketId) {
-                logger.debug(`🎭 ITEMS: Using mediasoupService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                logger.debug(`🎭 ITEMS: Using webrtcService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
             }
         }
 

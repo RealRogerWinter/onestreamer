@@ -46,7 +46,7 @@
  *   - streamService            Active-streamer registry + status getters.
  *   - sessionService           Socket/IP -> session + userId mapping.
  *   - takeoverService          Cooldown ledger.
- *   - mediasoupService         For cleanup() on takeover + currentStreamer sync.
+ *   - webrtcService         For cleanup() on takeover + currentStreamer sync.
  *   - testStreamService        Used by the graceful-degradation request-test-stream
  *                              fallback path when no ViewbotService is wired.
  *   - timeTrackingService      Viewing/streaming session bookkeeping.

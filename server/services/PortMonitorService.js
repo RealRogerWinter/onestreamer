@@ -10,8 +10,8 @@ const logger = require('../bootstrap/logger').child({ svc: 'PortMonitorService' 
 const execPromise = util.promisify(exec);
 
 class PortMonitorService {
-  constructor(mediasoupService) {
-    this.mediasoupService = mediasoupService;
+  constructor(webrtcService) {
+    this.webrtcService = webrtcService;
     this.monitorInterval = null;
     this.lastPortCount = 0;
     this.portExhaustionThreshold = 180; // Alert when 180+ ports are used (90% of 200)
@@ -86,7 +86,7 @@ class PortMonitorService {
    * Clean up orphaned transports (transports without active connections)
    */
   async cleanupOrphanedTransports() {
-    if (!this.mediasoupService.transports) return;
+    if (!this.webrtcService.transports) return;
     
     logger.debug('🧹 PORT MONITOR: Checking for orphaned transports...');
     let cleanedCount = 0;
@@ -102,7 +102,7 @@ class PortMonitorService {
     }
     
     // Check each transport
-    for (const [socketId, transport] of this.mediasoupService.transports) {
+    for (const [socketId, transport] of this.webrtcService.transports) {
       // If socket is not connected, clean up the transport
       if (!connectedSocketIds.has(socketId)) {
         logger.debug(`🧹 PORT MONITOR: Cleaning orphaned transport for disconnected socket ${socketId}`);
@@ -119,7 +119,7 @@ class PortMonitorService {
           logger.error(`❌ PORT MONITOR: Error closing transport for ${socketId}:`, e);
         }
         
-        this.mediasoupService.transports.delete(socketId);
+        this.webrtcService.transports.delete(socketId);
         cleanedCount++;
       }
     }
@@ -136,10 +136,10 @@ class PortMonitorService {
    * Clean up orphaned producers
    */
   cleanupOrphanedProducers(connectedSocketIds) {
-    if (!this.mediasoupService.producers) return;
+    if (!this.webrtcService.producers) return;
     
     let cleanedCount = 0;
-    for (const [socketId, producers] of this.mediasoupService.producers) {
+    for (const [socketId, producers] of this.webrtcService.producers) {
       if (!connectedSocketIds.has(socketId)) {
         logger.debug(`🧹 PORT MONITOR: Cleaning orphaned producers for ${socketId}`);
         
@@ -151,7 +151,7 @@ class PortMonitorService {
           }
         }
         
-        this.mediasoupService.producers.delete(socketId);
+        this.webrtcService.producers.delete(socketId);
         cleanedCount++;
       }
     }
@@ -167,10 +167,10 @@ class PortMonitorService {
   async forceCleanup() {
     logger.debug('🚨 PORT MONITOR: Forcing cleanup of all transports...');
     
-    if (!this.mediasoupService.transports) return;
+    if (!this.webrtcService.transports) return;
     
     let cleanedCount = 0;
-    for (const [socketId, transport] of this.mediasoupService.transports) {
+    for (const [socketId, transport] of this.webrtcService.transports) {
       try {
         if (transport.video && transport.audio) {
           if (!transport.video.closed) transport.video.close();
@@ -185,11 +185,11 @@ class PortMonitorService {
     }
     
     // Clear all transport references
-    this.mediasoupService.transports.clear();
+    this.webrtcService.transports.clear();
     
     // Also clear all producers
-    if (this.mediasoupService.producers) {
-      for (const [socketId, producers] of this.mediasoupService.producers) {
+    if (this.webrtcService.producers) {
+      for (const [socketId, producers] of this.webrtcService.producers) {
         if (producers instanceof Map) {
           for (const [kind, producer] of producers) {
             if (!producer.closed) {
@@ -198,7 +198,7 @@ class PortMonitorService {
           }
         }
       }
-      this.mediasoupService.producers.clear();
+      this.webrtcService.producers.clear();
     }
     
     logger.debug(`✅ PORT MONITOR: Force cleaned ${cleanedCount} transports and all producers`);
@@ -217,8 +217,8 @@ class PortMonitorService {
    */
   async getStatus() {
     const portCount = await this.checkPortUsage();
-    const transportCount = this.mediasoupService.transports ? this.mediasoupService.transports.size : 0;
-    const producerCount = this.mediasoupService.producers ? this.mediasoupService.producers.size : 0;
+    const transportCount = this.webrtcService.transports ? this.webrtcService.transports.size : 0;
+    const producerCount = this.webrtcService.producers ? this.webrtcService.producers.size : 0;
     
     return {
       portsInUse: portCount,

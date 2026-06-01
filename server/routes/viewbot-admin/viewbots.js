@@ -22,7 +22,7 @@ function createViewbotsRouter(deps) {
         adminKeyAuth,
         viewBotAuth,
         streamService,
-        mediasoupService,
+        webrtcService,
         sessionService,
         buffNotifier,
         streamNotifier,
@@ -90,7 +90,7 @@ function createViewbotsRouter(deps) {
         // Clear the viewbot from active streamer
         if (streamService.getCurrentStreamer() === result.streamId) {
           streamService.clearStreamer();
-          mediasoupService.currentStreamer = null;
+          webrtcService.currentStreamer = null;
           logger.info(`🧹 VIEWBOT STOP: Cleared ${result.streamId} from both services`);
 
           // Clear streamer buff display when viewbot streaming ends

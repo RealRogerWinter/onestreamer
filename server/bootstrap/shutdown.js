@@ -59,7 +59,7 @@ function registerShutdownHandlers(deps) {
         io,
         server,
         getRedisClient,
-        getMediasoupService,
+        getWebrtcService,
         getViewbotService,
         getRecordingService,
         getTimeTrackingService,
@@ -171,9 +171,9 @@ function registerShutdownHandlers(deps) {
 
             // 3. Clean up MediaSoup resources
             logger.info('🧹 Cleaning up MediaSoup resources...');
-            const mediasoupService = getMediasoupService();
-            if (mediasoupService) {
-                mediasoupService.cleanupAll();
+            const webrtcService = getWebrtcService();
+            if (webrtcService) {
+                webrtcService.cleanupAll();
             }
 
             // 3.5. Clean up WebRTC ViewBot systems

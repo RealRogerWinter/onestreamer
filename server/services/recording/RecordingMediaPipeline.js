@@ -25,7 +25,7 @@ class RecordingMediaPipeline {
     try {
       logger.debug(`📡 RECORDING: Creating plain transports for recording`);
 
-      const router = owner.mediasoupService.router;
+      const router = owner.webrtcService.router;
       if (!router) {
         throw new Error('MediaSoup router not available');
       }
@@ -110,8 +110,8 @@ class RecordingMediaPipeline {
     try {
       logger.debug(`👥 RECORDING: Creating consumers for recording ${recordingSession.id}`);
 
-      const currentStreamer = owner.mediasoupService.getCurrentStreamer();
-      const producerMap = owner.mediasoupService.producers.get(currentStreamer);
+      const currentStreamer = owner.webrtcService.getCurrentStreamer();
+      const producerMap = owner.webrtcService.producers.get(currentStreamer);
 
       if (!producerMap || producerMap.size === 0) {
         return { success: false, error: 'No producers available for recording' };

@@ -8,13 +8,13 @@ const RecordingMediaPipeline = require('./recording/RecordingMediaPipeline');
 const RecordingPersistence = require('./recording/RecordingPersistence');
 
 class RecordingService {
-  constructor(database, mediasoupService, storageService) {
+  constructor(database, webrtcService, storageService) {
     this.database = database;
     this.db = database.db;
     this.runAsync = database.runAsync;
     this.getAsync = database.getAsync;
     this.allAsync = database.allAsync;
-    this.mediasoupService = mediasoupService;
+    this.webrtcService = webrtcService;
     this.storageService = storageService;
     this.activeRecordings = new Map();
     this.continuousRecordingState = {
@@ -138,14 +138,14 @@ class RecordingService {
     try {
       // Verify stream is active
       logger.debug(`🔍 RECORDING: Checking stream status for recording:`);
-      const currentStreamer = this.mediasoupService.getCurrentStreamer();
+      const currentStreamer = this.webrtcService.getCurrentStreamer();
       if (!currentStreamer || currentStreamer !== streamerId) {
         logger.debug(`❌ RECORDING: Streamer mismatch - requested: ${streamerId}, current: ${currentStreamer}`);
         return { success: false, error: 'Streamer is not currently streaming' };
       }
       
       // Check if producers exist
-      const producerMap = this.mediasoupService.producers.get(currentStreamer);
+      const producerMap = this.webrtcService.producers.get(currentStreamer);
       if (!producerMap || producerMap.size === 0) {
         logger.debug(`❌ RECORDING: No producers available for ${streamerId}`);
         return { success: false, error: 'No producers available for recording' };
@@ -329,13 +329,13 @@ class RecordingService {
     this.continuousRecordingState.streamSwitches = 0;
     
     // If there's already an active stream, start recording immediately
-    const currentStreamer = this.mediasoupService?.getCurrentStreamer();
+    const currentStreamer = this.webrtcService?.getCurrentStreamer();
     if (currentStreamer) {
       logger.debug(`🔍 RECORDING: Checking for active stream to record:`);
       logger.debug(`   Current streamer: ${currentStreamer}`);
-      logger.debug(`   Has producers: ${this.mediasoupService.producers.has(currentStreamer)}`);
+      logger.debug(`   Has producers: ${this.webrtcService.producers.has(currentStreamer)}`);
       
-      if (this.mediasoupService.producers.has(currentStreamer)) {
+      if (this.webrtcService.producers.has(currentStreamer)) {
         logger.debug(`🎬 RECORDING: Active stream detected for ${currentStreamer}, starting continuous recording`);
         await this.handleStreamStart(currentStreamer);
       }
@@ -364,7 +364,7 @@ class RecordingService {
   }
   
   getContinuousRecordingStatus() {
-    const currentStreamer = this.mediasoupService?.getCurrentStreamer();
+    const currentStreamer = this.webrtcService?.getCurrentStreamer();
     return {
       ...this.continuousRecordingState,
       isRecording: !!this.continuousRecordingState.currentRecording && !!currentStreamer

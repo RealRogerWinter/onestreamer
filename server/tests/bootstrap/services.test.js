@@ -226,7 +226,7 @@ function buildDeps(overrides = {}) {
     redisClient: { _kind: 'redis' },
     database: { _kind: 'database' },
     env: { NODE_ENV: 'test' },
-    mediasoupService: { _kind: 'mediasoup' },
+    webrtcService: { _kind: 'mediasoup' },
     // PR 16.1: GameMechanicsService takes a shared Map by reference from
     // the factory — server/index.js creates it before calling createServices.
     // The factory guards null; pass a real Map so the constructor accepts.
@@ -470,13 +470,13 @@ describe('server/bootstrap/services factory', () => {
 
   // ── PR-I2 dep-graph identity checks ───────────────────────────────────
 
-  test('recordingService receives (database, mediasoupService, recordingStorageService)', () => {
+  test('recordingService receives (database, webrtcService, recordingStorageService)', () => {
     const deps = buildDeps();
     const { services: s } = createServices(deps);
 
     expect(s.recordingService._args).toHaveLength(3);
     expect(s.recordingService._args[0]).toBe(deps.database);
-    expect(s.recordingService._args[1]).toBe(deps.mediasoupService);
+    expect(s.recordingService._args[1]).toBe(deps.webrtcService);
     expect(s.recordingService._args[2]).toBe(s.recordingStorageService);
   });
 
@@ -496,13 +496,13 @@ describe('server/bootstrap/services factory', () => {
     expect(s.clipService._args[3]).toBe(s.continuousRecordingService);
   });
 
-  test('transcriptionService receives (database, mediasoupService, recordingService)', () => {
+  test('transcriptionService receives (database, webrtcService, recordingService)', () => {
     const deps = buildDeps();
     const { services: s } = createServices(deps);
 
     expect(s.transcriptionService._args).toHaveLength(3);
     expect(s.transcriptionService._args[0]).toBe(deps.database);
-    expect(s.transcriptionService._args[1]).toBe(deps.mediasoupService);
+    expect(s.transcriptionService._args[1]).toBe(deps.webrtcService);
     expect(s.transcriptionService._args[2]).toBe(s.recordingService);
   });
 
@@ -674,7 +674,7 @@ describe('server/bootstrap/services factory', () => {
 // ── PR-I4: createViewBotServices (late-init helper) ─────────────────────────
 //
 // Separate factory because it's only called inside startServer() after
-// mediasoupService.initialize() resolves, and it branches on whether a
+// webrtcService.initialize() resolves, and it branches on whether a
 // LiveKit backend is in play. Tests assert:
 //   1. The factory is exposed on the main createServices export.
 //   2. Always-constructed service: viewbotService.
@@ -688,7 +688,7 @@ describe('server/bootstrap/services factory', () => {
 describe('server/bootstrap/services :: createViewBotServices', () => {
   function buildViewBotDeps(overrides = {}) {
     return {
-      mediasoupService: { _kind: 'mediasoup' },
+      webrtcService: { _kind: 'mediasoup' },
       livekitService: null,
       streamService: { _kind: 'streamService' },
       ...overrides,
@@ -726,13 +726,13 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     expect(bag.viewBotLiveKitService._streamServiceArg).toBe(deps.streamService);
   });
 
-  test('viewbotService is constructed with (mediasoupService, livekitService)', async () => {
+  test('viewbotService is constructed with (webrtcService, livekitService)', async () => {
     const livekitService = { _kind: 'livekit' };
     const deps = buildViewBotDeps({ livekitService });
     const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewbotService._args).toHaveLength(2);
-    expect(bag.viewbotService._args[0]).toBe(deps.mediasoupService);
+    expect(bag.viewbotService._args[0]).toBe(deps.webrtcService);
     expect(bag.viewbotService._args[1]).toBe(livekitService);
   });
 
@@ -743,12 +743,12 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     expect(bag.viewbotService._args[1]).toBeNull();
   });
 
-  test('viewBotWebRTCService is constructed with (mediasoupService)', async () => {
+  test('viewBotWebRTCService is constructed with (webrtcService)', async () => {
     const deps = buildViewBotDeps();
     const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewBotWebRTCService._args).toHaveLength(1);
-    expect(bag.viewBotWebRTCService._args[0]).toBe(deps.mediasoupService);
+    expect(bag.viewBotWebRTCService._args[0]).toBe(deps.webrtcService);
   });
 
   test('viewBotLiveKitService is constructed with (livekitService)', async () => {

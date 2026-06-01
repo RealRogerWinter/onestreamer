@@ -15,7 +15,7 @@
  *     stdin/stdout/stderr are stubbed.
  *   - `database` is a hand-rolled mock exposing runAsync/getAsync/allAsync; the
  *     service destructures these onto itself in the constructor.
- *   - `mediasoupService` is a hand-rolled mock with a router, producers map,
+ *   - `webrtcService` is a hand-rolled mock with a router, producers map,
  *     and getCurrentStreamer().
  *   - Lifecycle paths schedule setTimeout-based waits; we drive these with jest
  *     fake timers.
@@ -100,10 +100,10 @@ function makeMediasoup({ streamer = 'streamerA', withProducers = true } = {}) {
 
 function makeService(opts = {}) {
     const database = opts.database || makeDatabase();
-    const mediasoupService = opts.mediasoupService || makeMediasoup(opts.msOpts || {});
+    const webrtcService = opts.webrtcService || makeMediasoup(opts.msOpts || {});
     const storageService = opts.storageService || {};
-    const service = new RecordingService(database, mediasoupService, storageService);
-    return { service, database, mediasoupService, storageService };
+    const service = new RecordingService(database, webrtcService, storageService);
+    return { service, database, webrtcService, storageService };
 }
 
 beforeEach(() => {
@@ -123,11 +123,11 @@ beforeEach(() => {
 describe('RecordingService characterization', () => {
     describe('construction', () => {
         it('wires DB helpers, empty active map, and default continuous state', () => {
-            const { service, database, mediasoupService } = makeService();
+            const { service, database, webrtcService } = makeService();
             expect(service.database).toBe(database);
             expect(service.db).toBe(database.db);
             expect(service.runAsync).toBe(database.runAsync);
-            expect(service.mediasoupService).toBe(mediasoupService);
+            expect(service.webrtcService).toBe(webrtcService);
             expect(service.activeRecordings instanceof Map).toBe(true);
             expect(service.activeRecordings.size).toBe(0);
             expect(service.continuousRecordingState).toEqual({
@@ -197,19 +197,19 @@ describe('RecordingService characterization', () => {
 
     describe('createPlainTransports', () => {
         it('returns video+audio transports with ffmpegPorts metadata', async () => {
-            const { service, mediasoupService } = makeService();
+            const { service, webrtcService } = makeService();
             const res = await service.createPlainTransports();
             expect(res.success).toBe(true);
             expect(res.transports.get('video')).toBeDefined();
             expect(res.transports.get('audio')).toBeDefined();
             expect(res.transports.ffmpegPorts).toEqual({ video: 5004, audio: 5006 });
-            expect(mediasoupService.router.createPlainTransport).toHaveBeenCalledTimes(2);
+            expect(webrtcService.router.createPlainTransport).toHaveBeenCalledTimes(2);
         });
 
         it('fails when the mediasoup router is unavailable', async () => {
             const ms = makeMediasoup();
             ms.router = null;
-            const { service } = makeService({ mediasoupService: ms });
+            const { service } = makeService({ webrtcService: ms });
             const res = await service.createPlainTransports();
             expect(res).toEqual({ success: false, error: 'MediaSoup router not available' });
         });
@@ -264,7 +264,7 @@ describe('RecordingService characterization', () => {
             // No current streamer -> no immediate recording start.
             const ms = makeMediasoup();
             ms.getCurrentStreamer = jest.fn(() => null);
-            const { service } = makeService({ mediasoupService: ms });
+            const { service } = makeService({ webrtcService: ms });
 
             const res = await service.enableContinuousRecording('1080p');
             expect(res.success).toBe(true);
