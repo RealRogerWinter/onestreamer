@@ -151,14 +151,10 @@ jest.mock('../../services/ViewbotService', () => class {
   constructor(...args) {
     this._args = args;
     this._stubName = 'ViewbotService';
-    this.viewBotClientService = undefined; // factory assigns this post-construction
   }
 });
 jest.mock('../../services/ViewBotWebRTCService', () => class {
   constructor(...args) { this._args = args; this._stubName = 'ViewBotWebRTCService'; }
-});
-jest.mock('../../services/ViewBotClientService', () => class {
-  constructor(...args) { this._args = args; this._stubName = 'ViewBotClientService'; }
 });
 jest.mock('../../services/ViewBotLiveKitService', () => class {
   constructor(...args) {
@@ -221,7 +217,6 @@ const LifecycleManager = require('../../services/LifecycleManager');
 // PR-I4 additions
 const ViewbotService = require('../../services/ViewbotService');
 const ViewBotWebRTCService = require('../../services/ViewBotWebRTCService');
-const ViewBotClientService = require('../../services/ViewBotClientService');
 const ViewBotLiveKitService = require('../../services/ViewBotLiveKitService');
 
 const createServices = require('../../bootstrap/services');
@@ -668,10 +663,9 @@ describe('server/bootstrap/services factory', () => {
   // factory doesn't thread (e.g., `new X(deps.zservice)` with no `zservice`
   // in the destructure), this fires with a list of offenders rather than
   // each affected route blowing up at runtime when the undefined gets
-  // dereferenced. Note: `null` is distinguished from `undefined` —
-  // viewBotClientService passes `null` as serverUrl intentionally for the
-  // env-var fallback, and the LiveKit-vs-MediaSoup branches leave their
-  // unused side null on the bag. Only `undefined` indicates a wiring gap.
+  // dereferenced. Note: `null` is distinguished from `undefined` — the
+  // LiveKit-vs-MediaSoup branches leave their unused side null on the
+  // ViewBot bag. Only `undefined` indicates a wiring gap.
   test('no service ctor arg is undefined when called with full deps (PR 2.3 fail-fast guard)', () => {
     const { services } = createServices(buildDeps());
 
@@ -695,14 +689,13 @@ describe('server/bootstrap/services factory', () => {
 // mediasoupService.initialize() resolves, and it branches on whether a
 // LiveKit backend is in play. Tests assert:
 //   1. The factory is exposed on the main createServices export.
-//   2. Always-constructed services: viewbotService + viewBotClientService.
+//   2. Always-constructed service: viewbotService.
 //   3. MediaSoup branch (no livekitService): builds viewBotWebRTCService,
 //      leaves viewBotLiveKitService null.
 //   4. LiveKit branch (livekitService present): builds + initializes
 //      viewBotLiveKitService, wires streamService, leaves viewBotWebRTCService
 //      null.
-//   5. Cross-wire: viewbotService.viewBotClientService === viewBotClientService.
-//   6. Constructor arg identity for each service matches the inline original.
+//   5. Constructor arg identity for each service matches the inline original.
 
 describe('server/bootstrap/services :: createViewBotServices', () => {
   function buildViewBotDeps(overrides = {}) {
@@ -718,17 +711,16 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     expect(typeof createViewBotServices).toBe('function');
   });
 
-  test('MediaSoup branch (livekitService null): builds Viewbot + WebRTC + Client; leaves LiveKit null', async () => {
+  test('MediaSoup branch (livekitService null): builds Viewbot + WebRTC; leaves LiveKit null', async () => {
     const deps = buildViewBotDeps();
     const { services: bag } = await createViewBotServices(deps);
 
     expect(Object.keys(bag).sort()).toEqual(
-      ['viewBotClientService', 'viewBotLiveKitService', 'viewBotWebRTCService', 'viewbotService'].sort()
+      ['viewBotLiveKitService', 'viewBotWebRTCService', 'viewbotService'].sort()
     );
 
     expect(bag.viewbotService).toBeInstanceOf(ViewbotService);
     expect(bag.viewBotWebRTCService).toBeInstanceOf(ViewBotWebRTCService);
-    expect(bag.viewBotClientService).toBeInstanceOf(ViewBotClientService);
     expect(bag.viewBotLiveKitService).toBeNull();
   });
 
@@ -738,7 +730,6 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     const { services: bag } = await createViewBotServices(deps);
 
     expect(bag.viewbotService).toBeInstanceOf(ViewbotService);
-    expect(bag.viewBotClientService).toBeInstanceOf(ViewBotClientService);
     expect(bag.viewBotWebRTCService).toBeNull();
     expect(bag.viewBotLiveKitService).toBeInstanceOf(ViewBotLiveKitService);
 
@@ -781,31 +772,11 @@ describe('server/bootstrap/services :: createViewBotServices', () => {
     expect(bag.viewBotLiveKitService._args[0]).toBe(livekitService);
   });
 
-  test('viewBotClientService is constructed with (null, mediasoupService, streamService, viewbotService)', async () => {
-    const deps = buildViewBotDeps();
-    const { services: bag } = await createViewBotServices(deps);
-
-    expect(bag.viewBotClientService._args).toHaveLength(4);
-    expect(bag.viewBotClientService._args[0]).toBeNull(); // serverUrl null -> env-var fallback
-    expect(bag.viewBotClientService._args[1]).toBe(deps.mediasoupService);
-    expect(bag.viewBotClientService._args[2]).toBe(deps.streamService);
-    expect(bag.viewBotClientService._args[3]).toBe(bag.viewbotService);
-  });
-
-  test('cross-wires viewbotService.viewBotClientService = viewBotClientService', async () => {
-    const deps = buildViewBotDeps();
-    const { services: bag } = await createViewBotServices(deps);
-
-    expect(bag.viewbotService.viewBotClientService).toBe(bag.viewBotClientService);
-  });
-
   // ── PR 2.3: fail-fast guard for the ViewBot factory ─────────────────────
   //
   // Same intent as the main-factory guard above, but the ViewBot bag is
   // branched: the inactive backend leaves either viewBotWebRTCService or
-  // viewBotLiveKitService as `null` on the bag. We skip nulls (intentional)
-  // and `viewBotClientService._args[0]` is intentionally `null` for the
-  // env-var fallback path, which the `!== undefined` check tolerates.
+  // viewBotLiveKitService as `null` on the bag. We skip nulls (intentional).
   // Two test cases — one per branch — because each branch constructs a
   // different service via a different `new` site.
 

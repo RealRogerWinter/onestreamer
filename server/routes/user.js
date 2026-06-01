@@ -8,13 +8,11 @@
  *
  * The chat-color routes use `database` (module singleton, passed verbatim
  * via the deps bag). The dashboard reads `streamService`/`takeoverService`
- * (both live by mount time) plus the LATE-initialized
- * `viewBotClientService`, which is assigned inside `startServer()` — so it
- * is resolved through a `getViewBotClientService()` getter at request time,
- * mirroring the convention in `routes/viewbot-admin.js`.
+ * (both live by mount time). The admin viewbot-client fleet
+ * (ViewBotClientService) it formerly queried was deleted — dead under
+ * LiveKit — so the dashboard's viewBot block now reports zeros/false/null.
  *
- * Body byte-equivalent except for `app.X(...)` → `router.X(...)` and
- * `viewBotClientService` → `getViewBotClientService()` at each reference.
+ * Body byte-equivalent except for `app.X(...)` → `router.X(...)`.
  */
 
 const express = require('express');
@@ -26,8 +24,6 @@ function createUserRouter(deps) {
         streamService,
         takeoverService,
         logger,
-        // Lazy-service getter (resolved at request-handler time):
-        getViewBotClientService,
     } = deps;
 
     const router = express.Router();
@@ -97,24 +93,12 @@ function createUserRouter(deps) {
     router.get('/admin/dashboard', authenticateAdmin, async (req, res) => {
       try {
         logger.info('🔍 Dashboard request received');
-        logger.info({ viewBotClientService: !!getViewBotClientService() }, '🔍 viewBotClientService exists');
 
-        // Get ViewBot system data with error handling
-        let viewBotData = null;
-        let viewBotHealth = null;
-
-        try {
-          if (getViewBotClientService()) {
-            logger.info('🔍 Getting ViewBot data...');
-            viewBotData = await getViewBotClientService().getAllBotsStatus();
-            viewBotHealth = getViewBotClientService().getHealthStatus();
-            logger.info({ totalBots: viewBotData?.totalBots, rotationEnabled: viewBotHealth?.rotationEnabled }, '🔍 ViewBot data retrieved');
-          } else {
-            logger.info('⚠️ ViewBotClientService not initialized');
-          }
-        } catch (error) {
-          logger.error({ err: error }, '❌ ViewBot service error');
-        }
+        // The admin viewbot-client fleet (ViewBotClientService) was deleted —
+        // it was dead under LiveKit. The dashboard's viewBot block now reports
+        // zeros/false/null via the existing optional-chaining defaults below.
+        const viewBotData = null;
+        const viewBotHealth = null;
 
         const services = {
           stream: streamService.getStreamStatus(),

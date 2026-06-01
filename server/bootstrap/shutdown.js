@@ -13,7 +13,7 @@
  * The post-PR shape is `registerShutdownHandlers(deps)` — a single factory
  * that wires all four `process.on(...)` handlers and contains
  * byte-equivalent shutdown + cleanup bodies. Lazy-init services
- * (`viewbotService`, `viewBotClientService`, `recordingService`,
+ * (`viewbotService`, `recordingService`,
  * etc.) are passed via
  * getter functions so the lookup happens at signal-time (always after
  * `startServer()` has wired them — or `undefined` if the signal arrives
@@ -61,7 +61,6 @@ function registerShutdownHandlers(deps) {
         getRedisClient,
         getMediasoupService,
         getViewbotService,
-        getViewBotClientService,
         getRecordingService,
         getTimeTrackingService,
         getResourceMonitor,
@@ -110,12 +109,6 @@ function registerShutdownHandlers(deps) {
             // etc.). A follow-up PR can prune entries that overlap with stoppables
             // once the iterator is proven.
             logger.info('🎬 Stopping all media streams...');
-
-            const viewBotClientService = getViewBotClientService();
-            if (viewBotClientService) {
-                logger.info('   Cleaning up ViewBot Client Service...');
-                await viewBotClientService.cleanup();
-            }
 
             const viewbotService = getViewbotService();
             if (viewbotService) {

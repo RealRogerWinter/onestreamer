@@ -65,7 +65,6 @@
  *   - getViewbotService        () => viewbotService. Lazy because the legacy
  *                              ViewbotService is constructed after io.on
  *                              wiring (post-startServer init).
- *   - getViewBotClientService  () => viewBotClientService. Same reason.
  *   - enrichStreamStatus       Helper from index.js: adds streamerDisplayName.
  *   - getStreamerDisplayName   Helper from index.js: socketId -> display name.
  *   - notifyViewersStreamStarted  Helper from index.js (room broadcast +

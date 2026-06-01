@@ -201,26 +201,12 @@ function createAdminModerationRouter(deps) {
           // For viewbots, trigger rotation instead of disconnect
           logger.info(`🔨 MODERATION: Admin triggering viewbot rotation for stream ${streamerId}`);
       
-          // Try different rotation methods based on what's available
-          let rotationResult = { success: false, message: 'No rotation service available' };
-      
-          if (viewBotClientService) {
-            // Use ViewBotClientService for rotation
-            rotationResult = await viewBotClientService.forceRotation();
-            logger.info({ rotationResult }, `🤖 ROTATION: Triggered via ViewBotClientService`);
-          } else if (global.viewBotRotation) {
-            // Use simple rotation service
-            await global.viewBotRotation.forceRotation();
-            rotationResult = { success: true, message: 'Rotation triggered via simple rotation service' };
-            logger.info(`🤖 ROTATION: Triggered via simple rotation service`);
-          }
-      
-          // Also ensure rotation is enabled after this action
-          if (global.viewBotRotation) {
-            await global.viewBotRotation.startRotation();
-          }
-      
-          res.json({ 
+          // The admin viewbot-client fleet (ViewBotClientService) was deleted —
+          // it was dead under LiveKit. No admin-triggered rotation path remains
+          // here; the endpoint still responds with the default result.
+          const rotationResult = { success: false, message: 'No rotation service available' };
+
+          res.json({
             success: true, 
             message: 'Viewbot rotation triggered',
             streamerId,

@@ -30,8 +30,8 @@ logger.info({
     fromEmail: process.env.FROM_EMAIL || 'NOT SET',
 }, 'Environment check on server start');
 
-// ViewBot stack: the four named services (ViewbotService,
-// ViewBotClientService, ViewBotWebRTCService, ViewBotLiveKitService) are
+// ViewBot stack: the named services (ViewbotService,
+// ViewBotWebRTCService, ViewBotLiveKitService) are
 // constructed by server/bootstrap/services.js::createViewBotServices (PR-I4)
 // inside startServer() once the mediasoup worker is ready.
 // PR 9.3 (Phase 9): ViewBotURLService, URLStreamHealthService,
@@ -56,8 +56,6 @@ const buffRoutes = require('./routes/buffs');
 const soundfxRoutes = require('./routes/soundfx');
 const { router: chatbotRoutes, initializeChatBotRoutes } = require('./routes/chatbots');
 const streambotRoutes = require('./routes/streambot');
-// ViewBot API routes will be initialized after services are created
-let viewbotApiRoutes;
 const bugReportsRoutes = require('./routes/bug-reports');
 const clipsRoutes = require('./routes/clips');
 const adminRecordingsRoutes = require('./routes/admin-recordings');
@@ -72,7 +70,6 @@ const registerDisconnectHandler = require('./sockets/DisconnectHandler');
 const registerDrawingHandler = require('./sockets/DrawingHandler');
 const registerGameHandler = require('./sockets/GameHandler');
 const registerStreamHandler = require('./sockets/StreamHandler');
-const registerViewBotHandler = require('./sockets/ViewBotHandler');
 const database = require('./database/database');
 const { runAsync } = database;
 
@@ -686,7 +683,6 @@ app.use('/api/internal', require('./routes/internal'));
 // Initialize ViewbotService after MediasoupService
 let viewbotService;
 let viewBotWebRTCService;
-let viewBotClientService;
 
 // Track which streamers have already been notified to prevent duplicates
 const notifiedStreamers = new Set();
@@ -928,11 +924,9 @@ app.use(require("./routes/emojis")({
 
 // User chat-color preferences + admin dashboard extracted to routes/user.js.
 // chat-color routes use `database`; the dashboard reads
-// streamService/takeoverService plus the late-init viewBotClientService
-// (passed via getter, resolved at request time).
+// streamService/takeoverService.
 app.use(require("./routes/user")({
   authenticateAdmin, database, streamService, takeoverService, logger,
-  getViewBotClientService: () => viewBotClientService,
 }));
 
 // Fallback auth middleware for ViewBot endpoints - try JWT first, then admin key
@@ -996,7 +990,6 @@ app.use(require("./routes/viewbot-admin")({
   cleanupViewbotUsername, broadcastGlobalCooldown, notifyViewersStreamEnded,
   io, ADMIN_KEY, upload, uploadsDir, path, logger,
   getViewbotService: () => viewbotService,
-  getViewBotClientService: () => viewBotClientService,
   getViewBotWebRTCService: () => viewBotWebRTCService,
 }));
 
@@ -1164,9 +1157,9 @@ movieBotService.on('prompt-logged', (data) => {
 
 // Phase 15B.5 — io.on('connection', ...) registration extracted to
 // bootstrap/register-socket-handlers.js. The lazy-service getters
-// (viewbotService / viewBotClientService / recordingService /
-// transcriptionService) are passed via getter functions so they resolve
-// at connection-callback time (always after startServer's lazy inits).
+// (viewbotService / recordingService / transcriptionService) are passed
+// via getter functions so they resolve at connection-callback time
+// (always after startServer's lazy inits).
 require('./bootstrap/register-socket-handlers')(io, {
   // Connection-level services
   IPBanService,
@@ -1175,7 +1168,6 @@ require('./bootstrap/register-socket-handlers')(io, {
 
   // Per-handler register functions
   registerStreamHandler,
-  registerViewBotHandler,
   registerBuffHandler,
   registerDrawingHandler,
   registerAdminHandler,
@@ -1229,7 +1221,6 @@ require('./bootstrap/register-socket-handlers')(io, {
 
   // Lazy-service getters (resolved at connection-callback time)
   getViewbotService: () => viewbotService,
-  getViewBotClientService: () => viewBotClientService,
   getRecordingService: () => recordingService,
   getTranscriptionService: () => transcriptionService,
 });
@@ -1283,7 +1274,6 @@ async function startServer() {
     });
     viewbotService = viewBotBag.viewbotService;
     viewBotWebRTCService = viewBotBag.viewBotWebRTCService;
-    viewBotClientService = viewBotBag.viewBotClientService;
     const viewBotLiveKitService = viewBotBag.viewBotLiveKitService; // null on MediaSoup branch.
 
     // Push livekit BEFORE viewbot stoppables so reverse-iteration stops the
@@ -1546,28 +1536,7 @@ async function startServer() {
     inventoryService.setViewbotService(viewbotService);
     // Inject viewbot socket checker function
     inventoryService.setViewbotSocketChecker((socketId) => viewbotSocketIds.has(socketId));
-    
-    // ViewBotClientService construction + viewbotService.viewBotClientService
-    // cross-wire are now handled by createViewBotServices (PR-I4). The
-    // global, route hookup, and async initialize() that depend on it still
-    // happen here because their error handling nulls out the local on
-    // failure (and that pattern is too entangled to lift cleanly).
-    logger.info('🚀 VIEWBOT CLIENT: ViewBotClientService constructed by factory');
 
-    // Set global reference for ViewBotClientService (needed for ViewBot WebRTC wiring)
-    global.viewBotClientService = viewBotClientService;
-
-    // CRITICAL: Initialize the service to restore state from database
-    try {
-      logger.info('🚀 VIEWBOT CLIENT: Initializing ViewBotClientService...');
-      await viewBotClientService.initialize();
-      logger.info('✅ VIEWBOT CLIENT: ViewBotClientService initialized and state restored');
-    } catch (error) {
-      logger.error({ err: error }, '❌ VIEWBOT CLIENT: Failed to initialize ViewBotClientService');
-      logger.info('⚠️ VIEWBOT CLIENT: Continuing without ViewBotClientService');
-      viewBotClientService = null;
-    }
-    
     // Expose io + streamService on the global for legacy rotation paths
     global.io = io;
     global.streamService = streamService;
@@ -1608,18 +1577,10 @@ async function startServer() {
     // ViewBots are now persisted in database and restored automatically
     // No need to recreate from uploads on every startup
     // To add new viewbots from uploads, run: node /root/onestreamer/create-viewbots-from-uploads.js
-    
-    // Initialize ViewBot API routes with the service instance
-    const viewbotApiRoutesFactory = require('./routes/viewbot-api');
-    viewbotApiRoutes = viewbotApiRoutesFactory(viewBotClientService);
-    app.use('/api', viewbotApiRoutes);
-    
-    logger.info('✅ VIEWBOT API: Routes initialized with service instance');
   } catch (error) {
     logger.error({ err: error }, '❌ MEDIASOUP: Initialization failed');
     logger.info('⚠️ Continuing without mediasoup and viewbot services...');
     viewbotService = null;
-    viewBotClientService = null;
   }
   
   // Initialize ChatBot service
@@ -1756,7 +1717,6 @@ require('./bootstrap/shutdown')({
   getRedisClient: () => redisClient,
   getMediasoupService: () => mediasoupService,
   getViewbotService: () => viewbotService,
-  getViewBotClientService: () => viewBotClientService,
   getRecordingService: () => recordingService,
   getTimeTrackingService: () => timeTrackingService,
   getResourceMonitor: () => resourceMonitor,

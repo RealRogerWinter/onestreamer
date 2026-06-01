@@ -117,13 +117,13 @@ module.exports = function registerTakeover(io, socket, deps) {
       // CRITICAL: Check if current streamer is a real user
       const currentStreamer = streamService.getCurrentStreamer();
 
-      // Enhanced ViewBot detection - check both old viewbotService and new ViewBotClientService
+      // Enhanced ViewBot detection - check the viewbotService and negative user IDs
       let currentIsViewbot = false;
       if (currentStreamer) {
         // Check old ViewBot system
         const isOldViewBot = viewbotService && viewbotService.isViewbotStream(currentStreamer);
 
-        // Check new ViewBotClientService system - negative user IDs indicate ViewBots
+        // Negative user IDs also indicate ViewBots
         const userId = sessionService.getUserIdBySocketId(currentStreamer);
         const isNewViewBot = userId && userId < 0;
 
