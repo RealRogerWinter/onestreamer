@@ -11,12 +11,6 @@
  * mutation; they need module-scope orchestrator state via `req.app.locals`.
  *
  * State deps:
- *   - `req.app.locals.usingAdapter`   set at index.js module-load
- *   - `req.app.locals.webrtcAdapter`  set at index.js module-load (mirrors
- *                                     global.webrtcAdapter — the existing
- *                                     pattern is to also expose on app.locals
- *                                     so route modules don't reach into
- *                                     `global`)
  *   - `req.app.locals.adminKey`       set at index.js module-load
  */
 
@@ -47,17 +41,10 @@ router.get('/api/admin/webrtc/config', (req, res) => {
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const usingAdapter = req.app.locals.usingAdapter;
-    const adapter = req.app.locals.webrtcAdapter;
-
     res.json({
-        adapterEnabled: usingAdapter,
-        currentBackend: usingAdapter && adapter ? adapter.getBackendType() : 'mediasoup',
-        availableBackends: ['mediasoup', 'livekit'],
-        environmentVariables: {
-            USE_WEBRTC_ADAPTER: process.env.USE_WEBRTC_ADAPTER || 'false',
-            WEBRTC_BACKEND: process.env.WEBRTC_BACKEND || 'mediasoup',
-        },
+        adapterEnabled: false,
+        currentBackend: 'livekit',
+        availableBackends: ['livekit'],
     });
 });
 

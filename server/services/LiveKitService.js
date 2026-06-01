@@ -46,6 +46,14 @@ class LiveKitService {
     this.streamNotifier = streamNotifier;
   }
 
+  // Backend-identity shims. LiveKit is the sole WebRTC backend (ADR-0024);
+  // these replace the WebRTCAdapterV2 Proxy that used to answer them for the
+  // services + routes that still ask "which backend is this?".
+  getBackendType() { return 'livekit'; }
+  isLiveKit() { return true; }
+  isMediaSoup() { return false; }
+  getBackendInfo() { return { type: 'livekit', backend: 'LiveKitService' }; }
+
   async initialize() {
     if (this.initialized) {
       return;

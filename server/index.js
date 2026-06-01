@@ -43,7 +43,6 @@ logger.info({
 // streaming-backend call (the whitelistService it produces is a dep).
 const SimpleViewBotRotation = require('./services/SimpleViewBotRotation');
 const WhitelistService = require('./services/WhitelistService');
-const MediasoupService = require('./services/MediasoupService');
 const AuthService = require('./services/AuthService');
 // ChatBotService / StreamBotService / MovieBotService are constructed by the
 // services factory (PR-I3). See server/bootstrap/services.js for wiring.
@@ -419,27 +418,14 @@ app.use('/hls', express.static('public/hls', {
 let redisClient;
 const { initializeRedis: bootInitializeRedis } = require('./bootstrap/redis');
 
-// WebRTC service initialization - with optional adapter support.
-// Built BEFORE the service factory because it branches on env + assigns to
-// globals, and the factory's plainTransportService consumes it as a dep.
-let mediasoupService;
-let usingAdapter = false;
-
-if (process.env.USE_WEBRTC_ADAPTER === 'true') {
-  // Use adapter for backend switching capability
-  logger.info('🔄 WebRTC Adapter enabled - backend switching available');
-  const WebRTCAdapterV2 = require('./services/WebRTCAdapterV2');
-  mediasoupService = new WebRTCAdapterV2();
-  usingAdapter = true;
-  global.webrtcAdapter = mediasoupService; // Make adapter available globally
-} else {
-  // Use standard MediaSoup (default for compatibility)
-  logger.info('📡 Using standard MediaSoup service');
-  mediasoupService = new MediasoupService();
-}
-
-// Store service type for debugging
-global.mediasoupServiceType = usingAdapter ? 'adapter' : 'direct';
+// WebRTC backend. LiveKit is the sole backend (ADR-0024). Built BEFORE the
+// service factory because the factory's plainTransportService consumes it as
+// a dep. The local is still named `mediasoupService` — the historical name
+// threaded through the service factory + socket handlers; a rename is a
+// deferred cosmetic follow-up.
+const LiveKitService = require('./services/LiveKitService');
+const mediasoupService = new LiveKitService();
+logger.info('🎬 WebRTC backend: LiveKit (ADR-0024)');
 
 // PR 16.1: userBonusCooldowns is the shared Map<userId, lastClaimEpochMs>
 // backing /claim-chat-bonus and /bonus-status/:userId. Created here so the
@@ -522,13 +508,11 @@ global.streamService = streamService;
 // those readers to `req.app.locals.services.X`, these can be dropped.
 app.locals.audioOptimizationService = audioOptimizationService;
 
-// mediasoupService isn't part of the PR-I services factory (it branches on
-// USE_WEBRTC_ADAPTER before the factory runs and assigns to globals). Expose
-// it here so server/routes/media.js can read
-// it via req.app.locals.mediasoupService (PR-G3).
+// The WebRTC backend (LiveKit, ADR-0024) is built before the PR-I services
+// factory because plainTransportService consumes it. Exposed here so
+// server/routes/media.js + routes/health.js can read it via
+// req.app.locals.mediasoupService.
 app.locals.mediasoupService = mediasoupService;
-app.locals.usingAdapter = usingAdapter;
-app.locals.webrtcAdapter = global.webrtcAdapter; // mirrors the global; routes/health.js reads
 app.locals.adminKey = ADMIN_KEY; // for routes/health.js admin-config endpoint
 // generateTurnCredentials is a top-level helper in server/index.js; expose
 // it for server/routes/media.js (used by /api/livekit/token).
@@ -1250,10 +1234,10 @@ async function startServer() {
   timeTrackingService.setSocketIO(io); // Pass Socket.IO instance to time tracking service
   logger.info('✅ TIME: Started periodic cleanup for time tracking service');
   
-  // Initialize mediasoup worker (restored to original)
+  // Initialize the WebRTC backend (LiveKit, ADR-0024).
   try {
     await mediasoupService.initialize();
-    logger.info('✅ MEDIASOUP: Initialization completed');
+    logger.info('✅ WEBRTC: LiveKit backend initialized');
     
     // ── PR-I4: late ViewBot service construction ───────────────────────────
     // The four named ViewBot services (Viewbot, ViewBotWebRTC,
@@ -1262,10 +1246,10 @@ async function startServer() {
     // orchestration (URL/Random services, SimpleViewBotRotation setters,
     // route mounts, autostarts) that stays inline — see the deferred-list
     // note in bootstrap/services.js for the rationale.
-    let livekitService = null;
-    if (usingAdapter && global.webrtcAdapter && global.webrtcAdapter.getBackendType() === 'livekit') {
-      livekitService = global.webrtcAdapter._backend;
-    }
+    // LiveKit is the sole WebRTC backend (ADR-0024); mediasoupService IS the
+    // LiveKitService. Kept as a named local because the downstream LiveKit
+    // cross-wires + the start-streaming-backend branch key off it.
+    const livekitService = mediasoupService;
 
     const { services: viewBotBag, stoppables: viewBotStoppables } = await createViewBotServices({
       mediasoupService,
@@ -1301,8 +1285,8 @@ async function startServer() {
     // both branches called it unconditionally.
     SimpleViewBotRotation.setStreamService(streamService);
 
-    // PR 3.1: LiveKitService is constructed inside WebRTCAdapter before the
-    // bootstrap factory runs, so it can't take streamNotifier in its ctor.
+    // PR 3.1: LiveKitService is constructed at module load (before the
+    // bootstrap factory runs), so it can't take streamNotifier in its ctor.
     // Wire it post-construction here, before the LiveKit branch starts using
     // clearStaleStreamer.
     if (livekitService && typeof livekitService.setStreamNotifier === 'function') {

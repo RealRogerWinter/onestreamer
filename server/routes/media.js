@@ -19,12 +19,9 @@
 // Service access:
 //   - streamService / sessionService / mediaStreamService come from
 //     req.app.locals.services (PR-I factory bag).
-//   - mediasoupService is read off req.app.locals.mediasoupService (lives
-//     at module scope in server/index.js because it branches on
-//     USE_WEBRTC_ADAPTER).
-//   - usingAdapter + global.webrtcAdapter: usingAdapter is exposed on
-//     app.locals; global.webrtcAdapter is the actual adapter instance
-//     (set in server/index.js when USE_WEBRTC_ADAPTER=true).
+//   - mediasoupService is read off req.app.locals.mediasoupService (the
+//     LiveKit backend; lives at module scope in server/index.js because the
+//     services factory consumes it).
 //   - generateTurnCredentials is exposed on app.locals so we don't
 //     duplicate the HMAC / TURN_SECRET wiring here.
 //   - database is required directly (singleton module).
@@ -155,37 +152,22 @@ router.get('/media/info', (req, res) => {
 // ── /api/webrtc/* — Backend management (only meaningful when adapter on) ────
 
 router.get('/webrtc/backend', (req, res) => {
-  const usingAdapter = !!req.app.locals.usingAdapter;
-  if (!usingAdapter) {
-    return res.json({
-      backend: 'mediasoup',
-      adapterEnabled: false,
-      message: 'Backend switching not available. Set USE_WEBRTC_ADAPTER=true to enable.'
-    });
-  }
-
   const mediasoupService = getMediasoup(req, res);
   if (!mediasoupService) return;
 
-  const adapter = global.webrtcAdapter;
   res.json({
-    backend: adapter.getBackendType(),
-    adapterEnabled: true,
-    info: adapter.getBackendInfo(),
-    stats: mediasoupService.getStats()
+    backend: 'livekit',
+    adapterEnabled: false,
+    info: mediasoupService.getBackendInfo(),
+    stats: mediasoupService.getStats(),
   });
 });
 
 // ── /api/livekit/token — Token endpoint (for testing) ───────────────────────
 
 router.get('/livekit/token', async (req, res) => {
-  const usingAdapter = !!req.app.locals.usingAdapter;
-  if (!usingAdapter || !global.webrtcAdapter || global.webrtcAdapter.getBackendType() !== 'livekit') {
-    return res.status(400).json({
-      error: 'LiveKit backend not active',
-      hint: 'Enable with: USE_WEBRTC_ADAPTER=true WEBRTC_BACKEND=livekit'
-    });
-  }
+  const livekitService = getMediasoup(req, res);
+  if (!livekitService) return;
 
   const generateTurnCredentials = req.app.locals.generateTurnCredentials;
   if (typeof generateTurnCredentials !== 'function') {
@@ -196,8 +178,6 @@ router.get('/livekit/token', async (req, res) => {
   const roomName = req.query.room || 'onestreamer-main';
 
   try {
-    // Get the LiveKit service through the adapter's backend
-    const livekitService = global.webrtcAdapter._backend;
     const token = await livekitService.generateToken(identity, {
       canPublish: true,
       canSubscribe: true,
