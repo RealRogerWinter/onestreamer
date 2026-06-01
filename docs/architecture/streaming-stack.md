@@ -2,6 +2,8 @@
 
 _Last verified: 2026-05-23 against commit 4a1d325._
 
+> **⚠️ Superseded by [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md) (2026-06-01).** OneStreamer now runs **LiveKit as the sole WebRTC backend** — the MediaSoup SFU, the `WebRTCAdapter`, the client `MediasoupClient`, and the `mediasoup` dependency have all been removed. The MediaSoup-specific flows, mermaid diagrams, codec tables, and the `50000–50199` UDP range described below are **historical** (pre-ADR-0024) and pending a full rewrite. Current reality: streamer↔viewers, URL-stream relay, recording (egress), and transcription all run over LiveKit (`livekit-server` / `livekit-ingress` / `livekit-egress`). See [ADR-0008](adr/0008-revive-livekit-for-url-streams-and-recording.md) + [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md).
+
 How real-time A/V actually moves through OneStreamer: from a streamer's webcam, through MediaSoup, through optional secondary pipelines (recording, transcription, viewbots), to viewer browsers — and the limits of that architecture.
 
 ## The primary path (streamer → viewer)
