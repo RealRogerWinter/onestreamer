@@ -39,7 +39,6 @@ function registerSocketHandlers(io, deps) {
 
         // Per-handler register functions
         registerStreamHandler,
-        registerMediaSoupHandler,
         registerViewBotHandler,
         registerBuffHandler,
         registerDrawingHandler,
@@ -188,21 +187,6 @@ function registerSocketHandlers(io, deps) {
             streamNotifier,
             viewerCountNotifier,
             buffNotifier,
-        });
-
-        registerMediaSoupHandler(io, socket, {
-            mediasoupService,
-            streamService,
-            sessionService,
-            notifiedStreamers,
-            lastEmittedStreamReady,
-            verifyAndEmitStreamReady,
-            getStreamerDisplayName,
-            notifyViewersStreamStarted,
-            broadcastGlobalCooldown,
-            getRecordingService,
-            getTranscriptionService,
-            viewerCountNotifier,
         });
 
         registerViewBotHandler(io, socket, {
