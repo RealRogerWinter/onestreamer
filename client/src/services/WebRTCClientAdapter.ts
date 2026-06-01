@@ -1,17 +1,11 @@
 /**
- * WebRTC Client Adapter - Provides unified interface for MediaSoup and LiveKit
- * Automatically detects backend mode and uses appropriate implementation
+ * WebRTC Client Adapter — thin wrapper over the LiveKit client.
+ * LiveKit is the sole WebRTC backend (ADR-0024); this seam is retained so the
+ * stream components don't import the client class directly.
  */
 
-import { MediasoupClient, MediasoupClientConfig } from './MediasoupClient';
 import { LiveKitClient } from './LiveKitClient';
 import { Socket } from 'socket.io-client';
-
-export interface WebRTCBackendInfo {
-  backend: 'mediasoup' | 'livekit';
-  adapterEnabled: boolean;
-  stats?: any;
-}
 
 export interface WebRTCClientConfig {
   socket: Socket;
@@ -28,9 +22,9 @@ export interface WebRTCClientConfig {
  * based on server configuration
  */
 export class WebRTCClientAdapter {
-  private client: MediasoupClient | LiveKitClient | null = null;
+  private client: LiveKitClient | null = null;
   private config: WebRTCClientConfig;
-  private backendType: 'mediasoup' | 'livekit' | null = null;
+  private backendType: 'livekit' | null = null;
   private serverUrl: string;
   private isInitializing: boolean = false;
 
@@ -40,30 +34,6 @@ export class WebRTCClientAdapter {
     console.log('🎯 WEBRTC ADAPTER: Initializing WebRTC client adapter');
   }
 
-
-  /**
-   * Detect backend type from server
-   */
-  private async detectBackend(): Promise<WebRTCBackendInfo> {
-    try {
-      const response = await fetch(`${this.serverUrl}/api/webrtc/backend`);
-      if (!response.ok) {
-        throw new Error(`Backend detection failed: ${response.status}`);
-      }
-      const data = await response.json();
-      return {
-        backend: data.backend || 'mediasoup',
-        adapterEnabled: data.adapterEnabled || false,
-        stats: data.stats
-      };
-    } catch (error) {
-      console.warn('⚠️ WEBRTC ADAPTER: Could not detect backend, defaulting to MediaSoup:', error);
-      return {
-        backend: 'mediasoup',
-        adapterEnabled: false
-      };
-    }
-  }
 
   /**
    * Get current backend type
@@ -109,39 +79,19 @@ export class WebRTCClientAdapter {
     this.isInitializing = true;
 
     try {
-      // Detect backend type from server
-      const backendInfo = await this.detectBackend();
-      console.log(`🔍 WEBRTC ADAPTER: Detected backend: ${backendInfo.backend}, adapter enabled: ${backendInfo.adapterEnabled}`);
+      // LiveKit is the sole WebRTC backend (ADR-0024).
+      this.client = new LiveKitClient(this.config);
+      this.backendType = 'livekit';
 
-      // Create appropriate client
-      if (backendInfo.backend === 'livekit') {
-        console.log('🚀 WEBRTC ADAPTER: Initializing LiveKit client');
-        this.client = new LiveKitClient(this.config);
-        this.backendType = 'livekit';
-      } else {
-        console.log('📡 WEBRTC ADAPTER: Initializing MediaSoup client');
-        this.client = new MediasoupClient(this.config as MediasoupClientConfig);
-        this.backendType = 'mediasoup';
-      }
-
-      // Initialize the client
       if ('init' in this.client) {
         await (this.client as any).init();
       } else if ('initialize' in this.client) {
         await (this.client as any).initialize();
       }
-      console.log(`✅ WEBRTC ADAPTER: ${this.backendType} client initialized successfully`);
+      console.log('✅ WEBRTC ADAPTER: LiveKit client initialized');
     } catch (error) {
-      console.error('❌ WEBRTC ADAPTER: Failed to initialize client:', error);
-      // Default to MediaSoup if detection fails
-      console.log('⚠️ WEBRTC ADAPTER: Falling back to MediaSoup client');
-      this.client = new MediasoupClient(this.config as MediasoupClientConfig);
-      this.backendType = 'mediasoup';
-      if ('init' in this.client) {
-        await (this.client as any).init();
-      } else if ('initialize' in this.client) {
-        await (this.client as any).initialize();
-      }
+      console.error('❌ WEBRTC ADAPTER: Failed to initialize LiveKit client:', error);
+      throw error;
     } finally {
       this.isInitializing = false;
     }
