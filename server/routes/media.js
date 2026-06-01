@@ -3,9 +3,6 @@
 // Covers the /api/* media / streaming surface that PR-G3 extracts from
 // server/index.js:
 //
-//   /api/media/start-ingestion
-//   /api/media/stop-ingestion
-//   /api/media/info
 //   /api/stream/status
 //   /api/stream/active        (admin-gated)
 //   /api/webrtc/backend
@@ -116,37 +113,6 @@ router.get('/stream/active', authenticateAdmin, async (req, res) => {
     logger.error('Error fetching active stream:', error);
     res.status(500).json({ error: 'Failed to fetch active stream' });
   }
-});
-
-// ── /api/media/* (Simple Media Ingestion API — temporary mock) ──────────────
-
-router.post('/media/start-ingestion', async (req, res) => {
-  const { mediaStreamService } = req.app.locals.services;
-  const { streamerId } = req.body;
-
-  if (!streamerId) {
-    return res.status(400).json({ error: 'streamerId is required' });
-  }
-
-  try {
-    const result = await mediaStreamService.startIngestion(streamerId);
-    res.json(result);
-  } catch (error) {
-    logger.error('Media ingestion start failed:', error);
-    res.status(500).json({ error: 'Failed to start media ingestion' });
-  }
-});
-
-router.post('/media/stop-ingestion', (req, res) => {
-  const { mediaStreamService } = req.app.locals.services;
-  mediaStreamService.stopIngestion();
-  res.json({ success: true });
-});
-
-router.get('/media/info', (req, res) => {
-  const { mediaStreamService } = req.app.locals.services;
-  const info = mediaStreamService.getStreamInfo();
-  res.json(info);
 });
 
 // ── /api/webrtc/* — Backend management (only meaningful when adapter on) ────
