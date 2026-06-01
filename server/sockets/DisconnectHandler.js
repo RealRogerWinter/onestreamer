@@ -35,8 +35,6 @@
  *   - cleanupViewbotUsername    `(socketId) => void` closure from index.js
  *                               that clears a cached username for the
  *                               disappearing ViewBot.
- *   - plainTransportService     `cleanup(botId)` for the ViewBot's
- *                               Plain-RTP transport pair.
  *   - streamService             Source of truth for the current streamer
  *                               and viewer set.
  *   - takeoverService           `setSocketCooldown` after a real-user
@@ -57,8 +55,6 @@
  *                               is late-init (post-MediaSoup) so we capture
  *                               the live reference at firing time, not at
  *                               registration time.
- *   - getViewBotClientService   `() => viewBotClientService` getter — same
- *                               reason as above.
  */
 const logger = require('../bootstrap/logger').child({ svc: 'DisconnectHandler' });
 
@@ -71,7 +67,6 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
     notifiedStreamers,
     viewbotSocketIds,
     cleanupViewbotUsername,
-    plainTransportService,
     streamService,
     takeoverService,
     streamingLogsService,
@@ -80,7 +75,6 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
     viewerCountNotifier,
     SimpleViewBotRotation,
     getViewbotService,
-    getViewBotClientService,
   } = deps;
 
   socket.on('disconnect', async () => {
@@ -120,25 +114,15 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
     // Clean up notified streamers tracking
     notifiedStreamers.delete(socket.id);
 
-    // Resolve late-init services once so the rest of the handler body
-    // sees a single consistent snapshot of viewbotService / viewBotClientService
-    // (they're reassigned by startServer after MediaSoup init — capture here
-    // means a re-init that lands between branches can't half-apply).
+    // Resolve late-init viewbotService once so the rest of the handler body
+    // sees a single consistent snapshot (it's reassigned by startServer after
+    // MediaSoup init — capture here means a re-init that lands between branches
+    // can't half-apply).
     const viewbotService = getViewbotService();
-    const viewBotClientService = getViewBotClientService();
 
     // Clean up ViewBot tracking and username cache if this was a ViewBot
     if (viewbotSocketIds.has(socket.id)) {
       cleanupViewbotUsername(socket.id);
-
-      // Clean up Plain Transport resources for disconnected ViewBot
-      if (viewBotClientService && plainTransportService) {
-        const botId = viewBotClientService.getBotIdBySocketId(socket.id);
-        if (botId) {
-          logger.info(`🧹 DISCONNECT: Cleaning up Plain Transport for ViewBot ${botId}`);
-          await plainTransportService.cleanup(botId);
-        }
-      }
     }
 
     // Clean up mediasoup resources
@@ -163,11 +147,8 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
         await streamingLogsService.endSession(socket.id, 'disconnect');
       }
 
-      // If real user is disconnecting, clear the protection flag and restart viewbot rotation
-      if (isRealUser && viewBotClientService) {
-        logger.info(`🔓 PRIORITY: Real user ${socket.id} disconnected - clearing viewbot protection`);
-        viewBotClientService.setRealStreamerStatus(false);
-
+      // If real user is disconnecting, restart viewbot rotation
+      if (isRealUser) {
         // CRITICAL: Restart viewbot rotation after real user disconnects.
         // stopRotation() disables the rotation service, so we re-enable it
         // after a 3 s settle window. Routed through LifecycleManager (PR
@@ -176,16 +157,6 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
         // half-cleaned-up state.
         lifecycleManager.schedule('viewbot-rotation-restart-after-disconnect', async () => {
           logger.info(`🔄 RESTART: Attempting to restart viewbot rotation after real user disconnect`);
-
-          // Restart ViewBotRotationService (global.viewBotRotation)
-          if (global.viewBotRotation && global.viewBotRotation.startRotation) {
-            try {
-              logger.info(`🚀 RESTART: Restarting global.viewBotRotation`);
-              await global.viewBotRotation.startRotation();
-            } catch (e) {
-              logger.error({ err: e }, `❌ RESTART: Failed to restart global.viewBotRotation`);
-            }
-          }
 
           // Also restart SimpleViewBotRotation if it was stopped
           if (SimpleViewBotRotation && SimpleViewBotRotation.startRotation) {
@@ -211,15 +182,6 @@ module.exports = function registerDisconnectHandler(io, socket, deps) {
       // CRITICAL FIX: Also clear MediasoupService currentStreamer
       mediasoupService.currentStreamer = null;
       logger.info(`🧹 DISCONNECT: Cleared ${socket.id} from both services`);
-
-      // Additional validation: Ensure real streamer status is accurate after disconnect.
-      // PR 4.2: routed through LifecycleManager so the 1 s grace window is
-      // cancelled on SIGTERM.
-      if (viewBotClientService) {
-        lifecycleManager.schedule('real-streamer-status-validate', () => {
-          viewBotClientService.validateRealStreamerStatus();
-        }, 1000);
-      }
 
       streamNotifier.streamEnded({ reason: 'streamer_disconnected', previousStreamer: socket.id });
       notifyViewersStreamEnded();

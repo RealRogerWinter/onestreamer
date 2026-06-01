@@ -32,7 +32,6 @@ class ViewBotURLService extends EventEmitter {
     this.probeService = new StreamProbeService();
     this.streamService = null;
     this.livekitService = null;
-    this.viewBotClientService = null; // For real streamer protection
     this.kickService = new KickRandomService(); // For Kick token refresh
 
     // Adaptive encoding settings - configured per backend
@@ -130,14 +129,6 @@ class ViewBotURLService extends EventEmitter {
   setStreamNotifier(streamNotifier) {
     this.streamNotifier = streamNotifier;
     logger.debug('✅ StreamNotifier registered with ViewBotURLService');
-  }
-
-  /**
-   * Set ViewBotClientService for real streamer protection
-   */
-  setViewBotClientService(viewBotClientService) {
-    this.viewBotClientService = viewBotClientService;
-    logger.debug('✅ ViewBotClientService registered with ViewBotURLService');
   }
 
   /**
@@ -379,9 +370,17 @@ class ViewBotURLService extends EventEmitter {
     const urlId = `url-stream-${Date.now()}-${++this.streamCounter}`;
 
     try {
-      // CRITICAL: Check if a real user is currently streaming
-      // URL streams should NEVER override a real human streamer
-      if (this.viewBotClientService && this.viewBotClientService.realStreamerActive) {
+      // CRITICAL: Check if a real (human) user is currently streaming.
+      // URL streams should NEVER override a real human streamer. Source of
+      // truth is StreamService (a real streamer is a current streamer whose
+      // socket id is not a viewbot/bot/url-stream).
+      const currentStreamer = this.streamService && this.streamService.getCurrentStreamer();
+      const realStreamerActive = !!currentStreamer
+        && !currentStreamer.startsWith('viewbot-')
+        && !currentStreamer.includes('viewbot')
+        && !currentStreamer.startsWith('bot-')
+        && !currentStreamer.startsWith('url-stream-');
+      if (realStreamerActive) {
         logger.debug(`⛔ URL STREAM: Blocking ${urlId} - real streamer is active`);
         this._startingStream = false;
         return {

@@ -22,7 +22,6 @@ module.exports = function registerLifecycle(io, socket, deps) {
     recordingService,
     SimpleViewBotRotation,
     IPBanService,
-    getViewBotClientService,
     notifyViewersStreamEnded,
     runAsync,
     streamNotifier,
@@ -32,9 +31,6 @@ module.exports = function registerLifecycle(io, socket, deps) {
 
   socket.on('stop-streaming', async () => {
     if (streamService.getCurrentStreamer() === socket.id) {
-      // Lazy-resolve viewbot client service — see request-to-stream comment.
-      const viewBotClientService = getViewBotClientService();
-
       // Update streamer connection disconnect time
       try {
         const clientIP = IPBanService.getIPFromSocket(socket);
@@ -96,22 +92,10 @@ module.exports = function registerLifecycle(io, socket, deps) {
       const isViewbot = userId && userId < 0;
       const isLiveKitViewBot = socket.id.startsWith('viewbot-');
 
-      if (!isViewbot && !isLiveKitViewBot && viewBotClientService) {
-        logger.info(`🔓 VOLUNTARY STOP: Real user ${socket.id} stopped streaming - clearing viewbot protection`);
-        viewBotClientService.setRealStreamerStatus(false);
-
+      if (!isViewbot && !isLiveKitViewBot) {
         // Restart viewbot rotation after real user voluntarily stops
         setTimeout(async () => {
           logger.info(`🔄 RESTART: Attempting to restart viewbot rotation after voluntary stop`);
-
-          if (global.viewBotRotation && global.viewBotRotation.startRotation) {
-            try {
-              logger.info(`🚀 RESTART: Restarting global.viewBotRotation`);
-              await global.viewBotRotation.startRotation();
-            } catch (e) {
-              logger.error({ err: e }, `❌ RESTART: Failed to restart global.viewBotRotation`);
-            }
-          }
 
           if (SimpleViewBotRotation && SimpleViewBotRotation.startRotation) {
             try {

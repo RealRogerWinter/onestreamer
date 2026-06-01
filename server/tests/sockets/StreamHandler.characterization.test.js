@@ -134,11 +134,6 @@ function makeDeps(overrides = {}) {
     getViewbotStatus: jest.fn(() => ({ isActive: false })),
     startViewbot: jest.fn(async () => ({ success: true, streamId: 'viewbot-stream-1' })),
   };
-  const viewBotClientService = {
-    setRealStreamerStatus: jest.fn(),
-    stopViewBotRotation: jest.fn(),
-  };
-
   const deps = {
     streamService,
     sessionService,
@@ -155,7 +150,6 @@ function makeDeps(overrides = {}) {
     viewbotSocketIds,
     lastEmittedStreamReady,
     getViewbotService: jest.fn(() => viewbotService),
-    getViewBotClientService: jest.fn(() => viewBotClientService),
     enrichStreamStatus: jest.fn(async (status) => ({ ...status, streamerDisplayName: 'Display Name' })),
     getStreamerDisplayName: jest.fn(async () => 'Display Name'),
     notifyViewersStreamStarted: jest.fn(),
@@ -170,7 +164,6 @@ function makeDeps(overrides = {}) {
     buffNotifier: { streamerBuffsUpdate: jest.fn() },
     // expose the lazy-resolved instances for assertions
     _viewbotService: viewbotService,
-    _viewBotClientService: viewBotClientService,
   };
 
   return Object.assign(deps, overrides);
