@@ -133,6 +133,16 @@ class RecordingService {
   
   async startRecording(streamerId, quality = '720p', mode = 'manual') {
     logger.debug(`🎬 RECORDING: Starting recording for streamer: ${streamerId}`);
+
+    // LiveKit mode (ADR-0024): there is no MediaSoup router / plain-transport to
+    // tap, so this legacy per-stream recorder is inert. Recording is automatic via
+    // LiveKit egress (ContinuousRecordingService). Fail clearly here instead of
+    // throwing "MediaSoup router not available" deep in RecordingMediaPipeline.
+    if (typeof this.webrtcService.isLiveKit === 'function' && this.webrtcService.isLiveKit()) {
+      logger.debug('⏭️ RECORDING: Manual recording unavailable under LiveKit; recording is automatic via egress (ContinuousRecordingService)');
+      return { success: false, error: 'Manual recording is unavailable in LiveKit mode — recording is automatic via egress (ContinuousRecordingService).' };
+    }
+
     const recordingId = uuidv4();
     
     try {
@@ -322,6 +332,14 @@ class RecordingService {
   // Continuous recording methods
   async enableContinuousRecording(quality = '720p') {
     logger.debug(`🔄 RECORDING: Enabling continuous recording mode (${quality})`);
+
+    // LiveKit mode (ADR-0024): continuous recording is handled automatically by
+    // ContinuousRecordingService (LiveKit egress). This legacy MediaSoup-based
+    // continuous recorder can't tap producers; don't enable an inert path.
+    if (typeof this.webrtcService.isLiveKit === 'function' && this.webrtcService.isLiveKit()) {
+      logger.debug('⏭️ RECORDING: Continuous recording is automatic via egress (ContinuousRecordingService) in LiveKit mode');
+      return { success: false, error: 'Continuous recording is automatic via egress (ContinuousRecordingService) in LiveKit mode.' };
+    }
     
     this.continuousRecordingState.enabled = true;
     this.continuousRecordingState.quality = quality;
