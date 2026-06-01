@@ -20,7 +20,7 @@ class TranscriptionAudioAdapter {
     }
 
     detectBackend() {
-        // Check if the service has the getBackendType method (from WebRTCAdapterV2)
+        // Check if the service exposes getBackendType (the LiveKit backend shim)
         if (typeof this.webrtcService.getBackendType === 'function') {
             return this.webrtcService.getBackendType();
         }
