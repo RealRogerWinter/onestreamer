@@ -551,36 +551,6 @@ app.locals.generateTurnCredentials = generateTurnCredentials;
 // never invoked the function. Removed rather than extracted — the truest
 // "state unification" for an unreachable broadcast pulse is no pulse.
 
-// When a buff is applied, ensure visual effects are triggered for all viewers
-buffDebuffService.on('buff-applied', async (buffData) => {
-  try {
-    // Check if this is a visual effect buff
-    const visualEffectItems = [
-      'smoke_bomb', 'pixelate', 'emboss', 'thermal_vision', 'rotate_90',
-      'potato', 'upside_down', 'mirror', 'invert_colors', 'darkness',
-      'overexposed', 'glitch_bomb', 'motion_blur', 'freeze_frame',
-      'spotlight', 'disco_ball', 'confetti_cannon', 'rainbow_effect',
-      'stream_reducer'
-    ];
-    
-    if (buffData.item_name && visualEffectItems.includes(buffData.item_name)) {
-      logger.info(`🎨 VISUAL FX: Buff ${buffData.item_name} applied, ensuring visual sync`);
-      
-      // Broadcast to all viewers to apply this effect
-      io.emit('visual-effect-apply-sync', {
-        effectId: buffData.item_name,
-        itemName: buffData.item_name,
-        displayName: buffData.display_name,
-        duration: (buffData.remaining_seconds || buffData.duration_seconds || 60) * 1000,
-        effectData: buffData.effect_data,
-        buffId: buffData.id,
-        isNewBuff: true
-      });
-    }
-  } catch (error) {
-    logger.error({ err: error }, '❌ VISUAL FX: Error syncing buff-applied visual effect');
-  }
-});
 // chatBotService / streamBotService / movieBotService built by the services
 // factory (PR-I2). setMovieBotService was
 // eliminated in PR 1.3 by the BotEventBus; remaining post-construction setters

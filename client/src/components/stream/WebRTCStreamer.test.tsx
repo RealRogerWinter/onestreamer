@@ -53,10 +53,6 @@ jest.mock('../../hooks/useStreamerViewManager', () => ({
   useStreamerViewManager: () => ({ viewState: mockViewState }),
 }));
 
-jest.mock('../../hooks/useVisualFxProcessor', () => ({
-  useVisualFxProcessor: jest.fn(),
-}));
-
 // --- Mock the global media stack -------------------------------------------
 // NOTE: CRA's jest preset sets `resetMocks: true`, which wipes every mock's
 // implementation before each test. So the MediaStream factory implementation

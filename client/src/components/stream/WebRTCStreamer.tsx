@@ -8,7 +8,6 @@ import AudioLevelMeter from '../audio/AudioLevelMeter';
 import { AudioSettingsConfig, VideoSettingsConfig, ScreenShareSettingsConfig } from './StreamerSettings';
 import CanvasEffectOverlay from '../canvas/CanvasEffectOverlay';
 import { useStreamerViewManager } from '../../hooks/useStreamerViewManager';
-import { useVisualFxProcessor } from '../../hooks/useVisualFxProcessor';
 import { resolutionConstraints } from '../../utils/resolutionConstraints';
 import {
   StreamLoadingOverlay,
@@ -509,9 +508,6 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
   // Initialize StreamerViewManager for automatic view switching
   const { viewState } = useStreamerViewManager(videoRef, socket, isStreaming);
-
-  // Initialize Visual FX processor for streamer preview
-  useVisualFxProcessor(videoRef, socket, true);
 
   useEffect(() => {
     if (isStreaming) {
