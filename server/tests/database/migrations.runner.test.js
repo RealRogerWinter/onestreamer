@@ -358,15 +358,16 @@ describe('migration runner — idempotency on fresh DB', () => {
 });
 
 describe('migration runner — bit-identical bootstrap', () => {
-    // The committed fixture is a snapshot of the pre-PR-14.1 `database.js`
-    // bootstrap (CREATE TABLE + inline ALTERs) producing 39 tables. The
-    // post-PR bootstrap (CREATE TABLE + migration runner) must produce the
-    // same PRAGMA shape.
+    // The committed fixture is a snapshot of the `database.js` bootstrap
+    // (CREATE TABLE + inline ALTERs) producing 33 tables. The post-PR
+    // bootstrap (CREATE TABLE + migration runner) must produce the same
+    // PRAGMA shape. (The fixture was re-baselined when the dead viewbot_*
+    // tables were dropped from the bootstrap — see the viewbot removal.)
     //
     // Strategy: boot database.js against an in-memory DB by monkey-patching
     // sqlite3.Database before requiring the module, wait for the bootstrap
-    // setTimeouts (recording indexes @1000ms, ViewBot tables @1500ms) to
-    // settle, snapshot, diff against fixture.
+    // setTimeout (recording indexes @1000ms) to settle, snapshot, diff
+    // against fixture.
 
     let originalSqliteDatabase;
     let snapshot;
@@ -384,9 +385,9 @@ describe('migration runner — bit-identical bootstrap', () => {
         // Loading database.js triggers the bootstrap.
         const { db } = require('../../database/database');
 
-        // The bootstrap queues two setTimeouts: recording indexes at 1000 ms
-        // (which require columns added by the migration runner) and
-        // ViewBot tables at 1500 ms. Wait long enough for both to settle.
+        // The bootstrap queues a setTimeout for the recording indexes at
+        // 1000 ms (which require columns added by the migration runner).
+        // Wait long enough for it to settle.
         await new Promise((r) => setTimeout(r, 2500));
 
         snapshot = await snapshotSchema(db);

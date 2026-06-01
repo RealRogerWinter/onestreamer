@@ -45,9 +45,8 @@
  *     `typeof X !== 'undefined'` guard (pre-existing pattern — that
  *     service may or may not exist depending on env / feature flags).
  *     Preserved verbatim here.
- *   - `global.viewBotURLService` / `global.unifiedViewBotRotation` /
- *     `global.viewBotManager` are read from the global namespace
- *     (assigned inside `bootstrap/start-streaming-backend.js`). They
+ *   - `global.viewBotURLService` is read from the global namespace
+ *     (assigned inside `bootstrap/start-streaming-backend.js`). It
  *     may be unset if shutdown fires before `startServer()` completes.
  */
 
@@ -167,15 +166,6 @@ function registerShutdownHandlers(deps) {
             const webrtcService = getWebrtcService();
             if (webrtcService) {
                 webrtcService.cleanupAll();
-            }
-
-            // 3.5. Clean up WebRTC ViewBot systems
-            logger.info('🧹 Cleaning up ViewBot systems...');
-            if (global.unifiedViewBotRotation) {
-                await global.unifiedViewBotRotation.shutdown();
-            }
-            if (global.viewBotManager) {
-                await global.viewBotManager.cleanup();
             }
 
             // 4. Clear all sessions

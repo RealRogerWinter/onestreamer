@@ -202,14 +202,6 @@ class PortMonitorService {
     }
     
     logger.debug(`✅ PORT MONITOR: Force cleaned ${cleanedCount} transports and all producers`);
-    
-    // Trigger ViewBot rotation restart after cleanup
-    if (global.viewBotRotationService && global.viewBotRotationService.enabled) {
-      logger.debug('🔄 PORT MONITOR: Restarting ViewBot rotation after cleanup...');
-      setTimeout(() => {
-        global.viewBotRotationService.forceRotation();
-      }, 2000);
-    }
   }
 
   /**

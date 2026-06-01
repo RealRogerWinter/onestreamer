@@ -4,17 +4,15 @@
  * from RandomStreamRotationService.
  *
  * Holds no rotation state of its own — just a `host` back-reference. The
- * `cleanupAll()` body is byte-equivalent to the pre-extraction
- * `_cleanupAllViewbots` (same ordered teardown of SimpleViewBotRotation,
- * the global ViewBotRotationService/ViewBotManager/UnifiedViewBotRotation/
- * LiveKit viewbots, the StreamService + MediaSoup current-streamer clears,
- * the StreamNotifier stream-ended chokepoint, and the trailing 1 s pause).
+ * `cleanupAll()` body performs the ordered teardown of SimpleViewBotRotation,
+ * the LiveKit viewbots, the StreamService + WebRTC current-streamer clears,
+ * the StreamNotifier stream-ended chokepoint, and the trailing 1 s pause.
+ * (The dead never-assigned globals ViewBotRotationService/ViewBotManager/
+ * UnifiedViewBotRotation were removed once the viewbot fleet was retired.)
  *
- * Cross-service collaboration via `this.host.*`:
+ * Cross-service collaboration:
  *   host.viewBotRotation, host.streamNotifier
- *   global.viewBotRotation, global.viewBotManager,
- *   global.unifiedViewBotRotation, global.viewBotLiveKitService,
- *   global.streamService, global.webrtcService
+ *   global.viewBotLiveKitService, global.streamService, global.webrtcService
  *
  * The shared `logger` is the RandomStreamRotationService child, so log lines
  * keep their `svc: 'RandomStreamRotationService'` binding.
@@ -42,47 +40,7 @@ class ViewBotCleanupCoordinator {
       logger.debug('✅ SimpleViewBotRotation stopped and disabled');
     }
 
-    // 2. CRITICAL: Stop ViewBotRotationService (global.viewBotRotation)
-    // This is a SEPARATE service from SimpleViewBotRotation!
-    if (global.viewBotRotation && global.viewBotRotation.stopRotation) {
-      logger.debug('🛑 Stopping ViewBotRotationService (global.viewBotRotation)...');
-      try {
-        global.viewBotRotation.enabled = false;
-        await global.viewBotRotation.stopRotation();
-        logger.debug('✅ ViewBotRotationService stopped and disabled');
-      } catch (error) {
-        logger.error('⚠️ Error stopping ViewBotRotationService:', error.message);
-      }
-    }
-
-    // 3. Stop ViewBotManager if it exists (alternative viewbot system)
-    if (global.viewBotManager) {
-      logger.debug('🛑 Stopping ViewBotManager...');
-      try {
-        // Stop rotation first
-        global.viewBotManager.stopRotation();
-        // Then cleanup all bots
-        await global.viewBotManager.cleanup();
-        logger.debug('✅ ViewBotManager cleaned up');
-      } catch (error) {
-        logger.error('⚠️ Error cleaning up ViewBotManager:', error.message);
-      }
-    }
-
-    // 4. Stop UnifiedViewBotRotation if it exists
-    if (global.unifiedViewBotRotation) {
-      logger.debug('🛑 Stopping UnifiedViewBotRotation...');
-      try {
-        if (global.unifiedViewBotRotation.stopRotation) {
-          await global.unifiedViewBotRotation.stopRotation();
-        }
-        logger.debug('✅ UnifiedViewBotRotation stopped');
-      } catch (error) {
-        logger.error('⚠️ Error stopping UnifiedViewBotRotation:', error.message);
-      }
-    }
-
-    // 5. CRITICAL: Stop all LiveKit viewbots and remove them from the room
+    // 2. CRITICAL: Stop all LiveKit viewbots and remove them from the room
     if (global.viewBotLiveKitService) {
       logger.debug('🛑 Stopping all LiveKit viewbots...');
       try {
@@ -93,7 +51,7 @@ class ViewBotCleanupCoordinator {
       }
     }
 
-    // 4. Clear current streamer from StreamService (viewbot was the current streamer)
+    // 3. Clear current streamer from StreamService (viewbot was the current streamer)
     if (global.streamService) {
       const currentStreamer = global.streamService.getCurrentStreamer();
       if (currentStreamer && (currentStreamer.startsWith('viewbot-') || currentStreamer.includes('viewbot'))) {
@@ -102,7 +60,7 @@ class ViewBotCleanupCoordinator {
       }
     }
 
-    // 5. Clear MediasoupService/WebRTCAdapter currentStreamer
+    // 4. Clear WebRTC current-streamer (viewbot was the current streamer)
     if (global.webrtcService && global.webrtcService.currentStreamer) {
       const current = global.webrtcService.currentStreamer;
       if (current.startsWith('viewbot-') || current.includes('viewbot')) {
@@ -111,7 +69,7 @@ class ViewBotCleanupCoordinator {
       }
     }
 
-    // 6. Emit stream-ended to notify viewers the current content is ending
+    // 5. Emit stream-ended to notify viewers the current content is ending
     // PR 3.1: routed through StreamNotifier (single chokepoint).
     if (host.streamNotifier) {
       logger.debug('📢 Broadcasting stream-ended to prepare for rotation...');

@@ -240,15 +240,9 @@ function createAdminModerationRouter(deps) {
       
           // Notify all viewers
           streamNotifier.streamEnded({ reason: 'admin_disconnect' });
-      
-          // After disconnecting a regular user, ensure viewbot rotation is enabled
-          if (global.viewBotRotation) {
-            logger.info(`🤖 ROTATION: Enabling rotation after user disconnect`);
-            await global.viewBotRotation.startRotation();
-          }
-      
-          res.json({ 
-            success: true, 
+
+          res.json({
+            success: true,
             message: 'Stream disconnected successfully',
             streamerId,
             rotationEnabled: true

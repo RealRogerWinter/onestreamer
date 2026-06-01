@@ -10,9 +10,8 @@
  * via the deps bag). The dashboard reads `streamService`/`takeoverService`
  * (both live by mount time). The admin viewbot-client fleet
  * (ViewBotClientService) it formerly queried was deleted — dead under
- * LiveKit — so the dashboard's viewBot block now reports zeros/false/null.
- *
- * Body byte-equivalent except for `app.X(...)` → `router.X(...)`.
+ * LiveKit — so the dashboard's `viewBot` block was dropped from the payload
+ * (the client AdminDashboardV3 no longer reads it).
  */
 
 const express = require('express');
@@ -94,25 +93,8 @@ function createUserRouter(deps) {
       try {
         logger.info('🔍 Dashboard request received');
 
-        // The admin viewbot-client fleet (ViewBotClientService) was deleted —
-        // it was dead under LiveKit. The dashboard's viewBot block now reports
-        // zeros/false/null via the existing optional-chaining defaults below.
-        const viewBotData = null;
-        const viewBotHealth = null;
-
         const services = {
           stream: streamService.getStreamStatus(),
-          viewBot: {
-            totalBots: viewBotData?.totalBots || 0,
-            streamingBots: viewBotData?.bots?.filter(bot => bot.isStreaming).length || 0,
-            connectedBots: viewBotData?.bots?.filter(bot => bot.isConnected).length || 0,
-            rotationEnabled: viewBotHealth?.rotationEnabled || false,
-            currentLiveBot: viewBotHealth?.currentLiveBot || null,
-            availableBots: viewBotData?.bots?.filter(bot => bot.isConnected && !bot.isStreaming).length || 0,
-            realStreamerActive: viewBotHealth?.realStreamerActive || false,
-            timeToNextRotation: viewBotHealth?.timeToNextRotation || null,
-            timeToNextRotationFormatted: viewBotHealth?.timeToNextRotationFormatted || null
-          },
           takeover: {
             cooldownSeconds: takeoverService.getCooldownSeconds(),
             lastTakeover: await takeoverService.getLastTakeoverTime(),

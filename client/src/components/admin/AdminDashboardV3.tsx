@@ -9,7 +9,6 @@ interface AdminDashboardV3Props {
 interface DashboardData {
   services: {
     stream: any;
-    viewBot: any;
     takeover: any;
   };
   cooldowns: Array<{
@@ -79,16 +78,6 @@ const AdminDashboardV3: React.FC<AdminDashboardV3Props> = ({ makeApiCall, addLog
           addLog(`Failed to reset cooldowns: ${error}`);
         }
         break;
-
-      case 'restart-viewbot':
-        try {
-          await makeApiCall('/admin/viewbot/restart', { method: 'POST' });
-          addLog('ViewBot restart initiated');
-          fetchDashboardData();
-        } catch (error) {
-          addLog(`Failed to restart ViewBot: ${error}`);
-        }
-        break;
     }
   };
 
@@ -129,19 +118,6 @@ const AdminDashboardV3: React.FC<AdminDashboardV3Props> = ({ makeApiCall, addLog
       icon: '👥',
       trend: 'up',
       color: '#2196f3'
-    },
-    {
-      label: 'ViewBot Status',
-      value: services.viewBot?.status || 'Unknown',
-      icon: '🤖',
-      color: services.viewBot?.status === 'active' ? '#4caf50' : '#ff9800'
-    },
-    {
-      label: 'Bot Count',
-      value: services.viewBot?.botCount || 0,
-      icon: '🎯',
-      trend: 'stable',
-      color: '#9c27b0'
     },
     {
       label: 'Stream Duration',
@@ -232,16 +208,7 @@ const AdminDashboardV3: React.FC<AdminDashboardV3Props> = ({ makeApiCall, addLog
             <span className="action-desc">Clear all active cooldowns</span>
           </button>
 
-          <button 
-            className="quick-action-card viewbot"
-            onClick={() => handleQuickAction('restart-viewbot')}
-          >
-            <span className="action-icon">🔄</span>
-            <span className="action-label">Restart ViewBot</span>
-            <span className="action-desc">Restart ViewBot service</span>
-          </button>
-
-          <button 
+          <button
             className="quick-action-card logs"
             onClick={() => addLog('Opening system logs...')}
           >
@@ -284,36 +251,6 @@ const AdminDashboardV3: React.FC<AdminDashboardV3Props> = ({ makeApiCall, addLog
               <div className="detail-row">
                 <span>Quality:</span>
                 <span>{services.stream?.quality || 'N/A'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* ViewBot Service */}
-          <div className="service-card">
-            <div className="service-header">
-              <h3>🤖 ViewBot Service</h3>
-              <span className={`service-status ${services.viewBot?.status === 'active' ? 'active' : 'inactive'}`}>
-                {services.viewBot?.status || 'Unknown'}
-              </span>
-            </div>
-            <div className="service-details">
-              <div className="detail-row">
-                <span>Bot Count:</span>
-                <span>{services.viewBot?.botCount || 0}</span>
-              </div>
-              <div className="detail-row">
-                <span>Rotation:</span>
-                <span>{services.viewBot?.rotationEnabled ? 'Enabled' : 'Disabled'}</span>
-              </div>
-              <div className="detail-row">
-                <span>Next Rotation:</span>
-                <span>{services.viewBot?.nextRotation || 'N/A'}</span>
-              </div>
-              <div className="detail-row">
-                <span>Health:</span>
-                <span className={`health-status ${services.viewBot?.health || 'unknown'}`}>
-                  {services.viewBot?.health || 'Unknown'}
-                </span>
               </div>
             </div>
           </div>

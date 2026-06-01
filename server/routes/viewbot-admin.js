@@ -25,9 +25,7 @@
  *
  * Auth: the surviving test-stream routes use `adminKeyAuth` (legacy
  * X-Admin-Key), defined inline in `server/index.js` and passed via the
- * factory's deps bag. The lazy `viewbotService` is assigned inside
- * `startServer()`; test-stream.js reaches it through `getViewbotService()`
- * (for the `isViewbotStream` classification in its /stop handler).
+ * factory's deps bag.
  */
 
 const express = require('express');

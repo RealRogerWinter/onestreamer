@@ -967,12 +967,11 @@ const viewBotAuth = (req, res, next) => {
 // families were removed with the ViewbotService creation half + ViewBotWebRTCService
 // + the viewbot-client fleet. Lazy services pass via getters.
 app.use(require("./routes/viewbot-admin")({
-  adminKeyAuth, viewBotAuth, authenticateAdmin,
-  streamService, webrtcService, sessionService, testStreamService,
-  mediaStreamService, buffNotifier, streamNotifier, viewerCountNotifier,
-  cleanupViewbotUsername, broadcastGlobalCooldown, notifyViewersStreamEnded,
-  io, ADMIN_KEY, upload, uploadsDir, path, logger,
-  getViewbotService: () => viewbotService,
+  adminKeyAuth,
+  streamService, webrtcService, testStreamService, mediaStreamService,
+  streamNotifier, viewerCountNotifier,
+  broadcastGlobalCooldown, notifyViewersStreamEnded,
+  io, logger,
 }));
 
 // Phase 15B.3.f+g — admin-ops bundle (stream control + cooldowns + debug
@@ -1044,32 +1043,6 @@ function notifyViewersStreamEnded() {
     logger.info(`📊 TIME: Stopped view tracking for viewer socket ${socketId}`);
   }
   
-  // Trigger ViewBot rotation after a delay when stream ends
-  const triggerTime = Date.now();
-  logger.info(`🔍 ROTATION TRIGGER: Stream ended at ${new Date(triggerTime).toISOString()}`);
-  logger.info(`🔍 ROTATION TRIGGER: Checking conditions - viewBotRotation exists: ${!!global.viewBotRotation}, enabled: ${global.viewBotRotation?.enabled}`);
-  if (global.viewBotRotation && global.viewBotRotation.enabled) {
-    logger.info('✅ ROTATION TRIGGER: Conditions met, scheduling rotation in 5s');
-    // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
-    // grace window cancels the rotation attempt against a torn-down service.
-    lifecycleManager.schedule('post-stream-rotation', async () => {
-      const currentStreamer = streamService.getCurrentStreamer();
-      logger.info(`🔍 ROTATION TRIGGER: After 5s delay (${Date.now() - triggerTime}ms elapsed) - currentStreamer: ${currentStreamer}`);
-      if (!currentStreamer && global.viewBotRotation && global.viewBotRotation.enabled) {
-        logger.info('✅ ROTATION TRIGGER: No streamer, triggering rotation...');
-        try {
-          await global.viewBotRotation.rotateToNextBot();
-          logger.info(`⏱️ ROTATION TRIGGER: Total time from stream end to rotation complete: ${Date.now() - triggerTime}ms`);
-        } catch (error) {
-          logger.error({ err: error }, '❌ Failed to start rotation after stream end');
-        }
-      } else {
-        logger.info(`⏭️  ROTATION TRIGGER: Skipped - currentStreamer: ${currentStreamer}`);
-      }
-    }, 5000);
-  } else {
-    logger.info('❌ ROTATION TRIGGER: Conditions not met, rotation will not trigger');
-  }
 }
 
 // Transcription API endpoints

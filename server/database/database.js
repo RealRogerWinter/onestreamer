@@ -488,20 +488,6 @@ function initializeDatabase() {
             });
         }, 1000);
 
-        // Initialize ViewBot tables
-        setTimeout(() => {
-            try {
-                const viewbotMigration = require('../migrations/setup-viewbot-tables');
-                viewbotMigration.setupViewBotTables().then(() => {
-                    logger.debug('✅ ViewBot tables initialized');
-                }).catch((err) => {
-                    logger.error('❌ ViewBot tables initialization failed:', err.message);
-                });
-            } catch (err) {
-                logger.error('❌ ViewBot migration module not found:', err.message);
-            }
-        }, 1500);
-
         // ============================================
         // Admin Recording Review System Tables
         // ============================================
