@@ -137,14 +137,12 @@ export class LiveKitClient {
       const isIOSDevice = isIOS();
       const isIOSSafariBrowser = isIOSSafari();
 
-      log('📡 LIVEKIT CLIENT: Getting router capabilities (LiveKit mode)');
       log(`🔍 LIVEKIT CLIENT: Browser detection - iOS: ${isIOSDevice}, iOS Safari: ${isIOSSafariBrowser}, Mobile: ${browserInfo.isMobile}`);
 
-      // Get "router capabilities" - in LiveKit mode, this returns LiveKit config
-      const response = await fetch(`${this.serverUrl}/api/mediasoup/router-capabilities`);
-      const capabilities = await response.json();
-
-      // LiveKit doesn't need to load device capabilities like MediaSoup
+      // LiveKit needs no router/device-capabilities probe (that was a MediaSoup
+      // concept). The old /api/mediasoup/router-capabilities endpoint was removed
+      // when MediaSoup was retired; fetching it 404'd and the HTML 404 body broke
+      // JSON.parse here, aborting viewer init (the "black screen" for all viewers).
       log('✅ LIVEKIT CLIENT: LiveKit initialized (no device loading needed)');
 
       // Create room instance but don't connect yet
@@ -446,47 +444,23 @@ export class LiveKitClient {
    */
   private async getLiveKitToken(): Promise<LiveKitTokenResponse> {
     try {
-      // Use socket ID as identity for consistency with MediaSoup
+      // Use socket ID as identity for consistency across reconnects.
       const identity = this.socket.id || `user-${Date.now()}`;
-      
-      // First try the transport endpoint (which returns LiveKit data in LiveKit mode)
-      const transportResponse = await fetch(`${this.serverUrl}/api/mediasoup/create-transport`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          socketId: identity,
-          isMobile: false
-        })
-      });
-      
-      if (transportResponse.ok) {
-        const transportData = await transportResponse.json();
-        
-        // Check if LiveKit data is present
-        if (transportData.livekitData) {
-          log('📋 LIVEKIT CLIENT: Got token from transport endpoint');
-          return {
-            token: transportData.livekitData.token,
-            url: transportData.livekitData.url,
-            roomName: transportData.livekitData.roomName,
-            identity: identity,
-            turnServers: transportData.livekitData.turnServers
-          };
-        }
-      }
-      
-      // Fallback to dedicated LiveKit token endpoint
+
+      // Get a LiveKit token + connection info from the server. (The old
+      // /api/mediasoup/create-transport probe was removed with MediaSoup; it
+      // 404'd and we fell through to this endpoint anyway.)
       const tokenResponse = await fetch(
         `${this.serverUrl}/api/livekit/token?identity=${identity}&room=${this.roomName}`
       );
-      
+
       if (!tokenResponse.ok) {
         throw new Error(`Failed to get LiveKit token: ${tokenResponse.status}`);
       }
-      
+
       const tokenData = await tokenResponse.json();
       log('📋 LIVEKIT CLIENT: Got token from LiveKit endpoint');
-      
+
       return tokenData;
     } catch (error) {
       console.error('❌ LIVEKIT CLIENT: Failed to get token:', error);
