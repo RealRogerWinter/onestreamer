@@ -117,14 +117,14 @@ class ContinuousRecordingService extends EventEmitter {
 
       // Clean up any stale egress jobs from previous server crashes/restarts
       this.cleanupStaleEgress().catch(err => {
-        logger.error('❌ CONTINUOUS RECORDING: Initial cleanup failed:', err.message);
+        logger.error({ err: err }, '❌ CONTINUOUS RECORDING: Initial cleanup failed');
       });
 
       // Start auto-record polling (check every 5 seconds if room has participants)
       this.startAutoRecordPolling();
 
     } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Failed to initialize:', error);
+      logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Failed to initialize');
     }
   }
 
@@ -186,7 +186,7 @@ class ContinuousRecordingService extends EventEmitter {
 
       return masterPath;
     } catch (error) {
-      logger.error('❌ Failed to generate master playlist:', error.message);
+      logger.error({ err: error }, '❌ Failed to generate master playlist');
       return null;
     }
   }
@@ -240,7 +240,7 @@ class ContinuousRecordingService extends EventEmitter {
     } catch (error) {
       // Room might not exist yet, that's ok
       if (!error.message?.includes('room not found')) {
-        logger.error('❌ CONTINUOUS RECORDING: Error checking room:', error.message);
+        logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Error checking room');
       }
     }
   }
@@ -251,7 +251,7 @@ class ContinuousRecordingService extends EventEmitter {
   startAutoRecordPolling() {
     // Check immediately
     this.checkAndAutoRecord().catch(err => {
-      logger.error('❌ CONTINUOUS RECORDING: Initial auto-record check failed:', err.message);
+      logger.error({ err: err }, '❌ CONTINUOUS RECORDING: Initial auto-record check failed');
     });
 
     // Then check every 5 seconds
@@ -259,7 +259,7 @@ class ContinuousRecordingService extends EventEmitter {
       try {
         await this.checkAndAutoRecord();
       } catch (err) {
-        logger.error('❌ CONTINUOUS RECORDING: Auto-record polling error:', err.message);
+        logger.error({ err: err }, '❌ CONTINUOUS RECORDING: Auto-record polling error');
         // Don't rethrow - keep polling running
       }
     }, 5000);
@@ -422,7 +422,7 @@ class ContinuousRecordingService extends EventEmitter {
       };
 
     } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Failed to start:', error);
+      logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Failed to start');
       return { success: false, error: error.message };
     }
   }
@@ -454,7 +454,7 @@ class ContinuousRecordingService extends EventEmitter {
           segmentCount = fs.readdirSync(sessionDir).filter(f => f.endsWith('.ts')).length;
         }
       } catch (e) {
-        logger.warn('Could not count segments:', e.message);
+        logger.warn({ err: e }, 'Could not count segments');
       }
 
       // Update database record
@@ -485,14 +485,14 @@ class ContinuousRecordingService extends EventEmitter {
       return { success: true, duration, sessionId: stoppedSessionId, segmentCount };
 
     } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Failed to stop:', error);
+      logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Failed to stop');
 
       // Even if stop failed, end open stream segments to keep timeline accurate
       if (this.currentSessionId) {
         try {
           await this.sessionStore.endAllOpenSegments(this.currentSessionId);
         } catch (e) {
-          logger.error('❌ CONTINUOUS RECORDING: Failed to end segments on error:', e.message);
+          logger.error({ err: e }, '❌ CONTINUOUS RECORDING: Failed to end segments on error');
         }
       }
 
@@ -558,7 +558,7 @@ class ContinuousRecordingService extends EventEmitter {
         }
       }
     } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Error in egress check:', error.message);
+      logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Error in egress check');
     }
   }
 
@@ -585,7 +585,7 @@ class ContinuousRecordingService extends EventEmitter {
 
       return activeEgresses;
     } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Failed to list egress:', error.message);
+      logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Failed to list egress');
       return [];
     }
   }
@@ -598,7 +598,7 @@ class ContinuousRecordingService extends EventEmitter {
       const egresses = await this.egressClient.listEgress({ egressId });
       return egresses[0] || null;
     } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Failed to get egress info:', error);
+      logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Failed to get egress info');
       return null;
     }
   }
