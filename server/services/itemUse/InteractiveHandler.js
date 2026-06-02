@@ -18,17 +18,18 @@ class InteractiveHandler {
         logger.debug(`🎯 ITEMS: Taking interactive item path for ${item.display_name}`);
 
         // Check if there's an active stream for interactive items
-        // Allow anonymous streamers too - check both hasActiveStream and MediaSoup
+        // Allow anonymous streamers too - check both StreamService and the
+        // LiveKit WebRTC service.
         const webrtcService = services.webrtcService;
-        const hasMediaSoupStreamer = webrtcService && webrtcService.currentStreamer;
+        const hasLiveKitStreamer = webrtcService && webrtcService.currentStreamer;
 
-        if (!streamStatus.hasActiveStream && !hasMediaSoupStreamer) {
+        if (!streamStatus.hasActiveStream && !hasLiveKitStreamer) {
             logger.debug(`❌ ITEMS: No active stream for interactive item ${item.display_name}`);
             logger.debug(`   StreamService hasActiveStream: ${streamStatus.hasActiveStream}`);
-            logger.debug(`   MediasoupService currentStreamer: ${hasMediaSoupStreamer}`);
+            logger.debug(`   LiveKit WebRTC currentStreamer: ${hasLiveKitStreamer}`);
             return { ok: false, kind: 'no-active-stream' };
-        } else if (!streamStatus.hasActiveStream && hasMediaSoupStreamer) {
-            logger.debug(`⚠️ ITEMS: StreamService says no stream but MediaSoup has streamer - allowing for anonymous`);
+        } else if (!streamStatus.hasActiveStream && hasLiveKitStreamer) {
+            logger.debug(`⚠️ ITEMS: StreamService says no stream but LiveKit has streamer - allowing for anonymous`);
         }
 
         // For interactive items, only validate but don't consume the item yet

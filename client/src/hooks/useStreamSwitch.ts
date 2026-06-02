@@ -13,8 +13,8 @@ export interface UseStreamSwitchOptions {
    *
    * Passed for documentation / future use; the hook itself doesn't observe
    * it yet — the streamer-change orchestration effect remains inline in
-   * WebRTCViewer because it is deeply entangled with initializeViewer,
-   * mediasoupClientRef, videoRef, and several component-scoped flags.
+   * WebRTCViewer because it is deeply entangled with initializeViewer, the
+   * WebRTC client ref, videoRef, and several component-scoped flags.
    * Extracting that effect cleanly would require threading 10+ callbacks
    * through this hook's surface; deferred to a follow-up PR.
    */
@@ -34,7 +34,7 @@ export interface UseStreamSwitchResult {
 
   /**
    * Ref holding the StreamSwitchManager instance for the current
-   * MediaSoup client. Created/cleaned by the inline initializeViewer
+   * WebRTC client. Created/cleaned by the inline initializeViewer
    * flow in WebRTCViewer; owned here so its lifetime is parented to the
    * hook rather than scattered through the component.
    */
@@ -69,7 +69,7 @@ export interface UseStreamSwitchResult {
  * This is the MVP slice of the eventual full stream-switch extraction.
  * The big per-streamer-change orchestration effect remains in
  * WebRTCViewer.tsx because it directly drives initializeViewer, the
- * video element, the mediasoup client lifecycle, abort controllers, and
+ * video element, the WebRTC client lifecycle, abort controllers, and
  * several component-scoped UI state setters (isLoading / error /
  * isConnected). Pulling that effect in here would require threading
  * 10+ callbacks through the hook's surface and changing media negotiation

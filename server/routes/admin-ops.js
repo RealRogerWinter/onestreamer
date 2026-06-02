@@ -341,16 +341,16 @@ function createAdminOpsRouter(deps) {
           viewers: streamService.getViewerCount()
         };
 
-        // Get mediasoup statistics
-        const mediasoupStats = webrtcService.getStats();
+        // Get WebRTC (LiveKit) statistics
+        const webrtcStats = webrtcService.getStats();
 
         // Update resource monitor with current stats
         resourceMonitor.updateConnectionMetrics(socketStats);
-        resourceMonitor.updateMediasoupMetrics(mediasoupStats);
+        resourceMonitor.updateWebrtcMetrics(webrtcStats);
 
         const performanceStats = {
           sockets: socketStats,
-          mediasoup: mediasoupStats,
+          webrtc: webrtcStats,
           resources: resourceMonitor.getMetrics(),
           health: resourceMonitor.getHealthSummary().status
         };

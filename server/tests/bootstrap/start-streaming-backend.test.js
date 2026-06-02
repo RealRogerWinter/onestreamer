@@ -1,19 +1,18 @@
-// Tests for the streaming-backend orchestration helper extracted in PR 9.3.
+// Tests for the streaming-backend orchestration helper.
 //
 // The module under test (`server/bootstrap/start-streaming-backend.js`)
-// owns the post-PR-9.2-aligned block that constructs URL/Random rotation
-// services + ActionArbiter + WhitelistEnforcer and wires the LiveKit-only
-// asymmetries inside a single `if (livekitService)` guard. The block has
-// no return value — its job is side effects:
+// constructs URL/Random rotation services + ActionArbiter + WhitelistEnforcer
+// and wires the LiveKit backend (the sole WebRTC backend, ADR-0024). The
+// block has no return value — its job is side effects:
 //   - sets globals (`viewBotURLService`, `urlStreamHealthService`,
 //     `randomStreamRotationService`, `whitelistEnforcer`, `viewBotLiveKitService`)
 //   - sets `app.locals.moderationActionArbiter` + `app.locals.whitelistEnforcer`
 //   - mounts `/api/url-stream` + `/api/random-stream` on the Express app
 //   - pushes `WhitelistEnforcer` to `stoppables`
 //   - schedules `random-rotation-autostart` via `lifecycleManager`
-//   - on LiveKit branch: wires `SimpleViewBotRotation.setLiveKitService`,
-//     URL-service LiveKit + deliberate-dormancy setters, the LiveKit
-//     cross-wire, and the streamer health check.
+//   - wires `SimpleViewBotRotation.setLiveKitService`, the URL-service LiveKit
+//     + socket-emit setters, the LiveKit cross-wire, and the streamer health
+//     check.
 //
 // We mock every constructed service with a tiny stub that records ctor
 // args on `this._args` and method calls on `this._calls`. That gives us
@@ -78,6 +77,16 @@ function makeDeps(overrides = {}) {
     setURLViewBotService: jest.fn(),
     setLiveKitService: jest.fn(),
   };
+  // LiveKit is the sole WebRTC backend (ADR-0024): livekitService +
+  // viewBotLiveKitService are always present when this helper runs.
+  const livekitService = {
+    _stubName: 'LiveKitService',
+    startStreamerHealthCheck: jest.fn(),
+  };
+  const viewBotLiveKitService = {
+    _stubName: 'ViewBotLiveKitService',
+    setURLViewBotService: jest.fn(),
+  };
   return {
     streamService: { _stubName: 'StreamService' },
     SimpleViewBotRotation,
@@ -94,8 +103,8 @@ function makeDeps(overrides = {}) {
     lifecycleManager,
     app,
     stoppables: [],
-    livekitService: null,
-    viewBotLiveKitService: null,
+    livekitService,
+    viewBotLiveKitService,
     ...overrides,
   };
 }
@@ -115,7 +124,7 @@ afterEach(() => {
   delete process.env.AI_MODERATION_ENFORCE;
 });
 
-describe('startStreamingBackend (MediaSoup branch — livekitService null)', () => {
+describe('startStreamingBackend (core orchestration)', () => {
   test('constructs the URL stream stack and wires it through SimpleViewBotRotation', () => {
     const deps = makeDeps();
     startStreamingBackend(deps);
@@ -212,39 +221,18 @@ describe('startStreamingBackend (MediaSoup branch — livekitService null)', () 
     );
   });
 
-  test('D2 dormancy: NO setSocketIO / setStreamNotifier on viewBotURLService when livekitService null', () => {
+  test('wires the URL-relay socket-emit setters (setSocketIO + setStreamNotifier)', () => {
     const deps = makeDeps();
     startStreamingBackend(deps);
 
-    expect(global.viewBotURLService._calls.setSocketIO).toBeUndefined();
-    expect(global.viewBotURLService._calls.setStreamNotifier).toBeUndefined();
-    expect(global.viewBotURLService._calls.setLiveKitService).toBeUndefined();
-  });
-
-  test('does not touch LiveKit-only globals when livekitService null', () => {
-    const deps = makeDeps();
-    startStreamingBackend(deps);
-
-    expect(global.viewBotLiveKitService).toBeUndefined();
-    expect(deps.SimpleViewBotRotation.setLiveKitService).not.toHaveBeenCalled();
+    expect(global.viewBotURLService._calls.setSocketIO).toEqual([deps.io]);
+    expect(global.viewBotURLService._calls.setStreamNotifier).toEqual([deps.streamNotifier]);
   });
 });
 
-describe('startStreamingBackend (LiveKit branch — livekitService present)', () => {
-  function makeLiveKitDeps(overrides = {}) {
-    const livekitService = {
-      _stubName: 'LiveKitService',
-      startStreamerHealthCheck: jest.fn(),
-    };
-    const viewBotLiveKitService = {
-      _stubName: 'ViewBotLiveKitService',
-      setURLViewBotService: jest.fn(),
-    };
-    return makeDeps({ livekitService, viewBotLiveKitService, ...overrides });
-  }
-
+describe('startStreamingBackend (LiveKit wires)', () => {
   test('wires SimpleViewBotRotation.setLiveKitService + URL service LiveKit cross-wire', () => {
-    const deps = makeLiveKitDeps();
+    const deps = makeDeps();
     startStreamingBackend(deps);
 
     expect(deps.SimpleViewBotRotation.setLiveKitService).toHaveBeenCalledWith(deps.viewBotLiveKitService);
@@ -252,16 +240,8 @@ describe('startStreamingBackend (LiveKit branch — livekitService present)', ()
     expect(deps.viewBotLiveKitService.setURLViewBotService).toHaveBeenCalledWith(global.viewBotURLService);
   });
 
-  test('D2 dormancy zone: setSocketIO + setStreamNotifier fire ONLY on the LiveKit branch', () => {
-    const deps = makeLiveKitDeps();
-    startStreamingBackend(deps);
-
-    expect(global.viewBotURLService._calls.setSocketIO).toEqual([deps.io]);
-    expect(global.viewBotURLService._calls.setStreamNotifier).toEqual([deps.streamNotifier]);
-  });
-
   test('publishes viewBotLiveKitService globally and starts the streamer health check', () => {
-    const deps = makeLiveKitDeps();
+    const deps = makeDeps();
     startStreamingBackend(deps);
 
     expect(global.viewBotLiveKitService).toBe(deps.viewBotLiveKitService);

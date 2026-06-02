@@ -40,12 +40,12 @@ class RegularHandler {
             // Get current streamer
             let currentStreamerSocketId = streamService.getCurrentStreamer();
 
-            // LIVEKIT FIX: Fallback to webrtcService/webrtcAdapter if StreamService has no streamer
+            // Fallback to the LiveKit WebRTC service if StreamService has no streamer
             const webrtcServiceForKillSwitch = services.webrtcService;
             if (!currentStreamerSocketId && webrtcServiceForKillSwitch) {
                 currentStreamerSocketId = webrtcServiceForKillSwitch.getCurrentStreamer();
                 if (currentStreamerSocketId) {
-                    logger.debug(`💥 KILL SWITCH: Using webrtcService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+                    logger.debug(`💥 KILL SWITCH: Using LiveKit WebRTC fallback for streamer: ${currentStreamerSocketId}`);
                 }
             }
 

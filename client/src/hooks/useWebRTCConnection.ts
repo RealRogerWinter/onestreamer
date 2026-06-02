@@ -12,7 +12,7 @@ export type WebRTCConnectionState = 'connected' | 'disconnected' | 'reconnecting
 
 export interface UseWebRTCConnectionOptions {
   /**
-   * Ref to the active MediasoupClient (set/cleared by the owning component's
+   * Ref to the active WebRTC client (set/cleared by the owning component's
    * initializeViewer / cleanup flow). The hook polls this ref to keep
    * `connectionState` and `reconnectionAttempts` in sync with the adapter.
    *
@@ -62,7 +62,7 @@ export interface UseWebRTCConnectionResult {
 }
 
 /**
- * Observes a MediasoupClient instance via the supplied ref and exposes
+ * Observes a WebRTC client instance via the supplied ref and exposes
  * connection-state primitives suitable for status UI (reconnect banner,
  * performance monitor, etc).
  *

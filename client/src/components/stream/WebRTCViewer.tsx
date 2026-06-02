@@ -23,7 +23,7 @@ interface WebRTCViewerProps {
 
 const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className = '', showPerformanceMonitor = false, forceInitialize = false, currentStreamerId }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const mediasoupClientRef = useRef<WebRTCClientAdapter | null>(null);
+  const webrtcClientRef = useRef<WebRTCClientAdapter | null>(null);
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInitializingRef = useRef(false);
   const isSwitchingRef = useRef(false);
@@ -50,7 +50,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     setConnectionState,
     setReconnectionAttempts,
   } = useWebRTCConnection({
-    clientRef: mediasoupClientRef,
+    clientRef: webrtcClientRef,
     isConnected,
   });
 
@@ -113,7 +113,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
       // CRITICAL: Don't cleanup if we have a working connection and isConnected
       // This handles the race condition where isActive becomes false due to stale isStreaming state
-      if (mediasoupClientRef.current && isConnected && !mediasoupClientRef.current.isDestroyed) {
+      if (webrtcClientRef.current && isConnected && !webrtcClientRef.current.isDestroyed) {
         console.log(`🛑 WEBRTC: Skipping cleanup - have active connection despite isActive=false (likely stale isStreaming state)`);
         return;
       }
@@ -145,7 +145,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
     // Only initialize if we don't already have a working connection
     // This prevents destroying working connections when dependencies change
-    if (mediasoupClientRef.current && isConnected) {
+    if (webrtcClientRef.current && isConnected) {
       return;
     }
 
@@ -273,8 +273,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     }
 
     // Check if we have a working LiveKit connection
-    const hasWorkingConnection = mediasoupClientRef.current &&
-                                  !mediasoupClientRef.current.isDestroyed &&
+    const hasWorkingConnection = webrtcClientRef.current &&
+                                  !webrtcClientRef.current.isDestroyed &&
                                   videoRef.current?.srcObject;
 
     // CRITICAL: If new streamer is a REAL streamer, ALWAYS reconnect - this is a takeover!
@@ -321,12 +321,12 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       setSwitchState('switching');
 
       // Clean up existing connection only if it exists
-      if (mediasoupClientRef.current) {
+      if (webrtcClientRef.current) {
         console.log(`🧹 STREAM-SWITCH: Cleaning up old connection`);
         try {
           isInitializingRef.current = false;
-          await mediasoupClientRef.current.cleanup();
-          mediasoupClientRef.current = null;
+          await webrtcClientRef.current.cleanup();
+          webrtcClientRef.current = null;
         } catch (error) {
           console.error('❌ STREAM-SWITCH: Cleanup error:', error);
         }
@@ -631,18 +631,18 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         await new Promise(resolve => setTimeout(resolve, 50));
       }
 
-      // Always create a completely new MediasoupClient to avoid MID collisions
-      if (mediasoupClientRef.current) {
+      // Always create a completely new WebRTC client to avoid MID collisions
+      if (webrtcClientRef.current) {
         // Clean up existing client completely
-        await mediasoupClientRef.current.cleanup();
-        mediasoupClientRef.current = null;
+        await webrtcClientRef.current.cleanup();
+        webrtcClientRef.current = null;
       }
       
       // Create new client with connection recovery callbacks
       // Use the correct server URL from environment or default to HTTPS
       const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}`;
       
-      mediasoupClientRef.current = new WebRTCClientAdapter({
+      webrtcClientRef.current = new WebRTCClientAdapter({
         socket,
         serverUrl,
         onConnectionLost: () => {
@@ -669,7 +669,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
           // CRITICAL FIX: Use streamId-based deduplication instead of time-based debouncing
           // Get the current streamer ID from the client
-          const newStreamerId = mediasoupClientRef.current?.getCurrentStreamer();
+          const newStreamerId = webrtcClientRef.current?.getCurrentStreamer();
 
           // Skip if this is the same stream we're already showing
           if (newStreamerId && newStreamerId === currentStreamIdRef.current) {
@@ -688,13 +688,13 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           // Helper function to attempt stream switch
           const attemptStreamSwitch = async (attempt: number = 1): Promise<boolean> => {
             try {
-              if (!mediasoupClientRef.current || !videoRef.current) {
+              if (!webrtcClientRef.current || !videoRef.current) {
                 console.log('⚠️ WEBRTC: Client or video ref not available');
                 return false;
               }
 
               const video = videoRef.current;
-              const newStream = await mediasoupClientRef.current.consume();
+              const newStream = await webrtcClientRef.current.consume();
 
               if (newStream && newStream.getTracks().length > 0) {
                 console.log(`🔄 WEBRTC: Switching to new stream with ${newStream.getTracks().length} tracks (attempt ${attempt})`);
@@ -746,7 +746,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
                 }
 
                 // Update tracking ref after successful switch
-                const actualStreamerId = mediasoupClientRef.current?.getCurrentStreamer();
+                const actualStreamerId = webrtcClientRef.current?.getCurrentStreamer();
                 if (actualStreamerId) {
                   currentStreamIdRef.current = actualStreamerId;
                   console.log(`📝 WEBRTC: Updated currentStreamIdRef to ${actualStreamerId}`);
@@ -788,7 +788,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
 
       // Create StreamSwitchManager for graceful degradation
       streamSwitchManagerRef.current = new StreamSwitchManager(
-        mediasoupClientRef.current,
+        webrtcClientRef.current,
         socket,
         {
           maxRetryAttempts: 3,
@@ -830,10 +830,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       });
       
       // Initialize device
-      await mediasoupClientRef.current.initialize();
+      await webrtcClientRef.current.initialize();
       
       // Create receive transport
-      await mediasoupClientRef.current.createRecvTransport();
+      await webrtcClientRef.current.createRecvTransport();
       
       // Enhanced consume logic with better error handling
       let stream = null;
@@ -850,12 +850,12 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         consumeAttempts++;
         
         try {
-          // Verify MediaSoup client is still valid before attempting consume
-          if (!mediasoupClientRef.current || mediasoupClientRef.current.destroyed) {
-            throw new Error('MediaSoup client is destroyed or invalid');
+          // Verify WebRTC client is still valid before attempting consume
+          if (!webrtcClientRef.current || webrtcClientRef.current.destroyed) {
+            throw new Error('WebRTC client is destroyed or invalid');
           }
           
-          stream = await mediasoupClientRef.current.consume();
+          stream = await webrtcClientRef.current.consume();
           if (stream) {
             // Verify stream has tracks before considering it successful
             const tracks = stream.getTracks();
@@ -922,9 +922,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         throw finalError;
       }
       
-      // Get the current streamer ID from MediaSoup client and store it
-      if (mediasoupClientRef.current) {
-        const currentStreamer = mediasoupClientRef.current.getCurrentStreamer();
+      // Get the current streamer ID from WebRTC client and store it
+      if (webrtcClientRef.current) {
+        const currentStreamer = webrtcClientRef.current.getCurrentStreamer();
         if (currentStreamer) {
           currentStreamIdRef.current = currentStreamer;
         }
@@ -1252,8 +1252,8 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       setIsLoading(true);
       setError('Reconnecting...');
       
-      if (mediasoupClientRef.current) {
-        await mediasoupClientRef.current.forceReconnection();
+      if (webrtcClientRef.current) {
+        await webrtcClientRef.current.forceReconnection();
       }
       
       // Try to reinitialize the viewer
@@ -1323,9 +1323,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
       }
       
       // Clean up current connection immediately
-      if (mediasoupClientRef.current) {
-        await mediasoupClientRef.current.cleanup();
-        mediasoupClientRef.current = null;
+      if (webrtcClientRef.current) {
+        await webrtcClientRef.current.cleanup();
+        webrtcClientRef.current = null;
       }
       
       // Reset video element
@@ -1478,16 +1478,16 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           // Don't rely on isConnected state (may be stale in closure) - check client directly
           const oldIsViewbot = previousStreamId?.startsWith('viewbot-');
           const newIsViewbot = data.newStreamId?.startsWith('viewbot-') || data.streamType === 'viewbot';
-          const hasActiveClient = mediasoupClientRef.current !== null;
+          const hasActiveClient = webrtcClientRef.current !== null;
           const canSwitchInPlace = oldIsViewbot && newIsViewbot && hasActiveClient;
 
-          if (canSwitchInPlace && mediasoupClientRef.current) {
+          if (canSwitchInPlace && webrtcClientRef.current) {
             // Viewbot-to-viewbot: just consume new participant, no cleanup needed
             console.log(`⚡ WEBRTC: Viewbot-to-viewbot switch - reusing connection`);
             setSwitchState('switching');
 
             try {
-              const newStream = await mediasoupClientRef.current.consume();
+              const newStream = await webrtcClientRef.current.consume();
               if (newStream && newStream.getTracks().length > 0) {
                 const video = videoRef.current;
                 if (video) {
@@ -1522,15 +1522,15 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           setError(`Connecting to stream${data.producerVerified ? ' (verified)' : ''}...`);
           setIsLoading(true);
 
-          if (mediasoupClientRef.current) {
+          if (webrtcClientRef.current) {
             if (abortControllerRef.current) {
               abortControllerRef.current.abort();
               abortControllerRef.current = null;
             }
             isInitializingRef.current = false;
 
-            await mediasoupClientRef.current.cleanup();
-            mediasoupClientRef.current = null;
+            await webrtcClientRef.current.cleanup();
+            webrtcClientRef.current = null;
           }
 
           if (videoRef.current) {
@@ -1648,10 +1648,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         // Update current stream ID immediately
         currentStreamIdRef.current = data.streamerId;
         
-        // Clean up existing MediaSoup connection
-        if (mediasoupClientRef.current) {
-          await mediasoupClientRef.current.cleanup();
-          mediasoupClientRef.current = null;
+        // Clean up existing WebRTC connection
+        if (webrtcClientRef.current) {
+          await webrtcClientRef.current.cleanup();
+          webrtcClientRef.current = null;
         }
         
         // Generate test pattern directly in video element
@@ -1702,11 +1702,11 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         setError('Switching to new stream...');
         setSwitchState('switching');
 
-        if (mediasoupClientRef.current) {
+        if (webrtcClientRef.current) {
           console.log('🧹 WEBRTC: Takeover detected, cleaning up consumers before new stream');
           try {
-            await mediasoupClientRef.current.cleanup();
-            mediasoupClientRef.current = null;
+            await webrtcClientRef.current.cleanup();
+            webrtcClientRef.current = null;
             console.log('✅ WEBRTC: Takeover cleanup completed');
           } catch (error) {
             console.error('❌ WEBRTC: Takeover cleanup failed:', error);
@@ -1719,10 +1719,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         isInitializingRef.current = false;
         setSwitchState('idle');
 
-        if (mediasoupClientRef.current) {
+        if (webrtcClientRef.current) {
           try {
-            await mediasoupClientRef.current.cleanup();
-            mediasoupClientRef.current = null;
+            await webrtcClientRef.current.cleanup();
+            webrtcClientRef.current = null;
             console.log('✅ WEBRTC: Normal stream end cleanup completed');
           } catch (error) {
             console.error('❌ WEBRTC: Normal stream end cleanup failed:', error);
@@ -1844,9 +1844,9 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     // Reset initialization flag
     isInitializingRef.current = false;
     
-    if (mediasoupClientRef.current) {
-      await mediasoupClientRef.current.cleanup();
-      mediasoupClientRef.current = null;
+    if (webrtcClientRef.current) {
+      await webrtcClientRef.current.cleanup();
+      webrtcClientRef.current = null;
     }
 
     if (streamSwitchManagerRef.current) {
@@ -1894,10 +1894,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
     isInitializingRef.current = false;
     isSwitchingRef.current = false;
     
-    if (mediasoupClientRef.current) {
+    if (webrtcClientRef.current) {
       // Fire and forget async cleanup
-      mediasoupClientRef.current.cleanup().catch(console.error);
-      mediasoupClientRef.current = null;
+      webrtcClientRef.current.cleanup().catch(console.error);
+      webrtcClientRef.current = null;
     }
     
     if (videoRef.current) {

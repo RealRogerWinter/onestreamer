@@ -15,7 +15,6 @@ const defaultConfig: DebugConfig = {
   categories: {
     canvas: true, // DEBUGGING CLICK ISSUE
     effects: false,
-    mediasoup: true, // Keep MediaSoup logs
     websocket: false,
     inventory: false,
     chat: false,
@@ -27,7 +26,6 @@ const defaultConfig: DebugConfig = {
   levels: {
     canvas: 'verbose', // DEBUGGING CLICK ISSUE
     effects: 'off',
-    mediasoup: 'normal',
     websocket: 'minimal',
     inventory: 'minimal',
     chat: 'minimal',
@@ -166,7 +164,6 @@ class DebugLogger {
     const prefixes: { [key: string]: string } = {
       canvas: '🎨 CANVAS:',
       effects: '✨ EFFECTS:',
-      mediasoup: '📡 MEDIASOUP:',
       websocket: '🔌 SOCKET:',
       inventory: '📦 INVENTORY:',
       chat: '💬 CHAT:',
@@ -187,11 +184,9 @@ const logger = new DebugLogger();
 export const debug = {
   canvas: (message: string, data?: any, level?: 'verbose' | 'normal' | 'minimal') => 
     logger.log('canvas', message, data, level),
-  effects: (message: string, data?: any, level?: 'verbose' | 'normal' | 'minimal') => 
+  effects: (message: string, data?: any, level?: 'verbose' | 'normal' | 'minimal') =>
     logger.log('effects', message, data, level),
-  mediasoup: (message: string, data?: any, level?: 'verbose' | 'normal' | 'minimal') => 
-    logger.log('mediasoup', message, data, level),
-  websocket: (message: string, data?: any, level?: 'verbose' | 'normal' | 'minimal') => 
+  websocket: (message: string, data?: any, level?: 'verbose' | 'normal' | 'minimal') =>
     logger.log('websocket', message, data, level),
   inventory: (message: string, data?: any, level?: 'verbose' | 'normal' | 'minimal') => 
     logger.log('inventory', message, data, level),

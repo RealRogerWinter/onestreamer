@@ -33,9 +33,7 @@ class ResourceMonitor {
         viewers: 0,
         reconnecting: 0
       },
-      mediasoup: {
-        workers: 0,
-        routers: 0,
+      webrtc: {
         transports: 0,
         producers: 0,
         consumers: 0
@@ -178,16 +176,16 @@ class ResourceMonitor {
     };
   }
 
-  // Update mediasoup metrics
-  updateMediasoupMetrics(mediasoupStats) {
-    if (!mediasoupStats) return;
+  // Update WebRTC (LiveKit) metrics. Maps LiveKitService.getStats() —
+  // { transportCount, producerCount, consumerCount, ... } — into the
+  // webrtc metric block.
+  updateWebrtcMetrics(webrtcStats) {
+    if (!webrtcStats) return;
 
-    this.metrics.mediasoup = {
-      workers: mediasoupStats.workers || 0,
-      routers: mediasoupStats.routers || 0,
-      transports: mediasoupStats.transports || 0,
-      producers: mediasoupStats.producers || 0,
-      consumers: mediasoupStats.consumers || 0
+    this.metrics.webrtc = {
+      transports: webrtcStats.transportCount || 0,
+      producers: webrtcStats.producerCount || 0,
+      consumers: webrtcStats.consumerCount || 0
     };
   }
 
@@ -395,7 +393,7 @@ class ResourceMonitor {
         uptimeFormatted: this.formatUptime(metrics.process.uptime)
       },
       connections: metrics.connections,
-      mediasoup: metrics.mediasoup,
+      webrtc: metrics.webrtc,
       performance: metrics.performance
     };
   }

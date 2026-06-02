@@ -14,7 +14,7 @@ class StreamService {
     // counter on the client). The invariant the drop-by-counter check
     // needs is *strictly monotonic*, not "increments by exactly 1 per
     // semantic identity change" — compound transitions can bump by more
-    // than 1 (e.g. MediaSoupHandler.js's viewbot-override path calls
+    // than 1 (e.g. the takeover viewbot-override path calls
     // clearStreamer() then setStreamer() with no emit between, going
     // N → N+2). Gaps are fine; backwards is not.
     this.streamGeneration = 0;
@@ -27,7 +27,8 @@ class StreamService {
     this.streamGeneration += 1;
     this.viewers.delete(socketId);
 
-    // SYNC: Keep MediasoupService in sync to prevent dual-source-of-truth issues
+    // SYNC: Keep the LiveKit WebRTC service in sync to prevent
+    // dual-source-of-truth issues.
     if (global.webrtcService) {
       global.webrtcService.currentStreamer = socketId;
     }
@@ -48,7 +49,8 @@ class StreamService {
     this.streamStartTime = null;
     this.streamGeneration += 1;
 
-    // SYNC: Keep MediasoupService in sync to prevent dual-source-of-truth issues
+    // SYNC: Keep the LiveKit WebRTC service in sync to prevent
+    // dual-source-of-truth issues.
     if (global.webrtcService) {
       global.webrtcService.currentStreamer = null;
     }
@@ -91,18 +93,18 @@ class StreamService {
   }
 
   getStreamStatus() {
-    // Check both local currentStreamer and MediaSoup service as fallback
+    // Check both local currentStreamer and the LiveKit WebRTC service as fallback
     let hasActiveStream = !!this.currentStreamer;
     let streamerId = this.currentStreamer;
-    
-    // Fallback to MediaSoup service if we don't have a currentStreamer
-    // This handles cases where anonymous streamers might not properly sync
+
+    // Fallback to the LiveKit WebRTC service if we don't have a currentStreamer.
+    // This handles cases where anonymous streamers might not properly sync.
     if (!hasActiveStream && global.webrtcService) {
-      const mediasoupStreamer = global.webrtcService.currentStreamer;
-      if (mediasoupStreamer) {
-        logger.debug(`⚠️ STREAM: Using MediaSoup fallback for stream status (found: ${mediasoupStreamer})`);
+      const webrtcStreamer = global.webrtcService.currentStreamer;
+      if (webrtcStreamer) {
+        logger.debug(`⚠️ STREAM: Using LiveKit WebRTC fallback for stream status (found: ${webrtcStreamer})`);
         hasActiveStream = true;
-        streamerId = mediasoupStreamer;
+        streamerId = webrtcStreamer;
       }
     }
     

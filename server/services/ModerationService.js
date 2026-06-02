@@ -1,21 +1,41 @@
 // server/services/ModerationService.js
 //
-// Orchestrator for the AI moderation pipeline (PR-M1 of [ADR-0013]).
+// Orchestrator for the AI moderation pipeline ([ADR-0013]).
 //
-// Subscribes to TranscriptionService 'transcription-chunk' events, runs the
-// chunk through Stage 1 (normalize + match), and — when there's a hit —
-// writes a moderation_events row and emits via ModerationNotifier. PR-M1
-// is **log-only**: no Stage 2, no Stage 3, no action arbiter, no bans.
-// Every Stage 1 hit lands in moderation_events with `final_decision =
-// 'admin_review'` so the admin UI (PR-M5) can list them and the operator
-// can validate Stage 1 quality before turning on enforcement.
+// Subscribes to TranscriptionService 'transcription-chunk' events and runs
+// each chunk through a demand-gated escalation pipeline:
+//
+//   Stage 1 (normalize + match)  — cheap local term match on the transcript.
+//                                  A miss ends processing for that chunk.
+//   Stage 2 (context)            — on a Stage 1 hit, classify the hit against
+//                                  the per-streamer rolling context window
+//                                  (contextWindowMs) so isolated false hits
+//                                  don't escalate.
+//   Stage 3 (omni-moderation)    — the expensive LLM/omni call, demand-gated
+//                                  behind Stages 1-2 and a per-streamer
+//                                  calls/hour quota (stage3QuotaPerHour). A
+//                                  separate Stage 3 instance handles IMAGE
+//                                  input (egress-frame screenshots) when image
+//                                  moderation is enabled (ADR-0021), with its
+//                                  own circuit breaker so an image-path stall
+//                                  can't starve the text path.
+//   ActionArbiter                — turns a 2-of-2 HIGH agreement verdict into
+//                                  an actual ban/skip + rotation. Gated by the
+//                                  enforce flag: when enforcement is off (or no
+//                                  arbiter / Stage 3 is wired), verdicts are
+//                                  downgraded to `final_decision = 'admin_review'`
+//                                  so the admin UI can list them without acting.
+//
+// Every escalation writes a moderation_events row and emits via
+// ModerationNotifier.
 //
 // Why a stateful service rather than a per-event-handler module:
 //   - Owns an in-memory cache of enabled moderation_terms (refreshed on
-//     admin edits in PR-M5; for M1 a one-shot load on initialize() suffices).
+//     admin edits) plus the cached image-moderation config knobs.
 //   - Owns the per-streamer mutex chain that serializes processing within
 //     a single session (so chunks-in-flight during Stage 2/3 latency don't
-//     double-classify in M2+).
+//     double-classify).
+//   - Owns the per-streamer Stage 3 rate-limit window and context buffer.
 //   - Owns the seed-integrity boot check (fails closed on SHA-256 mismatch).
 //
 // Per-streamer mutex:
@@ -26,8 +46,7 @@
 //     this._streamerChains.set(streamerId, next);
 //   The promise chain ensures FIFO ordering per streamer without blocking
 //   different streamers from each other. Chain cleanup happens lazily on
-//   stream end (PR-M3 will hook this when the action arbiter ties into the
-//   rotation lock).
+//   stream end (the ActionArbiter ties into the rotation lock).
 
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -51,7 +70,8 @@ class ModerationService extends EventEmitter {
    * @param {object} deps.streamService     Stream-state lookup (type, generation).
    * @param {object} [deps.stage2]          ModerationStage2 instance. If absent
    *                                        or its isReady() returns false,
-   *                                        Stage 2 is skipped (M1 log-only).
+   *                                        Stage 2 is skipped (the hit is
+   *                                        logged for admin_review only).
    * @param {object} [deps.stage3]          ModerationStage3 instance. If absent
    *                                        or its isReady() returns false,
    *                                        the 2-of-2 cross-check downgrades
@@ -503,12 +523,11 @@ class ModerationService extends EventEmitter {
   /**
    * Late-inject the ActionArbiter. The arbiter depends on
    * RandomStreamRotationService, which is constructed in server/index.js
-   * AFTER ModerationService — both the MediaSoup and the LiveKit branches
-   * call this setter once their rotation service is wired. Calling more
-   * than once is allowed and is treated as a replacement (the most-recent
-   * arbiter wins) so a backend that swaps rotation strategies mid-process
-   * doesn't end up with a stale arbiter wired to a torn-down rotation
-   * service.
+   * AFTER ModerationService — the streaming-backend bootstrap calls this
+   * setter once the rotation service is wired. Calling more than once is
+   * allowed and is treated as a replacement (the most-recent arbiter wins)
+   * so re-wiring the rotation service mid-process doesn't end up with a
+   * stale arbiter pointing at a torn-down rotation service.
    */
   setActionArbiter(arbiter) {
     this.actionArbiter = arbiter || null;
@@ -554,18 +573,18 @@ class ModerationService extends EventEmitter {
     if (!chunk) return null;
 
     // TranscriptionService emits `transcription-chunk` with TWO different
-    // payload shapes depending on which backend produced the audio:
-    //   - MediaSoup path (`startTimedTranscription` MediaSoup branch,
+    // payload shapes depending on which capture path produced the audio:
+    //   - webcam path (`startTimedTranscription`,
     //     TranscriptionService.js around line 1061): `{ ..., text }`.
-    //   - LiveKit path (URL-relay streams, line 997): `{ ..., transcription }`.
-    // The cross-cutting bug: production URL relays go through LiveKit and
-    // therefore emit `{transcription}` — a strict `chunk.text` read would
-    // silently drop every URL-relay chunk and leave the relay unmoderated.
-    // Read either field and normalize down to a single `text` property so
-    // the rest of the pipeline doesn't have to care. The follow-up that
-    // unifies the emit shape in TranscriptionService itself is tracked
-    // separately (see CHANGELOG for this PR); the defensive read here is
-    // load-bearing in the meantime.
+    //   - url-relay path (LiveKit URL-relay streams, line 997):
+    //     `{ ..., transcription }`.
+    // The cross-cutting bug: production URL relays emit `{transcription}` —
+    // a strict `chunk.text` read would silently drop every URL-relay chunk
+    // and leave the relay unmoderated. Read either field and normalize down
+    // to a single `text` property so the rest of the pipeline doesn't have
+    // to care. The follow-up that unifies the emit shape in
+    // TranscriptionService itself is tracked separately (see CHANGELOG for
+    // this PR); the defensive read here is load-bearing in the meantime.
     const text = (typeof chunk.text === 'string' && chunk.text)
       || (typeof chunk.transcription === 'string' && chunk.transcription)
       || null;

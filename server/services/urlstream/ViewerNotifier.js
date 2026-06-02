@@ -93,7 +93,6 @@ class ViewerNotifier {
     // This ensures viewers switch to consuming from the URL stream
     owner._registerAsCurrentStreamer(urlId, {
       streamerLog: `📢 URL STREAM: Registering ${urlId} as current streamer`,
-      mediasoupLog: `📢 URL STREAM: Setting MediaSoup currentStreamer to ${urlId}`,
     });
 
     logger.debug('📢 URL STREAM: Broadcasting new-streamer event to all viewers');

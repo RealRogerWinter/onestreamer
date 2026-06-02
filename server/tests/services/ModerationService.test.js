@@ -259,19 +259,19 @@ describe('ModerationService.handleTranscriptChunk', () => {
     expect(rows).toHaveLength(0);
   });
 
-  // Regression: TranscriptionService's two backend branches emit
-  // `transcription-chunk` with different payload shapes — MediaSoup uses
-  // `{text}` and LiveKit (URL-relay) uses `{transcription}`. Before the
-  // hotfix, production URL relays went unmoderated because
-  // handleTranscriptChunk strictly read `chunk.text`. The defensive read
-  // unifies both shapes down to one normalized `text` field.
+  // Regression: TranscriptionService's two capture paths emit
+  // `transcription-chunk` with different payload shapes — the webcam path
+  // uses `{text}` and the url-relay path (LiveKit URL-relay) uses
+  // `{transcription}`. Before the hotfix, production URL relays went
+  // unmoderated because handleTranscriptChunk strictly read `chunk.text`.
+  // The defensive read unifies both shapes down to one normalized `text` field.
   test('regression: LiveKit-shape {transcription} is processed identically to {text}', async () => {
     const { svc, moderationNotifier, wrapper } = await buildService();
     await svc.initialize();
     const result = await svc.handleTranscriptChunk({
       sessionId: 'sess_lk',
       streamerId: 'sock_lk',
-      // LiveKit path uses `transcription`, not `text` — see
+      // url-relay path uses `transcription`, not `text` — see
       // server/services/TranscriptionService.js around line 997.
       transcription: 'i would never say faggot but he did',
       isComplete: true,

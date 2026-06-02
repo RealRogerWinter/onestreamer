@@ -18,7 +18,7 @@ export interface StreamerViewState {
 
 export class StreamerViewManager {
   private socket: Socket;
-  private mediasoupClient: WebRTCClientAdapter | null = null;
+  private webrtcClient: WebRTCClientAdapter | null = null;
   private videoElement: HTMLVideoElement;
   private originalStream: MediaStream | null = null;
   private currentState: StreamerViewState;
@@ -216,10 +216,10 @@ export class StreamerViewManager {
     
     try {
       // Clean up MediasoupClient first
-      if (this.mediasoupClient) {
+      if (this.webrtcClient) {
         // console.log('🎬 STREAMER VIEW: Cleaning up MediasoupClient...');
-        await this.mediasoupClient.cleanup();
-        this.mediasoupClient = null;
+        await this.webrtcClient.cleanup();
+        this.webrtcClient = null;
         // Wait for cleanup to complete
         await new Promise(resolve => setTimeout(resolve, 200));
       }

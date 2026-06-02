@@ -14,8 +14,9 @@
 //   takeoverService            ──  redisClient, sessionService
 //   testStreamService          ──  no deps
 //   mediaStreamService         ──  no deps
-//   (webrtcService — the LiveKit-backed WebRTC service — is built in
-//    server/index.js because it assigns to globals; it's PASSED IN here)
+//   (webrtcService — the LiveKit WebRTC service (the sole backend, ADR-0024)
+//    — is built in server/index.js because it assigns to globals; it's
+//    PASSED IN here)
 //   audioOptimizationService   ──  no deps
 //   resourceMonitor            ──  no deps
 //   accountService             ──  no deps
@@ -72,9 +73,8 @@
 // route mounting (/api/url-stream, /api/random-stream), and delayed
 // auto-start setTimeouts — STAYS INLINE in server/index.js. That code is
 // orchestration (event handlers, route mounting, scheduling) rather than
-// service construction, and lifting it would obscure the conditional shape
-// without simplifying anything. See ADR-0002 (LiveKit dormant) and the
-// PR-I3 deferral note for context.
+// service construction, and lifting it would obscure the shape without
+// simplifying anything. See the PR-I3 deferral note for context.
 //
 // authService is also intentionally NOT here: it's instantiated early in
 // server/index.js (~line 324) so passport strategies can register against

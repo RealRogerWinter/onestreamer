@@ -148,8 +148,8 @@ describe('StreamService', () => {
       // A second clearStreamer (no-op for streamer state) still bumps.
       // The client's drop-by-counter check only needs monotonicity, and
       // tying the bump to "did state semantically change?" would create
-      // gaps that race against the call site (e.g. the viewbot-override
-      // path in MediaSoupHandler.js issues clearStreamer→setStreamer
+      // gaps that race against the call site (e.g. the takeover
+      // viewbot-override path issues clearStreamer→setStreamer
       // back-to-back with no emit in between — N→N+2 is fine; bumping
       // only on real changes would force introspection that's worse).
       streamService.clearStreamer();

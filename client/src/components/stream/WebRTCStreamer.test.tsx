@@ -11,7 +11,7 @@ import { VideoCompositor } from '../../services/VideoCompositor';
  * Characterization tests for WebRTCStreamer (broadcaster UI).
  *
  * WebRTCStreamer is a MEDIA-HEAVY component: it drives getUserMedia,
- * a WebRTC/mediasoup client adapter, screen capture, an audio mixer and a
+ * a WebRTC client adapter, screen capture, an audio mixer and a
  * video compositor. None of that live pipeline is deterministically
  * observable in jsdom, so these tests heavily mock the media layer and PIN
  * only the STABLE, observable UI shell + the wiring contracts the parent

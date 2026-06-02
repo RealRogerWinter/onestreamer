@@ -26,15 +26,16 @@
  */
 function resolveCurrentStreamerUserId({ streamService, webrtcService, sessionService, logger } = {}) {
     // Get the current streamer to determine target
-    // Try StreamService first (works for MediaSoup and synced LiveKit)
+    // Try StreamService first (the synced source of truth)
     let currentStreamerSocketId = streamService ? streamService.getCurrentStreamer() : null;
 
-    // LIVEKIT FIX: Fallback to webrtcService/webrtcAdapter if StreamService has no streamer
-    // This handles LiveKit mode where LiveKitService tracks currentStreamer but StreamService might not be synced
+    // Fallback to the LiveKit WebRTC service if StreamService has no streamer.
+    // This handles the case where LiveKitService tracks currentStreamer but
+    // StreamService might not be synced yet.
     if (!currentStreamerSocketId && webrtcService) {
         currentStreamerSocketId = webrtcService.getCurrentStreamer();
         if (currentStreamerSocketId && logger) {
-            logger.debug(`🎭 ITEMS: Using webrtcService/webrtcAdapter fallback for streamer: ${currentStreamerSocketId}`);
+            logger.debug(`🎭 ITEMS: Using LiveKit WebRTC fallback for streamer: ${currentStreamerSocketId}`);
         }
     }
 

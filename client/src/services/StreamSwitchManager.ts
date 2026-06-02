@@ -25,7 +25,7 @@ export interface StreamSwitchResult {
 export type StreamSwitchState = 'idle' | 'switching' | 'retrying' | 'fallback' | 'fallback-no-media' | 'failed';
 
 export class StreamSwitchManager {
-  private mediasoupClient: WebRTCClientAdapter;
+  private webrtcClient: WebRTCClientAdapter;
   private socket: Socket;
   private config: StreamSwitchConfig;
   private state: StreamSwitchState = 'idle';
@@ -40,8 +40,8 @@ export class StreamSwitchManager {
     onStateChange?: (newState: StreamSwitchState) => void;
   } = {};
 
-  constructor(mediasoupClient: WebRTCClientAdapter, socket: Socket, config?: Partial<StreamSwitchConfig>) {
-    this.mediasoupClient = mediasoupClient;
+  constructor(webrtcClient: WebRTCClientAdapter, socket: Socket, config?: Partial<StreamSwitchConfig>) {
+    this.webrtcClient = webrtcClient;
     this.socket = socket;
     this.config = {
       maxRetryAttempts: 3,
@@ -66,7 +66,7 @@ export class StreamSwitchManager {
 
     try {
       // Try to restore normal operation
-      await this.mediasoupClient.recreateTransports();
+      await this.webrtcClient.recreateTransports();
 
       this.fallbackMode = false;
       this.setState('idle');

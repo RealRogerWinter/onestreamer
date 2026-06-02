@@ -169,7 +169,7 @@ describe('ItemUseService characterization', () => {
             expect(inventoryService.useItem).not.toHaveBeenCalled();
         });
 
-        it('returns {ok:false, kind:"no-active-stream"} for an interactive item with no stream/MediaSoup', async () => {
+        it('returns {ok:false, kind:"no-active-stream"} for an interactive item with no stream/LiveKit streamer', async () => {
             const item = makeItem({ name: 'paint' });
             const inventoryService = makeInventory();
             const itemService = makeItemService(item);

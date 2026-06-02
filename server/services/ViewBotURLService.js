@@ -253,18 +253,17 @@ class ViewBotURLService extends EventEmitter {
   }
 
   /**
-   * Register a URL stream as the current streamer on StreamService and
-   * MediaSoup. Shared across startURLStream, broadcast, reconnect, and Kick
-   * token refresh. The per-call-site debug logs are preserved verbatim via
-   * the optional `streamerLog` / `mediasoupLog` strings.
+   * Register a URL stream as the current streamer on StreamService and the
+   * LiveKit WebRTC service. Shared across startURLStream, broadcast,
+   * reconnect, and Kick token refresh. The per-call-site debug log is
+   * preserved verbatim via the optional `streamerLog` string.
    */
-  _registerAsCurrentStreamer(urlId, { streamerLog = null, mediasoupLog = null } = {}) {
+  _registerAsCurrentStreamer(urlId, { streamerLog = null } = {}) {
     if (this.streamService) {
       if (streamerLog) logger.debug(streamerLog);
       this.streamService.setStreamer(urlId);
     }
     if (global.webrtcService) {
-      if (mediasoupLog) logger.debug(mediasoupLog);
       global.webrtcService.currentStreamer = urlId;
     }
   }

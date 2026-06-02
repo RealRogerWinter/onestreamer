@@ -1526,8 +1526,8 @@ async function startServer() {
     // No need to recreate from uploads on every startup
     // To add new viewbots from uploads, run: node /root/onestreamer/create-viewbots-from-uploads.js
   } catch (error) {
-    logger.error({ err: error }, '❌ MEDIASOUP: Initialization failed');
-    logger.info('⚠️ Continuing without mediasoup and viewbot services...');
+    logger.error({ err: error }, '❌ LIVEKIT: Initialization failed');
+    logger.info('⚠️ Continuing without LiveKit and viewbot services...');
     viewbotService = null;
   }
   

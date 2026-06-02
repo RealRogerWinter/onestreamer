@@ -52,7 +52,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
-  const mediasoupClientRef = useRef<WebRTCClientAdapter | null>(null);
+  const webrtcClientRef = useRef<WebRTCClientAdapter | null>(null);
   const screenCaptureRef = useRef<ScreenCaptureService>(new ScreenCaptureService());
   const audioMixerRef = useRef<AudioMixer>(new AudioMixer());
   const videoCompositorRef = useRef<VideoCompositor>(new VideoCompositor());
@@ -172,9 +172,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         streamRef.current.removeTrack(oldAudioTrack);
         streamRef.current.addTrack(newAudioTrack);
         
-        // Replace in MediaSoup if active
-        if (mediasoupClientRef.current && mediasoupClientRef.current.hasAudioProducer) {
-          await mediasoupClientRef.current.replaceAudioTrack(newAudioTrack);
+        // Replace in the WebRTC client if active
+        if (webrtcClientRef.current && webrtcClientRef.current.hasAudioProducer) {
+          await webrtcClientRef.current.replaceAudioTrack(newAudioTrack);
         }
         
         // Stop old track
@@ -245,9 +245,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
           }
         }
         
-        // Replace in MediaSoup if active
-        if (mediasoupClientRef.current && mediasoupClientRef.current.hasVideoProducer) {
-          await mediasoupClientRef.current.replaceVideoTrack(newVideoTrack);
+        // Replace in the WebRTC client if active
+        if (webrtcClientRef.current && webrtcClientRef.current.hasVideoProducer) {
+          await webrtcClientRef.current.replaceVideoTrack(newVideoTrack);
         }
         
         // Stop old track
@@ -533,7 +533,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       return;
     }
 
-    if (!mediasoupClientRef.current) {
+    if (!webrtcClientRef.current) {
       console.warn('Cannot start screen share - no WebRTC client');
       return;
     }
@@ -681,7 +681,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
       // Switch to screen share in WebRTC
       console.log('🖥️ Switching main video to screen share');
-      await mediasoupClientRef.current.switchToScreenShare(finalStream);
+      await webrtcClientRef.current.switchToScreenShare(finalStream);
 
       // Update local preview to show screen
       if (videoRef.current) {
@@ -723,7 +723,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
 
       // If we have a stored camera stream, switch back to it BEFORE cleaning up mixers
       // This ensures seamless audio transition for viewers
-      if (cameraStreamRef.current && mediasoupClientRef.current) {
+      if (cameraStreamRef.current && webrtcClientRef.current) {
         // Check if camera stream is still active
         const videoTrack = cameraStreamRef.current.getVideoTracks()[0];
         const audioTrack = cameraStreamRef.current.getAudioTracks()[0];
@@ -739,7 +739,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
           console.log('🖥️ Switching back to camera...');
 
           // Switch to camera FIRST - this replaces the tracks in LiveKit
-          await mediasoupClientRef.current.switchToCamera(cameraStreamRef.current);
+          await webrtcClientRef.current.switchToCamera(cameraStreamRef.current);
 
           // Update preview
           if (videoRef.current) {
@@ -924,33 +924,33 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         console.error('❌ WEBRTC STREAMER: No video ref available');
       }
 
-      // Cleanup any existing MediasoupClient first to avoid conflicts
-      if (mediasoupClientRef.current) {
+      // Cleanup any existing WebRTC client first to avoid conflicts
+      if (webrtcClientRef.current) {
         try {
-          await mediasoupClientRef.current.cleanup();
+          await webrtcClientRef.current.cleanup();
         } catch (cleanupError) {
           console.warn('⚠️ WEBRTC STREAMER: Error during pre-cleanup:', cleanupError);
         }
-        mediasoupClientRef.current = null;
+        webrtcClientRef.current = null;
         // Wait longer for complete cleanup to prevent race conditions
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Create MediasoupClient for remote streaming with proper error handling
+      // Create the WebRTC client for remote streaming with proper error handling
       try {
         const serverUrl = process.env.REACT_APP_API_URL || `https://${window.location.hostname}`;
-        mediasoupClientRef.current = new WebRTCClientAdapter({ socket, serverUrl });
-        
+        webrtcClientRef.current = new WebRTCClientAdapter({ socket, serverUrl });
+
         // Add timeout for initialization
-        const initPromise = mediasoupClientRef.current.initialize();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('MediaSoup initialization timeout')), 10000)
+        const initPromise = webrtcClientRef.current.initialize();
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('WebRTC initialization timeout')), 10000)
         );
         
         await Promise.race([initPromise, timeoutPromise]);
         
         // Create send transport with timeout
-        const transportPromise = mediasoupClientRef.current.createSendTransport();
+        const transportPromise = webrtcClientRef.current.createSendTransport();
         const transportTimeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Transport creation timeout')), 8000)
         );
@@ -958,25 +958,25 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         await Promise.race([transportPromise, transportTimeoutPromise]);
         
         // Start producing with timeout
-        const producePromise = mediasoupClientRef.current.produce(stream);
+        const producePromise = webrtcClientRef.current.produce(stream);
         const produceTimeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Producer creation timeout')), 8000)
         );
         
         await Promise.race([producePromise, produceTimeoutPromise]);
         
-      } catch (mediasoupError) {
-        console.warn('⚠️ WEBRTC STREAMER: MediaSoup failed, but local video should still work:', mediasoupError);
-        // Clean up failed MediaSoup client
-        if (mediasoupClientRef.current) {
+      } catch (webrtcError) {
+        console.warn('⚠️ WEBRTC STREAMER: WebRTC publish failed, but local video should still work:', webrtcError);
+        // Clean up the failed WebRTC client
+        if (webrtcClientRef.current) {
           try {
-            await mediasoupClientRef.current.cleanup();
+            await webrtcClientRef.current.cleanup();
           } catch (cleanupErr) {
-            console.warn('⚠️ WEBRTC STREAMER: Error cleaning up failed MediaSoup client:', cleanupErr);
+            console.warn('⚠️ WEBRTC STREAMER: Error cleaning up failed WebRTC client:', cleanupErr);
           }
-          mediasoupClientRef.current = null;
+          webrtcClientRef.current = null;
         }
-        // Don't fail completely if mediasoup fails - local video should still show
+        // Don't fail completely if WebRTC fails - local video should still show
       }
       
       setIsLoading(false);
@@ -1023,14 +1023,14 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       cameraStreamRef.current = null;
     }
 
-    if (mediasoupClientRef.current) {
+    if (webrtcClientRef.current) {
       try {
-        await mediasoupClientRef.current.stopProducing();
-        await mediasoupClientRef.current.cleanup();
+        await webrtcClientRef.current.stopProducing();
+        await webrtcClientRef.current.cleanup();
       } catch (error) {
-        console.warn('⚠️ WEBRTC STREAMER: Error during MediaSoup cleanup:', error);
+        console.warn('⚠️ WEBRTC STREAMER: Error during WebRTC client cleanup:', error);
       }
-      mediasoupClientRef.current = null;
+      webrtcClientRef.current = null;
     }
     
     if (streamRef.current) {

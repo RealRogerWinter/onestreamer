@@ -266,7 +266,7 @@ module.exports = function registerTakeover(io, socket, deps) {
       }
 
       streamService.setStreamer(socket.id, data.streamType);
-      // CRITICAL FIX: Sync MediasoupService currentStreamer with StreamService immediately
+      // CRITICAL FIX: Sync the LiveKit WebRTC service currentStreamer with StreamService immediately
       webrtcService.currentStreamer = socket.id;
 
       // Ensure the new streamer is also cleared from notifiedStreamers to allow fresh notifications
@@ -483,9 +483,10 @@ module.exports = function registerTakeover(io, socket, deps) {
         // LiveKit (live viewbot config flows through ViewBotLiveKitService /
         // SimpleViewBotRotation). Removing it has no behavioural effect.
 
-        // Check if ViewBot has producers ready
-        // CRITICAL FIX: ViewBots stream via LiveKit/ffmpeg, not MediaSoup producers
-        // Always treat ViewBot producers as ready since they stream via RTP/FFmpeg
+        // Check if ViewBot has tracks ready
+        // CRITICAL FIX: ViewBots stream via LiveKit/ffmpeg, so their media
+        // pipeline is handled out-of-band — always treat ViewBot tracks as
+        // ready since they stream via RTP/FFmpeg into LiveKit.
         const producerMap = webrtcService.producers.get(socket.id);
         const hasVideo = data.isViewBot ? true : (producerMap && producerMap.has('video'));
         const hasAudio = data.isViewBot ? true : (producerMap && producerMap.has('audio'));

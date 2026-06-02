@@ -10,8 +10,8 @@
 //
 // Mounted at /api so each handler keeps the original path. Routes live in
 // the same file because they share infrastructure (webrtcService +
-// streamService + the adapter / TURN credential plumbing) and none of the
-// sub-trees has enough mass to warrant its own file.
+// streamService + the LiveKit token / TURN credential plumbing) and none of
+// the sub-trees has enough mass to warrant its own file.
 //
 // Service access:
 //   - streamService / sessionService / mediaStreamService come from
@@ -32,7 +32,7 @@ const router = express.Router();
 const database = require('../database/database');
 const { authenticateAdmin } = require('../middleware/auth');
 
-function getMediasoup(req, res) {
+function getWebrtcService(req, res) {
   const service = req.app.locals.webrtcService;
   if (!service) {
     res.status(500).json({ error: 'webrtcService not initialized' });
@@ -45,26 +45,12 @@ function getMediasoup(req, res) {
 
 router.get('/stream/status', (req, res) => {
   const { streamService, mediaStreamService } = req.app.locals.services;
-  const webrtcService = req.app.locals.webrtcService;
   const status = streamService.getStreamStatus();
   const mediaInfo = mediaStreamService.getStreamInfo();
 
-  // Add MediaSoup producer info if available
-  let producerInfo = null;
-  if (webrtcService && webrtcService.currentStreamer) {
-    const producers = webrtcService.producers.get(webrtcService.currentStreamer);
-    if (producers) {
-      producerInfo = {
-        videoProducerId: producers.get('video')?.id || null,
-        audioProducerId: producers.get('audio')?.id || null
-      };
-    }
-  }
-
   res.json({
     ...status,
-    mediaStream: mediaInfo,
-    producers: producerInfo
+    mediaStream: mediaInfo
   });
 });
 
@@ -115,10 +101,10 @@ router.get('/stream/active', authenticateAdmin, async (req, res) => {
   }
 });
 
-// ── /api/webrtc/* — Backend management (only meaningful when adapter on) ────
+// ── /api/webrtc/* — Backend info (LiveKit is the sole backend, ADR-0024) ────
 
 router.get('/webrtc/backend', (req, res) => {
-  const webrtcService = getMediasoup(req, res);
+  const webrtcService = getWebrtcService(req, res);
   if (!webrtcService) return;
 
   res.json({
@@ -132,7 +118,7 @@ router.get('/webrtc/backend', (req, res) => {
 // ── /api/livekit/token — Token endpoint (for testing) ───────────────────────
 
 router.get('/livekit/token', async (req, res) => {
-  const livekitService = getMediasoup(req, res);
+  const livekitService = getWebrtcService(req, res);
   if (!livekitService) return;
 
   const generateTurnCredentials = req.app.locals.generateTurnCredentials;

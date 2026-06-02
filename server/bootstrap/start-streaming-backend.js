@@ -1,39 +1,32 @@
 /**
  * Streaming-backend orchestration helper.
  *
- * Pulled out of `server/index.js` `startServer()` in PR 9.3 of Phase 9, the
- * extraction step of the MediaSoup/LiveKit branch alignment work. PR 9.1
- * catalogued the divergences ([`mediasoup-livekit-divergences.md`](../../docs/architecture/plans/mediasoup-livekit-divergences.md));
- * PR 9.2 applied the alignment fixes ([ADR-0017](../../docs/architecture/adr/0017-mediasoup-livekit-alignment-plan.md));
- * this module is the now-aligned block lifted out wholesale.
+ * Extracted from `server/index.js` `startServer()`: the block that builds the
+ * URL-relay / random-rotation / moderation-arbiter orchestration around the
+ * LiveKit backend (the sole WebRTC backend, ADR-0024).
  *
- * Behaviour-equivalent to the inline block at the merge tip of PR 9.2: same
- * construction order, same setter sequence, same logs, same lifecycleManager
- * schedule name (`'random-rotation-autostart'`), same stoppables push, same
- * globals + app.locals writes. The `if (livekitService)` guard at the bottom
- * preserves the three labeled sub-zones (rotation cross-wires / PR-3.1
- * deliberate-dormancy / LiveKit lifecycle) and the `DO NOT MOVE` fence on
- * the dormancy zone.
+ * Behaviour-equivalent to the inline original: same construction order, same
+ * setter sequence, same logs, same lifecycleManager schedule name
+ * (`'random-rotation-autostart'`), same stoppables push, same globals +
+ * app.locals writes.
  *
- * Side effects (same as the inline original):
+ * Side effects:
  *   - Constructs `ViewBotURLService`, `URLStreamHealthService`,
  *     `RandomStreamRotationService`, and (conditionally) `ModerationActionArbiter`
  *     + `WhitelistEnforcer`.
  *   - Sets `global.viewBotURLService`, `global.urlStreamHealthService`,
  *     `global.randomStreamRotationService`, `global.whitelistEnforcer` (if
- *     whitelist service is present), `global.viewBotLiveKitService` (if
- *     livekitService is present).
+ *     whitelist service is present), `global.viewBotLiveKitService`.
  *   - Sets `app.locals.moderationActionArbiter` (if moderation service is
  *     present) and `app.locals.whitelistEnforcer` (if whitelist service is
  *     present).
  *   - Mounts `/api/url-stream` and `/api/random-stream` on `app`.
  *   - Pushes `whitelistEnforcer` to `stoppables` when constructed.
  *   - Schedules `random-rotation-autostart` via `lifecycleManager`.
- *   - Wires `SimpleViewBotRotation.setURLViewBotService`.
- *   - On LiveKit branch: wires `SimpleViewBotRotation.setLiveKitService`,
- *     `viewBotURLService.setLiveKitService/setSocketIO/setStreamNotifier`,
- *     `viewBotLiveKitService.setURLViewBotService`, and starts the LiveKit
- *     streamer health-check.
+ *   - Wires `SimpleViewBotRotation.setURLViewBotService` +
+ *     `setLiveKitService`, `viewBotURLService.setLiveKitService/setSocketIO/
+ *     setStreamNotifier`, `viewBotLiveKitService.setURLViewBotService`, and
+ *     starts the LiveKit streamer health-check.
  *
  * `deps`:
  *   - streamService           Required. Real-streamer protection.
@@ -53,10 +46,8 @@
  *                             `app.locals.*`).
  *   - stoppables              Required. Array mutated by push when
  *                             `WhitelistEnforcer` is constructed.
- *   - livekitService          Optional (may be `null`). Triggers the LiveKit
- *                             branch when present.
- *   - viewBotLiveKitService   Optional (may be `null`). Used only on the
- *                             LiveKit branch.
+ *   - livekitService          Required. The LiveKit backend.
+ *   - viewBotLiveKitService   Required. The LiveKit RTMP-ingress viewbot.
  */
 const ViewBotURLService = require('../services/ViewBotURLService');
 const URLStreamHealthService = require('../services/URLStreamHealthService');
@@ -193,9 +184,7 @@ module.exports = function startStreamingBackend({
   // Auto-start random rotation if it was enabled before restart.
   // PR 4.2: routed through LifecycleManager so SIGTERM during the 5 s
   // grace window cancels the autostart attempt against a torn-down
-  // rotation service. PR 9.2: schedule name unified from the previous
-  // per-backend `-mediasoup` / `-livekit` suffixes (only one fires per
-  // process; nothing reads the name to discriminate).
+  // rotation service.
   lifecycleManager.schedule('random-rotation-autostart', async () => {
     try {
       await randomStreamRotationService.autoStartIfEnabled();
@@ -204,48 +193,34 @@ module.exports = function startStreamingBackend({
     }
   }, 5000);
 
-  // ── LiveKit-only wires (deliberate asymmetries — ADR-0017 D2, D3, D10) ──
-  // The block below is divided into three sub-zones with explicit fences.
-  // Future maintainers adding a LiveKit-only wire: pick the zone that
-  // matches the wire's concern. DO NOT add new wires to the (b) dormancy
-  // zone without a separate behaviour-change PR + smoke pass on both
-  // backends — that zone exists to keep two socket-emit paths suppressed
-  // on the MediaSoup rollback path (ADR-0008).
-  if (livekitService) {
-    // ─ (a) Rotation + LiveKit-service cross-wires ─────────────────────
-    // Register with rotation systems so they can use RTMP viewbots
-    SimpleViewBotRotation.setLiveKitService(viewBotLiveKitService);
-    logger.debug('✅ VIEWBOT: Registered LiveKit service with SimpleViewBotRotation');
+  // ── LiveKit wires (LiveKit is the sole WebRTC backend, ADR-0024) ──────────
+  // Rotation + LiveKit-service cross-wires.
+  // Register with rotation systems so they can use RTMP viewbots.
+  SimpleViewBotRotation.setLiveKitService(viewBotLiveKitService);
+  logger.debug('✅ VIEWBOT: Registered LiveKit service with SimpleViewBotRotation');
 
-    // LiveKit-only cross-wire: ViewBotURLService relays via livekit-ingress
-    // (RTMP). LiveKit is the sole backend (ADR-0024).
-    viewBotURLService.setLiveKitService(viewBotLiveKitService);
+  // ViewBotURLService relays via livekit-ingress (RTMP).
+  viewBotURLService.setLiveKitService(viewBotLiveKitService);
 
-    // CRITICAL: Register URL ViewBot service with LiveKit ViewBot service for protection
-    // This prevents viewbot creation when URL stream is active
-    viewBotLiveKitService.setURLViewBotService(viewBotURLService);
-    logger.debug('✅ URL STREAM: Registered with ViewBotLiveKitService for URL stream protection');
+  // CRITICAL: Register URL ViewBot service with LiveKit ViewBot service for protection
+  // This prevents viewbot creation when URL stream is active
+  viewBotLiveKitService.setURLViewBotService(viewBotURLService);
+  logger.debug('✅ URL STREAM: Registered with ViewBotLiveKitService for URL stream protection');
 
-    // ─ (b) PR 3.1 deliberate-dormancy zone — DO NOT MOVE ──────────────
-    // The two setters below wire emit paths that the MediaSoup branch
-    // deliberately KEEPS SUPPRESSED. `ViewBotURLService._handleStreamEnd`
-    // and `stopURLStream` check `if (this.io)` / `if (this.streamNotifier)`
-    // and skip the emits when the setters never ran. Wiring them on the
-    // MediaSoup branch (livekitService=null) would silently activate two
-    // previously-dormant socket-emit paths in MediaSoup-mode production.
-    // Adding new setters here requires a behaviour-change PR + smoke
-    // pass on the MediaSoup rollback path documented in ADR-0008.
-    viewBotURLService.setSocketIO(io); // For notifying viewers when URL stream starts
-    viewBotURLService.setStreamNotifier(streamNotifier);
+  // Wire the URL-relay socket-emit paths. `ViewBotURLService._handleStreamEnd`
+  // and `stopURLStream` check `if (this.io)` / `if (this.streamNotifier)`, so
+  // these setters are what activate the viewer-notify emits when a URL relay
+  // starts/ends.
+  viewBotURLService.setSocketIO(io); // For notifying viewers when URL stream starts
+  viewBotURLService.setStreamNotifier(streamNotifier);
 
-    // ─ (c) LiveKit-process lifecycle ──────────────────────────────────
-    // Store for later registration with ViewBotRotationService
-    global.viewBotLiveKitService = viewBotLiveKitService;
+  // LiveKit-process lifecycle.
+  // Store for later registration with ViewBotRotationService
+  global.viewBotLiveKitService = viewBotLiveKitService;
 
-    // Start LiveKit streamer health check to detect stale streamers (WebRTC dropped but socket alive).
-    // The interval is cleared by livekitService.stop() (verified via
-    // LiveKitService.stopStreamerHealthCheck on the stoppables-shutdown path).
-    livekitService.startStreamerHealthCheck(streamService, io, 10000); // Check every 10 seconds
-    logger.debug('✅ LIVEKIT: Started streamer health check for stale connection detection');
-  }
+  // Start LiveKit streamer health check to detect stale streamers (WebRTC dropped but socket alive).
+  // The interval is cleared by livekitService.stop() (verified via
+  // LiveKitService.stopStreamerHealthCheck on the stoppables-shutdown path).
+  livekitService.startStreamerHealthCheck(streamService, io, 10000); // Check every 10 seconds
+  logger.debug('✅ LIVEKIT: Started streamer health check for stale connection detection');
 };
