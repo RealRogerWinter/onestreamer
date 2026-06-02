@@ -22,6 +22,43 @@ class AnonymousBuffStore {
         return typeof buffId === 'string' && buffId.startsWith('anon_');
     }
 
+    // Live remaining seconds for an in-memory buff. Unlike DB buffs (whose
+    // remaining_seconds is decremented each second by the streaming-gated
+    // updateBuffDurations monitor — which never sees this cache), anonymous
+    // buffs belong to sessionless relay/viewbot streamers that run continuously,
+    // so we decay them by wall-clock time since applied_at. This is what makes
+    // the Status-Effects countdown tick down instead of freezing at full.
+    _remainingSeconds(buff) {
+        const appliedMs = Date.parse(buff.applied_at);
+        if (Number.isNaN(appliedMs)) return Number(buff.remaining_seconds) || 0;
+        const elapsed = Math.floor((Date.now() - appliedMs) / 1000);
+        return Math.max(0, (Number(buff.duration_seconds) || 0) - elapsed);
+    }
+
+    // Expire (remove + emit buff-expired) every anonymous buff whose wall-clock
+    // duration has elapsed. Without this the buff would persist forever and
+    // keep re-applying its effect to every new/reloading viewer ("not
+    // resetting"). Mirrors removeBuff('expired') for DB buffs. Called on read.
+    _expireElapsed() {
+        const owner = this.owner;
+        const expiredIds = [];
+        for (const buffs of owner.anonymousBuffsCache.values()) {
+            for (const buff of buffs) {
+                if (buff.is_active && this._remainingSeconds(buff) <= 0) {
+                    expiredIds.push(buff.id);
+                }
+            }
+        }
+        for (const id of expiredIds) {
+            this.removeBuff(id, 'expired');
+        }
+        // Drop now-empty user entries so rotated-away relay/viewbot streams
+        // don't leave empty arrays accumulating in the cache.
+        for (const [userId, buffs] of owner.anonymousBuffsCache.entries()) {
+            if (buffs.length === 0) owner.anonymousBuffsCache.delete(userId);
+        }
+    }
+
     // createNewBuff anonymous arm
     createNewBuff(userId, itemId, appliedByUserId, buffType, duration, metadata) {
         const owner = this.owner;
@@ -75,7 +112,7 @@ class AnonymousBuffStore {
         return anonymousBuffs.find(buff =>
             buff.item_id === itemId &&
             buff.is_active &&
-            buff.remaining_seconds > 0
+            this._remainingSeconds(buff) > 0
         ) || null;
     }
 
@@ -103,11 +140,15 @@ class AnonymousBuffStore {
     // getActiveBuffsForUser anonymous arm
     async getActiveBuffsForUser(userId) {
         const owner = this.owner;
+        // Drop any anonymous buffs whose wall-clock duration has elapsed first.
+        this._expireElapsed();
         const anonymousBuffs = owner.anonymousBuffsCache.get(userId) || [];
-        // Enrich with item details
+        // Enrich with item details + refresh remaining_seconds to the live value
+        // so the client shows an accurate, ticking countdown.
         const enrichedBuffs = await Promise.all(anonymousBuffs
-            .filter(buff => buff.is_active && buff.remaining_seconds > 0)
+            .filter(buff => buff.is_active && this._remainingSeconds(buff) > 0)
             .map(async (buff) => {
+                buff.remaining_seconds = this._remainingSeconds(buff);
                 const item = await owner.itemRepository.getByIdIncludingInactive(buff.item_id);
                 if (item) {
                     buff.item_name = item.name;
