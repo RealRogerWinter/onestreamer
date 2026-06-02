@@ -5,7 +5,7 @@ _Last verified: 2026-05-23 against commit 4a1d325._
 OneStreamer continuously records every active stream, uploads segments to Backblaze B2, captures synced chat messages, and supports extracting playable clips from any segment. Recordings are reviewable in the admin panel; clips are user-visible in a gallery.
 
 > [!NOTE]
-> Earlier versions of this system used direct WebM-from-MediaSoup-PlainTransport capture. The current production path uses LiveKit-Egress-style HLS segmentation with B2 segment upload — see the [Recording pipeline](#recording-pipeline) below. Legacy recording-system notes live in [`/docs/archive/`](../archive/).
+> Earlier versions of this system captured WebM directly from a MediaSoup Plain-RTP transport; that path was retired with MediaSoup ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). The current production path is **LiveKit Egress → HLS segments → B2 segment upload** — see the [Recording pipeline](#recording-pipeline) below. Legacy recording-system notes live in [`/docs/archive/`](../archive/).
 
 ## What gets recorded
 
@@ -14,23 +14,22 @@ Every active stream is recorded by default. Per-stream metadata: streamer ID, st
 ## Recording pipeline
 
 ```
-Streamer browser → MediaSoup producer → GStreamer pipeline → HLS segments
-                                                              ├── written to /root/onestreamer/recordings/{sessionId}/
-                                                              └── B2SegmentUploadService → Backblaze B2 bucket (async, non-blocking)
+LiveKit room → LiveKit Egress (Room Composite / Participant) → HLS segments
+                                                              ├── written to egress-recordings/{sessionId}/
+                                                              └── RecordingUploadScheduler → Backblaze B2 bucket (async, non-blocking)
 
 Chat messages → SessionChatCaptureService → timestamped JSON sidecar
                                             └── persisted with recording metadata
 ```
 
-Components:
+The encode happens inside LiveKit Egress, not in the app — there is no in-process GStreamer or MediaSoup pipeline anymore ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). Components:
 
 | Service | Role |
 |---------|------|
-| [`ContinuousRecordingService.js`](../../server/services/ContinuousRecordingService.js) | Orchestrates recording; spawns the segmentation pipeline; tracks per-recording state |
-| [`RecordingStorageService.js`](../../server/services/RecordingStorageService.js) | Local FS layout, size tracking, DB metadata |
-| [`B2SegmentUploadService.js`](../../server/services/B2SegmentUploadService.js) | Pushes new segments to B2 in background, retries on failure |
+| [`ContinuousRecordingService.js`](../../server/services/ContinuousRecordingService.js) | Orchestrates recording; starts/stops the LiveKit Egress (Room Composite for viewbots, Participant Egress for a real streamer); tracks per-recording state in `recording_sessions` |
+| [`recording/RecordingDiskScanner.js`](../../server/services/recording/RecordingDiskScanner.js) | Reconciles the `egress-recordings/` directory against the `recording_sessions` table |
 | [`B2StorageService.js`](../../server/services/B2StorageService.js) | S3-compatible client (uses `@aws-sdk/client-s3` against B2's S3 endpoint), generates signed URLs for playback |
-| [`RecordingUploadScheduler.js`](../../server/services/RecordingUploadScheduler.js) | Periodic sweep for retry of stuck uploads |
+| [`RecordingUploadScheduler.js`](../../server/services/RecordingUploadScheduler.js) | Pushes finished segments to B2 and retries stuck uploads |
 | [`RecordingCleanupScheduler.js`](../../server/services/RecordingCleanupScheduler.js) | Deletes local files after B2 upload confirmed; respects retention policy |
 | [`SessionChatCaptureService.js`](../../server/services/SessionChatCaptureService.js) | Captures chat during stream; aligns to recording timeline |
 
@@ -161,8 +160,8 @@ In the admin panel → Recordings tab:
 |---------|-------------|
 | Clips show `available:false` even with a live stream | `isRecording` flag in `/api/clips/status`. Recording may have stopped despite the stream being active; check `ContinuousRecordingService` logs. |
 | New clip fails to render | `ClipProcessorService` log — FFmpeg error, missing source segment, or B2 fetch failure. |
-| Segments missing in B2 | `B2SegmentUploadService` log + B2 credentials valid. Check `b2_uploaded_segments` table for completion records. |
-| Disk filling up | Confirm `B2SegmentUploadService` is keeping pace; if not, segments stay local. See the [`recording-upload-failed.md`](../operations/runbooks/recording-upload-failed.md) runbook. |
+| Segments missing in B2 | `RecordingUploadScheduler` log + B2 credentials valid. |
+| Disk filling up | Confirm `RecordingUploadScheduler` is keeping pace; if not, egress segments stay local in `egress-recordings/`. See the [`recording-upload-failed.md`](../operations/runbooks/recording-upload-failed.md) runbook. |
 | Admin review playback stutters | Browser fetching directly from B2 — check B2 bandwidth + signed-URL TTL hasn't expired mid-playback. |
 
 ## See also

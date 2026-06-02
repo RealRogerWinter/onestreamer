@@ -1,8 +1,8 @@
 # Data model
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-06-01 against `main`._
 
-OneStreamer persists its state in a single SQLite database at `server/data/onestreamer.db`. ~30 tables, all in one file, no migrations framework. Schema lives in [`server/database/database.js`](../../server/database/database.js) (programmatic creation) and individual `.sql` files in [`server/database/`](../../server/database/) (recording, viewbot, URL-stream). Ad-hoc migrations live in [`server/migrations/`](../../server/migrations/) and must be run manually.
+OneStreamer persists its state in a single SQLite database at `server/data/onestreamer.db`. ~30 tables, all in one file. Schema lives in [`server/database/database.js`](../../server/database/database.js) (programmatic creation) and individual `.sql` files in [`server/database/`](../../server/database/) (`recording-schema.sql`, `url-stream-schema.sql`, `url-relay-whitelist-schema.sql`, `ai-moderation-schema.sql`). Incremental changes run through a lightweight migration runner in [`server/migrations/`](../../server/migrations/) ([ADR-0022](adr/0022-schema-migrations-layout.md)).
 
 This page describes the key entities and how they relate. The full schema is in code — this is the navigable summary.
 
@@ -344,14 +344,9 @@ Bot-on/off, message frequency.
 
 ## Viewbots
 
-### `viewbots` (and related)
-
-ViewBot fleet configuration — see [`viewbot-fleet.md`](viewbot-fleet.md). Schema files in [`server/database/`](../../server/database/):
-- `viewbot-schema.sql`
-
 ### `url_streams`
 
-External-URL ingest configs. See [`server/database/url-stream-schema.sql`](../../server/database/url-stream-schema.sql).
+External-URL ingest configs (the live viewbot path is URL relay → LiveKit ingress — see [`viewbot-fleet.md`](viewbot-fleet.md)). Schema in [`server/database/url-stream-schema.sql`](../../server/database/url-stream-schema.sql). The standalone `viewbot-schema.sql` file was removed in the post-ADR-0024 cleanup along with the old file-based viewbot fleet.
 
 ---
 
@@ -379,9 +374,9 @@ A few important pieces of state live outside the DB:
 - **Chat messages** — last 3,000 in memory in chat-service; lost on restart.
 - **Vote tallies + claim-code state** — in-memory in chat-service; lost on restart.
 - **Chat moderation (bans, timeouts)** — `chat-service/moderation_data.json` on disk.
-- **MediaSoup router/producer/consumer state** — in-memory in the main server; lost on restart.
+- **LiveKit room / track state** — held by the LiveKit server (and mirrored in the main server's `StreamService`); not persisted to SQLite.
 - **Whisper model files** — `whisper/models/*.bin` (not in git; downloaded separately).
-- **Recording segments** — local FS in `recordings/`, then Backblaze B2.
+- **Recording segments** — local FS in `egress-recordings/`, then Backblaze B2.
 - **Clip videos** — local FS in `clips/`, optionally B2.
 - **Uploaded avatars + emojis** — `uploads/` directory (gitignored).
 
@@ -389,24 +384,20 @@ A few important pieces of state live outside the DB:
 
 ## Migrations
 
-There is no migration framework. Schema is created programmatically in [`server/database/database.js`](../../server/database/database.js) on first boot. Subsequent changes are applied via individual scripts in [`server/migrations/`](../../server/migrations/) — each is self-contained and idempotent. Examples:
+The base schema is created programmatically in [`server/database/database.js`](../../server/database/database.js) on first boot. Incremental changes run through a lightweight migration runner ([ADR-0022](adr/0022-schema-migrations-layout.md)): [`server/migrations/_runner.js`](../../server/migrations/_runner.js) executes the timestamped `2026MMDDHHMM-<description>.js` modules in lexicographic order on boot. Each migration exports `run(db, logger)` and is idempotent (there is no `schema_migrations` tracking table — at single-host scale a re-applied idempotent `ADD COLUMN` is cheap). A handful of older standalone scripts (`setup-*`, `add_*`, `migrate-*`) remain and are run manually.
 
 | Script | Purpose |
 |--------|---------|
+| `2026MMDDHHMM-*.js` (runner-managed) | Timestamped incremental migrations applied automatically on boot — e.g. `…-users-add-admin-flags.js`, `…-user-stats-drop-legacy-points.js`, `…-recordings-add-session-and-user.js`, `…-url-relay-add-preferred-languages.js`. |
 | `setup-transcription-tables.js` | Create `transcriptions`, `transcription_chunks`, etc. |
 | `setup-clips-tables.js` | Create `clips`, `clip_views` |
-| `setup-viewbot-tables.js` | ViewBot tables |
 | `setup-recording-tables.js` | Recording tables |
 | `migrate-points-system.js` | The calculated-on-read → authoritative-balance refactor for `user_stats.points`. |
-| `add-account-deletion-tables.js` | Account deletion lifecycle columns + audit log |
 | `add_ip_bans.js` | `ip_bans` table |
-| `add_streaming_logs.js` | `streaming_logs` |
-| `add_bug_reports.js` | `bug_reports` |
-| `create_chatbots_table.sql` | Chatbot tables |
-| `create_streambot_messages.sql` | StreamBot tables |
+| `add_ai_moderation_tables.js` | AI moderation tables ([ADR-0013](adr/0013-ai-moderation-pipeline.md)) |
 | `add-summon-bot-support.js`, `add-auto-summon-bot.js`, etc. | Per-feature column additions |
 
-Operators run new migrations manually after upgrades. There is no rollback tooling — back up the DB first.
+The runner applies its migrations automatically on boot; older standalone scripts are run manually after an upgrade. There is no rollback tooling — back up the DB first.
 
 ## Operational notes
 

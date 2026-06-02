@@ -161,7 +161,7 @@ These aren't automated yet. Adding a doc-link-check to CI would be a cheap, usef
 ## Pitfalls
 
 - **Tests that hit the real database** — use a sandbox SQLite per test run, or mock at the service boundary. Tests that read/write `server/data/onestreamer.db` corrupt your dev state.
-- **Tests that spawn real subprocesses** (ffmpeg, whisper.cpp, gst-launch) — slow and flaky in CI. Mock the spawn or skip in CI.
+- **Tests that spawn real subprocesses** (ffmpeg, whisper.cpp, streamlink) — slow and flaky in CI. Mock the spawn or skip in CI.
 - **Tests that depend on external services** (B2, SendGrid, Twitch) — mock the SDK boundary. Real network calls in tests are flaky.
 - **Tests that depend on time** — use Jest's fake timers, never `await sleep(...)` for synchronization.
 

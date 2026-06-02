@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Site](https://img.shields.io/badge/live-onestreamer.live-blueviolet)](https://onestreamer.live)
 [![Node](https://img.shields.io/badge/node-18%2B-green)](https://nodejs.org)
-[![Stack](https://img.shields.io/badge/stack-Node%20%7C%20React%20%7C%20MediaSoup-informational)](#tech-stack)
+[![Stack](https://img.shields.io/badge/stack-Node%20%7C%20React%20%7C%20LiveKit-informational)](#tech-stack)
 
 <!-- TODO: hero screenshot or short GIF (~1280×720, save to docs/assets/hero.png). Replace this comment with: ![OneStreamer](docs/assets/hero.png) -->
 
@@ -16,7 +16,7 @@ OneStreamer is a one-streamer-at-a-time live broadcast platform where viewers ca
 ## What it is
 
 - **A single-tenant self-hosted application.** One organization runs it, one community uses it.
-- **Real-time first.** WebRTC streaming via MediaSoup, Socket.IO for everything else, sub-second feedback loops.
+- **Real-time first.** WebRTC streaming via LiveKit, Socket.IO for everything else, sub-second feedback loops.
 - **Opinionated about engagement.** The takeover mechanic, the points/items economy, the in-stream effects, and the chat-driven voting are all in tension with one another — that's the design.
 - **Open architecture, MIT-licensed.** Read the code, fork it, run your own instance.
 
@@ -34,7 +34,7 @@ OneStreamer is a one-streamer-at-a-time live broadcast platform where viewers ca
 ### Streaming
 - **One-streamer-at-a-time** with takeover request → approve/deny → handoff
 - **Dual cooldowns** (global + per-user) prevent thrashing
-- **WebRTC via MediaSoup SFU** (announces on a public IP, UDP 50000–50199 range)
+- **WebRTC via LiveKit** (self-hosted; coturn provides TURN/STUN for NAT traversal)
 - **HLS fallback** via hls.js when WebRTC fails
 - **Streamer audio profiles**: Raw, Voice Chat, Music, Streaming — with fine-grained echo / noise / gain / sample-rate / channel control
 - **Screen-share** mode in addition to camera
@@ -98,7 +98,7 @@ OneStreamer is a one-streamer-at-a-time live broadcast platform where viewers ca
 - **Random Twitch rotation** via Helix API (OAuth 2.0 client credentials), filtered by viewer-range and excluded categories
 - **Random Kick rotation** via a Python helper (`curl_cffi`) that bypasses bot detection
 - **Arbitrary URL ingestion** for any HTTP/RTMP source
-- **Viewbot fleet** (~20 service variants, one active orchestrator) with Plain RTP and WebRTC modes
+- **Viewbots** ingest a URL or local video via `streamlink`/`yt-dlp` → FFmpeg → RTMP → LiveKit ingress, gated so they never bot over a real streamer
 - See [`docs/features/external-sources-twitch-kick.md`](docs/features/external-sources-twitch-kick.md) and [`docs/architecture/viewbot-fleet.md`](docs/architecture/viewbot-fleet.md)
 
 ### Sound effects & TTS
@@ -156,7 +156,7 @@ flowchart TB
         Main[Main server<br/>Express + Socket.IO<br/>:8443]
         Chat[Chat service<br/>Express + Socket.IO<br/>:8444]
         Strapi[Strapi CMS<br/>:1337]
-        Mediasoup[(MediaSoup SFU)]
+        LiveKit[(LiveKit<br/>SFU + ingress + egress)]
         Local[(SQLite<br/>+ whisper.cpp<br/>+ Ollama)]
     end
 
@@ -169,11 +169,11 @@ flowchart TB
     end
 
     Browser <-->|HTTPS + WSS| Nginx
-    Browser <==>|WebRTC| Mediasoup
+    Browser <==>|WebRTC| LiveKit
     Nginx --> Main
     Nginx --> Chat
     Nginx --> Strapi
-    Main --> Mediasoup
+    Main --> LiveKit
     Main --> Local
     Main -.->|recording / clips| B2
     Main -.->|email| SendGrid
@@ -187,7 +187,7 @@ flowchart TB
 **The moving parts**:
 
 - **Three Node.js processes** managed by PM2: the main server (port 8443), the chat microservice (port 8444), the React client dev server (port 3443 in dev; static build behind nginx in prod).
-- **Real-time media flows over MediaSoup** (the WebRTC SFU) directly between browsers — the server doesn't decode video, it forwards encrypted RTP. LiveKit is also installed but currently dormant.
+- **Real-time media flows over LiveKit** (the self-hosted WebRTC SFU) — the server-side `LiveKitService` manages rooms, ingress (URL relay + viewbots), and egress (recording); browsers talk to LiveKit directly for low-latency A/V. MediaSoup was retired in [ADR-0024](docs/architecture/adr/0024-retire-mediasoup-livekit-only.md).
 - **SQLite is the source of truth** for users, items, points, recordings, clips, bans, transcriptions, chatbot configs, and more. ~30 tables, all in `server/data/onestreamer.db`.
 - **Recording is continuous** — every stream is captured to HLS segments and uploaded to Backblaze B2 in the background. Clips are extracted from those segments.
 - **A separate Strapi CMS** on port 1337 holds blog content; the main Node server fetches blog articles and server-side renders OG meta tags so links preview cleanly on Discord/Twitter.
@@ -204,7 +204,7 @@ Deeper architecture docs: **[`docs/architecture/`](docs/architecture/)**. Past d
 | [**`docs/operations/`**](docs/operations/) | Deployment, backup/restore, monitoring, upgrades, and a per-incident-class [runbook collection](docs/operations/runbooks/) |
 | [**`docs/features/`**](docs/features/) | One file per user-facing feature — streaming, chat, points, items, recording/clips, transcription, AI bots, admin panel, the game, more |
 | [**`docs/architecture/`**](docs/architecture/) | System overview, streaming stack, viewbot fleet, real-time events catalog, data model, service catalog, plus [ADRs](docs/architecture/adr/) |
-| [**`docs/integrations/`**](docs/integrations/) | One file per external dependency — LiveKit, MediaSoup, B2, Google OAuth, Turnstile, Ollama, Groq, Whisper, 101soundboards, Twitch, Kick, Strapi, SendGrid |
+| [**`docs/integrations/`**](docs/integrations/) | One file per external dependency — LiveKit, B2, Google OAuth, Turnstile, Ollama, Groq, Whisper, 101soundboards, Twitch, Kick, Strapi, SendGrid (plus a `mediasoup.md` retirement stub) |
 | [**`docs/api/`**](docs/api/) | Complete REST endpoint reference + Socket.IO event reference |
 | [**`docs/contributing/`**](docs/contributing/) | Coding conventions, branching/releases, testing, how to add a new service |
 | [**`docs/security/`**](docs/security/) | Threat model, moderation policy, auth flows with sequence diagrams |
@@ -219,9 +219,9 @@ The top-level [`docs/README.md`](docs/README.md) is the audience-first index —
 | Layer | Choices |
 |-------|---------|
 | **Runtime** | Node.js 18+, Express 4, Socket.IO 4.7 |
-| **Frontend** | React 19, TypeScript 4.9, `mediasoup-client`, `hls.js`, `socket.io-client`, `lucide-react`, CRA build |
-| **Realtime media** | MediaSoup (primary WebRTC SFU), coturn (TURN/STUN), LiveKit (installed but dormant — see [ADR-0002](docs/architecture/adr/0002-mediasoup-primary-livekit-dormant.md)) |
-| **Media tooling** | ffmpeg, GStreamer, Puppeteer / Chrome for WebRTC-mode viewbots |
+| **Frontend** | React 19, TypeScript 4.9, `livekit-client`, `hls.js`, `socket.io-client`, `lucide-react`, CRA build |
+| **Realtime media** | LiveKit (sole WebRTC SFU — server SDK `livekit-server-sdk`, server RTC `@livekit/rtc-node`, client `livekit-client`), coturn (TURN/STUN). See [ADR-0024](docs/architecture/adr/0024-retire-mediasoup-livekit-only.md). |
+| **Media tooling** | ffmpeg, streamlink / yt-dlp (URL-relay ingest) |
 | **Storage** | SQLite (primary), Backblaze B2 (recording + clip storage via the S3-compatible API), optional Redis (cache) |
 | **Auth** | Passport (Google OAuth + Local), JWT (`jsonwebtoken`), Cloudflare Turnstile, bcrypt |
 | **CMS** | Strapi 4 (blog content, separate process) |
@@ -238,7 +238,7 @@ Full per-dependency notes in [`docs/integrations/`](docs/integrations/).
 
 OneStreamer is actively used in production but has accumulated some honest debt. Where status matters, individual docs carry `> [!WARNING]` banners. The highlights:
 
-- **LiveKit was revived in May 2026.** [ADR-0008](docs/architecture/adr/0008-revive-livekit-for-url-streams-and-recording.md) supersedes ADR-0002/0007 and re-enables the LiveKit adapter because URL-stream relay, room-composite recording, and transcription all silently depended on it. The Sept-2025 WebSocket failure that triggered the original rollback (ADR-0003) is not root-caused; rollback procedure documented in the new ADR.
+- **LiveKit is now the sole WebRTC backend; MediaSoup is fully retired.** [ADR-0024](docs/architecture/adr/0024-retire-mediasoup-livekit-only.md) (2026-06-01) removed the MediaSoup SFU, its client, the Plain-RTP transport, and the `mediasoup`/`@roamhq/wrtc` deps after LiveKit had carried all production traffic (streamer↔viewer, URL relay, recording, transcription). The env-flip rollback is replaced by a redeploy of the tagged pre-retirement build; the Sept-2025 LiveKit WebSocket failure (ADR-0003) remains un-root-caused, so that recovery path is a finite-shelf-life escape hatch.
 - **Stream-reliability plan partially executed.** The most critical fix (`currentStreamer` dual-source-of-truth) shipped; transport-recreation race conditions and `stream-ready` event de-duplication remain TODO. See the archived [`STREAM_RELIABILITY_PLAN.md`](docs/archive/plans/STREAM_RELIABILITY_PLAN.md).
 - **`openai-whisper` was a phantom dependency.** Listed in `package.json` but unused — removed in #21. The live transcription path is `whisper.cpp`. See [ADR-0006](docs/architecture/adr/0006-whisper-cpp-over-cloud-stt.md).
 

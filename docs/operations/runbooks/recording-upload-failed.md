@@ -8,7 +8,7 @@ _Last verified: 2026-05-23 against commit 4a1d325._
 - Admin panel → Recordings tab shows stale segment counts (or recording entries with `upload_status: pending` for hours)
 - Admin recording-review playback fails with "segment not found" when `B2_STREAMING_ENABLED=true`
 - B2 dashboard shows no recent upload activity
-- `pm2 logs onestreamer-server` shows repeated `B2SegmentUploadService` errors or `NetworkError` / `403 Forbidden`
+- `pm2 logs onestreamer-server` shows repeated `RecordingUploadScheduler` errors or `NetworkError` / `403 Forbidden`
 
 ## How to confirm
 
@@ -74,7 +74,7 @@ Transient. Should self-recover. Check:
 curl -I "https://$B2_ENDPOINT"
 ```
 
-`B2SegmentUploadService` has retry logic — short outages are absorbed. Long outages cause a backlog that takes time to drain even after connectivity returns.
+`RecordingUploadScheduler` has retry logic — short outages are absorbed. Long outages cause a backlog that takes time to drain even after connectivity returns.
 
 ### 4. Disk filled up, blocking new segment writes too
 

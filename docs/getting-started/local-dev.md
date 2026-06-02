@@ -12,17 +12,17 @@ Set up OneStreamer on a clean machine. The result is three Node.js services runn
 | Chat microservice | `8081` (HTTP) / `8444` (HTTPS) | [`chat-service/index.js`](../../chat-service/index.js) | Real-time chat, voting, claim codes |
 | React client | `3000` (HTTP) / `3443` (HTTPS) | [`client/`](../../client/) | The browser app (CRA dev server) |
 
-Optional companions:
-- **Ollama** on `:11434` for AI chatbots (see [`/docs/integrations/ollama-and-groq.md`](../integrations/ollama-and-groq.md))
-- **MediaSoup UDP range** `50000–50199` for WebRTC media transport
-- **LiveKit** on `:7882` — only needed if you're working on the dormant LiveKit code paths
+Companions:
+- **LiveKit server** on `:7880`/`:7882` (+ its RTC UDP range) — **required for any live streaming**; it is the sole WebRTC backend ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). See [`/docs/integrations/livekit.md`](../integrations/livekit.md). (You can skip it only if you're working on non-streaming parts of the app.)
+- **Ollama** on `:11434` for AI chatbots (optional — see [`/docs/integrations/ollama-and-groq.md`](../integrations/ollama-and-groq.md))
 
 ## Prerequisites
 
 - Node.js **18+** and npm
 - A modern Chrome/Firefox/Safari for browser testing
-- `ffmpeg` (`apt install ffmpeg` / `brew install ffmpeg`) — required for VisualFX, recording, transcription
-- `gstreamer1.0-tools` + plugins (Linux: `apt install gstreamer1.0-tools gstreamer1.0-plugins-{base,good,bad,ugly}`) — required for the Plain RTP viewbot pipeline
+- `ffmpeg` (`apt install ffmpeg` / `brew install ffmpeg`) — required for the URL-relay/viewbot ingest path and clip extraction
+- `streamlink` / `yt-dlp` — pull upstream sources (Twitch/Kick/YouTube/etc.) for the URL-relay path
+- A running **LiveKit server** (plus its `ingress`/`egress` services if you exercise URL relay or recording) — see [`/docs/integrations/livekit.md`](../integrations/livekit.md). There is no GStreamer dependency anymore — the Plain-RTP viewbot pipeline was removed with MediaSoup ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)).
 - Build tools for `whisper.cpp`: `gcc`, `make`, `cmake` (skip if you don't need transcription)
 - (Optional) Ollama: download from [ollama.ai](https://ollama.ai), then `ollama pull mistral`
 
@@ -150,7 +150,7 @@ curl -sk https://localhost:8443/api/clips/status   # clips subsystem
 | Chat shows "disconnected" | Chat-service not running — `cd chat-service && npm run dev` separately. |
 | `whisper.cpp/main` not found | Run `node setup-whisper.js` (compiles + downloads models). Or skip if you don't need transcription — set `enableTranscription: false`. |
 | Turnstile widget blocks signup | Use the test site key (`1x00000000000000000000AA`) in `client/.env`, restart the client. |
-| MediaSoup binds fail | UDP `50000–50199` may be in use by another app. Adjust `MEDIASOUP_MIN_PORT` / `MEDIASOUP_MAX_PORT` in `.env`. |
+| Stream won't connect / `[livekit-client]` errors | Confirm a LiveKit server is running on `:7882` and its RTC UDP range (set in `livekit-config.yaml`) is free and reachable. See [`/docs/integrations/livekit.md`](../integrations/livekit.md). |
 
 ## What to do next
 

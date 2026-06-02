@@ -3,7 +3,7 @@
 _Last verified: 2026-05-23 against commit 4a1d325._
 
 > [!NOTE]
-> LiveKit is currently **dormant** in production — see [ADR-0002](../../architecture/adr/0002-mediasoup-primary-livekit-dormant.md). This runbook is for the scenario where LiveKit has been revived and is in the active streaming path (i.e. `WEBRTC_BACKEND=livekit`), or where dormant LiveKit infrastructure is itself producing alerts. If you're seeing stream issues today, you almost certainly want [`stream-stuck.md`](stream-stuck.md) instead, since the production WebRTC path is MediaSoup.
+> **LiveKit is the sole WebRTC backend** ([ADR-0024](../../architecture/adr/0024-retire-mediasoup-livekit-only.md)) — every live media path (primary streamer↔viewer, URL-stream relay via ingress, recording via egress, transcription) runs through it. A LiveKit-class outage is a **total streaming outage**: nobody can broadcast or watch. This is a primary streaming runbook. If the symptoms point upstream of LiveKit (a single stuck source, a wedged ingress/egress) rather than the LiveKit server itself, [`stream-stuck.md`](stream-stuck.md) and [`livekit-ingress-not-connected.md`](livekit-ingress-not-connected.md) are the more specific runbooks.
 
 ## Symptoms
 
@@ -11,31 +11,26 @@ _Last verified: 2026-05-23 against commit 4a1d325._
 - Browser console: `[livekit-client] Could not connect to LiveKit`
 - LiveKit server logs (`journalctl -u livekit`): `ws upgrade failed` / `unauthorized` / repeated `room not found`
 - Viewers report black video; streamer says they're broadcasting
-- Recording pipeline (which can use LiveKit Egress) stops producing segments
+- Recording pipeline (LiveKit Egress) stops producing segments
 
 ## How to confirm
 
-1. **Is LiveKit actually in the active path?**
-   ```bash
-   pm2 env onestreamer-server | grep WEBRTC_BACKEND
-   ```
-   If unset or `mediasoup` → LiveKit is dormant; this isn't your issue. Go to [`stream-stuck.md`](stream-stuck.md).
-2. **Is the LiveKit server running?**
+1. **Is the LiveKit server running?**
    ```bash
    curl -s http://127.0.0.1:7880/         # LiveKit HTTP root
    ss -tlnp | grep -E ":(7880|7882)"       # ports bound
    systemctl status livekit                # if managed by systemd
    ```
-3. **Can the main server reach LiveKit?**
+2. **Can the main server reach LiveKit?**
    ```bash
    curl -s http://127.0.0.1:7882/twirp/livekit.RoomService/ListRooms \
      -H "Authorization: Bearer <livekit-jwt>" -d '{}'
    ```
-4. **Is the WebSocket-upgrade path through nginx working?**
+3. **Is the WebSocket-upgrade path through nginx working?**
    ```bash
    sudo tail -n 100 /var/log/nginx/error.log | grep -E "(livekit|upgrade)"
    ```
-5. **Are LiveKit credentials still valid?**
+4. **Are LiveKit credentials still valid?**
    ```bash
    pm2 env onestreamer-server | grep -E "LIVEKIT_(API_KEY|API_SECRET)"
    ```
@@ -43,7 +38,7 @@ _Last verified: 2026-05-23 against commit 4a1d325._
 
 ## Likely causes
 
-Ranked by probability when LiveKit is active:
+Ranked by probability:
 
 ### 1. WebSocket upgrade failing at nginx
 
@@ -101,16 +96,9 @@ pm2 env onestreamer-server | grep LIVEKIT_TURN_ENABLED
 
 Set `LIVEKIT_TURN_ENABLED=true` if not already.
 
-### 6. The Sept-2025 dual-stack issue returned
+### 6. A WebSocket-connectivity regression (the Sept-2025 class of bug)
 
-The original dual-stack rollback (see [`/docs/archive/livekit/`](../../archive/livekit/) and [ADR-0003](../../architecture/adr/0003-livekit-dual-stack-rollback.md)) was triggered by WebSocket connectivity problems. If you re-enabled the dual-stack and the same symptoms appeared, this may be the same class of bug. Consider rolling back via:
-
-```bash
-# Edit .env: WEBRTC_BACKEND=mediasoup
-pm2 restart onestreamer-server --update-env
-```
-
-…and update ADR-0002 / ADR-0003 with what you learned.
+The Sept-2025 dual-stack rollback (see [`/docs/archive/livekit/`](../../archive/livekit/) and [ADR-0003](../../architecture/adr/0003-livekit-dual-stack-rollback.md)) was triggered by WebSocket connectivity problems through nginx. Those same symptoms — failed `/livekit/rtc` upgrades, clients that connect then immediately drop — recur whenever the nginx upgrade headers or LiveKit's announced address regress. Re-check cause #1 (nginx upgrade config) and the `livekit-config.yaml` RTC/UDP settings; there is **no in-process WebRTC fallback** to fail over to anymore ([ADR-0024](../../architecture/adr/0024-retire-mediasoup-livekit-only.md)).
 
 ## Resolution
 
@@ -119,18 +107,18 @@ In order of escalation:
 1. **Restart LiveKit**: `sudo systemctl restart livekit`. Many transient connectivity issues resolve.
 2. **Reload nginx**: `sudo nginx -t && sudo nginx -s reload`. Catches stale WebSocket-upgrade config.
 3. **Restart the main server**: `pm2 restart onestreamer-server --update-env`. Refreshes any cached LiveKit tokens.
-4. **Roll back to MediaSoup-only**: edit `.env`, set `WEBRTC_BACKEND=mediasoup`, restart. This is the safe fallback per ADR-0002.
-5. **If using dormant LiveKit infrastructure** (i.e. you haven't reverted ADR-0002 and shouldn't be seeing LiveKit at all): confirm `WEBRTC_BACKEND` isn't accidentally set; if dormant LiveKit is producing log noise but no user impact, you can `sudo systemctl stop livekit` to silence it.
+4. **Last resort — roll back to the pre-retirement build.** LiveKit is the only backend ([ADR-0024](../../architecture/adr/0024-retire-mediasoup-livekit-only.md)); there is no env flip to a second stack. If a recent deploy broke LiveKit integration and the steps above don't recover it, redeploy the last-known-good tagged build per [`deployment.md`](../deployment.md).
 
 ## Prevention
 
-- **Document the dual-stack revival decision** in a new ADR that supersedes ADR-0002/0003 before flipping it back on. Capture the new test/verification steps so this runbook can be updated with the actual symptoms you observe.
-- **Monitor LiveKit health** alongside the rest of the stack (see [`monitoring.md`](../monitoring.md)).
+- **Monitor LiveKit health** alongside the rest of the stack (see [`monitoring.md`](../monitoring.md)) — because it carries all live media, treat a LiveKit alert as a streaming-down alert.
+- **Smoke-test ingress and egress on every deploy**, not just a takeover: start a URL relay (ingress) and confirm a recording starts (egress).
 - **Don't ship default credentials.** `devkey` / `secret` are well-known LiveKit defaults; production must override.
 
 ## See also
 
-- [ADR-0002](../../architecture/adr/0002-mediasoup-primary-livekit-dormant.md) — current LiveKit status
-- [ADR-0003](../../architecture/adr/0003-livekit-dual-stack-rollback.md) — what the dual-stack attempt taught us
+- [ADR-0024](../../architecture/adr/0024-retire-mediasoup-livekit-only.md) — LiveKit as the sole WebRTC backend (MediaSoup retired)
+- [ADR-0003](../../architecture/adr/0003-livekit-dual-stack-rollback.md) — what the Sept-2025 dual-stack attempt taught us (historical)
 - [`/docs/archive/livekit/`](../../archive/livekit/) — historical fix notes from the rollback
-- [`stream-stuck.md`](stream-stuck.md) — likely the right runbook if LiveKit isn't active
+- [`livekit-ingress-not-connected.md`](livekit-ingress-not-connected.md) — when RTMP never reaches the ingress
+- [`stream-stuck.md`](stream-stuck.md) — a single source/relay is wedged but LiveKit itself is healthy

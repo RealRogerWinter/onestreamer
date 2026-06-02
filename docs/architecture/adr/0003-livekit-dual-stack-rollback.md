@@ -1,6 +1,6 @@
 # ADR-0003: LiveKit dual-stack rollback (Sept 2025)
 
-_Status: accepted_
+_Status: Accepted (historical record). Superseded by [ADR-0024](0024-retire-mediasoup-livekit-only.md) — the dual stack whose rollback this documents no longer exists; LiveKit is the sole backend._
 _Date: 2026-05-23 (documenting a decision made 2025-09-12)_
 
 ## Context

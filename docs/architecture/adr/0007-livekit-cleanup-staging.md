@@ -1,6 +1,6 @@
 # ADR-0007: Staged removal of dormant LiveKit infrastructure
 
-_Status: superseded by [ADR-0008](0008-revive-livekit-for-url-streams-and-recording.md) (LiveKit is no longer dormant; cleanup is paused)_
+_Status: Superseded by [ADR-0008](0008-revive-livekit-for-url-streams-and-recording.md) (LiveKit is no longer dormant; cleanup was paused), and ultimately by [ADR-0024](0024-retire-mediasoup-livekit-only.md) (MediaSoup — not LiveKit — was the stack retired)._
 _Date: 2026-05-23_
 
 ## Context

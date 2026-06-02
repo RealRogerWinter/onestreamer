@@ -22,7 +22,7 @@ Two patterns, in order of preference:
 
 2. **Stateless services** (e.g., `AuthService`, `AccountService`) — re-instantiate at module scope inside the route file. Same convention as `server/routes/auth.js`.
 
-Once PR-I lands `server/bootstrap/services.js`, the canonical reference becomes `const { x, y } = req.app.locals.services;`.
+`server/bootstrap/services.js` has landed: the canonical reference is now `const { x, y } = req.app.locals.services;` (the `app.locals.<serviceName>` form above still works for individually-exposed services).
 
 ## Conventions you must follow
 
@@ -46,7 +46,7 @@ Smoke-test path (after any change to streaming/takeover/chat/admin): walk throug
 
 ## Where things live (mental map)
 
-- **Server core**: [`server/index.js`](server/index.js) — currently a 10K-line orchestrator. Routes mounted from [`server/routes/`](server/routes/), services in [`server/services/`](server/services/), middleware in [`server/middleware/`](server/middleware/). An active refactor is decomposing this; see open PRs for the latest state.
+- **Server core**: [`server/index.js`](server/index.js) — a ~1700-line orchestrator, decomposed into [`server/bootstrap/*`](server/bootstrap/) (env, logger, redis, services, register-socket-handlers, start-streaming-backend, start-listeners, shutdown, trace-context). Routes mounted from [`server/routes/`](server/routes/), services in [`server/services/`](server/services/), middleware in [`server/middleware/`](server/middleware/).
 - **Chat microservice**: [`chat-service/`](chat-service/) — separate process, separate port (8444), HTTP callbacks to the main server.
 - **Client**: [`client/src/`](client/src/) — React 19 + TypeScript. Components in `components/`, services in `services/`, hooks in `hooks/`, contexts in `contexts/`.
 - **DB**: SQLite at `server/data/onestreamer.db`. Schema in [`server/database/`](server/database/). ~30 tables.

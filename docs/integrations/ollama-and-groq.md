@@ -56,7 +56,7 @@ curl http://localhost:11434/api/tags
 | `llama3.2:3b` | ~2.0 GB | Slow | High |
 | `mistral` (default) | ~4.1 GB | Slow | Best |
 
-Pick based on the host's RAM/CPU budget. A 4 GB model running on a server that's also handling MediaSoup workers, recording, and transcription is a tight fit — start small.
+Pick based on the host's RAM/CPU budget. A 4 GB model running on a host that's also running the LiveKit server, recording, and transcription is a tight fit — start small.
 
 ### Switching models at runtime
 

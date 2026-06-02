@@ -175,20 +175,8 @@ For *how* endpoints fit into user-visible flows, see [`/docs/features/`](../feat
 
 ---
 
-## ViewBot management (`/api/viewbot-manager`)
-
-[`server/routes/viewbot-manager.js`](../../server/routes/viewbot-manager.js)
-
-| Auth | Method | Path | Purpose |
-|:----:|--------|------|---------|
-| 🔴 | `GET` | `/api/viewbot-manager/status` | Current mode and active bots |
-| 🔴 | `POST` | `/api/viewbot-manager/toggle-mode` | Plain RTP ↔ WebRTC toggle |
-| 🔴 | `POST` | `/api/viewbot-manager/create` | Create a bot |
-| 🔴 | `POST` | `/api/viewbot-manager/start/:botId` | Start a bot |
-| 🔴 | `POST` | `/api/viewbot-manager/stop/:botId` | Stop a bot |
-| 🔴 | `DELETE` | `/api/viewbot-manager/:botId` | Destroy a bot |
-| 🔴 | `POST` | `/api/viewbot-manager/rotation/start` | Start rotation |
-| 🔴 | `POST` | `/api/viewbot-manager/rotation/stop` | Stop rotation |
+> [!NOTE]
+> The old **`/api/viewbot-manager/*`** endpoints (mode toggle, per-bot create/start/stop) were **removed** with the file-based GStreamer/Puppeteer viewbot fleet ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). Viewbots are now driven through `/api/url-stream` (below) and `/api/random-stream` (rotation). There is no mode toggle — every viewbot is a LiveKit ingress. See [`/docs/architecture/viewbot-fleet.md`](../architecture/viewbot-fleet.md).
 
 ---
 
@@ -223,7 +211,7 @@ For *how* endpoints fit into user-visible flows, see [`/docs/features/`](../feat
 | 🟢 | `GET` | `/api/url-stream/:streamId/metrics` | Stream metrics |
 | 🟢 | `GET` | `/api/url-stream` | List relay streams |
 | 🟢 | `GET` | `/api/url-stream/presets` | List preset sources |
-| 🟢 | `GET` | `/api/url-stream/tools/status` | Tools health (ffmpeg, gstreamer, etc.) |
+| 🟢 | `GET` | `/api/url-stream/tools/status` | Tools health (streamlink, yt-dlp, ffmpeg) |
 | 🟢 | `POST` | `/api/url-stream/validate` | Validate a URL before starting |
 | 🔴 | `POST` | `/api/url-stream/stop-all` | Stop everything |
 | 🔴 | `POST` | `/api/url-stream/presets` | Save a preset |

@@ -1,6 +1,6 @@
 # ADR-0002: MediaSoup is primary, LiveKit is dormant
 
-_Status: superseded by [ADR-0008](0008-revive-livekit-for-url-streams-and-recording.md)_
+_Status: Superseded by [ADR-0008](0008-revive-livekit-for-url-streams-and-recording.md), and ultimately by [ADR-0024](0024-retire-mediasoup-livekit-only.md) (MediaSoup retired; LiveKit is the sole backend)._
 _Date: 2026-05-23_
 
 ## Context

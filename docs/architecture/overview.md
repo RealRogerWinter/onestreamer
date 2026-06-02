@@ -1,10 +1,8 @@
 # System architecture overview
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-06-01 against `main` (post-ADR-0024 cleanup)._
 
-> **⚠️ Streaming details below are partly superseded by [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md) (2026-06-01).** MediaSoup has been fully retired — **LiveKit is the sole WebRTC backend**. References below to the "MediaSoup SFU", the `50000–50199` UDP range, `mediasoup:produce`, `mediasoup-client`, and MediaSoup consumers are historical; media now flows browser ↔ **LiveKit** (`livekit-server` on `:7882`, plus ingress/egress). The non-streaming sections (chat split, SQLite, local AI, Strapi, process management) remain accurate.
-
-The README has a top-level "what talks to what" diagram. This page goes deeper: the layers, the trust boundaries, the lifecycle of a request, and the rationale for the major splits.
+The README has a top-level "what talks to what" diagram. This page goes deeper: the layers, the trust boundaries, the lifecycle of a request, and the rationale for the major splits. **LiveKit is the sole WebRTC backend** ([ADR-0024](adr/0024-retire-mediasoup-livekit-only.md)); MediaSoup is fully retired.
 
 ## The layered view
 
@@ -13,7 +11,7 @@ flowchart TB
     subgraph CL[Client browser]
         UI[React UI<br/>~109 components]
         ClientSrv[Client services<br/>AuthService, SocketManager, AppService, EffectEngine]
-        WebRTC1[mediasoup-client<br/>+ hls.js]
+        WebRTC1[livekit-client<br/>+ hls.js]
     end
 
     subgraph NET[Network]
@@ -35,8 +33,8 @@ flowchart TB
 
     subgraph PERS[Persistence + local infra]
         SQL[(SQLite<br/>onestreamer.db)]
-        FS[(Local filesystem<br/>recordings/, clips/, audio-buffers/)]
-        Mediasoup[(MediaSoup SFU<br/>UDP 50000-50199)]
+        FS[(Local filesystem<br/>egress-recordings/, clips/, audio-buffers/)]
+        LiveKit[(LiveKit server<br/>SFU + ingress + egress<br/>:7880/:7882 + UDP)]
         Whisper[(whisper.cpp<br/>native binary)]
         Ollama[(Ollama LLM<br/>local)]
         Strapi[(Strapi CMS<br/>port 1337)]
@@ -57,17 +55,18 @@ flowchart TB
     UI --> ClientSrv
     ClientSrv --> WebRTC1
     ClientSrv -->|HTTPS + WSS| Nginx
-    WebRTC1 <==>|WebRTC media| Mediasoup
+    WebRTC1 <==>|WebRTC media| LiveKit
     Nginx --> Routes
     Nginx --> Sockets
     Nginx --> ChatHandlers
     Nginx --> Strapi
+    Nginx -->|/livekit/rtc| LiveKit
     Routes --> Middleware
     Sockets --> Services
     Routes --> Services
     Services --> SQL
     Services --> FS
-    Services --> Mediasoup
+    Services --> LiveKit
     Services --> Whisper
     Services --> Ollama
     Services -.-> B2
@@ -87,15 +86,15 @@ flowchart TB
 
 ## The five major splits
 
-### 1. Browser ↔ server is HTTPS + WSS over nginx; WebRTC bypasses nginx entirely
+### 1. Browser ↔ server is HTTPS + WSS over nginx; WebRTC media goes to LiveKit
 
 nginx terminates TLS for application traffic on ports 80/443 and proxies to:
 - Main server on `127.0.0.1:8443`
 - Chat-service on `127.0.0.1:8444`
 - Strapi on `127.0.0.1:1337`
-- LiveKit on `127.0.0.1:7882` (active — URL-stream relay via `livekit-ingress`, recording via `livekit-egress`, MovieBot transcription; see [ADR-0008](adr/0008-revive-livekit-for-url-streams-and-recording.md) which supersedes ADR-0002)
+- LiveKit on `127.0.0.1:7882` (the sole WebRTC backend — primary streamer↔viewer, URL-stream relay via ingress, recording via egress, transcription; see [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md))
 
-**Media flows direct browser ↔ MediaSoup over UDP** in the 50000–50199 range, announced on the public IP. nginx doesn't touch RTP packets. This is essential for low-latency streaming and is the reason `coturn` exists as a TURN server for clients behind strict NATs.
+**Media flows browser ↔ LiveKit.** The RTC signaling WebSocket is proxied by nginx (`/livekit/rtc`, with `Upgrade`/`Connection` headers + 7-day timeouts); the actual A/V RTP rides LiveKit's UDP port range (set in `livekit-config.yaml`), announced on the public IP. This direct media path is why `coturn` exists as a TURN relay for clients behind strict NATs.
 
 ### 2. Main server vs chat-service — one host, two processes
 
@@ -107,7 +106,7 @@ Chat-service calls back to the main server over HTTP for any cross-cutting side 
 
 ~30 SQLite tables in `server/data/onestreamer.db` hold everything stateful: users, inventory, points balance, recordings metadata, chatbot configs, IP bans, transcription chunks, account-deletion audit, etc. See [`data-model.md`](data-model.md).
 
-Recording video segments are not stored in SQLite — they're written to the local filesystem first (`recordings/{sessionId}/`), then uploaded to Backblaze B2 in the background by [`B2SegmentUploadService`](../../server/services/B2SegmentUploadService.js). The metadata in SQLite tracks both copies. See [ADR-0005](adr/0005-b2-over-direct-s3.md).
+Recording video segments are not stored in SQLite — they're written to the local filesystem first (`egress-recordings/{sessionId}/`), then uploaded to Backblaze B2 in the background by [`RecordingUploadScheduler`](../../server/services/RecordingUploadScheduler.js). The metadata in SQLite tracks both copies. See [ADR-0005](adr/0005-b2-over-direct-s3.md).
 
 ### 4. AI runs locally by default
 
@@ -122,7 +121,7 @@ The blog (`/blog/<slug>`) is content from Strapi CMS on `:1337`. The React SPA h
 | Boundary | What crosses | How it's gated |
 |----------|--------------|----------------|
 | Browser → main server | HTTPS REST + WSS sockets | JWT (Bearer header on REST; auth handshake on sockets) + Cloudflare Turnstile for signup/login/some chat actions + IP-ban check at socket connect |
-| Browser → MediaSoup | WebRTC RTP | DTLS handshake; ICE candidate exchange signaled through main server |
+| Browser → LiveKit | WebRTC RTP | LiveKit access token (minted server-side by `LiveKitService`); DTLS + ICE negotiated by the LiveKit SDK |
 | Browser → chat-service | WSS sockets | Same JWT as main server (shared `JWT_SECRET`); IP-ban check |
 | Chat-service → main server | HTTP callbacks | Bearer JWT (the user's) + shared trust; `/api/internal/*` paths |
 | Main server → Strapi | HTTP fetch | Localhost; no auth (Strapi is bound to 127.0.0.1) |
@@ -135,16 +134,16 @@ The blog (`/blog/<slug>`) is content from Strapi CMS on `:1337`. The React SPA h
 1. Browser hits `https://onestreamer.live/` → nginx serves the React static bundle.
 2. React opens two Socket.IO connections: one to the main server (`/socket.io/`), one to chat (`/chat/socket.io/`).
 3. Sockets connect with the user's JWT if logged in, anonymously otherwise. Server checks IP ban, assigns anonymous animal-username if no JWT, emits `stream-status` + chat history.
-4. If a stream is live, client subscribes to MediaSoup consumers for the streamer's producers — RTP media starts flowing over UDP.
+4. If a stream is live, the client connects to the LiveKit room (token minted by the server) and subscribes to the streamer's tracks — RTP media starts flowing over UDP.
 
 ### A viewer becoming the streamer
 1. Browser emits `request-to-stream`.
 2. Server checks cooldowns + ban status + current streamer.
 3. If approved, server emits `streaming-approved`.
-4. Browser builds a MediaSoup send transport, creates producers for audio + video tracks, emits `mediasoup:produce`.
-5. Server registers producers, broadcasts `stream-started` to all viewers.
-6. Other viewers' clients subscribe to the new producers, swap their video element source.
-7. [`ContinuousRecordingService`](../../server/services/ContinuousRecordingService.js) starts capturing HLS segments in the background.
+4. The client connects to the LiveKit room ([`LiveKitClient`](../../client/src/services/LiveKitClient.ts)) and publishes its audio + video tracks; ICE/SDP is negotiated inside the LiveKit SDK, not on the socket.
+5. Server broadcasts `stream-ready` then `stream-started` to all viewers.
+6. Other viewers' clients subscribe to the new publisher's LiveKit tracks, swap their video element source.
+7. [`ContinuousRecordingService`](../../server/services/ContinuousRecordingService.js) starts a LiveKit Egress capturing HLS segments in the background.
 
 ### A viewer using an item
 1. Browser POSTs to `/api/inventory/use/:itemId` with the user's JWT.
@@ -170,7 +169,7 @@ Plus the external companions:
 |---------|-------|
 | nginx | system service |
 | Strapi CMS | separate process; not in `config/ecosystem.config.js` (typically systemd or its own PM2 entry) |
-| LiveKit server | system service on `:7880` / `:7882` (active — URL-stream relay, recording, transcription; see ADR-0008) |
+| LiveKit server | system service on `:7880` / `:7882` (the WebRTC backend — streamer↔viewer, URL-stream relay, recording, transcription; see ADR-0024) |
 | coturn | system service |
 | Ollama | system service on `:11434` |
 
@@ -178,10 +177,10 @@ Plus the external companions:
 
 ## What's intentionally single-host
 
-OneStreamer is not currently designed for horizontal scaling. There is no Redis-backed session, no shared message bus between would-be replicas, no sharding of MediaSoup routers across hosts. The codebase has Redis support but it's optional and unused in production. Scaling beyond a single host would require:
+OneStreamer is not currently designed for horizontal scaling. There is no Redis-backed session, no shared message bus between would-be replicas, and the single LiveKit server runs co-located on the host. The codebase has Redis support but it's optional and unused in production. Scaling beyond a single host would require:
 
 - Sticky session routing for sockets (or shared session backend)
-- Distributed MediaSoup with router sharding
+- A distributed LiveKit deployment (separate nodes / a LiveKit cluster) instead of the single co-located server
 - Shared moderation state for the chat-service (currently in-memory + local JSON)
 - Read-replica or shared SQLite-alternative for the DB
 

@@ -53,7 +53,7 @@ OneStreamer is a single-tenant, self-hosted, public-facing live-streaming platfo
 ### Transport
 - **HTTPS everywhere** — Let's Encrypt certs on nginx; HSTS header `max-age=31536000; includeSubDomains`.
 - **WSS for sockets** (Socket.IO over the HTTPS connection).
-- **MediaSoup uses DTLS** for WebRTC media. The plain-RTP transport (for recording/transcription/viewbots) is localhost-only.
+- **LiveKit uses DTLS-SRTP** for WebRTC media (it is the sole WebRTC backend — [ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). The RTMP ingress that the URL relay and viewbots push to, and the egress that recording reads from, are localhost-only (`127.0.0.1:1935` / loopback).
 
 ### Headers
 - `X-Frame-Options: SAMEORIGIN`
@@ -72,7 +72,7 @@ OneStreamer is a single-tenant, self-hosted, public-facing live-streaming platfo
 |-----|------|-------------------|
 | **TURN HMAC secret shipped to client** | Anyone can mint TURN credentials against coturn | Documented in [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md); architectural fix proposed (server-side credential signing) but not implemented |
 | **Default `JWT_SECRET` / `SESSION_SECRET` fallbacks in code** | If prod doesn't override, anyone with source access can forge admin tokens | Documented; rotation procedure in the runbook |
-| **Default `LIVEKIT_API_KEY=devkey`** | Anyone can mint LiveKit room tokens | LiveKit is dormant ([ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md)); blast radius low but unnecessary exposure |
+| **Default `LIVEKIT_API_KEY=devkey`** | Anyone can mint LiveKit room tokens — and LiveKit carries **all** live media ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)) | High blast radius if shipped: a forged token can join/publish to any room. Production **must** override; documented in [`secret-rotation.md`](../operations/runbooks/secret-rotation.md) |
 | **No CSRF protection** for cookie-authed routes | Acceptable since auth is JWT-Bearer in headers, not cookies | Verify any future cookie-auth additions add CSRF |
 | **No DDoS protection at the application layer** | Single host; vulnerable to large floods | Mitigated by Cloudflare in front of nginx (Turnstile site implies Cloudflare account already exists; verify Cloudflare proxy is enabled on the DNS records) |
 | **No automated dependency scanning today** | Vulnerable to known CVEs in dependencies until manually updated | Step 10 of the docs overhaul adds Dependabot |

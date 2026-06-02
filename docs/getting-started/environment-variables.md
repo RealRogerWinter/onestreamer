@@ -57,25 +57,18 @@ These are not optional — without them, the corresponding feature is broken or 
 |----------|---------|---------|
 | `SSL_CRT_FILE` | React dev server | Path to TLS cert (CRA dev server) |
 | `SSL_KEY_FILE` | React dev server | Path to TLS key |
-| `DTLS_CERT_FILE` | Main (WebRTC) | DTLS certificate path for MediaSoup |
-| `DTLS_KEY_FILE` | Main (WebRTC) | DTLS key path |
 
-Production typically uses Let's Encrypt-issued certs in `/etc/letsencrypt/live/<domain>/`. See [`deployment.md`](../operations/deployment.md).
+Production typically uses Let's Encrypt-issued certs in `/etc/letsencrypt/live/<domain>/`. See [`deployment.md`](../operations/deployment.md). WebRTC media DTLS is handled by the LiveKit server (configured in `livekit-config.yaml`), not by OneStreamer env vars.
 
 ---
 
-## MediaSoup (WebRTC SFU)
+## WebRTC backend
+
+LiveKit is the sole WebRTC backend ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). The old `WEBRTC_BACKEND` / `USE_WEBRTC_ADAPTER` selector and every `MEDIASOUP_*` / `DTLS_*` variable were removed with MediaSoup — the backend is pinned to `livekit` in code ([`server/config/webrtc.config.js`](../../server/config/webrtc.config.js)) and there is no UDP `50000–50199` RTP range anymore. The RTC/ICE media ports are owned by the LiveKit server and configured in `livekit-config.yaml`, not by OneStreamer env vars — see the [LiveKit](#livekit-required) section below and [`/docs/integrations/livekit.md`](../integrations/livekit.md).
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `WEBRTC_BACKEND` | `mediasoup` | `mediasoup` or `livekit`. **Production: leave at `mediasoup`.** See [ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md). |
-| `USE_WEBRTC_ADAPTER` | `false` | Use the abstraction layer over MediaSoup/LiveKit |
-| `MEDIASOUP_LISTEN_IP` | `0.0.0.0` | IP MediaSoup binds to |
-| `MEDIASOUP_ANNOUNCED_IP` | (uses `ANNOUNCED_IP`) | Public IP announced in ICE candidates |
-| `ANNOUNCED_IP` | `<SERVER_IP>` (prod) | The public IP browsers will try to reach for RTP |
-| `ANNOUNCED_IPV6` | (empty) | IPv6 equivalent |
-| `MEDIASOUP_MIN_PORT` | `50000` | Low end of UDP RTP range |
-| `MEDIASOUP_MAX_PORT` | `50199` | High end of UDP RTP range |
+| `ANNOUNCED_IP` | `<SERVER_IP>` (prod) | Public IP the TURN/ICE layer advertises ([`server/routes/turn.js`](../../server/routes/turn.js)). |
 
 ---
 
@@ -93,13 +86,15 @@ Production typically uses Let's Encrypt-issued certs in `/etc/letsencrypt/live/<
 
 ---
 
-## LiveKit (dormant in production)
+## LiveKit (required) {#livekit-required}
+
+LiveKit is the sole WebRTC backend ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)) — these back **every** live media path (streamer↔viewer, URL-relay ingress, recording egress, transcription). `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` are **required in production**; without valid credentials nobody can broadcast or watch.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `LIVEKIT_HOST` | `http://127.0.0.1:7882` | LiveKit API URL |
-| `LIVEKIT_API_KEY` | `devkey` | API key |
-| `LIVEKIT_API_SECRET` | `secret` | API secret |
+| `LIVEKIT_API_KEY` | (unset) | API key — **required**; must match the key in `livekit-config.yaml` |
+| `LIVEKIT_API_SECRET` | (unset) | API secret — **required**; must match the secret in `livekit-config.yaml` |
 | `LIVEKIT_WS_URL` | `ws://localhost:7882` | WebSocket URL for client SDK |
 | `LIVEKIT_ROOM_NAME` | `onestreamer-main` | Default room name |
 | `LIVEKIT_MAX_PARTICIPANTS` | `1000` | Room cap |
@@ -107,7 +102,7 @@ Production typically uses Let's Encrypt-issued certs in `/etc/letsencrypt/live/<
 | `LIVEKIT_TURN_ENABLED` | `false` | Enable TURN inside LiveKit |
 | `LIVEKIT_USE_FFMPEG_FALLBACK` | `false` | Fall back to ffmpeg if LiveKit ingress fails |
 
-The defaults `devkey` / `secret` are the well-known LiveKit dev defaults. Even though LiveKit is dormant in production, the server is reachable at `livekit.onestreamer.live`. Set real credentials in production.
+The dev defaults `devkey` / `secret` are well-known LiveKit values that the dev config ships with; the production server is reachable at `livekit.onestreamer.live`. **Set real credentials in production** and keep them in sync between `.env` and `livekit-config.yaml` (mismatched keys fail every connect with `unauthorized` — see [`livekit-disconnect.md`](../operations/runbooks/livekit-disconnect.md)).
 
 ---
 
@@ -216,7 +211,6 @@ If unset, the [`TakeoverService`](../../server/services/TakeoverService.js) (the
 | `ENABLE_METRICS` | Enable detailed metrics collection |
 | `STATS_INTERVAL` | Metrics reporting interval (ms, default `5000`) |
 | `ENABLE_WEBRTC_LOGGING` | Verbose WebRTC debug logs |
-| `DISPLAY` | X11 display number for Puppeteer-Chrome viewbots (Unix only; `:0` typical) |
 
 ---
 
@@ -255,7 +249,7 @@ The server fails fast at startup (and chat-service refuses to boot) if any of th
 | `SESSION_SECRET` | Express session cookie signing. | `openssl rand -base64 48` |
 | `TURNSTILE_SECRET_KEY` | Server-side Cloudflare Turnstile verification. | Cloudflare dashboard → Turnstile → site → Secret Key. |
 | `TURN_SECRET` | coturn `static-auth-secret`; main server mints time-limited TURN credentials with it. | Must match `static-auth-secret` in `/etc/turnserver.conf`. |
-| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Only required if `WEBRTC_BACKEND=livekit` or you use the LiveKit-based recording pipeline. Default deployment leaves these unset (LiveKit is dormant — see [ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md)). | LiveKit server config. |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | All live media — LiveKit is the sole WebRTC backend ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)); streamer↔viewer, URL-relay ingress, recording egress, and transcription all need these. Must match the keys in `livekit-config.yaml`. | LiveKit server config. |
 | `SMTP_PASS` | SendGrid API key (read as the SMTP password). Required for verification + reset emails. | SendGrid → Settings → API Keys. |
 
 Generate fresh values for every deploy. Rotate any time you suspect leakage. See [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md) for the full rotation procedure.

@@ -1,6 +1,6 @@
 # ADR-0017: MediaSoup/LiveKit branch alignment plan
 
-_Status: accepted_
+_Status: Superseded by [ADR-0024](0024-retire-mediasoup-livekit-only.md) — the dual-branch alignment this plan scoped is moot now that MediaSoup is retired (ADR-0024 took this ADR's Alternative D, "retire the MediaSoup branch entirely")._
 _Date: 2026-05-27_
 _Phase: 9 (`server/index.js` MediaSoup/LiveKit alignment + extraction)_
 _PR: 9.1 (`mediasoup-livekit-divergences-archaeology`) — docs-only._
@@ -24,7 +24,7 @@ The Phase 9 roadmap splits the work into three PRs:
 
 ## Decision
 
-Adopt the staged plan above. The catalog of divergences and the per-divergence classification + recommended action live in [`docs/architecture/plans/mediasoup-livekit-divergences.md`](../plans/mediasoup-livekit-divergences.md). The summary table at the bottom of that doc lists 13 divergences classified as 10 **accidental** (recommend hoist), 2 **intentional** (recommend keep branch-specific), and 1 **stale** (recommend delete).
+Adopt the staged plan above. The catalog of divergences and the per-divergence classification + recommended action live in [`docs/architecture/plans/mediasoup-livekit-divergences.md`](../../archive/plans/mediasoup-livekit-divergences.md). The summary table at the bottom of that doc lists 13 divergences classified as 10 **accidental** (recommend hoist), 2 **intentional** (recommend keep branch-specific), and 1 **stale** (recommend delete).
 
 The most consequential classification is **D2** — `viewBotURLService.setSocketIO(io)` + `setStreamNotifier(streamNotifier)` are wired in the LiveKit branch and deliberately omitted from the MediaSoup branch. The PR 3.1 post-review fix added a 9-line code comment at `server/index.js:5000–5008` explaining this is **intentional dormancy** of two emit paths in MediaSoup mode. PR 9.2's reviewer subagent pass must specifically verify that the alignment preserves that dormancy — wiring the two setters on both branches would silently activate previously-suppressed emits in MediaSoup-mode production. If a future PR concludes the emits **should** fire in MediaSoup mode, that decision is a separate behaviour-change PR, not a side-effect of PR 9.2's extraction.
 
@@ -48,7 +48,7 @@ The most consequential classification is **D2** — `viewBotURLService.setSocket
 
 ### A. Skip the archaeology, dedupe by inspection during PR 9.2
 
-The original Phase 9 plan estimated "~50–150 LoC of changes" inside one PR. The Red-team #2 pass against the Phase 6+ roadmap (recorded in [`phases-6-plus.md`](../plans/phases-6-plus.md) §"Phase 9") caught that the alignment work is **hours of investigation per divergence**, not a single sit-down dedup. Doing the archaeology in PR 9.2 leaves the diff illegible — a reviewer can't tell "behavior preserved" from "this commit silently changed X" without the per-divergence classification published as prior art. Rejected; archaeology is its own PR.
+The original Phase 9 plan estimated "~50–150 LoC of changes" inside one PR. The Red-team #2 pass against the Phase 6+ roadmap (recorded in [`phases-6-plus.md`](../../archive/plans/phases-6-plus.md) §"Phase 9") caught that the alignment work is **hours of investigation per divergence**, not a single sit-down dedup. Doing the archaeology in PR 9.2 leaves the diff illegible — a reviewer can't tell "behavior preserved" from "this commit silently changed X" without the per-divergence classification published as prior art. Rejected; archaeology is its own PR.
 
 ### B. Align AND extract in a single PR
 
@@ -68,5 +68,5 @@ ADR-0008's rollback procedure (the `sed -i` + `pm2 restart` snippet) depends on 
 - [ADR-0008: Revive LiveKit for URL streams, recording, and transcription](0008-revive-livekit-for-url-streams-and-recording.md) — why both branches must keep working.
 - [ADR-0011: LifecycleManager](0011-lifecycle-manager.md) — PR 4.2's introduction added the duplicate `lifecycleManager.schedule` calls now classified as divergence D9.
 - [ADR-0009: StreamNotifier chokepoint](0009-stream-notifier-chokepoint.md) — PR 3.1 introduced the deliberate-dormancy comment that is divergence D2.
-- [`docs/architecture/plans/mediasoup-livekit-divergences.md`](../plans/mediasoup-livekit-divergences.md) — full archaeology, the per-divergence classification + recommendation that PR 9.2 implements.
-- [`docs/architecture/plans/phases-6-plus.md`](../plans/phases-6-plus.md) §"Phase 9" — surrounding plan, sequencing, smoke surface.
+- [`docs/architecture/plans/mediasoup-livekit-divergences.md`](../../archive/plans/mediasoup-livekit-divergences.md) — full archaeology, the per-divergence classification + recommendation that PR 9.2 implements.
+- [`docs/architecture/plans/phases-6-plus.md`](../../archive/plans/phases-6-plus.md) §"Phase 9" — surrounding plan, sequencing, smoke surface.

@@ -1,6 +1,6 @@
 # Upgrades
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-06-01 against `main`._
 
 OneStreamer is a rolling-deployment project — there's no semver release cadence today. Operators pull `main`, run migrations, restart. This page captures the pattern.
 
@@ -61,14 +61,16 @@ See [`backup-restore.md`](backup-restore.md) for the full backup procedure.
 
 Examples by category:
 
+Most incremental changes are now **runner-managed** ([ADR-0022](../architecture/adr/0022-schema-migrations-layout.md)): timestamped `server/migrations/2026MMDDHHMM-<description>.js` modules that [`_runner.js`](../../server/migrations/_runner.js) applies automatically on boot, so a plain restart picks them up. A handful of older standalone scripts remain and are run manually:
+
 | Category | Examples |
 |----------|----------|
-| Schema additions | `add_ip_bans.js`, `add_streaming_logs.js`, `add-account-deletion-tables.js`, `add_bug_reports.js`, `add-summon-bot-support.js`, `add-auto-summon-bot.js`, `add-global-prompt-table.js`, `add-llm-model-column.js` |
-| Table creation | `setup-transcription-tables.js`, `setup-clips-tables.js`, `setup-viewbot-tables.js`, `setup-recording-tables.js`, `create_chatbots_table.sql`, `create_streambot_messages.sql` |
+| Runner-managed (auto on boot) | `2026…-users-add-admin-flags.js`, `2026…-user-stats-drop-legacy-points.js`, `2026…-recordings-add-session-and-user.js`, `2026…-url-relay-add-preferred-languages.js` |
+| Standalone table creation | `setup-transcription-tables.js`, `setup-clips-tables.js`, `setup-recording-tables.js` |
+| Standalone schema additions | `add_ip_bans.js`, `add_ai_moderation_tables.js`, `add-summon-bot-support.js`, `add-auto-summon-bot.js` |
 | Data migrations | `migrate-points-system.js` (calculated → balance) |
-| Item seeding | `add-101soundboards-item.js`, `add-megaphone-item.js`, `add-heart-swarm.js`, `add-stream-reducer-item.js`, `add-visualfx-items.js`, `add-sample-emojis.js` |
 
-After running any migration, **restart the main server** so it re-reads the schema on boot.
+After running any standalone migration, **restart the main server** so it re-reads the schema on boot. (The runner-managed migrations run during that boot.)
 
 ## Rollback
 
@@ -103,20 +105,20 @@ There is **no automated rollback tooling**. Manual rollback is the only path. He
 
 ### Node version
 
-The project targets **Node 18+**. Bumping major Node versions (16 → 18, 18 → 20) requires reinstalling `node_modules` from scratch — native modules (mediasoup, @roamhq/wrtc, bcrypt) have ABI bindings per Node major.
+The project targets **Node 18+**. Bumping major Node versions (16 → 18, 18 → 20) requires reinstalling `node_modules` from scratch — native modules (`better-sqlite3`, `@livekit/rtc-node`, `bcrypt`) have ABI bindings per Node major. (`better-sqlite3` in particular is ABI-sensitive — see [`/docs/operations/runbooks/better-sqlite3-rebuild.md`](runbooks/better-sqlite3-rebuild.md).)
 
 ```bash
 rm -rf node_modules client/node_modules chat-service/node_modules
 npm run install-all
 ```
 
-### mediasoup version bump
+### LiveKit version bump
 
-The mediasoup native worker is locked to the package version. Bumping `mediasoup` in `package.json` requires:
+LiveKit is the sole WebRTC backend ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)); there is no MediaSoup worker to rebuild anymore. When bumping LiveKit:
 
-1. Rebuilding the worker (`npm install` triggers the build).
-2. Restarting the server.
-3. Browser-side `mediasoup-client` major version should match — keep them in lockstep.
+1. Keep the three SDKs roughly in step — `livekit-server-sdk`, `@livekit/rtc-node` (native; reinstall on Node-major change), and the browser `livekit-client`.
+2. Confirm the running `livekit-server` binary / system service version is compatible with the SDK bump.
+3. Re-test the `/livekit/rtc` WebSocket-upgrade path and a real takeover end-to-end after the bump.
 
 ### whisper.cpp updates
 
@@ -131,7 +133,7 @@ make clean && make
 pm2 restart onestreamer-server
 ```
 
-Models are forward-compatible but new models may need re-downloading via `node setup-whisper.js`.
+Models are forward-compatible but new models may need re-downloading via `node scripts/setup/setup-whisper.js`.
 
 ### Schema changes that touch `users` or `user_stats`
 
@@ -142,13 +144,13 @@ These two tables are foundational. Any migration here:
 3. Verify the result with `sqlite3 /tmp/test.db ".schema users"` and a few sanity queries.
 4. Only then run against production.
 
-### LiveKit re-enablement (someday)
+### LiveKit credentials and config
 
-If [ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md) is reversed and LiveKit returns to the production streaming path:
+LiveKit is the production streaming path ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)), so its credentials and config are load-bearing on every deploy:
 
-- Confirm `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` are no longer the dev defaults (`devkey` / `secret`).
-- Confirm the dormant `ViewBotLiveKit*.js` services still build (they may have rotted).
-- Update [ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md) with a **superseded by ADR-XXXX** note rather than editing.
+- Confirm `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` are **not** the well-known dev defaults (`devkey` / `secret`) — see [`/docs/operations/runbooks/secret-rotation.md`](runbooks/secret-rotation.md).
+- Confirm the deploy's `livekit-config.yaml` UDP port range matches what the firewall/host exposes; a media-port mismatch breaks streaming silently. See [`/docs/integrations/livekit.md`](../integrations/livekit.md).
+- After any LiveKit-touching change, smoke-test ingress (a URL relay) and egress (recording) in addition to a normal takeover.
 
 ### Strapi major-version bump
 

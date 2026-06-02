@@ -1,166 +1,123 @@
 # Streaming stack
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-06-01 against `main` (post-ADR-0024 cleanup)._
 
-> **⚠️ Superseded by [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md) (2026-06-01).** OneStreamer now runs **LiveKit as the sole WebRTC backend** — the MediaSoup SFU, the `WebRTCAdapter`, the client `MediasoupClient`, and the `mediasoup` dependency have all been removed. The MediaSoup-specific flows, mermaid diagrams, codec tables, and the `50000–50199` UDP range described below are **historical** (pre-ADR-0024) and pending a full rewrite. Current reality: streamer↔viewers, URL-stream relay, recording (egress), and transcription all run over LiveKit (`livekit-server` / `livekit-ingress` / `livekit-egress`). See [ADR-0008](adr/0008-revive-livekit-for-url-streams-and-recording.md) + [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md).
-
-How real-time A/V actually moves through OneStreamer: from a streamer's webcam, through MediaSoup, through optional secondary pipelines (recording, transcription, viewbots), to viewer browsers — and the limits of that architecture.
+How real-time A/V moves through OneStreamer: from a streamer's webcam, through **LiveKit**, to viewer browsers — plus the secondary pipelines (recording, transcription) and the viewbot ingest path that feed off the same LiveKit room. [LiveKit](https://livekit.io/) is the **sole WebRTC backend** ([ADR-0024](adr/0024-retire-mediasoup-livekit-only.md)); MediaSoup and its Plain-RTP/GStreamer/Puppeteer machinery are gone.
 
 ## The primary path (streamer → viewer)
 
 ```mermaid
 flowchart LR
-    subgraph S[Streamer browser]
+    subgraph S[Streamer browser - WebRTCStreamer.tsx]
         Cam[Camera + mic via getUserMedia]
         ScreenShare[Screen share via<br/>getDisplayMedia<br/>optional]
         AudioCfg[Audio settings:<br/>raw / voice / music / streaming]
-        SendT[MediaSoup<br/>SendTransport]
-        ProdA[Audio producer<br/>Opus]
-        ProdV[Video producer<br/>VP8/VP9]
+        LKC[LiveKitClient.ts<br/>via WebRTCClientAdapter]
+        PubTracks[Published tracks<br/>Opus audio + VP8/H.264 video]
     end
 
-    subgraph SFU[Main host - MediaSoup SFU]
-        RouterA[Router<br/>audio worker]
-        RouterV[Router<br/>video worker]
-        ConsA[Audio consumer<br/>per viewer]
-        ConsV[Video consumer<br/>per viewer]
+    subgraph LK[Main host - LiveKit server :7880/:7882]
+        Room[Room onestreamer-main]
+        SFU[SFU forwarding<br/>per-subscriber]
     end
 
     subgraph V[Viewer browser - WebRTCViewer.tsx]
-        RecvT[MediaSoup<br/>RecvTransport]
+        LKCV[LiveKitClient.ts<br/>subscriber]
         VideoEl[video element]
         FxOverlay[CanvasFX overlay]
     end
 
     Cam --> AudioCfg
-    AudioCfg --> SendT
-    ScreenShare --> SendT
-    SendT --> ProdA
-    SendT --> ProdV
-    ProdA --> RouterA
-    ProdV --> RouterV
-    RouterA --> ConsA
-    RouterV --> ConsV
-    ConsA --> RecvT
-    ConsV --> RecvT
-    RecvT --> VideoEl
+    AudioCfg --> LKC
+    ScreenShare --> LKC
+    LKC --> PubTracks
+    PubTracks --> Room
+    Room --> SFU
+    SFU --> LKCV
+    LKCV --> VideoEl
     VideoEl --> FxOverlay
 ```
 
-The signaling for all of this (ICE candidates, transport params, producer/consumer creation) flows over Socket.IO on the main server (`:8443`), not over WebRTC itself. See [`realtime-events.md`](realtime-events.md) for the `mediasoup:*` event vocabulary.
+**Application** signaling (who's the streamer, takeover handshake, `stream-ready`/`stream-started`) flows over Socket.IO on the main server (`:8443`). **Transport** signaling (ICE candidates, SDP, DTLS) flows inside the LiveKit client SDK directly against the LiveKit server — it is *not* on the OneStreamer socket. The client uses the application `stream-ready`/`streaming-approved` signal as its cue to connect to the LiveKit room and publish or subscribe. See [`realtime-events.md`](realtime-events.md).
 
-### Why MediaSoup, not LiveKit
+Client wiring: [`client/src/services/LiveKitClient.ts`](../../client/src/services/LiveKitClient.ts) wraps a LiveKit `Room`; the React stream components reach it through the thin [`WebRTCClientAdapter.ts`](../../client/src/services/WebRTCClientAdapter.ts) shim so they never import the LiveKit class directly. Server-side, [`LiveKitService.js`](../../server/services/LiveKitService.js) holds the `RoomServiceClient` (room/token management) and the ingress/egress clients.
 
-[ADR-0002](adr/0002-mediasoup-primary-livekit-dormant.md). Short version: MediaSoup is the primary; LiveKit infrastructure is dormant. A September 2025 dual-stack experiment was rolled back the same day after WebSocket-connectivity problems — see [ADR-0003](adr/0003-livekit-dual-stack-rollback.md).
+### Why LiveKit (and why a SFU)
 
-### Why a SFU (not P2P, not MCU)
+[ADR-0024](adr/0024-retire-mediasoup-livekit-only.md). LiveKit had already carried all production traffic — primary streamer→viewer, URL-stream relay (ingress), recording (egress), and transcription — since [ADR-0008](adr/0008-revive-livekit-for-url-streams-and-recording.md); ADR-0024 retired the never-exercised MediaSoup fallback to leave a single stack.
 
-Selective Forwarding Unit: the server receives one stream from the streamer and forwards encrypted RTP packets to N viewers without decoding or re-encoding. Compared to P2P (multi-peer mesh) this scales to many viewers without exploding the streamer's upload bandwidth. Compared to MCU (decode + composite + re-encode) it has near-zero CPU per viewer and adds no latency from re-encoding.
+LiveKit is a Selective Forwarding Unit: the server receives one set of tracks from the streamer and forwards them to N subscribers without decoding/re-encoding. Compared to P2P mesh this scales to many viewers without exploding the streamer's upload; compared to an MCU it adds near-zero CPU and no re-encode latency. The trade-off — no server-side transcoding-per-viewer or stream-merging — is a deliberate non-goal.
 
-The trade-off: the SFU can't transcode for different viewer bandwidths or merge multiple streams into one. Both are deliberate non-goals for OneStreamer.
+## Secondary pipelines (recording, transcription)
 
-## Branch pipelines (recording, transcription, viewbots)
-
-Beyond the primary streamer → viewer flow, the streamer's audio + video also feed several secondary consumers:
+Beyond the streamer → viewer flow, the LiveKit room feeds two independent server-side consumers:
 
 ```mermaid
 flowchart TB
-    Producer[Streamer MediaSoup producer]
-    
-    Producer --> ViewerCon[Viewer consumers<br/>primary path]
-    Producer --> PlainAudio[Plain RTP audio bridge<br/>MediasoupPlainTransportService]
-    Producer --> PlainVideo[Plain RTP video bridge<br/>MediasoupPlainTransportService]
-    
-    PlainAudio --> FFmpegRec[ffmpeg<br/>encoded to HLS]
-    PlainVideo --> FFmpegRec
-    FFmpegRec --> Local[Local disk<br/>recordings/sessionId/]
-    Local --> B2Up[B2SegmentUploadService<br/>background upload]
-    B2Up --> B2[(Backblaze B2)]
-    
-    PlainAudio --> FFmpegT[ffmpeg<br/>Opus to PCM 16kHz]
-    FFmpegT --> Buffer[AudioBuffer<br/>5s chunks + 0.5s overlap]
-    Buffer --> Whisper[whisper.cpp/main<br/>spawned per chunk]
+    Room[LiveKit room<br/>streamer tracks]
+
+    Room --> Subs[Viewer subscribers<br/>primary path]
+
+    Room -->|Egress| Egress[LiveKit Egress<br/>Room Composite / Participant]
+    Egress --> HLS[HLS segments<br/>egress-recordings/sessionId/]
+    HLS --> Sessions[(recording_sessions)]
+    HLS --> Upload[RecordingUploadScheduler<br/>background B2 upload]
+    Upload --> B2[(Backblaze B2)]
+    HLS --> Cleanup[RecordingCleanupScheduler<br/>local delete after upload]
+
+    Room -->|RTC subscribe| RTC[TranscriptionAudioAdapter<br/>@livekit/rtc-node AudioStream]
+    RTC --> PCM[PCM 16-bit frames -> .pcm -> .wav]
+    PCM --> Whisper[WhisperRunner<br/>whisper.cpp/main]
     Whisper --> Chunks[(transcription_chunks)]
     Whisper --> SocketEvt[transcription-update<br/>socket broadcast]
-    SocketEvt --> MovieBot[MovieBot context]
+    SocketEvt --> MovieBot[MovieBot / VisionBot context]
     SocketEvt --> Captions[Optional viewer captions]
 ```
 
-Three independent secondary pipelines all tap the same `MediasoupPlainTransportService`:
+- **Recording** — [`ContinuousRecordingService`](../../server/services/ContinuousRecordingService.js) starts a LiveKit **Egress** (Room Composite for viewbots, Participant Egress for a real streamer) that writes HLS segments to `egress-recordings/{sessionId}/`. [`RecordingUploadScheduler`](../../server/services/RecordingUploadScheduler.js) pushes them to B2; [`RecordingCleanupScheduler`](../../server/services/RecordingCleanupScheduler.js) deletes local copies once upload is confirmed; [`recording/RecordingDiskScanner`](../../server/services/recording/RecordingDiskScanner.js) reconciles disk against the `recording_sessions` table. Chat is timestamped to the segment timeline by [`SessionChatCaptureService`](../../server/services/SessionChatCaptureService.js). Review surface: `/admin/review/*`.
+- **Transcription** — [`TranscriptionAudioAdapter`](../../server/services/TranscriptionAudioAdapter.js) subscribes to the streamer's audio track via `@livekit/rtc-node` (`Room` → `AudioStream`, `TrackKind.KIND_AUDIO`), writes the PCM frames to a `.pcm`/`.wav` buffer in 5-second windows (0.5 s overlap), and [`WhisperRunner`](../../server/services/transcription/WhisperRunner.js) transcribes each with `whisper.cpp/main`. See [`/docs/features/transcription.md`](../features/transcription.md).
 
-- **Recording** — ffmpeg writes HLS segments to local disk; `B2SegmentUploadService` pushes them to B2 in the background. Chat messages are timestamped to the segment timeline by [`SessionChatCaptureService`](../../server/services/SessionChatCaptureService.js).
-- **Transcription** — ffmpeg decodes Opus → PCM 16 kHz mono; the audio buffer chunks into 5-second windows with 500 ms overlap; whisper.cpp transcribes each chunk; text is persisted and broadcast.
-- **Viewbots** (separate ingest path) — see below.
-
-These pipelines don't share state with one another. If transcription is off, the recording still happens. If recording is off, transcription still happens. If both are off, the primary viewer path is unaffected.
+These pipelines are independent: transcription off doesn't stop recording, recording off doesn't stop transcription, and neither affects the primary viewer path.
 
 ## Viewbot ingest (the other direction)
 
-Viewbots are "synthetic streamers" — local video files or external URLs piped into the platform as if they were a real streamer. The fleet has ~20 service variants ([`viewbot-fleet.md`](viewbot-fleet.md)) but one production orchestrator (`UnifiedViewBotRotation`) toggling between two modes:
+Viewbots are "synthetic streamers" — an external URL or a local video pushed into a LiveKit room as if it were a real broadcaster. Both paths terminate in a LiveKit **ingress**:
 
 ```mermaid
 flowchart LR
     subgraph Source
+        ExtURL[External URL<br/>Twitch / Kick / HTTP / RTMP]
         VideoFile[Local video file]
-        ExtURL[External URL<br/>Twitch / Kick / YouTube live / RTMP]
-    end
-    
-    subgraph PlainRTPMode[Plain RTP mode - default]
-        GStreamer[GStreamer pipeline]
-        PlainTransport[Mediasoup<br/>PlainTransport]
-        ProducerPR[MediaSoup producer]
     end
 
-    subgraph WebRTCMode[WebRTC mode - mobile-compatible]
-        Chrome[Headless Chrome<br/>via Puppeteer]
-        WebRTCBot[WebRTC connection<br/>identical to a real streamer]
-        ProducerWR[MediaSoup producer]
+    subgraph URLRelay[ViewBotURLService]
+        Streamlink[streamlink / yt-dlp]
+        FFmpeg1[FFmpeg]
     end
 
-    VideoFile -.-> GStreamer
-    VideoFile -.-> Chrome
-    ExtURL --> GStreamer
-    ExtURL --> Chrome
-    GStreamer --> PlainTransport
-    PlainTransport --> ProducerPR
-    Chrome --> WebRTCBot
-    WebRTCBot --> ProducerWR
+    subgraph LocalVid[ViewBotLiveKitService]
+        FFmpeg2[FFmpeg]
+    end
 
-    ProducerPR --> Router[MediaSoup Router]
-    ProducerWR --> Router
-    Router --> Viewers[Viewer consumers]
+    ExtURL --> Streamlink --> FFmpeg1
+    VideoFile --> FFmpeg2
+
+    FFmpeg1 -->|RTMP| Ingress[LiveKit ingress<br/>rtmp://127.0.0.1:1935/live/streamKey]
+    FFmpeg2 -->|RTMP| Ingress
+    Ingress --> Room[LiveKit room]
+    Room --> Viewers[Viewer subscribers]
 ```
 
-**Plain RTP** is cheaper per bot (~5–10 % CPU, ~50 MB RAM) but doesn't support ICE/TURN, so mobile viewers behind CGNAT can't watch viewbot streams. **WebRTC mode** runs a headless Chrome via Puppeteer (so the bot looks identical to a real streamer to the SFU), at ~3–5× the cost.
-
-The mode toggle is at runtime via `POST /api/viewbot-manager/toggle-mode`.
+There is no Plain-RTP/WebRTC mode toggle anymore — every viewbot is a LiveKit ingress. Rotation is gated by [`SimpleViewBotRotation`](../../server/services/SimpleViewBotRotation.js) (real-streamer / URL-relay protection) and driven by [`RandomStreamRotationService`](../../server/services/RandomStreamRotationService.js). Full detail in [`viewbot-fleet.md`](viewbot-fleet.md).
 
 ## Codec choices
 
-| Track | Codec | Negotiation |
-|-------|-------|-------------|
-| Audio | **Opus** at 48 kHz stereo (or 16 kHz mono for Voice Chat preset). DTX disabled to avoid mid-stream audio dropouts. VAD disabled for the same reason. | Hard-coded in [`AudioOptimizationService`](../../server/services/AudioOptimizationService.js) and the MediaSoup router config |
-| Video | **VP8** primary; **VP9** if both peers negotiate it | MediaSoup router config; browser SDP capability negotiation |
-| Recording output | **H.264 / AAC in MPEG-TS HLS segments** | ffmpeg pipeline; not negotiated with browsers |
-| Transcription input | **PCM 16 kHz mono** (decoded from Opus by ffmpeg) | Whisper requirement |
-
-## Bandwidth and bitrate
-
-MediaSoup transport options (in [`server/config/webrtc.config.js`](../../server/config/webrtc.config.js)):
-
-```js
-transportOptions: {
-  enableUdp: true,
-  enableTcp: true,         // TCP fallback for restrictive networks
-  preferUdp: true,
-  enableSctp: false,
-  initialAvailableOutgoingBitrate: 300_000,    // 300 kbps initial
-  minimumAvailableOutgoingBitrate: 100_000,    // 100 kbps floor
-  maxIncomingBitrate: 1_500_000,               // 1.5 Mbps ceiling per incoming stream
-}
-```
-
-The **VisualFX** subsystem can dynamically alter incoming bitrate on the producer side (`bitrate_potato`, `bitrate_low`, `bitrate_throttle` effects) — see [`/docs/features/visualfx-and-canvasfx.md`](../features/visualfx-and-canvasfx.md). When applied, the producer is reconfigured mid-stream.
+| Track | Codec | Notes |
+|-------|-------|-------|
+| Audio | **Opus** (48 kHz; 16 kHz mono for the Voice Chat preset) | Profile selected in [`AudioOptimizationService`](../../server/services/AudioOptimizationService.js); published by the LiveKit client |
+| Video | **VP8 / H.264** as negotiated by LiveKit | LiveKit handles codec negotiation + (optional) simulcast layers |
+| Recording output | **HLS segments** from LiveKit Egress | Encoded by LiveKit Egress, not by the app |
+| Transcription input | **PCM 16-bit mono** | Decoded from the LiveKit audio track by `@livekit/rtc-node`; whisper.cpp requirement |
 
 ## Port footprint
 
@@ -171,56 +128,58 @@ The **VisualFX** subsystem can dynamically alter incoming bitrate on the produce
 | 8443 | TCP | Main server HTTPS (behind nginx) |
 | 8444 | TCP | Chat-service HTTPS (behind nginx) |
 | 3443 | TCP | React dev server (dev only; behind nginx in prod) |
-| 1337 | TCP | Strapi CMS (localhost-only; nginx proxies `/strapi/*` and `/blog/*`) |
-| 7882 | TCP | LiveKit signaling (localhost; dormant) |
-| 7880 | TCP | LiveKit HTTP (dormant) |
+| 1337 | TCP | Strapi CMS (localhost-only) |
+| 7880 | TCP | LiveKit HTTP API |
+| 7882 | TCP/WS | LiveKit RTC signaling (WebSocket; proxied via nginx `/livekit/rtc`) |
+| 1935 | TCP | LiveKit RTMP ingress (localhost; viewbots/URL relay push here) |
 | 11434 | TCP | Ollama (localhost) |
-| **50000–50199** | **UDP** | **MediaSoup RTP — the only port range that needs to be reachable from the public internet for media** |
+| **(LiveKit UDP range)** | **UDP** | **LiveKit RTC/ICE media — the range configured in `livekit-config.yaml` (`rtc.port_range_start/end` + `rtc.udp_port`) must be reachable from the public internet for media** |
 | 3478, 5349 | UDP/TCP | coturn TURN/STUN |
 
 ## NAT traversal
 
-Two paths:
+LiveKit performs ICE the same way any WebRTC stack does:
 
-1. **Direct UDP** — streamer + viewer both have a routable path to the MediaSoup announced IP (<SERVER_IP> in production). The vast majority of WiFi viewers fall here.
-2. **TURN relay** via coturn — for clients behind symmetric NAT, double-NAT, mobile 4G/5G CGNAT, or restrictive corporate firewalls. The browser hits coturn over UDP/3478 (or TCP/5349 if even UDP is blocked), coturn relays packets to MediaSoup.
+1. **Direct** — host/server-reflexive candidates when both ends have a routable path to the LiveKit RTC port on the announced IP.
+2. **TURN relay via coturn** — for clients behind symmetric NAT, double-NAT, mobile CGNAT, or restrictive firewalls. LiveKit can also be configured with its own embedded TURN (`LIVEKIT_TURN_ENABLED`), but coturn is the primary relay.
 
-The TURN credential pattern is HMAC-based with a shared secret (`TURN_SECRET`). Currently the same secret is hardcoded as a fallback in several server and client files — see the security note in [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md). The architecturally correct pattern is server-signed time-limited credentials per session; that hasn't been built yet.
+The coturn credential pattern is HMAC-based with a shared secret (`TURN_SECRET`); the historical hardcoded-fallback caveat is tracked in [`/docs/operations/runbooks/secret-rotation.md`](../operations/runbooks/secret-rotation.md).
 
 ## Limits and known gaps
 
 | Item | Status | Workaround |
 |------|--------|------------|
-| Single MediaSoup worker per router | By design (single-host) | Scale vertically; sharding would require new infra |
-| LiveKit dual-stack | Rolled back ([ADR-0003](adr/0003-livekit-dual-stack-rollback.md)) | LiveKit infra remains for future revival |
-| HLS fallback path | Implemented but not the primary | Default is WebRTC; HLS is only when WebRTC fails to negotiate |
-| Mobile mediasoup-client + 4G/5G | Mostly works via TURN; some carriers block UDP entirely | Browser may auto-fall back to HLS; viewbots can be flipped to WebRTC mode |
-| Recording → B2 upload back-pressure | Local files accumulate if B2 upload fails | Monitor `recordings/active/` size; see [`/docs/operations/runbooks/recording-upload-failed.md`](../operations/runbooks/recording-upload-failed.md) |
-| Several `STREAM_RELIABILITY_PLAN` items pending (transport race, `stream-ready` dedup) | See [`/docs/archive/plans/STREAM_RELIABILITY_PLAN.md`](../archive/plans/STREAM_RELIABILITY_PLAN.md) | Admin disconnect + retry is the current workaround |
+| Single LiveKit server per host | By design (single-host) | Scale vertically; LiveKit supports a distributed deployment but that's new infra |
+| No in-process WebRTC fallback | Accepted ([ADR-0024](adr/0024-retire-mediasoup-livekit-only.md)) | Recovery from a LiveKit-class outage is redeploy of the tagged pre-retirement build, not an env flip |
+| HLS fallback path | Implemented but not primary | Default is WebRTC; HLS is only when WebRTC fails to negotiate |
+| LiveKit `devkey`/`secret` defaults in some environments | Security caveat | Rotate `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`; see [`/docs/integrations/livekit.md`](../integrations/livekit.md) + secret-rotation runbook |
+| Recording → B2 upload back-pressure | Local files accumulate if B2 upload fails | Monitor `egress-recordings/` size; see [`/docs/operations/runbooks/recording-upload-failed.md`](../operations/runbooks/recording-upload-failed.md) |
+| Ingress "not connected" | RTMP never reached LiveKit ingress | See [`/docs/operations/runbooks/livekit-ingress-not-connected.md`](../operations/runbooks/livekit-ingress-not-connected.md) |
 
 ## Code paths
 
 | Concern | File |
 |---------|------|
-| MediaSoup router/transport setup | [`server/services/MediasoupService.js`](../../server/services/MediasoupService.js) |
-| Plain RTP bridge for recording / transcription / viewbots | [`server/services/MediasoupPlainTransportService.js`](../../server/services/MediasoupPlainTransportService.js) |
-| WebRTC adapter (LiveKit/MediaSoup abstraction) | [`server/services/WebRTCAdapter.js`](../../server/services/WebRTCAdapter.js), [`WebRTCAdapterV2.js`](../../server/services/WebRTCAdapterV2.js) |
-| Streamer state | [`server/services/StreamService.js`](../../server/services/StreamService.js) |
-| Takeover handshake | [`server/services/TakeoverService.js`](../../server/services/TakeoverService.js) |
-| Recording orchestration | [`server/services/ContinuousRecordingService.js`](../../server/services/ContinuousRecordingService.js) |
-| B2 segment upload | [`server/services/B2SegmentUploadService.js`](../../server/services/B2SegmentUploadService.js) |
-| Transcription | [`server/services/TranscriptionService.js`](../../server/services/TranscriptionService.js) |
-| Audio codec config | [`server/services/AudioOptimizationService.js`](../../server/services/AudioOptimizationService.js) |
-| MediaSoup configuration | [`server/config/webrtc.config.js`](../../server/config/webrtc.config.js) |
+| LiveKit room / token / ingress / egress management | [`server/services/LiveKitService.js`](../../server/services/LiveKitService.js) |
+| LiveKit + streaming config | [`server/config/webrtc.config.js`](../../server/config/webrtc.config.js) (the `livekit` block) |
+| Streamer state / source of truth | [`server/services/StreamService.js`](../../server/services/StreamService.js) |
+| Takeover handshake | [`server/services/TakeoverService.js`](../../server/services/TakeoverService.js), [`server/sockets/streamHandler/takeover.js`](../../server/sockets/streamHandler/takeover.js) |
+| Streaming-backend bootstrap | [`server/bootstrap/start-streaming-backend.js`](../../server/bootstrap/start-streaming-backend.js) |
+| URL-relay ingest | [`server/services/ViewBotURLService.js`](../../server/services/ViewBotURLService.js), [`urlstream/FFmpegPipeline.js`](../../server/services/urlstream/FFmpegPipeline.js) |
+| Local-video ingest | [`server/services/ViewBotLiveKitService.js`](../../server/services/ViewBotLiveKitService.js) |
+| Recording (egress) | [`server/services/ContinuousRecordingService.js`](../../server/services/ContinuousRecordingService.js) |
+| Transcription capture | [`server/services/TranscriptionAudioAdapter.js`](../../server/services/TranscriptionAudioAdapter.js), [`transcription/WhisperRunner.js`](../../server/services/transcription/WhisperRunner.js) |
+| Audio codec/profile config | [`server/services/AudioOptimizationService.js`](../../server/services/AudioOptimizationService.js) |
 | Viewer client | [`client/src/components/stream/WebRTCViewer.tsx`](../../client/src/components/stream/WebRTCViewer.tsx) |
 | Streamer client | [`client/src/components/stream/WebRTCStreamer.tsx`](../../client/src/components/stream/WebRTCStreamer.tsx) |
-| Mediasoup client wrapper | [`client/src/services/MediasoupClient.ts`](../../client/src/services/MediasoupClient.ts) |
+| LiveKit client wrapper | [`client/src/services/LiveKitClient.ts`](../../client/src/services/LiveKitClient.ts), [`WebRTCClientAdapter.ts`](../../client/src/services/WebRTCClientAdapter.ts) |
 
 ## See also
 
 - [`overview.md`](overview.md) — the layered system view
 - [`viewbot-fleet.md`](viewbot-fleet.md) — synthetic ingest in detail
+- [`/docs/integrations/livekit.md`](../integrations/livekit.md) — LiveKit install, config, credentials
 - [`/docs/features/streaming-and-takeover.md`](../features/streaming-and-takeover.md) — user-facing flow
 - [`/docs/features/recording-and-clips.md`](../features/recording-and-clips.md) — what happens to recorded segments
-- [`/docs/features/transcription.md`](../features/transcription.md) — Whisper pipeline detail
-- [ADR-0002](adr/0002-mediasoup-primary-livekit-dormant.md), [ADR-0003](adr/0003-livekit-dual-stack-rollback.md)
+- [`/docs/features/transcription.md`](../features/transcription.md) — the whisper.cpp pipeline
+- [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md), [ADR-0008](adr/0008-revive-livekit-for-url-streams-and-recording.md)

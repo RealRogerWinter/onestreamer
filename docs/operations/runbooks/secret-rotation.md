@@ -83,7 +83,7 @@ Procedure for rotating any of the project's credentials. Use when a secret has l
 2. **Restart LiveKit**: `sudo systemctl restart livekit`.
 3. **Update OneStreamer's `.env`**: `LIVEKIT_API_KEY=<new>`, `LIVEKIT_API_SECRET=<new>`.
 4. **Restart OneStreamer**: `pm2 restart onestreamer-server --update-env`.
-5. **Verify**: only matters if LiveKit is actively used — see [`livekit-disconnect.md`](livekit-disconnect.md). For the currently-dormant case, just confirm the LiveKit server starts cleanly and that `pm2 env onestreamer-server | grep LIVEKIT_API` shows new values.
+5. **Verify**: LiveKit is the sole WebRTC backend ([ADR-0024](../../architecture/adr/0024-retire-mediasoup-livekit-only.md)), so this is streaming-critical — a key mismatch between `.env` and the LiveKit config breaks **all** live media with `unauthorized`. Confirm the LiveKit server starts cleanly, that `pm2 env onestreamer-server | grep LIVEKIT_API` shows the new values, then smoke-test an actual stream (and ingress/egress) per [`livekit-disconnect.md`](livekit-disconnect.md).
 
 ### coturn (TURN HMAC)
 

@@ -6,7 +6,7 @@ OneStreamer ships **two distinct effect systems** that often get conflated. They
 
 | System | Where it runs | What it modifies | Examples |
 |--------|---------------|------------------|----------|
-| **VisualFX** | Server (FFmpeg / MediaSoup pipeline manipulation) | The video stream itself — resolution, bitrate, frame rate, pixel filters, network simulation | Pixelate, blur, packet loss, 240p, choppy 1 FPS |
+| **VisualFX** | Server-side stream manipulation | The video stream itself — resolution, bitrate, frame rate, pixel filters, network simulation | Pixelate, blur, packet loss, 240p, choppy 1 FPS |
 | **CanvasFX** | Client (HTML canvas overlay rendered by every viewer) | An overlay layer *on top of* the video, leaving the underlying stream untouched | Tomato splat, confetti burst, smoke bomb, disco ball |
 
 You'll often trigger a CanvasFX overlay from the same item that triggers a VisualFX effect — but they're independent subsystems with separate code paths.
@@ -17,7 +17,10 @@ You'll often trigger a CanvasFX overlay from the same item that triggers a Visua
 
 ### What it does
 
-Real-time modification of the live video stream via MediaSoup configuration changes and/or FFmpeg processing pipelines. Effects are applied at the server and seen by all viewers automatically.
+Real-time modification of the live video stream — resolution/bitrate/frame-rate degradation, pixel filters, and network simulation applied server-side so every viewer sees the effect automatically.
+
+> [!NOTE]
+> The original server-side VisualFX engine (`VisualFxService`) drove these effects by manipulating the **MediaSoup** RTP pipeline. MediaSoup was retired and that service was removed ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)); LiveKit is now the sole WebRTC backend. The VisualFX **items** still exist in the shop ([`scripts/migrations/add-visualfx-items.js`](../../scripts/migrations/add-visualfx-items.js)), but the LiveKit-based server-side application path is not reinstated — treat the effect catalogue below as the historical design until it's re-wired onto LiveKit. CanvasFX (client overlays, below) is unaffected.
 
 ### Effect catalogue
 
@@ -110,7 +113,7 @@ Server → client:
 
 ### Integration with items
 
-The buff/item subsystem maps named items to VisualFX effects, so a viewer using `lag_spike` triggers `packet_loss_severe`. The mapping is in [`VisualFxService.js`](../../server/services/VisualFxService.js):
+The buff/item subsystem maps named items to VisualFX effects, so a viewer using `lag_spike` triggers `packet_loss_severe`. The mapping below is from the now-removed `VisualFxService.js` (see the note at the top of this section — the MediaSoup-era engine was retired with [ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)) and is preserved here as the item→effect design reference:
 
 ```js
 {
@@ -143,7 +146,7 @@ Service queues effects when limits are hit, drops them when the queue itself is 
 
 ### Adding a new effect
 
-1. Register in [`VisualFxService.js`](../../server/services/VisualFxService.js):
+1. Register the effect (in the historical `VisualFxService.js` shape — this path needs re-wiring onto LiveKit before it applies again; see the note above):
    ```js
    this.registerEffect('my_effect', {
      name: 'My Effect',
@@ -256,12 +259,10 @@ Effect config shape:
 
 | Concern | File |
 |---------|------|
-| VisualFX server | [`server/services/VisualFxService.js`](../../server/services/VisualFxService.js) |
+| VisualFX server | _retired with MediaSoup ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)); `VisualFxService.js` and the `visualfx.js` route were removed_ |
 | CanvasFX server | [`server/services/CanvasFxService.js`](../../server/services/CanvasFxService.js) |
-| VisualFX routes | [`server/routes/visualfx.js`](../../server/routes/visualfx.js) |
 | Canvas overlay client | [`client/src/components/canvas/CanvasEffectOverlay.tsx`](../../client/src/components/canvas/CanvasEffectOverlay.tsx) |
 | Effect engine client | [`client/src/services/EffectEngine.ts`](../../client/src/services/EffectEngine.ts) |
-| VisualFX client hook | [`client/src/hooks/useVisualFxProcessor.ts`](../../client/src/hooks/useVisualFxProcessor.ts) |
 | Per-effect renderers | [`client/src/services/effects/`](../../client/src/services/) |
 
 ## See also

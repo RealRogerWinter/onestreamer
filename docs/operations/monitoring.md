@@ -53,8 +53,7 @@ Healthy baseline (no active stream):
 
 Under an active stream with one viewer:
 
-- Add ~200 MB to server (MediaSoup workers)
-- ~5–15% CPU on server (WebRTC + recording + transcription if enabled)
+- ~5–15% CPU on server (token/room coordination + recording + transcription if enabled). The WebRTC SFU work and recording encode run inside the LiveKit server process, not the app ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)).
 - Add ~10–30% CPU per active transcription depending on Whisper model
 
 **Memory caps in `config/ecosystem.config.js`** (2G server, 1G chat, 2G client) — when hit, PM2 auto-restarts. Frequent restarts = real memory leak; investigate, don't just bump the cap.
@@ -63,40 +62,38 @@ Under an active stream with one viewer:
 
 ```bash
 df -h                                                    # overall disk
-du -sh /root/onestreamer/recordings/                     # recording footprint
+du -sh /root/onestreamer/egress-recordings/              # recording footprint (LiveKit egress)
 du -sh /root/onestreamer/clips/                          # clip footprint
 du -sh /root/onestreamer/audio-buffers/                  # transcription scratch
 du -sh /root/onestreamer/server/data/onestreamer.db      # SQLite size
 du -sh /root/onestreamer/logs/                           # PM2 logs
-ls -la /root/onestreamer/recordings/active/ | wc -l      # active-recording file count
+ls /root/onestreamer/egress-recordings/ | wc -l          # active-session directory count
 ```
 
-**Recording disk is the most common runaway.** If `B2SegmentUploadService` can't upload, segments accumulate in `recordings/active/` forever. See [`runbooks/recording-upload-failed.md`](runbooks/recording-upload-failed.md).
+**Recording disk is the most common runaway.** If `RecordingUploadScheduler` can't push LiveKit-egress segments to B2, they accumulate in `egress-recordings/` forever. See [`runbooks/recording-upload-failed.md`](runbooks/recording-upload-failed.md).
 
 ### Process count + orphans
 
 ```bash
-pgrep -fa ffmpeg                                          # ffmpeg processes
-pgrep -fa gst-launch-1.0                                  # GStreamer pipelines
-pgrep -fa "chrome --enable-automation"                    # Puppeteer Chrome viewbots
+pgrep -fa ffmpeg                                          # ffmpeg processes (URL-relay path only)
+pgrep -fa streamlink                                      # streamlink source pulls (URL-relay path only)
 ```
 
-Normal idle counts:
+There is no per-viewbot Chromium and no GStreamer anymore — the Puppeteer/GStreamer viewbot fleet was removed with MediaSoup ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). `ffmpeg`/`streamlink` only exist while a URL-stream relay is running. Normal idle counts:
 
-- ffmpeg: 0
-- gst-launch-1.0: 0 (or ≤2 if a stream is active)
-- chrome --enable-automation: 0 unless viewbots running
+- ffmpeg: 0 (a few while URL relays are active)
+- streamlink: 0 (one per active URL relay)
 
 Persistent process counts above these = process leak. The [`viewbot-fleet-misbehaving.md`](runbooks/viewbot-fleet-misbehaving.md) runbook covers cleanup.
 
-### Network — MediaSoup UDP
+### Network — LiveKit RTC UDP
 
 ```bash
-ss -ulnp | grep -E ":(5[0-9]{4})"     # MediaSoup UDP listeners in 50000-50199 range
+ss -ulnp | grep livekit                # LiveKit RTC/ICE UDP listeners (range set in livekit-config.yaml)
 ss -tlnp | grep -E ":(8443|8444|7882|1337|11434)"   # TCP listeners
 ```
 
-If MediaSoup isn't listening on its UDP range, no streams will work — restart the main server.
+LiveKit is the sole WebRTC backend ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)); if its RTC UDP range isn't reachable, no media flows. There is no longer a `50000–50199` MediaSoup range. See [`runbooks/livekit-disconnect.md`](runbooks/livekit-disconnect.md).
 
 ### Database health
 
@@ -141,14 +138,14 @@ curl -s http://127.0.0.1:1337/_health    # if Strapi exposes a health endpoint
 journalctl -u strapi -n 50               # systemd logs (if managed by systemd)
 ```
 
-### LiveKit (even though dormant)
+### LiveKit (the WebRTC backend — watch it like a streaming-critical service)
 
 ```bash
 curl -s http://127.0.0.1:7880/             # LiveKit HTTP root
 ss -tlnp | grep -E ":(7880|7882)"
 ```
 
-If LiveKit ever falls over, only the dormant infrastructure is affected — no user-visible impact unless someone tries to revive the dual-stack path.
+LiveKit carries **all** live media ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)) — if it falls over, nobody can broadcast or watch. Treat a LiveKit alert as a streaming-down incident; see [`runbooks/livekit-disconnect.md`](runbooks/livekit-disconnect.md).
 
 ### coturn
 
@@ -164,8 +161,8 @@ sudo systemctl status coturn
 | Symptom | grep pattern |
 |---------|--------------|
 | Auth issues | `JWT` / `verifyToken` / `401` |
-| MediaSoup transport churn | `mediasoup` / `transport.*close` |
-| Recording uploads stuck | `B2SegmentUploadService` / `B2 upload` |
+| LiveKit connect/disconnect churn | `livekit` / `LiveKitService` / `ParticipantDisconnected` |
+| Recording uploads stuck | `RecordingUploadScheduler` / `B2 upload` |
 | Account deletion runs | `DELETION SCHEDULER` |
 | Moderation actions | `🔨 MODERATION` / `🚫 MODERATION` |
 | Connection from banned IP | `🚫 CONNECTION` |

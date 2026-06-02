@@ -4,7 +4,7 @@
 * **Date:** 2026-05-27
 * **Phase:** 12 (observability sweep)
 * **PR:** 12.1 (`logging-convention-and-inventory`) — codification only; sweeps land in PR 12.2 / 12.3
-* **Related:** [`server/bootstrap/logger.js`](../../../server/bootstrap/logger.js), [`docs/architecture/plans/console-callsite-inventory.md`](../plans/console-callsite-inventory.md)
+* **Related:** [`server/bootstrap/logger.js`](../../../server/bootstrap/logger.js), [`docs/architecture/plans/console-callsite-inventory.md`](../../archive/plans/console-callsite-inventory.md)
 
 ## Context
 
@@ -68,7 +68,7 @@ The propagation helper lands in PR 12.3 as `server/bootstrap/trace-context.js` (
 
 ## Consequences
 
-* PR 12.2 has a concrete target list — the top 20 service files by `console.*` density (see [console-callsite-inventory.md](../plans/console-callsite-inventory.md)) cover ~57 % of all server-side callsites. Estimated touch: ~500 lines edited, ~2100 `console.*` calls converted.
+* PR 12.2 has a concrete target list — the top 20 service files by `console.*` density (see [console-callsite-inventory.md](../../archive/plans/console-callsite-inventory.md)) cover ~57 % of all server-side callsites. Estimated touch: ~500 lines edited, ~2100 `console.*` calls converted.
 * PR 12.3 sweeps the remaining ~1650 callsites across ~108 files (mostly low-density tail; average 15 calls/file) and adds the trace-ID helper + the chokepoint integration.
 * No log-output schema change for now: production already gets raw JSON to stdout from anything that calls the pino logger. The fields gain `svc` (per child) and `traceId` (per scope) — both are additive.
 * **What this ADR doesn't change**: log destination (still stdout), log format (still pino-JSON), log aggregator (operator's choice — Loki / ELK / Datadog all consume pino JSON natively), the `LOG_LEVEL` env-var override (still works as documented in [`server/bootstrap/logger.js`](../../../server/bootstrap/logger.js)).

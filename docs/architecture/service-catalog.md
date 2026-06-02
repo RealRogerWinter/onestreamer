@@ -1,12 +1,11 @@
 # Service catalog
 
-_Last verified: 2026-05-23. Sixteen orphan services (LiveKit-Audio/Ingress, Simple{TestBot,ViewBotMediaSoup}, ViewBot{FFmpeg,GStreamerWebRTC,LiveKit{FFmpeg,Node,Puppeteer,RTMP,SDK},Metrics,Monitor,MuxedStreamService,RotationIntegration}, InitializeSimpleRotation) deleted in #25._
+_Last verified: 2026-06-01 against `main` (post-ADR-0024 cleanup). MediaSoup/GStreamer/Puppeteer viewbot stack and the dead-code variants enumerated in earlier revisions are gone — LiveKit is the sole streaming backend._
 
-OneStreamer's backend has **~85 modules in [`server/services/`](../../server/services/)**. This catalog groups every service thematically, with a one-line description and notes on which ones are dead-code candidates.
+OneStreamer's backend has **~150 top-level modules in [`server/services/`](../../server/services/)** plus **~80 more in per-domain subdirectories** (e.g. `recording/`, `transcription/`, `urlstream/`, `random-stream/`, `chatbot/`, `streambot/`, `canvasfx/`, `game/`, `moderation/`). This catalog groups the load-bearing services thematically with a one-line description; the small per-domain helper modules are referenced by their parent service rather than listed exhaustively.
 
 **Conventions used below:**
 - **Bold** = actively wired in production
-- _Italic_ = legacy / superseded / dead-code candidate
 - (regular) = supporting service used by another active service
 
 ---
@@ -16,106 +15,108 @@ OneStreamer's backend has **~85 modules in [`server/services/`](../../server/ser
 | Service | Role |
 |---------|------|
 | **`StreamService.js`** | Source of truth for the current streamer and viewer list. Critical state holder. |
+| **`StreamOrchestration.js`** | Coordinates start/stop/switch of the active stream across services. |
+| **`StreamNotifier.js`** | Single chokepoint for stream lifecycle broadcasts ([ADR-0009](adr/0009-stream-notifier-chokepoint.md)) — collapses the old N-emit-sites of `stream-ended`/`stream-status` into one. |
 | **`SessionService.js`** | Maps IP ↔ user ID ↔ socket ID; survives socket reconnect. |
 | **`TakeoverService.js`** | Takeover handshake (request/approve/deny) + cooldown enforcement (global + per-user). |
-| **`MediasoupService.js`** | The WebRTC SFU. Manages routers, transports, producers, consumers. |
-| **`MediasoupPlainTransportService.js`** | Plain RTP transport creation for the secondary pipelines (recording, transcription, viewbots) that need raw RTP rather than DTLS-wrapped WebRTC. |
-| **`MediasoupSyncConfig.js`** | MediaSoup configuration helpers. |
-| `LiveKitService.js` | Alternative WebRTC backend (RoomServiceClient, ingress, egress). Currently dormant — see [ADR-0002](adr/0002-mediasoup-primary-livekit-dormant.md). Scheduled for removal in PR-S. |
-| `WebRTCAdapter.js` | Abstraction layer for swapping MediaSoup ↔ LiveKit. |
-| `WebRTCAdapterV2.js` | Second-generation adapter (used by `UnifiedViewBotRotation`). |
-| **`TestStreamService.js`** | Synthetic test streams (SMPTE bars, color gradients, scrolling text, clock). |
-| **`SimpleMediaStreamService.js`** | Basic media stream service. |
-| `MediaStreamService.js` | (Variant; check usage before relying on.) |
+| **`LiveKitService.js`** | **The WebRTC backend.** Wraps the LiveKit `RoomServiceClient` + ingress/egress clients: room/token management, `createIngress`/`deleteIngress` (URL relay + viewbots), webhook receipt. The sole streaming backend since [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md). |
+| **`AudioOptimizationService.js`** | Audio quality profiles (raw / voice / music / streaming). |
+| **`AdaptiveEncodingSettings.js`** | Adaptive frame-rate / bitrate settings for ingress encodes. |
+| **`TestStreamService.js`** | Synthetic test streams (SMPTE bars, gradients, scrolling text, clock). |
+| **`SimpleMediaStreamService.js`** | Basic media stream helper. |
+| **`LifecycleManager.js`** | Named-timer scheduler used across streaming lifecycle ([ADR-0011](adr/0011-lifecycle-manager.md)). |
+
+Client-side, the streamer/viewer talk to LiveKit through [`client/src/services/LiveKitClient.ts`](../../client/src/services/LiveKitClient.ts) (a `Room` wrapper) via the thin [`WebRTCClientAdapter.ts`](../../client/src/services/WebRTCClientAdapter.ts) shim, so the React stream components never import the LiveKit class directly.
 
 ---
 
-## Viewbot fleet (~20 variants)
+## Viewbots (synthetic streamers)
 
-See [`viewbot-fleet.md`](viewbot-fleet.md) for the live/dead breakdown.
-
-### Orchestration
+See [`viewbot-fleet.md`](viewbot-fleet.md) for the full pipeline. Every viewbot is a LiveKit ingress now; there is no Plain-RTP/WebRTC mode toggle.
 
 | Service | Role |
 |---------|------|
-| **`UnifiedViewBotRotation.js`** | Current rotation orchestrator. Wired in production. |
-| **`ViewBotClientService.js`** | Per-bot lifecycle (start, stop, monitor). |
-| **`ViewBotManager.js`** | Plain RTP ↔ WebRTC mode toggle. |
-| **`ViewBotStateManager.js`** | Shared state across bot lifecycles. |
-| **`SimpleViewBotRotation.js`** | Simple in-memory rotation state (used by URL-stream rotation + by `UnifiedViewBotRotation` via `WebRTCAdapterV2`). |
-| **`SimpleViewBotSocket.js`** | Socket helper used by `SimpleViewBotRotation`. |
-| _`ViewBotRotationService.js`_ | Legacy rotation; replaced by Unified. |
-| _`WebRTCViewBotRotation.js`_ | Earlier WebRTC-only rotation. |
+| **`ViewBotURLService.js`** | URL relay: `streamlink`/`yt-dlp` → FFmpeg → RTMP → LiveKit ingress. The primary viewbot path. |
+| **`ViewBotLiveKitService.js`** | Local-video viewbot: FFmpeg → RTMP → LiveKit ingress. |
+| **`ViewbotService.js`** | Shared viewbot bookkeeping / identity (note the lowercase 'b'). |
+| **`SimpleViewBotRotation.js`** | Rotation gating — real-streamer / URL-relay protection (`isRealStreamerActive`). |
+| **`URLStreamExtractorService.js`** | Resolves a Twitch/Kick/HTTP URL to a playable stream; builds the `streamlink` pipe. |
+| **`URLStreamDatabaseService.js`** | Persists URL-stream configurations. |
+| **`URLStreamHealthService.js`** | Liveness monitoring of active relays. |
+| **`StreamProbeService.js`** | `ffprobe`-based source inspection. |
+| (`urlstream/FFmpegPipeline.js`, `IngressJanitor.js`, `StreamReconnector.js`, `WhitelistGate.js`, `ViewerNotifier.js`) | URL-relay internals — FFmpeg→RTMP build, ingress teardown, reconnect, policy gate, viewer notify. |
+| (`viewbot/ffmpegArgs.js`, `viewbot/streamDefaults.js`, `viewbot/UsernameCache.js`, `viewbotLivekit/helpers.js`) | Local-video FFmpeg arg builders + helpers. |
 
-### Ingest pipelines
+---
 
-| Service | Role |
-|---------|------|
-| **`ViewBotGStreamerService.js`** | GStreamer pipeline for Plain RTP mode. |
-| **`ViewBotWebRTCService.js`** | Puppeteer-driven Chrome for WebRTC mode. |
-| _`WebRTCViewBot.js`_ | Earlier WebRTC viewbot. |
-
-### LiveKit-backed variants
-
-`ViewBotLiveKitService.js` is the only remaining LiveKit-backed variant. Dormant per [ADR-0003](adr/0003-livekit-dual-stack-rollback.md) and scheduled for removal alongside `LiveKitService.js` in PR-S. The other six LiveKit viewbot variants (FFmpeg, Node, Puppeteer, RTMP, SDK, and the GStreamer→WebRTC bridge) were deleted in #25.
-
-### Helpers
+## Rotation + external feeds
 
 | Service | Role |
 |---------|------|
-| **`createViewBotSDP.js`** | Crafts SDP offers for viewbot transports. |
-| **`launch-chrome-xvfb.sh`** | Shell wrapper that launches Puppeteer Chrome under Xvfb (X virtual framebuffer) for headless rendering. |
-| **`ViewBotSocketClient.js`** | Socket.IO client used by certain bot variants. |
-| **`ViewBotDatabaseService.js`** | Viewbot config persistence. |
-| **`ViewbotService.js`** | Legacy main viewbot service. (Lowercase 'b' — note the inconsistent capitalization.) |
-
-### URL-based ingest
-
-| Service | Role |
-|---------|------|
-| **`ViewBotURLService.js`** | Accepts arbitrary HTTP/Twitch/Kick URLs and feeds them through the pipeline. |
-| **`URLStreamExtractorService.js`** | Extracts the actual playable URL from a Twitch/Kick HTML page. |
-| **`URLStreamDatabaseService.js`** | Persists URL stream configurations. |
-| **`URLStreamHealthService.js`** | Monitors URL streams for liveness. |
+| **`RandomStreamRotationService.js`** | Top-level orchestrator: picks the next stream (Twitch / Kick / saved URL), drives the relay, pauses on real takeover, auto-resumes. Internals in [`server/services/random-stream/`](../../server/services/) (scheduler, announcer, recovery monitor, dependency wiring, state persistence). |
+| **`TwitchRandomService.js`** | Twitch Helix API client; filtered random channel pick. |
+| **`KickRandomService.js`** | Kick public scrape via the Python helper (`curl_cffi`). |
+| **`kick-api-helper.py`** | Python helper for Kick (subprocess-spawned, not a Node module). |
+| **`WhitelistService.js`** | URL-relay content policy ([ADR-0010](adr/0010-url-relay-whitelist-mode.md)): per-platform `off`/`blacklist`/`whitelist` + CCL/mature gates. |
+| **`WhitelistEnforcer.js`** | Mid-stream drift checker — re-checks the active relay against `WhitelistService` and stops it on policy drift. |
 
 ---
 
 ## Recording + clips
 
+Recording is LiveKit **egress** → local HLS → B2. The old ffmpeg/HLS recorder (`RecordingService`, `RecordingStorageService`, `FileCompressionService`) and the `fluent-ffmpeg` dependency were removed.
+
 | Service | Role |
 |---------|------|
-| **`ContinuousRecordingService.js`** | Main recording orchestrator. Spawns the per-recording pipeline; tracks state. |
-| **`RecordingStorageService.js`** | Local FS layout, size tracking, DB metadata. |
-| **`RecordingUploadScheduler.js`** | Periodic sweep for retry of stuck B2 uploads. |
-| **`RecordingCleanupScheduler.js`** | Deletes local files after B2 upload confirmed; respects retention. |
-| **`B2StorageService.js`** | S3-compatible client (AWS SDK against B2). Generates signed URLs. |
-| **`B2SegmentUploadService.js`** | Background per-segment upload to B2. |
-| **`SessionChatCaptureService.js`** | Captures chat aligned to recording timeline. |
-| **`FileCompressionService.js`** | Post-recording compression (HLS → optimized output). |
+| **`ContinuousRecordingService.js`** | Drives LiveKit Egress (Room Composite for viewbots, Participant Egress for the real streamer) → HLS segments on disk → `recording_sessions` table. Cleans up stale egress jobs on boot. |
+| **`recording/RecordingDiskScanner.js`** | Scans the egress-recordings directory; reconciles on-disk segments with DB sessions and clip lookups. |
+| **`recording/RecordingSessionStore.js`** | In-memory + DB session bookkeeping. |
+| **`recording/RoomParticipantInspector.js`** | Inspects LiveKit room participants to decide room-vs-participant egress. |
+| **`RecordingUploadScheduler.js`** | Periodic sweep that retries stuck B2 uploads. |
+| **`RecordingCleanupScheduler.js`** | Deletes local files once B2 upload is confirmed; respects retention. |
+| **`B2StorageService.js`** | S3-compatible client (AWS SDK against B2); generates signed URLs. |
+| **`EgressFrameCaptureService.js`** | Extracts a JPEG frame from the egress HLS for a transcription window (feeds VisionBot). |
+| **`SessionChatCaptureService.js`** | Captures chat aligned to the recording timeline (chat replay). |
 | **`ClipService.js`** | Clip CRUD, lifecycle, public/private toggle. |
 | **`ClipProcessorService.js`** | FFmpeg-based clip extraction + thumbnail generation. |
 | **`ClipStorageService.js`** | Clip file storage (local + B2). |
-| **`StreamProbeService.js`** | Probes stream properties via `ffprobe`. |
-| **`VideoTimestampMapper.js`** | Maps wall-clock timestamps to recording timeline. |
-| **`VideoTransitionDetector.js`** | Detects scene changes (used for thumbnails and clip suggestions). |
-| **`BlackFrameDetectorService.js`** | Detects black frames (clip cut-points). |
+
+The recording-review surface is served at `/admin/review/*` ([`server/routes/admin-recordings.js`](../../server/routes/admin-recordings.js) + `admin-recordings/`).
 
 ---
 
 ## Transcription + AI
 
+Transcription captures audio from the LiveKit room (not Plain RTP) and runs whisper.cpp locally.
+
 | Service | Role |
 |---------|------|
-| **`TranscriptionService.js`** | Whisper-based audio transcription orchestrator (spawns `whisper.cpp/main`). |
-| **`TranscriptionAudioAdapter.js`** | Audio capture abstraction for the transcription pipeline. |
-| **`AudioBufferService.js`** | Audio buffer management for transcription (5-second chunks + 0.5 s overlap). |
-| **`OpusDecoder.js`** | Decodes Opus audio (utility). |
-| **`MpegTsDemuxerService.js`** | Demultiplexes MPEG-TS streams (used in recording / external ingest). |
-| **`RtpReceiver.js`** | Low-level RTP packet receiver. |
-| **`ChatBotService.js`** | Multi-bot LLM orchestrator; per-bot scheduling. |
+| **`TranscriptionService.js`** | Transcription orchestrator (sessions, config, persistence, socket broadcast). |
+| **`TranscriptionAudioAdapter.js`** | Captures audio via `@livekit/rtc-node` (`Room`/`AudioStream`/`TrackKind.KIND_AUDIO`) → PCM → WAV. |
+| **`transcription/WhisperRunner.js`** | Self-contained whisper.cpp subprocess driver (spawns `whisper.cpp/main`). |
+| **`transcription/TranscriptionRepository.js`** | `transcriptions` / `transcription_chunks` DB access. |
+| **`transcription/AudioFileJanitor.js`** | Cleans up temp PCM/WAV buffer files. |
+| **`TranscriptionDrivenBotService.js`** | Bridges transcription output into bot context. |
+| **`AudioBufferService.js`** | Rolling audio buffer (5 s chunks + 0.5 s overlap). |
+| **`ChatBotService.js`** | Multi-bot LLM orchestrator; per-bot scheduling. Internals under `chatbot/` (identity, dispatch, temporary-bot lifecycle, LLM clients). |
 | **`ChatBotLLMService.js`** | LLM provider abstraction (Ollama / Groq + canned fallback). |
 | **`MovieBotService.js`** | Live stream commentary bot (consumes transcription + chat context). |
-| **`StreamBotService.js`** | Periodic-announcement bot. |
+| **`StreamBotService.js`** | Periodic-announcement bot (internals under `streambot/`). |
+| **`VisionBotService.js`** | Screenshot-aware commentary ([ADR-0018](adr/0018-visionbot-screenshot-comments.md)) — pairs an egress frame with a transcription window. |
+
+---
+
+## Moderation
+
+| Service | Role |
+|---------|------|
+| **`ModerationService.js`** | AI moderation pipeline orchestrator ([ADR-0013](adr/0013-ai-moderation-pipeline.md)). |
+| **`ModerationStage1.js` / `Stage2.js` / `Stage3.js`** | The staged moderation passes. |
+| **`ModerationActionArbiter.js`** | Decides the action from stage results. |
+| **`ModerationNotifier.js`** | Broadcasts moderation outcomes. |
+| **`ProfanityFilterService.js`** | Local profanity detection with character-substitution normalization. |
+| **`IPBanService.js`** | IP ban DB + in-memory cache; checked at socket connect. |
+| (`moderation/ImageModerationConfig.js`, `Retention.js`, `SchemaSeed.js`, `TermsAdmin.js`) | Image-moderation config ([ADR-0021](adr/0021-omni-image-moderation.md)), retention, seed, terms admin. |
 
 ---
 
@@ -123,10 +124,10 @@ See [`viewbot-fleet.md`](viewbot-fleet.md) for the live/dead breakdown.
 
 | Service | Role |
 |---------|------|
-| **`AudioOptimizationService.js`** | Codec negotiation, audio quality profiles. |
 | **`SoundFxService.js`** | Sound effect playback + TTS + 101soundboards queue. |
-| **`VisualFxService.js`** | Server-side video pipeline filters (resolution, bitrate, network sim, color, glitch, etc.). |
-| **`CanvasFxService.js`** | Server-side trigger for client-rendered overlay effects. |
+| **`CanvasFxService.js`** | Server-side trigger for client-rendered overlay effects (internals under `canvasfx/`). |
+| **`DrawingService.js`** | Collaborative drawing-overlay state. |
+| **`AudioBufferService.js`** | (also used by transcription — see above). |
 
 ---
 
@@ -134,10 +135,12 @@ See [`viewbot-fleet.md`](viewbot-fleet.md) for the live/dead breakdown.
 
 | Service | Role |
 |---------|------|
-| **`ItemService.js`** | Item CRUD, category management, type detection (`isCooldownModifierItem`, etc.). |
+| **`ItemService.js`** | Item CRUD, category management, type detection. Internals under `item/`. |
+| **`ItemUseService.js`** | Dispatches item use to the right handler (`itemUse/`: buff/debuff, cooldown modifier, interactive, utility, auto-trigger). |
 | **`InventoryService.js`** | User inventory state (acquire, use, stack). |
-| **`ShopService.js`** | Shop catalog read + purchase logic (deducts points, adds inventory). |
-| **`BuffDebuffService.js`** | Buff/debuff lifecycle (apply, track expiry, broadcast). |
+| **`ShopService.js`** | Shop catalog read + purchase logic. |
+| **`BuffDebuffService.js`** | Buff/debuff lifecycle (apply, track expiry, broadcast). Internals under `buffdebuff/`. |
+| **`ThrowingService.js`** | Throwable-item mechanics. |
 
 ---
 
@@ -146,25 +149,10 @@ See [`viewbot-fleet.md`](viewbot-fleet.md) for the live/dead breakdown.
 | Service | Role |
 |---------|------|
 | **`AuthService.js`** | JWT signing/verifying, Google OAuth flow, password reset, login/signup. |
-| **`AccountService.js`** | User profile reads/writes, stat aggregation, the points-balance ledger, account-deletion DB operations. |
-| **`AccountDeletionScheduler.js`** | Hourly cron-like check for accounts past their 15-day grace period; calls `permanentlyDeleteAccount()`. |
-| **`IPBanService.js`** | IP ban DB + in-memory cache. Checked at socket connect. |
-| **`EmailService.js`** | SMTP email sending (verification, password reset, deletion confirmation). |
-| **`ProfanityFilterService.js`** | Local profanity detection with character-substitution normalization (~600 entries). |
-
----
-
-## Rotation + external feeds
-
-| Service | Role |
-|---------|------|
-| **`RandomStreamRotationService.js`** | Top-level orchestrator that picks the next stream (Twitch / Kick / saved URL) and triggers the rotation. |
-| **`TwitchRandomService.js`** | Twitch Helix API client; filtered random channel pick. |
-| **`KickRandomService.js`** | Kick public scrape via Python helper (`curl_cffi`). |
-| **`kick-api-helper.py`** | Python helper script for Kick (not a Node module; subprocess-spawned). |
-| **`SimpleViewBotRotation.js`** | Simple in-memory rotation state (used by URL-stream rotation). |
-| **`WhitelistService.js`** | URL-relay content filter (ADR-0010). Per-platform `off` / `blacklist` / `whitelist` mode + CCL/mature gates. Pure policy + DB + in-memory cache. |
-| **`WhitelistEnforcer.js`** | Mid-stream drift checker (ADR-0010, PR-W4). 60s polling loop that re-checks the active URL relay against `WhitelistService` and stops it if the streamer drifted out of policy. |
+| **`AccountService.js`** | Profile reads/writes, stat aggregation, points ledger, account-deletion DB ops. Internals under `account/` (lifecycle manager, profile manager, points). |
+| **`AccountDeletionScheduler.js`** | Hourly check for accounts past their 15-day grace period. |
+| **`EmailService.js`** | SMTP email (verification, password reset, deletion confirmation). |
+| **`SessionService.js`** | (see Streaming core). |
 
 ---
 
@@ -172,81 +160,46 @@ See [`viewbot-fleet.md`](viewbot-fleet.md) for the live/dead breakdown.
 
 | Service | Role |
 |---------|------|
-| **`TimeTrackingService.js`** | Per-user stream/view/chat time accumulation; awards points on a 25-second tick. |
+| **`TimeTrackingService.js`** | Per-user stream/view/chat time accumulation; awards points on a tick. |
 | **`StreamingLogsService.js`** | Stream event audit trail (start, end, takeover, disconnect). |
-| **`ResourceMonitor.js`** | CPU / memory / disk monitoring loop (5 s interval). |
+| **`ResourceMonitor.js`** | CPU / memory / disk monitoring loop. |
 | **`PortMonitorService.js`** | Network port availability checks. |
-| **`ProcessManager.js`** | Child process lifecycle (kill stale ffmpeg / gstreamer / chrome). |
-
----
-
-## Stream interceptor (intermediate processing)
-
-| Service | Role |
-|---------|------|
-| **`StreamInterceptorService.js`** | Intercepts/processes the stream mid-pipeline (GStreamer-based — used by VisualFX effects). |
-| **`StreamInterceptorIntegration.js`** | Integration wrapper that wires the interceptor into MediaSoup. |
+| **`ProcessManager.js`** | Child-process lifecycle (kill stale ffmpeg / streamlink). |
+| **`BotEventBus.js`** | In-process event bus for bot subsystems. |
 
 ---
 
 ## Game subsystem
 
-Lives in [`server/services/game/`](../../server/services/) as a self-contained subdirectory.
-
-| Service | Role |
-|---------|------|
-| **`GameService.js`** | Main orchestrator. |
-| **`GameLoopManager.js`** | Per-tick game loop. |
-| **`PlayerManager.js`** | Player state, movement, inventory in-game. |
-| **`EnemyManager.js`** | Enemy spawning + AI. |
-| **`WorldManager.js`** | Map, tiles, spawn points, persistence. |
-| **`CollisionManager.js`** | Collision detection. |
-| **`GameBroadcaster.js`** | Per-tick state broadcast via Socket.IO. |
-| **`GameStreamService.js`** | Streams game video to viewers when game-mode is active. |
-| **`index.js`** | Exports the game services. |
+Lives in [`server/services/game/`](../../server/services/) as a self-contained subdirectory: `GameService.js` (orchestrator), `GameLoopManager.js`, `PlayerManager.js`, `EnemyManager.js`, `WorldManager.js`, `CollisionManager.js`, `GameBroadcaster.js`, `GameStreamService.js`, plus `GameMechanicsService.js`. `index.js` exports the set.
 
 ---
 
 ## Counting the fleet
 
-Approximate counts for orientation:
+Approximate counts for orientation (top-level `server/services/*.js`; subdirectory helpers add ~80 more):
 
 | Group | Count |
 |-------|------:|
-| Streaming core | ~11 |
-| Viewbot fleet (active + legacy + LiveKit-dormant) | ~12 |
-| Recording + clips | ~15 |
-| Transcription + AI | ~9 |
+| Streaming core | ~10 |
+| Viewbots + rotation + external | ~14 |
+| Recording + clips | ~12 |
+| Transcription + AI | ~12 |
+| Moderation | ~8 |
 | Audio + effects | ~4 |
-| Items + economy | ~4 |
-| Auth + accounts | ~6 |
-| Rotation + external | ~5 |
-| Monitoring + admin | ~5 |
-| Stream interceptor | ~2 |
-| Game subsystem | ~9 |
-| **Total** | **~85** |
-
----
-
-## Pruning landed + remaining
-
-**Landed in #25:** 16 orphan services deleted (4,257 LOC):
-
-- `LiveKitAudioCapture.js`, `LiveKitIngressService.js`
-- 6 dormant LiveKit viewbot variants (`ViewBotLiveKit{FFmpeg,Node,Puppeteer,RTMP,SDK}.js`, `ViewBotGStreamerWebRTC.js`)
-- 6 superseded viewbot experiments (`SimpleTestBot.js`, `SimpleViewBotMediaSoup.js`, `ViewBotFFmpegService.js`, `ViewBotMetrics.js`, `ViewBotMonitor.js`, `ViewBotMuxedStreamService.js`)
-- 2 dead rotation files (`InitializeSimpleRotation.js`, `ViewBotRotationIntegration.js`)
-
-**Remaining cleanup (out of scope for #25):**
-
-1. **Dormant LiveKit core** — `LiveKitService.js`, `ViewBotLiveKitService.js`, `client/src/services/LiveKitClient.ts` are still wired but never executed in production. Scheduled for PR-S.
-2. **Superseded legacy rotation** — `ViewBotRotationService.js`, `WebRTCViewBotRotation.js`. These have non-trivial transitive ties; check before removal.
-3. **`WebRTCViewBot.js`** — earlier prototype, may be orphan; verify before deleting.
+| Items + economy | ~8 |
+| Auth + accounts | ~5 |
+| Monitoring + admin | ~6 |
+| Game subsystem | ~10 |
+| **Top-level total** | **~150** |
+| **+ subdirectory modules** | **~80** |
 
 ---
 
 ## See also
 
 - [`overview.md`](overview.md) — where each group of services fits in the layered view
-- [`viewbot-fleet.md`](viewbot-fleet.md) — the live vs dead breakdown in detail
-- [`/docs/contributing/adding-a-service.md`](../contributing/adding-a-service.md) — how to add a new service that survives this catalog's "is it actually used?" test
+- [`viewbot-fleet.md`](viewbot-fleet.md) — the live LiveKit ingest paths in detail
+- [`streaming-stack.md`](streaming-stack.md) — the LiveKit media pipeline
+- [`/docs/contributing/adding-a-service.md`](../contributing/adding-a-service.md) — how to add a service that survives this catalog's "is it actually used?" test
+- [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md) — the MediaSoup retirement that shrank this catalog

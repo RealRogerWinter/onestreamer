@@ -1,3 +1,6 @@
+> [!NOTE]
+> **COMPLETED — historical.** This roadmap/handoff/inventory has been executed and is preserved for the record only; it is **not maintained** and its file/line references reflect the tree at the time it was written (pre-ADR-0024). _Archived 2026-06-01._
+
 # Phase 6+ refactor roadmap
 
 _Last revised: 2026-05-27 against `main` at commit `a7891d0` (PR 5.3 merged)._

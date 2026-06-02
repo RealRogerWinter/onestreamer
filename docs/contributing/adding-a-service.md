@@ -185,7 +185,7 @@ If your service is a new user-visible feature, add a `/docs/features/<feature>.m
 | `<Thing>Service.js` | Most services — the dominant pattern |
 | `<Thing>Manager.js` | Services that manage a fleet of similar things (ViewBotManager, ProcessManager) |
 | `<Thing>Scheduler.js` | Services that own a periodic loop (AccountDeletionScheduler, RecordingUploadScheduler) |
-| `<Thing>Adapter.js` | Abstraction over multiple implementations (WebRTCAdapter) |
+| `<Thing>Adapter.js` | Abstraction over an implementation (e.g. client-side `WebRTCClientAdapter`, the thin shim over the LiveKit SDK) |
 
 ## Checklist
 

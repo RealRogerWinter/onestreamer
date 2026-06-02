@@ -2,6 +2,12 @@
 
 _Last verified: 2026-05-23 against commit 4a1d325._
 
+> ⚠️ **OUTDATED (ADR-0024).** This runbook describes the retired GStreamer/Puppeteer→MediaSoup
+> viewbot fleet, which has been removed. The live viewbot path is LiveKit/RTMP-ingress based
+> (see [`viewbot-fleet.md`](../../architecture/viewbot-fleet.md)). The symptoms, the
+> `gst-launch`/Chrome process checks, and the `/api/viewbot-manager` commands below no longer
+> apply and need a full rewrite against the LiveKit path.
+
 ## Symptoms
 
 - Viewbot rotation stuck on one channel — never advances

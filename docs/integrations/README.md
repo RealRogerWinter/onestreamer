@@ -4,8 +4,8 @@ One file per external dependency. Each covers: what it does, where it runs, cred
 
 | File | Integration |
 |------|-------------|
-| [`livekit.md`](livekit.md) | WebRTC SFU (currently dormant — see [ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md)). |
-| [`mediasoup.md`](mediasoup.md) | Primary WebRTC backend. |
+| [`livekit.md`](livekit.md) | **The WebRTC backend** — streamer↔viewer, URL-relay ingress, recording egress, transcription capture ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). |
+| [`mediasoup.md`](mediasoup.md) | Retired predecessor backend (stub — see ADR-0024). |
 | [`backblaze-b2.md`](backblaze-b2.md) | Recording + clip cloud storage (S3-compatible API). |
 | [`google-oauth.md`](google-oauth.md) | Google sign-in via Passport. |
 | [`cloudflare-turnstile.md`](cloudflare-turnstile.md) | CAPTCHA on signup, login, and some chat actions. |

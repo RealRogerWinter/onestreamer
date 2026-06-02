@@ -49,7 +49,7 @@ All required for the recording-and-clips feature. Without them, [`B2StorageServi
 
 ## Operational notes
 
-- **Upload is asynchronous and non-blocking.** [`B2SegmentUploadService`](../../server/services/B2SegmentUploadService.js) queues segments as they're written locally and uploads them in the background. The main recording pipeline doesn't wait.
+- **Upload is asynchronous and non-blocking.** [`RecordingUploadScheduler`](../../server/services/RecordingUploadScheduler.js) queues segments as they're written locally and uploads them in the background. The main recording pipeline doesn't wait.
 - **Local files are cleaned up after B2 confirms the upload.** [`RecordingCleanupScheduler`](../../server/services/RecordingCleanupScheduler.js) handles this. If B2 uploads stall, local disk fills — see [`/docs/operations/runbooks/recording-upload-failed.md`](../operations/runbooks/recording-upload-failed.md).
 - **`B2_STREAMING_ENABLED=true`** lets the admin recording-review tool stream video directly from B2 (via 4-hour signed URLs). Saves bandwidth on the OneStreamer host but creates a hard dependency on B2 being reachable.
 - **Egress cost** — B2 egress is much cheaper than AWS but not free. If you stream a lot of recording playback from B2, factor that into the budget.
@@ -60,7 +60,7 @@ All required for the recording-and-clips feature. Without them, [`B2StorageServi
 | Concern | File |
 |---------|------|
 | S3 client setup (against B2 endpoint) | [`server/services/B2StorageService.js`](../../server/services/B2StorageService.js) |
-| Per-segment upload queue | [`server/services/B2SegmentUploadService.js`](../../server/services/B2SegmentUploadService.js) |
+| Per-segment upload queue | [`server/services/RecordingUploadScheduler.js`](../../server/services/RecordingUploadScheduler.js) |
 | Periodic retry of stuck uploads | [`server/services/RecordingUploadScheduler.js`](../../server/services/RecordingUploadScheduler.js) |
 | Local file cleanup after upload | [`server/services/RecordingCleanupScheduler.js`](../../server/services/RecordingCleanupScheduler.js) |
 | Recording pipeline (the producer of segments) | [`server/services/ContinuousRecordingService.js`](../../server/services/ContinuousRecordingService.js) |
@@ -95,7 +95,7 @@ If the probe fails:
 | Recordings filling local disk | B2 uploads stuck — see [`/docs/operations/runbooks/recording-upload-failed.md`](../operations/runbooks/recording-upload-failed.md) |
 | Admin review playback fails | If `B2_STREAMING_ENABLED=true`, the signed URL may have expired (4h TTL by default) — refresh the admin page |
 | All uploads failing | Probe credentials with the `aws s3 ls` command above |
-| Some uploads failing, some succeeding | Likely a per-segment retry-able error; check `B2SegmentUploadService` log for the pattern |
+| Some uploads failing, some succeeding | Likely a per-segment retry-able error; check `RecordingUploadScheduler` log for the pattern |
 | B2 invoice surprise | Egress from `B2_STREAMING_ENABLED=true` usage — consider serving from a CDN, or set `B2_STREAMING_ENABLED=false` and stream from local disk |
 
 ## See also

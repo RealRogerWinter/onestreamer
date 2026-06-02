@@ -47,7 +47,7 @@ Pragmatic conventions that match how OneStreamer is actually written today. The 
 - **CSS files**: PascalCase matching component (`StreamerSettings.css`)
 - **Database tables**: `snake_case`
 - **Database columns**: `snake_case`
-- **Socket events**: `kebab-case` (`stream-ready`) or `colon:separated` for grouped events (`mediasoup:produce`, `game:state-update`)
+- **Socket events**: `kebab-case` (`stream-ready`) or `colon:separated` for grouped events (`game:full-state`, `admin:start-game`)
 - **REST endpoints**: `kebab-case` paths (`/api/random-stream/start`)
 - **Env vars**: `SCREAMING_SNAKE_CASE`
 - **Client-only env vars**: prefix with `REACT_APP_` (CRA requirement)
@@ -102,7 +102,7 @@ Use emoji-prefixed log lines for important events. The convention has emerged or
 | `🔨 MODERATION:` | Mod actions |
 | `🚫 MODERATION:` / `🚫 CONNECTION:` / `🚫 STREAMING:` | Bans / blocks |
 | `✅ MODERATION:` | Unbans / approvals |
-| `📡 MEDIASOUP:` | WebRTC events |
+| `📡 LIVEKIT:` | WebRTC events (LiveKit is the sole backend) |
 | `🎬 RECORDING:` | Recording pipeline |
 | `🗑️ DELETION SCHEDULER:` | Account-deletion runs |
 | `📧` | Email send (verification, reset, etc.) |

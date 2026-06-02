@@ -1,8 +1,11 @@
 # Socket.IO event reference
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-06-01 against `main` (post-ADR-0024 cleanup)._
 
 Flat-table reference of every Socket.IO event OneStreamer uses. For grouped-by-feature narrative and the rationale for the two-socket design, see [`/docs/architecture/realtime-events.md`](../architecture/realtime-events.md).
+
+> [!NOTE]
+> WebRTC transport negotiation is **not** on this socket — the LiveKit client SDK handles ICE/SDP over its own connection ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). The former `mediasoup:*` and `stream-offer`/`stream-answer`/`ice-candidate` events were removed with MediaSoup.
 
 Two sockets per browser:
 
@@ -54,19 +57,9 @@ Direction key: **C→S** = client emits, **S→C** = server emits.
 | `viewer-count-update` | S→C | Live viewer count |
 | `kill-switch-activated` | S→C | Emergency stop |
 
-### MediaSoup signaling
+### WebRTC media setup
 
-| Event | Direction | Purpose |
-|-------|:---------:|---------|
-| `mediasoup:get-rtp-capabilities` | C→S | Fetch SFU RTP capabilities |
-| `mediasoup:create-send-transport` | C→S | Create upstream transport |
-| `mediasoup:connect-transport` | C→S | Complete DTLS handshake |
-| `mediasoup:produce` | C→S | Register producer |
-| `mediasoup:consume` | C→S | Subscribe to producer |
-| `produce-verified` | S→C | Producer ack'd |
-| `stream-offer` | both | SDP offer (legacy/non-mediasoup signaling) |
-| `stream-answer` | both | SDP answer |
-| `ice-candidate` | both | ICE candidate exchange |
+No events. Media transport (ICE/SDP/DTLS) is negotiated by the LiveKit client SDK against the LiveKit server, off this socket. The client joins the LiveKit room when it receives `stream-ready` / `streaming-approved` above. See [`/docs/architecture/streaming-stack.md`](../architecture/streaming-stack.md).
 
 ### Buffs / items / points / cooldowns
 
@@ -158,24 +151,12 @@ Direction key: **C→S** = client emits, **S→C** = server emits.
 
 ### Viewbots
 
+Viewbots ingest via LiveKit (RTMP ingress); the old transport-setup/producer handshake was removed with MediaSoup. See [`/docs/architecture/viewbot-fleet.md`](../architecture/viewbot-fleet.md).
+
 | Event | Direction | Purpose |
 |-------|:---------:|---------|
-| `viewbot-create-plain-bridge` | C→S | Create Plain RTP bridge |
-| `viewbot-create-webrtc-transport` | C→S | Create WebRTC transport |
-| `viewbot-create-plain-transport` | C→S | Create Plain RTP transport |
-| `viewbot-webrtc-produce` | C→S | Bot is producing WebRTC media |
-| `viewbot-create-producers` | C→S | Create producer set |
-| `viewbot-stream-ready` | C→S | Bot signals ready |
-| `viewbot-video-ended` | C→S | Bot's video reached EOF |
-| `viewbot-rotation-request` | C→S | Bot requests rotation |
-| `viewbot-available` | S→C | New bot available |
-| `viewbot-stream-approved` | S→C | Bot's stream approved |
-| `viewbot-mode-changed` | S→C | Plain RTP ↔ WebRTC toggle |
-| `viewbot-producer-created` | S→C | Producer created |
-| `viewbot-producer-error` | S→C | Producer error |
-| `viewbot-rotation-completed` | S→C | Rotation done |
-| `viewbot-rotation-after-video-end` | S→C | Next bot after EOF |
-| `viewbot-stopped` | S→C | Bot stopped |
+| `viewbot-stream-approved` | S→C | Bot's stream approved to go live |
+| `viewbot-stream-ready` | C→S | Bot signals its stream is ready |
 
 ### Game
 

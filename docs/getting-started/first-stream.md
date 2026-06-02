@@ -39,13 +39,13 @@ If nobody else is streaming locally (likely — you just started everything):
 1. Click **Start Streaming** in the bottom toolbar.
 2. Your browser prompts for camera + microphone permission. Click **Allow**.
 3. Server-side, you'll see a chain of socket events in `pm2 logs onestreamer-server`:
-   - `request-to-stream` → server checks cooldowns (clean in dev) → `streaming-approved`
-   - `mediasoup:get-rtp-capabilities` → `mediasoup:create-send-transport` → `mediasoup:connect-transport` → `mediasoup:produce` (twice — once for audio, once for video)
+   - `request-to-stream` → server checks cooldowns (clean in dev) → `streaming-approved` (the server mints a LiveKit access token)
+   - the **LiveKit client SDK** then connects to the LiveKit room over its own WebSocket and publishes the audio + video tracks — that ICE/SDP negotiation happens on LiveKit's connection, **not** on the OneStreamer socket ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md))
    - `stream-ready` then `stream-started` broadcast to all viewers
 4. Your camera preview should appear in the main video area.
 5. Above the preview: an audio-level meter ([`AudioLevelMeter.tsx`](../../client/src/components/audio/AudioLevelMeter.tsx)). Speak — the bar should move.
 
-If the preview stays black: open DevTools → Console. Look for `getUserMedia` errors or MediaSoup transport failures. The [`stream-stuck.md`](../operations/runbooks/stream-stuck.md) runbook covers most of the common causes.
+If the preview stays black: open DevTools → Console. Look for `getUserMedia` errors or `[livekit-client]` connection failures. The [`stream-stuck.md`](../operations/runbooks/stream-stuck.md) runbook covers most of the common causes.
 
 ## 3. Watch your own stream from a second browser
 
@@ -100,7 +100,7 @@ Click **Stop Broadcasting** in the streamer toolbar. The second browser should s
 You've exercised most of the core stack:
 
 - **Auth** — JWT-based session + Turnstile + email verification
-- **WebRTC streaming** — full MediaSoup signaling handshake + producer/consumer media path
+- **WebRTC streaming** — LiveKit room publish/subscribe (LiveKit is the sole WebRTC backend; the server mints the access token, the LiveKit SDK carries the media — [ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md))
 - **Chat** — separate socket to the chat-service, message broadcast, animal-username assignment
 - **Points + items** — earning, spending, shop CRUD via admin panel, item usage
 - **Recording + clips** — continuous recording, segment buffer, extraction
@@ -114,7 +114,7 @@ The pieces you *haven't* touched yet from this walkthrough: takeover handshake (
 - **Recording isn't producing segments** → [`recording-upload-failed.md`](../operations/runbooks/recording-upload-failed.md) (covers both upload and capture)
 - **Chat shows "disconnected"** → check `pm2 logs onestreamer-chat` (or `npm run chat` output); confirm port 8444 is listening
 - **Turnstile blocks signup** → confirm you set `1x00000000000000000000AA` as the site key and `1x0000000000000000000000000000000AA` as the secret key in `.env`
-- **MediaSoup transport errors** → confirm UDP 50000–50199 aren't blocked by your OS firewall
+- **LiveKit connection errors** (`[livekit-client]` in the console) → confirm a local LiveKit server is running on `:7882` and its RTC UDP range (set in `livekit-config.yaml`) isn't blocked by your OS firewall
 
 ## What to do next
 

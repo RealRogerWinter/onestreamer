@@ -1,3 +1,6 @@
+> [!NOTE]
+> **COMPLETED — historical.** This roadmap/handoff/inventory has been executed and is preserved for the record only; it is **not maintained** and its file/line references reflect the tree at the time it was written (pre-ADR-0024). _Archived 2026-06-01._
+
 # `console.*` callsite inventory — pre-Phase-12 snapshot
 
 > Companion to [ADR-0020](../adr/0020-namespaced-logging-with-pino.md). Sets the target list for the PR 12.2 / PR 12.3 sweep. Captured at PR 12.1 (commit on `main` immediately after merging PR 11.2 — `3f597b1`).

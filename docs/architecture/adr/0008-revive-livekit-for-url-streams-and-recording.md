@@ -1,6 +1,6 @@
 # ADR-0008: Revive LiveKit for URL streams, recording, and transcription
 
-_Status: accepted_
+_Status: Superseded by [ADR-0024](0024-retire-mediasoup-livekit-only.md) — LiveKit became the **sole** backend (MediaSoup retired); ADR-0008's env-flip rollback to MediaSoup is replaced by ADR-0024's redeploy procedure._
 _Date: 2026-05-26_
 
 ## Context

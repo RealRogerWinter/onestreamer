@@ -1,6 +1,6 @@
 # Background work inventory
 
-_Last verified: 2026-05-26 against `main` at the start of Phase 0._
+_Last verified: 2026-06-01 against `main` (post-ADR-0024 LiveKit-only cleanup)._
 
 Mechanical catalogue of every `setInterval`, `setTimeout`, and long-lived child process across `server/`. Companion to [`/docs/architecture/service-catalog.md`](service-catalog.md): the catalog says what each service *is*, this page says what work each service *runs in the background*.
 
@@ -8,13 +8,16 @@ The point of the page is to make the Phase 2 lifecycle work mechanical. Today th
 
 ## Counts
 
-| Kind | Count | Where |
-|------|-------|-------|
-| `setInterval` | 53 | services (most), `server/index.js` (5), socket handlers (1) |
-| `setTimeout` | 175 | services (most), `server/index.js` (~10); the bulk are one-shot deferred work and are not lifecycle hazards |
-| `ffmpeg` child processes | ~21 callsites across `ContinuousRecordingService`, `RecordingService`, `ViewBotURLService`, clip processing | spawned per stream/session, exit on stream end |
-| `puppeteer` / Chromium | ~8 launches across `ViewBotClientService`, `ViewBotWebRTCService` | one browser per viewbot |
-| `whisper.cpp` | spawned per transcription session in `TranscriptionService` | exit on stream end |
+| Kind | Where |
+|------|-------|
+| `setInterval` | live services (most — see the two tables below), `server/index.js` (the streaming-time sync at `server/index.js` `setInterval` callsite) |
+| `setTimeout` | services (most), `server/index.js`; the bulk are one-shot deferred work and are not lifecycle hazards. The "schedule autostart / grace-period" shapes now route through `LifecycleManager` (see hazard note). |
+| `ffmpeg` child processes | URL relay (`urlstream/FFmpegPipeline.js`, spawned per URL stream), recording (`ContinuousRecordingService`), clip processing — exit on stream end / EOF |
+| `streamlink` / `yt-dlp` | URL relay source pull (`ViewBotURLService` → `urlstream/`), piped into `ffmpeg` → RTMP → LiveKit ingress — exit on stream end |
+| `whisper.cpp` | spawned per transcription run by `transcription/WhisperRunner.js` (driven by `TranscriptionService`) — exits when the WAV chunk is transcribed |
+
+> [!NOTE]
+> Re-run the refresh grep (bottom of page) for exact counts; the tables below are the verified, named timers as of the last-verified date, not a raw count. The old per-viewbot Puppeteer/Chromium fleet and the in-process MediaSoup SFU are **gone** ([ADR-0024](adr/0024-retire-mediasoup-livekit-only.md)) — LiveKit is the sole WebRTC backend, so there is no longer any browser-per-viewbot or `MediasoupService` stats-polling background work.
 
 ## The two patterns
 
@@ -22,46 +25,41 @@ The point of the page is to make the Phase 2 lifecycle work mechanical. Today th
 
 Already lifecycle-ready. Phase 2 adds `stop() { clearInterval(this.X); }` to each, and the service factory returns these in a `stoppables` array for reverse-order shutdown. The 20 services below are the **easy** half.
 
-| Site | Service | Description |
-|------|---------|-------------|
-| `services/ResourceMonitor.js:76` | `ResourceMonitor` | `monitoringInterval` — CPU/mem polling for the admin dashboard |
-| `services/RecordingUploadScheduler.js:37` | `RecordingUploadScheduler` | `checkInterval` — scan local segments, push to B2 |
-| `services/LiveKitService.js:592` | `LiveKitService` | `healthCheckTimer` — server-room health |
-| `services/ViewBotClientService.js:1452` | `ViewBotClientService` | `validationTimer` — Puppeteer page validation |
-| `services/ViewBotClientService.js:3901` | `ViewBotClientService` | `pipelineHealthCheckTimer` — WebRTC pipeline checks |
-| `services/ViewBotManager.js:199` | `ViewBotManager` | `rotationTimer` — viewbot rotation tick |
-| `services/RtpReceiver.js:127` | `RtpReceiver` | `accumulatorInterval` — RTP packet accumulation |
-| `services/URLStreamHealthService.js:49` | `URLStreamHealthService` | `checkTimer` — URL stream up/down probe |
-| `services/AudioOptimizationService.js:416` | `AudioOptimizationService` | `monitoringInterval` — audio quality polling |
-| `services/PortMonitorService.js:29` | `PortMonitorService` | `monitorInterval` — port state polling |
-| `services/ViewbotService.js:427` | `ViewbotService` | `simulationTimer` — viewbot frame simulation |
-| `services/BuffDebuffService.js:597` | `BuffDebuffService` | `updateInterval` — buff duration tick |
-| `services/CanvasFxService.js:183` | `CanvasFxService` | `streamerCheckInterval` — streamer-online polling |
-| `services/RecordingCleanupScheduler.js:27` | `RecordingCleanupScheduler` | `checkInterval` — delete-by-age cleanup *(see hazard note below)* |
-| `services/game/GameLoopManager.js:32` | `GameLoopManager` | `intervalId` — game world tick |
-| `services/TimeTrackingService.js:115` | `TimeTrackingService` | `cleanupIntervalId` — session cleanup |
-| `services/AccountDeletionScheduler.js:27` | `AccountDeletionScheduler` | `intervalId` — 15-day grace check |
-| `services/ContinuousRecordingService.js:745` | `ContinuousRecordingService` | `autoRecordInterval` — LiveKit room polling for active streams |
-| `services/ContinuousRecordingService.js:1368` | `ContinuousRecordingService` | `cleanupInterval` — old recording purge |
-| `services/StreamBotService.js:305` | `StreamBotService` | `intervalId` — periodic announcement timer |
+| Service / file | Handle | Description |
+|----------------|--------|-------------|
+| `ResourceMonitor` (`services/ResourceMonitor.js`) | `monitoringInterval` | CPU/mem polling for the admin dashboard |
+| `LiveKitService` (`services/LiveKitService.js`) | `healthCheckTimer` | LiveKit server/room health probe (the sole WebRTC backend) |
+| `EgressFrameCaptureService` (`services/EgressFrameCaptureService.js`) | `_cleanupTimer` | reaps stale LiveKit egress frame-capture jobs |
+| `ContinuousRecordingService` (`services/ContinuousRecordingService.js`) | `autoRecordInterval` | polls the LiveKit room for active streams to start egress recording |
+| `ContinuousRecordingService` → disk scanner (`recording/RecordingDiskScanner.js`) | `cleanupInterval` | scans recording disk, prunes old segments |
+| `RecordingUploadScheduler` (`services/RecordingUploadScheduler.js`) | `checkInterval` | scan local recording segments, push to B2 |
+| `RecordingCleanupScheduler` (`services/RecordingCleanupScheduler.js`) | `checkInterval` | delete-by-age cleanup *(see hazard note below)* |
+| `TranscriptionService` (`services/TranscriptionService.js`) | `session.transcriptionInterval` | per-session tick that hands the buffered WAV to `WhisperRunner` |
+| `AudioFileJanitor` (`services/transcription/AudioFileJanitor.js`) | anonymous | deletes consumed PCM/WAV transcription chunks |
+| `RandomStreamRotationService` → scheduler (`random-stream/RotationScheduler.js`) | `rotationTimer` + `countdownAnnouncementTimers` | next-rotation `setTimeout` + `!extend` countdown nudges |
+| `RandomStreamRotationService` → recovery (`random-stream/RotationRecoveryMonitor.js`) | `autoRestartMonitor` | auto-restart watchdog for a wedged rotation |
+| `URLStreamHealthService` (`services/URLStreamHealthService.js`) | `checkTimer` | URL stream up/down probe |
+| `AudioOptimizationService` (`services/AudioOptimizationService.js`) | `monitoringInterval` | audio quality polling |
+| `PortMonitorService` (`services/PortMonitorService.js`) | `monitorInterval` | port state polling |
+| `BuffDebuffService` (`services/BuffDebuffService.js`) | `updateInterval` | buff duration tick |
+| `CanvasFxService` → bridge (`services/canvasfx/BuffEffectBridge.js`) | `streamerCheckInterval` | streamer-online polling for canvas FX |
+| `BuffDebuffService` cache (`services/buffdebuff/CacheCleaner.js`) | `cacheCleanupInterval` | evicts stale buff cache entries |
+| `game/GameLoopManager.js` | `intervalId` | game world tick |
+| `TimeTrackingService` (`services/TimeTrackingService.js`) | `cleanupIntervalId` | session cleanup |
+| `AccountDeletionScheduler` (`services/AccountDeletionScheduler.js`) | `intervalId` | 15-day grace check |
+| `moderation/Retention.js` | `_retentionTimer` | daily retention/purge scheduler |
+| `StreamBotService` schedulers (`services/streambot/PeriodicMessageScheduler.js`, `AutoSummonManager.js`) | `intervalId` / `autoSummonIntervalId` | periodic announcements + auto-summon ticks |
 
 ### "Module-scope" or "constructor-leaked" — no handle on instance, can't be stopped
 
-These are the **hard** half. Each is created without storing the handle on a state location, so there's nothing to clear. Phase 2 fixes each one by relocating the handle and adding `stop()`. Listed in order of severity.
+These are the **hard** half. Each is created without storing the handle on a state location, so there's nothing to clear. Phase 2 fixes each one by relocating the handle and adding `stop()`. The surface shrank sharply post-ADR-0024: the ~45-site `ViewBotClientService`, the 5-site `MediasoupService`, `ViewBotSocketClient`, `VisualFxService`, `RecordingStorageService`, and `FileCompressionService` rows that used to dominate this list are **all deleted** along with the per-viewbot browser fleet and the in-process MediaSoup SFU. What remains:
 
 | Site | Severity | Notes |
 |------|----------|-------|
-| `server/index.js:556` | **High** | `visualEffectSyncInterval` — module-scope `let`, started by `startVisualEffectSync()`. The function does check-and-clear, but on hot-reload the previous interval orphans. |
-| `server/index.js:5561` | Medium | Streaming time sync — module-scope, never stopped. |
-| `server/index.js:5978` | Medium | Stress-test generator (dev only?), module-scope. |
-| `services/VisualFxService.js:1537` | Medium | Anonymous `setInterval` inside a method, no handle saved. |
-| `services/ChatBotLLMService.js:656` | Medium | Anonymous `setInterval`, no handle saved. |
-| `services/RecordingStorageService.js:441` | Medium | Anonymous `setInterval`, no handle saved. |
-| `services/FileCompressionService.js:146` | Medium | Anonymous `setInterval`, no handle saved. |
-| `services/ViewBotSocketClient.js` (5 sites) | Medium | Multiple `setInterval` per bot instance; partial handle storage. |
-| `services/MediasoupService.js` (5 sites) | Medium | Stats polling, transport health — mixed pattern. |
-| `services/ViewBotClientService.js` (45 sites total) | Medium-Mixed | A large surface — some sites are `this.X = setInterval(...)`, others anonymous. Audit during Phase 2 viewbot lifecycle work. |
-| `services/StreamBotService.js:540` | Low (false positive) | This is a method *named* `setInterval`, not a call to the global. |
+| `server/index.js` streaming-time sync (`setInterval` callsite) | Medium | Module-scope, never stopped. |
+| `services/chatbot/llm/ollamaQueue.js:117` | Medium | Anonymous `setInterval` (Ollama request-queue drain), no handle saved. |
+| `services/transcription/AudioFileJanitor.js:87` | Low-Medium | Anonymous `setInterval` (consumed-WAV sweep); fires for the process lifetime — relocate the handle when `TranscriptionService` gets a `stop()`. |
+| `services/TimeTrackingService.js:351` | Low | A second anonymous `setInterval` inside a method (distinct from the owned `cleanupIntervalId`), no handle saved. |
 
 ## Notable hazards
 
@@ -87,9 +85,9 @@ PR 3.4 deleted the three helpers and the Map reference. The previous wording her
 
 Less concerning for lifecycle since they exit on their own work boundaries:
 
-- **`ffmpeg`**: spawned for recording, URL relay (`ViewBotURLService`), clip processing. Exits when stream ends or input EOFs. Wedge cases (stuck source) are not currently reaped by timeout — flagged as Phase 1 PR 2.6 territory.
-- **`puppeteer` / Chromium**: one browser per viewbot in `ViewBotClientService`. Closed in `stopViewbot()`. Browser leaks are a known viewbot fleet issue (`docs/operations/runbooks/viewbot-fleet-misbehaving.md`).
-- **`whisper.cpp`**: spawned per active transcription session. Exits when the session ends.
+- **`ffmpeg`**: spawned for recording (`ContinuousRecordingService`), URL relay (`urlstream/FFmpegPipeline.js`, driven by `ViewBotURLService`), and clip processing. On the URL-relay path it transcodes the source to RTMP that feeds **LiveKit ingress**. Exits when the stream ends or input EOFs. Wedge cases (stuck source) are not currently reaped by timeout — flagged as Phase 1 PR 2.6 territory. Orphans from server restarts / failed cleanup are pattern-killed on the next URL-stream start by `urlstream/IngressJanitor.js` (`pkill -f "streamlink.*twitch|..."`), which runs on-demand, not on a timer.
+- **`streamlink` / `yt-dlp`**: pull the upstream source (Twitch/Kick/YouTube/etc.) for the URL-relay path and pipe into `ffmpeg`. Spawned per URL stream, torn down with the relay. There is **no per-viewbot Chromium** anymore — the Puppeteer browser fleet was removed with the MediaSoup retirement ([ADR-0024](adr/0024-retire-mediasoup-livekit-only.md)); viewbots now join the LiveKit room headlessly (`ViewBotLiveKitService`) or via the URL-relay ingress.
+- **`whisper.cpp`**: spawned by `transcription/WhisperRunner.js` per transcription run (whisper.cpp). It has its own SIGTERM→SIGKILL timeout (`WhisperRunner.js`) so a hung run is reaped; the PCM/WAV it consumes comes from `TranscriptionAudioAdapter` (LiveKit RTC audio capture).
 
 ## Atomic-SQL audit closure
 

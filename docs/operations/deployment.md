@@ -26,13 +26,12 @@ flowchart TB
 
         subgraph Companions["Companion services - systemd"]
             Strapi[Strapi CMS<br/>:1337<br/>blog content]
-            LiveKit[LiveKit server<br/>:7880 :7882<br/>dormant]
             Coturn[coturn<br/>:3478 :5349<br/>TURN/STUN]
             Ollama[Ollama<br/>:11434<br/>local LLM]
         end
 
-        subgraph Realtime["Real-time media"]
-            Mediasoup[MediaSoup<br/>UDP 50000-50199<br/>WebRTC SFU]
+        subgraph Realtime["Real-time media - the sole WebRTC backend"]
+            LiveKit[LiveKit server<br/>:7880 :7882 + RTC UDP range<br/>SFU + ingress + egress]
         end
 
         subgraph Persist["Persistence"]
@@ -54,15 +53,15 @@ flowchart TB
     end
 
     Users -->|HTTPS 443| Nginx
-    Users <==>|WebRTC UDP 50000-50199| Mediasoup
+    Users <==>|WebRTC RTC/ICE UDP| LiveKit
     Users -.->|TURN UDP 3478| Coturn
     LE -->|certs| Nginx
     Nginx --> Main
     Nginx --> Chat
     Nginx --> Client
     Nginx --> Strapi
-    Nginx --> LiveKit
-    Main --> Mediasoup
+    Nginx -->|/livekit/*| LiveKit
+    Main -->|rooms/tokens/ingress/egress| LiveKit
     Main --> SQLite
     Main --> LocalFS
     Main --> WhisperModels
@@ -83,12 +82,12 @@ flowchart TB
 
 OneStreamer runs entirely on **one host**. There is no horizontal scaling, no load balancer in front of multiple app servers, no distributed cache. The architecture is deliberately single-host:
 
-- MediaSoup workers are local to the process — no router sharding.
+- The LiveKit server runs on the same host as the app — no SFU clustering.
 - SQLite is the database — one file, one writer.
 - Chat-service in-memory state isn't shared with anyone (because there's no second chat-service instance).
 - Sticky-session requirements vanish because there's only one server.
 
-The host runs on a public IP (`<SERVER_IP>`) that's also the MediaSoup announced IP. WebRTC clients need a clear UDP path to that IP in the 50000–50199 range.
+The host runs on a public IP (`<SERVER_IP>`) that LiveKit announces in its ICE candidates. WebRTC clients need a clear UDP path to that IP across the RTC port range configured in `livekit-config.yaml`.
 
 ## Process management — PM2
 
@@ -231,9 +230,9 @@ sudo ln -sfn /root/onestreamer/blog /var/www/html/blog
 
 If `https://onestreamer.live/blog/` returns 404 on a freshly provisioned host, this symlink is the first thing to check.
 
-### LiveKit (`:7880`, `:7882`)
+### LiveKit (`:7880`, `:7882`, + RTC UDP range)
 
-Running but dormant — see [ADR-0002](../architecture/adr/0002-mediasoup-primary-livekit-dormant.md). nginx exposes it via the `livekit.onestreamer.live` subdomain and the `/livekit/*` paths.
+**The sole WebRTC backend** ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)) — every live media path runs through it (streamer↔viewer, URL-relay ingress, recording egress, transcription). Configured from `livekit-config.yaml` at the repo root (gitignored; the tracked reference is [`config/livekit-config.example.yaml`](../../config/livekit-config.example.yaml)). nginx exposes the HTTP/WebSocket API via the `livekit.onestreamer.live` subdomain and the `/livekit/*` paths; the RTC/ICE media UDP range (set in `livekit-config.yaml`) must be reachable from the public internet. A LiveKit outage is a streaming-down outage — see [`runbooks/livekit-disconnect.md`](runbooks/livekit-disconnect.md).
 
 ### coturn
 
@@ -327,8 +326,8 @@ See [`monitoring.md`](monitoring.md) for the per-symptom diagnosis paths.
 ## Disaster recovery
 
 1. **SQLite is corrupt** → restore from latest backup (see [`backup-restore.md`](backup-restore.md)). All point balances + items + recordings metadata come back; in-flight chat is lost.
-2. **Recordings disk full** → check `B2SegmentUploadService` is uploading; if uploads are stuck, recordings accumulate. [`recording-upload-failed.md`](runbooks/recording-upload-failed.md).
-3. **MediaSoup processes crash** → `pm2 restart onestreamer-server`. Active streams drop; users have to refresh.
+2. **Recordings disk full** → check `RecordingUploadScheduler` is uploading egress segments to B2; if uploads are stuck, recordings accumulate. [`recording-upload-failed.md`](runbooks/recording-upload-failed.md).
+3. **LiveKit server crashes** → `sudo systemctl restart livekit` (and `pm2 restart onestreamer-server` to refresh tokens if needed). Active streams drop; users have to refresh. See [`runbooks/livekit-disconnect.md`](runbooks/livekit-disconnect.md).
 4. **Whole host down** → unrelated to OneStreamer; standard host-failure procedure. No HA today.
 
 ## See also

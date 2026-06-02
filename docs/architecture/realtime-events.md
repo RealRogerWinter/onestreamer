@@ -1,8 +1,11 @@
 # Real-time events
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-06-01 against `main` (post-ADR-0024 cleanup)._
 
-OneStreamer uses Socket.IO heavily — ~110 distinct event names across two services (main server `:8443` and chat-service `:8444`). This page is the **catalog** of every event with direction, purpose, and where it's wired. For wire-format payload details, follow the file links into the code.
+> [!NOTE]
+> **WebRTC media and its signaling now run entirely inside LiveKit** ([ADR-0024](adr/0024-retire-mediasoup-livekit-only.md)). There is no application-level WebRTC handshake on the OneStreamer socket anymore — the old `mediasoup:*` events and the `stream-offer`/`stream-answer`/`ice-candidate` SDP exchange are gone, because the LiveKit client SDK negotiates ICE/SDP over its own connection. The socket carries application signaling (who's streaming, takeover, items, effects), not transport negotiation.
+
+OneStreamer uses Socket.IO heavily across two services (main server `:8443` and chat-service `:8444`). This page is the **catalog** of every event with direction, purpose, and where it's wired. For wire-format payload details, follow the file links into the code.
 
 The companion reference [`/docs/api/socket-events.md`](../api/socket-events.md) presents the same data as flat reference tables; this page groups events by feature for understanding.
 
@@ -62,26 +65,11 @@ Client wiring: [`client/src/services/SocketManager.ts`](../../client/src/service
 | `viewer-count-update` | server → client | Live viewer count for current stream |
 | `kill-switch-activated` | server → client | Emergency stop |
 
-### MediaSoup handshake (signaling)
+### WebRTC media setup
 
-All `mediasoup:*` events flow client → server for the request and server → client for the response. Used during the WebRTC setup dance.
+There are **no application-level WebRTC signaling events** on this socket. Media transport (ICE/SDP/DTLS) is negotiated by the LiveKit client SDK ([`LiveKitClient.ts`](../../client/src/services/LiveKitClient.ts)) directly against the LiveKit server over its own WebSocket — see [`streaming-stack.md`](streaming-stack.md). The OneStreamer socket only carries the *application* signal that a stream is starting/ready (`stream-ready`, `stream-started`, etc. above); the client uses that as the cue to join the LiveKit room.
 
-| Event | Direction | Purpose |
-|-------|-----------|---------|
-| `mediasoup:get-rtp-capabilities` | client → server | Fetch the SFU's RTP capabilities for SDP negotiation |
-| `mediasoup:create-send-transport` | client → server | Streamer creates an upstream WebRTC transport |
-| `mediasoup:connect-transport` | client → server | Complete DTLS handshake on a transport |
-| `mediasoup:produce` | client → server | Register a new producer (audio or video track) |
-| `mediasoup:consume` | client → server | Viewer subscribes to a producer |
-| `produce-verified` | server → client | Producer acknowledged + registered |
-
-WebRTC also uses these for older-style signaling (pre-MediaSoup paths):
-
-| Event | Direction | Purpose |
-|-------|-----------|---------|
-| `stream-offer` | both | SDP offer |
-| `stream-answer` | both | SDP answer |
-| `ice-candidate` | both | ICE candidate exchange |
+(The former `mediasoup:get-rtp-capabilities` / `mediasoup:create-send-transport` / `mediasoup:connect-transport` / `mediasoup:produce` / `mediasoup:consume` / `produce-verified` handshake and the `stream-offer`/`stream-answer`/`ice-candidate` SDP exchange were removed with MediaSoup in [ADR-0024](adr/0024-retire-mediasoup-livekit-only.md).)
 
 ### Chat (mirrored on main socket for some integrations)
 
@@ -183,24 +171,14 @@ The main server emits a few chat-adjacent events that the React client needs to 
 
 ### Viewbots
 
+Viewbots now ingest via LiveKit (RTMP ingress), so the old P2P/RTP transport-setup handshake (`viewbot-create-*`, `viewbot-webrtc-produce`, `viewbot-producer-*`, `viewbot-mode-changed`) is gone. Only the approval/ready signals remain:
+
 | Event | Direction | Purpose |
 |-------|-----------|---------|
-| `viewbot-create-plain-bridge` | client → server | Create a Plain RTP bridge for a bot |
-| `viewbot-create-webrtc-transport` | client → server | Create a WebRTC transport for a bot |
-| `viewbot-create-plain-transport` | client → server | Create a Plain RTP transport |
-| `viewbot-webrtc-produce` | client → server | Bot is producing WebRTC media |
-| `viewbot-create-producers` | client → server | Create the producer set |
-| `viewbot-stream-ready` | client → server | Bot signals ready |
-| `viewbot-video-ended` | client → server | Bot's video reached EOF |
-| `viewbot-rotation-request` | client → server | Bot requests rotation to next item |
-| `viewbot-available` | server → client | New bot is available |
-| `viewbot-stream-approved` | server → client | Bot's stream was approved |
-| `viewbot-mode-changed` | server → client | Plain RTP ↔ WebRTC toggle event |
-| `viewbot-producer-created` | server → client | Producer was created for the bot |
-| `viewbot-producer-error` | server → client | Producer creation failed |
-| `viewbot-rotation-completed` | server → client | Rotation finished |
-| `viewbot-rotation-after-video-end` | server → client | Next bot started after current bot's video ended |
-| `viewbot-stopped` | server → client | Bot stopped |
+| `viewbot-stream-approved` | server → client | Bot's stream was approved to go live (emitted alongside `streaming-approved` in [`takeover.js`](../../server/sockets/streamHandler/takeover.js)) |
+| `viewbot-stream-ready` | client → server | Bot signals its stream is ready |
+
+See [`viewbot-fleet.md`](viewbot-fleet.md) for the ingest pipeline.
 
 ### Game
 
@@ -297,8 +275,8 @@ These events the chat-service emits to chat clients reflect actions the main ser
 1. Browser emits `request-to-stream` on main socket.
 2. Server checks cooldowns; emits `streaming-approved` to requester (or `takeover-denied`).
 3. If approved, server emits `stream-switching` to all viewers.
-4. Requester runs the `mediasoup:*` handshake sequence.
-5. Server emits `stream-ready` then `stream-started` to all viewers.
+4. The requester's client connects to the **LiveKit room** ([`LiveKitClient.connect`](../../client/src/services/LiveKitClient.ts)) and publishes its camera/mic tracks — all ICE/SDP negotiation happens inside the LiveKit SDK, not on this socket.
+5. Server emits `stream-ready` then `stream-started` to all viewers; their clients subscribe to the new publisher's LiveKit tracks.
 6. Server emits `new-streamer` to chat-service via HTTP callback; chat-service emits `system-message` to all chat clients.
 
 ### Item use

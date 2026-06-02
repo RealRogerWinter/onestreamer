@@ -1,3 +1,5 @@
+> **Superseded by [ADR-0024](../../architecture/adr/0024-retire-mediasoup-livekit-only.md).** This document was the divergence archaeology for aligning the MediaSoup and LiveKit branches of `startServer()`. Its dual-branch premise died when MediaSoup was retired (LiveKit is now the sole backend), so the alignment work it scopes is moot. Kept for historical record. _Archived 2026-06-01._
+
 _Last revised: 2026-05-27 against `main` at the merge tip of PR 8.4 (PR #138). Companion ADR: [ADR-0017](../adr/0017-mediasoup-livekit-alignment-plan.md). Read [`phases-6-plus.md`](phases-6-plus.md) §"Phase 9" for the surrounding plan._
 
 # MediaSoup vs LiveKit branch — divergence archaeology

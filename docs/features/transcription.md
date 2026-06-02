@@ -1,30 +1,30 @@
 # Transcription
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-06-01 against `main` (post-ADR-0024 cleanup)._
 
 Real-time speech-to-text of streamed audio. Runs **locally on the server** via the bundled `whisper.cpp` native binary — no cloud APIs, no per-minute charges, no audio leaving the host. See [ADR-0006](../architecture/adr/0006-whisper-cpp-over-cloud-stt.md) for the rationale.
 
 > [!NOTE]
-> Earlier iterations attempted Python `openai-whisper`, `@xenova/transformers` browser-side, and LiveKit-RTMP capture (the latter producing six "FINAL" docs in October 2025 — see [`/docs/archive/transcription/`](../archive/transcription/)). The current production path is exclusively `whisper.cpp` spawned as a child process from the main server. The `openai-whisper` npm package is listed in `package.json` but never required — flag for removal.
+> Earlier iterations attempted Python `openai-whisper`, `@xenova/transformers` browser-side, and a LiveKit-RTMP capture variant (the latter producing several "FINAL" docs in 2025 — see [`/docs/archive/transcription/`](../archive/transcription/)). None of those remain: there is no `openai-whisper`, no `@xenova/transformers`, and no MediaSoup/Plain-RTP path. The current production path captures audio from the **LiveKit room** via `@livekit/rtc-node` and runs `whisper.cpp` as a child process.
 
 ## What gets transcribed
 
 When transcription is enabled for an active stream:
 
-1. Audio is consumed from the streamer's MediaSoup producer via a Plain Transport (RTP).
-2. FFmpeg decodes Opus → PCM @ 16 kHz mono.
-3. Audio is buffered in **5-second chunks** with a **500 ms overlap** for cross-chunk context.
-4. Each chunk is written to a temp file and passed to `whisper.cpp/main`.
+1. [`TranscriptionAudioAdapter`](../../server/services/TranscriptionAudioAdapter.js) joins the streamer's LiveKit room with `@livekit/rtc-node` (`Room` → subscribe to the audio track, `TrackKind.KIND_AUDIO`) and opens an `AudioStream` over it.
+2. The PCM frames (`frame.data`, Int16) are written to a `.pcm` buffer file, then wrapped with a WAV header (`.wav`). LiveKit already delivers decoded PCM, so there is no separate FFmpeg Opus-decode step.
+3. Audio is buffered in **5-second chunks** with a **500 ms overlap** for cross-chunk context ([`AudioBufferService`](../../server/services/AudioBufferService.js)).
+4. Each chunk is passed to [`WhisperRunner`](../../server/services/transcription/WhisperRunner.js), which spawns `whisper.cpp/main`.
 5. The transcribed text is broadcast over Socket.IO as a `transcription-update` event and persisted to SQLite.
 
 ```
-MediaSoup audio producer
-    ↓ (Plain RTP)
-FFmpeg (Opus → PCM 16 kHz mono)
+LiveKit room (streamer audio track)
+    ↓  @livekit/rtc-node  Room → AudioStream (TrackKind.KIND_AUDIO)
+PCM 16-bit frames → .pcm → .wav buffer
     ↓
 Audio buffer (5 s chunks + 0.5 s overlap)
     ↓
-whisper.cpp/main (native binary)
+WhisperRunner → whisper.cpp/main (native binary)
     ↓
 Text → transcription_chunks table + transcription-update socket event
 ```
@@ -47,7 +47,7 @@ Whisper model files live under `/root/onestreamer/whisper/models/*.bin` (not com
 
 ```bash
 # Build whisper.cpp + download models (one-time)
-node setup-whisper.js
+node scripts/setup/setup-whisper.js
 
 # Create the transcription tables (idempotent)
 node server/migrations/setup-transcription-tables.js
@@ -157,18 +157,21 @@ transcription_settings (...)
 
 | Symptom | First check |
 |---------|-------------|
-| No transcription appears | Confirm an audio producer exists for the streamer: `mediasoupService.producers.get(streamerId)`. Confirm `ffmpeg -version` works on the server. |
+| No transcription appears | Confirm the streamer is publishing an audio track to the LiveKit room (the `TranscriptionAudioAdapter` subscription needs a `KIND_AUDIO` track). Confirm `whisper.cpp/main` exists and runs. |
 | Quality is poor | Try a larger model (`small`/`medium`). Confirm `language` matches what the streamer speaks. |
 | CPU pinned at 100% | Drop to a smaller model. Increase `chunkDuration` (less frequent Whisper invocations). Reduce concurrent transcriptions. |
-| Transcription "starts" but no chunks arrive | FFmpeg may have died — check `pm2 logs onestreamer-server` for ffmpeg crash trace. |
+| Transcription "starts" but no chunks arrive | The LiveKit RTC subscription may not have received frames (no audio track, or the room name is wrong) — check `pm2 logs onestreamer-server` for `TranscriptionAudioAdapter` / `WHISPER` lines. |
 
 ## Code paths
 
 | Concern | File |
 |---------|------|
-| Service entrypoint | [`server/services/TranscriptionService.js`](../../server/services/TranscriptionService.js) (the `whisper.cpp/main` spawn is around line 481) |
-| Audio capture from MediaSoup | [`server/services/TranscriptionAudioAdapter.js`](../../server/services/TranscriptionAudioAdapter.js) |
+| Service entrypoint (sessions, config, persistence) | [`server/services/TranscriptionService.js`](../../server/services/TranscriptionService.js) |
+| `whisper.cpp/main` subprocess driver | [`server/services/transcription/WhisperRunner.js`](../../server/services/transcription/WhisperRunner.js) |
+| Audio capture from LiveKit (`@livekit/rtc-node`) | [`server/services/TranscriptionAudioAdapter.js`](../../server/services/TranscriptionAudioAdapter.js) |
 | Buffer mgmt | [`server/services/AudioBufferService.js`](../../server/services/AudioBufferService.js) |
+| Temp PCM/WAV cleanup | [`server/services/transcription/AudioFileJanitor.js`](../../server/services/transcription/AudioFileJanitor.js) |
+| Persistence (chunks/sessions) | [`server/services/transcription/TranscriptionRepository.js`](../../server/services/transcription/TranscriptionRepository.js) |
 | Admin UI | [`client/src/components/admin/TranscriptionManagement.tsx`](../../client/src/components/admin/TranscriptionManagement.tsx) |
 
 ## See also

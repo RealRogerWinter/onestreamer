@@ -60,8 +60,8 @@ sequenceDiagram
     end
     O->>E: extractPlayableUrl(channel_url)
     E-->>O: HLS playlist URL
-    O->>V: Start ingest (Plain RTP or WebRTC mode)
-    V->>V: GStreamer / Puppeteer Chrome → MediaSoup producer
+    O->>V: Start ingest (RTMP → LiveKit ingress)
+    V->>V: streamlink / yt-dlp → FFmpeg → RTMP → LiveKit
     O->>S: emit('random-rotation-status', { source, currentStreamer, ... })
     O->>S: emit('stream-started')
 ```
@@ -120,7 +120,7 @@ Admin panel → URL Streams tab includes preset management (save common URLs for
 | Twitch source | [`server/services/TwitchRandomService.js`](../../server/services/TwitchRandomService.js) |
 | Kick source | [`server/services/KickRandomService.js`](../../server/services/KickRandomService.js) + [`kick-api-helper.py`](../../server/services/kick-api-helper.py) |
 | URL extraction | [`server/services/URLStreamExtractorService.js`](../../server/services/URLStreamExtractorService.js) |
-| Viewbot ingest | [`server/services/UnifiedViewBotRotation.js`](../../server/services/UnifiedViewBotRotation.js) + [`ViewBotClientService.js`](../../server/services/ViewBotClientService.js) |
+| Viewbot ingest | [`server/services/ViewBotURLService.js`](../../server/services/ViewBotURLService.js) + [`ViewBotLiveKitService.js`](../../server/services/ViewBotLiveKitService.js) |
 | HTTP routes | [`server/routes/random-stream.js`](../../server/routes/random-stream.js) |
 | Chat-vote callbacks | [`chat-service/index.js`](../../chat-service/index.js) |
 

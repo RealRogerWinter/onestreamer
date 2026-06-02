@@ -1,15 +1,15 @@
 # Streaming and takeover
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-06-01 against `main` (post-ADR-0024 LiveKit-only cleanup)._
 
 OneStreamer is built around a **single-streamer model**: only one person broadcasts at a time. Viewers can request to take over the stream with the click of a button, subject to dual cooldowns (global + per-user). This page covers the streaming flow, the takeover handshake, the cooldown mechanics, audio configuration, and known issues.
 
 > [!WARNING]
-> **Partial reliability remediation.** The `currentStreamer` dual-source-of-truth bug between `StreamService` and `MediasoupService` was fixed. The remaining items in the Nov-2025 stream-reliability plan (transport-recreation race conditions, `stream-ready` event de-duplication) are not yet implemented — see [`/docs/archive/plans/STREAM_RELIABILITY_PLAN.md`](../archive/plans/STREAM_RELIABILITY_PLAN.md).
+> **Partial reliability remediation.** The `currentStreamer` dual-source-of-truth bug between `StreamService` and the WebRTC service (now `LiveKitService`) was fixed. The remaining items in the Nov-2025 stream-reliability plan (`stream-ready` event de-duplication, takeover race-window hardening) are not all implemented — see [`/docs/archive/plans/STREAM_RELIABILITY_PLAN.md`](../archive/plans/STREAM_RELIABILITY_PLAN.md). The plan predates the MediaSoup retirement ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)); its MediaSoup transport-recreation items no longer apply.
 
 ## How streaming works
 
-Real-time media flows over WebRTC via MediaSoup as a Selective Forwarding Unit (SFU). Streamer browser → SFU → viewer browsers. The server doesn't decode video; it forwards encrypted RTP packets. See [`/docs/architecture/streaming-stack.md`](../architecture/streaming-stack.md) for the full topology.
+Real-time media flows over WebRTC through **LiveKit**, which is the Selective Forwarding Unit (SFU) — it is the sole WebRTC backend ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). The streamer's browser **publishes** audio/video tracks to a LiveKit room; viewer browsers **subscribe** to those tracks. The LiveKit server forwards the media per-subscriber; the OneStreamer main server does **not** forward RTP itself — it mints LiveKit access tokens and coordinates the handshake over Socket.IO. See [`/docs/architecture/streaming-stack.md`](../architecture/streaming-stack.md) for the full topology.
 
 ### Becoming the streamer
 
@@ -18,25 +18,23 @@ sequenceDiagram
     autonumber
     participant U as User browser
     participant S as Main server
-    participant M as MediaSoup
+    participant LK as LiveKit server (SFU)
     participant V as Other viewers
 
     U->>S: socket.emit('request-to-stream')
     S->>S: Check cooldowns + active streamer + IP ban
     alt approved
         S-->>U: socket.emit('streaming-approved')
-        U->>U: getUserMedia(camera+mic), build SDP
-        U->>S: mediasoup:create-send-transport
-        S->>M: createWebRtcTransport()
-        M-->>S: transport params
-        S-->>U: transport params
-        U->>S: mediasoup:connect-transport
-        U->>S: mediasoup:produce (audio + video tracks)
-        S->>M: producer.create()
-        S-->>U: streaming-approved-ack
+        U->>U: getUserMedia(camera+mic)
+        U->>S: GET /api/livekit/token (publish grant)
+        S->>S: LiveKitService.generateToken() (AccessToken)
+        S-->>U: { token, ws url, room }
+        U->>LK: connect to room + publish audio/video tracks
+        U->>S: streaming-approved-ack
         S->>V: stream-status, new-streamer, stream-started
-        V->>S: mediasoup:consume (per viewer)
-        S->>M: consumer.create() per viewer
+        V->>S: GET /api/livekit/token (subscribe grant)
+        S-->>V: { token, ws url, room }
+        V->>LK: connect to room + subscribe to streamer's tracks
     else denied
         S-->>U: stream-denied { reason } (cooldown, banned, etc.)
     end
@@ -47,7 +45,7 @@ sequenceDiagram
 Same flow as above, but if there's already an active streamer:
 
 1. The taker's `request-to-stream` triggers a takeover evaluation in [`TakeoverService`](../../server/services/TakeoverService.js).
-2. If approved, the *previous* streamer receives `stream-ended` with `reason: 'takeover'` and their MediaSoup producers are torn down.
+2. If approved, the *previous* streamer receives `stream-ended` with `reason: 'takeover'` and unpublishes their LiveKit tracks (their client disconnects from the room).
 3. The previous streamer also receives an individual cooldown — they can't immediately take it back.
 4. All viewers receive `stream-switching` then `stream-started` with the new streamer.
 
@@ -74,7 +72,7 @@ Not anymore. The original MVP allowed anonymous streaming. The current productio
 
 ## Audio settings (streamer-side)
 
-Streamers can configure how the browser captures and encodes audio before it reaches MediaSoup. The control surface is the **🎵 Audio Settings** panel in the streaming UI ([`AudioSettings.tsx`](../../client/src/components/audio/AudioSettings.tsx)).
+Streamers can configure how the browser captures and encodes audio before it is published to the LiveKit room. The control surface is the **🎵 Audio Settings** panel in the streaming UI ([`AudioSettings.tsx`](../../client/src/components/audio/AudioSettings.tsx)).
 
 ### Presets
 
@@ -149,8 +147,7 @@ All in [`StreamerSettings.tsx`](../../client/src/components/stream/StreamerSetti
 
 Viewers receive media via [`WebRTCViewer.tsx`](../../client/src/components/stream/WebRTCViewer.tsx) (the largest single React component at ~2.7k LOC). It:
 
-- Subscribes to MediaSoup consumers for each producer
-- Falls back to HLS playback via `hls.js` if WebRTC fails (slower; not currently the primary path)
+- Subscribes to the active streamer's published LiveKit tracks (via [`LiveKitClient.ts`](../../client/src/services/LiveKitClient.ts)) and attaches them to the `<video>` element. There is **no HLS fallback for live viewing** — that path went away with MediaSoup ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)). (`hls.js` survives in the client only for admin VOD/recording playback, not live streams.)
 - Renders an audio-level meter ([`AudioLevelMeter.tsx`](../../client/src/components/audio/AudioLevelMeter.tsx)) when locally enabled
 - Surfaces the takeover button + cooldown countdown via [`StreamControls.tsx`](../../client/src/components/stream/StreamControls.tsx)
 
@@ -169,7 +166,7 @@ Every stream is recorded — see [`recording-and-clips.md`](recording-and-clips.
 |---------|------|
 | [`StreamService`](../../server/services/StreamService.js) | Source of truth for current streamer + viewer list |
 | [`TakeoverService`](../../server/services/TakeoverService.js) | Takeover request/approve/deny + cooldown enforcement |
-| [`MediasoupService`](../../server/services/MediasoupService.js) | The WebRTC SFU |
+| [`LiveKitService`](../../server/services/LiveKitService.js) | Mints LiveKit access tokens, owns the room lifecycle, emits `stream-ended`. The SFU itself is the **LiveKit server**, not this process — see [`streaming-stack.md`](../architecture/streaming-stack.md). Client side: streamer publishes via [`WebRTCStreamer.tsx`](../../client/src/components/stream/WebRTCStreamer.tsx) → [`LiveKitClient.ts`](../../client/src/services/LiveKitClient.ts); viewers subscribe via the same `LiveKitClient.ts`. |
 | [`SessionService`](../../server/services/SessionService.js) | IP → user mapping; survives socket reconnect |
 | [`IPBanService`](../../server/services/IPBanService.js) | Pre-stream gate — banned IPs can't `request-to-stream` |
 | [`ContinuousRecordingService`](../../server/services/ContinuousRecordingService.js) | Records every stream as it goes (see [`recording-and-clips.md`](recording-and-clips.md)) |

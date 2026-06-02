@@ -20,10 +20,10 @@ OneStreamer's state lives in a handful of places. Backing up requires capturing 
 
 **What you do NOT need to back up:**
 
-- `recordings/` local files — uploaded to B2; expendable once B2 confirms upload
+- `egress-recordings/` local files — LiveKit-egress HLS segments ([ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)); uploaded to B2 and expendable once B2 confirms upload
+- `recordings/` — legacy local recording dir (kept for clip scratch)
 - `clips/temp/` — scratch
 - `audio-buffers/` — transcription scratch
-- `egress-recordings/` — LiveKit egress; dormant
 - `whisper/models/*.bin` — downloadable from upstream (`setup-whisper.js`)
 - `logs/*.log` — rotated automatically by PM2
 - `node_modules/` — `npm install` regenerates
@@ -156,7 +156,7 @@ Already off-host. Restore only happens if you accidentally delete from B2 — an
 ### Total host loss
 
 1. Provision a new host with the same OS family.
-2. Install dependencies: Node 18+, ffmpeg, GStreamer, build-essential, sqlite3, nginx, certbot, coturn, Ollama, Strapi.
+2. Install dependencies: Node 18+, ffmpeg, streamlink/yt-dlp, build-essential, sqlite3, nginx, certbot, coturn, Ollama, Strapi, and the LiveKit server (the sole WebRTC backend — [ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md); no GStreamer needed anymore).
 3. Clone the repo: `git clone https://github.com/onestreamer/onestreamer.git /root/onestreamer`.
 4. Restore `.env` files (or rotate fresh — preferred).
 5. Restore SQLite + Strapi + moderation_data.json + uploads from backup.
@@ -193,8 +193,8 @@ If significant user activity has happened since, this gets harder (foreign-key c
 
 - **In-memory chat messages** (last 3,000) — gone on any chat-service restart anyway.
 - **Active vote tallies** in chat-service — gone on chat restart.
-- **In-flight MediaSoup state** — every active stream drops; users have to refresh.
-- **In-progress recordings** — the segment writing in `recordings/active/` stops; whatever was being recorded at the moment of the restart is partial.
+- **In-flight LiveKit room state** — every active stream drops; users have to refresh (LiveKit is the sole WebRTC backend — [ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)).
+- **In-progress recordings** — the LiveKit egress writing segments to `egress-recordings/{sessionId}/` stops; whatever was being recorded at the moment of the restart is partial.
 - **Active transcriptions** — the current chunk is dropped.
 
 None of these are catastrophic — they're per-user inconveniences. Communicate via `POST /api/system-message` against chat-service before doing anything that requires a restart.

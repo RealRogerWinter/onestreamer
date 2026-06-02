@@ -1,3 +1,6 @@
+> [!NOTE]
+> **COMPLETED / SUPERSEDED — historical.** Moved to the archive on 2026-06-01. This was a point-in-time *mechanical* socket-surface snapshot taken "at the start of Phase 0" to drive the Phase 3 state-unification refactor. That refactor has since landed (the `stream-ended`/`stream-status` fan-out was collapsed into the `StreamNotifier` chokepoint — see [ADR-0009](../../architecture/adr/0009-stream-notifier-chokepoint.md)), and most files/line-numbers cited below (`ViewBotHandler.js`, `MediaSoupHandler.js`, `ViewBotClientService.js`, `ViewBotSocketClient.js`, `SimpleViewBotSocket.js`, `WebRTCViewBotRotation.js`, `ViewBotRotationService.js`, the high `server/index.js` line numbers) no longer exist after the MediaSoup retirement ([ADR-0024](../../architecture/adr/0024-retire-mediasoup-livekit-only.md)) and the `index.js` decomposition. For the current event surface use [`/docs/architecture/realtime-events.md`](../../architecture/realtime-events.md) and [`/docs/api/socket-events.md`](../../api/socket-events.md); the refresh commands at the bottom still regenerate counts against the live tree.
+
 # Socket events: mechanical surface
 
 _Last verified: 2026-05-26 against `main` at the start of Phase 0._

@@ -119,13 +119,13 @@ A separate concern from chat moderation: ending the *currently broadcasting* str
 
 | Method | Path | Effect |
 |--------|------|--------|
-| `POST` | `/api/admin/stream/disconnect` | Immediately terminate the active stream, clean up MediaSoup resources, notify the streamer and all viewers |
+| `POST` | `/api/admin/stream/disconnect` | Immediately terminate the active stream, release the streamer's LiveKit room resources, notify the streamer and all viewers |
 
 Flow:
 
 1. Admin clicks **Disconnect Stream** in the admin panel.
 2. Server clears the streamer from [`StreamService`](../../server/services/StreamService.js).
-3. MediaSoup producers/transports torn down.
+3. The streamer's LiveKit participant is removed and the room resources are released ([`LiveKitService`](../../server/services/LiveKitService.js) — the sole WebRTC backend, [ADR-0024](../architecture/adr/0024-retire-mediasoup-livekit-only.md)).
 4. The streamer socket receives `stream-disconnected-by-admin` and is force-disconnected.
 5. All viewers receive `stream-ended`.
 
