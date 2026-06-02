@@ -1,12 +1,13 @@
 import { renderHook, act } from '@testing-library/react';
 import { useStreamVisualEffects } from './useStreamVisualEffects';
 
-/** Minimal socket double that lets the test fire `visual-effect-applied`. */
+/** Minimal socket double that lets the test fire server events. */
 function makeMockSocket() {
   const handlers: Record<string, (data: any) => void> = {};
   return {
     on: jest.fn((event: string, cb: (data: any) => void) => { handlers[event] = cb; }),
     off: jest.fn((event: string) => { delete handlers[event]; }),
+    emit: jest.fn(),
     fire: (event: string, data: any) => handlers[event]?.(data),
   } as any;
 }
@@ -83,5 +84,57 @@ describe('useStreamVisualEffects', () => {
     expect(socket.on).toHaveBeenCalledWith('visual-effect-applied', expect.any(Function));
     unmount();
     expect(socket.off).toHaveBeenCalledWith('visual-effect-applied', expect.any(Function));
+  });
+
+  it('requests current streamer buffs on mount (to seed in-progress effects)', () => {
+    const socket = makeMockSocket();
+    renderHook(() => useStreamVisualEffects(socket));
+    expect(socket.emit).toHaveBeenCalledWith('get-streamer-buffs');
+    expect(socket.on).toHaveBeenCalledWith('streamer-buffs-update', expect.any(Function));
+  });
+
+  it('seeds an in-progress effect from streamer buffs (late-join / reload) for the remaining time', () => {
+    const socket = makeMockSocket();
+    const { result } = renderHook(() => useStreamVisualEffects(socket));
+
+    // Join while an upside-down debuff is active with 8s left.
+    act(() => socket.fire('streamer-buffs-update', {
+      buffs: [{ effectData: { effect_type: 'visual_filter', visual_effect: 'flip_vertical' }, remainingSeconds: 8 }],
+    }));
+    expect(result.current.transform).toBe('scaleY(-1)');
+
+    // It clears when the remaining time elapses.
+    act(() => { jest.advanceTimersByTime(8000); });
+    expect(result.current.transform).toBeUndefined();
+  });
+
+  it('tolerates effectData provided as a JSON string and ignores non-visual buffs', () => {
+    const socket = makeMockSocket();
+    const { result } = renderHook(() => useStreamVisualEffects(socket));
+
+    act(() => socket.fire('streamer-buffs-update', {
+      buffs: [
+        { effectData: JSON.stringify({ effect_type: 'visual_filter', visual_effect: 'grayscale' }), remainingSeconds: 10 },
+        { effectData: { effect_type: 'bitrate_reduction', visual_effect: 'bitrate_low' }, remainingSeconds: 10 },
+      ],
+    }));
+    expect(result.current.filter).toBe('grayscale(100%)');
+  });
+
+  it('seeds only once — periodic streamer-buffs-update broadcasts do not re-seed', () => {
+    const socket = makeMockSocket();
+    const { result } = renderHook(() => useStreamVisualEffects(socket));
+
+    act(() => socket.fire('streamer-buffs-update', {
+      buffs: [{ effectData: { effect_type: 'visual_filter', visual_effect: 'flip_vertical' }, remainingSeconds: 5 }],
+    }));
+    // Effect expires …
+    act(() => { jest.advanceTimersByTime(5000); });
+    expect(result.current.transform).toBeUndefined();
+    // … and a later periodic broadcast of the same (now-stale) buff must NOT revive it.
+    act(() => socket.fire('streamer-buffs-update', {
+      buffs: [{ effectData: { effect_type: 'visual_filter', visual_effect: 'flip_vertical' }, remainingSeconds: 5 }],
+    }));
+    expect(result.current.transform).toBeUndefined();
   });
 });

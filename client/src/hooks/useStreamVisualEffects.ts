@@ -66,6 +66,14 @@ export function useStreamVisualEffects(socket: Socket | null): StreamVisualEffec
   useEffect(() => {
     if (!socket) return;
 
+    // The live `visual-effect-applied` broadcast only carries effects triggered
+    // from now on, so a viewer who joins or reloads MID-effect would otherwise
+    // see nothing until the next trigger. Seed in-progress effects once from the
+    // current streamer's active buffs (each visual-filter buff carries its
+    // effect id + remaining time). `seeded` guards against the periodic
+    // streamer-buffs-update broadcasts re-seeding.
+    let seeded = false;
+
     const recompute = () => {
       const filters: string[] = [];
       const transforms: string[] = [];
@@ -79,15 +87,17 @@ export function useStreamVisualEffects(socket: Socket | null): StreamVisualEffec
       });
     };
 
-    const handleEffect = (data: { effectId?: string; durationSeconds?: number }) => {
-      const effectId = data?.effectId;
+    // Apply (or refresh) one effect for `durationSeconds`. Re-applying the same
+    // effect id refreshes its timer rather than stacking, so two upside-downs
+    // don't cancel into a no-op.
+    const applyEffect = (effectId?: string, durationSeconds?: number) => {
       if (!effectId) return;
       const css = EFFECT_CSS[effectId];
       // Unknown / non-CSS effects (audio, framerate, freeze, …) carry no visual
       // mapping — ignore them here; they surface only as status-effect icons.
       if (!css) return;
 
-      const durationMs = (Number(data?.durationSeconds) || 20) * 1000;
+      const durationMs = Math.max(1, Number(durationSeconds) || 20) * 1000;
 
       const existing = activeRef.current.get(effectId);
       if (existing) clearTimeout(existing.timeout);
@@ -101,10 +111,34 @@ export function useStreamVisualEffects(socket: Socket | null): StreamVisualEffec
       recompute();
     };
 
+    const handleEffect = (data: { effectId?: string; durationSeconds?: number }) => {
+      applyEffect(data?.effectId, data?.durationSeconds);
+    };
+
+    const handleStreamerBuffs = (data: { buffs?: Array<{ effectData?: unknown; remainingSeconds?: number }> }) => {
+      if (seeded) return;
+      seeded = true;
+      for (const buff of data?.buffs || []) {
+        let fx: any = buff?.effectData;
+        if (typeof fx === 'string') {
+          try { fx = JSON.parse(fx); } catch { fx = null; }
+        }
+        if (fx && fx.effect_type === 'visual_filter' && fx.visual_effect && EFFECT_CSS[fx.visual_effect]) {
+          applyEffect(fx.visual_effect, buff.remainingSeconds);
+        }
+      }
+    };
+
     socket.on('visual-effect-applied', handleEffect);
+    socket.on('streamer-buffs-update', handleStreamerBuffs);
+    // Ask the server for the current streamer's buffs to seed any in-progress
+    // effect (works for URL-relay too — relay buffs resolve via the synthetic
+    // streamer id).
+    socket.emit('get-streamer-buffs');
 
     return () => {
       socket.off('visual-effect-applied', handleEffect);
+      socket.off('streamer-buffs-update', handleStreamerBuffs);
       for (const { timeout } of activeRef.current.values()) clearTimeout(timeout);
       activeRef.current.clear();
     };
