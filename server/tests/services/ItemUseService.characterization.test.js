@@ -271,6 +271,84 @@ describe('ItemUseService characterization', () => {
                 toSocketId: 'sa', action: 'use', itemId: 5, remainingQuantity: 2,
             }));
         });
+
+        // On a URL-relay stream the streamer is sessionless (synthetic
+        // `url-stream-…` id, no userId). resolveCurrentStreamerUserId now derives
+        // a stable synthetic NEGATIVE id for it, so the buff applies via the
+        // in-memory AnonymousBuffStore (no FK) AND the visual effect broadcasts.
+        it('URL-relay (sessionless streamer): a visual-filter debuff applies under a synthetic negative id AND broadcasts visual-effect-applied', async () => {
+            const item = makeItem({
+                name: 'upside_down', item_type: 'debuff', display_name: 'Upside Down', duration_seconds: 20,
+                effect_data: JSON.stringify({ effect_type: 'visual_filter', visual_effect: 'flip_vertical' }),
+            });
+            const inventoryService = makeInventory();
+            const itemService = makeItemService(item, { isBuffOrDebuffItem: jest.fn(() => true) });
+            // url-relay streamer is registered, but maps to no session/userId.
+            const streamService = {
+                getStreamStatus: jest.fn(() => ({ hasActiveStream: true, streamerId: 'url-stream-1' })),
+                getCurrentStreamer: jest.fn(() => 'url-stream-1'),
+            };
+            const sessionService = { getSessionBySocketId: jest.fn(() => null), getSocketsByUserId: jest.fn(() => []) };
+            const io = { emit: jest.fn(), to: jest.fn(() => ({ emit: jest.fn() })) };
+            const res = await call(svc(), { inventoryService, itemService, streamService, buffDebuffService: {} },
+                { io, sessionService });
+
+            expect(res.ok).toBe(true);
+            // Resolved to a synthetic negative streamer id (→ AnonymousBuffStore).
+            expect(res.body.targetUserId).toBeLessThan(0);
+            expect(itemService.applyBuffDebuffItem).toHaveBeenCalled();
+            expect(itemService.applyBuffDebuffItem.mock.calls[0][0]).toBeLessThan(0);
+            // The visual effect is broadcast to every viewer.
+            expect(io.emit).toHaveBeenCalledWith('visual-effect-applied', expect.objectContaining({
+                effectId: 'flip_vertical', durationSeconds: 20,
+            }));
+            expect(io.emit).toHaveBeenCalledWith('item-used', expect.objectContaining({
+                item: { id: 5, displayName: 'X', name: 'x' },
+            }));
+        });
+
+        // Non-visual buffs/debuffs ALSO now apply on a relay stream (under the
+        // synthetic id) rather than bailing no-streamer-target — they just carry
+        // no `visual-effect-applied` broadcast.
+        it('URL-relay: a NON-visual buff applies under the synthetic id and does NOT broadcast a visual effect', async () => {
+            const item = makeItem({ name: 'low_bitrate', item_type: 'debuff', display_name: 'Low Quality' });
+            const inventoryService = makeInventory();
+            const itemService = makeItemService(item, { isBuffOrDebuffItem: jest.fn(() => true) });
+            const streamService = {
+                getStreamStatus: jest.fn(() => ({ hasActiveStream: true, streamerId: 'url-stream-7' })),
+                getCurrentStreamer: jest.fn(() => 'url-stream-7'),
+            };
+            const sessionService = { getSessionBySocketId: jest.fn(() => null), getSocketsByUserId: jest.fn(() => []) };
+            const io = { emit: jest.fn(), to: jest.fn(() => ({ emit: jest.fn() })) };
+            const res = await call(svc(), { inventoryService, itemService, streamService, buffDebuffService: {} },
+                { io, sessionService });
+
+            expect(res.ok).toBe(true);
+            expect(res.body.targetUserId).toBeLessThan(0);
+            expect(itemService.applyBuffDebuffItem).toHaveBeenCalled();
+            const visualEmits = io.emit.mock.calls.filter(c => c[0] === 'visual-effect-applied');
+            expect(visualEmits).toHaveLength(0);
+        });
+
+        it('webcam (resolved target): a visual-filter debuff applies the buff AND broadcasts visual-effect-applied', async () => {
+            const item = makeItem({
+                name: 'upside_down', item_type: 'debuff', display_name: 'Upside Down', duration_seconds: 20,
+                effect_data: JSON.stringify({ effect_type: 'visual_filter', visual_effect: 'flip_vertical' }),
+            });
+            const inventoryService = makeInventory();
+            const itemService = makeItemService(item, { isBuffOrDebuffItem: jest.fn(() => true) });
+            const sessionService = { getSessionBySocketId: jest.fn(() => ({ userId: 9 })), getSocketsByUserId: jest.fn(() => []) };
+            const io = { emit: jest.fn(), to: jest.fn(() => ({ emit: jest.fn() })) };
+            const res = await call(svc(), { inventoryService, itemService, streamService: activeStream(), buffDebuffService: {} },
+                { io, sessionService });
+
+            expect(res.ok).toBe(true);
+            expect(res.body.targetUserId).toBe(9);
+            expect(itemService.applyBuffDebuffItem).toHaveBeenCalled();
+            expect(io.emit).toHaveBeenCalledWith('visual-effect-applied', expect.objectContaining({
+                effectId: 'flip_vertical', durationSeconds: 20,
+            }));
+        });
     });
 
     describe('regular consumed items', () => {

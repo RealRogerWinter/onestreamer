@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   URLStream,
   Preset,
@@ -26,11 +26,16 @@ export function useURLStreamData(makeApiCall?: MakeApiCall, addLog?: (message: s
   const [randomStatus, setRandomStatus] = useState<RandomRotationStatus | null>(null);
   const [isRandomLoading, setIsRandomLoading] = useState(false);
   const [showRandomSettings, setShowRandomSettings] = useState(false);
+  // Keep a ref mirroring the panel-open flag. The 10s polling closure below is
+  // created once on mount, so a plain `showRandomSettings` read inside it would
+  // see the stale initial `false`; the ref always reflects the current value.
+  const showRandomSettingsRef = useRef(showRandomSettings);
+  showRandomSettingsRef.current = showRandomSettings;
   const [randomSettings, setRandomSettings] = useState<RandomSettings>({
     minRotationMinutes: 5,
-    maxRotationMinutes: 10,
-    minViewers: 1,
-    maxViewers: 999999,
+    maxRotationMinutes: 20,
+    minViewers: 499,
+    maxViewers: 9999999,
     language: 'en',
     platforms: ['twitch', 'kick'] as string[],
     platformWeight: { twitch: 50, kick: 50 }
@@ -57,7 +62,10 @@ export function useURLStreamData(makeApiCall?: MakeApiCall, addLog?: (message: s
     try {
       const status = await makeApiCall('/api/random-stream/status');
       setRandomStatus(status);
-      if (status.settings) {
+      // Only sync the editable settings form from the server while the panel is
+      // CLOSED. Otherwise the 10s poll overwrites the operator's in-progress
+      // edits on every tick ("the values keep changing while I'm editing them").
+      if (status.settings && !showRandomSettingsRef.current) {
         setRandomSettings({
           minRotationMinutes: status.settings.minRotationMinutes,
           maxRotationMinutes: status.settings.maxRotationMinutes,

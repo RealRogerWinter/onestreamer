@@ -1,3 +1,5 @@
+const syntheticStreamerUserId = require('./syntheticStreamerUserId');
+
 /**
  * resolveCurrentStreamerUserId — shared current-streamer → userId resolution.
  *
@@ -11,9 +13,12 @@
  *   1. streamService.getCurrentStreamer()                    — primary
  *   2. webrtcService.getCurrentStreamer()                    — LiveKit fallback
  *   3. sessionService.getSessionBySocketId(socketId).userId  — socket → userId
+ *   4. syntheticStreamerUserId(socketId)                     — sessionless relay/viewbot
  *
  * Returns the streamer's userId (including negative/synthetic IDs for
  * anonymous/viewbot streamers), or null when no streamer/session is found.
+ * Step 4 covers sessionless streamers (URL-relay `url-stream-…`): they have no
+ * SessionService entry, so without it streamer-targeted items would bail.
  * Any service may be absent; missing services short-circuit to null exactly
  * as the original inline code did.
  *
@@ -58,6 +63,22 @@ function resolveCurrentStreamerUserId({ streamService, webrtcService, sessionSer
         }
     } else if (logger) {
         logger.debug(`🎭 ITEMS: No current streamer or session service unavailable`);
+    }
+
+    // Sessionless streamers — URL-relay (`url-stream-…`) and any viewbot socket
+    // that has no session entry — resolve no userId above. Give them the same
+    // stable synthetic negative id viewbots already use so streamer-targeted
+    // items still apply (negative ids live in the in-memory AnonymousBuffStore,
+    // so there's no `active_buffs` FK to satisfy). Real sockets are unaffected:
+    // they resolve a real userId above and never reach this branch.
+    if (!targetUserId && currentStreamerSocketId) {
+        const synthetic = syntheticStreamerUserId(currentStreamerSocketId);
+        if (synthetic !== null) {
+            targetUserId = synthetic;
+            if (logger) {
+                logger.debug(`🎭 ITEMS: Using synthetic streamer userId ${synthetic} for sessionless streamer ${currentStreamerSocketId}`);
+            }
+        }
     }
 
     return targetUserId;

@@ -251,7 +251,7 @@ const RandomRotationView: React.FC<RandomRotationViewProps> = ({
                 min="1"
                 max="120"
                 value={randomSettings.maxRotationMinutes}
-                onChange={(e) => setRandomSettings({...randomSettings, maxRotationMinutes: parseInt(e.target.value) || 10})}
+                onChange={(e) => setRandomSettings({...randomSettings, maxRotationMinutes: parseInt(e.target.value) || 20})}
               />
             </div>
             <div className="setting-group">
@@ -260,7 +260,7 @@ const RandomRotationView: React.FC<RandomRotationViewProps> = ({
                 type="number"
                 min="0"
                 value={randomSettings.minViewers}
-                onChange={(e) => setRandomSettings({...randomSettings, minViewers: parseInt(e.target.value) || 0})}
+                onChange={(e) => setRandomSettings({...randomSettings, minViewers: parseInt(e.target.value) || 499})}
               />
             </div>
             <div className="setting-group">
@@ -269,7 +269,7 @@ const RandomRotationView: React.FC<RandomRotationViewProps> = ({
                 type="number"
                 min="1"
                 value={randomSettings.maxViewers}
-                onChange={(e) => setRandomSettings({...randomSettings, maxViewers: parseInt(e.target.value) || 999999})}
+                onChange={(e) => setRandomSettings({...randomSettings, maxViewers: parseInt(e.target.value) || 9999999})}
               />
             </div>
             <div className="setting-group">

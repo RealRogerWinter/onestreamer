@@ -54,11 +54,11 @@ class RandomStreamRotationService extends EventEmitter {
 
     // Settings
     this.settings = {
-      minRotationMinutes: 1,
-      maxRotationMinutes: 11,
+      minRotationMinutes: 5,
+      maxRotationMinutes: 20,
       language: 'en',
-      minViewers: 1,
-      maxViewers: 999999,
+      minViewers: 499,
+      maxViewers: 9999999,
       blockedCategories: ['ASMR', 'Pools, Hot Tubs, and Beaches'],
       platforms: ['twitch', 'kick'], // Which platforms to use: 'twitch', 'kick', or both
       platformWeight: { twitch: 50, kick: 50 } // Percentage weight for each platform

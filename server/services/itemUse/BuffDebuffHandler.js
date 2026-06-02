@@ -7,6 +7,28 @@ const resolveCurrentStreamerUserId = require('../item/resolveCurrentStreamerUser
 // consume, apply the effect, and broadcast. Extracted verbatim from
 // ItemUseService.
 
+/**
+ * Pull the client-renderable visual-filter effect id (e.g. 'flip_vertical',
+ * 'mirror', 'grayscale') out of an item's effect_data, or null when the item is
+ * not a visual-filter effect (or its effect_data is absent/malformed).
+ * effect_data is persisted as a JSON string; an already-parsed object is
+ * tolerated too.
+ */
+function readVisualEffect(item) {
+    if (!item || !item.effect_data) return null;
+    try {
+        const data = typeof item.effect_data === 'string'
+            ? JSON.parse(item.effect_data)
+            : item.effect_data;
+        if (data && data.effect_type === 'visual_filter' && data.visual_effect) {
+            return data.visual_effect;
+        }
+    } catch (_) {
+        // Malformed effect_data → treat as a non-visual item.
+    }
+    return null;
+}
+
 class BuffDebuffHandler {
     constructor(owner) {
         this.owner = owner;
@@ -79,6 +101,22 @@ class BuffDebuffHandler {
 
         // Emit socket events for buff/debuff items
         if (io) {
+            // Visual-filter items (upside-down, mirror, grayscale, …) re-skin the
+            // stream by composing CSS onto every viewer's <video>. Broadcast the
+            // effect so clients render it. It is stream-type agnostic (all viewers
+            // share the same <video>), so it covers webcam AND URL-relay streams —
+            // relay resolves a synthetic streamer id above, so this buff path is
+            // reached for them too.
+            const visualEffect = readVisualEffect(item);
+            if (visualEffect) {
+                io.emit('visual-effect-applied', {
+                    effectId: visualEffect,
+                    durationSeconds: Number(item.duration_seconds) || 20,
+                    itemName: result.item.displayName,
+                    username: user.username,
+                });
+            }
+
             io.emit('item-used', {
                 userId: userId,
                 username: user.username,

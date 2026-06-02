@@ -9,6 +9,7 @@ import { isIOSSafari, isIOS, isMobile, getBrowserInfo } from '../../utils/browse
 import VideoControls from '../video/VideoControls';
 import { useWebRTCConnection } from '../../hooks/useWebRTCConnection';
 import { useStreamSwitch } from '../../hooks/useStreamSwitch';
+import { useStreamVisualEffects } from '../../hooks/useStreamVisualEffects';
 import { renderTestPatternFrame } from '../../utils/testPattern';
 import './WebRTCViewer.css';
 
@@ -23,6 +24,10 @@ interface WebRTCViewerProps {
 
 const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className = '', showPerformanceMonitor = false, forceInitialize = false, currentStreamerId }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Viewer-side rendering of "visual filter" item effects (upside-down, mirror,
+  // grayscale, …). Driven by the server's `visual-effect-applied` broadcast, so
+  // it works for both webcam and URL-relay streams.
+  const visualEffectStyle = useStreamVisualEffects(socket);
   const webrtcClientRef = useRef<WebRTCClientAdapter | null>(null);
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInitializingRef = useRef(false);
@@ -2355,9 +2360,14 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           display: isConnected && (playbackState === 'playing' || playbackState === 'paused') ? 'block' : 'none',
           position: 'relative',
           zIndex: 1, // Lower z-index than canvas overlay (which is 1000+)
-          // Mobile Chrome specific fixes
-          WebkitTransform: 'translateZ(0)', // Force hardware acceleration
-          transform: 'translateZ(0)',
+          // Viewer-side visual-filter item effects (upside-down, grayscale, …).
+          filter: visualEffectStyle.filter,
+          transition: 'filter 0.4s ease, transform 0.4s ease',
+          // Mobile Chrome specific fixes. The effect transform is composed onto
+          // the `translateZ(0)` hardware-acceleration hint so neither clobbers
+          // the other.
+          WebkitTransform: `translateZ(0)${visualEffectStyle.transform ? ` ${visualEffectStyle.transform}` : ''}`,
+          transform: `translateZ(0)${visualEffectStyle.transform ? ` ${visualEffectStyle.transform}` : ''}`,
           WebkitBackfaceVisibility: 'hidden',
           backfaceVisibility: 'hidden'
         }}

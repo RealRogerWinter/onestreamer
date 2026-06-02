@@ -5,6 +5,7 @@ const BuffRepository = require('../database/repository/BuffRepository');
 const AnonymousBuffStore = require('./buffdebuff/AnonymousBuffStore');
 const CacheCleaner = require('./buffdebuff/CacheCleaner');
 const BuffFormatter = require('./buffdebuff/BuffFormatter');
+const syntheticStreamerUserId = require('./item/syntheticStreamerUserId');
 
 const logger = require('../bootstrap/logger').child({ svc: 'BuffDebuffService' });
 
@@ -211,8 +212,14 @@ class BuffDebuffService extends EventEmitter {
                     logger.debug(`🎭 BUFF: Checking if buff target is current streamer - currentStreamer socketId: ${currentStreamer}, targetUserId: ${userId}`);
                     if (this.sessionService) {
                         const session = this.sessionService.getSessionBySocketId(currentStreamer);
-                        logger.debug(`🎭 BUFF: Session for streamer:`, session ? `userId=${session.userId}` : 'not found');
-                        if (session && session.userId && session.userId.toString() === userId.toString()) {
+                        // Sessionless relay/viewbot streamers have no session; fall
+                        // back to their stable synthetic negative id so their buffs
+                        // still broadcast to all viewers.
+                        const streamerUserId = (session && session.userId)
+                            ? session.userId
+                            : syntheticStreamerUserId(currentStreamer);
+                        logger.debug(`🎭 BUFF: Streamer userId resolved:`, streamerUserId == null ? 'not found' : streamerUserId);
+                        if (streamerUserId != null && streamerUserId.toString() === userId.toString()) {
                             logger.debug(`🎭 BUFF: ✅ Target IS the current streamer! Broadcasting streamer-buffs-update to ALL connected sockets`);
                             logger.debug(`🎭 BUFF: Buff data being sent:`, userActiveBuffs.map(b => ({ id: b.id, displayName: b.displayName, remaining: b.remainingSeconds })));
                             if (this.buffNotifier) {
@@ -351,7 +358,17 @@ class BuffDebuffService extends EventEmitter {
         const session = this.sessionService.getSessionBySocketId(currentStreamerSocketId);
         if (!session || !session.userId) {
             logger.debug(`🎭 BUFF: No userId found for current streamer socketId: ${currentStreamerSocketId}`);
-            
+
+            // Sessionless streamer (URL-relay `url-stream-…` / viewbot): its buffs
+            // live in the in-memory AnonymousBuffStore under a stable synthetic
+            // negative id. Resolve them directly so the public Status Effects panel
+            // shows them (matches the apply-time broadcast below).
+            const syntheticUserId = syntheticStreamerUserId(currentStreamerSocketId);
+            if (syntheticUserId !== null) {
+                logger.debug(`🎭 BUFF: Resolving synthetic streamer buffs for ${currentStreamerSocketId} → userId ${syntheticUserId}`);
+                return await this.getActiveBuffsForUser(syntheticUserId);
+            }
+
             // Fallback: Try to get any active buffs from the database
             // This handles viewbots and other special cases
             logger.debug(`🎭 BUFF: Attempting fallback - checking for any active buffs in database`);
