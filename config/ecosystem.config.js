@@ -19,7 +19,7 @@ module.exports = {
         MAIN_SERVER_URL: 'https://127.0.0.1:8443',
         SERVER_HOST: 'onestreamer.live',
         VIEWBOT_SERVER_URL: 'https://127.0.0.1:8443',
-        ANNOUNCED_IP: '<SERVER_IP>',
+        ANNOUNCED_IP: process.env.ANNOUNCED_IP || '',
         TURN_DOMAIN: 'turn.onestreamer.live',
         // Skip ffmpeg re-encode for direct HLS sources (already H.264/AAC). Drops the
         // viewbot ffmpeg from ~40% to ~5% of one core. Roll back by setting to 'false'

@@ -1,6 +1,7 @@
 log_level: debug
-api_key: devkey
-api_secret: secret
+# Set these to your LiveKit API key/secret (must match the LiveKit server). Do NOT commit real values.
+api_key: REPLACE_WITH_LIVEKIT_API_KEY
+api_secret: REPLACE_WITH_LIVEKIT_API_SECRET
 ws_url: ws://127.0.0.1:7882
 redis:
   address: "127.0.0.1:6379"

@@ -21,7 +21,7 @@ const config = {
     wsUrl: process.env.LIVEKIT_WS_URL || 'ws://localhost:7882',
     roomName: process.env.LIVEKIT_ROOM_NAME || 'onestreamer-main',
     enableTurn: process.env.LIVEKIT_TURN_ENABLED === 'true',
-    turnHost: process.env.TURN_DOMAIN || '<SERVER_IP>',
+    turnHost: process.env.TURN_DOMAIN || 'turn.example.com',
     turnUsername: process.env.TURN_USERNAME,
     turnCredential: process.env.TURN_CREDENTIAL,
     maxParticipants: parseInt(process.env.LIVEKIT_MAX_PARTICIPANTS || '1000'),

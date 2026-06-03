@@ -145,13 +145,17 @@ router.get('/livekit/token', async (req, res) => {
       roomName: roomName,
       identity: identity,
       turnServers: {
-        // CRITICAL: Use direct IP to bypass Cloudflare proxy (doesn't forward TURN/UDP)
-        urls: [
-          'stun:<SERVER_IP>:3478',
-          'turn:<SERVER_IP>:3478?transport=udp',
-          'turn:<SERVER_IP>:3478?transport=tcp',
-          'turns:<SERVER_IP>:5349?transport=tcp'
-        ],
+        // CRITICAL: Use direct IP to bypass Cloudflare proxy (doesn't forward TURN/UDP).
+        // Set TURN_PUBLIC_IP to the TURN server's public IP in the environment.
+        urls: (() => {
+          const turnIp = process.env.TURN_PUBLIC_IP || '127.0.0.1';
+          return [
+            `stun:${turnIp}:3478`,
+            `turn:${turnIp}:3478?transport=udp`,
+            `turn:${turnIp}:3478?transport=tcp`,
+            `turns:${turnIp}:5349?transport=tcp`
+          ];
+        })(),
         username: turnCreds.username,
         credential: turnCreds.credential,
         ttl: turnCreds.ttl
