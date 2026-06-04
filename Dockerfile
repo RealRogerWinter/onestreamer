@@ -81,12 +81,12 @@ COPY --from=builder --chown=1001:1001 /app/node_modules ./node_modules
 COPY --from=builder --chown=1001:1001 /app/chat-service/node_modules ./chat-service/node_modules
 COPY --from=builder --chown=1001:1001 /app/whisper ./whisper
 
-# The app creates cwd-relative runtime dirs under /app at boot (public/hls via
+# The app creates cwd-relative scratch dirs under /app at boot (public/hls via
 # SimpleMediaStreamService; temp/audio + temp/transcription via AudioBufferService
-# / TranscriptionService). /app itself is root-owned (created by WORKDIR), so make
-# it + the scratch dirs writable by the runtime uid, else mkdir EACCES → crash.
-RUN mkdir -p /app/public/hls /app/temp \
-    && chown 1001:1001 /app \
+# / TranscriptionService). Pre-create + chown ONLY those — leave /app itself
+# root-owned so a compromised runtime uid can't create/replace top-level code or
+# deps (PR #3 security review). Every other write target is a uid-1001 bind mount.
+RUN mkdir -p /app/public/hls /app/temp/audio /app/temp/transcription \
     && chown -R 1001:1001 /app/public /app/temp
 
 # Run as uid 1001 (matches the VPS on-disk owner of the bind-mounted certs / DB /

@@ -23,6 +23,10 @@ executors:
     docker:
       - image: cimg/node:18.20
     resource_class: medium
+    # jest/react-scripts default --maxWorkers to the HOST cpu count (~36 on
+    # CircleCI), not this 2-vCPU class -> the heavy suites OOM (step killed
+    # mid-run). Every test job pins --maxWorkers=2 to match resource_class;
+    # if you bump the class, bump the workers too.
   vm:
     machine:
       image: ubuntu-2204:current
@@ -112,7 +116,7 @@ jobs:
       - with_test_secrets
       - run:
           name: Server unit tests
-          command: npx jest --config config/jest/jest.config.js --reporters=default --reporters=jest-junit
+          command: npx jest --config config/jest/jest.config.js --reporters=default --reporters=jest-junit --maxWorkers=2
           environment:
             JEST_JUNIT_OUTPUT_DIR: ./test-results/server-unit
       - store_test_results: { path: ./test-results }
@@ -128,7 +132,7 @@ jobs:
       - with_test_secrets
       - run:
           name: better-sqlite3 contract tests (isolated)
-          command: npx jest --config config/jest/jest.bettersqlite.config.js --reporters=default --reporters=jest-junit
+          command: npx jest --config config/jest/jest.bettersqlite.config.js --reporters=default --reporters=jest-junit --maxWorkers=2
           environment:
             JEST_JUNIT_OUTPUT_DIR: ./test-results/server-bettersqlite
       - store_test_results: { path: ./test-results }
@@ -141,7 +145,7 @@ jobs:
       - with_test_secrets
       - run:
           name: Server integration tests
-          command: npx jest --config config/jest/jest.integration.config.js --reporters=default --reporters=jest-junit
+          command: npx jest --config config/jest/jest.integration.config.js --reporters=default --reporters=jest-junit --maxWorkers=2
           environment:
             JEST_JUNIT_OUTPUT_DIR: ./test-results/server-integration
       - store_test_results: { path: ./test-results }
@@ -154,7 +158,7 @@ jobs:
       - with_test_secrets
       - run:
           name: chat-service tests
-          command: cd chat-service && npx jest --reporters=default --reporters=jest-junit
+          command: cd chat-service && npx jest --reporters=default --reporters=jest-junit --maxWorkers=2
           environment:
             JEST_JUNIT_OUTPUT_DIR: ./test-results/chat
       - store_test_results: { path: ./chat-service/test-results }
@@ -166,7 +170,7 @@ jobs:
       - attach_workspace: { at: . }
       - run:
           name: Client tests (react-scripts, CI mode)
-          command: cd client && CI=true npx react-scripts test --watchAll=false --passWithNoTests
+          command: cd client && CI=true npx react-scripts test --watchAll=false --passWithNoTests --maxWorkers=2
           # NOTE: CRA wraps jest; JUnit reporting for the client is a follow-up.
 
   docker-build:
