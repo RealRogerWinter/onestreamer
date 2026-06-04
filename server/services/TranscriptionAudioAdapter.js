@@ -432,7 +432,12 @@ class TranscriptionAudioAdapter {
             }
 
             const pcmData = fs.readFileSync(session.pcmFile);
-            const sampleRate = session.sampleRate || 48000;
+            // The AudioStream is created with { sampleRate: 16000 } (whisper's required
+            // rate), so the captured PCM is always 16 kHz mono. session.sampleRate can
+            // still hold the 48 kHz default (it races the first frame), which would
+            // mislabel the WAV header and make whisper reject it ("must be 16 kHz" ->
+            // no output -> silent bots). Pin the header to the actual capture rate.
+            const sampleRate = 16000;
 
             logger.debug(`📝 Finalizing WAV file...`);
             logger.debug(`   PCM data: ${pcmData.length} bytes`);
