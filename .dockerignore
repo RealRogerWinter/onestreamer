@@ -1,0 +1,55 @@
+# Keep the build context small and never ship secrets, runtime state, host
+# node_modules, or the client bundle (served by nginx, not the app image).
+
+# VCS / CI / tooling
+.git
+.github
+.circleci
+.claude
+**/.claude
+
+# Dependencies (the image runs `npm ci` in the builder; host node_modules may be
+# wrong-ABI symlinks)
+node_modules
+**/node_modules
+
+# Client (built in CI, rsynced to nginx — not in this image)
+client
+
+# Whisper: the binary is built in the image; the 600 MB models are bind-mounted
+whisper
+whisper.cpp
+
+# Tests / coverage / docs / blog — not needed at runtime
+**/tests
+**/*.test.js
+coverage
+docs
+blog
+
+# Runtime state / media (bind-mounted on the VPS, never baked)
+recordings
+egress-recordings
+clips
+audio-buffers
+transcripts
+videos
+temp
+logs
+certificates
+public/hls
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Secrets / env / backups
+.env
+.env.*
+*.env.example
+*.bak*
+*.log

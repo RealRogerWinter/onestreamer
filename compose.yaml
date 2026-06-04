@@ -1,0 +1,87 @@
+# OneStreamer — two host-networked containers from one image (ADR-0025).
+# Replaces PM2. LiveKit (systemd) + ingress/egress (containers), Redis, Ollama,
+# Strapi and nginx stay on the host; the app reaches them over 127.0.0.1.
+#
+# Deploy pins ${IMAGE} to an immutable digest (scripts/deploy/deploy.sh).
+# Deploy-specific values (server IP, public domain, all secrets, LiveKit/SMTP/
+# B2/OAuth creds) live in /etc/onestreamer/app.env — NEVER committed. Only
+# non-sensitive, loopback operational settings are inlined here.
+#
+# IMPORTANT
+#   * network_mode: host  -> `ports:` are ignored on purpose; the app binds
+#     127.0.0.1 (BIND_ADDR) and nginx is the sole public ingress.
+#   * NEVER add `pid: host` — the app runs `pkill ffmpeg`/`pkill chrome`; the
+#     host PID namespace would let it reap the co-located livekit-egress and
+#     neighbouring containers' processes.
+#   * Host data dirs default to /root/onestreamer; override with ONESTREAMER_HOME.
+
+x-common: &common
+  image: ${IMAGE:-ghcr.io/realrogerwinter/onestreamer-app:latest}
+  network_mode: host
+  user: "1001:1001"
+  restart: unless-stopped
+  stop_grace_period: 20s
+  env_file:
+    - /etc/onestreamer/app.env   # JWT_SECRET, SESSION_SECRET, TURN_SECRET, TURNSTILE_SECRET_KEY,
+                                  # ADMIN_KEY, INTERNAL_API_SECRET, LIVEKIT_*, REDIS_URL, SMTP_*,
+                                  # B2/S3, GOOGLE_*, ANNOUNCED_IP, CLIENT_URL, SERVER_HOST, TURN_DOMAIN
+
+services:
+  server:
+    <<: *common
+    container_name: onestreamer-server
+    command: ["node", "server/index.js"]
+    mem_limit: 2g
+    environment:
+      NODE_ENV: production
+      USE_HTTPS: "true"
+      HTTPS_PORT: "8443"
+      BIND_ADDR: 127.0.0.1
+      CHAT_SERVICE_URL: https://127.0.0.1:8444
+      MAIN_SERVER_URL: https://127.0.0.1:8443
+      VIEWBOT_SERVER_URL: https://127.0.0.1:8443
+      VIEWBOT_STREAM_COPY: "true"
+      CLIENT_BUILD_INDEX_PATH: /var/www/html/index.html   # SPA index for /clips/:id SSR + catch-all (client isn't in the image)
+    volumes:
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/certificates:/app/certificates:ro
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/server/data:/app/server/data
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/server/uploads:/app/server/uploads
+      - /var/www/uploads/avatars:/var/www/uploads/avatars
+      - /var/www/html:/var/www/html:ro                    # blog/clip SSR reads /var/www/html/{blog/index.html, index.html}
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/recordings:/app/recordings
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/egress-recordings:/app/egress-recordings
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/clips:/app/clips
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/transcripts:/app/transcripts
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/audio-buffers:/app/audio-buffers
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/logs:/app/logs
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/whisper/models:/app/whisper/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsk", "https://127.0.0.1:8443/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
+
+  chat:
+    <<: *common
+    container_name: onestreamer-chat
+    command: ["node", "chat-service/index.js"]
+    mem_limit: 1g
+    environment:
+      NODE_ENV: production
+      USE_HTTPS: "true"
+      CHAT_PORT: "8081"
+      CHAT_HTTPS_PORT: "8444"
+      BIND_ADDR: 127.0.0.1
+      MAIN_SERVER_URL: https://127.0.0.1:8443
+      MODERATION_STORE_PATH: /app/chat-state/moderation_data.json
+    volumes:
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/certificates:/app/certificates:ro
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/chat-state:/app/chat-state
+      - ${ONESTREAMER_HOME:-/root/onestreamer}/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-fsk", "https://127.0.0.1:8444/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3

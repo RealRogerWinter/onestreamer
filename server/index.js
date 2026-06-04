@@ -100,6 +100,13 @@ if (USE_HTTPS || fs.existsSync(path.join(__dirname, '..', 'certificates', 'cert.
     logger.info('🔒 HTTPS: SSL certificates loaded successfully');
   } catch (err) {
     logger.error({ err }, '⚠️ HTTPS: Failed to load SSL certificates');
+    if (USE_HTTPS) {
+      // Refuse to start rather than silently fall through to the plain-HTTP
+      // listener (which, under host networking, would serve plaintext on the
+      // livekit-ingress :8080 port). ADR-0025.
+      logger.error('❌ HTTPS: USE_HTTPS=true but certificate load failed — exiting instead of serving plaintext.');
+      process.exit(1);
+    }
   }
 }
 
@@ -187,7 +194,7 @@ const PORT = process.env.PORT || 8080;
 // catch-all React route AND by the social-embed clip handler — PR 4.3's
 // first review pass caught a duplicate inline path that survived the
 // initial extraction.
-const CLIENT_BUILD_INDEX_PATH = path.join(__dirname, '..', 'client', 'build', 'index.html');
+const CLIENT_BUILD_INDEX_PATH = process.env.CLIENT_BUILD_INDEX_PATH || path.join(__dirname, '..', 'client', 'build', 'index.html');
 
 // =========================================================================
 // MIDDLEWARE SETUP (Phase 15B.6 — order matters; do not reorder without

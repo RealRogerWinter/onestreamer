@@ -18,10 +18,10 @@ flowchart TB
             LE[Let's Encrypt<br/>certbot]
         end
 
-        subgraph App["Application processes - PM2"]
+        subgraph App["Application containers - Docker (host network, uid 1001)"]
             Main[onestreamer-server<br/>:8443 HTTPS<br/>main API + signaling]
             Chat[onestreamer-chat<br/>:8444 HTTPS<br/>chat microservice]
-            Client[onestreamer-client<br/>:3443 HTTPS<br/>CRA dev server]
+            Client[client bundle<br/>static — built in CI, served by nginx]
         end
 
         subgraph Companions["Companion services - systemd"]
@@ -89,42 +89,54 @@ OneStreamer runs entirely on **one host**. There is no horizontal scaling, no lo
 
 The host runs on a public IP (`<SERVER_IP>`) that LiveKit announces in its ICE candidates. WebRTC clients need a clear UDP path to that IP across the RTC port range configured in `livekit-config.yaml`.
 
-## Process management — PM2
+## Process management — Docker
 
-All three Node applications are managed by [PM2](https://pm2.keymetrics.io/) via [`config/ecosystem.config.js`](../../config/ecosystem.config.js):
+The two Node applications run as Docker containers from **one image**
+([ADR-0025](../architecture/adr/0025-docker-replaces-pm2.md)), recreating what PM2
+used to manage. The chat container overrides the command (`compose.yaml`):
 
-```js
-apps: [
-  { name: 'onestreamer-server', script: './server/index.js', max_memory_restart: '2G', /* env */ },
-  { name: 'onestreamer-chat',   script: './chat-service/index.js', max_memory_restart: '1G', /* env */ },
-  { name: 'onestreamer-client', script: 'npm', args: 'start', cwd: './client', max_memory_restart: '2G', /* env */ },
-]
-```
+| Container | Command | Memory cap |
+|-----------|---------|------------|
+| `onestreamer-server` | `node server/index.js` | 2 GB |
+| `onestreamer-chat` | `node chat-service/index.js` | 1 GB |
 
-| Process | Role | Memory cap |
-|---------|------|------------|
-| `onestreamer-server` | Main API + signaling | 2 GB |
-| `onestreamer-chat` | Chat microservice | 1 GB |
-| `onestreamer-client` | React dev server (notable: prod runs CRA dev server, not a static build) | 2 GB |
+Both run **`--network host`** and **`--user 1001:1001`** in the **default
+(private) PID namespace — never `--pid=host`** (the app runs `pkill ffmpeg` /
+`pkill chrome`), with **`BIND_ADDR=127.0.0.1`** so nginx is the sole public
+ingress. The React client is **not** in the image — it's built in CI and rsynced
+to `/var/www/html`. Bind mounts (identical absolute paths) cover certs, the
+SQLite DB, uploads, recordings/clips/transcripts/audio-buffers, logs, the avatars
+dir, and the whisper models (read-only); the chat moderation store is a
+*directory* mount.
 
-Standard PM2 operations:
+Standard operations:
 
 ```bash
-pm2 start config/ecosystem.config.js     # start all
-pm2 restart all                   # restart all (preserves env)
-pm2 restart onestreamer-server    # restart just one
-pm2 logs                          # tail all
-pm2 logs onestreamer-server       # tail one
-pm2 env onestreamer-server        # show actual env loaded by a process
-pm2 stop all                      # stop without removing
-pm2 delete all                    # remove from PM2
-pm2 save                          # persist current process list across reboots
-pm2 startup                       # generate the systemd unit that boots PM2 on system start
+docker compose -f compose.yaml up -d        # start / recreate both containers
+docker compose -f compose.yaml ps           # status
+docker compose -f compose.yaml down         # stop + remove
+docker restart onestreamer-server           # restart just one
+docker logs -f onestreamer-server           # tail one
+docker logs --since 10m onestreamer-chat    # recent logs
+docker stats onestreamer-server onestreamer-chat
 ```
 
-The companion services (Strapi, LiveKit, coturn, Ollama) are managed by **systemd** outside PM2.
+**Env**: non-secret operational settings are inlined in `compose.yaml`; secrets
+plus the server IP/domain come from **`/etc/onestreamer/app.env`** (mode 0640
+`root:deploy`, uncommitted) via `env_file`. `JWT_SECRET` must be identical for
+both containers.
 
-For deploys and recovery (kill stale processes, regenerate dev certs if missing, check nginx config, start PM2, sanity-check ports), use [`scripts/deploy/start-production.sh`](../../scripts/deploy/start-production.sh).
+The companion services (Strapi, LiveKit, coturn, Ollama, Redis) and nginx are
+unchanged: LiveKit-server + coturn + Ollama are systemd, Strapi is its own
+process, and LiveKit **ingress/egress are their own host-networked containers**.
+
+Deploys are driven by CircleCI (build → test → **manual approval** → deploy)
+running [`scripts/deploy/deploy.sh`](../../scripts/deploy/deploy.sh) on the VPS —
+`flock`, DB backup, pull-by-digest, client rsync + nginx reload,
+stop-old/start-new, and dependency-signal health verification. See the
+[deploy/rollback runbook](runbooks/docker-deploy-rollback.md) and
+[ADR-0026](../architecture/adr/0026-circleci-pipeline.md). The old
+`scripts/deploy/start-production.sh` (PM2 + build-and-rsync) is superseded.
 
 ## nginx — TLS termination + reverse proxy
 
@@ -264,7 +276,7 @@ System service. Loaded models live in `~/.ollama/models/`. Default: `mistral`.
 │   ├── models/*.bin               (gitignored; large)
 │   └── whisper.cpp/
 ├── certificates/                   TLS certs for dev / non-letsencrypt
-├── logs/                           PM2 logs
+├── logs/                           app logs (bind-mounted into the containers)
 ├── blog/                           Strapi blog static assets
 ├── public/                         server-served static files (HLS, etc.)
 └── server/data/onestreamer.db      SQLite database
@@ -272,15 +284,24 @@ System service. Loaded models live in `~/.ollama/models/`. Default: `mistral`.
 
 ## Environment loading
 
-PM2 reads env vars from `config/ecosystem.config.js`'s per-app `env:` block. **`config/ecosystem.config.js` is tracked in git**, so put only non-secret config there; pull real secrets from `.env`.
+The containers get non-secret operational settings from `compose.yaml`'s `environment:` block and secrets (plus the server IP / public domain) from the `env_file` **`/etc/onestreamer/app.env`** (mode 0640 `root:deploy`, uncommitted). For the same key, `compose.yaml`'s `environment:` wins over `env_file`.
 
-The processes also load `.env` via dotenv at the top of `server/index.js` and `chat-service/index.js`. Precedence (highest first): real shell env > `config/ecosystem.config.js` `env:` block > `.env`.
+`server/index.js` and `chat-service/index.js` still call `dotenv` at startup, but there is no `.env` inside the image — the single source of truth is `--env-file /etc/onestreamer/app.env`. `JWT_SECRET` must be identical for both containers.
 
-After editing `.env`, restart with `pm2 restart all --update-env` to pick up changes. Plain `pm2 restart all` keeps the previously loaded env.
+After editing `/etc/onestreamer/app.env`, recreate the containers to pick it up: `docker compose -f compose.yaml up -d`.
 
-## Deployment workflow (manual)
+## Deployment workflow
 
-There is no CI/CD pipeline today; deploys are manual:
+Deploys run through **CircleCI** (build → test → **manual approval** → deploy,
+[ADR-0026](../architecture/adr/0026-circleci-pipeline.md)), which runs
+[`scripts/deploy/deploy.sh`](../../scripts/deploy/deploy.sh) on the VPS. See the
+[deploy/rollback runbook](runbooks/docker-deploy-rollback.md) for the full flow,
+health verification, and rollback.
+
+The legacy steps below are an **emergency fallback only** and predate the
+container cutover — `npm install` / `pm2` no longer apply once the app runs in
+Docker (bring the containers up with `docker compose -f compose.yaml up -d`
+instead):
 
 ```bash
 cd /root/onestreamer
