@@ -258,7 +258,13 @@ class TranscriptionAudioAdapter {
 
                         try {
                             // Create AudioStream to receive frames
-                            const stream = new AudioStream(track);
+                            // Whisper requires 16 kHz mono. @livekit/rtc-node's
+                            // AudioStream yields the track's native rate (48 kHz for
+                            // Opus) unless told otherwise, and whisper.cpp rejects
+                            // non-16 kHz input ("WAV must be 16 kHz" -> no output, so
+                            // the transcription-driven bots go silent). Resample at the
+                            // source so the captured buffer is whisper-ready.
+                            const stream = new AudioStream(track, { sampleRate: 16000, numChannels: 1 });
                             session.audioStreamReader = stream;
 
                             logger.debug(`📥 Reading audio frames...`);
