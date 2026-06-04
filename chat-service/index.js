@@ -396,6 +396,12 @@ loadModerationData();
 // ingress (ADR-0025). Defaults to '0.0.0.0' to preserve dev behaviour.
 const BIND_ADDR = process.env.BIND_ADDR || '0.0.0.0';
 
+// Defense-in-depth (ADR-0025): the chat HTTP API has no auth (it trusts the
+// main server over loopback), so in production it must bind 127.0.0.1.
+if (process.env.NODE_ENV === 'production' && !['127.0.0.1', '::1', 'localhost'].includes(BIND_ADDR)) {
+  console.warn(`⚠️  SECURITY: chat binding ${BIND_ADDR} (non-loopback) in production — set BIND_ADDR=127.0.0.1; the chat API is unauthenticated and must not be reachable off-host.`);
+}
+
 // Start listeners. When HTTPS is configured (production) we serve ONLY over
 // TLS: Socket.IO and the app ride on httpsServer (`const server = httpsServer
 // || httpServer` above), and the main server reaches us via

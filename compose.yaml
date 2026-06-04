@@ -41,11 +41,13 @@ services:
       MAIN_SERVER_URL: https://127.0.0.1:8443
       VIEWBOT_SERVER_URL: https://127.0.0.1:8443
       VIEWBOT_STREAM_COPY: "true"
+      CLIENT_BUILD_INDEX_PATH: /var/www/html/index.html   # SPA index for /clips/:id SSR + catch-all (client isn't in the image)
     volumes:
       - ${ONESTREAMER_HOME:-/root/onestreamer}/certificates:/app/certificates:ro
       - ${ONESTREAMER_HOME:-/root/onestreamer}/server/data:/app/server/data
       - ${ONESTREAMER_HOME:-/root/onestreamer}/server/uploads:/app/server/uploads
       - /var/www/uploads/avatars:/var/www/uploads/avatars
+      - /var/www/html:/var/www/html:ro                    # blog/clip SSR reads /var/www/html/{blog/index.html, index.html}
       - ${ONESTREAMER_HOME:-/root/onestreamer}/recordings:/app/recordings
       - ${ONESTREAMER_HOME:-/root/onestreamer}/egress-recordings:/app/egress-recordings
       - ${ONESTREAMER_HOME:-/root/onestreamer}/clips:/app/clips

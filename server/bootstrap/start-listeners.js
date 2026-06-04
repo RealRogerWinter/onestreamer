@@ -31,7 +31,18 @@ module.exports = function startListeners({ httpServer, httpsServer, port, httpsP
   // Defaults to '0.0.0.0' to preserve the original behaviour when unset.
   const bindAddr = process.env.BIND_ADDR || '0.0.0.0';
 
+  // Defense-in-depth (ADR-0025): in production the app must sit behind nginx on
+  // loopback. Warn loudly if bound to a routable interface — under host
+  // networking there is no container port-isolation backstop.
+  if (process.env.NODE_ENV === 'production' && !['127.0.0.1', '::1', 'localhost'].includes(bindAddr)) {
+    logger.warn(`⚠️  SECURITY: binding ${bindAddr} (non-loopback) in production — set BIND_ADDR=127.0.0.1 so nginx is the sole ingress; never open 8443/8444/8081 in the firewall.`);
+  }
+
   if (httpsServer) {
+    httpsServer.on('error', (err) => {
+      logger.error({ err, bindAddr, httpsPort }, '❌ HTTPS listener error (e.g. address in use) — exiting');
+      process.exit(1);
+    });
     // HTTPS configured (production): serve ONLY over TLS. The plain-HTTP
     // listener is intentionally skipped here — once HTTPS is on, Socket.IO
     // and the Express app are served via httpsServer (see index.js

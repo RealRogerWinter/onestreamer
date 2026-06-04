@@ -46,6 +46,23 @@ if grep -rnE "SG\.[A-Za-z0-9_-]{20,}" \
   fail=1
 fi
 
+# [4/4] forbidden infra strings (server IP, public domain, …). The values are
+# supplied via the CI env (DOCS_LINT_FORBIDDEN, space-separated) so they are NOT
+# committed in this script. Set DOCS_LINT_FORBIDDEN in the CircleCI project/context.
+if [ -n "${DOCS_LINT_FORBIDDEN:-}" ]; then
+  echo "== [4/4] no committed forbidden infra strings =="
+  for s in $DOCS_LINT_FORBIDDEN; do
+    if grep -rnF "$s" \
+          --include='*.js' --include='*.ts' --include='*.json' --include='*.yml' \
+          --include='*.yaml' --include='*.md' --include='*.sh' \
+          --exclude-dir=node_modules --exclude-dir=archive \
+          . | grep -v 'docs/operations/runbooks/secret-rotation.md'; then
+      echo "ERROR: forbidden infra string committed: $s"
+      fail=1
+    fi
+  done
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo "docs-lint: FAILED"
   exit 1

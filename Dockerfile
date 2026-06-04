@@ -13,7 +13,8 @@
 ###############################################################################
 
 # ---- Stage 1: builder — native node modules + whisper.cpp ------------------
-FROM node:18.20-bookworm AS builder
+# Pinned by digest (tag node:18.20-bookworm) for reproducibility; bump via Dependabot.
+FROM node:18.20-bookworm@sha256:c6ae79e38498325db67193d391e6ec1d224d96c693a8a4d943498556716d3783 AS builder
 
 # Toolchain for native modules (better-sqlite3, sqlite3, sharp, bcrypt) + whisper.cpp.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,8 +33,11 @@ RUN cd chat-service && npm ci --no-audit --no-fund
 # Build whisper.cpp (pinned). The transcription / AI-moderation pipeline shells
 # out to <repo>/whisper/whisper.cpp/main (server/services/transcription/WhisperRunner.js).
 # The 600 MB models are NOT baked — they are bind-mounted read-only at runtime.
-ARG WHISPER_CPP_REF=v1.7.4
-RUN git clone --depth 1 --branch "${WHISPER_CPP_REF}" https://github.com/ggerganov/whisper.cpp /tmp/wcpp \
+# Pinned to the exact commit v1.7.4 resolves to — git tags are mutable.
+ARG WHISPER_CPP_SHA=8a9ad7844d6e2a10cddf4b92de4089d7ac2b14a9
+RUN git -c advice.detachedHead=false clone https://github.com/ggerganov/whisper.cpp /tmp/wcpp \
+    && git -C /tmp/wcpp checkout -q "${WHISPER_CPP_SHA}" \
+    && test "$(git -C /tmp/wcpp rev-parse HEAD)" = "${WHISPER_CPP_SHA}" \
     && cmake -S /tmp/wcpp -B /tmp/wcpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF \
     && cmake --build /tmp/wcpp/build -j --target whisper-cli \
     && mkdir -p /app/whisper/whisper.cpp \
@@ -41,7 +45,8 @@ RUN git clone --depth 1 --branch "${WHISPER_CPP_REF}" https://github.com/ggergan
     && rm -rf /tmp/wcpp
 
 # ---- Stage 2: runtime ------------------------------------------------------
-FROM node:18.20-bookworm-slim AS runtime
+# Pinned by digest (tag node:18.20-bookworm-slim); same Node 18 / bookworm ABI as the builder.
+FROM node:18.20-bookworm-slim@sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e AS runtime
 
 # Runtime OS deps the app shells out to:
 #   ffmpeg/ffprobe          viewbot / url-relay / recording / egress frame capture
@@ -56,7 +61,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg streamlink python3 python3-pip procps tini curl ca-certificates libgomp1 \
     && pip3 install --no-cache-dir --break-system-packages "curl_cffi==0.7.4" \
     && curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/yt-dlp" -o /usr/local/bin/yt-dlp \
-    && chmod 0755 /usr/local/bin/yt-dlp \
+    && curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/SHA2-256SUMS" -o /tmp/yt-dlp.sums \
+    && awk '$2=="yt-dlp"{print $1"  /usr/local/bin/yt-dlp"}' /tmp/yt-dlp.sums | sha256sum -c - \
+    && chmod 0755 /usr/local/bin/yt-dlp && rm -f /tmp/yt-dlp.sums \
     && apt-get purge -y python3-pip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 

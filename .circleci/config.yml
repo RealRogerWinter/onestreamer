@@ -179,8 +179,8 @@ jobs:
       - run:
           name: Vulnerability scan (trivy) — fail on CRITICAL
           command: |
-            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /tmp/bin v0.58.1
-            /tmp/bin/trivy image --no-progress --exit-code 1 --severity CRITICAL --ignore-unfixed onestreamer-app:$CIRCLE_SHA1
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.58.1/contrib/install.sh | sh -s -- -b /tmp/bin v0.58.1
+            /tmp/bin/trivy image --no-progress --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed onestreamer-app:$CIRCLE_SHA1
       - run:
           name: Push to GHCR (by commit SHA) + capture immutable digest
           command: |
@@ -202,21 +202,26 @@ jobs:
       - attach_workspace: { at: . }
       - add_ssh_keys      # adds the deploy SSH key configured in the context
       - run:
-          name: Trust the VPS host key
+          name: Pin the VPS host key (no blind TOFU)
           command: |
             mkdir -p ~/.ssh && chmod 700 ~/.ssh
-            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+            # DEPLOY_HOST_PUBKEY is set in the onestreamer-deploy context, e.g.
+            #   "5.78.111.208 ssh-ed25519 AAAA…"  (get it once with ssh-keyscan, then pin it).
+            if [ -z "${DEPLOY_HOST_PUBKEY:-}" ]; then echo "ERROR: DEPLOY_HOST_PUBKEY not set in context"; exit 1; fi
+            printf '%s\n' "$DEPLOY_HOST_PUBKEY" >> ~/.ssh/known_hosts
+            chmod 600 ~/.ssh/known_hosts
       - run:
           name: Stage client bundle + deploy manifest on the VPS
           command: |
-            rsync -az --delete client/build/ "$DEPLOY_USER@$DEPLOY_HOST:~/onestreamer-deploy/client-build/"
-            rsync -az compose.yaml scripts/deploy/deploy.sh "$DEPLOY_USER@$DEPLOY_HOST:~/onestreamer-deploy/"
+            SSH='ssh -o StrictHostKeyChecking=yes'
+            rsync -az -e "$SSH" --delete client/build/ "$DEPLOY_USER@$DEPLOY_HOST:~/onestreamer-deploy/client-build/"
+            rsync -az -e "$SSH" compose.yaml scripts/deploy/deploy.sh "$DEPLOY_USER@$DEPLOY_HOST:~/onestreamer-deploy/"
       - run:
           name: Deploy on the VPS (flock, backup, pull-by-digest, recreate, verify, rollback)
           command: |
             DIGEST="$(cat workspace/image-digest.txt)"
             echo "Deploying image: $DIGEST"
-            ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+            ssh -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
               "IMAGE='$DIGEST' RELEASE_SHA='$CIRCLE_SHA1' bash ~/onestreamer-deploy/deploy.sh"
 
 workflows:

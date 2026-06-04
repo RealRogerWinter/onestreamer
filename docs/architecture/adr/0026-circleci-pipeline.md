@@ -77,7 +77,15 @@ follow-up gated on confirming a paid plan; v1 ships `parallelism: 1`, unsplit.
   nothing is lost.
 - **Build on the VPS (no registry)** — rejected: couples build to prod and loses
   the immutable-digest rollback story. GHCR pull-by-digest is cleaner.
-- **Deploy as root over SSH** — rejected: a leaked key would be full host root; a
-  scoped `deploy` user (docker group + a small sudoers allowlist) bounds it.
+- **Deploy as root over SSH** — rejected in favour of a dedicated `deploy` user,
+  but with eyes open: docker-group membership is itself **root-equivalent**
+  (`docker run -v /:/host …`), so the deploy SSH key is effectively a **host-root
+  credential** regardless of the sudoers allowlist. We bound it *operationally* —
+  dedicated CircleCI context, key rotation, a **pinned** VPS host key (no
+  `ssh-keyscan` TOFU), ideally source-IP allowlisting — and keep the sudo
+  allowlist minimal (`nginx -t` / `systemctl reload nginx` + the one-time `pm2`
+  teardown; the DB backup runs in-container as uid 1001, not via `sudo sqlite3`,
+  and `/var/www/html` is `deploy`-owned so the client rsync needs no sudo). A
+  rootless-Docker / signed-deploy-RPC model is the real fix, tracked as a follow-up.
 - **Enable test splitting in v1** — deferred: it needs jest-junit timings history
   and a paid plan with parallelism; shipping unsplit first is correct and simpler.
