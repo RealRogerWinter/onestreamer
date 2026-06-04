@@ -24,6 +24,15 @@ const { safeCompare } = require('../utils/safeCompare');
  */
 function makeStreamControlAuth(authenticateAdmin, logger) {
   return function streamControlAuth(req, res, next) {
+    // Reads are public: the vulnerability is anonymous MUTATION (force-rotate /
+    // kill the live stream) and URL ingestion (SSRF), and every such route is
+    // non-GET. Exempt GET so viewers keep polling status/presets/history while
+    // writes stay gated. (Verified: all random-stream + url-stream state-changing
+    // and ingestion routes are POST/PUT/DELETE.)
+    if (req.method === 'GET') {
+      return next();
+    }
+
     const expected = process.env.INTERNAL_API_SECRET;
     if (expected && safeCompare(req.headers['x-internal-secret'], expected)) {
       return next();

@@ -35,7 +35,7 @@ class ContinuousRecordingService extends EventEmitter {
     this.roomName = config.roomName || process.env.LIVEKIT_ROOM_NAME || 'onestreamer-main';
 
     // Recording configuration
-    this.outputDir = config.outputDir || '/root/onestreamer/egress-recordings';
+    this.outputDir = config.outputDir || process.env.EGRESS_RECORDINGS_DIR || '/root/onestreamer/egress-recordings';
     this.segmentDuration = config.segmentDuration || 4; // 4 seconds per segment for low latency
     this.retentionMinutes = config.retentionMinutes || 10; // keep last 10 minutes
 
