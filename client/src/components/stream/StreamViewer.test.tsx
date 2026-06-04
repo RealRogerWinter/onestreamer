@@ -2,6 +2,13 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import StreamViewer from './StreamViewer';
 
+// StreamViewer renders the heavy LiveKit WebRTC children (WebRTCViewer /
+// WebRTCStreamer), which initialise real WebRTC/LiveKit APIs and throw under
+// jsdom. These tests cover StreamViewer's own view-state markup, so stub the
+// children out.
+jest.mock('./WebRTCViewer', () => ({ __esModule: true, default: () => null }));
+jest.mock('./WebRTCStreamer', () => ({ __esModule: true, default: () => null }));
+
 const mockSocket = {
   emit: jest.fn(),
   on: jest.fn(),

@@ -19,8 +19,9 @@ afterEach(() => {
   Object.assign(console, originalConsole);
 });
 
-// Mock IntersectionObserver
-global.IntersectionObserver = class IntersectionObserver {
+// Mock IntersectionObserver. Cast through `any`: the stub only implements the
+// methods the components touch, not the full lib.dom IntersectionObserver type.
+(global as any).IntersectionObserver = class IntersectionObserver {
   constructor() {}
   observe() {
     return null;
@@ -62,8 +63,9 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 });
 
-// Mock WebRTC APIs
-global.RTCPeerConnection = jest.fn().mockImplementation(() => ({
+// Mock WebRTC APIs. Cast through `any`: the jest.fn() stub doesn't implement
+// the static `generateCertificate` the lib.dom RTCPeerConnection type requires.
+(global as any).RTCPeerConnection = jest.fn().mockImplementation(() => ({
   createOffer: jest.fn().mockResolvedValue({}),
   createAnswer: jest.fn().mockResolvedValue({}),
   setLocalDescription: jest.fn().mockResolvedValue(undefined),
