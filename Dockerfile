@@ -34,11 +34,15 @@ RUN cd chat-service && npm ci --no-audit --no-fund
 # out to <repo>/whisper/whisper.cpp/main (server/services/transcription/WhisperRunner.js).
 # The 600 MB models are NOT baked — they are bind-mounted read-only at runtime.
 # Pinned to the exact commit v1.7.4 resolves to — git tags are mutable.
+# Built STATIC (-DBUILD_SHARED_LIBS=OFF): newer whisper.cpp defaults to shared libs,
+# so the copied `main` would dynamically link libwhisper.so.1 / libggml*.so — which
+# aren't in the runtime image (-> "libwhisper.so.1: cannot open shared object file",
+# exit 127, transcription/AI-bots dead). Static = self-contained binary (only libgomp1).
 ARG WHISPER_CPP_SHA=8a9ad7844d6e2a10cddf4b92de4089d7ac2b14a9
 RUN git -c advice.detachedHead=false clone https://github.com/ggerganov/whisper.cpp /tmp/wcpp \
     && git -C /tmp/wcpp checkout -q "${WHISPER_CPP_SHA}" \
     && test "$(git -C /tmp/wcpp rev-parse HEAD)" = "${WHISPER_CPP_SHA}" \
-    && cmake -S /tmp/wcpp -B /tmp/wcpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF \
+    && cmake -S /tmp/wcpp -B /tmp/wcpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF \
     && cmake --build /tmp/wcpp/build -j --target whisper-cli \
     && mkdir -p /app/whisper/whisper.cpp \
     && cp /tmp/wcpp/build/bin/whisper-cli /app/whisper/whisper.cpp/main \
@@ -56,7 +60,9 @@ FROM node:18.20-bookworm-slim@sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87
 #   tini                    PID 1 — forwards SIGTERM to Node's graceful drain
 #   curl                    HEALTHCHECK
 #   libgomp1                whisper.cpp OpenMP runtime
-ARG YT_DLP_VERSION=2025.05.22
+# Bump when site extractors (e.g. Twitch) break — stale yt-dlp fails URL relay
+# with "KeyError('data')". Verify the binary against a live Twitch URL after bumping.
+ARG YT_DLP_VERSION=2026.03.17
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg streamlink python3 python3-pip procps tini curl ca-certificates libgomp1 \
     && pip3 install --no-cache-dir --break-system-packages "curl_cffi==0.7.4" \
