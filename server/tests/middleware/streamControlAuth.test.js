@@ -57,4 +57,14 @@ describe('streamControlAuth', () => {
     mw(mkReq({ authorization: 'Bearer token' }), {}, next);
     expect(authenticateAdmin).toHaveBeenCalledTimes(1);
   });
+
+  test('GET reads bypass the gate (public) even when enforcing with no creds', () => {
+    process.env.INTERNAL_API_SECRET = 's3cret';
+    process.env.ENFORCE_STREAM_CONTROL_AUTH = 'true';
+    const getReq = { headers: {}, method: 'GET', originalUrl: '/api/random-stream/status' };
+    mw(getReq, {}, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(authenticateAdmin).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
 });
