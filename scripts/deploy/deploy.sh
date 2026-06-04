@@ -65,7 +65,11 @@ rollback(){
 fail(){ log "$*"; rollback; echo "[deploy ERROR] $*" >&2; exit 1; }
 
 # ── 1. previous image as a PULLABLE digest ref (for rollback) ────────────────
-PREV_IMAGE="$(docker inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' onestreamer-server 2>/dev/null || true)"
+# RepoDigests is an IMAGE field, not a CONTAINER field — inspecting the container
+# for it always yields "" (rollback then has no target). Resolve in two hops:
+# container -> .Image (image id) -> that image's .RepoDigests.
+PREV_IMG_ID="$(docker inspect --format '{{.Image}}' onestreamer-server 2>/dev/null || true)"
+PREV_IMAGE="$(docker inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$PREV_IMG_ID" 2>/dev/null || true)"
 log "previous server image: ${PREV_IMAGE:-<none>}"
 
 # ── 2. pull the new image by digest (before backup → backup uses a known image)
