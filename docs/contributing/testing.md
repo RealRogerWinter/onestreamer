@@ -58,13 +58,16 @@ If you write a new operator-invoked check, drop it under `scripts/ops/` and foll
 
 ## What CI runs
 
-The CI workflow is [`/.github/workflows/ci.yml`](../../.github/workflows/ci.yml) (added in the docs-overhaul PR). At minimum:
+CI runs on **CircleCI** ([`.circleci/config.yml`](../../.circleci/config.yml), [ADR-0026](../architecture/adr/0026-circleci-pipeline.md)): `build → lint → test → docker-build → manual approval → deploy`. The test stage is parallel jobs:
 
-- **Lint / typecheck** (TypeScript `tsc --noEmit` on the client)
-- **Server unit tests** (`npm test` at project root)
-- **Client component tests** (`npm test -- --watchAll=false`)
+- **lint** — client `tsc --noEmit` + `scripts/ci/docs-lint.sh` (root-md hygiene, no-stub docs, SendGrid-secret scan). There is no server ESLint config.
+- **test-server-unit** — root jest (`config/jest/jest.config.js`).
+- **test-server-bettersqlite** — the better-sqlite3 contract tests in their own process (`config/jest/jest.bettersqlite.config.js`) so node-sqlite3 never co-loads with better-sqlite3 (they corrupt each other in one process; ADR-0014).
+- **test-server-integration** — `config/jest/jest.integration.config.js`.
+- **test-chat** — `chat-service` jest.
+- **test-client** — `tsc --noEmit` + react-scripts tests.
 
-Failing CI blocks merges if branch protection is enabled (see [`branching-and-releases.md`](branching-and-releases.md)).
+`jest-junit` + `store_test_results` feed CircleCI Test Insights / flaky-test detection. Timings-based test splitting (parallelism) on the server-unit suite is staged groundwork, gated on a paid plan (ADR-0026). The deploy job is gated by a manual approval. Failing CI blocks merges if branch protection is enabled (see [`branching-and-releases.md`](branching-and-releases.md)).
 
 ## How tests are organized
 

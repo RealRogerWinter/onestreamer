@@ -39,3 +39,4 @@ What would have prevented this. Could be code, monitoring, runbook update, etc.
 | [`secret-rotation.md`](secret-rotation.md) | Procedure for rotating any of the project's credentials. |
 | [`better-sqlite3-rebuild.md`](better-sqlite3-rebuild.md) | better-sqlite3 native binding fails to load (NODE_MODULE_VERSION mismatch on Ubuntu-patched Node 18). |
 | [`stale-frontend-after-deploy.md`](stale-frontend-after-deploy.md) | A merged client feature isn't visible in the browser after a deploy — `/var/www/html` not synced with `client/build`. |
+| [`docker-deploy-rollback.md`](docker-deploy-rollback.md) | Deploying / rolling back the containerized app (ADR-0025/0026); the dependency-signal health check; the one-time PM2→container cutover. |

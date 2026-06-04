@@ -153,27 +153,27 @@ The blog (`/blog/<slug>`) is content from Strapi CMS on `:1337`. The React SPA h
 
 ## Process management
 
-All three Node services are PM2-managed via [`config/ecosystem.config.js`](../../config/ecosystem.config.js):
+The two Node services run as Docker containers from one image ([ADR-0025](adr/0025-docker-replaces-pm2.md)), replacing the former PM2 setup:
 
-| App | Script | Memory cap |
-|-----|--------|------------|
-| `onestreamer-server` | `./server/index.js` | 2 GB |
-| `onestreamer-chat` | `./chat-service/index.js` | 1 GB |
-| `onestreamer-client` | `npm start` in `client/` | 2 GB |
+| Container | Command | Memory cap |
+|-----------|---------|------------|
+| `onestreamer-server` | `node server/index.js` | 2 GB |
+| `onestreamer-chat` | `node chat-service/index.js` | 1 GB |
 
-(Notable: in production the React `client` dev server runs alongside, not just the static build. This is a quirk worth being aware of.)
+Both run **host-networked, as uid 1001**, in a private PID namespace (never `--pid=host`). The React client is a static CRA bundle served by nginx — the old `onestreamer-client` PM2 dev-server entry was retired 2026-05-26.
 
 Plus the external companions:
 
 | Process | Where |
 |---------|-------|
 | nginx | system service |
-| Strapi CMS | separate process; not in `config/ecosystem.config.js` (typically systemd or its own PM2 entry) |
+| Strapi CMS | separate process; not containerized (systemd) |
 | LiveKit server | system service on `:7880` / `:7882` (the WebRTC backend — streamer↔viewer, URL-stream relay, recording, transcription; see ADR-0024) |
+| LiveKit ingress / egress | host-networked Docker containers |
 | coturn | system service |
 | Ollama | system service on `:11434` |
 
-`pm2 start config/ecosystem.config.js` is the canonical way to bring the three Node apps up; `scripts/deploy/start-production.sh` wraps it with cert + nginx checks for deploys and recovery.
+`docker compose -f compose.yaml up -d` (driven by [`scripts/deploy/deploy.sh`](../../scripts/deploy/deploy.sh)) brings the app containers up; CircleCI deploys after a manual approval ([ADR-0026](adr/0026-circleci-pipeline.md)). See [deployment.md](../operations/deployment.md) and the [deploy/rollback runbook](../operations/runbooks/docker-deploy-rollback.md).
 
 ## What's intentionally single-host
 

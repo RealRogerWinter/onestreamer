@@ -65,6 +65,8 @@ What else we looked at and why we did not pick it.
 | 0021 | [Omni image moderation pipeline](0021-omni-image-moderation.md) | accepted |
 | 0022 | [Schema migrations layout (light-weight, no framework)](0022-schema-migrations-layout.md) | accepted |
 | 0024 | [Retire MediaSoup; LiveKit is the sole WebRTC backend](0024-retire-mediasoup-livekit-only.md) | accepted |
+| 0025 | [Docker containers replace PM2 for the Node app](0025-docker-replaces-pm2.md) | accepted |
+| 0026 | [CircleCI build → test → approval → deploy pipeline](0026-circleci-pipeline.md) | accepted |
 
 ### Note on the 0013a slug
 

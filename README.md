@@ -186,7 +186,7 @@ flowchart TB
 
 **The moving parts**:
 
-- **Three Node.js processes** managed by PM2: the main server (port 8443), the chat microservice (port 8444), the React client dev server (port 3443 in dev; static build behind nginx in prod).
+- **Two Node.js processes** run as Docker containers — the main server (port 8443) and the chat microservice (port 8444) — replacing the old PM2 setup ([ADR-0025](docs/architecture/adr/0025-docker-replaces-pm2.md)). The React client is a static build served by nginx (dev server on port 3443).
 - **Real-time media flows over LiveKit** (the self-hosted WebRTC SFU) — the server-side `LiveKitService` manages rooms, ingress (URL relay + viewbots), and egress (recording); browsers talk to LiveKit directly for low-latency A/V. MediaSoup was retired in [ADR-0024](docs/architecture/adr/0024-retire-mediasoup-livekit-only.md).
 - **SQLite is the source of truth** for users, items, points, recordings, clips, bans, transcriptions, chatbot configs, and more. ~30 tables, all in `server/data/onestreamer.db`.
 - **Recording is continuous** — every stream is captured to HLS segments and uploaded to Backblaze B2 in the background. Clips are extracted from those segments.
@@ -227,7 +227,8 @@ The top-level [`docs/README.md`](docs/README.md) is the audience-first index —
 | **CMS** | Strapi 4 (blog content, separate process) |
 | **AI / ML** | Ollama (local, default `mistral`), Groq (optional cloud LLM), `whisper.cpp` (local STT, no cloud APIs) |
 | **Email** | SendGrid SMTP via `nodemailer` |
-| **Process management** | PM2 |
+| **Process management** | Docker — two host-networked containers from one image ([ADR-0025](docs/architecture/adr/0025-docker-replaces-pm2.md)) |
+| **CI/CD** | CircleCI — build → test → manual approval → deploy ([ADR-0026](docs/architecture/adr/0026-circleci-pipeline.md)) |
 | **Reverse proxy** | nginx with Let's Encrypt TLS |
 
 Full per-dependency notes in [`docs/integrations/`](docs/integrations/).
