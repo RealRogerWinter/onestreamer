@@ -17,8 +17,9 @@ whisper/models/
 *.mpg
 *.mpeg
 
-# Node modules
-node_modules/
+# Node modules — no trailing slash so a stray `node_modules` *symlink* is
+# ignored too (absolute-path symlinks were accidentally committed before).
+node_modules
 
 # Environment variables
 .env

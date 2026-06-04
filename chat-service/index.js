@@ -392,18 +392,26 @@ const PORT = process.env.CHAT_PORT || 8081;
 // Load moderation data on startup
 loadModerationData();
 
-// Start HTTP server
-httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`💬 CHAT HTTP: Running on port ${PORT}`);
-  console.log(`💬 CHAT HTTP: Health check at http://onestreamer.live:${PORT}/health`);
-});
+// Bind address seam: production sets BIND_ADDR=127.0.0.1 so nginx is the sole
+// ingress (ADR-0025). Defaults to '0.0.0.0' to preserve dev behaviour.
+const BIND_ADDR = process.env.BIND_ADDR || '0.0.0.0';
 
-// Start HTTPS server if configured
+// Start listeners. When HTTPS is configured (production) we serve ONLY over
+// TLS: Socket.IO and the app ride on httpsServer (`const server = httpsServer
+// || httpServer` above), and the main server reaches us via
+// CHAT_SERVICE_URL=https://127.0.0.1:8444 — so the plain-HTTP :8081 listener
+// is unused and is skipped to avoid exposing it on the host network (ADR-0025).
 if (httpsServer) {
-  httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
-    console.log(`🔒 CHAT HTTPS: Running on port ${HTTPS_PORT}`);
+  httpsServer.listen(HTTPS_PORT, BIND_ADDR, () => {
+    console.log(`🔒 CHAT HTTPS: Running on port ${HTTPS_PORT} (bind ${BIND_ADDR})`);
     console.log(`🔒 CHAT HTTPS: Health check at https://onestreamer.live:${HTTPS_PORT}/health`);
     console.log('⚠️  Note: Using self-signed certificate. Browser will show security warning.');
+  });
+} else {
+  // No HTTPS (local dev): plain HTTP is the only listener.
+  httpServer.listen(PORT, BIND_ADDR, () => {
+    console.log(`💬 CHAT HTTP: Running on port ${PORT} (bind ${BIND_ADDR})`);
+    console.log(`💬 CHAT HTTP: Health check at http://onestreamer.live:${PORT}/health`);
   });
 }
 
