@@ -143,7 +143,7 @@ class RecordingUploadScheduler {
             // Check if local path exists
             if (!session.local_path || !fs.existsSync(session.local_path)) {
                 // Try default path
-                const defaultPath = path.join('/root/onestreamer/egress-recordings', sessionId);
+                const defaultPath = path.join(process.env.EGRESS_RECORDINGS_DIR || '/root/onestreamer/egress-recordings', sessionId);
                 if (!fs.existsSync(defaultPath)) {
                     return { success: false, error: 'Local recording not found' };
                 }

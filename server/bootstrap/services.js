@@ -269,7 +269,7 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
     apiKey: env && env.LIVEKIT_API_KEY,
     apiSecret: env && env.LIVEKIT_API_SECRET,
     roomName: (env && env.LIVEKIT_ROOM_NAME) || 'onestreamer-main',
-    outputDir: '/root/onestreamer/egress-recordings',
+    outputDir: process.env.EGRESS_RECORDINGS_DIR || '/root/onestreamer/egress-recordings',
     retentionMinutes: 10, // keep last 10 minutes for clipping
   });
 

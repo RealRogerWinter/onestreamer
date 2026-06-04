@@ -81,9 +81,13 @@ COPY --from=builder --chown=1001:1001 /app/node_modules ./node_modules
 COPY --from=builder --chown=1001:1001 /app/chat-service/node_modules ./chat-service/node_modules
 COPY --from=builder --chown=1001:1001 /app/whisper ./whisper
 
-# public/hls is written at runtime (SimpleMediaStreamService.mkdirSync) — make
-# /app/public writable by the runtime uid.
-RUN mkdir -p /app/public/hls && chown -R 1001:1001 /app/public
+# The app creates cwd-relative runtime dirs under /app at boot (public/hls via
+# SimpleMediaStreamService; temp/audio + temp/transcription via AudioBufferService
+# / TranscriptionService). /app itself is root-owned (created by WORKDIR), so make
+# it + the scratch dirs writable by the runtime uid, else mkdir EACCES → crash.
+RUN mkdir -p /app/public/hls /app/temp \
+    && chown 1001:1001 /app \
+    && chown -R 1001:1001 /app/public /app/temp
 
 # Run as uid 1001 (matches the VPS on-disk owner of the bind-mounted certs / DB /
 # recordings) — never root (ADR-0025). The container keeps the DEFAULT (private)
