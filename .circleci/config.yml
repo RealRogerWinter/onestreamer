@@ -179,7 +179,21 @@ jobs:
       - checkout
       - run:
           name: Build image
-          command: DOCKER_BUILDKIT=1 docker build -t onestreamer-app:$CIRCLE_SHA1 .
+          # DLC reuses a persistent buildkit cache volume across builds. If that
+          # volume is left with a dangling cache record (a child snapshot whose
+          # parent layer was GC'd), every build dies at snapshot-prepare with
+          # "parent snapshot … does not exist" — before any Dockerfile step runs,
+          # and a plain rerun reattaches the same poisoned volume. We keep DLC for
+          # the layer-cache speedup on the happy path, but if a build fails we
+          # prune the buildkit cache (evicting the orphaned record) and retry once.
+          # A genuine Dockerfile error just fails the retry too, surfacing as normal.
+          command: |
+            build() { DOCKER_BUILDKIT=1 docker build -t onestreamer-app:$CIRCLE_SHA1 .; }
+            if ! build; then
+              echo "Build failed — pruning buildkit cache (possible DLC corruption) and retrying"
+              docker builder prune --all --force || true
+              build
+            fi
       - run:
           name: Vulnerability scan (trivy) — fail on CRITICAL
           command: |
