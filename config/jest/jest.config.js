@@ -25,6 +25,10 @@ module.exports = {
     'TranscriptionDrivenBotService',
     'ChatBotLLMService.vision',
     'VisionBotService',
+    // better-sqlite3 contract tests run in their own process
+    // (jest.bettersqlite.config.js); node-sqlite3 — loaded here as the
+    // production-path driver — corrupts better-sqlite3 in the same process.
+    '\\.bettersqlite\\.test\\.js$',
   ],
   collectCoverage: true,
   coverageDirectory: 'coverage',

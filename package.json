@@ -16,7 +16,8 @@
     "test": "jest --config config/jest/jest.config.js",
     "test:watch": "jest --config config/jest/jest.config.js --watch",
     "test:integration": "jest --config config/jest/jest.integration.config.js",
-    "test:all": "npm test && npm run test:integration && cd client && npm test -- --watchAll=false"
+    "test:bettersqlite": "jest --config config/jest/jest.bettersqlite.config.js",
+    "test:all": "npm test && npm run test:bettersqlite && npm run test:integration && cd client && npm test -- --watchAll=false"
   },
   "keywords": [
     "streaming",
