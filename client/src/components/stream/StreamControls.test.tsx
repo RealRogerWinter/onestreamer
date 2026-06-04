@@ -1,6 +1,14 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import StreamControls from './StreamControls';
+import PermissionService from '../../services/PermissionService';
+
+// StreamControls gates the action button on PermissionService (added after
+// these tests were written): until camera/mic are 'granted' it renders a
+// "Setup Permissions" button and a click opens the permission modal instead of
+// invoking the callback. The service's default export is a singleton instance,
+// so spy its methods (jest.mock of a default-exported singleton is unreliable
+// under the CRA transform) to exercise the take-over/start path under test.
 
 describe('StreamControls', () => {
   const mockOnTakeOver = jest.fn();
@@ -16,6 +24,14 @@ describe('StreamControls', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(PermissionService, 'checkPermissions').mockResolvedValue({
+      camera: 'granted', microphone: 'granted', lastChecked: 0,
+    });
+    jest.spyOn(PermissionService, 'canStream').mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   test('renders start streaming button when no active stream', () => {
