@@ -1,0 +1,261 @@
+version: 2.1
+
+# OneStreamer CI/CD (ADR-0026). Replaces the (never-run) GitHub Actions CI.
+#
+#   build ──┬─ lint
+#           ├─ test-server-unit
+#           ├─ test-server-bettersqlite   (isolated process: node-sqlite3 must
+#           ├─ test-server-integration     never co-load with better-sqlite3)
+#           ├─ test-chat
+#           └─ test-client
+#                     └──► docker-build (main only)
+#                                └──► hold  (manual approval)
+#                                          └──► deploy (main only)
+#
+# "Smarter testing": jest-junit + store_test_results power CircleCI Test
+# Insights / flaky-test detection now. Timings-based test splitting
+# (`circleci tests split --split-by=timings`, parallelism > 1) on the big
+# server-unit suite is a documented follow-up gated on a paid plan — see
+# ADR-0026 and docs/contributing/testing.md.
+
+executors:
+  node:
+    docker:
+      - image: cimg/node:18.20
+    resource_class: medium
+  vm:
+    machine:
+      image: ubuntu-2204:current
+      docker_layer_caching: true
+    resource_class: medium
+  deployer:
+    docker:
+      - image: cimg/base:2024.11
+    resource_class: small
+
+commands:
+  install_all_deps:
+    description: "npm ci for root + chat-service + client (native build scripts ENABLED)"
+    steps:
+      - restore_cache:
+          keys:
+            - v1-npm-{{ checksum "package-lock.json" }}-{{ checksum "chat-service/package-lock.json" }}-{{ checksum "client/package-lock.json" }}
+            - v1-npm-
+      - run:
+          name: Install root deps (native build scripts on — sqlite/sharp/bcrypt)
+          command: npm ci --no-audit --no-fund
+      - run:
+          name: Install chat-service deps
+          command: cd chat-service && npm ci --no-audit --no-fund
+      - run:
+          name: Install client deps
+          command: cd client && npm ci --no-audit --no-fund
+      - save_cache:
+          key: v1-npm-{{ checksum "package-lock.json" }}-{{ checksum "chat-service/package-lock.json" }}-{{ checksum "client/package-lock.json" }}
+          paths:
+            - ~/.npm
+
+  with_test_secrets:
+    description: "Dummy secrets for jest (the validateEnv fail-fast set) via BASH_ENV"
+    steps:
+      - run:
+          name: Export CI test secrets
+          command: |
+            {
+              echo 'export NODE_ENV=test'
+              echo 'export JWT_SECRET=ci-test-jwt-secret-not-for-real-use-0123456789'
+              echo 'export SESSION_SECRET=ci-test-session-secret-not-for-real-0123456789'
+              echo 'export TURN_SECRET=ci-test-turn-secret-0123456789'
+              echo 'export TURNSTILE_SECRET_KEY=ci-turnstile-test'
+              echo 'export ADMIN_KEY=ci-admin-key-test'
+              echo 'export JEST_JUNIT_ADD_FILE_ATTRIBUTE=true'
+            } >> "$BASH_ENV"
+
+jobs:
+  build:
+    executor: node
+    steps:
+      - checkout
+      - install_all_deps
+      - run:
+          name: Build client bundle (CI=false — CRA treats warnings as errors under CI=true)
+          command: cd client && CI=false npm run build
+      - persist_to_workspace:
+          root: .
+          paths:
+            - node_modules
+            - chat-service/node_modules
+            - client/node_modules
+            - client/build
+
+  lint:
+    executor: node
+    steps:
+      - checkout
+      - attach_workspace: { at: . }
+      - run:
+          name: Client typecheck (tsc --noEmit)
+          command: cd client && npx tsc --noEmit
+      - run:
+          name: Docs + secret-hygiene gate (ported from GitHub Actions)
+          command: bash scripts/ci/docs-lint.sh
+
+  test-server-unit:
+    executor: node
+    # v1: parallelism 1, unsplit. Follow-up: parallelism: 4 + shard via
+    #   npx jest --config config/jest/jest.config.js --listTests \
+    #     | circleci tests split --split-by=timings
+    # (run jest on the shard WITHOUT --runInBand; needs a paid plan).
+    steps:
+      - checkout
+      - attach_workspace: { at: . }
+      - with_test_secrets
+      - run:
+          name: Server unit tests
+          command: npx jest --config config/jest/jest.config.js --reporters=default --reporters=jest-junit
+          environment:
+            JEST_JUNIT_OUTPUT_DIR: ./test-results/server-unit
+      - store_test_results: { path: ./test-results }
+      - store_artifacts: { path: ./coverage, destination: coverage-server-unit }
+
+  test-server-bettersqlite:
+    executor: node
+    # Own process so node-sqlite3 is never loaded alongside better-sqlite3
+    # (they corrupt each other's error handling). See jest.bettersqlite.config.js.
+    steps:
+      - checkout
+      - attach_workspace: { at: . }
+      - with_test_secrets
+      - run:
+          name: better-sqlite3 contract tests (isolated)
+          command: npx jest --config config/jest/jest.bettersqlite.config.js --reporters=default --reporters=jest-junit
+          environment:
+            JEST_JUNIT_OUTPUT_DIR: ./test-results/server-bettersqlite
+      - store_test_results: { path: ./test-results }
+
+  test-server-integration:
+    executor: node
+    steps:
+      - checkout
+      - attach_workspace: { at: . }
+      - with_test_secrets
+      - run:
+          name: Server integration tests
+          command: npx jest --config config/jest/jest.integration.config.js --reporters=default --reporters=jest-junit
+          environment:
+            JEST_JUNIT_OUTPUT_DIR: ./test-results/server-integration
+      - store_test_results: { path: ./test-results }
+
+  test-chat:
+    executor: node
+    steps:
+      - checkout
+      - attach_workspace: { at: . }
+      - with_test_secrets
+      - run:
+          name: chat-service tests
+          command: cd chat-service && npx jest --reporters=default --reporters=jest-junit
+          environment:
+            JEST_JUNIT_OUTPUT_DIR: ./test-results/chat
+      - store_test_results: { path: ./chat-service/test-results }
+
+  test-client:
+    executor: node
+    steps:
+      - checkout
+      - attach_workspace: { at: . }
+      - run:
+          name: Client tests (react-scripts, CI mode)
+          command: cd client && CI=true npx react-scripts test --watchAll=false --passWithNoTests
+          # NOTE: CRA wraps jest; JUnit reporting for the client is a follow-up.
+
+  docker-build:
+    executor: vm
+    steps:
+      - checkout
+      - run:
+          name: Build image
+          command: DOCKER_BUILDKIT=1 docker build -t onestreamer-app:$CIRCLE_SHA1 .
+      - run:
+          name: Vulnerability scan (trivy) — fail on CRITICAL
+          command: |
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /tmp/bin v0.58.1
+            /tmp/bin/trivy image --no-progress --exit-code 1 --severity CRITICAL --ignore-unfixed onestreamer-app:$CIRCLE_SHA1
+      - run:
+          name: Push to GHCR (by commit SHA) + capture immutable digest
+          command: |
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            IMG=ghcr.io/realrogerwinter/onestreamer-app
+            docker tag onestreamer-app:$CIRCLE_SHA1 "$IMG:$CIRCLE_SHA1"
+            docker push "$IMG:$CIRCLE_SHA1"
+            mkdir -p workspace
+            docker inspect --format='{{index .RepoDigests 0}}' "$IMG:$CIRCLE_SHA1" | tee workspace/image-digest.txt
+      - persist_to_workspace:
+          root: .
+          paths:
+            - workspace/image-digest.txt
+
+  deploy:
+    executor: deployer
+    steps:
+      - checkout
+      - attach_workspace: { at: . }
+      - add_ssh_keys      # adds the deploy SSH key configured in the context
+      - run:
+          name: Trust the VPS host key
+          command: |
+            mkdir -p ~/.ssh && chmod 700 ~/.ssh
+            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      - run:
+          name: Stage client bundle + deploy manifest on the VPS
+          command: |
+            rsync -az --delete client/build/ "$DEPLOY_USER@$DEPLOY_HOST:~/onestreamer-deploy/client-build/"
+            rsync -az compose.yaml scripts/deploy/deploy.sh "$DEPLOY_USER@$DEPLOY_HOST:~/onestreamer-deploy/"
+      - run:
+          name: Deploy on the VPS (flock, backup, pull-by-digest, recreate, verify, rollback)
+          command: |
+            DIGEST="$(cat workspace/image-digest.txt)"
+            echo "Deploying image: $DIGEST"
+            ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+              "IMAGE='$DIGEST' RELEASE_SHA='$CIRCLE_SHA1' bash ~/onestreamer-deploy/deploy.sh"
+
+workflows:
+  ci-cd:
+    jobs:
+      - build
+      - lint:
+          requires: [build]
+      - test-server-unit:
+          requires: [build]
+      - test-server-bettersqlite:
+          requires: [build]
+      - test-server-integration:
+          requires: [build]
+      - test-chat:
+          requires: [build]
+      - test-client:
+          requires: [build]
+      - docker-build:
+          context: onestreamer-deploy
+          requires:
+            - lint
+            - test-server-unit
+            - test-server-bettersqlite
+            - test-server-integration
+            - test-chat
+            - test-client
+          filters:
+            branches:
+              only: main
+      - hold:
+          type: approval
+          requires: [docker-build]
+          filters:
+            branches:
+              only: main
+      - deploy:
+          context: onestreamer-deploy
+          requires: [hold]
+          filters:
+            branches:
+              only: main
