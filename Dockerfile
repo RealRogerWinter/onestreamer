@@ -63,15 +63,26 @@ FROM node:18.20-bookworm-slim@sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87
 # Bump when site extractors (e.g. Twitch) break — stale yt-dlp fails URL relay
 # with "KeyError('data')". Verify the binary against a live Twitch URL after bumping.
 ARG YT_DLP_VERSION=2026.03.17
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# `apt-get upgrade` pulls debian security patches on top of the pinned base digest
+# (clears the trivy OS findings, e.g. libgnutls30 CVE-2026-33845). curl_cffi bumped
+# to 0.15.0 for CVE-2026-33752 (redirect SSRF) — verify KickRandomService still
+# works (server/services/kick-api-helper.py) after this jump from 0.7.x.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         ffmpeg streamlink python3 python3-pip procps tini curl ca-certificates libgomp1 \
-    && pip3 install --no-cache-dir --break-system-packages "curl_cffi==0.7.4" \
+    && pip3 install --no-cache-dir --break-system-packages "curl_cffi==0.15.0" \
     && curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/yt-dlp" -o /usr/local/bin/yt-dlp \
     && curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/SHA2-256SUMS" -o /tmp/yt-dlp.sums \
     && awk '$2=="yt-dlp"{print $1"  /usr/local/bin/yt-dlp"}' /tmp/yt-dlp.sums | sha256sum -c - \
     && chmod 0755 /usr/local/bin/yt-dlp && rm -f /tmp/yt-dlp.sums \
     && apt-get purge -y python3-pip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
+
+# The runtime entrypoint is `node ...` — npm/npx are never invoked here, but the
+# base image ships a global npm whose BUNDLED deps (tar, minimatch, …) account for
+# a chunk of the image's trivy node-pkg findings. Drop it: fewer CVEs, smaller
+# attack surface. (corepack stays; the builder stage keeps its own npm for `npm ci`.)
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 WORKDIR /app
 
