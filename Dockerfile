@@ -42,11 +42,14 @@ RUN cd chat-service && npm ci --omit=dev --no-audit --no-fund
 # so the copied `main` would dynamically link libwhisper.so.1 / libggml*.so — which
 # aren't in the runtime image (-> "libwhisper.so.1: cannot open shared object file",
 # exit 127, transcription/AI-bots dead). Static = self-contained binary (only libgomp1).
+# AVX-512 disabled: CI builders have AVX-512 but the production VPS is AVX2-only; the
+# mismatch produces SIGILL at runtime (whisper loads, starts processing, then crashes).
+# Disabling -DGGML_AVX512* keeps the binary AVX2-compatible on any x86-64 with AVX2.
 ARG WHISPER_CPP_SHA=8a9ad7844d6e2a10cddf4b92de4089d7ac2b14a9
 RUN git -c advice.detachedHead=false clone https://github.com/ggerganov/whisper.cpp /tmp/wcpp \
     && git -C /tmp/wcpp checkout -q "${WHISPER_CPP_SHA}" \
     && test "$(git -C /tmp/wcpp rev-parse HEAD)" = "${WHISPER_CPP_SHA}" \
-    && cmake -S /tmp/wcpp -B /tmp/wcpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF \
+    && cmake -S /tmp/wcpp -B /tmp/wcpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_AVX512=OFF -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF \
     && cmake --build /tmp/wcpp/build -j --target whisper-cli \
     && mkdir -p /app/whisper/whisper.cpp \
     && cp /tmp/wcpp/build/bin/whisper-cli /app/whisper/whisper.cpp/main \
