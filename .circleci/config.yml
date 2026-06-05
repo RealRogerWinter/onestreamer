@@ -196,8 +196,13 @@ jobs:
             fi
       - run:
           name: Vulnerability scan (trivy) — fail on CRITICAL
+          # trivy version must be a currently-published release: aquasecurity
+          # prunes binary release assets for old tags, so a stale pin 404s on the
+          # install download (the install.sh resolves the tag but the tarball is
+          # gone). v0.58.1's binaries are already gone — keep this within trivy's
+          # retention window and bump periodically.
           command: |
-            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.58.1/contrib/install.sh | sh -s -- -b /tmp/bin v0.58.1
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.71.0/contrib/install.sh | sh -s -- -b /tmp/bin v0.71.0
             /tmp/bin/trivy image --no-progress --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed onestreamer-app:$CIRCLE_SHA1
       - run:
           name: Push to GHCR (by commit SHA) + capture immutable digest
