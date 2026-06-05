@@ -23,12 +23,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install deps with build scripts ENABLED (native compiles) — NOT --ignore-scripts.
+# Install PRODUCTION deps only (--omit=dev) with build scripts ENABLED (native
+# compiles) — NOT --ignore-scripts. Dev tooling (jest, nodemon, babel, supertest,
+# concurrently) is never used inside the image; it only drags vuln surface into the
+# runtime — that's how jest's minimatch/picomatch/semver were shipping and failing
+# the trivy scan. Tests run in CI, in the node executor, NOT in this image.
 # Copy only manifests first so the install layer caches on lockfile content.
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --omit=dev --no-audit --no-fund
 COPY chat-service/package.json chat-service/package-lock.json ./chat-service/
-RUN cd chat-service && npm ci --no-audit --no-fund
+RUN cd chat-service && npm ci --omit=dev --no-audit --no-fund
 
 # Build whisper.cpp (pinned). The transcription / AI-moderation pipeline shells
 # out to <repo>/whisper/whisper.cpp/main (server/services/transcription/WhisperRunner.js).
