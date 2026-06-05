@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const { RoomServiceClient, IngressClient, AccessToken } = require('livekit-server-sdk');
 const { Room, RoomEvent, TrackKind, AudioStream } = require('@livekit/rtc-node');
 
@@ -425,19 +426,39 @@ class TranscriptionAudioAdapter {
                 return;
             }
 
-            const pcmData = fs.readFileSync(session.pcmFile);
             const sampleRate = session.sampleRate || 48000;
 
-            logger.debug(`📝 Finalizing WAV file...`);
-            logger.debug(`   PCM data: ${pcmData.length} bytes`);
-            logger.debug(`   Sample rate: ${sampleRate} Hz`);
+            logger.debug(`📝 Finalizing WAV file (resampling ${sampleRate}Hz -> 16000Hz for Whisper)...`);
 
-            // Create WAV file with proper header
-            const wavHeader = this.createWAVHeader(sampleRate, 1, 16, pcmData.length);
-            const wavData = Buffer.concat([wavHeader, pcmData]);
+            // Use FFmpeg to resample from native LiveKit rate (48kHz) to 16kHz
+            // Whisper.cpp requires 16kHz mono 16-bit PCM — passing 48kHz produces no output.
+            const resampleOk = await new Promise((resolve) => {
+                const ff = spawn('ffmpeg', [
+                    '-f', 's16le', '-ar', String(sampleRate), '-ac', '1',
+                    '-i', session.pcmFile,
+                    '-ar', '16000', '-ac', '1',
+                    '-f', 'wav', '-y', session.bufferFile,
+                ]);
+                let stderr = '';
+                ff.stderr.on('data', d => { stderr += d.toString(); });
+                ff.on('close', code => {
+                    if (code === 0) {
+                        resolve(true);
+                    } else {
+                        logger.error(`❌ TranscriptionAudioAdapter: FFmpeg resample failed (code ${code}): ${stderr.slice(-400)}`);
+                        resolve(false);
+                    }
+                });
+                ff.on('error', e => {
+                    logger.error(`❌ TranscriptionAudioAdapter: FFmpeg spawn error: ${e.message}`);
+                    resolve(false);
+                });
+            });
 
-            fs.writeFileSync(session.bufferFile, wavData);
-            logger.debug(`✅ WAV file created: ${session.bufferFile} (${wavData.length} bytes)`);
+            if (resampleOk) {
+                const wavStats = fs.statSync(session.bufferFile);
+                logger.debug(`✅ WAV file created at 16kHz: ${session.bufferFile} (${wavStats.size} bytes)`);
+            }
 
             // Clean up PCM file
             fs.unlinkSync(session.pcmFile);
