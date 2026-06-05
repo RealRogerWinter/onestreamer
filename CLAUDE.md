@@ -55,7 +55,7 @@ Smoke-test path (after any change to streaming/takeover/chat/admin): walk throug
 ## What to avoid
 
 - **Don't read `node_modules/`, `whisper.cpp/`, `whisper/`, `audio-buffers/`, `recordings/`, `logs/`, `clips/`** — large, generated, or build artifacts.
-- **Don't propose dependency upgrades** unless asked — Dependabot handles those in its own PR stream.
+- **Dependency upgrades are manual — Dependabot is disabled.** Nothing auto-bumps deps, so security-relevant upgrades (e.g., clearing trivy HIGH/CRITICAL findings from the `docker-build` scan) are a real, in-scope task when asked. Still keep bumps scoped and intentional — no unprompted bulk upgrades.
 - **Don't refactor adjacent code** while fixing a specific bug — keep PR scope tight. Open a separate PR for cleanup.
 - **Don't bypass `authenticateToken` / `authenticateAdmin`** middleware on new admin/auth-gated endpoints. Both live in [`server/middleware/auth.js`](server/middleware/auth.js).
 - **Don't add new root-level scripts** — they go in [`scripts/ops/`](scripts/ops/), [`scripts/deploy/`](scripts/deploy/), [`scripts/migrations/`](scripts/migrations/), or [`scripts/setup/`](scripts/setup/) depending on purpose.
