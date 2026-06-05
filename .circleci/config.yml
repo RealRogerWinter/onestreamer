@@ -234,6 +234,9 @@ jobs:
             printf '%s\n' "$DEPLOY_HOST_PUBKEY" >> ~/.ssh/known_hosts
             chmod 600 ~/.ssh/known_hosts
       - run:
+          name: Install rsync (not bundled in cimg/base)
+          command: sudo apt-get update -qq && sudo apt-get install -y -qq rsync
+      - run:
           name: Stage client bundle + deploy manifest on the VPS
           command: |
             SSH='ssh -o StrictHostKeyChecking=yes'
