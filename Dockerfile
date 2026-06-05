@@ -78,11 +78,13 @@ RUN apt-get update && apt-get upgrade -y \
     && apt-get purge -y python3-pip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-# The runtime entrypoint is `node ...` — npm/npx are never invoked here, but the
-# base image ships a global npm whose BUNDLED deps (tar, minimatch, …) account for
-# a chunk of the image's trivy node-pkg findings. Drop it: fewer CVEs, smaller
-# attack surface. (corepack stays; the builder stage keeps its own npm for `npm ci`.)
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+# The runtime entrypoint is `node ...` — no package manager is ever invoked here,
+# but the base image's GLOBAL node_modules (npm AND corepack) vendor their own deps
+# (tar, minimatch 3.1.2, semver 7.0.0, …) which trivy flags as node-pkg findings.
+# Nuke the whole global dir + the pm shims: fewer CVEs, smaller attack surface.
+# (The builder stage keeps its own npm for `npm ci`; only the runtime is stripped.)
+RUN rm -rf /usr/local/lib/node_modules \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 WORKDIR /app
 
