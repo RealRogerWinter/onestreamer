@@ -210,9 +210,16 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             IMG=ghcr.io/realrogerwinter/onestreamer-app
             docker tag onestreamer-app:$CIRCLE_SHA1 "$IMG:$CIRCLE_SHA1"
-            docker push "$IMG:$CIRCLE_SHA1"
+            # Build a FULLY-QUALIFIED digest ref from the push output. Do NOT use
+            # `docker inspect '{{index .RepoDigests 0}}'` — it can return a
+            # registry-less ref (e.g. 'onestreamer-app@sha256:…'), and the VPS then
+            # tries to pull it from Docker Hub -> "pull access denied". The digest
+            # line emitted by `docker push` is the authoritative source.
+            docker push "$IMG:$CIRCLE_SHA1" | tee /tmp/push.log
+            DIGEST="$(grep -oE 'sha256:[0-9a-f]{64}' /tmp/push.log | tail -n1)"
+            case "$DIGEST" in sha256:*) ;; *) echo "ERROR: could not parse pushed digest"; exit 1 ;; esac
             mkdir -p workspace
-            docker inspect --format='{{index .RepoDigests 0}}' "$IMG:$CIRCLE_SHA1" | tee workspace/image-digest.txt
+            echo "${IMG}@${DIGEST}" | tee workspace/image-digest.txt
       - persist_to_workspace:
           root: .
           paths:
