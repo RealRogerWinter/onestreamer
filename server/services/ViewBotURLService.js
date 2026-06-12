@@ -13,7 +13,7 @@ const URLStreamExtractorService = require('./URLStreamExtractorService');
 const StreamProbeService = require('./StreamProbeService');
 const AdaptiveEncodingSettings = require('./AdaptiveEncodingSettings');
 const KickRandomService = require('./KickRandomService');
-const { defaultPropsForPlatform } = require('./viewbot/streamDefaults');
+const { defaultPropsForPlatform, capSourceQuality } = require('./viewbot/streamDefaults');
 const webrtcConfig = require('../config/webrtc.config');
 const WhitelistGate = require('./urlstream/WhitelistGate');
 const ViewerNotifier = require('./urlstream/ViewerNotifier');
@@ -62,10 +62,13 @@ class ViewBotURLService extends EventEmitter {
     this.adaptiveConfig = {
       enabled: true,           // Enable adaptive encoding by default
       mode: 'performance',     // 'performance', 'balanced', or 'quality' — perf uses ultrafast + 0.7x bitrate
-      maxWidth: 1920,          // Max output resolution
-      maxHeight: 1080,
-      maxVideoBitrate: 6000,   // kbps
-      maxFps: 60,
+      // 720p ceiling: the relay source is capped at 720p (capSourceQuality),
+      // so encoding above it only burns ingress CPU upscaling. Matches the
+      // observed 30fps the pipeline already ran at.
+      maxWidth: 1280,          // Max output resolution
+      maxHeight: 720,
+      maxVideoBitrate: 3000,   // kbps
+      maxFps: 30,
       probeTimeout: 8000       // ms to wait for probe
     };
 
@@ -176,6 +179,7 @@ class ViewBotURLService extends EventEmitter {
    * @returns {Promise<object>} Stream properties
    */
   async probeStreamSource(url, quality = 'best') {
+    quality = capSourceQuality(quality);
     try {
       // First get the actual stream URL via extractor
       const streamInfo = await this.extractorService.getStreamURL(url, quality);
@@ -330,11 +334,14 @@ class ViewBotURLService extends EventEmitter {
    */
   async startURLStream(url, options = {}) {
     const {
-      quality = 'best',
       displayName = null,
       autoReconnect = true,
       kickUsername = null  // Kick username for token refresh
     } = options;
+    // All callers funnel through here, so this is THE source-quality cap:
+    // 'best' (and anything above 720p) becomes '720p' before extraction,
+    // platform defaults, and the stream entry ever see it.
+    const quality = capSourceQuality(options.quality || 'best');
 
     // CRITICAL: Mutex to prevent concurrent stream starts
     // This prevents race conditions where multiple streams could start simultaneously

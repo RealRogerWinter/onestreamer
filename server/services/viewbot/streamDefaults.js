@@ -31,6 +31,28 @@ const PLATFORM_DEFAULTS = {
   },
 };
 
+// Hard ceiling for the relay's SOURCE variant. The prod relay runs in
+// stream-copy mode (VIEWBOT_STREAM_COPY=true), so whatever variant we pull is
+// what the LiveKit ingress has to decode + transcode — pulling 1080p costs
+// ~2x the ingress CPU of 720p on this 4-core host for zero visible benefit.
+const MAX_SOURCE_HEIGHT = 720;
+
+/**
+ * Cap a requested source quality at MAX_SOURCE_HEIGHT. 'best'/'source' and
+ * any explicit resolution above the cap collapse to '720p'; lower explicit
+ * qualities ('480p', 'worst', …) pass through unchanged.
+ */
+function capSourceQuality(quality) {
+  if (!quality || quality === 'best' || quality === 'source') {
+    return `${MAX_SOURCE_HEIGHT}p`;
+  }
+  const m = String(quality).match(/^(\d+)p/);
+  if (m && parseInt(m[1], 10) > MAX_SOURCE_HEIGHT) {
+    return `${MAX_SOURCE_HEIGHT}p`;
+  }
+  return quality;
+}
+
 function defaultPropsForPlatform(platform, quality, baseDefaults = {}) {
   const platformSettings = PLATFORM_DEFAULTS[platform] || PLATFORM_DEFAULTS.default;
   const qualitySettings = platformSettings[quality] || platformSettings.best || platformSettings.default?.best;
@@ -44,4 +66,4 @@ function defaultPropsForPlatform(platform, quality, baseDefaults = {}) {
   };
 }
 
-module.exports = { PLATFORM_DEFAULTS, defaultPropsForPlatform };
+module.exports = { PLATFORM_DEFAULTS, defaultPropsForPlatform, capSourceQuality, MAX_SOURCE_HEIGHT };

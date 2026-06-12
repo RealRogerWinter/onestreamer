@@ -1,4 +1,24 @@
 const URLStreamExtractorService = require('../../services/URLStreamExtractorService');
+const { streamlinkQualitySelector } = URLStreamExtractorService;
+
+describe('streamlinkQualitySelector', () => {
+  test('expands a resolution into a descending fallback chain ending in worst', () => {
+    expect(streamlinkQualitySelector('720p')).toBe(
+      '720p60,720p30,720p,480p60,480p30,480p,360p60,360p30,360p,160p60,160p30,160p,worst'
+    );
+  });
+
+  test('respects the requested height as the ceiling', () => {
+    expect(streamlinkQualitySelector('480p')).toMatch(/^480p60,/);
+    expect(streamlinkQualitySelector('480p')).not.toMatch(/720|1080/);
+  });
+
+  test('non-resolution qualities pass through verbatim', () => {
+    expect(streamlinkQualitySelector('best')).toBe('best');
+    expect(streamlinkQualitySelector('worst')).toBe('worst');
+    expect(streamlinkQualitySelector('audio_only')).toBe('audio_only');
+  });
+});
 
 beforeAll(() => {
   jest.spyOn(console, 'log').mockImplementation(() => {});
