@@ -19,6 +19,11 @@ function normalizeHost(host) {
   return host.startsWith('http') ? host : `http://${host}`;
 }
 
+// Ingress transcode ceiling (see buildIngressRequest). Keep in sync with the
+// source-side cap in viewbot/streamDefaults.MAX_SOURCE_HEIGHT.
+const MAX_INGRESS_WIDTH = 1280;
+const MAX_INGRESS_HEIGHT = 720;
+
 /**
  * Whether a current-streamer identity belongs to a viewbot (which must NOT
  * block other viewbots) rather than a real human streamer.
@@ -61,10 +66,21 @@ function buildBotTokenGrant(roomName) {
  */
 function buildIngressRequest({ bot, roomName, encodingSettings, bypassTranscoding, TrackSource }) {
   // Determine video settings - prefer adaptive, fall back to defaults
-  const videoWidth = encodingSettings?.width || 1280;
-  const videoHeight = encodingSettings?.height || 720;
+  let videoWidth = encodingSettings?.width || 1280;
+  let videoHeight = encodingSettings?.height || 720;
   const videoFps = encodingSettings?.fps || 30;
-  const videoBitrate = encodingSettings?.videoBitrate ? encodingSettings.videoBitrate * 1000 : 4000000;
+  let videoBitrate = encodingSettings?.videoBitrate ? encodingSettings.videoBitrate * 1000 : 4000000;
+
+  // Defense-in-depth 720p ceiling: the upstream caps (capSourceQuality +
+  // adaptiveConfig max*) should never let >720p reach here, but a probed
+  // source dimension passed straight through would make the ingress
+  // transcode at full source resolution (~1 core at 1080p on this host).
+  const scale = Math.min(1, MAX_INGRESS_WIDTH / videoWidth, MAX_INGRESS_HEIGHT / videoHeight);
+  if (scale < 1) {
+    videoWidth = Math.round((videoWidth * scale) / 2) * 2;
+    videoHeight = Math.round((videoHeight * scale) / 2) * 2;
+    videoBitrate = Math.round(videoBitrate * scale * scale);
+  }
   const audioBitrate = encodingSettings?.audioBitrate ? encodingSettings.audioBitrate * 1000 : 160000;
   const audioChannels = encodingSettings?.audioChannels || 2;
 

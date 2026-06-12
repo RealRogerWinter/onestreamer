@@ -9,6 +9,30 @@ const { spawn, execSync } = require('child_process');
 const EventEmitter = require('events');
 
 const logger = require('../bootstrap/logger').child({ svc: 'URLStreamExtractorService' });
+
+/**
+ * Expand a resolution quality ('720p') into a streamlink fallback chain.
+ * Streamlink matches quality strings EXACTLY against the variant names the
+ * platform advertises — Twitch typically offers '720p60' but not '720p', so a
+ * bare '720p' errors out. The chain tries the capped resolution (60/30/bare),
+ * then steps DOWN, ending in 'worst' so an exotic variant list still yields
+ * the lowest stream rather than blowing past the cap via 'best'.
+ * Non-resolution qualities ('best', 'worst', 'audio_only') pass through.
+ */
+function streamlinkQualitySelector(quality) {
+  const m = String(quality || '').match(/^(\d+)p(\d*)$/);
+  if (!m) return quality;
+  const height = parseInt(m[1], 10);
+  const ladder = [1080, 720, 480, 360, 160];
+  const chain = [];
+  for (const h of ladder) {
+    if (h > height) continue;
+    chain.push(`${h}p60`, `${h}p30`, `${h}p`);
+  }
+  chain.push('worst');
+  return chain.join(',');
+}
+
 class URLStreamExtractorService extends EventEmitter {
   constructor() {
     super();
@@ -372,7 +396,7 @@ class URLStreamExtractorService extends EventEmitter {
    */
   async _getStreamlinkURL(url, quality) {
     return new Promise((resolve, reject) => {
-      const process = spawn(this.streamlinkPath, ['--stream-url', url, quality], {
+      const process = spawn(this.streamlinkPath, ['--stream-url', url, streamlinkQualitySelector(quality)], {
         timeout: 30000
       });
 
@@ -477,7 +501,7 @@ class URLStreamExtractorService extends EventEmitter {
       '--stdout',
       '--force', // Don't prompt for confirmation
       url,
-      quality
+      streamlinkQualitySelector(quality)
     ], {
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -602,3 +626,4 @@ class URLStreamExtractorService extends EventEmitter {
 }
 
 module.exports = URLStreamExtractorService;
+module.exports.streamlinkQualitySelector = streamlinkQualitySelector;

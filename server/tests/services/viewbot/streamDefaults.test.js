@@ -1,4 +1,30 @@
-const { defaultPropsForPlatform } = require('../../../services/viewbot/streamDefaults');
+const { defaultPropsForPlatform, capSourceQuality } = require('../../../services/viewbot/streamDefaults');
+
+describe('capSourceQuality', () => {
+  test("'best' and 'source' collapse to 720p", () => {
+    expect(capSourceQuality('best')).toBe('720p');
+    expect(capSourceQuality('source')).toBe('720p');
+  });
+
+  test('resolutions above the cap collapse to 720p', () => {
+    expect(capSourceQuality('1080p')).toBe('720p');
+    expect(capSourceQuality('1080p60')).toBe('720p');
+    expect(capSourceQuality('1440p')).toBe('720p');
+  });
+
+  test('720p and below pass through unchanged', () => {
+    expect(capSourceQuality('720p')).toBe('720p');
+    expect(capSourceQuality('720p60')).toBe('720p60');
+    expect(capSourceQuality('480p')).toBe('480p');
+    expect(capSourceQuality('worst')).toBe('worst');
+    expect(capSourceQuality('audio_only')).toBe('audio_only');
+  });
+
+  test('missing quality defaults to 720p', () => {
+    expect(capSourceQuality(undefined)).toBe('720p');
+    expect(capSourceQuality('')).toBe('720p');
+  });
+});
 
 describe('defaultPropsForPlatform', () => {
   test('known platform + quality returns that tier merged with audio + probeNote', () => {
