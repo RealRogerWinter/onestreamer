@@ -359,3 +359,87 @@ describe('EgressFrameCaptureService', () => {
         expect(svc._cleanupTimer).toBeNull();
     });
 });
+
+describe('EgressFrameCaptureService relay-source fallback', () => {
+    let tmpFramesDir;
+
+    beforeEach(() => {
+        spawn.mockReset();
+        tmpFramesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frames-archive-'));
+        delete global.viewBotURLService;
+    });
+
+    afterEach(() => {
+        delete global.viewBotURLService;
+    });
+
+    function makeSvc(relaySourceProvider) {
+        return new EgressFrameCaptureService({
+            continuousRecordingService: makeMockEgress({ isRecording: false }),
+            framesArchiveDir: tmpFramesDir,
+            cleanupIntervalMs: 999_999_999,
+            relaySourceProvider,
+        });
+    }
+
+    test('captures from the relay source URL when egress is not recording', async () => {
+        mockFfmpegSuccess();
+        const svc = makeSvc(() => 'https://example.test/live/variant.m3u8');
+        const r = await svc.captureFrame('url-stream-1', new Date(), 3);
+        expect(r).not.toBeNull();
+        expect(r.sourceSegment).toBe('relay_source');
+        expect(r.streamGeneration).toBe(3);
+        expect(spawn).toHaveBeenCalledTimes(1);
+        const args = spawn.mock.calls[0][1];
+        expect(args).toContain('https://example.test/live/variant.m3u8');
+        await svc.stop();
+    });
+
+    test('returns null (no spawn) when the provider has no source for the streamer', async () => {
+        const svc = makeSvc(() => null);
+        const r = await svc.captureFrame('not-a-relay', new Date(), 1);
+        expect(r).toBeNull();
+        expect(spawn).not.toHaveBeenCalled();
+        await svc.stop();
+    });
+
+    test('returns null when relay ffmpeg fails', async () => {
+        mockFfmpegFailure(1);
+        const svc = makeSvc(() => 'https://example.test/live/variant.m3u8');
+        const r = await svc.captureFrame('url-stream-1', new Date(), 1);
+        expect(r).toBeNull();
+        await svc.stop();
+    });
+
+    test('default provider reads global.viewBotURLService and skips pipe-mode sources', async () => {
+        const activeStreams = new Map([
+            ['pipe-stream', { status: 'streaming', streamInfo: { pipeMode: true, streamUrl: 'x' } }],
+            ['direct-stream', { status: 'streaming', streamInfo: { pipeMode: false, streamUrl: 'https://example.test/d.m3u8' } }],
+            ['starting-stream', { status: 'starting', streamInfo: { pipeMode: false, streamUrl: 'https://example.test/s.m3u8' } }],
+        ]);
+        global.viewBotURLService = { activeStreams };
+        const svc = makeSvc(undefined); // default provider
+
+        expect(await svc.captureFrame('pipe-stream', new Date(), 1)).toBeNull();
+        expect(await svc.captureFrame('starting-stream', new Date(), 1)).toBeNull();
+        expect(spawn).not.toHaveBeenCalled();
+
+        mockFfmpegSuccess();
+        const r = await svc.captureFrame('direct-stream', new Date(), 1);
+        expect(r).not.toBeNull();
+        expect(spawn.mock.calls[0][1]).toContain('https://example.test/d.m3u8');
+        await svc.stop();
+    });
+
+    test('remote capture uses the longer kill escalation', async () => {
+        mockFfmpegSuccess();
+        const svc = makeSvc(() => 'https://example.test/live/variant.m3u8');
+        const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+        await svc.captureFrame('url-stream-1', new Date(), 1);
+        const delays = setTimeoutSpy.mock.calls.map(c => c[1]);
+        expect(delays).toContain(12000);
+        expect(delays).toContain(15000);
+        setTimeoutSpy.mockRestore();
+        await svc.stop();
+    });
+});

@@ -224,10 +224,19 @@ class ContinuousRecordingService extends EventEmitter {
       if (hasPublisher && !this.isRecording) {
         if (realStreamer) {
           logger.debug(`🎥 CONTINUOUS RECORDING: Detected REAL streamer ${realStreamer}, starting participant recording...`);
+          this._viewbotSkipLogged = false;
+          await this.startRecording(realStreamer);
         } else {
-          logger.debug('🎥 CONTINUOUS RECORDING: Detected viewbot publisher, starting room recording...');
+          // Viewbot/url-relay publishers are NOT auto-recorded: a 24/7 relay
+          // would keep a room-composite egress (headless Chrome + encoder,
+          // ~0.8 CPU cores) running around the clock recording re-broadcast
+          // content to disk + B2. VisionBot frames for relay streams come
+          // from EgressFrameCaptureService's relay-source fallback instead.
+          // Admins can still start a recording manually (admin-recordings-ext
+          // routes call startRecording() directly — this gate only covers
+          // the auto-record poll).
+          this._logViewbotSkipOnce();
         }
-        await this.startRecording(realStreamer);
       } else if (!hasPublisher && this.isRecording) {
         // Keep recording for a bit after stream ends to capture final moments
         logger.debug('🎥 CONTINUOUS RECORDING: No publishers detected, will continue recording briefly...');
@@ -243,6 +252,16 @@ class ContinuousRecordingService extends EventEmitter {
         logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Error checking room');
       }
     }
+  }
+
+  /**
+   * The auto-record poll fires every few seconds; log the viewbot-skip
+   * decision once per continuous viewbot-only stretch instead of every tick.
+   */
+  _logViewbotSkipOnce() {
+    if (this._viewbotSkipLogged) return;
+    this._viewbotSkipLogged = true;
+    logger.info('🎥 CONTINUOUS RECORDING: Viewbot-only publisher — skipping auto-record (real streamers still record)');
   }
 
   /**

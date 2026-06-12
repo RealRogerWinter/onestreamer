@@ -24,8 +24,25 @@ const logger = require('../bootstrap/logger').child({ svc: 'EgressFrameCaptureSe
  * prevent runaway under back-pressure.
  */
 class EgressFrameCaptureService {
-    constructor({ continuousRecordingService, framesArchiveDir, frameRetentionHours, bannedRetentionDays, cleanupIntervalMs } = {}) {
+    constructor({ continuousRecordingService, framesArchiveDir, frameRetentionHours, bannedRetentionDays, cleanupIntervalMs, relaySourceProvider } = {}) {
         this.continuousRecordingService = continuousRecordingService;
+        // Resolves a streamerId to a directly-readable live source URL when
+        // that streamer is a url-relay (viewbot) stream. Used as the frame
+        // source when no egress recording exists — relay streams are no
+        // longer auto-recorded (ContinuousRecordingService skips viewbot-only
+        // rooms), so VisionBot frames are pulled straight from the relay's
+        // HLS playlist instead. Injectable for tests; defaults to the
+        // global.viewBotURLService idiom used across server/index.js.
+        this.relaySourceProvider = relaySourceProvider || ((streamerId) => {
+            const svc = global.viewBotURLService;
+            const entry = svc && svc.activeStreams && svc.activeStreams.get(streamerId);
+            if (!entry || entry.status !== 'streaming') return null;
+            const info = entry.streamInfo;
+            // Pipe-mode sources (streamlink stdout) have no URL ffmpeg can
+            // open; only direct HLS/URL sources are capturable.
+            if (!info || info.pipeMode || !info.streamUrl) return null;
+            return info.streamUrl;
+        });
         this.framesArchiveDir = framesArchiveDir || path.join(__dirname, '..', '..', 'logs', 'visionbot', 'frames');
         this.frameRetentionHours = frameRetentionHours ?? 1;
         // OmniImageMod PR 2: flagged frames are promoted to the `banned/`
@@ -87,6 +104,15 @@ class EgressFrameCaptureService {
         }
 
         if (!this.continuousRecordingService || !this.continuousRecordingService.isRecording) {
+            // No egress recording — normal for url-relay streams (viewbot-only
+            // rooms are not auto-recorded). Capture straight from the relay's
+            // live source playlist instead. The frame is "now" rather than
+            // aligned to the transcription window (live HLS has no rewind),
+            // which is within the same few-seconds-to-30s tolerance the
+            // window alignment already accepts via its newest-segment
+            // fallback.
+            const relayFrame = await this._captureFromRelaySource(streamerId, streamGeneration, endTimeMs);
+            if (relayFrame) return relayFrame;
             this._logSkip('no_egress', { streamerId });
             return null;
         }
@@ -235,7 +261,55 @@ class EgressFrameCaptureService {
         return bestPath || fallbackPath;
     }
 
-    _extractFrame(segmentPath) {
+    /**
+     * Frame capture for url-relay streams: one-shot ffmpeg against the
+     * relay's live HLS playlist (the same URL the relay ffmpeg consumes).
+     * Costs one segment download + one decoded frame every cache-miss —
+     * negligible next to the room-composite egress it replaces.
+     */
+    async _captureFromRelaySource(streamerId, streamGeneration, endTimeMs) {
+        let sourceUrl = null;
+        try {
+            sourceUrl = this.relaySourceProvider(streamerId);
+        } catch (e) {
+            this._logSkip('relay_provider_error', { streamerId, error: e.message });
+            return null;
+        }
+        if (!sourceUrl) return null;
+
+        if (this.activeProcesses.size >= this.MAX_CONCURRENT) {
+            this._logSkip('ffmpeg_concurrency_cap', { streamerId, activeCount: this.activeProcesses.size });
+            return null;
+        }
+
+        let jpegBuffer;
+        try {
+            jpegBuffer = await this._extractFrame(sourceUrl, { remote: true });
+        } catch (err) {
+            this._logSkip('relay_ffmpeg_error', { streamerId, error: err.message });
+            return null;
+        }
+        if (!jpegBuffer || jpegBuffer.length === 0 || jpegBuffer.length > 4 * 1024 * 1024) {
+            this._logSkip('relay_invalid_jpeg_buffer', { streamerId, size: jpegBuffer ? jpegBuffer.length : 0 });
+            return null;
+        }
+
+        const capturedAt = Date.now();
+        const result = {
+            streamerId,
+            streamGeneration,
+            jpegBase64: jpegBuffer.toString('base64'),
+            capturedAt,
+            sourceSegment: 'relay_source',
+            sizeBytes: jpegBuffer.length,
+            transcriptionEndTime: endTimeMs,
+        };
+        this.cache = result;
+        result.auditPath = this._writeAuditCopy(streamerId, capturedAt, jpegBuffer);
+        return result;
+    }
+
+    _extractFrame(segmentPath, { remote = false } = {}) {
         return new Promise((resolve, reject) => {
             // No -sseof here: ffmpeg 7.x exits non-zero when seeking from the
             // end of a short HLS .ts segment with B-frames ("co located POCs
@@ -244,8 +318,12 @@ class EgressFrameCaptureService {
             // -pix_fmt yuvj420p is required because the egress encoder emits
             // limited-range YUV; without the conversion ffmpeg 7's mjpeg
             // encoder refuses the input ("Non full-range YUV is non-standard").
+            // Remote (live HLS) inputs need a playlist + segment fetch before
+            // the first frame exists, so they get smaller probe sizes (speed)
+            // and a longer kill escalation than local .ts reads.
             const proc = spawn('ffmpeg', [
                 '-hide_banner', '-loglevel', 'error',
+                ...(remote ? ['-analyzeduration', '2000000', '-probesize', '5000000'] : []),
                 '-i', segmentPath,
                 '-frames:v', '1',
                 '-vf', `scale='min(384,iw)':-2`,
@@ -263,11 +341,11 @@ class EgressFrameCaptureService {
             const sigTermTimer = setTimeout(() => {
                 killed = true;
                 try { proc.kill('SIGTERM'); } catch (_) {}
-            }, 6000);
+            }, remote ? 12000 : 6000);
             const sigKillTimer = setTimeout(() => {
                 killed = true;
                 try { proc.kill('SIGKILL'); } catch (_) {}
-            }, 8000);
+            }, remote ? 15000 : 8000);
 
             const cleanup = () => {
                 clearTimeout(sigTermTimer);
