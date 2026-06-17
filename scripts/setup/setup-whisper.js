@@ -76,40 +76,72 @@ async function setupWhisper() {
     } else {
         console.log('🐧 Unix-like system detected - building whisper.cpp from source...');
         
+        // Pin the exact commit (must match Dockerfile's WHISPER_CPP_SHA). git tags
+        // are mutable and `master` drifts — an unpinned clone can pull a build that
+        // changes the CLI flags / output format that WhisperRunner.js parses.
+        const WHISPER_CPP_SHA = '8a9ad7844d6e2a10cddf4b92de4089d7ac2b14a9';
+
         // Clone whisper.cpp if not exists
         const whisperRepoPath = path.join(whisperDir, 'whisper.cpp');
-        if (!fs.existsSync(whisperRepoPath)) {
+        if (!fs.existsSync(path.join(whisperRepoPath, '.git'))) {
             console.log('📥 Cloning whisper.cpp repository...');
             try {
-                await execAsync(`git clone https://github.com/ggerganov/whisper.cpp.git ${whisperRepoPath}`);
-                console.log('✅ Repository cloned');
+                await execAsync(`git -c advice.detachedHead=false clone https://github.com/ggerganov/whisper.cpp.git ${whisperRepoPath}`);
+                await execAsync(`git -C ${whisperRepoPath} checkout -q ${WHISPER_CPP_SHA}`);
+                console.log(`✅ Repository cloned @ ${WHISPER_CPP_SHA.slice(0, 12)}`);
             } catch (error) {
                 console.error('❌ Failed to clone repository:', error);
                 return;
             }
         }
-        
-        // Build whisper.cpp
-        console.log('🔨 Building whisper.cpp...');
+
+        // Build whisper.cpp.
+        //
+        // This MUST mirror the Dockerfile builder stage, for two reasons:
+        //   1. AVX-512 OFF — the legacy `make` build (and cmake's default
+        //      GGML_NATIVE) bakes in whatever instruction sets the BUILD host
+        //      advertises. A binary built on an AVX-512 machine then SIGILLs
+        //      ("Illegal instruction") the moment it starts inference on an
+        //      AVX2-only host (e.g. AMD EPYC-Milan). Disabling -DGGML_AVX512*
+        //      keeps the binary runnable on any x86-64 with AVX2.
+        //   2. STATIC (-DBUILD_SHARED_LIBS=OFF) — newer whisper.cpp defaults to
+        //      shared libs, so `main` would dynamically link libwhisper.so.1 /
+        //      libggml*.so. A self-contained binary avoids "cannot open shared
+        //      object file" at runtime.
+        // The CLI lives at whisper.cpp/main (per WhisperRunner.js); newer
+        // whisper.cpp builds the `whisper-cli` target, which we copy to `main`.
+        console.log('🔨 Building whisper.cpp (static, AVX2-only)...');
         try {
-            await execAsync('make', { cwd: whisperRepoPath });
+            const buildDir = path.join(whisperRepoPath, 'build');
+            await execAsync(
+                `cmake -S ${whisperRepoPath} -B ${buildDir} -DCMAKE_BUILD_TYPE=Release ` +
+                '-DWHISPER_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF ' +
+                '-DGGML_AVX512=OFF -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF'
+            );
+            await execAsync(`cmake --build ${buildDir} -j --target whisper-cli`);
+            fs.copyFileSync(path.join(buildDir, 'bin', 'whisper-cli'), path.join(whisperRepoPath, 'main'));
             console.log('✅ Build completed');
         } catch (error) {
             console.error('❌ Build failed:', error);
-            console.log('Please ensure you have build tools installed (gcc, make)');
+            console.log('Please ensure you have build tools installed (gcc, g++, cmake, make)');
+            return;
         }
-        
-        // Download model
+
+        // Download model into whisper/models (where WhisperRunner.js looks —
+        // NOT whisper/whisper.cpp/models).
         console.log('📦 Downloading base model...');
-        try {
-            await execAsync('./models/download-ggml-model.sh base', { cwd: whisperRepoPath });
-            console.log('✅ Model downloaded');
-        } catch (error) {
-            console.log('⚠️  Model download script failed, trying direct download...');
-            const modelUrl = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin';
-            const modelPath = path.join(modelsDir, 'ggml-base.bin');
-            await downloadFile(modelUrl, modelPath);
-            console.log('✅ Model downloaded directly');
+        const modelPath = path.join(modelsDir, 'ggml-base.bin');
+        if (fs.existsSync(modelPath)) {
+            console.log('✅ Model already exists');
+        } else {
+            try {
+                const modelUrl = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin';
+                await downloadFile(modelUrl, modelPath);
+                console.log('✅ Model downloaded');
+            } catch (error) {
+                console.error('❌ Failed to download model:', error);
+                console.log(`   Download manually from https://huggingface.co/ggerganov/whisper.cpp and save to ${modelPath}`);
+            }
         }
     }
     
