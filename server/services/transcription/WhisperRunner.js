@@ -59,10 +59,14 @@ class WhisperRunner {
             let output = '';
             let stderr = '';
             let timeoutId;
+            // Set when WE terminate the process (watchdog timeout) so the close
+            // handler can tell our own SIGTERM/SIGKILL apart from a crash signal.
+            let killedByTimeout = false;
 
             // Add timeout to kill hanging whisper process
             timeoutId = setTimeout(() => {
                 logger.debug('⚠️ WHISPER: Process timeout, killing...');
+                killedByTimeout = true;
                 whisperProcess.kill('SIGTERM');
                 setTimeout(() => {
                     if (!whisperProcess.killed) {
@@ -79,10 +83,40 @@ class WhisperRunner {
                 stderr += data.toString();
             });
 
-            whisperProcess.on('close', (code) => {
+            whisperProcess.on('close', (code, signal) => {
                 clearTimeout(timeoutId);
 
-                if (code === 0 || code === null) {
+                // Our own watchdog kill (SIGTERM, then SIGKILL) — expected, treat
+                // as an empty (timed-out) transcription, not a crash.
+                if (killedByTimeout) {
+                    logger.debug('⚠️ WHISPER: Process timed out');
+                    resolve('');
+                    return;
+                }
+
+                // Terminated by a signal we did NOT send: the binary crashed
+                // (SIGILL = illegal instruction; SIGSEGV/SIGABRT/SIGBUS = native
+                // fault). The old code folded this into the `code === null` success
+                // path and silently returned '' — so an instruction-set mismatch
+                // (e.g. an AVX-512 binary on an AVX2-only host) looked like endless
+                // silence with no error, and every transcript came back 0 words.
+                // Surface it loudly and reject so the failure is visible.
+                if (signal) {
+                    logger.error(`❌ WHISPER: binary terminated by signal ${signal} (the whisper.cpp subprocess crashed)`);
+                    if (signal === 'SIGILL') {
+                        logger.error('   SIGILL = illegal instruction: the whisper.cpp binary was almost'
+                            + ' certainly built for a CPU feature this host lacks (commonly AVX-512).'
+                            + ' Rebuild it AVX2-only — see scripts/setup/setup-whisper.js / Dockerfile'
+                            + ' (-DGGML_AVX512=OFF).');
+                    }
+                    if (stderr.trim()) {
+                        logger.error(`   stderr: ${stderr.trim()}`);
+                    }
+                    reject(new Error(`Whisper terminated by signal ${signal}`));
+                    return;
+                }
+
+                if (code === 0) {
                     // Read the output text file
                     const txtPath = audioPath + '.txt';
                     if (fs.existsSync(txtPath)) {
@@ -105,9 +139,6 @@ class WhisperRunner {
                         logger.debug('⚠️ WHISPER: No transcription output');
                         resolve('');
                     }
-                } else if (code === -15 || code === 143) { // SIGTERM
-                    logger.debug('⚠️ WHISPER: Process timed out');
-                    resolve(''); // Return empty string on timeout
                 } else {
                     logger.error(`❌ WHISPER: Process exited with code ${code}`);
                     logger.error(`   stderr: ${stderr}`);
