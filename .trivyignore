@@ -2,20 +2,5 @@
 # Picked up automatically by `trivy image` (runs from the repo root in CI).
 # Rule: every entry needs a rationale + a follow-up plan. Re-check on each bump.
 #
-# ---------------------------------------------------------------------------
-# node-tar 6.2.1 -> 7.x : MAJOR bump of a BUILD-TIME-ONLY transitive dep.
-#   Dependents in this tree: node-gyp, cacache, sqlite3 (native-build tooling).
-#   The CVEs are arbitrary file write / overwrite / path-traversal during tar
-#   EXTRACTION. The app never extracts untrusted archives at runtime; these
-#   tools only unpack trusted npm-registry tarballs at build time. The only
-#   fixes are in tar 7.x — forcing it (override) risks breaking native
-#   compilation in the Docker builder, which can't be verified outside CI.
-#   DEFERRED to a dedicated, tested follow-up (bump tar -> 7 + sqlite3/node-gyp
-#   as needed; verify the image builds and the server + chat boot). Until then
-#   these are accepted build-time risk, not runtime-reachable.
-CVE-2026-23745
-CVE-2026-23950
-CVE-2026-24842
-CVE-2026-26960
-CVE-2026-29786
-CVE-2026-31802
+# (currently empty — node-tar 6 -> 7 is now fixed directly via the root
+#  package.json "tar": "7.5.11" override, so its CVEs no longer need ignoring.)
