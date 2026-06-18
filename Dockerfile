@@ -42,14 +42,20 @@ RUN cd chat-service && npm ci --omit=dev --no-audit --no-fund
 # so the copied `main` would dynamically link libwhisper.so.1 / libggml*.so — which
 # aren't in the runtime image (-> "libwhisper.so.1: cannot open shared object file",
 # exit 127, transcription/AI-bots dead). Static = self-contained binary (only libgomp1).
-# AVX-512 disabled: CI builders have AVX-512 but the production VPS is AVX2-only; the
-# mismatch produces SIGILL at runtime (whisper loads, starts processing, then crashes).
-# Disabling -DGGML_AVX512* keeps the binary AVX2-compatible on any x86-64 with AVX2.
+# AVX-512 disabled: CI builders have AVX-512 but the production VPS is AVX2-only
+# (AMD EPYC-Milan); the mismatch produces SIGILL at runtime (whisper loads, starts
+# processing, then crashes — every transcript comes back 0 words, AI bots dead).
+# CRITICAL: -DGGML_NATIVE=OFF is the actual fix. ggml defaults GGML_NATIVE=ON, which
+# adds -march=native and bakes in whatever the BUILD host advertises — so on an
+# AVX-512 CI runner the binary gets AVX-512 *regardless* of -DGGML_AVX512=OFF (the
+# native arch flag wins). Turning NATIVE off and pinning the feature set explicitly
+# (AVX/AVX2/FMA/F16C on, AVX-512 off) yields a portable binary that runs on any
+# x86-64 with AVX2 no matter where it's built. (-DGGML_AVX512=OFF alone is NOT enough.)
 ARG WHISPER_CPP_SHA=8a9ad7844d6e2a10cddf4b92de4089d7ac2b14a9
 RUN git -c advice.detachedHead=false clone https://github.com/ggerganov/whisper.cpp /tmp/wcpp \
     && git -C /tmp/wcpp checkout -q "${WHISPER_CPP_SHA}" \
     && test "$(git -C /tmp/wcpp rev-parse HEAD)" = "${WHISPER_CPP_SHA}" \
-    && cmake -S /tmp/wcpp -B /tmp/wcpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_AVX512=OFF -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF \
+    && cmake -S /tmp/wcpp -B /tmp/wcpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_AVX512=OFF -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF \
     && cmake --build /tmp/wcpp/build -j --target whisper-cli \
     && mkdir -p /app/whisper/whisper.cpp \
     && cp /tmp/wcpp/build/bin/whisper-cli /app/whisper/whisper.cpp/main \
