@@ -98,24 +98,27 @@ async function setupWhisper() {
         // Build whisper.cpp.
         //
         // This MUST mirror the Dockerfile builder stage, for two reasons:
-        //   1. AVX-512 OFF — the legacy `make` build (and cmake's default
-        //      GGML_NATIVE) bakes in whatever instruction sets the BUILD host
-        //      advertises. A binary built on an AVX-512 machine then SIGILLs
-        //      ("Illegal instruction") the moment it starts inference on an
-        //      AVX2-only host (e.g. AMD EPYC-Milan). Disabling -DGGML_AVX512*
-        //      keeps the binary runnable on any x86-64 with AVX2.
+        //   1. NATIVE OFF + explicit AVX2 feature set — ggml defaults
+        //      GGML_NATIVE=ON, which adds -march=native and bakes in whatever
+        //      the BUILD host advertises. Built on an AVX-512 machine (e.g. a CI
+        //      runner) the binary then SIGILLs ("Illegal instruction") the moment
+        //      it starts inference on an AVX2-only host (e.g. AMD EPYC-Milan).
+        //      -DGGML_AVX512=OFF alone is NOT enough — the native arch flag wins.
+        //      Turn NATIVE off and pin the features (AVX/AVX2/FMA/F16C on, AVX-512
+        //      off) for a portable binary that runs on any x86-64 with AVX2.
         //   2. STATIC (-DBUILD_SHARED_LIBS=OFF) — newer whisper.cpp defaults to
         //      shared libs, so `main` would dynamically link libwhisper.so.1 /
         //      libggml*.so. A self-contained binary avoids "cannot open shared
         //      object file" at runtime.
         // The CLI lives at whisper.cpp/main (per WhisperRunner.js); newer
         // whisper.cpp builds the `whisper-cli` target, which we copy to `main`.
-        console.log('🔨 Building whisper.cpp (static, AVX2-only)...');
+        console.log('🔨 Building whisper.cpp (static, portable AVX2)...');
         try {
             const buildDir = path.join(whisperRepoPath, 'build');
             await execAsync(
                 `cmake -S ${whisperRepoPath} -B ${buildDir} -DCMAKE_BUILD_TYPE=Release ` +
                 '-DWHISPER_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF ' +
+                '-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON ' +
                 '-DGGML_AVX512=OFF -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF'
             );
             await execAsync(`cmake --build ${buildDir} -j --target whisper-cli`);
