@@ -164,6 +164,10 @@
     max-width: 100% !important;
     aspect-ratio: 16 / 9 !important;
     height: auto !important;
+    /* Reset the 50vh floor from the generic mobile block so aspect-ratio
+       governs the height — otherwise the box resolves to ~width x 50vh
+       (near-square) and the 16:9 stream letterboxes into a small strip. */
+    min-height: auto !important;
     max-height: calc(100dvh - 176px) !important;
     /* No margins - directly below header */
     margin: 0 !important;
@@ -177,6 +181,8 @@
     /* Preserve aspect ratio */
     width: 100% !important;
     height: 100% !important;
+    /* Reset the 50vh floor from the generic mobile block (see above). */
+    min-height: auto !important;
     object-fit: contain !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -197,7 +203,9 @@
     border-radius: 0 !important;
     background: #000 !important;
     overflow: hidden !important;
-    /* iOS fixes */
+    /* GPU compositing hint for the CONTAINER (non-iOS). Safe on iOS: object-fit
+       lives on the child <video>, whose own promotion is stripped by the iOS
+       @supports guard at the bottom of this file. */
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
   }
@@ -210,8 +218,27 @@
     object-fit: contain !important;
     margin: 0 !important;
     padding: 0 !important;
-    /* iOS video rendering fixes */
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
+  }
+}
+
+/*
+ * iOS Safari: never promote the stream <video> to its own WebKit compositing
+ * layer. A `translateZ()`/`translate3d()` hint or `backface-visibility: hidden`
+ * makes Safari fit `object-fit: contain` against the layer's backing store
+ * instead of the element box, painting the frame in a wrong-sized, offset,
+ * cropped rectangle (WebKit bug 229792 / Apple FB 709099). Those hints help
+ * Chrome mobile but are unnecessary — and actively harmful — on iOS, so strip
+ * them here. `-webkit-touch-callout` is a reliable iOS-WebKit-only feature
+ * query. No `!important`: a real item-effect transform set inline still wins,
+ * so mirror/flip/rotate effects continue to apply (the JS render path already
+ * neutralizes the baseline hint on iOS; this is defense-in-depth for any path
+ * that renders `.webrtc-video` without the inline override).
+ */
+@supports (-webkit-touch-callout: none) {
+  .webrtc-video {
+    -webkit-transform: none;
+    transform: none;
+    -webkit-backface-visibility: visible;
+    backface-visibility: visible;
   }
 }

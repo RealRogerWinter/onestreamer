@@ -28,6 +28,27 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   // grayscale, …). Driven by the server's `visual-effect-applied` broadcast, so
   // it works for both webcam and URL-relay streams.
   const visualEffectStyle = useStreamVisualEffects(socket);
+
+  // iOS Safari mis-fits `object-fit: contain` on a <video> that has been promoted
+  // to its own WebKit compositing layer: a `translateZ(0)`/`translate3d()` hint or
+  // `backface-visibility: hidden` makes Safari fit the frame against the layer's
+  // backing store rather than the element box, so the picture paints in a wrong-
+  // sized, offset, cropped rectangle (WebKit bug 229792 / Apple FB 709099). Those
+  // hints are a Chrome-mobile optimization and are unnecessary — and actively
+  // harmful — on iOS, so on iOS we drop the baseline hint and only emit a
+  // transform when an actual geometry item-effect (mirror/flip/rotate) needs one.
+  // Other platforms keep the `translateZ(0)` hint. (`transform: 'none'`/`visible`
+  // backface, set inline, override the non-`!important` CSS hints by specificity.)
+  // NOTE: an active geometry item-effect (mirror/flip/rotate) is itself a non-none
+  // transform, which necessarily re-promotes the layer on iOS, so the crop can
+  // transiently return for that effect's duration. We accept this: the transform
+  // must reach the element, and the idle path — the common case and the reported
+  // bug — is now correct.
+  const videoIsIOS = isIOS();
+  const videoTransform = videoIsIOS
+    ? (visualEffectStyle.transform ?? 'none')
+    : `translateZ(0)${visualEffectStyle.transform ? ` ${visualEffectStyle.transform}` : ''}`;
+  const videoBackfaceVisibility: 'visible' | 'hidden' = videoIsIOS ? 'visible' : 'hidden';
   const webrtcClientRef = useRef<WebRTCClientAdapter | null>(null);
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInitializingRef = useRef(false);
@@ -2363,13 +2384,13 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
           // Viewer-side visual-filter item effects (upside-down, grayscale, …).
           filter: visualEffectStyle.filter,
           transition: 'filter 0.4s ease, transform 0.4s ease',
-          // Mobile Chrome specific fixes. The effect transform is composed onto
-          // the `translateZ(0)` hardware-acceleration hint so neither clobbers
-          // the other.
-          WebkitTransform: `translateZ(0)${visualEffectStyle.transform ? ` ${visualEffectStyle.transform}` : ''}`,
-          transform: `translateZ(0)${visualEffectStyle.transform ? ` ${visualEffectStyle.transform}` : ''}`,
-          WebkitBackfaceVisibility: 'hidden',
-          backfaceVisibility: 'hidden'
+          // Hardware-acceleration hint for non-iOS (Chrome mobile). On iOS this
+          // resolves to the bare item-effect transform (or 'none'), avoiding the
+          // WebKit composited object-fit cropping bug — see videoTransform above.
+          WebkitTransform: videoTransform,
+          transform: videoTransform,
+          WebkitBackfaceVisibility: videoBackfaceVisibility,
+          backfaceVisibility: videoBackfaceVisibility
         }}
       />
 

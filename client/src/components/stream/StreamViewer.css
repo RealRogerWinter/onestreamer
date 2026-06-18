@@ -350,6 +350,9 @@
     max-width: 100% !important;
     aspect-ratio: 16 / 9 !important;
     height: auto !important;
+    /* Reset the 50vh floor from the generic mobile block so aspect-ratio
+       governs the height instead of forcing a near-square box. */
+    min-height: auto !important;
     max-height: calc(100dvh - 176px) !important;
     /* No margins - directly below header */
     margin: 0 !important;
@@ -416,7 +419,9 @@
     background: #000 !important;
     overflow: hidden !important;
     box-shadow: none !important;
-    /* iOS fixes */
+    /* GPU compositing hint for the CONTAINER (non-iOS). object-fit lives on the
+       child <video>; the viewer video's own promotion is stripped on iOS by the
+       @supports guard in WebRTCViewer.css. */
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
   }

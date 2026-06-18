@@ -660,6 +660,9 @@ html, body {
     max-width: 100% !important;
     aspect-ratio: 16 / 9;
     height: auto !important;
+    /* Reset the 50vh floor from the generic mobile block so aspect-ratio
+       governs the height instead of forcing a near-square box. */
+    min-height: auto !important;
     max-height: calc(100dvh - 176px) !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -782,6 +785,10 @@ html, body {
     bottom: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
+    /* Reset the 50vh floor from the generic mobile block so it does not fight
+       the absolute top/bottom anchoring (matches the sibling .stream-viewer
+       reset below). */
+    min-height: auto !important;
     overflow: hidden !important;
     display: flex !important;
     align-items: center !important;
