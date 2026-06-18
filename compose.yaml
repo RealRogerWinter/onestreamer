@@ -40,7 +40,8 @@ services:
       CHAT_SERVICE_URL: https://127.0.0.1:8444
       MAIN_SERVER_URL: https://127.0.0.1:8443
       VIEWBOT_SERVER_URL: https://127.0.0.1:8443
-      VIEWBOT_STREAM_COPY: "true"
+      VIEWBOT_STREAM_COPY: "false"                          # relay re-encodes to a constant 1280x720 (ffmpegArgs.js scale/pad path). With copy (true), Twitch adaptive-rendition resolution flips (1080p<->720p) passed straight through and the LiveKit ingress could not rebuild its video output bin on the change -> "could not add bin: video output bin" -> "timed out publishing track" -> session torn down -> ~57% of relay streams crash-looped within ~30s.
+      LIVEKIT_INGRESS_BYPASS_TRANSCODING: "true"            # ingress forwards the now-constant-resolution relay stream instead of transcoding it again (keeps the single transcode in the relay; ~CPU-neutral vs old copy+ingress-transcode, avoids a double encode on the 4-core host). NOTE: bypass = single layer / no simulcast — confirm viewers see video after deploy.
       CLIENT_BUILD_INDEX_PATH: /var/www/html/index.html   # SPA index for /clips/:id SSR + catch-all (client isn't in the image)
       EGRESS_RECORDINGS_DIR: /app/egress-recordings        # recording services hardcode-default /root/onestreamer/egress-recordings; point them at the mount
       ENFORCE_STREAM_CONTROL_AUTH: "true"                  # gate WRITES on /api/{random,url}-stream (rotate/kill/ingest); GET reads stay public. Needs INTERNAL_API_SECRET (app.env, shared with chat-service).
