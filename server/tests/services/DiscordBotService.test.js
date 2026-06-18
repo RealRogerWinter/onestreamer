@@ -50,6 +50,32 @@ describe('DiscordBotService — enablement', () => {
     expect(svc.isEnabled()).toBe(true);
   });
 
+  test('default re-announce cooldown is 60s (collapses reconnect flaps, not real go-lives)', () => {
+    const saved = process.env.DISCORD_ANNOUNCE_COOLDOWN_MS;
+    delete process.env.DISCORD_ANNOUNCE_COOLDOWN_MS;
+    try {
+      expect(new DiscordBotService(ENABLED_OPTS).cooldownMs).toBe(60_000);
+    } finally {
+      if (saved !== undefined) process.env.DISCORD_ANNOUNCE_COOLDOWN_MS = saved;
+    }
+  });
+
+  test('DISCORD_ANNOUNCE_COOLDOWN_MS overrides the default (and 0 disables suppression)', () => {
+    const saved = process.env.DISCORD_ANNOUNCE_COOLDOWN_MS;
+    try {
+      process.env.DISCORD_ANNOUNCE_COOLDOWN_MS = '15000';
+      expect(new DiscordBotService(ENABLED_OPTS).cooldownMs).toBe(15000);
+      process.env.DISCORD_ANNOUNCE_COOLDOWN_MS = '0';
+      expect(new DiscordBotService(ENABLED_OPTS).cooldownMs).toBe(0);
+      // explicit opt still wins over env
+      process.env.DISCORD_ANNOUNCE_COOLDOWN_MS = '15000';
+      expect(new DiscordBotService({ ...ENABLED_OPTS, cooldownMs: 999 }).cooldownMs).toBe(999);
+    } finally {
+      if (saved !== undefined) process.env.DISCORD_ANNOUNCE_COOLDOWN_MS = saved;
+      else delete process.env.DISCORD_ANNOUNCE_COOLDOWN_MS;
+    }
+  });
+
   test('disabled service is an inert no-op: announce returns null, never sends', async () => {
     const client = makeFakeClient();
     const svc = new DiscordBotService({ channelId: '123', client }); // no token
