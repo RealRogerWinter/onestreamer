@@ -15,7 +15,8 @@ import {
   StreamIdlePreview,
 } from './webrtcStreamer/StreamStatusOverlays';
 import { ViewModeIndicator } from './webrtcStreamer/ViewModeIndicator';
-import { webrtcVideoStyle } from './webrtcStreamer/videoStyles';
+import { getWebrtcVideoStyle } from './webrtcStreamer/videoStyles';
+import { isIOS } from '../../utils/browserDetection';
 import './WebRTCViewer.css';
 
 interface WebRTCStreamerProps {
@@ -1077,7 +1078,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         webkit-playsinline="true"
         crossOrigin="anonymous"
         preload="auto"
-        style={webrtcVideoStyle}
+        style={getWebrtcVideoStyle(isIOS())}
       />
 
       {/* View Mode Indicator */}
