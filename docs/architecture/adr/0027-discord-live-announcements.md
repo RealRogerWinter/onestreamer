@@ -67,6 +67,13 @@ integration conventions:
 
 ## Consequences
 
+- **Announcement fires at takeover-approval, not at first video frame.** The
+  chokepoint is the only non-dead one and sits before the WebRTC producers are
+  verified (`stream-ready`), so a stream that is approved but never successfully
+  publishes still posts a "LIVE" card. This matches the sibling in-app StreamBot
+  chat announcement (same timing), and the per-streamer cooldown bounds the
+  noise; tightening to first-frame would require reviving a real `stream-ready`
+  chokepoint, out of scope here.
 - Adds `discord.js` (+ its `@discordjs/*` subtree) as a runtime dependency.
 - The card is intentionally minimal (name, registered/guest, optional title,
   watch link) because richer streamer profile data isn't stored. If avatars/bios

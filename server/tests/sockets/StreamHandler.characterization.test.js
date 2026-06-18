@@ -417,6 +417,22 @@ describe('sockets/StreamHandler characterization', () => {
       expect(deps.discordBotService.announceStreamLive).not.toHaveBeenCalled();
     });
 
+    test('a url-stream- socket id does NOT post a Discord announcement (prefix guard)', async () => {
+      const { deps, handlers } = register({ socketId: 'url-stream-12345' });
+
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      expect(deps.discordBotService.announceStreamLive).not.toHaveBeenCalled();
+    });
+
+    test('a viewbot- prefixed socket id does NOT post a Discord announcement (prefix guard)', async () => {
+      const { deps, handlers } = register({ socketId: 'viewbot-987' });
+
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      expect(deps.discordBotService.announceStreamLive).not.toHaveBeenCalled();
+    });
+
     test('viewbot start: emits stream-ready (io-wide), tracks socket id, links synthetic negative userId, no recordTakeover', async () => {
       const { io, deps, handlers } = register();
 

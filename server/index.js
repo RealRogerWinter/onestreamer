@@ -1214,8 +1214,8 @@ async function startServer() {
 
   // Log the Discord live-announcement bot into the gateway (no-op + immediate
   // return when graceful-disabled). start() never throws — a login failure just
-  // disables announcements for this run.
-  discordBotService.start();
+  // disables announcements for this run. Intentionally not awaited (void).
+  void discordBotService.start();
   
   // Initialize the WebRTC backend (LiveKit, ADR-0024).
   try {

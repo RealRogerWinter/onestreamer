@@ -80,9 +80,23 @@ describe('DiscordBotService — start()', () => {
     const client = makeFakeClient();
     const svc = new DiscordBotService({ ...ENABLED_OPTS, client });
     await Promise.all([svc.start(), svc.start(), svc.start()]);
-    // The error-handler attach happens once per setup run; one attach proves
-    // the body executed a single time despite three start() calls.
-    expect(client.on).toHaveBeenCalledTimes(1);
+    // The 'error' handler attaches exactly once per setup run; a single attach
+    // proves the body executed once despite three start() calls (independent of
+    // how many distinct listeners each run wires up).
+    const errorAttaches = client.on.mock.calls.filter((c) => c[0] === 'error').length;
+    expect(errorAttaches).toBe(1);
+  });
+
+  test('flips ready off when the gateway session is invalidated', async () => {
+    const client = makeFakeClient();
+    const handlers = {};
+    client.on = jest.fn((evt, cb) => { handlers[evt] = cb; });
+    const svc = new DiscordBotService({ ...ENABLED_OPTS, client });
+    await svc.start();
+    expect(svc.ready).toBe(true);
+    expect(typeof handlers.invalidated).toBe('function');
+    handlers.invalidated();
+    expect(svc.ready).toBe(false);
   });
 });
 
@@ -98,6 +112,14 @@ describe('DiscordBotService — announceStreamLive()', () => {
     expect(client.sent).toHaveLength(1);
     expect(client.sent[0]).toHaveProperty('embeds');
     expect(client.sent[0].embeds[0].title).toContain('alice');
+  });
+
+  test('pins allowedMentions to nothing so the card can never ping', async () => {
+    const client = makeFakeClient();
+    const svc = new DiscordBotService({ ...ENABLED_OPTS, client });
+    await svc.start();
+    await svc.announceStreamLive({ displayName: 'alice', userId: 7 });
+    expect(client.sent[0].allowedMentions).toEqual({ parse: [] });
   });
 
   test('ensures startup on first use even if start() was not called explicitly', async () => {
@@ -199,6 +221,39 @@ describe('DiscordBotService — dedupe / cooldown', () => {
     expect(await svc.announceStreamLive({ displayName: 'alice', userId: 5 })).toBe(true);
     expect(client.sent).toHaveLength(2);
   });
+
+  test('guests dedupe by stable dedupeKey, not by their (socket-unique) display name', async () => {
+    const client = makeFakeClient();
+    const svc = new DiscordBotService({ ...ENABLED_OPTS, client, cooldownMs: 60_000 });
+    await svc.start();
+
+    // Same guest (same IP), different socket-derived display names → suppressed.
+    expect(await svc.announceStreamLive({ displayName: 'User-aaaa1111', userId: null, dedupeKey: '1.2.3.4' })).toBe(true);
+    expect(await svc.announceStreamLive({ displayName: 'User-bbbb2222', userId: null, dedupeKey: '1.2.3.4' })).toBeNull();
+    expect(client.sent).toHaveLength(1);
+  });
+
+  test('different guest dedupeKeys announce independently', async () => {
+    const client = makeFakeClient();
+    const svc = new DiscordBotService({ ...ENABLED_OPTS, client, cooldownMs: 60_000 });
+    await svc.start();
+
+    expect(await svc.announceStreamLive({ displayName: 'guest', userId: null, dedupeKey: '1.1.1.1' })).toBe(true);
+    expect(await svc.announceStreamLive({ displayName: 'guest', userId: null, dedupeKey: '2.2.2.2' })).toBe(true);
+    expect(client.sent).toHaveLength(2);
+  });
+
+  test('prunes expired dedupe entries so the map stays bounded', async () => {
+    const client = makeFakeClient();
+    const svc = new DiscordBotService({ ...ENABLED_OPTS, client, cooldownMs: 0 });
+    await svc.start();
+
+    await svc.announceStreamLive({ displayName: 'a', userId: 1 });
+    await svc.announceStreamLive({ displayName: 'b', userId: 2 });
+    await svc.announceStreamLive({ displayName: 'c', userId: 3 });
+    // With a 0ms cooldown, every prior entry is expired and swept on each insert.
+    expect(svc._lastAnnounced.size).toBeLessThanOrEqual(1);
+  });
 });
 
 describe('DiscordBotService — buildEmbed()', () => {
@@ -237,6 +292,51 @@ describe('DiscordBotService — buildEmbed()', () => {
   test('falls back to a generic name when displayName is absent', () => {
     const svc = new DiscordBotService(ENABLED_OPTS);
     expect(svc.buildEmbed({}).title).toContain('A streamer');
+  });
+
+  test('only userId > 0 counts as a registered account (negative/zero = guest)', () => {
+    const svc = new DiscordBotService(ENABLED_OPTS);
+    expect(JSON.stringify(svc.buildEmbed({ displayName: 'x', userId: -7 }).fields)).toContain('Guest');
+    expect(JSON.stringify(svc.buildEmbed({ displayName: 'x', userId: 0 }).fields)).toContain('Guest');
+    expect(JSON.stringify(svc.buildEmbed({ displayName: 'x', userId: 3 }).fields)).toContain('Registered');
+  });
+
+  test('escapes Discord markdown so a crafted name cannot inject a disguised link', () => {
+    const svc = new DiscordBotService(ENABLED_OPTS);
+    const embed = svc.buildEmbed({ displayName: '[FREE NITRO](https://evil.example)', userId: null });
+    // The raw masked-link syntax must not survive into the title/description.
+    expect(embed.title).not.toContain('](https://evil');
+    expect(embed.description).not.toContain('](https://evil');
+    expect(embed.title).toContain('\\['); // bracket was escaped
+  });
+
+  test('escapes markdown in the stream title field', () => {
+    const svc = new DiscordBotService(ENABLED_OPTS);
+    const embed = svc.buildEmbed({ displayName: 'a', title: '**pwn** [x](http://e)' });
+    const titleField = embed.fields.find((f) => f.name.includes('Stream'));
+    expect(titleField.value).not.toContain('](http://e');
+  });
+
+  test('maps the opaque socket-derived guest name to a friendly label', () => {
+    const svc = new DiscordBotService(ENABLED_OPTS);
+    const embed = svc.buildEmbed({ displayName: 'User-ab12cd34', userId: null });
+    expect(embed.title).toContain('A guest');
+    expect(embed.title).not.toContain('User-ab12cd34');
+  });
+
+  test('omits the watch link/url when no site URL is configured', () => {
+    const saved = { p: process.env.PUBLIC_SITE_URL, c: process.env.CLIENT_URL };
+    delete process.env.PUBLIC_SITE_URL;
+    delete process.env.CLIENT_URL;
+    try {
+      const svc = new DiscordBotService({ token: 't', channelId: 'c' }); // no site URL anywhere
+      const embed = svc.buildEmbed({ displayName: 'alice', userId: 1 });
+      expect(embed.url).toBeUndefined();
+      expect(JSON.stringify(embed.fields)).not.toContain('Tune in now');
+    } finally {
+      if (saved.p !== undefined) process.env.PUBLIC_SITE_URL = saved.p;
+      if (saved.c !== undefined) process.env.CLIENT_URL = saved.c;
+    }
   });
 });
 

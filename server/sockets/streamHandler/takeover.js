@@ -345,10 +345,14 @@ module.exports = function registerTakeover(io, socket, deps) {
         try {
           const announceUserId = sessionService.getUserIdBySocketId(socket.id);
           const announceDisplayName = await getStreamerDisplayName(socket.id);
+          const isAuthed = announceUserId && announceUserId > 0;
           // Not awaited: announceStreamLive is fire-and-forget and never throws.
           discordBotService.announceStreamLive({
             displayName: announceDisplayName,
-            userId: announceUserId && announceUserId > 0 ? announceUserId : null,
+            userId: isAuthed ? announceUserId : null,
+            // Stable per-guest dedupe identity (the anon display name can be
+            // socket-unique, which would defeat the re-announce cooldown).
+            dedupeKey: isAuthed ? null : IPBanService.getIPFromSocket(socket),
             isTakeover: !!currentStreamer,
             title: typeof data.title === 'string' ? data.title : null,
           });
