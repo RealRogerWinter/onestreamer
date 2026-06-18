@@ -43,6 +43,7 @@ jest.mock('../../services/GameMechanicsService', () => class { constructor(...ar
 jest.mock('../../services/BuffDebuffService', () => class { constructor(...args) { this._args = args; this._stubName = 'BuffDebuffService'; } });
 jest.mock('../../services/CanvasFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'CanvasFxService'; } });
 jest.mock('../../services/SoundFxService', () => class { constructor(...args) { this._args = args; this._stubName = 'SoundFxService'; } });
+jest.mock('../../services/DiscordBotService', () => class { constructor(...args) { this._args = args; this._stubName = 'DiscordBotService'; } async stop() {} });
 jest.mock('../../services/StreamNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'StreamNotifier'; } });
 jest.mock('../../services/ViewerCountNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'ViewerCountNotifier'; } });
 jest.mock('../../services/BuffNotifier', () => class { constructor(...args) { this._args = args; this._stubName = 'BuffNotifier'; } });
@@ -174,6 +175,7 @@ const GameMechanicsService = require('../../services/GameMechanicsService');
 const BuffDebuffService = require('../../services/BuffDebuffService');
 const CanvasFxService = require('../../services/CanvasFxService');
 const SoundFxService = require('../../services/SoundFxService');
+const DiscordBotService = require('../../services/DiscordBotService');
 const StreamNotifier = require('../../services/StreamNotifier');
 const ViewerCountNotifier = require('../../services/ViewerCountNotifier');
 const BuffNotifier = require('../../services/BuffNotifier');
@@ -223,7 +225,7 @@ function buildDeps(overrides = {}) {
 }
 
 describe('server/bootstrap/services factory', () => {
-  test('returns all 40 expected keys (no more, no less)', () => {
+  test('returns all 38 expected keys (no more, no less)', () => {
     const { services } = createServices(buildDeps());
 
     const expectedKeys = [
@@ -253,6 +255,8 @@ describe('server/bootstrap/services factory', () => {
       'buffDebuffService',
       'canvasFxService',
       'soundFxService',
+      // Optional Discord live-announcement bot
+      'discordBotService',
       // PR-I2 additions
       'clipStorageService',
       'clipProcessorService',
@@ -279,7 +283,7 @@ describe('server/bootstrap/services factory', () => {
     ];
 
     expect(Object.keys(services).sort()).toEqual(expectedKeys.slice().sort());
-    expect(expectedKeys).toHaveLength(37);
+    expect(expectedKeys).toHaveLength(38);
   });
 
   test('each returned value is an instance of the matching service class', () => {
@@ -302,6 +306,7 @@ describe('server/bootstrap/services factory', () => {
     expect(s.buffDebuffService).toBeInstanceOf(BuffDebuffService);
     expect(s.canvasFxService).toBeInstanceOf(CanvasFxService);
     expect(s.soundFxService).toBeInstanceOf(SoundFxService);
+    expect(s.discordBotService).toBeInstanceOf(DiscordBotService);
     expect(s.streamNotifier).toBeInstanceOf(StreamNotifier);
     expect(s.viewerCountNotifier).toBeInstanceOf(ViewerCountNotifier);
     expect(s.buffNotifier).toBeInstanceOf(BuffNotifier);

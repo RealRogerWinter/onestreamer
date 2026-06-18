@@ -131,6 +131,12 @@ function makeDeps(overrides = {}) {
   const viewbotService = {
     isViewbotStream: jest.fn(() => false),
   };
+  // Optional Discord live-announcement bot. announceStreamLive is fire-and-forget
+  // (never throws / returns a promise); the guard in takeover.js calls it only
+  // for real human streamers.
+  const discordBotService = {
+    announceStreamLive: jest.fn(() => Promise.resolve(true)),
+  };
   const deps = {
     streamService,
     sessionService,
@@ -158,6 +164,7 @@ function makeDeps(overrides = {}) {
     streamNotifier: { streamEnded: jest.fn() },
     viewerCountNotifier: { broadcast: jest.fn() },
     buffNotifier: { streamerBuffsUpdate: jest.fn() },
+    discordBotService,
     // expose the lazy-resolved instances for assertions
     _viewbotService: viewbotService,
   };
@@ -375,6 +382,55 @@ describe('sockets/StreamHandler characterization', () => {
 
       // mediasoup cleanup for the previous streamer
       expect(deps.webrtcService.cleanup).toHaveBeenCalledWith('real-streamer-2');
+    });
+
+    // -----------------------------------------------------------------------
+    // Discord live-announcement guard (real human streamers ONLY)
+    // -----------------------------------------------------------------------
+    test('real authenticated go-live posts a Discord announcement with the user id', async () => {
+      const { deps, handlers } = register();
+      deps.sessionService.getUserIdBySocketId.mockReturnValue(42);
+
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      expect(deps.discordBotService.announceStreamLive).toHaveBeenCalledTimes(1);
+      expect(deps.discordBotService.announceStreamLive.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ displayName: 'Display Name', userId: 42, isTakeover: false })
+      );
+    });
+
+    test('anonymous human go-live posts a Discord announcement with userId null', async () => {
+      const { deps, handlers } = register();
+      // default getUserIdBySocketId() → null (guest)
+
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      expect(deps.discordBotService.announceStreamLive).toHaveBeenCalledTimes(1);
+      expect(deps.discordBotService.announceStreamLive.mock.calls[0][0].userId).toBeNull();
+    });
+
+    test('viewbot go-live does NOT post a Discord announcement', async () => {
+      const { deps, handlers } = register();
+
+      await handlers['request-to-stream']({ isViewBot: true, streamType: 'viewbot' });
+
+      expect(deps.discordBotService.announceStreamLive).not.toHaveBeenCalled();
+    });
+
+    test('a url-stream- socket id does NOT post a Discord announcement (prefix guard)', async () => {
+      const { deps, handlers } = register({ socketId: 'url-stream-12345' });
+
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      expect(deps.discordBotService.announceStreamLive).not.toHaveBeenCalled();
+    });
+
+    test('a viewbot- prefixed socket id does NOT post a Discord announcement (prefix guard)', async () => {
+      const { deps, handlers } = register({ socketId: 'viewbot-987' });
+
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      expect(deps.discordBotService.announceStreamLive).not.toHaveBeenCalled();
     });
 
     test('viewbot start: emits stream-ready (io-wide), tracks socket id, links synthetic negative userId, no recordTakeover', async () => {

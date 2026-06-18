@@ -81,6 +81,9 @@ function registerSocketHandlers(io, deps) {
         viewerCountNotifier,
         buffNotifier,
 
+        // Per-handler deps — optional Discord live-announcement bot
+        discordBotService,
+
         // Per-handler deps — utility imports
         runAsync,
         database,
@@ -179,6 +182,7 @@ function registerSocketHandlers(io, deps) {
             streamNotifier,
             viewerCountNotifier,
             buffNotifier,
+            discordBotService,
         });
 
         registerBuffHandler(io, socket, {
