@@ -97,6 +97,8 @@ const GameMechanicsService = require('../services/GameMechanicsService');
 const BuffDebuffService = require('../services/BuffDebuffService');
 const CanvasFxService = require('../services/CanvasFxService');
 const SoundFxService = require('../services/SoundFxService');
+// Optional Discord live-announcement bot (no-op when its env vars are unset).
+const DiscordBotService = require('../services/DiscordBotService');
 const StreamNotifier = require('../services/StreamNotifier');
 const ViewerCountNotifier = require('../services/ViewerCountNotifier');
 const BuffNotifier = require('../services/BuffNotifier');
@@ -250,6 +252,18 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
   const buffDebuffService = new BuffDebuffService(io, streamService, timeTrackingService, sessionService, { buffNotifier });
   const canvasFxService = new CanvasFxService(io, itemService, buffDebuffService);
   const soundFxService = new SoundFxService();
+
+  // Optional Discord live-announcement bot. Graceful-disabled when
+  // DISCORD_BOT_TOKEN / DISCORD_ANNOUNCE_CHANNEL_ID are unset. The constructor
+  // is side-effect-free (no network) — the gateway login happens in start(),
+  // called from server/index.js' startServer(). Announces ONLY real human
+  // streamers going live; URL relays and viewbots are never announced (see the
+  // guard in server/sockets/streamHandler/takeover.js).
+  const discordBotService = new DiscordBotService({
+    token: env && env.DISCORD_BOT_TOKEN,
+    channelId: env && env.DISCORD_ANNOUNCE_CHANNEL_ID,
+    siteUrl: env && (env.PUBLIC_SITE_URL || env.CLIENT_URL),
+  });
 
   // ── PR-I2: recording cluster ────────────────────────────────────────────
   // The MediaSoup-era RecordingService / RecordingStorageService /
@@ -418,6 +432,7 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
     buffDebuffService,
     canvasFxService,
     soundFxService,
+    discordBotService,
     // PR-I2:
     clipStorageService,
     clipProcessorService,
@@ -464,6 +479,8 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
     egressFrameCaptureService,
     visionBotService,
     streamBotService,
+    // Optional Discord bot — stop() tears down the gateway connection.
+    discordBotService,
     // PR 8.3 (Phase 8): ProcessManager runs LATE in the shutdown order
     // (early in the array → late in reverse-iteration) so the per-bot
     // stop() paths on ViewBot services — which already call

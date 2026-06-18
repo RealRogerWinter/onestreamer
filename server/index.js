@@ -471,6 +471,8 @@ const {
   buffDebuffService,
   canvasFxService,
   soundFxService,
+  // Optional Discord live-announcement bot.
+  discordBotService,
   // PR-I2:
   clipStorageService,
   clipProcessorService,
@@ -1171,6 +1173,9 @@ require('./bootstrap/register-socket-handlers')(io, {
   viewerCountNotifier,
   buffNotifier,
 
+  // Optional Discord live-announcement bot (real-streamer go-live cards).
+  discordBotService,
+
   // Utility imports
   runAsync,
   database,
@@ -1206,6 +1211,11 @@ async function startServer() {
   timeTrackingService.startPeriodicCleanup();
   timeTrackingService.setSocketIO(io); // Pass Socket.IO instance to time tracking service
   logger.info('✅ TIME: Started periodic cleanup for time tracking service');
+
+  // Log the Discord live-announcement bot into the gateway (no-op + immediate
+  // return when graceful-disabled). start() never throws — a login failure just
+  // disables announcements for this run.
+  discordBotService.start();
   
   // Initialize the WebRTC backend (LiveKit, ADR-0024).
   try {

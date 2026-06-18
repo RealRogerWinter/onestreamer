@@ -38,6 +38,7 @@ module.exports = function registerTakeover(io, socket, deps) {
     streamNotifier,
     viewerCountNotifier,
     buffNotifier,
+    discordBotService,
   } = deps;
 
   socket.on('request-to-stream', async (data, callback) => {
@@ -328,6 +329,31 @@ module.exports = function registerTakeover(io, socket, deps) {
           });
         } catch (error) {
           logger.error({ err: error }, '❌ STREAM: Error sending stream announcement');
+        }
+      }
+
+      // Discord live-announcement card — REAL human streamers ONLY. Viewbots are
+      // excluded by `!isViewBot`; URL relays never reach this socket handler at
+      // all (they register via ViewBotURLService), and the prefix guards below
+      // make that invariant explicit and defensive. Fire-and-forget: the service
+      // swallows its own errors, and the try/catch ensures a Discord problem
+      // never disrupts the takeover flow.
+      if (discordBotService
+          && !isViewBot
+          && !socket.id.startsWith('url-stream-')
+          && !socket.id.startsWith('viewbot-')) {
+        try {
+          const announceUserId = sessionService.getUserIdBySocketId(socket.id);
+          const announceDisplayName = await getStreamerDisplayName(socket.id);
+          // Not awaited: announceStreamLive is fire-and-forget and never throws.
+          discordBotService.announceStreamLive({
+            displayName: announceDisplayName,
+            userId: announceUserId && announceUserId > 0 ? announceUserId : null,
+            isTakeover: !!currentStreamer,
+            title: typeof data.title === 'string' ? data.title : null,
+          });
+        } catch (error) {
+          logger.error({ err: error }, '❌ DISCORD: Error dispatching live announcement');
         }
       }
 
