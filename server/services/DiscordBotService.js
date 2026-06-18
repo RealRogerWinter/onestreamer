@@ -22,10 +22,12 @@
 
 const logger = require('../bootstrap/logger').child({ svc: 'DiscordBotService' });
 
-// Per-streamer re-announce suppression. Prevents a flood when a streamer
-// rapidly stops/re-takes the slot (or a viewer wars over takeovers): the same
-// streamer is announced at most once per window.
-const DEFAULT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+// Per-streamer re-announce suppression. Its ONLY job is to collapse a burst of
+// reconnect retries (a flaky mobile client drops and socket.io re-fires
+// request-to-stream every 1–5s) into a single announcement. It must NOT swallow
+// a genuine new go-live minutes later — keep the window short. Tunable via
+// DISCORD_ANNOUNCE_COOLDOWN_MS (ms; 0 disables suppression entirely).
+const DEFAULT_COOLDOWN_MS = 60 * 1000; // 60 seconds
 
 // Discord "danger"/red — reads as a live indicator on the card's left border.
 const LIVE_COLOR = 0xED4245;
@@ -54,6 +56,7 @@ class DiscordBotService {
    * @param {string} [opts.siteUrl]      public site URL for the "watch now" link
    *                                     (default: PUBLIC_SITE_URL || CLIENT_URL)
    * @param {number} [opts.cooldownMs]   per-streamer re-announce suppression window
+   *                                     (default: DISCORD_ANNOUNCE_COOLDOWN_MS || 60s)
    * @param {object} [opts.client]       pre-built discord.js Client (test seam; when
    *                                     provided, start() skips login())
    * @param {object} [opts.discordModule] override for `require('discord.js')` (test seam)
@@ -67,7 +70,13 @@ class DiscordBotService {
       || process.env.PUBLIC_SITE_URL
       || process.env.CLIENT_URL
       || null;
-    this.cooldownMs = opts.cooldownMs != null ? opts.cooldownMs : DEFAULT_COOLDOWN_MS;
+    // Precedence: explicit opt → env override (allows 0 = disabled) → default.
+    const envCooldown = process.env.DISCORD_ANNOUNCE_COOLDOWN_MS;
+    this.cooldownMs = opts.cooldownMs != null
+      ? opts.cooldownMs
+      : (envCooldown != null && envCooldown !== '' && !Number.isNaN(Number(envCooldown)))
+        ? Number(envCooldown)
+        : DEFAULT_COOLDOWN_MS;
 
     // Test seams.
     this._injectedClient = opts.client || null;
