@@ -141,23 +141,6 @@ class BuffRepository {
     }
 
     /**
-     * Active buffs across all users, ORDERed by applied_at DESC.
-     * Used by the "current streamer" fallback path when the session
-     * lookup fails and the service has to guess the streamer from
-     * the database alone.
-     */
-    async listActiveWithItemsOrdered() {
-        return await this.allAsync(`
-                SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data,
-                       ab.user_id
-                FROM active_buffs ab
-                JOIN items i ON ab.item_id = i.id
-                WHERE ab.is_active = 1 AND ab.remaining_seconds > 0
-                ORDER BY ab.applied_at DESC
-            `);
-    }
-
-    /**
      * Active buffs for one user, with item display columns. Service
      * uses this on every "what buffs does X have right now" lookup.
      */

@@ -59,19 +59,49 @@ interface ActiveEffect {
   timeout: ReturnType<typeof setTimeout>;
 }
 
-export function useStreamVisualEffects(socket: Socket | null): StreamVisualEffectStyle {
+/**
+ * @param socket            the viewer's socket.
+ * @param currentStreamerId identity of the stream currently being watched. MUST
+ *   be threaded in: visual-filter buffs belong to a specific streamer, so when
+ *   the streamer changes (takeover, stream end, switch) the previous streamer's
+ *   CSS filters have to be cleared and the new streamer's re-seeded. Without
+ *   this, a continuously-connected viewer keeps the prior streamer's
+ *   blur/invert/upside-down painted onto the new streamer's <video> — the one-
+ *   time `seeded` lock below even makes empty `streamer-buffs-update` broadcasts
+ *   a no-op, so the server alone can't correct it. Omitted ⇒ legacy single-
+ *   streamer behaviour (effects only ever cleared on socket teardown).
+ */
+export function useStreamVisualEffects(
+  socket: Socket | null,
+  currentStreamerId?: string | null,
+): StreamVisualEffectStyle {
   const [style, setStyle] = useState<StreamVisualEffectStyle>({});
   const activeRef = useRef<Map<string, ActiveEffect>>(new Map());
+  const prevStreamerIdRef = useRef<string | null | undefined>(currentStreamerId);
 
   useEffect(() => {
     if (!socket) return;
+
+    // When the streamer CHANGES, drop the previous streamer's visual filters so
+    // they don't bleed onto the new streamer's <video>. Gated on an actual id
+    // change so it never fires on the initial mount: an unconditional setStyle
+    // here re-renders, and a caller that recreates `socket` each render would
+    // then loop (the socket dep changes → effect re-runs → setStyle → …). The
+    // effect's cleanup also clears these on teardown.
+    if (prevStreamerIdRef.current !== currentStreamerId) {
+      for (const { timeout } of activeRef.current.values()) clearTimeout(timeout);
+      activeRef.current.clear();
+      setStyle({});
+      prevStreamerIdRef.current = currentStreamerId;
+    }
 
     // The live `visual-effect-applied` broadcast only carries effects triggered
     // from now on, so a viewer who joins or reloads MID-effect would otherwise
     // see nothing until the next trigger. Seed in-progress effects once from the
     // current streamer's active buffs (each visual-filter buff carries its
     // effect id + remaining time). `seeded` guards against the periodic
-    // streamer-buffs-update broadcasts re-seeding.
+    // streamer-buffs-update broadcasts re-seeding. It resets per streamer because
+    // the effect re-runs when currentStreamerId changes.
     let seeded = false;
 
     const recompute = () => {
@@ -142,7 +172,7 @@ export function useStreamVisualEffects(socket: Socket | null): StreamVisualEffec
       for (const { timeout } of activeRef.current.values()) clearTimeout(timeout);
       activeRef.current.clear();
     };
-  }, [socket]);
+  }, [socket, currentStreamerId]);
 
   return style;
 }

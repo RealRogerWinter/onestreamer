@@ -149,24 +149,6 @@ describe.each([
         });
     });
 
-    describe('listActiveWithItemsOrdered', () => {
-        it('SELECTs active rows + JOIN items ORDER BY applied_at DESC; includes ab.user_id projection', async () => {
-            const { repo, allAsync } = makeRepo();
-            allAsync.mockResolvedValue([]);
-            await repo.listActiveWithItemsOrdered();
-            const [sql] = allAsync.mock.calls[0];
-            // The legacy inline SQL projected ab.user_id explicitly in
-            // addition to ab.* — preserved here for byte-equivalent
-            // wire-format output (some callers iterate Object.keys
-            // and the duplicate projection is observable).
-            expect(norm(sql)).toBe(
-                'SELECT ab.*, i.name as item_name, i.display_name, i.emoji, i.effect_data, ab.user_id ' +
-                'FROM active_buffs ab JOIN items i ON ab.item_id = i.id ' +
-                'WHERE ab.is_active = 1 AND ab.remaining_seconds > 0 ORDER BY ab.applied_at DESC'
-            );
-        });
-    });
-
     describe('listActiveForUser', () => {
         it('SELECTs active rows for one user + JOIN items ORDER BY applied_at DESC', async () => {
             const { repo, allAsync } = makeRepo();

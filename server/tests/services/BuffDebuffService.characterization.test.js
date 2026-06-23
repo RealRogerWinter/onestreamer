@@ -86,7 +86,6 @@ function makeBuffRepo() {
     }),
     incrementStreamingTime: jest.fn().mockResolvedValue({ changes: 1 }),
     listActiveWithItems: jest.fn().mockResolvedValue([]),
-    listActiveWithItemsOrdered: jest.fn().mockResolvedValue([]),
     listActiveForUser: jest.fn().mockImplementation((userId) =>
       Promise.resolve(Array.from(rows.values())
         .filter((r) => r.user_id === userId && r.is_active && r.remaining_seconds > 0)
@@ -328,5 +327,67 @@ describe('BuffDebuffService characterization', () => {
     svc.shutdown();
     expect(svc.updateInterval).toBeNull();
     expect(svc.cacheCleanupInterval).toBeNull();
+  });
+
+  // Regression net for the "new streamer inherits visual FX on go-live" bug.
+  // getActiveBuffsForCurrentStreamer used to "guess" the streamer from the DB
+  // (most-recently-applied active buffs of ANY user) whenever the current
+  // streamer's session had no userId. Because buff durations only tick down
+  // while their owner is the active streamer, a prior streamer's debuffs FREEZE
+  // (is_active=1, remaining_seconds>0) and linger forever — so the guess painted
+  // a previous streamer's blur/invert/upside-down onto whoever went live next,
+  // with no item ever used. A streamer we can't resolve to a concrete userId
+  // must return NO buffs; buffs are strictly per-user.
+  describe("getActiveBuffsForCurrentStreamer never inherits another streamer's buffs", () => {
+    it('returns [] for an anonymous/guest streamer (session userId=null), ignoring a prior streamer\'s frozen debuff', async () => {
+      // A previous, now-offline streamer (user 42) left a frozen visual-filter
+      // debuff lingering in active_buffs.
+      const frozenForeignDebuff = {
+        id: 1, user_id: 42, item_id: 1, applied_by_user_id: 7,
+        buff_type: 'debuff', duration_seconds: 30, remaining_seconds: 30,
+        is_active: 1, applied_at: new Date().toISOString(), metadata: null,
+        item_name: 'upside_down', display_name: 'Upside Down', emoji: '🙃',
+        effect_data: JSON.stringify({ effect_type: 'visual_filter', visual_effect: 'flip_vertical' }),
+      };
+      const buffRepository = makeBuffRepo();
+      // Surface the foreign debuff through every "list active buffs" path, so the
+      // test fails loudly if ANY DB-guessing fallback is ever reintroduced.
+      buffRepository.listActiveForUser = jest.fn().mockResolvedValue([frozenForeignDebuff]);
+      buffRepository.listActiveWithItems = jest.fn().mockResolvedValue([frozenForeignDebuff]);
+
+      const { svc } = makeService({
+        buffRepository,
+        // A real (non-relay) socket id whose session has no userId — i.e. an
+        // anonymous "Guest" streamer who just took over and went live.
+        streamService: { getCurrentStreamer: () => 'socket-guest-going-live' },
+        sessionService: { getSessionBySocketId: () => ({ userId: null }) },
+      });
+
+      await expect(svc.getActiveBuffsForCurrentStreamer()).resolves.toEqual([]);
+    });
+
+    it("still returns the resolved streamer's OWN buffs (legit late-join seeding is preserved)", async () => {
+      const ownBuff = {
+        id: 5, user_id: 7, item_id: 1, applied_by_user_id: 99,
+        buff_type: 'debuff', duration_seconds: 60, remaining_seconds: 42,
+        is_active: 1, applied_at: new Date().toISOString(), metadata: null,
+        item_name: 'upside_down', display_name: 'Upside Down', emoji: '🙃',
+        effect_data: JSON.stringify({ effect_type: 'visual_filter', visual_effect: 'flip_vertical' }),
+      };
+      const buffRepository = makeBuffRepo();
+      buffRepository.listActiveForUser = jest.fn().mockImplementation((userId) =>
+        Promise.resolve(userId === 7 ? [ownBuff] : []));
+
+      const { svc } = makeService({
+        buffRepository,
+        streamService: { getCurrentStreamer: () => 'socket-real-streamer' },
+        sessionService: { getSessionBySocketId: () => ({ userId: 7 }) },
+      });
+
+      const buffs = await svc.getActiveBuffsForCurrentStreamer();
+      expect(buffs).toHaveLength(1);
+      expect(buffs[0].userId).toBe(7);
+      expect(buffs[0].effectData).toEqual({ effect_type: 'visual_filter', visual_effect: 'flip_vertical' });
+    });
   });
 });
