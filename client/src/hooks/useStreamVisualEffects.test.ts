@@ -137,4 +137,52 @@ describe('useStreamVisualEffects', () => {
     }));
     expect(result.current.transform).toBeUndefined();
   });
+
+  // Regression: when the streamer changes (takeover / switch / end) a
+  // continuously-connected viewer must NOT keep the previous streamer's CSS
+  // filters painted on the new streamer's video. The hook clears effects and
+  // re-seeds for the new streamer when currentStreamerId changes.
+  it("clears the previous streamer's effect when the streamer changes (no bleed-through)", () => {
+    const socket = makeMockSocket();
+    const { result, rerender } = renderHook(
+      ({ id }) => useStreamVisualEffects(socket, id),
+      { initialProps: { id: 'streamer-A' } },
+    );
+
+    // Streamer A is upside-down (seeded on join).
+    act(() => socket.fire('streamer-buffs-update', {
+      buffs: [{ effectData: { effect_type: 'visual_filter', visual_effect: 'flip_vertical' }, remainingSeconds: 30 }],
+    }));
+    expect(result.current.transform).toBe('scaleY(-1)');
+
+    // Streamer B takes over — A's filter must be gone immediately.
+    act(() => rerender({ id: 'streamer-B' }));
+    expect(result.current.transform).toBeUndefined();
+  });
+
+  it('re-asks the server for the new streamer buffs and re-seeds on a streamer change', () => {
+    const socket = makeMockSocket();
+    const { result, rerender } = renderHook(
+      ({ id }) => useStreamVisualEffects(socket, id),
+      { initialProps: { id: 'streamer-A' } },
+    );
+
+    act(() => socket.fire('streamer-buffs-update', {
+      buffs: [{ effectData: { effect_type: 'visual_filter', visual_effect: 'grayscale' }, remainingSeconds: 10 }],
+    }));
+    expect(result.current.filter).toBe('grayscale(100%)');
+
+    // Switch to streamer B: A's grayscale clears and the hook re-requests buffs.
+    (socket.emit as jest.Mock).mockClear();
+    act(() => rerender({ id: 'streamer-B' }));
+    expect(result.current.filter).toBeUndefined();
+    expect(socket.emit).toHaveBeenCalledWith('get-streamer-buffs');
+
+    // B's OWN in-progress debuff seeds correctly (the one-time guard reset with
+    // the streamer change, so this is not blocked).
+    act(() => socket.fire('streamer-buffs-update', {
+      buffs: [{ effectData: { effect_type: 'visual_filter', visual_effect: 'invert' }, remainingSeconds: 10 }],
+    }));
+    expect(result.current.filter).toBe('invert(100%)');
+  });
 });

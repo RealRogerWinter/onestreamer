@@ -369,39 +369,24 @@ class BuffDebuffService extends EventEmitter {
                 return await this.getActiveBuffsForUser(syntheticUserId);
             }
 
-            // Fallback: Try to get any active buffs from the database
-            // This handles viewbots and other special cases
-            logger.debug(`🎭 BUFF: Attempting fallback - checking for any active buffs in database`);
-            const allActiveBuffs = await this.buffRepository.listActiveWithItemsOrdered();
-            
-            if (allActiveBuffs && allActiveBuffs.length > 0) {
-                logger.debug(`🎭 BUFF: Found ${allActiveBuffs.length} active buffs in fallback query`);
-                // Group by user and return the buffs for the user with most recent activity
-                const buffsByUser = {};
-                for (const buff of allActiveBuffs) {
-                    if (!buffsByUser[buff.user_id]) {
-                        buffsByUser[buff.user_id] = [];
-                    }
-                    buffsByUser[buff.user_id].push(buff);
-                }
-                
-                // Find the user with the most recent buff application (likely the streamer)
-                let mostRecentUserId = null;
-                let mostRecentTime = null;
-                for (const [userId, userBuffs] of Object.entries(buffsByUser)) {
-                    const latestBuff = userBuffs[0]; // Already sorted by applied_at DESC
-                    if (!mostRecentTime || new Date(latestBuff.applied_at) > mostRecentTime) {
-                        mostRecentTime = new Date(latestBuff.applied_at);
-                        mostRecentUserId = userId;
-                    }
-                }
-                
-                if (mostRecentUserId && buffsByUser[mostRecentUserId]) {
-                    logger.debug(`🎭 BUFF: Returning buffs for user ${mostRecentUserId} (${buffsByUser[mostRecentUserId].length} buffs)`);
-                    return buffsByUser[mostRecentUserId].map(buff => this.formatBuffForClient(buff));
-                }
-            }
-            
+            // Unresolvable streamer (e.g. an anonymous/guest streamer whose
+            // session carries userId=null, and whose socket id is not a
+            // url-stream-/viewbot- synthetic id): return NO buffs.
+            //
+            // This branch used to "guess" the streamer by returning the
+            // most-recently-applied active buffs of ANY user
+            // (buffRepository.listActiveWithItemsOrdered, ORDER BY applied_at DESC).
+            // That guess was unsound and is the root of "a new streamer's viewers
+            // see the camera flipped / blurred / inverted with no item used":
+            // buff durations only tick down while their owner is the *active*
+            // streamer (see updateBuffDurations), so a previous streamer's debuffs
+            // FREEZE at remaining_seconds>0 / is_active=1 and linger in active_buffs
+            // indefinitely. The guess then mis-attributed those frozen debuffs to
+            // whoever went live next, and the client seeds visual filters from this
+            // result (client useStreamVisualEffects → streamer-buffs-update), so the
+            // stale debuff was painted onto the new stream. Buffs are per-user; we
+            // never guess. A streamer we cannot resolve to a concrete userId simply
+            // has no buffs to display.
             return [];
         }
 

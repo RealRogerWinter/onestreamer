@@ -26,8 +26,10 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
   const videoRef = useRef<HTMLVideoElement>(null);
   // Viewer-side rendering of "visual filter" item effects (upside-down, mirror,
   // grayscale, …). Driven by the server's `visual-effect-applied` broadcast, so
-  // it works for both webcam and URL-relay streams.
-  const visualEffectStyle = useStreamVisualEffects(socket);
+  // it works for both webcam and URL-relay streams. currentStreamerId is threaded
+  // in so the effects reset on a streamer change (takeover/switch/end) instead of
+  // bleeding the previous streamer's filters onto the new streamer's video.
+  const visualEffectStyle = useStreamVisualEffects(socket, currentStreamerId);
 
   // iOS Safari mis-fits `object-fit: contain` on a <video> that has been promoted
   // to its own WebKit compositing layer: a `translateZ(0)`/`translate3d()` hint or
