@@ -8,7 +8,8 @@ version: 2.1
 #           ├─ test-server-integration     never co-load with better-sqlite3)
 #           ├─ test-chat
 #           └─ test-client
-#                     └──► docker-build (main only)
+#   vuln-scan-deps  (independent; ALL branches — shift-left npm CVE gate)
+#                     └──► docker-build (main only; requires the tests + vuln-scan-deps)
 #                                └──► hold  (manual approval)
 #                                          └──► deploy (main only)
 #
@@ -173,6 +174,32 @@ jobs:
           command: cd client && CI=true npx react-scripts test --watchAll=false --passWithNoTests --maxWorkers=2
           # NOTE: CRA wraps jest; JUnit reporting for the client is a follow-up.
 
+  vuln-scan-deps:
+    # Shift-left dependency scan. The image vuln scan (trivy) lives in the
+    # main-only docker-build job, so a HIGH/CRITICAL npm advisory only surfaces
+    # post-merge, at deploy time (exactly how nodemailer/undici slipped through).
+    # This job runs the same trivy gate over the production npm trees on EVERY
+    # branch (incl. PRs), so a vulnerable dep fails the PR instead of the deploy.
+    # It mirrors what ships in the image: prod-only installs of root +
+    # chat-service (the client is built to static assets and carries no runtime
+    # node_modules, so it's skipped). The image scan in docker-build still runs
+    # for OS/base-image CVEs this filesystem scan can't see.
+    executor: node
+    steps:
+      - checkout
+      - run:
+          name: Install prod deps (root + chat-service), manifests only
+          command: |
+            npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+            cd chat-service && npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+      - run:
+          name: Trivy dependency scan — fail on fixed HIGH/CRITICAL
+          # Keep the trivy version in lockstep with the docker-build image scan
+          # (aquasecurity prunes old release assets; bump both together).
+          command: |
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.71.0/contrib/install.sh | sh -s -- -b /tmp/bin v0.71.0
+            /tmp/bin/trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress --skip-dirs client .
+
   docker-build:
     executor: vm
     steps:
@@ -273,6 +300,9 @@ workflows:
           requires: [build]
       - test-client:
           requires: [build]
+      # Independent of `build` (does its own prod-only install) so it runs early,
+      # in parallel, on every branch — the shift-left npm CVE gate.
+      - vuln-scan-deps
       - docker-build:
           context: onestreamer-deploy
           requires:
@@ -282,6 +312,7 @@ workflows:
             - test-server-integration
             - test-chat
             - test-client
+            - vuln-scan-deps
           filters:
             branches:
               only: main
