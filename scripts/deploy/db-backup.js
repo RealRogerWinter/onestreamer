@@ -14,7 +14,7 @@ const Database = require('better-sqlite3');
 const SRC = process.env.DB_PATH || '/data/onestreamer.db';
 const OUT = process.env.OUT_DIR || '/out';
 const SHA = (process.env.RELEASE_SHA || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '');
-const KEEP = Math.max(1, parseInt(process.env.KEEP_BACKUPS || '5', 10));
+const KEEP = Math.max(1, parseInt(process.env.KEEP_BACKUPS || '3', 10));
 
 (async () => {
   if (!fs.existsSync(SRC)) {
