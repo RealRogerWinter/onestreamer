@@ -2,7 +2,8 @@
  * ContinuousRecordingRepository
  *
  * Pure SQL wrapper for the continuous-recording tables:
- *   - recording_sessions          (one row per recording session — typically one per day)
+ *   - recording_sessions          (one row per recording RUN — per-run ids since ADR-0028;
+ *                                  pre-cutover rows were per-day buckets)
  *   - recording_stream_segments   (1:N child rows tracking which streamer was live during what
  *                                  window inside the session's recording)
  *
@@ -59,10 +60,11 @@ class ContinuousRecordingRepository {
 
     /**
      * INSERT a new recording_sessions row if no row with the same
-     * `session_id` exists. The legacy SQL uses `INSERT OR IGNORE`
-     * because the service may re-enter `createSessionRecord` for the
-     * same daily session (recording restarts mid-day) and a duplicate
-     * would silently corrupt the per-day duration math.
+     * `session_id` exists. With per-run session ids (ADR-0028) this
+     * inserts a fresh row on every run; the `INSERT OR IGNORE` remains
+     * as a guard against a re-entrant `createSessionRecord` for the
+     * SAME run (e.g. a retried start), where a duplicate would corrupt
+     * the duration math.
      *
      * Status is hard-coded to `'recording'` and `created_at` to
      * `CURRENT_TIMESTAMP` in the SQL, matching the legacy shape
@@ -83,11 +85,35 @@ class ContinuousRecordingRepository {
      * marked as ended (by an earlier shutdown) is re-activated when
      * recording resumes — without resetting the start_time or other
      * fields.
+     *
+     * Guarded so it can never DOWNGRADE a terminal row (audit R8): a
+     * session that is `'uploaded'` (archived, local files deleted) or
+     * `'processing'` (upload in flight) must not silently flip back to
+     * `'recording'` — with per-run ids that could only be a re-entrant
+     * start colliding with an old id, and reviving it would re-expose
+     * the R2/R4 skip-and-delete hazards.
      */
     async setSessionRecording(sessionId) {
         return await this.runAsync(`
                 UPDATE recording_sessions SET status = 'recording', updated_at = CURRENT_TIMESTAMP
-                WHERE session_id = ?
+                WHERE session_id = ? AND status NOT IN ('uploaded', 'processing')
+            `, [sessionId]);
+    }
+
+    /**
+     * Mark a run's row terminal once its recording stops (ADR-0028).
+     * Guarded on status = 'recording' so a late/duplicate stop can't
+     * regress an `'uploaded'`/`'processing'` row. This is what makes
+     * upload recovery (RecordingUploadScheduler.loadPendingUploads)
+     * and DB-row reaping (RecordingCleanupScheduler's
+     * status IN ('completed','uploaded') filter) reach steady state —
+     * the per-day model deliberately never wrote a terminal status,
+     * so rows accumulated forever.
+     */
+    async markSessionCompleted(sessionId) {
+        return await this.runAsync(`
+                UPDATE recording_sessions SET status = 'completed', updated_at = CURRENT_TIMESTAMP
+                WHERE session_id = ? AND status = 'recording'
             `, [sessionId]);
     }
 

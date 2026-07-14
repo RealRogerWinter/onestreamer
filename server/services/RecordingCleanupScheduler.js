@@ -55,7 +55,7 @@ class RecordingCleanupScheduler {
             const days = parseInt(setting?.value || '7');
             return Math.max(1, Math.min(7, days)); // Clamp to 1-7 days
         } catch (error) {
-            logger.error('[CleanupScheduler] Error getting retention setting:', error.message);
+            logger.error({ err: error }, '[CleanupScheduler] Error getting retention setting');
             return 7; // Default to 7 days
         }
     }
@@ -105,7 +105,7 @@ class RecordingCleanupScheduler {
                     await this.deleteSession(session);
                     deletedCount++;
                 } catch (error) {
-                    logger.error(`[CleanupScheduler] Error deleting session ${session.session_id}:`, error.message);
+                    logger.error({ err: error }, `[CleanupScheduler] Error deleting session ${session.session_id}`);
                     errorCount++;
                 }
             }
@@ -113,7 +113,7 @@ class RecordingCleanupScheduler {
             logger.debug(`[CleanupScheduler] Cleanup complete - deleted: ${deletedCount}, errors: ${errorCount}`);
 
         } catch (error) {
-            logger.error('[CleanupScheduler] Error running cleanup:', error.message);
+            logger.error({ err: error }, '[CleanupScheduler] Error running cleanup');
         }
     }
 
@@ -157,7 +157,7 @@ class RecordingCleanupScheduler {
             await this.deleteSession(session);
             return { success: true };
         } catch (error) {
-            logger.error(`[CleanupScheduler] Error deleting session ${sessionId}:`, error.message);
+            logger.error({ err: error }, `[CleanupScheduler] Error deleting session ${sessionId}`);
             return { success: false, error: error.message };
         }
     }
@@ -222,7 +222,7 @@ class RecordingCleanupScheduler {
             logger.debug(`[CleanupScheduler] Retention set to ${clampedDays} days`);
             return { success: true, retentionDays: clampedDays };
         } catch (error) {
-            logger.error('[CleanupScheduler] Error setting retention:', error.message);
+            logger.error({ err: error }, '[CleanupScheduler] Error setting retention');
             return { success: false, error: error.message };
         }
     }

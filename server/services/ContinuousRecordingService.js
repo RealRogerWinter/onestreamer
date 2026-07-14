@@ -359,16 +359,23 @@ class ContinuousRecordingService extends EventEmitter {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      // Create a unique session ID for this recording
-      // Use date-based session ID so all recordings for the same day go into one session
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-      this.currentSessionId = `recording_${today}`;
+      // Create a unique per-run session ID: recording_<YYYY-MM-DD>_<epochMs>
+      // (ADR-0028). Every start gets its own immutable dir and its own
+      // recording_sessions row — the old per-day bucket (`recording_<date>`)
+      // made a same-day second run share the first run's dir and DB row,
+      // which the upload path would skip as "already uploaded" (audit R2)
+      // and the post-upload cleanup would rm -rf while live (audit R4).
+      // LOCKSTEP: RecordingDiskScanner._parseSessionDir must recognize this
+      // format or cleanup AND clip lookup silently break — change both
+      // together, gated by RecordingDiskScanner.parseSessionDir.test.js.
+      const egressTimestamp = Date.now();
+      const today = new Date(egressTimestamp).toISOString().split('T')[0]; // YYYY-MM-DD
+      this.currentSessionId = `recording_${today}_${egressTimestamp}`;
       const sessionDir = `/out/${this.currentSessionId}`;
 
       // Create HLS segmented output
       // Egress runs in Docker with /out mapped to outputDir
       // Use timestamp prefix to avoid overwriting segments when egress restarts
-      const egressTimestamp = Date.now();
       const segmentOutput = new SegmentedFileOutput({
         protocol: SegmentedFileProtocol.HLS_PROTOCOL,
         filenamePrefix: `${sessionDir}/seg_${egressTimestamp}`,
