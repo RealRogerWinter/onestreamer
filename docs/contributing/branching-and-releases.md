@@ -124,7 +124,7 @@ For the prod deploy workflow itself, see [`/docs/operations/deployment.md`](../o
 Once the project has more than one regular contributor, enable on GitHub:
 
 - **Require pull request before merging** to `main`
-- **Require status checks to pass** (the CI workflow from [`/.github/workflows/ci.yml`](../../.github/workflows/ci.yml))
+- **Require status checks to pass** (the CircleCI checks from [`/.circleci/config.yml`](../../.circleci/config.yml), [ADR-0026](../architecture/adr/0026-circleci-pipeline.md))
 - **Dismiss stale approvals** when new commits are pushed
 
 Until then, self-merge is fine — but still go through a PR for the changelog/audit benefit.
