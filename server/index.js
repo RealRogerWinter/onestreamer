@@ -1479,28 +1479,11 @@ async function startServer() {
     // Make viewbotService available to routes
     app.locals.viewbotService = viewbotService;
     
-    // Initialize recording system after MediaSoup is ready
-    try {
-      // Run database migration to ensure recording tables exist
-      const { setupRecordingTables } = require('./migrations/setup-recording-tables');
-      await setupRecordingTables();
-      logger.info('✅ RECORDING: Database tables verified');
+    // Recording + clips tables are created by the database.js bootstrap
+    // (ADR-0030: single DDL source). The setup-recording-tables /
+    // setup-clips-tables re-runs that used to live here were duplicate,
+    // conflicting DDL on a second boot-time connection and were deleted.
 
-      // Recording service is ready to use
-      logger.info('✅ RECORDING: Recording system initialized and ready');
-    } catch (error) {
-      logger.error({ err: error }, '❌ RECORDING: Failed to initialize recording system');
-    }
-
-    // Run clips table migration (separate try/catch so it runs even if recording fails)
-    try {
-      const setupClipsTables = require('./migrations/setup-clips-tables');
-      await setupClipsTables(database.db);
-      logger.info('✅ CLIPS: Database tables verified');
-    } catch (error) {
-      logger.error({ err: error }, '❌ CLIPS: Failed to initialize clips tables');
-    }
-    
     // Inject viewbotService into InventoryService for viewbot targeting
     inventoryService.setViewbotService(viewbotService);
     // Inject viewbot socket checker function

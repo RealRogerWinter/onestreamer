@@ -14,30 +14,41 @@
  * the env-flag default OFF and investigating before any rollout.
  */
 
-const { createBetterSqlite3Adapter } = require('../../database/database-better');
+const {
+    makeBetterPrimitives,
+    bootstrapProductionSchema,
+} = require('../integration/_helpers/db-fixture');
 
 describe('better-sqlite3 adapter — atomic points-race SQL (PR 5.1 + ADR-0014)', () => {
     let adapter;
 
-    beforeEach(() => {
-        adapter = createBetterSqlite3Adapter(':memory:');
-        adapter.db.exec(`
-            CREATE TABLE user_stats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                points_balance INTEGER DEFAULT 0,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+    beforeEach(async () => {
+        // Boot the REAL schema (database.js initializeSchema) against
+        // :memory: instead of a hand-copied user_stats — ADR-0030. This is
+        // also a regression net for audit finding DB1: the SQL below only
+        // works because the prod boot path now provisions points_balance.
+        adapter = makeBetterPrimitives();
+        await bootstrapProductionSchema(adapter);
     });
 
-    afterEach(() => {
-        adapter.close();
+    afterEach(async () => {
+        await adapter.close();
     });
+
+    // Prod schema enforces the user_stats→users FK (the adapter runs with
+    // foreign_keys=ON), so each test seeds its parent users row first.
+    function seedUser(userId, balance) {
+        adapter.db
+            .prepare('INSERT INTO users (id, email, username) VALUES (?, ?, ?)')
+            .run(userId, `race-${userId}@example.com`, `race-user-${userId}`);
+        adapter.db
+            .prepare('INSERT INTO user_stats (user_id, points_balance) VALUES (?, ?)')
+            .run(userId, balance);
+    }
 
     test('20 concurrent addPoints-shape UPDATEs land the exact arithmetic answer', async () => {
         const userId = 42;
-        adapter.db.prepare('INSERT INTO user_stats (user_id, points_balance) VALUES (?, ?)').run(userId, 0);
+        seedUser(userId, 0);
 
         const N = 20;
         const amount = 5;
@@ -62,7 +73,7 @@ describe('better-sqlite3 adapter — atomic points-race SQL (PR 5.1 + ADR-0014)'
     test('20 concurrent subtractPoints-shape guarded UPDATEs land the exact arithmetic answer', async () => {
         const userId = 99;
         const seed = 10_000;
-        adapter.db.prepare('INSERT INTO user_stats (user_id, points_balance) VALUES (?, ?)').run(userId, seed);
+        seedUser(userId, seed);
 
         const N = 20;
         const amount = 5;
@@ -88,7 +99,7 @@ describe('better-sqlite3 adapter — atomic points-race SQL (PR 5.1 + ADR-0014)'
     test('guarded subtract refuses to go below the floor under concurrent contention', async () => {
         const userId = 7;
         const seed = 30; // Only enough for 6 debits at amount=5
-        adapter.db.prepare('INSERT INTO user_stats (user_id, points_balance) VALUES (?, ?)').run(userId, seed);
+        seedUser(userId, seed);
 
         const N = 20;
         const amount = 5;
