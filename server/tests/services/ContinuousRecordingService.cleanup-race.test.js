@@ -321,9 +321,10 @@ describe('ContinuousRecordingService.cleanupOldRecordings — b2_file_id gate (P
     await service.cleanupOldRecordings();
 
     expect(fs.rmSync).not.toHaveBeenCalled();
+    // pino convention: error object first, message second (`logger.error({ err }, msg)`).
     expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('Cleanup aborted'),
-      expect.any(Error)
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining('Cleanup aborted')
     );
   });
 });

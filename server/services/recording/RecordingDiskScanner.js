@@ -472,7 +472,8 @@ class RecordingDiskScanner {
     try {
       for (const f of fs.readdirSync(dirPath)) {
         try {
-          total += fs.statSync(path.join(dirPath, f)).size;
+          const sz = fs.statSync(path.join(dirPath, f)).size;
+          if (Number.isFinite(sz)) total += sz;
         } catch (_) { /* ignore */ }
       }
     } catch (_) { /* ignore */ }
@@ -513,7 +514,9 @@ class RecordingDiskScanner {
       dirs.push({ item, itemPath, size, ageMs: ageMs === null ? Infinity : ageMs });
     }
 
-    if (totalBytes <= this.diskBudgetBytes) return;
+    // Never act on a non-finite total (e.g. a stat that couldn't report a size):
+    // NaN <= budget is false, which would otherwise fall through to deletion.
+    if (!Number.isFinite(totalBytes) || totalBytes <= this.diskBudgetBytes) return;
 
     // Oldest first; protect the live dir and anything inside the rolling window.
     dirs.sort((a, b) => b.ageMs - a.ageMs);
