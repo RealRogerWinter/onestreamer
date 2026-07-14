@@ -83,15 +83,26 @@ class AudioFileJanitor {
 
     // Start periodic cleanup (called from constructor or init)
     startPeriodicCleanup(intervalMinutes = 15) {
-        // Run cleanup every N minutes
-        setInterval(() => {
+        if (this._cleanupTimer) return; // idempotent
+        // Run cleanup every N minutes. Guarded unref: this background timer
+        // must never be the only thing keeping a process alive (audit B6).
+        this._cleanupTimer = setInterval(() => {
             this.cleanupOldAudioFiles(30); // Delete files older than 30 minutes
         }, intervalMinutes * 60 * 1000);
+        if (typeof this._cleanupTimer.unref === 'function') this._cleanupTimer.unref();
 
         // Run initial cleanup
         this.cleanupOldAudioFiles(30);
 
         logger.debug(`🧹 TRANSCRIPTION: Started periodic cleanup (every ${intervalMinutes} minutes)`);
+    }
+
+    // Stop the cleanup interval (tests/shutdown).
+    stopPeriodicCleanup() {
+        if (this._cleanupTimer) {
+            clearInterval(this._cleanupTimer);
+            this._cleanupTimer = null;
+        }
     }
 }
 
