@@ -123,6 +123,71 @@ describe('/api/moderation-ai', () => {
       const r = await request(makeApp(svc)).post('/api/moderation-ai/events/999/reverse').send({});
       expect(r.status).toBe(404);
     });
+
+    // ── Audit M5: unban by the PERSISTED resolved_user_id ────────────────
+    test('reverse unbans via persisted resolved_user_id even when the socket is long gone', async () => {
+      const svc = stubService({
+        getEvent: jest.fn(async () => ({
+          id: 7, final_decision: 'auto_ban', streamer_id: 'sock_dead', resolved_user_id: 42,
+        })),
+      });
+      const arb = {
+        // Live resolution FAILS (socket disconnected) — the persisted id must win.
+        sessionService: { getUserIdBySocketId: jest.fn(() => null) },
+        userRepository: { runAsync: jest.fn().mockResolvedValue({}) },
+      };
+      const r = await request(makeApp(svc, arb))
+        .post('/api/moderation-ai/events/7/reverse')
+        .send({ reason: 'appeal upheld' });
+      expect(r.status).toBe(200);
+      expect(r.body.user_unbanned).toBe(true);
+      expect(arb.userRepository.runAsync).toHaveBeenCalledWith(
+        expect.stringContaining('streaming_banned = 0'),
+        [42]
+      );
+      // The persisted id short-circuits — no live lookup needed.
+      expect(arb.sessionService.getUserIdBySocketId).not.toHaveBeenCalled();
+    });
+
+    test('reverse falls back to the live socket lookup for pre-M5 rows (no resolved_user_id)', async () => {
+      const svc = stubService(); // getEvent(7) → auto_ban, streamer_id sock_a, no resolved_user_id
+      const arb = {
+        sessionService: { getUserIdBySocketId: jest.fn(() => 42) },
+        userRepository: { runAsync: jest.fn().mockResolvedValue({}) },
+      };
+      const r = await request(makeApp(svc, arb)).post('/api/moderation-ai/events/7/reverse').send({});
+      expect(r.status).toBe(200);
+      expect(r.body.user_unbanned).toBe(true);
+      expect(arb.sessionService.getUserIdBySocketId).toHaveBeenCalledWith('sock_a');
+    });
+
+    test('reverse of an unresolvable auto_ban → 409 user_unresolvable, row NOT marked reversed (was a silent 200 no-op)', async () => {
+      const svc = stubService({
+        getEvent: jest.fn(async () => ({
+          id: 7, final_decision: 'auto_ban', streamer_id: 'sock_dead', resolved_user_id: null,
+        })),
+      });
+      const arb = {
+        sessionService: { getUserIdBySocketId: jest.fn(() => null) },
+        userRepository: { runAsync: jest.fn() },
+      };
+      const r = await request(makeApp(svc, arb)).post('/api/moderation-ai/events/7/reverse').send({});
+      expect(r.status).toBe(409);
+      expect(r.body.error).toBe('user_unresolvable');
+      expect(svc.reverseEvent).not.toHaveBeenCalled();
+      expect(arb.userRepository.runAsync).not.toHaveBeenCalled();
+    });
+
+    test('non-ban events (admin_review / auto_skip) still reverse without user resolution', async () => {
+      const svc = stubService({
+        getEvent: jest.fn(async () => ({ id: 7, final_decision: 'auto_skip', streamer_id: null })),
+      });
+      const r = await request(makeApp(svc)).post('/api/moderation-ai/events/7/reverse').send({});
+      expect(r.status).toBe(200);
+      expect(r.body.ok).toBe(true);
+      expect(r.body.user_unbanned).toBe(false);
+      expect(svc.reverseEvent).toHaveBeenCalled();
+    });
   });
 
   describe('terms', () => {

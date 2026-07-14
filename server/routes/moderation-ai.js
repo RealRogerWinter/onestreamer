@@ -89,41 +89,58 @@ module.exports = function moderationAIRoutes() {
       if (!event) return res.status(404).json({ error: 'event_not_found' });
       if (event.reversed_at) return res.status(409).json({ error: 'already_reversed' });
 
+      // For auto_ban events, resolve the user to unban BEFORE marking the
+      // row reversed. Audit M5: prefer the resolved_user_id persisted at
+      // ban time (stable across restarts/disconnects); the live
+      // socketId → userId lookup is only a fallback for pre-M5 rows. If
+      // NEITHER resolves, this is now a hard 409 — the old behavior
+      // returned 200 { ok: true, user_unbanned: false }, a silent no-op
+      // that left the user banned while the admin believed the reversal
+      // succeeded.
+      const arb = actionArbiter(req);
+      let userId = null;
+      if (event.final_decision === 'auto_ban') {
+        userId = event.resolved_user_id || null;
+        if (!userId && event.streamer_id && arb && arb.sessionService) {
+          userId = arb.sessionService.getUserIdBySocketId(event.streamer_id);
+        }
+        if (!userId) {
+          return res.status(409).json({
+            error: 'user_unresolvable',
+            detail: 'auto_ban event has no resolved_user_id and the streamer socket is gone — the ban (if any) must be reversed manually via user admin',
+          });
+        }
+        if (!(arb && arb.userRepository && typeof arb.userRepository.runAsync === 'function')) {
+          return res.status(503).json({ error: 'action_arbiter_unavailable' });
+        }
+      }
+
       // Mark the moderation_events row reversed.
       const result = await s.reverseEvent(id, actor(req), reason);
       if (!result.ok) return res.status(400).json({ error: result.error });
 
       // For auto_ban events, also unban the user via the action arbiter's
-      // userRepository (or fall back to the local request-scoped one). For
-      // auto_skip events on URL-relay, the admin can remove the blocklist
-      // row via the existing /api/whitelist/entry/:id DELETE — keeping
-      // the two reversal flows separate matches the existing per-system
-      // mental model.
+      // userRepository. For auto_skip events on URL-relay, the admin can
+      // remove the blocklist row via the existing /api/whitelist/entry/:id
+      // DELETE — keeping the two reversal flows separate matches the
+      // existing per-system mental model.
       let userUnbanned = false;
-      if (event.final_decision === 'auto_ban' && event.streamer_id) {
-        const arb = actionArbiter(req);
-        if (arb && arb.sessionService && arb.userRepository) {
-          const userId = arb.sessionService.getUserIdBySocketId(event.streamer_id);
-          if (userId) {
-            try {
-              // The repo doesn't have a dedicated unban method today (M3
-              // notes this gap); fall back to a direct UPDATE through the
-              // raw db handle the repo exposes via runAsync.
-              if (typeof arb.userRepository.runAsync === 'function') {
-                await arb.userRepository.runAsync(
-                  `UPDATE users
-                     SET streaming_banned = 0,
-                         streaming_banned_at = NULL,
-                         streaming_banned_by = NULL
-                   WHERE id = ?`,
-                  [userId]
-                );
-                userUnbanned = true;
-              }
-            } catch (e) {
-              logger.error('moderation-ai/reverse: unban failed:', e.message);
-            }
-          }
+      if (event.final_decision === 'auto_ban' && userId) {
+        try {
+          // The repo doesn't have a dedicated unban method today (M3
+          // notes this gap); fall back to a direct UPDATE through the
+          // raw db handle the repo exposes via runAsync.
+          await arb.userRepository.runAsync(
+            `UPDATE users
+               SET streaming_banned = 0,
+                   streaming_banned_at = NULL,
+                   streaming_banned_by = NULL
+             WHERE id = ?`,
+            [userId]
+          );
+          userUnbanned = true;
+        } catch (e) {
+          logger.error('moderation-ai/reverse: unban failed:', e.message);
         }
       }
 

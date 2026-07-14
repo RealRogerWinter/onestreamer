@@ -158,6 +158,16 @@ ALTER TABLE moderation_events ADD COLUMN source TEXT;
 ALTER TABLE moderation_events ADD COLUMN image_path TEXT;
 ALTER TABLE moderation_events ADD COLUMN applied_input_types_json TEXT;
 
+-- ── Audit M5 addition (applied by SchemaSeed._ensureColumn, NOT here) ─────
+-- moderation_events.resolved_user_id INTEGER — the numeric users.id an
+-- auto_ban actually landed on, persisted at ban time so the reverse route
+-- (/api/moderation-ai/events/:id/reverse) can unban by a stable id instead
+-- of re-resolving the ephemeral streamer_id socket id live (which silently
+-- no-oped once the socket was gone). Added via a PRAGMA-checked idempotent
+-- ALTER in server/services/moderation/SchemaSeed.js so a genuine ALTER
+-- failure surfaces instead of being conflated with the duplicate-column
+-- tolerance the statements above rely on.
+
 ALTER TABLE moderation_global_config ADD COLUMN image_moderation_enabled INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE moderation_global_config ADD COLUMN image_categories_enabled_json TEXT;
 ALTER TABLE moderation_global_config ADD COLUMN image_frame_retention_days INTEGER NOT NULL DEFAULT 30;

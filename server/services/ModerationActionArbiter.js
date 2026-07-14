@@ -30,13 +30,23 @@ const logger = require('../bootstrap/logger').child({ svc: 'ModerationActionArbi
 //          - Either way: emit streamer-banner via notifier, request rotation.
 //          - final_decision = 'auto_ban'.
 //      - 'url-relay':
+//          - Resolve the external identity: event.external_platform/
+//            external_login when present, else (audit M3) from the LIVE
+//            relay via viewBotURLService.getActiveURLStream() — transcript
+//            chunks and vision events never carry the external_* fields, so
+//            without this fallback the auto-block never fired. The stale-
+//            session check above guarantees the live relay is still the
+//            offending one.
 //          - Insert block entry via whitelistService.addEntry({
 //              platform, entry_type: 'streamer', value: <login>,
 //              list: 'block', notes: 'AI moderation auto-block: event #<id>'
 //            }, 'ai-moderator'). PR-M7 swaps this to numeric external_user_id
 //            keying for spoof resistance — M3 stays login-keyed.
 //          - Force rotation.
-//          - final_decision = 'auto_skip'.
+//          - final_decision = 'auto_skip' when the block actually landed;
+//            'admin_review' (fail-honest, audit M3) when the identity is
+//            unresolvable or the block write failed — previously that path
+//            still recorded 'auto_skip' as if the block had happened.
 //      - 'viewbot' / unknown:
 //          - Log only. final_decision = 'admin_review'.
 //
@@ -52,6 +62,8 @@ class ModerationActionArbiter {
    * @param {object}  deps.streamService              streamGeneration check
    * @param {object?} deps.randomStreamRotationService  force-rotate
    * @param {object?} deps.whitelistService           URL-relay block entry
+   * @param {object?} deps.viewBotURLService          live-relay identity
+   *                                                  resolution (audit M3)
    * @param {object}  deps.moderationNotifier         socket emits
    * @param {boolean} [deps.enforce=false]            AI_MODERATION_ENFORCE
    */
@@ -66,6 +78,7 @@ class ModerationActionArbiter {
     this.streamService = deps.streamService;
     this.randomStreamRotationService = deps.randomStreamRotationService || null;
     this.whitelistService = deps.whitelistService || null;
+    this.viewBotURLService = deps.viewBotURLService || null;
     this.moderationNotifier = deps.moderationNotifier;
     this.enforce = !!deps.enforce;
   }
@@ -174,13 +187,41 @@ class ModerationActionArbiter {
     return {
       final_decision: 'auto_ban',
       action_taken: `${banResult};rotation=${rotationResult}`,
+      // M5 (audit): surface the numeric user id the ban landed on so the
+      // caller (ModerationService) can persist it on the moderation_events
+      // row (resolved_user_id) — the reverse route unbans by this stable id
+      // instead of re-resolving the ephemeral socket id live.
+      banned_user_id: userId || null,
     };
   }
 
   async _actUrlRelay(event) {
-    const platform = event.external_platform;
-    const login = event.external_login;
+    let platform = event.external_platform;
+    let login = event.external_login;
+
+    // M3 (audit): the transcript/vision pipelines never populate the
+    // external_* fields on their events, so resolve the identity from the
+    // LIVE relay at this single chokepoint. Safe because the stale-session
+    // check in arbitrate() already established that the stream generation
+    // hasn't rotated since the offending chunk was captured.
+    if ((!platform || !login) && this.viewBotURLService
+        && typeof this.viewBotURLService.getActiveURLStream === 'function') {
+      try {
+        const active = this.viewBotURLService.getActiveURLStream();
+        if (active) {
+          platform = platform || active.platform || null;
+          if (!login && active.sourceUrl && platform
+              && typeof this.viewBotURLService._extractLoginFromUrl === 'function') {
+            login = this.viewBotURLService._extractLoginFromUrl(active.sourceUrl, platform) || null;
+          }
+        }
+      } catch (err) {
+        logger.error('❌ ActionArbiter: live relay identity resolution failed:', err.message);
+      }
+    }
+
     let blockResult = 'none';
+    let blocked = false;
     if (this.whitelistService && platform && login) {
       try {
         const r = await this.whitelistService.addEntry({
@@ -191,17 +232,19 @@ class ModerationActionArbiter {
           notes: `AI moderation auto-block: event #${event.id}`,
         }, 'ai-moderator');
         blockResult = `blocked:${platform}:${login}:id=${r && r.id ? r.id : '?'}`;
+        blocked = true;
       } catch (err) {
         // UNIQUE constraint hit (already on the list) is a no-op success.
         if (String(err.message || '').includes('UNIQUE')) {
           blockResult = `already_blocked:${platform}:${login}`;
+          blocked = true;
         } else {
           logger.error('❌ ActionArbiter: whitelist.addEntry failed:', err.message);
           blockResult = `block_error:${err.message}`;
         }
       }
     } else {
-      blockResult = `cannot_block:platform=${platform || 'none'},login=${login || 'none'},whitelist=${!!this.whitelistService}`;
+      blockResult = `url_relay_block_unresolved:platform=${platform || 'none'},login=${login || 'none'},whitelist=${!!this.whitelistService}`;
     }
 
     let rotationResult = 'none';
@@ -215,8 +258,14 @@ class ModerationActionArbiter {
       }
     }
 
+    // Fail-honest (audit M3): only claim 'auto_skip' when the blocklist
+    // write actually landed (or the entry already existed). An unresolved
+    // identity or a failed write downgrades to 'admin_review' so the event
+    // row no longer records a block that never happened. The rotation still
+    // ran either way (the offending relay is off-air), but without the
+    // block it is re-selectable — hence the admin escalation.
     return {
-      final_decision: 'auto_skip',
+      final_decision: blocked ? 'auto_skip' : 'admin_review',
       action_taken: `${blockResult};rotation=${rotationResult}`,
     };
   }
