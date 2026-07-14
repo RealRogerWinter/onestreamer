@@ -78,6 +78,7 @@ services:
       BIND_ADDR: 127.0.0.1
       MAIN_SERVER_URL: https://127.0.0.1:8443
       MODERATION_STORE_PATH: /app/chat-state/moderation_data.json
+      # ENFORCE_CHAT_INTERNAL_AUTH: "true"                 # gate the chat HTTP API (/api/ban etc.) on X-Internal-Secret (INTERNAL_API_SECRET, app.env). Flip to "true" only AFTER the permissive 'ALLOWED (ENFORCE_CHAT_INTERNAL_AUTH off)' warns go silent post-deploy — the server must be sending the secret first (audit CH3).
     volumes:
       - ${ONESTREAMER_HOME:-/root/onestreamer}/certificates:/app/certificates:ro
       - ${ONESTREAMER_HOME:-/root/onestreamer}/chat-state:/app/chat-state

@@ -1,6 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
 const ProfanityFilterService = require('./ProfanityFilterService');
 const ClipRepository = require('../database/repository/ClipRepository');
+// CH3: shared helper resolves CHAT_SERVICE_URL and attaches the
+// X-Internal-Secret header (+ https agent + timeout) to chat-service calls.
+const { chatServiceUrl: resolveChatServiceUrl, chatAxiosConfig } = require('../utils/chatServiceClient');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ClipService' });
 /**
@@ -646,19 +649,18 @@ class ClipService {
     logger.debug(`💬 CLIPS: Capturing chat for clip ${clipId} from ${new Date(startTimeMs).toISOString()} to ${new Date(endTimeMs).toISOString()}`);
 
     try {
-      // Fetch chat from chat service API
-      const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
+      // Fetch chat from chat service API (CH3: chatAxiosConfig attaches the
+      // X-Internal-Secret header + https agent + 5s timeout)
+      const chatServiceUrl = resolveChatServiceUrl('https://127.0.0.1:8444');
       const axios = require('axios');
 
-      const response = await axios.get(`${chatServiceUrl}/api/chat-history`, {
+      const response = await axios.get(`${chatServiceUrl}/api/chat-history`, chatAxiosConfig(chatServiceUrl, {
         params: {
           since: startTimeMs,
           until: endTimeMs,
           contextMs: contextMs
-        },
-        httpsAgent: new (require('https').Agent)({ rejectUnauthorized: false }),
-        timeout: 5000
-      });
+        }
+      }));
 
       if (!response.data.success || !response.data.messages || response.data.messages.length === 0) {
         logger.debug(`💬 CLIPS: No chat messages found for clip ${clipId}`);

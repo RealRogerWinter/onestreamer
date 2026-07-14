@@ -11,6 +11,9 @@
  * extraction with no logic change. Takes the same `(io, socket, deps)`.
  */
 const logger = require('../../bootstrap/logger').child({ svc: 'StreamHandler' });
+// CH3: shared helper resolves CHAT_SERVICE_URL and attaches the
+// X-Internal-Secret header (+ https agent + timeout) to chat-service calls.
+const { chatServiceUrl: resolveChatServiceUrl, chatAxiosConfig } = require('../../utils/chatServiceClient');
 
 module.exports = function registerTakeover(io, socket, deps) {
   const {
@@ -311,18 +314,14 @@ module.exports = function registerTakeover(io, socket, deps) {
             announcementMessage = `🎬 ${streamerName} is going live!`;
           }
 
-          // Send announcement to chat service
-          const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
+          // Send announcement to chat service (CH3: chatAxiosConfig attaches
+          // the X-Internal-Secret header + https agent + 5s timeout).
+          const chatServiceUrl = resolveChatServiceUrl('https://127.0.0.1:8444');
 
           axios.post(`${chatServiceUrl}/api/system-message`, {
             message: announcementMessage,
             type: currentStreamer ? 'stream_takeover' : 'stream_start'
-          }, {
-            httpsAgent: new https.Agent({
-              rejectUnauthorized: false
-            }),
-            timeout: 5000
-          }).then(response => {
+          }, chatAxiosConfig(chatServiceUrl)).then(response => {
             logger.info(`📢 STREAM: Sent StreamBot announcement for ${streamerName}`);
           }).catch(error => {
             logger.error({ err: error }, '❌ STREAM: Failed to send StreamBot announcement');

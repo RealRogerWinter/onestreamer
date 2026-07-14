@@ -12,6 +12,8 @@
 
 const axios = require('axios');
 const https = require('https');
+// CH3: attaches the X-Internal-Secret header to chat-service calls.
+const { chatAxiosConfig } = require('../utils/chatServiceClient');
 
 const logger = require('../bootstrap/logger').child({ svc: 'ChatNotifier' });
 class ChatNotifier {
@@ -58,10 +60,10 @@ class ChatNotifier {
             const response = await this.axios.post(`${this.chatServiceUrl}/api/system-message`, {
                 message,
                 username
-            }, {
+            }, chatAxiosConfig(this.chatServiceUrl, {
                 timeout: 5000,
                 httpsAgent: this.httpsAgent
-            });
+            }));
 
             logger.debug(`✅ CHAT: System message sent successfully at ${timestamp}: "${message}"`);
             return response.data;

@@ -12,9 +12,11 @@
 const EventEmitter = require('events');
 const TwitchRandomService = require('./TwitchRandomService');
 const KickRandomService = require('./KickRandomService');
-const https = require('https');
 const axios = require('axios');
 const path = require('path');
+// CH3: shared helper resolves CHAT_SERVICE_URL and attaches the
+// X-Internal-Secret header (+ https agent + timeout) to chat-service calls.
+const { chatServiceUrl: resolveChatServiceUrl, chatAxiosConfig } = require('../utils/chatServiceClient');
 
 const RotationRetryState = require('./random-stream/RotationRetryState');
 const AnimalNameGenerator = require('./random-stream/AnimalNameGenerator');
@@ -264,8 +266,9 @@ class RandomStreamRotationService extends EventEmitter {
    */
   async sendChatAnnouncement(message) {
     try {
-      const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
-      const agent = new https.Agent({ rejectUnauthorized: false });
+      // CH3: chatAxiosConfig attaches the X-Internal-Secret header + https
+      // agent + 5s timeout.
+      const chatServiceUrl = resolveChatServiceUrl('https://127.0.0.1:8444');
 
       await axios.post(
         `${chatServiceUrl}/api/system-message`,
@@ -273,11 +276,9 @@ class RandomStreamRotationService extends EventEmitter {
           message: message,
           username: '🤖 StreamBot'
         },
-        {
-          httpsAgent: agent,
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 5000
-        }
+        chatAxiosConfig(chatServiceUrl, {
+          headers: { 'Content-Type': 'application/json' }
+        })
       );
 
       logger.debug('📢 Rotation announcement sent to chat');
