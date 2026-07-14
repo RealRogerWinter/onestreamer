@@ -96,8 +96,11 @@ function createClaimEventService(deps) {
 
     io.emit('new-message', streamerBotMessage);
 
-    // Set timeout to expire the claim event
-    setTimeout(() => {
+    // Set timeout to expire the claim event. Guarded unref: the claim timers
+    // must never be the only thing keeping a process alive — the chat
+    // service's listeners own the event loop, and jest must be able to exit
+    // (audit B6).
+    const expiryTimer = setTimeout(() => {
       if (activeClaimEvent && !activeClaimEvent.claimedBy) {
         const expiredMessage = `⏰ Claim event expired! No one claimed the ${activeClaimEvent.reward} points.`;
         const expiredBotMessage = {
@@ -119,6 +122,7 @@ function createClaimEventService(deps) {
         activeClaimEvent = null;
       }
     }, CLAIM_TIMEOUT);
+    if (typeof expiryTimer.unref === 'function') expiryTimer.unref();
 
     lastClaimEventTime = Date.now();
     return true;
@@ -140,6 +144,8 @@ function createClaimEventService(deps) {
       startClaimEvent(false);
       scheduleNextClaimEvent(); // Schedule the next one
     }, nextEventDelay);
+    // Guarded unref — see the expiry timer above (audit B6).
+    if (typeof claimEventTimer.unref === 'function') claimEventTimer.unref();
   }
 
   // Returns the live active-claim object (or null). Callers may mutate
