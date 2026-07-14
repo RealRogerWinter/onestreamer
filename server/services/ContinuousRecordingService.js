@@ -49,6 +49,14 @@ class ContinuousRecordingService extends EventEmitter {
     this.autoRecordInterval = null;
     this.currentRecordingTarget = null; // 'room' or participant identity (for participant egress)
 
+    // Auto-stop bookkeeping: consecutive 5s polls observing no publisher. After
+    // emptyRoomStopPolls (default 6 ≈ 30s of grace) the egress is stopped, so an
+    // empty room is never encoded indefinitely. An unbounded "keep recording
+    // briefly" was a major disk-leak contributor (the 11 GB / 8.6 GB single-day
+    // room-composite buckets).
+    this.consecutiveNoPublisherPolls = 0;
+    this.emptyRoomStopPolls = config.emptyRoomStopPolls || 6;
+
     // Stream identity tracking
     this.currentStreamIdentity = null;
     this.currentStreamSegmentId = null;
@@ -221,6 +229,10 @@ class ContinuousRecordingService extends EventEmitter {
         await new Promise(resolve => setTimeout(resolve, 1000)); // Brief delay
       }
 
+      if (hasPublisher) {
+        this.consecutiveNoPublisherPolls = 0;
+      }
+
       if (hasPublisher && !this.isRecording) {
         if (realStreamer) {
           logger.debug(`🎥 CONTINUOUS RECORDING: Detected REAL streamer ${realStreamer}, starting participant recording...`);
@@ -238,8 +250,17 @@ class ContinuousRecordingService extends EventEmitter {
           this._logViewbotSkipOnce();
         }
       } else if (!hasPublisher && this.isRecording) {
-        // Keep recording for a bit after stream ends to capture final moments
-        logger.debug('🎥 CONTINUOUS RECORDING: No publishers detected, will continue recording briefly...');
+        // Keep recording for a brief, BOUNDED grace after the stream ends (to
+        // capture final moments), then stop — otherwise an empty room is
+        // encoded to disk indefinitely.
+        this.consecutiveNoPublisherPolls += 1;
+        if (this.consecutiveNoPublisherPolls >= this.emptyRoomStopPolls) {
+          logger.debug(`🎥 CONTINUOUS RECORDING: No publishers for ${this.consecutiveNoPublisherPolls} polls — stopping egress`);
+          await this.stopRecording();
+          this.consecutiveNoPublisherPolls = 0;
+        } else {
+          logger.debug(`🎥 CONTINUOUS RECORDING: No publishers (${this.consecutiveNoPublisherPolls}/${this.emptyRoomStopPolls}), continuing briefly...`);
+        }
       }
 
       // Track stream identity changes (check what's actually being shown)

@@ -31,6 +31,17 @@ module.exports = function createGiftRouter({ logger, authService }) {
         });
       }
 
+      // A negative/zero/fractional quantity inverts both inventory writes
+      // (removeItemFromInventory subtracts a negative → mints for the sender;
+      // addItemToInventory adds a negative → steals from the recipient). Reject
+      // anything that isn't a positive integer.
+      if (!Number.isInteger(quantity) || quantity < 1) {
+        return res.status(400).json({
+          success: false,
+          error: 'quantity must be a positive integer'
+        });
+      }
+
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });

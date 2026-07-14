@@ -393,7 +393,11 @@ class ModerationService extends EventEmitter {
       ]
     );
 
-    const eventId = insertResult && (insertResult.lastID || insertResult.insertId || null);
+    // Both production runAsync adapters (sqlite3 + better-sqlite3) return
+    // { id, changes }, so `.id` is the real insert-id — `.lastID`/`.insertId`
+    // are always undefined here, which left eventId null and silently purged
+    // banned-frame (incl. potential CSAM) evidence instead of promoting it.
+    const eventId = insertResult && (insertResult.id ?? insertResult.lastID ?? insertResult.insertId ?? null);
 
     // Promote the audit JPEG to logs/visionbot/frames/banned/<eventId>.jpg
     // so it survives the rolling-hour purge and is available for appeal

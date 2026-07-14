@@ -154,8 +154,12 @@ const io = socketIo(server, {
       // Allow requests with no origin (e.g., server-side connections, ViewBots)
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
+      } else if (process.env.CORS_ALLOW_ALL === 'true') {
+        // Explicit, opt-in debug escape hatch (was unconditionally on, which is
+        // cross-site WebSocket hijacking with credentials:true). Keep OFF in prod.
+        callback(null, true);
       } else {
-        callback(null, true); // Allow all for now to debug ViewBots
+        callback(new Error('Origin not allowed by CORS'));
       }
     },
     methods: ["GET", "POST"],

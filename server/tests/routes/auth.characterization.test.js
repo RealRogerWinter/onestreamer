@@ -317,25 +317,29 @@ describe('routes/auth characterization', () => {
 
   // ---- Password reset ------------------------------------------------------
   describe('password reset', () => {
-    test('POST /auth/forgot-password returns resetToken when email exists', async () => {
+    // Security fix (2026-07 audit): the token is never returned in the response
+    // (was an account-takeover for any known email), and the response is
+    // identical whether or not the email resolves (closes the enumeration oracle).
+    test('POST /auth/forgot-password returns a generic message and never the token when email exists', async () => {
       mockRequestPasswordReset.mockResolvedValue('reset-tok');
       const res = await request(buildApp())
         .post('/auth/forgot-password')
         .send({ email: 'a@b.com' });
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ message: 'Password reset token generated', resetToken: 'reset-tok' });
+      expect(res.body).toEqual({ message: 'If that email is registered, a password reset link has been sent.' });
+      expect(res.body.resetToken).toBeUndefined();
       expect(mockRequestPasswordReset).toHaveBeenCalledWith('a@b.com');
     });
 
-    test('POST /auth/forgot-password 404 when email not found (falsy token)', async () => {
+    test('POST /auth/forgot-password returns the SAME 200 generic message when email not found (no enumeration oracle)', async () => {
       mockRequestPasswordReset.mockResolvedValue(null);
       const res = await request(buildApp())
         .post('/auth/forgot-password')
         .send({ email: 'missing@b.com' });
 
-      expect(res.status).toBe(404);
-      expect(res.body).toEqual({ error: 'Email not found' });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ message: 'If that email is registered, a password reset link has been sent.' });
     });
 
     test('POST /auth/reset-password 400 when token or new password missing', async () => {
