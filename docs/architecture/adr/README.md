@@ -67,6 +67,7 @@ What else we looked at and why we did not pick it.
 | 0024 | [Retire MediaSoup; LiveKit is the sole WebRTC backend](0024-retire-mediasoup-livekit-only.md) | accepted |
 | 0025 | [Docker containers replace PM2 for the Node app](0025-docker-replaces-pm2.md) | accepted |
 | 0026 | [CircleCI build → test → approval → deploy pipeline](0026-circleci-pipeline.md) | accepted |
+| 0029 | [Transaction gate + economy tx plumbing](0029-transaction-gate-and-economy-tx-plumbing.md) | accepted |
 
 ### Note on the 0013a slug
 
