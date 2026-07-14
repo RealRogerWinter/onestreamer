@@ -87,6 +87,18 @@ function createVoteService(deps) {
     onFailed
   } = config;
 
+  // Voter dedup key (audit CH2): dedup by authenticated user id when
+  // available (a logged-in user on two devices/IPs still counts once), else
+  // by IP. The IP is now the spoof-resistant last-XFF-hop value from
+  // core/ipAddress.js, so an anonymous client can no longer mint unlimited
+  // voter identities via a forged X-Forwarded-For header. The `u:`/`ip:`
+  // prefixes keep the two namespaces from colliding.
+  function voterKey(user) {
+    return (user && user.authenticatedUserId != null)
+      ? `u:${user.authenticatedUserId}`
+      : `ip:${user && user.ip}`;
+  }
+
   // Lifecycle state. Exposed via the returned `state` object so the parser
   // can do its existing `if (activeXVote)` truthy checks and cooldown reads
   // until PR-K4 migrates it.
@@ -157,7 +169,7 @@ function createVoteService(deps) {
 
     state.active = {
       startTime: Date.now(),
-      voters: new Set([initiator.ip]),
+      voters: new Set([voterKey(initiator)]),
       voterUsernames: new Set([initiator.username]),
       requiredVotes,
       totalViewers,
@@ -224,16 +236,18 @@ function createVoteService(deps) {
   }
 
   // Register a vote from `user`. Returns false if the user already voted
-  // (IP-deduped) or if there is no active vote. Triggers an early end() when
-  // the threshold is reached.
+  // (deduped by authenticated user id when present, else by IP — see
+  // voterKey above) or if there is no active vote. Triggers an early end()
+  // when the threshold is reached.
   function register(user) {
     if (!state.active) return false;
 
-    if (state.active.voters.has(user.ip)) {
+    const key = voterKey(user);
+    if (state.active.voters.has(key)) {
       return false;
     }
 
-    state.active.voters.add(user.ip);
+    state.active.voters.add(key);
     state.active.voterUsernames.add(user.username);
 
     const currentVotes = state.active.voters.size;

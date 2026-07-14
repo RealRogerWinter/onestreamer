@@ -182,10 +182,25 @@ class IPBanService {
   getIPFromSocket(socket) {
     // Try multiple methods to get the real IP
     let ip = socket.handshake.address;
-    
-    // Check for proxied IPs
+
+    // Check for proxied IPs. Audit M1: Socket.IO handshake reads bypass
+    // Express `trust proxy`, and the old FIRST-hop parse trusted the
+    // client-supplied leftmost X-Forwarded-For value — letting a banned
+    // client evade IP bans by forging the header. nginx APPENDS the real
+    // client address as the LAST hop ($proxy_add_x_forwarded_for), so take
+    // that. PRECONDITIONS (operator): exactly one trusted proxy (nginx;
+    // revisit as a hop-count parse if a CDN is added) and the app ports not
+    // directly reachable bypassing nginx (BIND_ADDR=127.0.0.1). Same fix
+    // lives in chat-service/core/ipAddress.js (audit CH2) — duplicated
+    // because the two processes don't share code.
     if (socket.handshake.headers['x-forwarded-for']) {
-      ip = socket.handshake.headers['x-forwarded-for'].split(',')[0].trim();
+      const hops = socket.handshake.headers['x-forwarded-for']
+        .split(',')
+        .map((h) => h.trim())
+        .filter((h) => h.length > 0);
+      if (hops.length > 0) {
+        ip = hops[hops.length - 1];
+      }
     } else if (socket.handshake.headers['x-real-ip']) {
       ip = socket.handshake.headers['x-real-ip'];
     }
