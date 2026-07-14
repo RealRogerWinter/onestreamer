@@ -461,7 +461,11 @@ class LiveKitService {
     at.addGrant({
       roomJoin: true,
       room: this.config.roomName,
-      canPublish: grants.canPublish !== false,
+      // Least privilege: publish is opt-IN (default false). A caller must
+      // explicitly prove the participant may publish (see media.js, which
+      // grants this only to the validated active streamer). Prevents a future
+      // caller that omits the grant from silently minting a publish token.
+      canPublish: grants.canPublish === true,
       canSubscribe: grants.canSubscribe !== false,
       canPublishData: grants.canPublishData !== false,
     });

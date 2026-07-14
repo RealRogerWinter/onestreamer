@@ -349,20 +349,44 @@ module.exports = function(rotationService) {
 
       const updates = {};
 
+      // Validate numerics BEFORE clamping: parseInt('abc') is NaN, and
+      // Math.max(1, Math.min(60, NaN)) is NaN — which, persisted as the
+      // rotation interval, drives a permanent rapid-rotation loop. Reject
+      // non-numeric input instead of silently storing NaN.
+      const asInt = (v) => {
+        const n = parseInt(v, 10);
+        return Number.isFinite(n) ? n : null;
+      };
+      const badNumber = (name) =>
+        res.status(400).json({ success: false, error: `${name} must be a number` });
+
       if (minRotationMinutes !== undefined) {
-        updates.minRotationMinutes = Math.max(1, Math.min(60, parseInt(minRotationMinutes)));
+        const n = asInt(minRotationMinutes);
+        if (n === null) return badNumber('minRotationMinutes');
+        updates.minRotationMinutes = Math.max(1, Math.min(60, n));
       }
       if (maxRotationMinutes !== undefined) {
-        updates.maxRotationMinutes = Math.max(1, Math.min(120, parseInt(maxRotationMinutes)));
+        const n = asInt(maxRotationMinutes);
+        if (n === null) return badNumber('maxRotationMinutes');
+        updates.maxRotationMinutes = Math.max(1, Math.min(120, n));
       }
       if (language !== undefined) {
         updates.language = language;
       }
       if (minViewers !== undefined) {
-        updates.minViewers = Math.max(0, parseInt(minViewers));
+        const n = asInt(minViewers);
+        if (n === null) return badNumber('minViewers');
+        updates.minViewers = Math.max(0, n);
       }
       if (maxViewers !== undefined) {
-        updates.maxViewers = Math.max(1, parseInt(maxViewers));
+        const n = asInt(maxViewers);
+        if (n === null) return badNumber('maxViewers');
+        updates.maxViewers = Math.max(1, n);
+      }
+      // Cross-field sanity: min must not exceed max when both are supplied.
+      if (updates.minRotationMinutes !== undefined && updates.maxRotationMinutes !== undefined
+          && updates.minRotationMinutes > updates.maxRotationMinutes) {
+        return res.status(400).json({ success: false, error: 'minRotationMinutes cannot exceed maxRotationMinutes' });
       }
       if (blockedCategories !== undefined && Array.isArray(blockedCategories)) {
         updates.blockedCategories = blockedCategories;

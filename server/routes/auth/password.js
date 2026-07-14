@@ -10,20 +10,18 @@ module.exports = function createPasswordRouter({ logger, authService }) {
     router.post('/forgot-password', requireTurnstile, async (req, res) => {
         try {
             const { email } = req.body;
-            const resetToken = await authService.requestPasswordReset(email);
-
-            if (resetToken) {
-                res.json({
-                    message: 'Password reset token generated',
-                    resetToken
-                });
-            } else {
-                res.status(404).json({ error: 'Email not found' });
-            }
+            // Fire the reset (emails the token). Never return the token to the
+            // caller: doing so is a full account-takeover for any known email.
+            // Also respond identically whether or not the email resolves, to
+            // close the account-enumeration oracle (was 404 vs 200).
+            await authService.requestPasswordReset(email);
         } catch (error) {
-            logger.error('Password reset request error:', error);
-            res.status(500).json({ error: 'Failed to process password reset' });
+            // Swallow to preserve the uniform response; log for ops.
+            logger.error({ err: error }, 'Password reset request error');
         }
+        res.json({
+            message: 'If that email is registered, a password reset link has been sent.'
+        });
     });
 
     router.post('/reset-password', async (req, res) => {

@@ -129,9 +129,25 @@ router.get('/livekit/token', async (req, res) => {
   const identity = req.query.identity || `user-${Date.now()}`;
   const roomName = req.query.room || 'onestreamer-main';
 
+  // Only the current active streamer may publish media. Everyone else — viewers,
+  // including anonymous ones — gets a subscribe-only token so viewing keeps
+  // working. Without this gate the (unauthenticated) endpoint minted
+  // publish-capable tokens for any attacker-chosen identity, allowing stream
+  // hijack / media injection / streamer eviction. The client sends
+  // identity = socket.id (LiveKitClient.getLiveKitToken), and the server sets
+  // the streamer's socket.id as the current streamer before the publish token
+  // is fetched, so the legitimate streamer still matches here.
+  let canPublish = false;
+  try {
+    const { streamService } = req.app.locals.services || {};
+    canPublish = !!(streamService && streamService.getCurrentStreamer() === identity);
+  } catch (e) {
+    canPublish = false;
+  }
+
   try {
     const token = await livekitService.generateToken(identity, {
-      canPublish: true,
+      canPublish,
       canSubscribe: true,
       canPublishData: true
     });
