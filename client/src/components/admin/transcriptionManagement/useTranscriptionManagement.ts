@@ -46,14 +46,14 @@ export function useTranscriptionManagement(addLog: (message: string) => void) {
     // Socket is already connected via context
     addLog('Connected to transcription service');
 
-    socket.on('transcription-started', (data: any) => {
+    const handleTranscriptionStarted = (data: any) => {
       addLog(`Transcription started: ${data.sessionId}`);
       setCurrentSessionId(data.sessionId);
       setLiveTranscription([]);
       loadStatus();
-    });
+    };
 
-    socket.on('transcription-update', (data: any) => {
+    const handleTranscriptionUpdate = (data: any) => {
       if (data.sessionId === currentSessionId) {
         // Filter out common hallucinations
         if (data.text && data.text.trim() !== 'you' && data.text.trim() !== '') {
@@ -75,10 +75,10 @@ export function useTranscriptionManagement(addLog: (message: string) => void) {
           }
         }
       }
-    });
+    };
 
     // Listen for buffer status updates
-    socket.on('buffer-status', (data: any) => {
+    const handleBufferStatus = (data: any) => {
       if (data.sessionId === currentSessionId) {
         // Update buffer health based on status
         const bufferHealth = data.duration > 10 ? 'good' : data.duration > 5 ? 'warning' : 'error';
@@ -91,9 +91,9 @@ export function useTranscriptionManagement(addLog: (message: string) => void) {
             : session
         ));
       }
-    });
+    };
 
-    socket.on('transcription-stopped', (data: any) => {
+    const handleTranscriptionStopped = (data: any) => {
       addLog(`Transcription completed: ${data.wordCount} words`);
       if (data.sessionId === currentSessionId) {
         setCurrentSessionId(null);
@@ -106,21 +106,28 @@ export function useTranscriptionManagement(addLog: (message: string) => void) {
       }
       loadStatus();
       loadHistory();
-    });
+    };
 
-    socket.on('stream-started', (data: any) => {
+    const handleStreamStarted = (data: any) => {
       addLog('Stream started');
       checkActiveStream();
-    });
+    };
 
-    socket.on('stream-ended', () => {
+    const handleStreamEnded = () => {
       addLog('Stream ended');
       setHasActiveStream(false);
       setCurrentStreamerId(null);
       if (currentSessionId) {
         stopTranscription();
       }
-    });
+    };
+
+    socket.on('transcription-started', handleTranscriptionStarted);
+    socket.on('transcription-update', handleTranscriptionUpdate);
+    socket.on('buffer-status', handleBufferStatus);
+    socket.on('transcription-stopped', handleTranscriptionStopped);
+    socket.on('stream-started', handleStreamStarted);
+    socket.on('stream-ended', handleStreamEnded);
 
     // Load initial data
     loadStatus();
@@ -128,13 +135,16 @@ export function useTranscriptionManagement(addLog: (message: string) => void) {
     checkActiveStream();
 
     return () => {
-      // Clean up event listeners
-      socket.off('transcription-started');
-      socket.off('transcription-update');
-      socket.off('buffer-status');
-      socket.off('transcription-stopped');
-      socket.off('stream-started');
-      socket.off('stream-ended');
+      // Clean up event listeners — pass the same handler refs so only OUR
+      // listeners are removed. A bare socket.off('stream-started') strips
+      // every other component's handlers on the shared main socket
+      // (audit Plan 05, C4).
+      socket.off('transcription-started', handleTranscriptionStarted);
+      socket.off('transcription-update', handleTranscriptionUpdate);
+      socket.off('buffer-status', handleBufferStatus);
+      socket.off('transcription-stopped', handleTranscriptionStopped);
+      socket.off('stream-started', handleStreamStarted);
+      socket.off('stream-ended', handleStreamEnded);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, connected, currentSessionId]);
