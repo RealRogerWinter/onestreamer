@@ -19,13 +19,45 @@ const logger = require('../../bootstrap/logger').child({ svc: 'RecordingDiskScan
  *   (currentSessionId).
  */
 class RecordingDiskScanner {
-  constructor({ outputDir, segmentDuration, retentionMinutes, recordingRepository, owner }) {
+  constructor({ outputDir, segmentDuration, retentionMinutes, recordingRepository, owner, pendingUploadMaxAgeMs, diskBudgetBytes }) {
     this.outputDir = outputDir;
     this.segmentDuration = segmentDuration;
     this.retentionMinutes = retentionMinutes;
     this.recordingRepository = recordingRepository;
     this.owner = owner;
     this.cleanupInterval = null;
+    // Backstop against the pending-upload gate pinning a dir forever (the
+    // 37 GB leak): a dir whose upload never confirms is reclaimed once its
+    // newest segment is older than this, regardless of b2_file_id. Mirrors the
+    // DB-side RecordingCleanupScheduler extendedCutoff valve. Default covers
+    // RecordingUploadScheduler.localBufferHours (2h) + RecordingCleanupScheduler
+    // retryWindow (24h) with margin.
+    this.pendingUploadMaxAgeMs = pendingUploadMaxAgeMs || (26 * 60 * 60 * 1000);
+    // Hard disk-budget backstop independent of upload state (defense in depth).
+    this.diskBudgetBytes = diskBudgetBytes || (20 * 1024 * 1024 * 1024);
+  }
+
+  /**
+   * Age (ms) of a session dir measured from its NEWEST `.ts` segment's mtime,
+   * not the dir-name date. A `recording_<YYYY-MM-DD>` bucket reads as hours old
+   * by its name even while it holds minutes-old segments, so name-based age
+   * would delete fresh footage during the `currentSessionId===null` window.
+   * Returns null when the dir has no segments.
+   */
+  _newestSegmentAgeMs(dirPath, now = Date.now()) {
+    let newest = 0;
+    try {
+      for (const f of fs.readdirSync(dirPath)) {
+        if (!f.endsWith('.ts')) continue;
+        try {
+          const m = fs.statSync(path.join(dirPath, f)).mtimeMs;
+          if (m > newest) newest = m;
+        } catch (_) { /* segment vanished mid-scan — ignore */ }
+      }
+    } catch (_) {
+      return null;
+    }
+    return newest > 0 ? (now - newest) : null;
   }
 
   /**
@@ -156,7 +188,7 @@ class RecordingDiskScanner {
       recordings.sort((a, b) => b.startTime - a.startTime);
 
     } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Failed to list recordings:', error);
+      logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Failed to list recordings');
     }
 
     return recordings;
@@ -324,7 +356,9 @@ class RecordingDiskScanner {
    */
   async cleanupOldRecordings() {
     try {
-      const cutoffTime = Date.now() - (this.retentionMinutes * 60 * 1000);
+      const now = Date.now();
+      const retentionMs = this.retentionMinutes * 60 * 1000;
+      const cutoffTime = now - retentionMs;
 
       // Build the pending-upload set BEFORE the readdir/stat loop so a
       // mid-iteration race (an upload completing while we iterate)
@@ -338,44 +372,70 @@ class RecordingDiskScanner {
         // Fail-closed: if the DB lookup fails, do NOT delete anything
         // this tick. Better to delay cleanup than to nuke an
         // unconfirmed upload's source file. Next tick retries.
-        logger.error('❌ CONTINUOUS RECORDING: Cleanup aborted — failed to load pending uploads:', dbError);
+        logger.error({ err: dbError }, '❌ CONTINUOUS RECORDING: Cleanup aborted — failed to load pending uploads');
         return;
       }
 
       const items = fs.readdirSync(this.outputDir);
       let deletedCount = 0;
       let skippedPendingUpload = 0;
+      let reclaimedStale = 0;
 
       for (const item of items) {
         const itemPath = path.join(this.outputDir, item);
-        const stat = fs.statSync(itemPath);
+        let stat;
+        try {
+          stat = fs.statSync(itemPath);
+        } catch (_) {
+          continue; // vanished mid-scan
+        }
 
         // Recognize both `recording_<YYYY-MM-DD>` (current egress buckets) and
-        // legacy `session_<unix-ms>` dirs. The old code matched only `session_`,
-        // so it never matched today's dirs and never deleted anything.
+        // legacy `session_<unix-ms>` dirs.
         const sessionTs = stat.isDirectory() ? this._parseSessionDir(item) : null;
         if (sessionTs !== null) {
-          // Don't delete the current active session
+          // Never touch the live session dir.
           if (item === this.owner.currentSessionId) {
             continue;
           }
 
-          if (sessionTs < cutoffTime) {
-            // PR 2.6: skip directories whose recording_sessions row
-            // still has b2_file_id = NULL (upload pending or in
-            // flight). Without this gate, we race the uploader.
-            if (pendingSessionIds.has(item)) {
+          // Age from the NEWEST segment mtime, not the dir-name date (which for
+          // a per-day bucket reads as hours old even when it holds fresh
+          // segments). Empty dirs fall back to the dir-name date.
+          const newestAgeMs = this._newestSegmentAgeMs(itemPath, now);
+          const dirAgeMs = newestAgeMs !== null ? newestAgeMs : (now - sessionTs);
+
+          // Still inside the rolling retention window — keep it.
+          if (dirAgeMs < retentionMs) {
+            continue;
+          }
+
+          if (pendingSessionIds.has(item)) {
+            // PR 2.6 gate: normally skip dirs whose recording_sessions row still
+            // has b2_file_id = NULL (upload pending/in-flight) so we don't race
+            // the uploader. BUT bound it: past pendingUploadMaxAgeMs the upload
+            // is never going to confirm (B2 off, or a permanently-failed
+            // session), and an unbounded skip pins the dir forever — the 37 GB
+            // leak. Reclaim it, loudly.
+            if (dirAgeMs < this.pendingUploadMaxAgeMs) {
               skippedPendingUpload++;
               continue;
             }
-            // Delete the entire session directory
+            logger.warn(
+              `🧹 CONTINUOUS RECORDING: Reclaiming stale pending-upload dir ${item} ` +
+              `(newest segment ${Math.round(dirAgeMs / 3600000)}h old, past ` +
+              `${Math.round(this.pendingUploadMaxAgeMs / 3600000)}h grace) — upload never confirmed`
+            );
             fs.rmSync(itemPath, { recursive: true, force: true });
-            deletedCount++;
+            reclaimedStale++;
+            continue;
           }
+
+          // Uploaded (or untracked) and past retention — delete.
+          fs.rmSync(itemPath, { recursive: true, force: true });
+          deletedCount++;
         } else if (!stat.isDirectory() && (item.endsWith('.mp4') || item.endsWith('.json'))) {
-          // Clean up old single-file recordings too (legacy format —
-          // not produced by current pipeline; left in place for any
-          // historical files that may still exist on disk).
+          // Legacy single-file recordings (not produced by current pipeline).
           const match = item.match(/room_(\d+)\./);
           if (match) {
             const timestamp = parseInt(match[1]);
@@ -387,15 +447,91 @@ class RecordingDiskScanner {
         }
       }
 
-      if (deletedCount > 0 || skippedPendingUpload > 0) {
-        const suffix = skippedPendingUpload > 0
-          ? ` (skipped ${skippedPendingUpload} pending B2 upload)`
-          : '';
+      if (deletedCount > 0 || skippedPendingUpload > 0 || reclaimedStale > 0) {
+        const parts = [];
+        if (skippedPendingUpload > 0) parts.push(`skipped ${skippedPendingUpload} pending B2 upload`);
+        if (reclaimedStale > 0) parts.push(`reclaimed ${reclaimedStale} stale un-uploaded`);
+        const suffix = parts.length ? ` (${parts.join(', ')})` : '';
         logger.debug(`🧹 CONTINUOUS RECORDING: Cleaned up ${deletedCount} old recording(s)${suffix}`);
       }
 
+      // Hard disk-budget backstop, independent of upload state — defense in
+      // depth against any future regression of the gate above.
+      this._enforceDiskBudget(now);
+
     } catch (error) {
-      logger.error('❌ CONTINUOUS RECORDING: Cleanup error:', error);
+      logger.error({ err: error }, '❌ CONTINUOUS RECORDING: Cleanup error');
+    }
+  }
+
+  /**
+   * Total bytes of a directory's immediate files (segments live one level deep).
+   */
+  _dirSizeBytes(dirPath) {
+    let total = 0;
+    try {
+      for (const f of fs.readdirSync(dirPath)) {
+        try {
+          total += fs.statSync(path.join(dirPath, f)).size;
+        } catch (_) { /* ignore */ }
+      }
+    } catch (_) { /* ignore */ }
+    return total;
+  }
+
+  /**
+   * If the recordings footprint exceeds diskBudgetBytes, delete the oldest
+   * (by newest-segment mtime) session dirs — never the live one, never a dir
+   * still inside the rolling window — until under budget. This is a last-resort
+   * guard: after the age-backstop above runs, the footprint should already be
+   * small, so this normally computes sizes over a handful of dirs and deletes
+   * nothing.
+   */
+  _enforceDiskBudget(now = Date.now()) {
+    let entries;
+    try {
+      entries = fs.readdirSync(this.outputDir);
+    } catch (_) {
+      return;
+    }
+    const retentionMs = this.retentionMinutes * 60 * 1000;
+    const dirs = [];
+    let totalBytes = 0;
+    for (const item of entries) {
+      if (this._parseSessionDir(item) === null) continue;
+      const itemPath = path.join(this.outputDir, item);
+      let stat;
+      try {
+        stat = fs.statSync(itemPath);
+      } catch (_) {
+        continue;
+      }
+      if (!stat.isDirectory()) continue;
+      const size = this._dirSizeBytes(itemPath);
+      totalBytes += size;
+      const ageMs = this._newestSegmentAgeMs(itemPath, now);
+      dirs.push({ item, itemPath, size, ageMs: ageMs === null ? Infinity : ageMs });
+    }
+
+    if (totalBytes <= this.diskBudgetBytes) return;
+
+    // Oldest first; protect the live dir and anything inside the rolling window.
+    dirs.sort((a, b) => b.ageMs - a.ageMs);
+    for (const d of dirs) {
+      if (totalBytes <= this.diskBudgetBytes) break;
+      if (d.item === this.owner.currentSessionId) continue;
+      if (d.ageMs < retentionMs) continue;
+      logger.warn(
+        `🧹 CONTINUOUS RECORDING: Disk-budget backstop deleting ${d.item} ` +
+        `(${Math.round(d.size / 1e9 * 10) / 10} GB) — footprint over ` +
+        `${Math.round(this.diskBudgetBytes / 1e9)} GB budget`
+      );
+      try {
+        fs.rmSync(d.itemPath, { recursive: true, force: true });
+        totalBytes -= d.size;
+      } catch (e) {
+        logger.error({ err: e }, `❌ CONTINUOUS RECORDING: Disk-budget delete failed for ${d.item}`);
+      }
     }
   }
 
