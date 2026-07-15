@@ -2,6 +2,7 @@ const axios = require('axios');
 const requireEnv = require('../config/requireEnv');
 
 const logger = require('../bootstrap/logger').child({ svc: 'turnstile' });
+const { ipFromRequest } = require('../utils/clientIp');
 const TURNSTILE_SECRET_KEY = requireEnv('TURNSTILE_SECRET_KEY');
 
 // Cloudflare Turnstile verification endpoint
@@ -32,11 +33,12 @@ const verifyTurnstile = (required = true) => {
       formData.append('secret', TURNSTILE_SECRET_KEY);
       formData.append('response', token);
       
-      const remoteIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
+      // S5: last-XFF-hop rule — the leftmost hop is client-supplied, so
+      // the old parse let a caller attribute the Turnstile verification to
+      // an arbitrary IP.
+      const remoteIp = ipFromRequest(req);
       if (remoteIp) {
-        // Extract first IP if there are multiple (from proxy chain)
-        const firstIp = remoteIp.split(',')[0].trim();
-        formData.append('remoteip', firstIp);
+        formData.append('remoteip', remoteIp);
       }
       
       const response = await axios.post(TURNSTILE_VERIFY_URL, formData, {
@@ -93,7 +95,7 @@ const verifyTurnstile = (required = true) => {
       req.turnstileData = {
         challenge_ts,
         hostname,
-        ip: req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip
+        ip: ipFromRequest(req) // S5: last-XFF-hop rule
       };
 
       next();

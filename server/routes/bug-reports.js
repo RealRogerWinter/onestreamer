@@ -9,6 +9,7 @@ const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const { requireTurnstile } = require('../middleware/turnstile');
 const UserRepository = require('../database/repository/UserRepository');
 const applyPragmas = require('../database/applyPragmas');
+const { ipFromRequest } = require('../utils/clientIp');
 
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
 const db = new sqlite3.Database(dbPath, (err) => {
@@ -69,7 +70,8 @@ router.post('/', requireTurnstile, optionalAuth, async (req, res) => {
         // Get user info and IP
         const userId = req.user ? req.user.id : null;
         const reportUsername = userId ? req.user.username : (username || 'Anonymous');
-        const ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
+        // S5: last-XFF-hop rule — the raw header is client-spoofable.
+        const ipAddress = ipFromRequest(req);
         const userAgent = req.headers['user-agent'] || '';
         
         // Prepare session data
