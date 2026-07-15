@@ -28,6 +28,9 @@ describe('RotationRetryState', () => {
         lastFailureTime: null,
         lastSuccessTime: null,
         currentRetryTimer: null,
+        // T4: resolver slot for the awaited backoff promise (cancel sites
+        // settle it instead of orphaning the awaiter)
+        pendingResolve: null,
       });
     });
 
@@ -177,6 +180,73 @@ describe('RotationRetryState', () => {
       expect(op).toHaveBeenCalledTimes(1);
       expect(result.success).toBe(true);
       expect(r.state.consecutiveFailures).toBe(0); // reset before op ran
+    });
+
+    // T4: cancelling a pending backoff must SETTLE the awaited promise
+    // ({ success:false, cancelled:true }) — previously the awaiter's async
+    // frame hung forever.
+    test('clearTimer() while a backoff is pending resolves it cancelled and op never runs', async () => {
+      const r = new RotationRetryState({ maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 8000, backoffMultiplier: 2 });
+      const op = jest.fn().mockResolvedValue({ success: true });
+
+      const p = r.scheduleRetryWithBackoff(op, 'cancelled');
+      r.clearTimer();
+
+      const result = await p;
+      expect(result).toEqual({ success: false, cancelled: true });
+      await jest.advanceTimersByTimeAsync(10000);
+      expect(op).not.toHaveBeenCalled();
+    });
+
+    test('clearTimer() cancels the max-retries branch the same way', async () => {
+      const r = new RotationRetryState({ maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 7000, backoffMultiplier: 2 });
+      r.state.consecutiveFailures = 3; // at the cap
+      const op = jest.fn().mockResolvedValue({ success: true });
+
+      const p = r.scheduleRetryWithBackoff(op, 'cancelled-maxed');
+      r.clearTimer();
+
+      const result = await p;
+      expect(result).toEqual({ success: false, cancelled: true });
+      await jest.advanceTimersByTimeAsync(10000);
+      expect(op).not.toHaveBeenCalled();
+    });
+
+    test('recordSuccess() while a backoff is pending also resolves it cancelled', async () => {
+      const r = new RotationRetryState({ maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 8000, backoffMultiplier: 2 });
+      const op = jest.fn().mockResolvedValue({ success: true });
+
+      const p = r.scheduleRetryWithBackoff(op, 'success-cancel');
+      r.recordSuccess();
+
+      const result = await p;
+      expect(result).toEqual({ success: false, cancelled: true });
+      expect(op).not.toHaveBeenCalled();
+    });
+
+    test('op calling recordSuccess() internally does NOT clobber the real result (resolver detached before op runs)', async () => {
+      const r = new RotationRetryState({ maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 8000, backoffMultiplier: 2 });
+      const op = jest.fn().mockImplementation(async () => {
+        r.recordSuccess(); // what a successful rotation does via _recordSuccess
+        return { success: true, real: true };
+      });
+
+      const p = r.scheduleRetryWithBackoff(op, 'ordering');
+      await jest.advanceTimersByTimeAsync(1000);
+      const result = await p;
+
+      expect(result).toEqual({ success: true, real: true });
+    });
+
+    test('a rejecting op settles the promise with { success:false, error }', async () => {
+      const r = new RotationRetryState({ maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 8000, backoffMultiplier: 2 });
+      const op = jest.fn().mockRejectedValue(new Error('exploded'));
+
+      const p = r.scheduleRetryWithBackoff(op, 'rejecting');
+      await jest.advanceTimersByTimeAsync(1000);
+      const result = await p;
+
+      expect(result).toEqual({ success: false, error: 'exploded' });
     });
 
     test('logger.debug is called when supplied; absence is safe', async () => {

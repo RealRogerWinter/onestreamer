@@ -75,6 +75,10 @@ function makeDeps(overrides = {}) {
     getCurrentStreamer: jest.fn(() => null),
     setStreamer: jest.fn(),
     clearStreamer: jest.fn(),
+    // T2: pass-through by default; the serialization tests swap in the real
+    // promise-chain implementation.
+    takeoverInProgress: false,
+    runExclusiveTakeover: jest.fn((task) => task()),
   };
   const sessionService = {
     getUniqueViewerCount: jest.fn(() => 7),
@@ -354,12 +358,9 @@ describe('sockets/StreamHandler characterization', () => {
       const prevSocket = { leave: jest.fn(), emit: jest.fn() };
       io.sockets.sockets.set('real-streamer-2', prevSocket);
 
-      // The takeover path awaits a 200ms `setTimeout` (viewer-cleanup grace
-      // window). Under fake timers we must advance the clock for the promise
-      // chain to settle, so run the handler and the timers concurrently.
-      const done = handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
-      await jest.advanceTimersByTimeAsync(250);
-      await done;
+      // (T2 removed the 200ms viewer-cleanup sleep, so the handler settles
+      // without advancing fake timers.)
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
 
       // cooldown applied to the taken-over streamer
       expect(deps.takeoverService.setSocketCooldown).toHaveBeenCalledWith('real-streamer-2', 'stream_taken_over');
@@ -458,6 +459,103 @@ describe('sockets/StreamHandler characterization', () => {
       // viewbots bypass takeover recording + global cooldown
       expect(deps.takeoverService.recordTakeover).not.toHaveBeenCalled();
       expect(deps.broadcastGlobalCooldown).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // T2 (ADR-0033): takeover serialization
+  // -------------------------------------------------------------------------
+  describe('request-to-stream serialization (T2)', () => {
+    // Use the REAL StreamService serialization primitive so these tests pin
+    // the actual chain semantics, not a mock's.
+    const StreamService = require('../../services/StreamService');
+
+    function makeSerializedDeps() {
+      const real = new StreamService();
+      return {
+        deps: {
+          streamService: {
+            addViewer: jest.fn(),
+            getStreamStatus: jest.fn(() => ({ hasActiveStream: false, viewerCount: 0 })),
+            getCurrentStreamer: jest.fn(() => null),
+            setStreamer: jest.fn(),
+            clearStreamer: jest.fn(),
+            takeoverInProgress: false,
+            runExclusiveTakeover: (task) => real.runExclusiveTakeover(task),
+          },
+        },
+        real,
+      };
+    }
+
+    afterEach(() => {
+      delete global.randomStreamRotationService;
+    });
+
+    test('two concurrent request-to-stream invocations run serialized (second waits for first recordTakeover)', async () => {
+      const { deps: depsOverride } = makeSerializedDeps();
+      const a = register({ socketId: 'socket-A', deps: depsOverride });
+
+      // First handler blocks inside the critical section on canTakeOver.
+      let releaseFirst;
+      const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+      a.deps.takeoverService.canTakeOver
+        .mockImplementationOnce(async () => { await firstGate; return { allowed: true }; })
+        .mockImplementationOnce(async () => ({ allowed: false, reason: 'global_cooldown', cooldownRemaining: 30 }));
+
+      const first = a.handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+      const second = a.handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      // Give the second handler every chance to run ahead — it must not have
+      // entered canTakeOver while the first holds the section.
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      expect(a.deps.takeoverService.canTakeOver).toHaveBeenCalledTimes(1);
+
+      releaseFirst();
+      await first;
+      await second;
+
+      // Second re-ran canTakeOver after the first finished and was denied.
+      expect(a.deps.takeoverService.canTakeOver).toHaveBeenCalledTimes(2);
+      expect(a.deps.streamService.setStreamer).toHaveBeenCalledTimes(1);
+      expect(a.deps.takeoverService.recordTakeover).toHaveBeenCalledTimes(1);
+      const denied = a.socket.emit.mock.calls.find((c) => c[0] === 'takeover-denied');
+      expect(denied).toBeDefined();
+      expect(denied[1].reason).toBe('global_cooldown');
+    });
+
+    test('rotation pause happens BEFORE setStreamer for a real user', async () => {
+      const { deps: depsOverride } = makeSerializedDeps();
+      const pause = jest.fn(async () => {});
+      global.randomStreamRotationService = { isEnabled: true, pause };
+
+      const { deps, handlers } = register({ deps: depsOverride });
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      expect(pause).toHaveBeenCalledTimes(1);
+      expect(deps.streamService.setStreamer).toHaveBeenCalledTimes(1);
+      expect(pause.mock.invocationCallOrder[0])
+        .toBeLessThan(deps.streamService.setStreamer.mock.invocationCallOrder[0]);
+    });
+
+    test('takeoverInProgress is set during the section and cleared after, including on throw', async () => {
+      const real = new StreamService();
+      const observed = [];
+
+      await real.runExclusiveTakeover(async () => {
+        observed.push(real.takeoverInProgress);
+      });
+      expect(observed).toEqual([true]);
+      expect(real.takeoverInProgress).toBe(false);
+
+      await expect(real.runExclusiveTakeover(async () => {
+        throw new Error('boom');
+      })).rejects.toThrow('boom');
+      expect(real.takeoverInProgress).toBe(false);
+
+      // The chain is not wedged by the rejection.
+      const ran = await real.runExclusiveTakeover(async () => 'ok');
+      expect(ran).toBe('ok');
     });
   });
 

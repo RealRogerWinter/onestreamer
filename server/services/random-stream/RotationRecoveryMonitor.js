@@ -53,8 +53,12 @@ class RotationRecoveryMonitor {
         }
 
         const runMonitorCheck = async () => {
-            // Skip if already processing or a retry timer is pending
-            if (host.isRestarting || host.retryState.currentRetryTimer) return;
+            // Skip if already processing or a retry timer is pending.
+            // T2: also stand down mid-takeover — before setStreamer lands,
+            // hasRealStreamer() is false and the monitor would start a
+            // rotation into the middle of the takeover.
+            if (host.isRestarting || host.retryState.currentRetryTimer
+                || global.streamService?.takeoverInProgress) return;
 
             // CRITICAL: Check if ViewBotURLService is busy (starting or reconnecting)
             if (host.viewBotURLService && host.viewBotURLService.isBusy()) {

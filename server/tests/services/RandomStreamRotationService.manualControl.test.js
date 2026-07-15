@@ -496,4 +496,36 @@ describe('forceRotate', () => {
     expect(result.success).toBe(false);
     expect(svc._scheduleNextRotation).not.toHaveBeenCalled();
   });
+
+  // T4: a successful force-rotate resets the failure counter and cancels any
+  // pending backoff retry — previously the stale retry fired after the
+  // force-rotate and rotated a second time.
+  test('success resets consecutiveFailures and clears a pending retry timer', async () => {
+    const svc = makeRunningService();
+    svc.retryState.consecutiveFailures = 3;
+    svc.retryState.currentRetryTimer = setTimeout(() => {}, 999999);
+    svc._rotateToNewStream = jest.fn().mockResolvedValue({ success: true });
+    svc._scheduleNextRotation = jest.fn();
+    svc._emitRotationTiming = jest.fn();
+
+    const result = await svc.forceRotate();
+    expect(result.success).toBe(true);
+    expect(svc.retryState.consecutiveFailures).toBe(0);
+    expect(svc.retryState.currentRetryTimer).toBeNull();
+  });
+
+  // T2: force-rotate is denied while a takeover critical section runs (same
+  // response shape the chat-service vote handlers read).
+  test('denied while a takeover is in progress', async () => {
+    global.streamService = { takeoverInProgress: true };
+    try {
+      const svc = makeRunningService();
+      svc._rotateToNewStream = jest.fn();
+      const result = await svc.forceRotate();
+      expect(result).toEqual({ success: false, error: 'Takeover in progress' });
+      expect(svc._rotateToNewStream).not.toHaveBeenCalled();
+    } finally {
+      delete global.streamService;
+    }
+  });
 });

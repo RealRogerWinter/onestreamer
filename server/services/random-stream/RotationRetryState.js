@@ -8,7 +8,10 @@
  *   recordSuccess()                → resets failures + clears timer
  *   recordFailure()                → bumps failures, stamps lastFailureTime
  *   shouldRetry()                  → failures < maxRetries
- *   clearTimer()                   → cancels pending retry
+ *   clearTimer()                   → cancels pending retry AND resolves its
+ *                                    awaited promise with
+ *                                    { success:false, cancelled:true } (T4:
+ *                                    previously the awaiter hung forever)
  *   reset()                        → zeroes failures + lastFailureTime
  *   scheduleRetryWithBackoff(op, name, { isLocked, logger })
  *                                  → schedules `op()` after backoff delay;
@@ -34,6 +37,9 @@ class RotationRetryState {
       lastFailureTime: null,
       lastSuccessTime: null,
       currentRetryTimer: null,
+      // T4: resolver of the currently-awaited backoff promise, so cancel
+      // sites can settle it instead of orphaning the awaiter.
+      pendingResolve: null,
     };
   }
 
@@ -64,6 +70,14 @@ class RotationRetryState {
       clearTimeout(this.state.currentRetryTimer);
       this.state.currentRetryTimer = null;
     }
+    // T4: settle the awaited backoff promise so the awaiter's async frame
+    // unwinds. `cancelled: true` tells it another actor took ownership of the
+    // timer lifecycle (lock/pause/stop/forceRotate) — do not reschedule.
+    if (this.state.pendingResolve) {
+      const resolve = this.state.pendingResolve;
+      this.state.pendingResolve = null;
+      resolve({ success: false, cancelled: true });
+    }
   }
 
   reset() {
@@ -80,6 +94,10 @@ class RotationRetryState {
 
       return new Promise((resolve) => {
         this.state.currentRetryTimer = setTimeout(async () => {
+          // T4 load-bearing: detach the resolver BEFORE running the op — the
+          // op's own success path calls recordSuccess() → clearTimer(), and
+          // without this the cancel resolution would win over the real result.
+          this.state.pendingResolve = null;
           if (isLocked()) {
             log?.debug('🔒 ROTATION: Skipping retry - timer is locked');
             resolve({ success: false, error: 'Rotation is locked' });
@@ -87,9 +105,14 @@ class RotationRetryState {
           }
           log?.debug(`🔄 ROTATION: Resetting retry counter and attempting ${operationName} again...`);
           this.state.consecutiveFailures = 0;
-          const result = await operation();
-          resolve(result);
+          try {
+            const result = await operation();
+            resolve(result);
+          } catch (err) {
+            resolve({ success: false, error: err.message });
+          }
         }, this.config.maxDelayMs);
+        this.state.pendingResolve = resolve;
       });
     }
 
@@ -99,14 +122,21 @@ class RotationRetryState {
 
     return new Promise((resolve) => {
       this.state.currentRetryTimer = setTimeout(async () => {
+        // T4: detach the resolver before the op runs (see max-retries branch).
+        this.state.pendingResolve = null;
         if (isLocked()) {
           log?.debug('🔒 ROTATION: Skipping retry - timer is locked');
           resolve({ success: false, error: 'Rotation is locked' });
           return;
         }
-        const result = await operation();
-        resolve(result);
+        try {
+          const result = await operation();
+          resolve(result);
+        } catch (err) {
+          resolve({ success: false, error: err.message });
+        }
       }, delay);
+      this.state.pendingResolve = resolve;
     });
   }
 }
