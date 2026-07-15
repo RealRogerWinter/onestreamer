@@ -43,28 +43,46 @@ class RecordingUploadScheduler {
     }
 
     /**
-     * Load any sessions that need uploading from database
+     * Load any sessions that need uploading from database.
+     *
+     * Status-agnostic on purpose (ADR-0028): the old
+     * `WHERE status = 'completed'` recovered nothing because the retired
+     * per-day session model never wrote a terminal status. Anything with a
+     * finished recording (end_time set) and no confirmed archive
+     * (b2_file_id NULL) is a recovery candidate — including stale
+     * 'processing' rows from a crash mid-upload (the every-boot
+     * 202607140001 migration also resets those to 'completed' for the
+     * DB-row reaper's benefit).
+     *
+     * ADDITIVE: never overwrite an entry already in uploadQueue — a failed
+     * upload sits there with a +30min retry backoff, and re-deriving its
+     * schedule from end_time+buffer (long past due) would collapse the
+     * backoff into a tight retry loop.
      */
     async loadPendingUploads() {
         try {
-            // Find completed sessions that haven't been uploaded yet
             const sessions = await allAsync(`
                 SELECT * FROM recording_sessions
-                WHERE status = 'completed' AND b2_file_id IS NULL
+                WHERE b2_file_id IS NULL AND end_time IS NOT NULL AND status != 'uploaded'
                 ORDER BY end_time ASC
             `);
 
+            let queued = 0;
             for (const session of sessions) {
-                if (session.end_time) {
-                    const scheduledTime = session.end_time + (this.localBufferHours * 60 * 60 * 1000);
-                    this.uploadQueue.set(session.session_id, scheduledTime);
-                    logger.debug(`[UploadScheduler] Queued session ${session.session_id} for upload at ${new Date(scheduledTime).toISOString()}`);
+                if (this.uploadQueue.has(session.session_id)) {
+                    continue;
                 }
+                const scheduledTime = session.end_time + (this.localBufferHours * 60 * 60 * 1000);
+                this.uploadQueue.set(session.session_id, scheduledTime);
+                queued++;
+                logger.debug(`[UploadScheduler] Queued session ${session.session_id} for upload at ${new Date(scheduledTime).toISOString()}`);
             }
 
-            logger.debug(`[UploadScheduler] Loaded ${sessions.length} pending uploads from database`);
+            if (queued > 0) {
+                logger.debug(`[UploadScheduler] Loaded ${queued} pending uploads from database`);
+            }
         } catch (error) {
-            logger.error('[UploadScheduler] Error loading pending uploads:', error.message);
+            logger.error({ err: error }, '[UploadScheduler] Error loading pending uploads');
         }
     }
 
@@ -96,6 +114,11 @@ class RecordingUploadScheduler {
         this.isProcessing = true;
 
         try {
+            // Re-discover pending sessions each tick (additive — see
+            // loadPendingUploads) so a missed recording-stopped event or a
+            // restart can never strand a finished run un-archived.
+            await this.loadPendingUploads();
+
             const now = Date.now();
 
             for (const [sessionId, scheduledTime] of this.uploadQueue) {
@@ -115,7 +138,7 @@ class RecordingUploadScheduler {
                 }
             }
         } catch (error) {
-            logger.error('[UploadScheduler] Error processing uploads:', error.message);
+            logger.error({ err: error }, '[UploadScheduler] Error processing uploads');
         } finally {
             this.isProcessing = false;
         }
@@ -193,7 +216,7 @@ class RecordingUploadScheduler {
                 return { success: false, error: result.error };
             }
         } catch (error) {
-            logger.error(`[UploadScheduler] Error uploading session ${sessionId}:`, error.message);
+            logger.error({ err: error }, `[UploadScheduler] Error uploading session ${sessionId}`);
             return { success: false, error: error.message };
         }
     }
@@ -209,7 +232,7 @@ class RecordingUploadScheduler {
                 logger.debug(`[UploadScheduler] Cleaned up local files: ${localPath}`);
             }
         } catch (error) {
-            logger.error(`[UploadScheduler] Error cleaning up local files:`, error.message);
+            logger.error({ err: error }, '[UploadScheduler] Error cleaning up local files');
         }
     }
 

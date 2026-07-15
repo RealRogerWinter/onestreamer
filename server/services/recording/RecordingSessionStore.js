@@ -49,18 +49,22 @@ class RecordingSessionStore {
         }
       }
 
-      // Use INSERT OR IGNORE to avoid creating duplicates for the same day's recording
+      // Per-run session ids (ADR-0028): every run inserts a fresh row.
+      // INSERT OR IGNORE remains as a guard against a re-entrant create
+      // for the same run id.
       await this.recordingRepository.insertSessionIfMissing({
         sessionId, streamerIdentity, streamerUserId, streamerUsername, startTime, localPath,
       });
 
-      // Update the session to recording status (in case it was marked as ended)
+      // Re-activate the row for a re-entrant start of the SAME run. The
+      // repository guard refuses to downgrade 'uploaded'/'processing'
+      // rows (audit R8).
       await this.recordingRepository.setSessionRecording(sessionId);
 
       logger.debug(`📝 SESSION DB: Recording session ${sessionId} active for streamer ${streamerUsername || streamerIdentity || 'room'}`);
       return { success: true };
     } catch (error) {
-      logger.error('❌ SESSION DB: Failed to create session record:', error.message);
+      logger.error({ err: error }, '❌ SESSION DB: Failed to create session record');
       return { success: false, error: error.message };
     }
   }
@@ -73,16 +77,21 @@ class RecordingSessionStore {
       const startTime = await this.getSessionStartTime(sessionId);
       const durationMs = startTime ? (endTime - startTime) : 0;
 
-      // Don't mark as completed - session represents the whole day's recording
-      // Just update the segment count and duration
       await this.recordingRepository.updateSessionEnd(sessionId, {
         endTime, durationMs, segmentCount,
       });
 
+      // Per-run sessions reach a terminal state when the run stops
+      // (ADR-0028): 'completed' is what upload recovery and DB-row
+      // reaping key on. The retired per-day model deliberately never
+      // wrote this ("session represents the whole day"), which left
+      // rows in 'recording' forever.
+      await this.recordingRepository.markSessionCompleted(sessionId);
+
       logger.debug(`📝 SESSION DB: Updated session ${sessionId} - duration: ${Math.floor(durationMs / 1000)}s, added ${segmentCount} segments`);
       return { success: true };
     } catch (error) {
-      logger.error('❌ SESSION DB: Failed to update session record:', error.message);
+      logger.error({ err: error }, '❌ SESSION DB: Failed to update session record');
       return { success: false, error: error.message };
     }
   }
@@ -122,7 +131,7 @@ class RecordingSessionStore {
 
       return result.lastID;
     } catch (error) {
-      logger.error('❌ STREAM TRACKING: Failed to log segment start:', error.message);
+      logger.error({ err: error }, '❌ STREAM TRACKING: Failed to log segment start');
       return null;
     }
   }
@@ -139,7 +148,7 @@ class RecordingSessionStore {
 
       logger.debug(`📝 STREAM TRACKING: Ended segment ID ${segmentId} at ${new Date(now).toISOString()}`);
     } catch (error) {
-      logger.error('❌ STREAM TRACKING: Failed to log segment end:', error.message);
+      logger.error({ err: error }, '❌ STREAM TRACKING: Failed to log segment end');
     }
   }
 
@@ -155,7 +164,7 @@ class RecordingSessionStore {
 
       logger.debug(`📝 STREAM TRACKING: Ended all open segments for session ${sessionId}`);
     } catch (error) {
-      logger.error('❌ STREAM TRACKING: Failed to end open segments:', error.message);
+      logger.error({ err: error }, '❌ STREAM TRACKING: Failed to end open segments');
     }
   }
 
@@ -192,7 +201,7 @@ class RecordingSessionStore {
       }
 
     } catch (error) {
-      logger.error('❌ STREAM TRACKING: Error tracking identity change:', error.message);
+      logger.error({ err: error }, '❌ STREAM TRACKING: Error tracking identity change');
     }
   }
 }
