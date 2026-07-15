@@ -28,14 +28,22 @@ const pino = require('pino');
 const { getTraceId } = require('./trace-context');
 
 const isDev = process.env.NODE_ENV !== 'production';
+// pino's transport runs pino-pretty on a worker thread; under jest that
+// thread outlives the test and keeps the worker process from exiting
+// (audit B6), so tests get plain JSON like production.
+const isTest = process.env.NODE_ENV === 'test';
 
 const logger = pino({
-    level: process.env.LOG_LEVEL || (isDev ? 'debug' : 'info'),
+    // Silent under jest: pino's write path (worker thread or direct fd
+    // write) breaks under suites that mock fs wholesale, and tests must
+    // not depend on logger I/O. LOG_LEVEL still re-enables output for
+    // debugging a test run.
+    level: process.env.LOG_LEVEL || (isTest ? 'silent' : isDev ? 'debug' : 'info'),
     mixin() {
         const traceId = getTraceId();
         return traceId ? { traceId } : {};
     },
-    transport: isDev
+    transport: isDev && !isTest
         ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:MM:ss' } }
         : undefined,
 });

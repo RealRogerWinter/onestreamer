@@ -113,8 +113,11 @@ class OllamaQueue {
     }
 
     startRequestProcessor() {
-        // Periodically check and process queue
-        setInterval(() => {
+        if (this._processorTimer) return; // idempotent
+        // Periodically check and process queue. Guarded unref: this 1 Hz
+        // tick must never be the only thing keeping a process alive —
+        // constructing ChatBotService in a test used to leak it (audit B6).
+        this._processorTimer = setInterval(() => {
             this.processQueue();
 
             // Clean up old cache entries
@@ -125,6 +128,14 @@ class OllamaQueue {
                 }
             }
         }, 1000); // Check every second
+        if (typeof this._processorTimer.unref === 'function') this._processorTimer.unref();
+    }
+
+    stop() {
+        if (this._processorTimer) {
+            clearInterval(this._processorTimer);
+            this._processorTimer = null;
+        }
     }
 
     getModelConfig(modelName) {
