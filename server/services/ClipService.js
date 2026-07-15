@@ -55,8 +55,21 @@ class ClipService {
     // Profanity filter for clip titles and descriptions
     this.profanityFilter = new ProfanityFilterService();
 
-    // Cleanup old entries periodically
-    setInterval(() => this.cleanupRateLimitCaches(), 15 * 60 * 1000); // Every 15 minutes
+    // Cleanup old entries periodically. Guarded unref: under jest fake
+    // timers the stub handle may lack unref, and the timer must never be
+    // the only thing keeping a process alive (audit B6).
+    this._rateLimitCleanupTimer = setInterval(() => this.cleanupRateLimitCaches(), 15 * 60 * 1000); // Every 15 minutes
+    if (typeof this._rateLimitCleanupTimer.unref === 'function') this._rateLimitCleanupTimer.unref();
+  }
+
+  /**
+   * Stop the rate-limit cache cleanup interval (tests/shutdown).
+   */
+  stopRateLimitCleanup() {
+    if (this._rateLimitCleanupTimer) {
+      clearInterval(this._rateLimitCleanupTimer);
+      this._rateLimitCleanupTimer = null;
+    }
   }
 
   /**
