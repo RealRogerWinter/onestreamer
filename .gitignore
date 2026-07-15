@@ -118,10 +118,18 @@ nginx/*
 !nginx/.gitkeep
 !nginx/*.example.conf
 
-# LiveKit per-deploy configs — dormant infrastructure (ADR-0002, ADR-0007),
-# only the sanitized livekit-*.example.yaml references are tracked
+# LiveKit per-deploy configs — LiveKit is the sole WebRTC backend (ADR-0024)
+# and these carry the live api_key/api_secret on a deployed host. Only the
+# sanitized *.example siblings are tracked (audit Plan 02 S4 / Plan 03 D3:
+# a `git commit -a` must never be able to pick up a secret-bearing config).
 livekit-config.yaml
 livekit-ssl.yaml
+egress-config.yaml
+ingress-config.yaml
+
+# Secret-bearing rotation backups (e.g. .env.bak-20260604-rotate,
+# egress-config.yaml.bak-20260604-rotate) — same S4/D3 rule
+*.bak-*-rotate
 
 # Recording artifacts (keep the .gitkeep scaffolding, ignore actual recordings)
 recordings/**

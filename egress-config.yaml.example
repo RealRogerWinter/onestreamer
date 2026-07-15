@@ -1,3 +1,6 @@
+# TEMPLATE — copy to egress-config.yaml on the deploy host and fill in the real
+# LiveKit api_key/api_secret. The real egress-config.yaml is gitignored
+# (audit S4/D3): it must never be committed.
 # LiveKit Egress Configuration
 log_level: info
 # Set these to your LiveKit API key/secret (must match the LiveKit server). Do NOT commit real values.
