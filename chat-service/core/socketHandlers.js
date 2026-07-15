@@ -32,10 +32,15 @@
 //   - `register(socket)` — installs all listeners for one connection.
 //   - `userLastMessage` / `userMessageHistory` — the throttle Maps, exposed
 //     for graceful-shutdown cleanup. Do not mutate from outside otherwise.
+//   - `pruneThrottleState(now?)` — age-based sweep of the throttle Maps
+//     (audit CH6); also runs automatically on an unref'd 60s interval.
 
 // Client-IP derivation (audit CH2): last-XFF-hop parse + IPv6 normalization
 // moved to ./ipAddress.js so the spoof-resistant parse is unit-testable.
 const { getIpAddress } = require('./ipAddress');
+// Audit CH5: anonymous usernames are derived from hash(salt + IP) so they
+// are stable across restarts (see generateUsername below).
+const crypto = require('crypto');
 
 // Rate-limit and duplicate-detection windows. Kept here (not as deps) since
 // they are implementation details of the throttle subsystem and have no
@@ -103,11 +108,35 @@ function createSocketHandlers(deps) {
     uuidv4
   } = deps;
 
-  // Generate random username with color for anonymous viewers.
-  function generateUsername() {
-    const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
-    const number = Math.floor(Math.random() * 9999) + 1;
-    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+  // Audit CH5: salt for the deterministic anonymous-username derivation.
+  // Normally supplied by moderation/moderationService.js, which persists it
+  // next to the moderation store so the same IP regenerates the SAME
+  // username after a restart (persisted username-bans on anonymous viewers
+  // used to be voided by every restart, because the old implementation
+  // picked a fresh random name). If the moderation service predates
+  // getAnonSalt (e.g. older test stubs), fall back to an ephemeral
+  // per-process salt — identical to the pre-fix behavior.
+  const ephemeralAnonSalt = crypto.randomBytes(32).toString('hex');
+  const getAnonSalt = typeof moderationService.getAnonSalt === 'function'
+    ? moderationService.getAnonSalt
+    : () => ephemeralAnonSalt;
+
+  // Generate a username with color for anonymous viewers. Deterministic per
+  // IP (audit CH5): the same IP + same persisted salt always yields the same
+  // Animal+Number name and color, so moderation state keyed by username
+  // survives chat-service restarts even though ipToUser is in-memory only.
+  // Display format is unchanged (Animal + 1..9999 + palette color). Two IPs
+  // hashing to the same name is possible but rare (~500k combinations) and
+  // no worse than the random collisions the old implementation allowed —
+  // there was never a uniqueness fallback here.
+  function generateUsername(ip) {
+    const digest = crypto
+      .createHash('sha256')
+      .update(`${getAnonSalt()}:${ip}`)
+      .digest();
+    const animal = ANIMALS[digest.readUInt32BE(0) % ANIMALS.length];
+    const number = (digest.readUInt32BE(4) % 9999) + 1;
+    const color = COLORS[digest.readUInt32BE(8) % COLORS.length];
 
     return {
       name: `${animal}${number}`,
@@ -185,6 +214,37 @@ function createSocketHandlers(deps) {
   // returned factory object.
   const userLastMessage = new Map();    // username -> last-message timestamp
   const userMessageHistory = new Map(); // username -> [{ message, timestamp }, ...]
+
+  // Audit CH6: these Maps are keyed by USERNAME, which is shared across
+  // sockets (same anonymous IP in two tabs, an authenticated user on two
+  // devices), so a per-disconnect delete would need live-socket refcounting
+  // and would also let a quick reconnect reset the rate limit. Instead, a
+  // periodic age-based sweep removes entries whose newest activity is older
+  // than DUPLICATE_MESSAGE_WINDOW (30s) — the longest window either gate
+  // reads — so pruning can never change gating decisions, and the Maps no
+  // longer grow unboundedly with every username that ever chatted.
+  const THROTTLE_SWEEP_INTERVAL = 60 * 1000;
+
+  function pruneThrottleState(now = Date.now()) {
+    for (const [username, lastTs] of userLastMessage) {
+      if (now - lastTs >= DUPLICATE_MESSAGE_WINDOW) {
+        userLastMessage.delete(username);
+      }
+    }
+    for (const [username, history] of userMessageHistory) {
+      const recent = history.filter((msg) => now - msg.timestamp < DUPLICATE_MESSAGE_WINDOW);
+      if (recent.length === 0) {
+        userMessageHistory.delete(username);
+      } else if (recent.length !== history.length) {
+        userMessageHistory.set(username, recent);
+      }
+    }
+  }
+
+  // Guarded unref, matching the claim/ban timers (audit B6): the sweep must
+  // never be the only thing keeping the process alive, and jest must exit.
+  const throttleSweepTimer = setInterval(pruneThrottleState, THROTTLE_SWEEP_INTERVAL);
+  if (typeof throttleSweepTimer.unref === 'function') throttleSweepTimer.unref();
 
   // Send throttle notification to user (private message). Kept inline here
   // (not a top-level helper in index.js) because nothing outside this
@@ -362,8 +422,8 @@ function createSocketHandlers(deps) {
           userInfo = ipToUser.get(ip);
           console.log(`💬 CHAT: Reusing existing username for IP ${ip}: ${userInfo.name}`);
         } else {
-          // Generate new username for new IP
-          userInfo = generateUsername();
+          // Derive username for new IP (deterministic per IP — audit CH5)
+          userInfo = generateUsername(ip);
           userInfo.isAuthenticated = false;
           ipToUser.set(ip, userInfo);
           console.log(`💬 CHAT: Assigned NEW username for IP ${ip}: ${userInfo.name} with color ${userInfo.color}`);
@@ -733,7 +793,11 @@ function createSocketHandlers(deps) {
   return {
     register,
     userLastMessage,
-    userMessageHistory
+    userMessageHistory,
+    // Audit CH6: exposed for tests and for callers that want an eager sweep;
+    // the interval above runs it automatically once a minute.
+    pruneThrottleState,
+    _throttleSweepTimer: throttleSweepTimer
   };
 }
 

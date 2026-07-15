@@ -45,33 +45,69 @@ function listMigrationFiles(dir = __dirname) {
 }
 
 /**
+ * Async-failure sink (audit DB6 / ADR-0035 — fail-loud migrations).
+ *
+ * Migrations queue callback-style statements, so their errors surface
+ * AFTER runAll() has returned — a synchronous throw can't reach them.
+ * addColumn/dropColumn (and any migration that detects a non-benign
+ * error in its own callback) record the failure here; the schema
+ * bootstrap (server/database/schema.js) drains the sink at its flush
+ * marker and REJECTS initializeSchema's promise when anything was
+ * recorded, which aborts boot at the database.js call site.
+ *
+ * Module-level on purpose: migration modules only receive (db, logger),
+ * and threading a per-run collector through every migration signature
+ * buys nothing at one-boot-at-a-time scale.
+ */
+const pendingAsyncFailures = [];
+
+function recordAsyncFailure(info) {
+    pendingAsyncFailures.push(info);
+}
+
+/** Return-and-clear the recorded async failures. */
+function drainAsyncFailures() {
+    return pendingAsyncFailures.splice(0);
+}
+
+/**
  * Run every migration in the directory in lexicographic filename order.
  *
  * Each migration module must export `run(db, logger)`. The migration is free
  * to use callback-style `db.run(...)` — when invoked from inside
  * `db.serialize(...)`, statements queue in order on the same handle.
  *
+ * FAIL-LOUD contract (audit DB6 / ADR-0035): a migration module that fails
+ * to load, lacks run(), or throws synchronously THROWS out of this function
+ * (after logging) instead of being skipped. A silently-skipped migration
+ * means the process runs against a schema it does not understand — data
+ * corruption is worse than downtime. Benign idempotency errors (duplicate
+ * column / no such column, handled in addColumn/dropColumn below) are still
+ * tolerated exactly as before.
+ *
  * @param {sqlite3.Database} db
  * @param {{ error: Function, debug?: Function }} logger
+ * @param {string} [dir] - migrations directory (injectable for tests)
  */
-function runAll(db, logger) {
-    const files = listMigrationFiles();
+function runAll(db, logger, dir = __dirname) {
+    const files = listMigrationFiles(dir);
     for (const file of files) {
         let mod;
         try {
-            mod = require(path.join(__dirname, file));
+            mod = require(path.join(dir, file));
         } catch (e) {
-            logger.error({ err: e, file }, 'Migration module failed to load');
-            continue;
+            logger.error({ err: e, file }, 'Migration module failed to load — aborting boot');
+            throw new Error(`Migration ${file} failed to load: ${e.message}`);
         }
         if (typeof mod.run !== 'function') {
-            logger.error({ file }, 'Migration module missing run(db, logger) export');
-            continue;
+            logger.error({ file }, 'Migration module missing run(db, logger) export — aborting boot');
+            throw new Error(`Migration ${file} is missing its run(db, logger) export`);
         }
         try {
             mod.run(db, logger);
         } catch (e) {
-            logger.error({ err: e, file }, 'Migration run() threw synchronously');
+            logger.error({ err: e, file }, 'Migration run() threw synchronously — aborting boot');
+            throw new Error(`Migration ${file} threw synchronously: ${e.message}`);
         }
     }
     if (typeof logger.debug === 'function') {
@@ -83,6 +119,10 @@ function runAll(db, logger) {
  * Helper used by individual migration modules: ALTER TABLE ... ADD COLUMN
  * with the "already added" branch silently swallowed. Mirrors the exact
  * pattern the pre-PR-14.1 inline ALTERs used.
+ *
+ * Any OTHER error is non-benign: it is logged AND recorded in the
+ * async-failure sink, which makes initializeSchema reject and boot abort
+ * (audit DB6 / ADR-0035).
  */
 function addColumn(db, table, column, definition, logger) {
     db.run(
@@ -93,6 +133,7 @@ function addColumn(db, table, column, definition, logger) {
                     { err, table, column },
                     'Migration ALTER TABLE ADD COLUMN failed'
                 );
+                recordAsyncFailure({ err, op: 'addColumn', table, column });
             }
         }
     );
@@ -110,6 +151,7 @@ function dropColumn(db, table, column, logger) {
                 { err, table, column },
                 'Migration ALTER TABLE DROP COLUMN failed'
             );
+            recordAsyncFailure({ err, op: 'dropColumn', table, column });
         }
     });
 }
@@ -119,5 +161,7 @@ module.exports = {
     listMigrationFiles,
     addColumn,
     dropColumn,
+    recordAsyncFailure,
+    drainAsyncFailures,
     MIGRATION_FILENAME_RE,
 };

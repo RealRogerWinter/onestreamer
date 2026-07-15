@@ -81,8 +81,11 @@ class IPBanService {
       return isBanned;
     } catch (error) {
       logger.error('❌ Failed to check IP ban:', error);
-      // On error, be conservative and don't ban
-      return false;
+      // Audit M6: fail CLOSED, matching the cache-hit branch above. If the
+      // DB is unavailable we can't prove the IP is clean, so treat it as
+      // banned (callers interpret `true` as deny). Failing open here let a
+      // banned IP connect/stream during any DB hiccup.
+      return true;
     }
   }
 

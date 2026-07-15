@@ -89,11 +89,24 @@ class ViewerNotifier {
     const logger = this.logger;
     if (!owner.io) return;
 
+    // V3: the ready-poll runs for up to the max wait — the stream may have
+    // been stopped (e.g. by a takeover tearing relays down) while polling.
+    if (!owner.activeStreams.has(urlId)) {
+      logger.debug(`⏸️ URL STREAM: ${urlId} no longer active - skipping viewer broadcast`);
+      return;
+    }
+
     // CRITICAL: Register the URL stream as the current streamer
     // This ensures viewers switch to consuming from the URL stream
-    owner._registerAsCurrentStreamer(urlId, {
+    // V3: refusal means a real streamer took over mid-startup — do NOT
+    // flip viewers to the relay over the human.
+    const registered = owner._registerAsCurrentStreamer(urlId, {
       streamerLog: `📢 URL STREAM: Registering ${urlId} as current streamer`,
     });
+    if (!registered) {
+      logger.warn(`⏸️ URL STREAM: ${urlId} superseded - skipping new-streamer broadcast`);
+      return;
+    }
 
     logger.debug('📢 URL STREAM: Broadcasting new-streamer event to all viewers');
     owner.io.emit('new-streamer', {

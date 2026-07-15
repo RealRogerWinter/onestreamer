@@ -175,13 +175,15 @@ class URLStreamHealthService extends EventEmitter {
   updateFFmpegProgress(urlId, stats) {
     let health = this.healthData.get(urlId);
     if (!health) {
+      const now = Date.now();
       health = {
         urlId,
-        lastCheck: Date.now(),
+        lastCheck: now,
         sourceStatus: 'unknown',
         ffmpegStatus: 'active',
         frameCount: 0,
-        lastFrameTime: Date.now(),
+        lastFrameTime: now,
+        streamStartTime: now,  // Track when stream started for grace period
         errors: [],
         warnings: []
       };

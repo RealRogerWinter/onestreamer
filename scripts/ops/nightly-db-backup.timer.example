@@ -1,0 +1,15 @@
+# Nightly off-host DB backup (audit D2.a) — EXAMPLE systemd timer.
+# See nightly-db-backup.service.example for install steps.
+
+[Unit]
+Description=Run OneStreamer nightly off-host SQLite backup at 03:30 UTC
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+# Catch up after downtime (a skipped night still runs on next boot):
+Persistent=true
+RandomizedDelaySec=300
+Unit=onestreamer-nightly-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -75,6 +75,7 @@ What else we looked at and why we did not pick it.
 | 0032 | [Descendant-scoped shutdown kill, Chrome-pkill deletion, and a shutdown watchdog](0032-descendant-scoped-shutdown-kill.md) | accepted |
 | 0033 | [Serialized takeover critical section (promise chain + takeoverInProgress flag)](0033-serialized-takeover-critical-section.md) | accepted |
 | 0034 | [B2 upload: tuple-ordered concat, multipart, bounded execution, terminal upload_failed](0034-b2-upload-ordering-multipart-timeouts.md) | accepted |
+| 0035 | [user_stats uniqueness (dedup + UNIQUE index + upsert) and fail-loud migrations](0035-user-stats-uniqueness-fail-loud-migrations.md) | accepted |
 
 ### Note on the 0013a slug
 

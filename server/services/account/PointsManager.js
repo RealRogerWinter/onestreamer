@@ -52,9 +52,15 @@ class PointsManager {
         if (updated) {
             newBalance = updated.points_balance;
         } else {
-            // No stats row yet — INSERT with the amount as the initial balance.
-            await repo.insertStatsWithBalance({ userId, balance: amount });
-            newBalance = amount;
+            // No stats row yet — upsert with the amount as the initial
+            // balance. ON CONFLICT(user_id) (audit DB5 / ADR-0035): two
+            // concurrent first-credits can both miss the UPDATE above; the
+            // loser's INSERT folds into an atomic increment instead of
+            // creating a duplicate row, and RETURNING gives the true
+            // post-write balance (which may exceed `amount` when we lost
+            // that race).
+            const upserted = await repo.upsertStatsWithBalance({ userId, balance: amount });
+            newBalance = upserted.points_balance;
         }
 
         await this.owner.recordTransaction(userId, amount, newBalance, type, description, metadata, tx);
@@ -89,9 +95,16 @@ class PointsManager {
             // Either no stats row or insufficient balance — disambiguate
             // for the error message. The SELECT can race with concurrent
             // mutations but it's only feeding the error string.
+            //
+            // E7: typed AccountServiceError(400) instead of a plain Error, so
+            // routes surface a client 400 instead of an opaque 500 when the
+            // atomic guard loses a race that the caller's pre-check passed.
+            // Lazy require to dodge the PointsManager ⟷ AccountService
+            // circular import (same pattern as AdminPointsManager).
+            const { AccountServiceError } = require('../AccountService');
             const stats = await repo.getPointsBalanceByUserId(userId);
             const currentBalance = stats?.points_balance || 0;
-            throw new Error(`Insufficient points balance. Has: ${currentBalance}, Needs: ${amount}`);
+            throw new AccountServiceError(400, `Insufficient points balance. Has: ${currentBalance}, Needs: ${amount}`);
         }
 
         const newBalance = updated.points_balance;

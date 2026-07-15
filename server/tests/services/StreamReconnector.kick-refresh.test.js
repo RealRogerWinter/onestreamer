@@ -28,7 +28,9 @@ function makeOwner({ playbackUrl = 'https://kick.example/fresh.m3u8' } = {}) {
     _stopProcesses: jest.fn(async () => {}),
     _teardownIngress: jest.fn(async () => {}),
     _startPipeline: jest.fn(async () => {}),
-    _registerAsCurrentStreamer: jest.fn(),
+    // V3: refresh consults the real-streamer standdown guard; not superseded here.
+    _supersededByRealStreamer: jest.fn(() => null),
+    _registerAsCurrentStreamer: jest.fn(() => true),
   };
   return owner;
 }

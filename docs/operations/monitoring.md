@@ -197,13 +197,26 @@ For a more structured metrics surface (Prometheus-style), nothing is built today
 
 ## Alerting recommendations
 
-Even without a metrics stack, three cheap alerts catch most real incidents:
+Even without a metrics stack, four cheap alerts catch most real incidents:
 
 1. **`/health` failures (3 consecutive)** — service is down.
 2. **Disk free below 10 GB** — recording accumulation or log rotation lag.
 3. **`onestreamer-server` PM2 restart count rises** — something is crashing repeatedly.
+4. **Backup age > 25 h** — the nightly DB backup ([`scripts/ops/nightly-db-backup.sh`](../../scripts/ops/nightly-db-backup.sh), see [`backup-restore.md`](backup-restore.md)) didn't run or didn't complete. The script already exits non-zero on any failure (including a failed off-host push), but a cron/timer that silently stopped firing produces no exit code at all — the age check is the backstop. Local check (25 h = 1500 min):
 
-Healthchecks.io + a cron-fed cURL is the lowest-friction way to wire this up. Wire whichever paging system you already use; for a single-host single-operator setup, even just email is fine.
+   ```bash
+   find "${BACKUP_DIR:-/backups/nightly}" -name 'onestreamer-nightly-*.db.gz' -mmin -1500 | grep -q . \
+     || echo "ALERT: newest nightly DB backup is older than 25h"
+   ```
+
+   If your off-host target is reachable (e.g. rsync-over-ssh), run the same check on the remote side too — a fresh local artifact with a stale off-host copy means the push leg is broken, which is the failure the whole tool exists to prevent:
+
+   ```bash
+   ssh backup@backup-host "find /backups/onestreamer -name 'onestreamer-nightly-*.db.gz' -mmin -1500 | grep -q ." \
+     || echo "ALERT: newest OFF-HOST DB backup copy is older than 25h"
+   ```
+
+Healthchecks.io + a cron-fed cURL is the lowest-friction way to wire this up (for the backup itself, a wrapper that pings Healthchecks.io only on exit 0 gives you both the failure and the didn't-run cases). Wire whichever paging system you already use; for a single-host single-operator setup, even just email is fine.
 
 ## See also
 

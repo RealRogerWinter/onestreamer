@@ -107,6 +107,9 @@ public/hls/*.m3u8
 
 # Runtime state / per-deploy config — checked-in counterparts have .example.* siblings
 chat-service/moderation_data.json
+# Per-install anonymous-identity salt (audit CH5) — runtime secret, sibling
+# of the moderation store; also covers .bak/.tmp of the store itself
+chat-service/moderation_data.json.*
 server/data/*-state.json
 youtube-cookies.txt
 

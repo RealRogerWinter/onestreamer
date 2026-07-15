@@ -775,6 +775,84 @@ describe('ModerationService.checkBotOutput (MovieBot output gate)', () => {
     expect((await svc.checkBotOutput(undefined)).allowed).toBe(true);
   });
 
+  // Audit M7: the output gate must fail CLOSED when Stage 1 soft-matched
+  // but Stage 2 produced no usable verdict — previously a degraded Stage 2
+  // (Groq outage) let every non-hard Stage-1 match ship unverified under
+  // the platform identity.
+  test('M7: soft-tier match + degraded Stage 2 → DROPPED (fail closed)', async () => {
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => ({ degraded: true, reason: 'breaker_open' })),
+    });
+    const { svc, moderationNotifier, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    const r = await svc.checkBotOutput('that was so cool nigga, fair play', { botUsername: 'bot_d' });
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toBe('stage2_unverifiable');
+    expect(moderationNotifier.botOutputDropped).toHaveBeenCalledTimes(1);
+    const row = await wrapper.getAsync('SELECT * FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.final_decision).toBe('mb_output_dropped');
+    expect(row.action_taken).toBe('dropped_stage2_unverifiable');
+    expect(row.stage2_verdict_json).toContain('degraded');
+  });
+
+  test('M7: soft-tier match + Stage 2 error result → DROPPED (fail closed)', async () => {
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => ({ error: 'groq_http_500', raw_status: 500, raw_body: null })),
+    });
+    const { svc } = await buildService({ stage2 });
+    await svc.initialize();
+    const r = await svc.checkBotOutput('that was so cool nigga, fair play', { botUsername: 'bot_d' });
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toBe('stage2_unverifiable');
+  });
+
+  test('M7: soft-tier match + Stage 2 throws → DROPPED (fail closed)', async () => {
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => { throw new Error('network boom'); }),
+    });
+    const { svc } = await buildService({ stage2 });
+    await svc.initialize();
+    const r = await svc.checkBotOutput('that was so cool nigga, fair play', { botUsername: 'bot_d' });
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toBe('stage2_unverifiable');
+  });
+
+  test('M7: soft-tier match + Stage 2 breaker open (isReady=false) → DROPPED (fail closed)', async () => {
+    const stage2 = makeStage2Stub({ isReady: jest.fn(() => false) });
+    const { svc } = await buildService({ stage2 });
+    await svc.initialize();
+    const r = await svc.checkBotOutput('that was so cool nigga, fair play', { botUsername: 'bot_d' });
+    expect(stage2.classify).not.toHaveBeenCalled();
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toBe('stage2_unverifiable');
+  });
+
+  test('M7: clean text (no Stage-1 match) + degraded Stage 2 → still allowed', async () => {
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => ({ degraded: true, reason: 'breaker_open' })),
+    });
+    const { svc, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    const r = await svc.checkBotOutput('That was a really fun stream segment, classic dad jokes.', { botUsername: 'bot_d' });
+    expect(r.allowed).toBe(true);
+    expect(stage2.classify).not.toHaveBeenCalled();
+    const rows = await wrapper.allAsync('SELECT * FROM moderation_events');
+    expect(rows).toHaveLength(0);
+  });
+
+  test('M7: hard-tier match + degraded Stage 2 keeps the hard-hit reason (behavior unchanged)', async () => {
+    const stage2 = makeStage2Stub({
+      classify: jest.fn(async () => ({ degraded: true, reason: 'breaker_open' })),
+    });
+    const { svc, wrapper } = await buildService({ stage2 });
+    await svc.initialize();
+    const r = await svc.checkBotOutput('lol what a faggot move from the streamer', { botUsername: 'bot_d' });
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toBe('hard_tier_word');
+    const row = await wrapper.getAsync('SELECT action_taken FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.action_taken).toBe('dropped_hard_tier_word');
+  });
+
   test('stopped service short-circuits to allowed:true', async () => {
     const { svc } = await buildService();
     await svc.initialize();

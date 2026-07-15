@@ -101,6 +101,28 @@ function makeBetterSchemaShim(rawBetterDb) {
             if (typeof cb === 'function') cb.call({}, err);
             else if (err) throw err;
         },
+        // Migration 202605270010 probes sqlite_master via db.get() before its
+        // addColumn. The shim's original serialize+run surface silently broke
+        // it here ("db.get is not a function", swallowed by the pre-DB6
+        // runner); with fail-loud migrations (ADR-0035) that throw aborts the
+        // bootstrap, so the shim must cover the full surface migrations use.
+        get(sql, params, cb) {
+            if (typeof params === 'function') {
+                cb = params;
+                params = undefined;
+            }
+            let err = null;
+            let row;
+            try {
+                const stmt = rawBetterDb.prepare(sql);
+                const args = params === undefined ? [] : Array.isArray(params) ? params : [params];
+                row = stmt.get(...args);
+            } catch (e) {
+                err = e;
+            }
+            if (typeof cb === 'function') cb.call({}, err, row);
+            else if (err) throw err;
+        },
     };
 }
 
