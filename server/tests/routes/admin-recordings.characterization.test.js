@@ -237,6 +237,28 @@ describe('routes/admin-recordings (characterization)', () => {
     expect(mockRecordingRepo.getSessionLocalPath).toHaveBeenCalledWith('s4');
   });
 
+  // --- S6: path-traversal confinement --------------------------------------
+  test('GET /segment/:sessionId/:filename rejects a traversal filename with 400', async () => {
+    mockRecordingRepo.getSessionLocalPath.mockResolvedValue({ local_path: '/rec/s6' });
+
+    // encoded ../../../../etc/passwd — express decodes it into the :filename param
+    const res = await request(app).get('/admin/review/segment/s6/..%2f..%2f..%2f..%2fetc%2fpasswd');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ success: false, error: 'Invalid segment filename' });
+  });
+
+  test('GET /sessions/:sessionId/stream?file= rejects a traversal file with 400', async () => {
+    mockRecordingRepo.getSessionById.mockResolvedValue({ session_id: 's6', local_path: '/rec/s6' });
+
+    const res = await request(app)
+      .get('/admin/review/sessions/s6/stream')
+      .query({ file: '../../../../etc/passwd' });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ success: false, error: 'Invalid segment filename' });
+  });
+
   // --- Group: chat ---------------------------------------------------------
 
   test('GET /sessions/:sessionId/chat returns mapped messages with flags', async () => {

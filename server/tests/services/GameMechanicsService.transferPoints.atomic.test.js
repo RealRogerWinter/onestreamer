@@ -66,6 +66,7 @@ async function bootstrapSchema(primitives) {
             is_admin BOOLEAN DEFAULT 0,
             is_moderator BOOLEAN DEFAULT 0,
             is_banned BOOLEAN DEFAULT 0,
+            account_status TEXT DEFAULT 'active',
             oauth_provider TEXT,
             username_changed BOOLEAN DEFAULT 0,
             avatar_url TEXT,

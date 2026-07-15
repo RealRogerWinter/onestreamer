@@ -186,61 +186,10 @@ class LiveKitService {
     };
   }
 
-  async createWebRtcTransport(socketId, isMobile = false) {
-    logger.debug(`📡 LIVEKIT: Creating transport for ${socketId}`);
-    
-    // Generate access token for this participant
-    const token = await this.generateToken(socketId, {
-      canPublish: true,
-      canSubscribe: true,
-      canPublishData: true
-    });
-
-    // Store transport info (LiveKit doesn't use transports like MediaSoup)
-    const transportInfo = {
-      id: `lk-transport-${socketId}-${Date.now()}`,
-      socketId: socketId,
-      token: token,
-      url: this.config.wsUrl,
-      createdAt: Date.now()
-    };
-
-    this.transports.set(socketId, transportInfo);
-
-    // Return MediaSoup-compatible transport options
-    return {
-      id: transportInfo.id,
-      iceParameters: {
-        usernameFragment: 'livekit',
-        password: token.substring(0, 22) // Fake ICE password
-      },
-      iceCandidates: this.getIceCandidates(),
-      dtlsParameters: {
-        fingerprints: [
-          {
-            algorithm: 'sha-256',
-            value: 'FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF'
-          }
-        ],
-        role: 'server'
-      },
-      // LiveKit-specific data for client
-      livekitData: {
-        token: token,
-        url: this.config.wsUrl,
-        roomName: this.config.roomName,
-        turnServers: {
-          urls: [
-            'stun:onestreamer.live:3478',
-            'turn:onestreamer.live:3478?transport=udp',
-            'turn:onestreamer.live:3478?transport=tcp',
-            'turns:onestreamer.live:5349?transport=tcp'
-          ],
-          ...generateTurnCredentials(socketId)
-        }
-      }
-    };
-  }
+  // (S2-residual: createWebRtcTransport was deleted — a dead MediaSoup-era
+  // shim with zero callers post-ADR-0024 that unconditionally minted a
+  // canPublish:true token, defeating generateToken's inverted default if it
+  // were ever re-wired. The remaining MediaSoup compat maps/shims are L2.)
 
   async connectTransport(socketId, dtlsParameters) {
     logger.debug(`🔗 LIVEKIT: Connecting transport for ${socketId}`);

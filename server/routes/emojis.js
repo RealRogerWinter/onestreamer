@@ -168,9 +168,14 @@ function createEmojiRouter(deps) {
             // Ensure code is formatted correctly (without colons)
             const cleanCode = code.replace(/^:+|:+$/g, '');
         
-            const { exec } = require('child_process');
+            // S12: execFile + argv array instead of exec() with shell
+            // interpolation of file paths (latent RCE if a path ever became
+            // user-influenced). The `2>/dev/null` shell redirect is dropped —
+            // execFile has no shell; stderr is captured and ignored on the
+            // success paths as before.
+            const { execFile } = require('child_process');
             const util = require('util');
-            const execPromise = util.promisify(exec);
+            const execFilePromise = util.promisify(execFile);
         
             const fileExt = path.extname(req.file.filename).toLowerCase();
             let finalFilePath = req.file.path;
@@ -184,11 +189,11 @@ function createEmojiRouter(deps) {
                 
                     // First decode to PNG
                     const tempPng = req.file.path.replace('.avif', '_temp.png');
-                    await execPromise(`avifdec "${req.file.path}" "${tempPng}" 2>/dev/null`);
+                    await execFilePromise('avifdec', [req.file.path, tempPng]);
                 
                     // Re-encode with Safari-compatible settings
                     const tempAvif = req.file.path + '.new';
-                    await execPromise(`avifenc --qcolor 85 --speed 6 --yuv 420 --range limited --cicp 1/13/6 --autotiling --jobs all "${tempPng}" "${tempAvif}" 2>/dev/null`);
+                    await execFilePromise('avifenc', ['--qcolor', '85', '--speed', '6', '--yuv', '420', '--range', 'limited', '--cicp', '1/13/6', '--autotiling', '--jobs', 'all', tempPng, tempAvif]);
                 
                     // Replace original with converted version
                     if (fs.existsSync(tempAvif) && fs.statSync(tempAvif).size > 0) {
@@ -211,14 +216,14 @@ function createEmojiRouter(deps) {
                     let sourceFile = req.file.path;
                     if (fileExt === '.gif') {
                         const tempPng = req.file.path.replace('.gif', '_frame.png');
-                        await execPromise(`ffmpeg -i "${req.file.path}" -vframes 1 -y "${tempPng}" 2>/dev/null`);
+                        await execFilePromise('ffmpeg', ['-i', req.file.path, '-vframes', '1', '-y', tempPng]);
                         if (fs.existsSync(tempPng)) {
                             sourceFile = tempPng;
                         }
                     }
                 
                     // Convert to AVIF with Safari-compatible settings
-                    await execPromise(`avifenc --qcolor 85 --speed 6 --yuv 420 --range limited --cicp 1/13/6 --autotiling --jobs all "${sourceFile}" "${avifPath}" 2>/dev/null`);
+                    await execFilePromise('avifenc', ['--qcolor', '85', '--speed', '6', '--yuv', '420', '--range', 'limited', '--cicp', '1/13/6', '--autotiling', '--jobs', 'all', sourceFile, avifPath]);
                 
                     // Check if conversion succeeded
                     if (fs.existsSync(avifPath) && fs.statSync(avifPath).size > 0) {
