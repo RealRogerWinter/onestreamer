@@ -219,6 +219,9 @@ class RandomStreamRotationService extends EventEmitter {
   _calculateRetryDelay() { return this._retryHelper.calculateRetryDelay(); }
   _recordSuccess() { return this._retryHelper.recordSuccess(); }
   _recordFailure() { return this._retryHelper.recordFailure(); }
+  // T4: single cancel chokepoint — also resolves the awaited backoff promise
+  // ({ success:false, cancelled:true }) instead of orphaning it.
+  _clearRetryTimer() { return this._retryHelper.clearTimer(); }
   async _scheduleRetryWithBackoff(operation, operationName) {
     return this._retryHelper.scheduleRetryWithBackoff(operation, operationName, {
       isLocked: () => this.isLocked,
@@ -439,11 +442,9 @@ class RandomStreamRotationService extends EventEmitter {
       this.rotationTimer = null;
     }
 
-    // CRITICAL: Clear any pending retry timer
-    if (this.retryState.currentRetryTimer) {
-      clearTimeout(this.retryState.currentRetryTimer);
-      this.retryState.currentRetryTimer = null;
-    }
+    // CRITICAL: Clear any pending retry timer (T4: via the helper, so the
+    // awaited backoff promise settles instead of hanging forever)
+    this._clearRetryTimer();
 
     // Clear countdown announcements
     this._clearCountdownAnnouncements();
@@ -520,11 +521,9 @@ class RandomStreamRotationService extends EventEmitter {
       this.rotationTimer = null;
     }
 
-    // Clear any pending retry timer
-    if (this.retryState.currentRetryTimer) {
-      clearTimeout(this.retryState.currentRetryTimer);
-      this.retryState.currentRetryTimer = null;
-    }
+    // Clear any pending retry timer (T4: via the helper — settles the awaited
+    // backoff promise)
+    this._clearRetryTimer();
 
     // Reset retry state (fresh start after pause)
     this.retryState.consecutiveFailures = 0;
@@ -658,6 +657,20 @@ class RandomStreamRotationService extends EventEmitter {
       if (!result.success) {
         logger.error(`❌ Failed to start stream: ${result.error}`);
         return result;
+      }
+
+      // T2 defensive abort: a rotation that passed its guards BEFORE a
+      // takeover set the flag can reach here after the takeover installed a
+      // real streamer (startURLStream's _registerAsCurrentStreamer would
+      // overwrite it). Tear the just-started URL stream back down.
+      if (global.streamService?.takeoverInProgress || this._recoveryMonitor.hasRealStreamer()) {
+        logger.warn('⏸️ ROTATION: Takeover superseded in-flight rotation - stopping just-started URL stream');
+        try {
+          await this.viewBotURLService.stopURLStream(result.urlId);
+        } catch (err) {
+          logger.error({ err }, '❌ ROTATION: Failed to stop superseded URL stream');
+        }
+        return { success: false, error: 'superseded by takeover' };
       }
 
       // Update state AFTER stream successfully starts

@@ -196,6 +196,95 @@ describe('StreamService', () => {
     });
   });
 
+  describe('clearStreamerIfCurrent (L1)', () => {
+    // Compare-and-clear for async health checks: only clears when the id
+    // still matches and (when provided) the generation matches the caller's
+    // pre-await snapshot.
+
+    test('clears and returns previous streamer when id + generation match', () => {
+      streamService.setStreamer('socket-A');
+      const gen = streamService.getStreamGeneration();
+
+      const cleared = streamService.clearStreamerIfCurrent('socket-A', gen);
+
+      expect(cleared).toBe('socket-A');
+      expect(streamService.getCurrentStreamer()).toBe(null);
+      // delegates to clearStreamer(): generation bumps, streamer re-added as viewer
+      expect(streamService.getStreamGeneration()).toBe(gen + 1);
+      expect(streamService.getAllViewers()).toContain('socket-A');
+    });
+
+    test('returns null and mutates nothing when a takeover replaced the streamer', () => {
+      streamService.setStreamer('socket-A');
+      const gen = streamService.getStreamGeneration();
+      streamService.setStreamer('socket-B'); // takeover during the health-check await
+
+      const cleared = streamService.clearStreamerIfCurrent('socket-A', gen);
+
+      expect(cleared).toBe(null);
+      expect(streamService.getCurrentStreamer()).toBe('socket-B');
+      expect(streamService.getAllViewers()).not.toContain('socket-A');
+    });
+
+    test('returns null when id matches but the generation drifted', () => {
+      streamService.setStreamer('socket-A');
+      const gen = streamService.getStreamGeneration();
+      streamService.bumpStreamGeneration(); // e.g. GameStreamService emit
+
+      const cleared = streamService.clearStreamerIfCurrent('socket-A', gen);
+
+      expect(cleared).toBe(null);
+      expect(streamService.getCurrentStreamer()).toBe('socket-A');
+    });
+
+    test('id-only form (no generation) clears on id match', () => {
+      streamService.setStreamer('socket-A');
+      streamService.bumpStreamGeneration();
+
+      const cleared = streamService.clearStreamerIfCurrent('socket-A');
+
+      expect(cleared).toBe('socket-A');
+      expect(streamService.getCurrentStreamer()).toBe(null);
+    });
+  });
+
+  describe('runExclusiveTakeover (T2)', () => {
+    test('serializes two tasks and tracks takeoverInProgress', async () => {
+      const order = [];
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+
+      const first = streamService.runExclusiveTakeover(async () => {
+        order.push('first-start');
+        expect(streamService.takeoverInProgress).toBe(true);
+        await gate;
+        order.push('first-end');
+      });
+      const second = streamService.runExclusiveTakeover(async () => {
+        order.push('second');
+      });
+
+      await Promise.resolve();
+      expect(order).toEqual(['first-start']);
+
+      release();
+      await first;
+      await second;
+      expect(order).toEqual(['first-start', 'first-end', 'second']);
+      expect(streamService.takeoverInProgress).toBe(false);
+    });
+
+    test('a rejecting task clears the flag and does not wedge the chain', async () => {
+      await expect(streamService.runExclusiveTakeover(async () => {
+        throw new Error('boom');
+      })).rejects.toThrow('boom');
+      expect(streamService.takeoverInProgress).toBe(false);
+
+      const result = await streamService.runExclusiveTakeover(async () => 42);
+      expect(result).toBe(42);
+    });
+  });
+
   describe('isStreaming', () => {
     test('should return true for current streamer', () => {
       const socketId = 'socket123';

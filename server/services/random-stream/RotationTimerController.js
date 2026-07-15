@@ -33,7 +33,8 @@
  *   host._scheduleNextRotation() (for extend/reduce/unlock reschedules)
  *   host._emitRotationTiming() (for forceRotate post-emit)
  *   host._clearCountdownAnnouncements() (lock clears countdowns)
- *   host.retryState.currentRetryTimer (lock clears pending retry)
+ *   host._clearRetryTimer() / host._recordSuccess() (lock/forceRotate cancel
+ *     or reset the pending retry via the RotationRetryState helper — T4)
  *   host.rotationTimer (cleared before reschedule)
  *   host.nextRotationAt (read for remaining-time math)
  */
@@ -101,6 +102,12 @@ class RotationTimerController {
     const notEnabled = this._requireEnabled();
     if (notEnabled) return notEnabled;
 
+    // T2: deny force-rotate while a takeover critical section runs (same
+    // response shape the chat-service vote handlers read).
+    if (global.streamService?.takeoverInProgress) {
+      return { success: false, error: 'Takeover in progress' };
+    }
+
     this.logger?.debug?.(`🔄 Force rotating to new stream...${platform ? ` (platform: ${platform})` : ''}`);
 
     // If locked, unlock first (force rotate overrides lock).
@@ -126,6 +133,10 @@ class RotationTimerController {
     const result = await host._rotateToNewStream({ forcePlatform: platform });
 
     if (result.success) {
+      // T4: a successful force-rotate resets the failure counter and cancels
+      // (settling) any pending backoff retry — previously the stale retry
+      // fired after the force-rotate and rotated a second time.
+      host._recordSuccess();
       host._scheduleNextRotation();
       host._emitRotationTiming();
 
@@ -335,8 +346,8 @@ class RotationTimerController {
     this._clearActiveRotationTimer();
 
     if (host.retryState.currentRetryTimer) {
-      clearTimeout(host.retryState.currentRetryTimer);
-      host.retryState.currentRetryTimer = null;
+      // T4: via the host delegate so the awaited backoff promise settles.
+      host._clearRetryTimer();
       this.logger?.debug?.('🔒 ROTATION: Also cleared pending retry timer');
     }
 

@@ -21,6 +21,8 @@ class TakeoverService {
 
     // Initialize lastStreamStartTime asynchronously
     this.loadLastStreamStartTime().catch((err) => logger.error({ err }, "loadLastStreamStartTime failed"));
+    // T5: reload any guard-item extended cooldown that survived a restart
+    this.loadExtendedCooldown().catch((err) => logger.error({ err }, "loadExtendedCooldown failed"));
   }
 
   /**
@@ -105,9 +107,12 @@ class TakeoverService {
 
       logger.debug(`   ✅ Takeover allowed for ${socketId} (IP: ${ip || 'unknown'})`);
       return { allowed: true, ip };
-    } catch (error) {
-      logger.error('Error checking takeover eligibility:', error);
-      return { allowed: true };
+    } catch (err) {
+      // T7: fail CLOSED — an error in the eligibility check must not grant a
+      // takeover that bypasses every cooldown. Both callers (request-to-stream,
+      // join-as-viewer) forward reason/cooldownRemaining to the client.
+      logger.error({ err }, 'Error checking takeover eligibility - failing closed');
+      return { allowed: false, reason: 'server_error', cooldownRemaining: this.globalCooldownSeconds };
     }
   }
 
@@ -132,7 +137,7 @@ class TakeoverService {
         this.inMemoryStorage.set('last_stream_start_time', timestamp);
       }
     } catch (error) {
-      logger.error('Error recording takeover:', error);
+      logger.error({ err: error }, 'Error recording takeover');
       this.inMemoryStorage.set('last_takeover_time', timestamp);
       this.inMemoryStorage.set('last_stream_start_time', timestamp);
     }
@@ -147,7 +152,7 @@ class TakeoverService {
         return this.inMemoryStorage.get('last_takeover_time') || null;
       }
     } catch (error) {
-      logger.error('Error getting last takeover time:', error);
+      logger.error({ err: error }, 'Error getting last takeover time');
       return this.inMemoryStorage.get('last_takeover_time') || null;
     }
   }
@@ -157,18 +162,21 @@ class TakeoverService {
     if (!lastTakeoverTime) return 0;
 
     const now = Date.now();
-    const cooldownMs = this.cooldownSeconds * 1000;
+    const cooldownMs = this.individualCooldownSeconds * 1000;
     const elapsed = now - lastTakeoverTime;
-    
+
     return elapsed < cooldownMs ? Math.ceil((cooldownMs - elapsed) / 1000) : 0;
   }
 
+  // T5: these historically read/wrote a phantom `this.cooldownSeconds` field
+  // that no constructor ever initialized (getCooldownSeconds() returned
+  // undefined). They now alias the real individual-cooldown setting.
   setCooldownSeconds(seconds) {
-    this.cooldownSeconds = seconds;
+    this.individualCooldownSeconds = seconds;
   }
 
   getCooldownSeconds() {
-    return this.cooldownSeconds;
+    return this.individualCooldownSeconds;
   }
 
   // IP-specific cooldown management  
@@ -198,7 +206,7 @@ class TakeoverService {
         await this.redisClient.expire(`cooldown:${identifier}`, duration);
       }
     } catch (error) {
-      logger.error('Error setting IP cooldown in Redis:', error);
+      logger.error({ err: error }, 'Error setting IP cooldown in Redis');
     }
   }
 
@@ -249,7 +257,7 @@ class TakeoverService {
         }
       }
     } catch (error) {
-      logger.error('Error getting IP cooldown from Redis:', error);
+      logger.error({ err: error }, 'Error getting IP cooldown from Redis');
     }
 
     return null;
@@ -289,7 +297,7 @@ class TakeoverService {
         await this.redisClient.del(`cooldown:${identifier}`);
       }
     } catch (error) {
-      logger.error('Error removing cooldown from Redis:', error);
+      logger.error({ err: error }, 'Error removing cooldown from Redis');
     }
 
     return hadCooldown;
@@ -307,7 +315,7 @@ class TakeoverService {
         }
       }
     } catch (error) {
-      logger.error('Error resetting cooldowns in Redis:', error);
+      logger.error({ err: error }, 'Error resetting cooldowns in Redis');
     }
 
     return count;
@@ -322,8 +330,55 @@ class TakeoverService {
         this.lastStreamStartTime = this.inMemoryStorage.get('last_stream_start_time') || null;
       }
     } catch (error) {
-      logger.error('Error loading last stream start time:', error);
+      logger.error({ err: error }, 'Error loading last stream start time');
       this.lastStreamStartTime = null;
+    }
+  }
+
+  /**
+   * T5: persist extendedCooldownUntil so guard-item cooldowns survive a
+   * restart. The Redis key carries a TTL equal to the cooldown remainder, so
+   * it self-expires exactly when the cooldown ends; a null/expired cooldown
+   * deletes the key (weapon items can clear it).
+   */
+  async persistExtendedCooldown() {
+    try {
+      const until = this.extendedCooldownUntil;
+      const ttlSeconds = until ? Math.ceil((until - Date.now()) / 1000) : 0;
+      if (this.redisClient) {
+        if (until && ttlSeconds > 0) {
+          await this.redisClient.set('extended_cooldown_until', until.toString());
+          await this.redisClient.expire('extended_cooldown_until', ttlSeconds);
+        } else {
+          await this.redisClient.del('extended_cooldown_until');
+        }
+      } else {
+        if (until && ttlSeconds > 0) {
+          this.inMemoryStorage.set('extended_cooldown_until', until);
+        } else {
+          this.inMemoryStorage.delete('extended_cooldown_until');
+        }
+      }
+    } catch (error) {
+      logger.error({ err: error }, 'Error persisting extended cooldown');
+    }
+  }
+
+  async loadExtendedCooldown() {
+    try {
+      let value = null;
+      if (this.redisClient) {
+        const result = await this.redisClient.get('extended_cooldown_until');
+        value = result ? parseInt(result) : null;
+      } else {
+        value = this.inMemoryStorage.get('extended_cooldown_until') || null;
+      }
+      // Ignore stale values: the Redis TTL should already have expired them,
+      // but the in-memory path and clock skew still need the guard.
+      this.extendedCooldownUntil = (value && value > Date.now()) ? value : null;
+    } catch (error) {
+      logger.error({ err: error }, 'Error loading extended cooldown');
+      this.extendedCooldownUntil = null;
     }
   }
 
@@ -375,7 +430,7 @@ class TakeoverService {
         }
       }
     } catch (error) {
-      logger.error('Error getting all cooldowns from Redis:', error);
+      logger.error({ err: error }, 'Error getting all cooldowns from Redis');
     }
 
     return cooldowns;
@@ -503,20 +558,16 @@ class TakeoverService {
         }
       }
       
-      // Persist the change
-      try {
-        if (this.redisClient) {
-          await this.redisClient.set('last_stream_start_time', this.lastStreamStartTime.toString());
-        } else {
-          this.inMemoryStorage.set('last_stream_start_time', this.lastStreamStartTime);
-        }
-      } catch (error) {
-        logger.error('Error persisting global cooldown modification:', error);
-      }
-      
+      // T5: persist the extended cooldown itself. The previous code here
+      // re-persisted last_stream_start_time (which this method never mutates —
+      // recordTakeover owns it) and threw a swallowed null.toString() TypeError
+      // whenever a guard item was used with no active stream, so the
+      // extendedCooldownUntil change never survived a restart.
+      await this.persistExtendedCooldown();
+
       return true;
     } catch (error) {
-      logger.error('Error modifying global cooldown:', error);
+      logger.error({ err: error }, 'Error modifying global cooldown');
       return false;
     }
   }
@@ -527,7 +578,7 @@ class TakeoverService {
       logger.debug(`🔧 TAKEOVER: Reset all ${count} individual cooldowns (reason: ${reason})`);
       return count;
     } catch (error) {
-      logger.error('Error resetting all individual cooldowns:', error);
+      logger.error({ err: error }, 'Error resetting all individual cooldowns');
       return 0;
     }
   }
@@ -549,14 +600,14 @@ class TakeoverService {
             // Don't change the TTL - let it expire naturally with the extended time
           }
         } catch (error) {
-          logger.error(`Error updating frozen cooldown for ${identifier}:`, error);
+          logger.error({ err: error }, `Error updating frozen cooldown for ${identifier}`);
         }
       }
       
       logger.debug(`🔧 TAKEOVER: Froze ${this.ipCooldowns.size} individual cooldowns for ${durationSeconds}s (reason: ${reason})`);
       return this.ipCooldowns.size;
     } catch (error) {
-      logger.error('Error freezing individual cooldowns:', error);
+      logger.error({ err: error }, 'Error freezing individual cooldowns');
       return 0;
     }
   }

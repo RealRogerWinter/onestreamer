@@ -42,10 +42,37 @@ describe('TakeoverService', () => {
     test('should allow takeover after cooldown period', async () => {
       const pastTimestamp = Date.now() - 6000;
       takeoverService.inMemoryStorage.set('last_takeover_time', pastTimestamp);
-      
+
       const result = await takeoverService.canTakeOver();
-      
+
       expect(result.allowed).toBe(true);
+    });
+
+    // T7: an error in the eligibility check must fail CLOSED — previously any
+    // throw returned { allowed: true }, bypassing every cooldown.
+    test('fails closed when gameStreamService throws', async () => {
+      takeoverService.setGameStreamService({
+        canTakeOver: () => { throw new Error('boom'); },
+      });
+
+      const result = await takeoverService.canTakeOver('socket-x');
+
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toBe('server_error');
+      expect(Number.isFinite(result.cooldownRemaining)).toBe(true);
+      expect(result.cooldownRemaining).toBeGreaterThan(0);
+    });
+
+    test('fails closed when sessionService throws', async () => {
+      const service = new TakeoverService(null, {
+        getSessionBySocketId: () => { throw new Error('boom'); },
+      });
+
+      const result = await service.canTakeOver('socket-x');
+
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toBe('server_error');
+      expect(Number.isFinite(result.cooldownRemaining)).toBe(true);
     });
   });
 
@@ -101,16 +128,17 @@ describe('TakeoverService', () => {
   });
 
   describe('cooldown configuration', () => {
-    // The original assertion expected an env-driven default of 30s. The
-    // current constructor never reads TAKEOVER_COOLDOWN_SEC — callers must
-    // opt in via setCooldownSeconds(). Lock in the actual behavior so any
-    // future regression (or a real default-cooldown implementation) shows
-    // up in CI.
-    test('no-arg constructor leaves cooldownSeconds unset (callers must opt in via setCooldownSeconds)', () => {
+    // T5: get/setCooldownSeconds historically targeted a phantom
+    // `this.cooldownSeconds` field no constructor initialized (the getter
+    // returned undefined). They now alias individualCooldownSeconds, so the
+    // no-arg constructor exposes the real default (60, or
+    // INDIVIDUAL_COOLDOWN_SECONDS).
+    test('no-arg constructor exposes the individual-cooldown default via getCooldownSeconds', () => {
       const service = new TakeoverService();
-      expect(service.getCooldownSeconds()).toBeUndefined();
+      expect(service.getCooldownSeconds()).toBe(60);
       service.setCooldownSeconds(30);
       expect(service.getCooldownSeconds()).toBe(30);
+      expect(service.individualCooldownSeconds).toBe(30);
     });
 
     test('should allow setting custom cooldown', () => {
@@ -125,7 +153,9 @@ describe('TakeoverService', () => {
     beforeEach(() => {
       mockRedisClient = {
         get: jest.fn(),
-        set: jest.fn()
+        set: jest.fn(),
+        expire: jest.fn(),
+        del: jest.fn()
       };
       takeoverService = new TakeoverService(mockRedisClient);
       takeoverService.setCooldownSeconds(5);
@@ -180,9 +210,9 @@ describe('TakeoverService', () => {
 
     beforeEach(() => {
       // canTakeOver() reads globalCooldownSeconds / individualCooldownSeconds
-      // (env-driven, defaults 30 / 60). setCooldownSeconds() targets a
-      // legacy field that canTakeOver ignores, so set the live properties
-      // directly for deterministic test windows.
+      // (env-driven, defaults 30 / 60). The outer beforeEach's
+      // setCooldownSeconds(5) now aliases individualCooldownSeconds (T5), so
+      // re-pin both live properties for deterministic test windows.
       takeoverService.globalCooldownSeconds = 30;
       takeoverService.individualCooldownSeconds = 60;
     });
@@ -260,6 +290,87 @@ describe('TakeoverService', () => {
       takeoverService.lastStreamStartTime = Date.now() - 31000; // outside 30s window
       const allowed = await takeoverService.canTakeOver('socket-A');
       expect(allowed.allowed).toBe(true);
+    });
+  });
+
+  // T5: extendedCooldownUntil (guard-item cooldowns) is now persisted with a
+  // TTL and reloaded on boot — previously modifyGlobalCooldown re-persisted
+  // last_stream_start_time (a no-op that threw a swallowed null.toString()
+  // TypeError with no active stream) and the extended cooldown died with the
+  // process.
+  describe('extended cooldown persistence', () => {
+    let mockRedis;
+
+    beforeEach(() => {
+      mockRedis = {
+        get: jest.fn(async () => null),
+        set: jest.fn(async () => {}),
+        expire: jest.fn(async () => {}),
+        del: jest.fn(async () => {})
+      };
+    });
+
+    test('guard-item extension with no active stream persists with a TTL (and no null.toString() throw)', async () => {
+      const service = new TakeoverService(mockRedis);
+      service.lastStreamStartTime = null;
+
+      const ok = await service.modifyGlobalCooldown(60, 'guard_item');
+
+      expect(ok).toBe(true);
+      expect(mockRedis.set).toHaveBeenCalledWith('extended_cooldown_until', expect.any(String));
+      const ttl = mockRedis.expire.mock.calls.find((c) => c[0] === 'extended_cooldown_until')[1];
+      expect(ttl).toBeGreaterThanOrEqual(59);
+      expect(ttl).toBeLessThanOrEqual(60);
+      // the old no-op persist of last_stream_start_time is gone
+      const lsst = mockRedis.set.mock.calls.find((c) => c[0] === 'last_stream_start_time');
+      expect(lsst).toBeUndefined();
+    });
+
+    test('weapon item clearing the extended cooldown deletes the persisted key', async () => {
+      const service = new TakeoverService(mockRedis);
+      service.extendedCooldownUntil = Date.now() + 30000;
+
+      const ok = await service.modifyGlobalCooldown(-60, 'weapon');
+
+      expect(ok).toBe(true);
+      expect(service.extendedCooldownUntil).toBe(null);
+      expect(mockRedis.del).toHaveBeenCalledWith('extended_cooldown_until');
+    });
+
+    test('reload across restart: persisted extended cooldown blocks takeover', async () => {
+      const until = Date.now() + 30000;
+      mockRedis.get.mockImplementation(async (key) =>
+        key === 'extended_cooldown_until' ? String(until) : null
+      );
+      const service = new TakeoverService(mockRedis);
+      // ctor load is fire-and-forget; await it explicitly for determinism
+      await service.loadExtendedCooldown();
+
+      expect(service.extendedCooldownUntil).toBe(until);
+      const result = await service.canTakeOver('socket-x');
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toBe('global_cooldown');
+    });
+
+    test('stale persisted value is ignored on reload', async () => {
+      mockRedis.get.mockImplementation(async (key) =>
+        key === 'extended_cooldown_until' ? String(Date.now() - 5000) : null
+      );
+      const service = new TakeoverService(mockRedis);
+      await service.loadExtendedCooldown();
+
+      expect(service.extendedCooldownUntil).toBe(null);
+      const result = await service.canTakeOver('socket-x');
+      expect(result.allowed).toBe(true);
+    });
+
+    test('in-memory fallback stores the extension when no Redis client exists', async () => {
+      const service = new TakeoverService();
+      service.lastStreamStartTime = null;
+
+      await service.modifyGlobalCooldown(60, 'guard_item');
+
+      expect(service.inMemoryStorage.get('extended_cooldown_until')).toBe(service.extendedCooldownUntil);
     });
   });
 });

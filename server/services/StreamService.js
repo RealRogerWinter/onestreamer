@@ -18,6 +18,36 @@ class StreamService {
     // clearStreamer() then setStreamer() with no emit between, going
     // N → N+2). Gaps are fine; backwards is not.
     this.streamGeneration = 0;
+
+    // T2: takeover serialization. `request-to-stream` handlers run through
+    // runExclusiveTakeover() so the canTakeOver → recordTakeover span is one
+    // exclusive critical section; `takeoverInProgress` is the synchronous
+    // flag the rotation actors (scheduler timer, forceRotate, recovery
+    // monitor) check so a rotation cannot interleave with a takeover.
+    // Lives here because StreamService is the singleton both sides already
+    // share (deps.streamService === global.streamService).
+    this.takeoverInProgress = false;
+    this._takeoverChain = Promise.resolve();
+  }
+
+  /**
+   * T2: run `task` exclusively — queued behind any in-flight takeover, with
+   * `takeoverInProgress` set for the task's duration (cleared in `finally`,
+   * so a throwing task cannot wedge the flag). Returns the task's promise;
+   * the internal chain swallows rejections so one failure cannot poison the
+   * queue for later takeovers.
+   */
+  runExclusiveTakeover(task) {
+    const run = this._takeoverChain.then(async () => {
+      this.takeoverInProgress = true;
+      try {
+        return await task();
+      } finally {
+        this.takeoverInProgress = false;
+      }
+    });
+    this._takeoverChain = run.catch(() => {});
+    return run;
   }
 
   setStreamer(socketId, streamType = 'webcam') {
@@ -60,6 +90,20 @@ class StreamService {
     }
 
     return previousStreamer;
+  }
+
+  /**
+   * L1: compare-and-clear for async health checks. Only clears when
+   * `streamerId` is still the current streamer AND (when provided) the
+   * generation still matches the caller's pre-await snapshot — so a stale
+   * check that raced a takeover cannot kill the freshly-installed stream.
+   * Returns the previous streamer on success, null when the guard misses.
+   * Synchronous by design: the check-and-clear is atomic within the JS tick.
+   */
+  clearStreamerIfCurrent(streamerId, expectedGeneration) {
+    if (this.currentStreamer !== streamerId) return null;
+    if (typeof expectedGeneration === 'number' && this.streamGeneration !== expectedGeneration) return null;
+    return this.clearStreamer();
   }
 
   getStreamGeneration() {
