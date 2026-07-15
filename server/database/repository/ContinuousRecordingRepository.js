@@ -213,8 +213,11 @@ class ContinuousRecordingRepository {
      * retry-window OR clause.
      */
     async listSessionsPendingUpload() {
+        // P2.2: upload_failed is terminal — un-pin those dirs from the disk
+        // scanner's don't-delete gate immediately (they reclaim at plain
+        // retention) instead of holding them the full 26h pending grace.
         return await this.allAsync(
-            `SELECT session_id FROM recording_sessions WHERE b2_file_id IS NULL`
+            `SELECT session_id FROM recording_sessions WHERE b2_file_id IS NULL AND status != 'upload_failed'`
         );
     }
 

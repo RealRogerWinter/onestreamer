@@ -297,7 +297,7 @@ forEachBackend(({ make, label }) => {
                 expect(mockB2Slot.processAndUploadSession).not.toHaveBeenCalled();
             });
 
-            it('returns failure when the local recording directory was deleted before the upload could run', async () => {
+            it('marks the session terminally upload_failed when the local recording directory was deleted before the upload could run (P2.2)', async () => {
                 const sessionId = await seedRecordingSession(primitives, {
                     status: 'completed',
                     local_path: '/tmp/nonexistent-recording-dir-' + Date.now(),
@@ -305,14 +305,16 @@ forEachBackend(({ make, label }) => {
 
                 const res = await scheduler.uploadSession(sessionId);
                 expect(res.success).toBe(false);
+                expect(res.permanent).toBe(true);
                 expect(res.error).toMatch(/Local recording not found/);
                 expect(mockB2Slot.processAndUploadSession).not.toHaveBeenCalled();
 
-                // Row remains in 'completed' state — no spurious 'processing'
-                // status update on a session whose files are missing.
+                // P2.2: the source dir is gone (disk scanner reclaimed it),
+                // so the upload can never succeed — terminal status instead
+                // of retrying every 30 min forever.
                 const row = await primitives.getAsync(
                     'SELECT status FROM recording_sessions WHERE session_id = ?', [sessionId]);
-                expect(row.status).toBe('completed');
+                expect(row.status).toBe('upload_failed');
             });
 
             it('returns failure when the session_id has no row', async () => {

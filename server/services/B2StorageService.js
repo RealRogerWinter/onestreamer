@@ -7,7 +7,10 @@
  * Uses S3-compatible API for Backblaze B2.
  */
 
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+// R6 (P2.2): lib-storage Upload does automatic multipart, so whole-run
+// archives past S3/B2's 5 GB single-PutObject cap can actually upload.
+const { Upload } = require('@aws-sdk/lib-storage');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const fs = require('fs');
 const path = require('path');
@@ -21,6 +24,12 @@ class B2StorageService {
         this.bucketId = process.env.B2_BUCKET_ID;
         this.bucketName = process.env.B2_BUCKET_NAME;
         this.endpoint = process.env.B2_ENDPOINT;
+
+        // R11 (P2.2): bound the concat ffmpeg. -c copy concat is pure I/O
+        // (minutes even for a multi-GB day), so 30 min is generous headroom.
+        // Set before the credentials guard: concatenateSegments is callable
+        // on a disabled instance.
+        this.concatTimeoutMs = Number(process.env.B2_CONCAT_TIMEOUT_MS) || 30 * 60 * 1000;
 
         if (!this.keyId || !this.applicationKey || !this.bucketName) {
             logger.warn('[B2Storage] Missing B2 credentials - service will be disabled');
@@ -38,7 +47,15 @@ class B2StorageService {
                 accessKeyId: this.keyId,
                 secretAccessKey: this.applicationKey
             },
-            forcePathStyle: true
+            forcePathStyle: true,
+            // P2.2: bound every network await so a wedged connection can't
+            // latch the upload scheduler's isProcessing forever.
+            // requestTimeout is socket-inactivity, so slow-but-progressing
+            // multipart parts survive.
+            requestHandler: {
+                connectionTimeout: 10_000,
+                requestTimeout: 120_000
+            }
         });
 
         logger.debug(`[B2Storage] Initialized with bucket: ${this.bucketName}`);
@@ -59,16 +76,25 @@ class B2StorageService {
      */
     async concatenateSegments(segmentsDir, outputPath) {
         return new Promise((resolve) => {
-            // Find all .ts segment files
-            const segmentFiles = fs.readdirSync(segmentsDir)
-                .filter(f => f.endsWith('.ts'))
-                .sort((a, b) => {
-                    // Sort by segment number
-                    const numA = parseInt(a.match(/\d+/)?.[0] || '0');
-                    const numB = parseInt(b.match(/\d+/)?.[0] || '0');
-                    return numA - numB;
-                })
-                .map(f => path.join(segmentsDir, f));
+            // R5 (P2.2): sort by the FULL (timestamp, index) tuple from
+            // seg_<epochMs>_<idx>.ts. The old sort keyed on the first number
+            // only — the shared egress timestamp — so all segments of one run
+            // tied and fell back to readdir() order (scrambled archive).
+            // Numeric idx compare is mandatory: the %05d INDEX grows to 6
+            // digits past segment 99999. The tuple (not idx alone) keeps
+            // legacy day-bucket dirs — multiple seg_<ts>_ prefixes per dir —
+            // in true order too.
+            const SEG_RE = /^seg_(\d+)_(\d+)\.ts$/;
+            const allTs = fs.readdirSync(segmentsDir).filter(f => f.endsWith('.ts'));
+            const strays = allTs.filter(f => !SEG_RE.test(f));
+            if (strays.length > 0) {
+                logger.warn(`[B2Storage] Excluding ${strays.length} non-segment .ts file(s) from concat: ${strays.slice(0, 5).join(', ')}`);
+            }
+            const segmentFiles = allTs
+                .map(f => { const m = f.match(SEG_RE); return m && { f, ts: Number(m[1]), idx: Number(m[2]) }; })
+                .filter(Boolean)
+                .sort((a, b) => a.ts - b.ts || a.idx - b.idx)
+                .map(e => path.join(segmentsDir, e.f));
 
             if (segmentFiles.length === 0) {
                 return resolve({ success: false, error: 'No segment files found' });
@@ -98,11 +124,33 @@ class B2StorageService {
                 stderr += data.toString();
             });
 
+            // R11 (P2.2): bound the concat. A hung ffmpeg used to never
+            // resolve this promise, latching the upload scheduler's
+            // isProcessing latch and halting all future uploads. Mirrors
+            // ClipProcessorService.spawnWithTimeout.
+            let timedOut = false;
+            const killTimer = setTimeout(() => {
+                timedOut = true;
+                logger.error(`[B2Storage] Concat ffmpeg exceeded ${this.concatTimeoutMs}ms - killing`);
+                ffmpeg.kill('SIGKILL');
+            }, this.concatTimeoutMs);
+
             ffmpeg.on('close', (code) => {
+                clearTimeout(killTimer);
                 // Clean up concat list
                 try {
                     fs.unlinkSync(concatListPath);
                 } catch (e) {}
+
+                if (timedOut) {
+                    // The killed child has closed, so the fd is released —
+                    // remove the partial output (the concat-failure return in
+                    // processAndUploadSession never reaches its temp cleanup).
+                    try {
+                        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+                    } catch (e) {}
+                    return resolve({ success: false, error: `Concat timed out after ${this.concatTimeoutMs}ms` });
+                }
 
                 if (code === 0 && fs.existsSync(outputPath)) {
                     const stats = fs.statSync(outputPath);
@@ -115,6 +163,7 @@ class B2StorageService {
             });
 
             ffmpeg.on('error', (err) => {
+                clearTimeout(killTimer);
                 resolve({ success: false, error: err.message });
             });
         });
@@ -143,22 +192,35 @@ class B2StorageService {
 
             logger.debug(`[B2Storage] Uploading ${fileName} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
 
-            const command = new PutObjectCommand({
-                Bucket: this.bucketName,
-                Key: fileName,
-                Body: fileStream,
-                ContentType: 'video/mp4',
-                ContentLength: stats.size,
-                Metadata: {
-                    sessionId: sessionId,
-                    uploadedAt: new Date().toISOString(),
-                    ...Object.fromEntries(
-                        Object.entries(metadata).map(([k, v]) => [k, String(v)])
-                    )
-                }
+            // R6 (P2.2): automatic multipart via lib-storage. Single
+            // PutObject hard-caps at 5 GB, so whole-run archives above that
+            // could never upload (and retried every 30 min forever). 64 MiB
+            // parts × the 10k-part cap gives a 640 GB ceiling; queueSize 2
+            // bounds buffered memory to ~128 MB; leavePartsOnError:false
+            // aborts the multipart upload on failure so B2 doesn't bill
+            // orphaned parts. ContentLength is gone — lib-storage sizes
+            // parts itself.
+            const upload = new Upload({
+                client: this.s3Client,
+                params: {
+                    Bucket: this.bucketName,
+                    Key: fileName,
+                    Body: fileStream,
+                    ContentType: 'video/mp4',
+                    Metadata: {
+                        sessionId: sessionId,
+                        uploadedAt: new Date().toISOString(),
+                        ...Object.fromEntries(
+                            Object.entries(metadata).map(([k, v]) => [k, String(v)])
+                        )
+                    }
+                },
+                partSize: 64 * 1024 * 1024,
+                queueSize: 2,
+                leavePartsOnError: false
             });
 
-            const result = await this.s3Client.send(command);
+            const result = await upload.done();
 
             logger.debug(`[B2Storage] Upload complete: ${fileName}`);
 

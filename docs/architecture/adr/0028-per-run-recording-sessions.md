@@ -33,7 +33,7 @@ Backblaze B2 archival is currently **disabled** (no `B2_*` env vars), which is w
 - `updateSessionEnd`'s accumulate semantics (`segment_count = segment_count + ?`) degenerate to set-once on per-run rows — correct, no change needed.
 - Admin review endpoints (timeline/playback/master-stream) iterate all session rows ordered by `start_time` and already handle multiple playlists per directory, so they need no structural change; a day now yields several list entries instead of one.
 - Old day-format directories on disk remain parseable and age out via segment-mtime rules; their name-derived timestamp (UTC midnight) only matters for empty dirs.
-- **B2 stays off.** Per-run ids are necessary but not sufficient for enabling archival: the concat ordering, single-PutObject 5 GB ceiling, and missing ffmpeg timeout (audit R5/R6/R11, Plan 01 P2.2) must land first.
+- **B2 stays off.** Per-run ids are necessary but not sufficient for enabling archival: the concat ordering, single-PutObject 5 GB ceiling, and missing ffmpeg timeout (audit R5/R6/R11, Plan 01 P2.2) must land first. _Update 2026-07-15: those blockers are closed by [ADR-0034](0034-b2-upload-ordering-multipart-timeouts.md); enablement remains a deliberate operator decision (P2.1 retention decoupling is still open)._
 - A derived `day` column for admin grouping was considered and deferred — the read endpoints don't need it, and schema shape is owned by the Plan 04 single-source-DDL work.
 
 ## Alternatives considered

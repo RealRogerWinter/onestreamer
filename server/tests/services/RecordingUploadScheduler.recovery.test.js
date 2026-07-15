@@ -130,4 +130,92 @@ describe('RecordingUploadScheduler recovery (ADR-0028)', () => {
     scheduler.scheduleUpload('recording_2026-07-14_700', Date.now());
     expect(scheduler.uploadQueue.size).toBe(0);
   });
+
+  // P2.2: terminal upload_failed status.
+  describe('terminal upload_failed (P2.2)', () => {
+    test('local recording missing → upload_failed immediately, dropped from the queue, no reschedule', async () => {
+      const sessionId = 'recording_2026-07-14_800';
+      const endTime = Date.now() - 3 * 60 * 60 * 1000;
+      const row = {
+        session_id: sessionId, end_time: endTime, status: 'completed',
+        b2_file_id: null, local_path: '/nonexistent/definitely-gone',
+      };
+      allAsync.mockResolvedValue([row]);
+      getAsync.mockResolvedValue(row);
+
+      await scheduler.processPendingUploads();
+
+      const failedWrite = runAsync.mock.calls.find(([sql, params]) =>
+        /UPDATE recording_sessions SET status = \?/.test(sql) && params[0] === 'upload_failed');
+      expect(failedWrite).toBeDefined();
+      expect(scheduler.uploadQueue.has(sessionId)).toBe(false);
+      expect(b2Storage.processAndUploadSession).not.toHaveBeenCalled();
+    });
+
+    test('maxUploadAttempts consecutive transient failures flip to upload_failed; one fewer does not', async () => {
+      const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uprec-'));
+      try {
+        const sessionId = 'recording_2026-07-14_900';
+        const row = {
+          session_id: sessionId, end_time: 1, status: 'completed',
+          b2_file_id: null, local_path: sessionDir,
+        };
+        getAsync.mockResolvedValue(row);
+        b2Storage.processAndUploadSession.mockResolvedValue({ success: false, error: 'B2 5xx' });
+        const capped = new RecordingUploadScheduler({ localBufferHours: 2, maxUploadAttempts: 3 });
+
+        const r1 = await capped.uploadSession(sessionId);
+        const r2 = await capped.uploadSession(sessionId);
+        expect(r1.permanent).toBeUndefined();
+        expect(r2.permanent).toBeUndefined();
+        // attempts 1-2 revert to 'completed'
+        expect(runAsync.mock.calls.filter(([sql, p]) =>
+          /SET status = \?/.test(sql) && p[0] === 'completed').length).toBe(2);
+
+        const r3 = await capped.uploadSession(sessionId);
+        expect(r3.permanent).toBe(true);
+        const failedWrite = runAsync.mock.calls.find(([sql, p]) =>
+          /SET status = \?/.test(sql) && p[0] === 'upload_failed');
+        expect(failedWrite).toBeDefined();
+        expect(failedWrite[1][1]).toBe(sessionId);
+      } finally {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+      }
+    });
+
+    test('a success resets the consecutive-failure counter', async () => {
+      const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uprec-'));
+      try {
+        const sessionId = 'recording_2026-07-14_1000';
+        const row = {
+          session_id: sessionId, end_time: 1, status: 'completed',
+          b2_file_id: null, local_path: sessionDir,
+        };
+        getAsync.mockResolvedValue(row);
+        const capped = new RecordingUploadScheduler({ localBufferHours: 2, maxUploadAttempts: 2 });
+
+        b2Storage.processAndUploadSession.mockResolvedValueOnce({ success: false, error: 'blip' });
+        await capped.uploadSession(sessionId);
+        b2Storage.processAndUploadSession.mockResolvedValueOnce({ success: true, fileId: 'f', fileName: 'n', fileSize: 1 });
+        await capped.uploadSession(sessionId);
+        expect(capped.attempts.has(sessionId)).toBe(false);
+
+        // Next failure is attempt 1 again, not the capping attempt 2.
+        // (Recreate the dir — the success path's cleanupLocalFiles rm'd it.)
+        fs.mkdirSync(sessionDir, { recursive: true });
+        getAsync.mockResolvedValue({ ...row, b2_file_id: null });
+        b2Storage.processAndUploadSession.mockResolvedValueOnce({ success: false, error: 'blip' });
+        const r = await capped.uploadSession(sessionId);
+        expect(r.permanent).toBeUndefined();
+      } finally {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+      }
+    });
+
+    test('recovery query excludes upload_failed rows', async () => {
+      await scheduler.loadPendingUploads();
+      const [sql] = allAsync.mock.calls[0];
+      expect(sql).toMatch(/status NOT IN \('uploaded', 'upload_failed'\)/);
+    });
+  });
 });

@@ -2,7 +2,9 @@
 
 _Last verified: 2026-05-23 against commit 4a1d325._
 
-The cloud-storage tier for recording segments and clip videos. B2 is used via its S3-compatible API; the `@aws-sdk/client-s3` library talks to it as if it were AWS S3. See [ADR-0005](../architecture/adr/0005-b2-over-direct-s3.md) for why B2 over direct AWS S3.
+The cloud-storage tier for recording segments and clip videos. B2 is used via its S3-compatible API; the `@aws-sdk/client-s3` library (and `@aws-sdk/lib-storage` for multipart recording uploads) talks to it as if it were AWS S3. See [ADR-0005](../architecture/adr/0005-b2-over-direct-s3.md) for why B2 over direct AWS S3.
+
+> ⚠️ **Archival is deliberately OFF in production: keep all `B2_*` env vars unset until an operator decides to enable it.** The upload-correctness blockers (audit R5/R6/R11) were fixed in [ADR-0034](../architecture/adr/0034-b2-upload-ordering-multipart-timeouts.md), but local retention is still coupled to upload state until Plan 01 P2.1 lands, and first enablement will churn the reclaimed legacy backlog through `upload_failed` (expected, one-time).
 
 ## What it is
 

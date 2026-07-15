@@ -310,6 +310,10 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
 
   const recordingUploadScheduler = new RecordingUploadScheduler({
     localBufferHours: 2,
+    // P2.2: consecutive transient failures before the terminal
+    // 'upload_failed' (12 × 30min retry ≈ 6h, inside the disk scanner's
+    // 26h pending-dir grace).
+    maxUploadAttempts: 12,
   });
 
   const recordingCleanupScheduler = new RecordingCleanupScheduler();
