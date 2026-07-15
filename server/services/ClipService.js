@@ -138,8 +138,15 @@ class ClipService {
       }
     }
 
+    // P2.3/R10: hard precondition BEFORE any DB write. Previously a falsy
+    // processorService silently skipped queueing after the insert, leaving
+    // a permanently-stuck 'processing' row.
+    if (!this.processorService) {
+      throw new Error('Clip processing is unavailable right now. Please try again later.');
+    }
+
     // Check processing queue limit
-    if (this.processorService) {
+    {
       const queueStatus = this.processorService.getStatus();
       if (queueStatus.queueLength >= this.MAX_PROCESSING_QUEUE) {
         throw new Error('Too many clips are being processed. Please try again in a few minutes.');
@@ -202,18 +209,13 @@ class ClipService {
       durationMs,
     });
 
-    // Capture chat messages for clip creation time (not recording time)
-    // We use current time because chat is ephemeral and recording timestamps may be old
-    const clipCreationTime = Date.now();
-    const chatEndTime = clipCreationTime;
-    const chatStartTime = clipCreationTime - durationMs;
-
-    this.captureChatForClip(clipId, chatStartTime, chatEndTime).catch(err => {
-      logger.error(`⚠️ CLIPS: Failed to capture chat for clip ${clipId}:`, err.message);
-    });
-
-    // Queue for processing with segment info
-    if (this.processorService) {
+    // Queue for processing with segment info. P2.3/R10: fail CLOSED — a
+    // queue failure marks the row 'failed' (invisible to the public list,
+    // which filters status='ready') instead of leaving a stuck 'processing'
+    // row; the rethrow also skips the rate-limit charge below. The
+    // insert-before-queue ordering is deliberate: the processor's completion
+    // callback UPDATEs the row, so it must exist first.
+    try {
       this.processorService.queueClip({
         clipId,
         segments: segmentInfo.segments,
@@ -221,7 +223,23 @@ class ClipService {
         clipEndMs: endTime,
         clipDurationMs: durationMs
       });
+    } catch (err) {
+      logger.error({ err }, `✂️ CLIPS: Failed to queue clip ${clipId} - marking failed`);
+      await this.clipRepository.setClipFailed(clipId);
+      throw new Error('Failed to queue clip for processing. Please try again.');
     }
+
+    // Capture chat messages for clip creation time (not recording time).
+    // We use current time because chat is ephemeral and recording timestamps
+    // may be old. (P2.3: moved after the queue — don't capture chat for a
+    // clip that failed to queue.)
+    const clipCreationTime = Date.now();
+    const chatEndTime = clipCreationTime;
+    const chatStartTime = clipCreationTime - durationMs;
+
+    this.captureChatForClip(clipId, chatStartTime, chatEndTime).catch(err => {
+      logger.error(`⚠️ CLIPS: Failed to capture chat for clip ${clipId}:`, err.message);
+    });
 
     // Increment rate limit counters
     this.incrementRateLimits(userId, ipAddress);
@@ -236,56 +254,11 @@ class ClipService {
     };
   }
 
-  /**
-   * Create a clip from a specific recording with explicit time range
-   * Useful for admin/manual clip creation from archived recordings
-   */
-  async createClipFromRecording({ userId, recordingPath, startMs, endMs, title, description = '' }) {
-    // Validate inputs
-    const durationMs = endMs - startMs;
-    if (durationMs < this.MIN_DURATION_MS || durationMs > this.MAX_DURATION_MS) {
-      throw new Error(`Clip duration must be between ${this.MIN_DURATION_MS / 1000} and ${this.MAX_DURATION_MS / 1000} seconds`);
-    }
-
-    if (!title || title.trim().length === 0) {
-      throw new Error('Title is required');
-    }
-
-    // Check rate limit
-    await this.checkRateLimit(userId);
-
-    // Generate clip ID
-    const clipId = uuidv4();
-
-    // Insert clip record (streamer_user_id defaults to NULL via the repo;
-    // the legacy SQL here omitted that column entirely, which the repo's
-    // explicit NULL preserves at the row level).
-    await this.clipRepository.insertClip({
-      clipId,
-      recordingId: recordingPath,
-      userId,
-      streamerUserId: null,
-      title: title.trim(),
-      description: description.trim(),
-      startMs,
-      endMs,
-      durationMs,
-    });
-
-    // Queue for processing
-    if (this.processorService) {
-      this.processorService.queueClip({
-        clipId,
-        recordingPath,
-        startMs,
-        endMs
-      });
-    }
-
-    this.incrementRateLimit(userId);
-
-    return { clipId, status: 'processing', durationMs };
-  }
+  // (P2.3/R10: createClipFromRecording was deleted — it was dead three ways:
+  // it called nonexistent checkRateLimit/incrementRateLimit, its only caller
+  // passed sessionId where it expected recordingPath, and the processor only
+  // handles segment-jobs. Per-run dirs (ADR-0028) are rm -rf'd after upload,
+  // so from-recording clipping would be a new B2-download feature, not a fix.)
 
   /**
    * Get clip by ID. **Inline by design** (PR 10.2 / Phase 10): the

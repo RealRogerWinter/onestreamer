@@ -109,7 +109,6 @@ describe('routes/admin-recordings (characterization)', () => {
     uploadScheduler: { forceUpload: jest.fn(), getStatus: jest.fn() },
     cleanupScheduler: { deleteSessionById: jest.fn(), getStatus: jest.fn() },
     chatCaptureService: { getStatus: jest.fn() },
-    clipService: { createClipFromRecording: jest.fn() },
   };
 
   beforeAll(() => {
@@ -270,38 +269,10 @@ describe('routes/admin-recordings (characterization)', () => {
     expect(mockChatRepo.listBySession).toHaveBeenCalledWith('s5', { fromMs: 10, toMs: 20 });
   });
 
-  // --- Group: clips --------------------------------------------------------
-
-  test('POST /sessions/:sessionId/clip 400 when startMs/endMs missing', async () => {
-    const res = await request(app).post('/admin/review/sessions/s6/clip').send({});
-
-    expect(res.status).toBe(400);
-    expect(res.body).toEqual({ success: false, error: 'startMs and endMs are required' });
-  });
-
-  test('POST /sessions/:sessionId/clip delegates to clipService with absolute times', async () => {
-    mockRecordingRepo.getSessionById.mockResolvedValue({
-      session_id: 's6',
-      start_time: 1000,
-      streamer_username: 'bob',
-    });
-    services.clipService.createClipFromRecording.mockResolvedValue({ success: true, clipId: 'c1' });
-
-    const res = await request(app)
-      .post('/admin/review/sessions/s6/clip')
-      .send({ startMs: 100, endMs: 500, title: 'T', description: 'D' });
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ success: true, clipId: 'c1' });
-    expect(services.clipService.createClipFromRecording).toHaveBeenCalledWith({
-      startMs: 1100,
-      endMs: 1500,
-      title: 'T',
-      description: 'D',
-      userId: 'admin-1',
-      sessionId: 's6',
-    });
-  });
+  // (P2.3/R10: the clips group was deleted with its endpoint — POST
+  // /sessions/:sessionId/clip never worked: it called the nonexistent
+  // ClipService.checkRateLimit and passed sessionId where the method
+  // expected recordingPath.)
 
   // --- Group: delete / upload (schedulers) ---------------------------------
 
