@@ -12,6 +12,31 @@ const express = require('express');
 const AccountService = require('../../services/AccountService');
 const { GameMechanicsError } = require('../../services/GameMechanicsService');
 const { AccountServiceError } = require('../../services/AccountService');
+const { safeCompare } = require('../../utils/safeCompare');
+
+// E1b (audit Plan 04, critical — the audit's P0 item 6): `/award-points`
+// credits arbitrary points and was gated ONLY by "the caller's own JWT
+// matches the credited user" — so any authenticated user could self-credit
+// unlimited points by calling it directly. It is meant for INTERNAL callers
+// only (the chat-service claim-event handler), which sends X-Internal-Secret
+// via getAxiosConfig. Enforce that secret when configured — a direct client
+// call has no secret and is rejected. When INTERNAL_API_SECRET is unset
+// (dev / pre-rollout) we can't distinguish callers, so we warn loudly and
+// fall back to the JWT check; the amount cap + integer validation below
+// bound the damage until the operator sets the secret (same rollout
+// dependency as S3/CH3). Max single award — claim rewards are small.
+const MAX_AWARD_POINTS = 1_000_000;
+
+function isTrustedInternalCall(req, logger) {
+  const expected = process.env.INTERNAL_API_SECRET;
+  if (expected) {
+    return safeCompare(req.headers['x-internal-secret'], expected);
+  }
+  // Unset: cannot authenticate the internal caller. Warn so the gap is
+  // visible; the endpoint stays JWT-gated + amount-capped meanwhile.
+  logger.warn('⚠️ AWARD-POINTS: INTERNAL_API_SECRET unset - endpoint is not fully protected (self-credit bounded only by the amount cap). Set INTERNAL_API_SECRET on both processes to close E1b.');
+  return null; // "unknown" — fall through to the JWT check
+}
 
 // PR 16.2: small helper used by the five game-mechanic handlers. Catches the
 // service's typed errors and maps to the byte-equivalent res.json shape;
@@ -54,7 +79,26 @@ module.exports = function createPointsRouter({ logger, authService }) {
         });
       }
 
-      // Verify authorization
+      // E1b/E6: server-side positive-integer + cap validation. Fractional
+      // amounts used to reach the ledger; an uncapped amount was the core of
+      // the self-credit exploit.
+      if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_AWARD_POINTS) {
+        return res.status(400).json({
+          success: false,
+          error: `amount must be a positive integer no greater than ${MAX_AWARD_POINTS}`
+        });
+      }
+
+      // E1b: authorize as an internal call (chat-service sends the secret).
+      const trusted = isTrustedInternalCall(req, logger);
+      if (trusted === false) {
+        // INTERNAL_API_SECRET is set but the header is missing/wrong — a
+        // direct client call. Reject; this is what closes the exploit.
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
+
+      // Verify authorization (defense-in-depth: the credited user's own JWT;
+      // in permissive mode this is the only identity gate).
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({

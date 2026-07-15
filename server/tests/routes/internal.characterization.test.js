@@ -224,6 +224,60 @@ describe('routes/internal characterization', () => {
       expect(res.body).toEqual({ success: false, error: 'Missing required parameters' });
     });
 
+    // E6: server-side positive-integer + cap validation on the award amount.
+    test('POST /award-points 400 when amount is fractional', async () => {
+      const res = await request(buildApp({ services: {} }))
+        .post('/api/internal/award-points')
+        .set('Authorization', 'Bearer user:7')
+        .send({ userId: 7, amount: 0.5 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/positive integer/);
+    });
+
+    test('POST /award-points 400 when amount exceeds the cap', async () => {
+      const res = await request(buildApp({ services: {} }))
+        .post('/api/internal/award-points')
+        .set('Authorization', 'Bearer user:7')
+        .send({ userId: 7, amount: 2_000_000 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/no greater than/);
+    });
+
+    // E1b (critical): when INTERNAL_API_SECRET is configured, a direct client
+    // call (no matching X-Internal-Secret) is rejected — this closes the
+    // self-credit exploit. The legit caller is the chat-service, which sends
+    // the secret.
+    describe('with INTERNAL_API_SECRET configured', () => {
+      const OLD = process.env.INTERNAL_API_SECRET;
+      beforeAll(() => { process.env.INTERNAL_API_SECRET = 'test-internal-secret'; });
+      afterAll(() => {
+        if (OLD === undefined) delete process.env.INTERNAL_API_SECRET;
+        else process.env.INTERNAL_API_SECRET = OLD;
+      });
+
+      test('POST /award-points 403 when the internal secret header is missing (even with a valid own JWT)', async () => {
+        const res = await request(buildApp({ services: {} }))
+          .post('/api/internal/award-points')
+          .set('Authorization', 'Bearer user:7')
+          .send({ userId: 7, amount: 100 });
+
+        expect(res.status).toBe(403);
+        expect(res.body).toEqual({ success: false, error: 'Forbidden' });
+      });
+
+      test('POST /award-points 403 when the internal secret header is wrong', async () => {
+        const res = await request(buildApp({ services: {} }))
+          .post('/api/internal/award-points')
+          .set('Authorization', 'Bearer user:7')
+          .set('X-Internal-Secret', 'nope')
+          .send({ userId: 7, amount: 100 });
+
+        expect(res.status).toBe(403);
+      });
+    });
+
     test('POST /transfer-points 401 when token id does not match fromUserId', async () => {
       const gameMechanicsService = { transferPoints: jest.fn() };
       const res = await request(buildApp({ services: { gameMechanicsService } }))
