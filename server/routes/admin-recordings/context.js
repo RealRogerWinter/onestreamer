@@ -47,14 +47,12 @@ const services = {
     uploadScheduler: null,
     cleanupScheduler: null,
     chatCaptureService: null,
-    clipService: null,
 };
 
 function setServices(injected) {
     services.uploadScheduler = injected.uploadScheduler;
     services.cleanupScheduler = injected.cleanupScheduler;
     services.chatCaptureService = injected.chatCaptureService;
-    services.clipService = injected.clipService;
 }
 
 module.exports = {

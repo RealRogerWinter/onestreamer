@@ -553,8 +553,7 @@ app.locals.generateTurnCredentials = generateTurnCredentials;
 adminRecordingsRoutes.setServices({
   uploadScheduler: recordingUploadScheduler,
   cleanupScheduler: recordingCleanupScheduler,
-  chatCaptureService: sessionChatCaptureService,
-  clipService: clipService
+  chatCaptureService: sessionChatCaptureService
 });
 
 // Listen for recording events to trigger chat capture and upload scheduling
