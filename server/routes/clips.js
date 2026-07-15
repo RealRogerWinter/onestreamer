@@ -287,41 +287,10 @@ router.get('/my/all', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * POST /api/clips
- * Create a new clip from a recording
- */
-router.post('/', authenticateToken, async (req, res) => {
-  try {
-    const clipService = req.app.get('clipService');
-    const { recordingId, startMs, endMs, title, description } = req.body;
-    const userId = req.user.id || req.user.userId;
-
-    // Validate required fields
-    if (!recordingId || startMs === undefined || endMs === undefined || !title) {
-      return res.status(400).json({
-        error: 'Missing required fields: recordingId, startMs, endMs, title'
-      });
-    }
-
-    const result = await clipService.createClip({
-      userId,
-      recordingId,
-      startMs: parseInt(startMs),
-      endMs: parseInt(endMs),
-      title,
-      description: description || ''
-    });
-
-    res.json({
-      success: true,
-      ...result
-    });
-  } catch (error) {
-    logger.error('Error creating clip:', error);
-    res.status(400).json({ error: error.message });
-  }
-});
+// (P2.3/R10: the POST /api/clips from-recording handler was deleted — it
+// called the nonexistent clipService.createClip, so it 400'd on every
+// request since extraction, and no client code ever called it. Live clip
+// creation is POST /api/clips/live below.)
 
 /**
  * POST /api/clips/live
