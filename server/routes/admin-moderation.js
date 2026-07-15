@@ -62,7 +62,7 @@ function createAdminModerationRouter(deps) {
     router.get('/api/admin/moderation', authenticateModerator, async (req, res) => {
         try {
             // Send a request to the chat service to get moderation data
-            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/moderation`;
+            const chatServiceUrl = `${resolveChatServiceUrl()}/api/moderation`;
             logger.info(`📊 MAIN SERVER: Fetching moderation data from ${chatServiceUrl}`);
         
             const response = await axios.get(chatServiceUrl, chatAxiosConfig(chatServiceUrl, { timeout: 5000 }));
@@ -86,7 +86,7 @@ function createAdminModerationRouter(deps) {
             const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
         
             // Send ban request to chat service
-            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/ban`;
+            const chatServiceUrl = `${resolveChatServiceUrl()}/api/ban`;
             const response = await axios.post(chatServiceUrl, {
                 username,
                 reason,
@@ -105,7 +105,7 @@ function createAdminModerationRouter(deps) {
             const { username } = req.body;
         
             // Send unban request to chat service
-            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/unban`;
+            const chatServiceUrl = `${resolveChatServiceUrl()}/api/unban`;
             const response = await axios.post(chatServiceUrl, { username }, chatAxiosConfig(chatServiceUrl));
         
             res.json(response.data);
@@ -121,7 +121,7 @@ function createAdminModerationRouter(deps) {
             const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
         
             // Send timeout request to chat service
-            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/timeout`;
+            const chatServiceUrl = `${resolveChatServiceUrl()}/api/timeout`;
             const response = await axios.post(chatServiceUrl, {
                 username,
                 duration,
@@ -141,7 +141,7 @@ function createAdminModerationRouter(deps) {
             const { username } = req.body;
         
             // Send remove timeout request to chat service
-            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/remove-timeout`;
+            const chatServiceUrl = `${resolveChatServiceUrl()}/api/remove-timeout`;
             const response = await axios.post(chatServiceUrl, { username }, chatAxiosConfig(chatServiceUrl));
         
             res.json(response.data);

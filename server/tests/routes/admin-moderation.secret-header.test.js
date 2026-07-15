@@ -62,7 +62,7 @@ describe('admin-moderation → chat-service proxies attach X-Internal-Secret (CH
     const r = await request(makeApp(axiosStub)).get('/api/admin/moderation');
     expect(r.status).toBe(200);
     const [url, config] = axiosStub.get.mock.calls[0];
-    expect(url).toBe('https://onestreamer.live:8444/api/moderation');
+    expect(url).toBe('https://127.0.0.1:8444/api/moderation');
     expect(config.headers['X-Internal-Secret']).toBe(SECRET);
     expect(config.timeout).toBe(5000);
   });
@@ -77,7 +77,7 @@ describe('admin-moderation → chat-service proxies attach X-Internal-Secret (CH
     const r = await request(makeApp(axiosStub)).post(adminPath).send(body);
     expect(r.status).toBe(200);
     const [url, , config] = axiosStub.post.mock.calls[0];
-    expect(url).toBe(`https://onestreamer.live:8444${chatPath}`);
+    expect(url).toBe(`https://127.0.0.1:8444${chatPath}`);
     expect(config.headers['X-Internal-Secret']).toBe(SECRET);
     // These POSTs previously had NO timeout and NO https agent at all —
     // the helper gives them both.

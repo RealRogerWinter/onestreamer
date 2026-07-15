@@ -164,7 +164,6 @@ Transcription captures audio from the LiveKit room (not Plain RTP) and runs whis
 | **`StreamingLogsService.js`** | Stream event audit trail (start, end, takeover, disconnect). |
 | **`ResourceMonitor.js`** | CPU / memory / disk monitoring loop. |
 | **`PortMonitorService.js`** | Network port availability checks. |
-| **`ProcessManager.js`** | Child-process lifecycle (kill stale ffmpeg / streamlink). |
 | **`BotEventBus.js`** | In-process event bus for bot subsystems. |
 
 ---

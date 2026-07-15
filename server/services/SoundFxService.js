@@ -169,7 +169,7 @@ class SoundFxService extends EventEmitter {
     async sendTTSToChat(username, text) {
         try {
             // Use 127.0.0.1 instead of localhost to avoid IPv6 issues
-            const chatServiceUrl = resolveChatServiceUrl('http://127.0.0.1:8081');
+            const chatServiceUrl = resolveChatServiceUrl();
             const formattedMessage = `📢 ${username} TTS: ${text}`;
             
             logger.debug(`📤 SOUNDFX: Sending TTS to chat at ${chatServiceUrl}/api/system-message`);
@@ -597,7 +597,7 @@ class SoundFxService extends EventEmitter {
 
     async sendSoundboardToChat(username, soundName, boardName) {
         try {
-            const chatServiceUrl = resolveChatServiceUrl('http://127.0.0.1:8081');
+            const chatServiceUrl = resolveChatServiceUrl();
             const formattedMessage = `🔊 ${username} played: "${soundName}" from ${boardName}\n🎵 Browse more sounds at https://www.101soundboards.com`;
             
             logger.debug(`📤 SOUNDFX: Sending soundboard to chat at ${chatServiceUrl}/api/system-message`);

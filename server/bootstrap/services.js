@@ -131,14 +131,6 @@ const BotEventBus = require('../services/BotEventBus');
 // PR 4.2: deferred-work registry.
 const LifecycleManager = require('../services/LifecycleManager');
 
-// PR 8.3 (Phase 8): ProcessManager singleton — registry for ViewBot
-// ffmpeg / chrome child PIDs. Exposes a stoppable.stop() that reaps
-// any tracked PIDs not already cleaned up by their owning service's
-// stop() path. See ADR-0011 (lifecycle contract) and the runbook
-// `viewbot-fleet-misbehaving.md` for the orphan-process hazard this
-// closes.
-const processManager = require('../services/ProcessManager');
-
 // PR-I4: late ViewBot stack — see createViewBotServices below.
 // ViewbotService was demoted to the stateless `isViewbotStream` predicate
 // (server/services/ViewbotService.js) and is no longer constructed here; it's
@@ -485,15 +477,12 @@ function createServices({ io, redisClient, database, env, webrtcService, userBon
     streamBotService,
     // Optional Discord bot — stop() tears down the gateway connection.
     discordBotService,
-    // PR 8.3 (Phase 8): ProcessManager runs LATE in the shutdown order
-    // (early in the array → late in reverse-iteration) so the per-bot
-    // stop() paths on ViewBot services — which already call
-    // `processManager.killBotProcesses(botId)` and `onBotStopped` — have
-    // a chance to clean their tracked PIDs FIRST. By the time the reaper
-    // runs, the registry is near-empty in the happy path; the reaper
-    // exists to catch the case where a service died unexpectedly with a
-    // registered PID still in the map.
-    processManager,
+    // (ProcessManager was removed 2026-07-15 — its registerProcess had
+    // ZERO production callers, so the registry was permanently empty and
+    // the shutdown reaper a no-op; the comment that used to sit here
+    // claiming ViewBot services "already call killBotProcesses" was stale.
+    // Orphan-process safety is owned by the per-service stop() paths and
+    // ADR-0032's descendant-scoped crash kill. Flagged in ADR-0032.)
     // PR 4.2: drained last (reverse-iterated first by the shutdown loop) so
     // any in-flight deferred work the other services have scheduled is
     // cancelled BEFORE those services tear down their own state.

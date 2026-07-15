@@ -20,6 +20,11 @@ module.exports = {
   testPathIgnorePatterns: [
     '/node_modules/',
     '/tests/integration/',
+    // chat-service has its own jest config + dedicated CI job (test-chat);
+    // sweeping its tests here too ran them twice per pipeline (audit
+    // follow-up). Run them via `cd chat-service && npx jest` / npm run
+    // test:all.
+    '/chat-service/',
     'worktrees',
     'EgressFrameCaptureService',
     'TranscriptionDrivenBotService',

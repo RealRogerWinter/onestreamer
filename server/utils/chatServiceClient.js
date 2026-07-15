@@ -10,16 +10,16 @@
 // getAxiosConfig (chat-service/index.js) which does the same in the
 // opposite direction (chat → main, verified by streamControlAuth).
 //
-// NOTE on defaults: the pre-existing call sites carry two divergent
-// CHAT_SERVICE_URL fallbacks — 'https://onestreamer.live:8444' (public FQDN,
-// admin-moderation.js) vs 'https://127.0.0.1:8444' (loopback, everywhere
-// else) and 'http://127.0.0.1:8081' (SoundFxService). This helper
-// deliberately PRESERVES the per-call-site default via the `defaultUrl`
-// parameter rather than unifying them — unification (presumably on
-// 127.0.0.1, keeping secret-bearing traffic off the public hop) is a
-// follow-up decision for the maintainer. In production CHAT_SERVICE_URL is
-// set (compose.yaml: https://127.0.0.1:8444) so the defaults only matter
-// on dev hosts.
+// NOTE on defaults (unified 2026-07-15, audit follow-up): call sites used
+// to carry three divergent CHAT_SERVICE_URL fallbacks —
+// 'https://onestreamer.live:8444' (public FQDN, admin-moderation.js),
+// 'https://127.0.0.1:8444' (loopback, most sites), and the outright wrong
+// 'http://127.0.0.1:8081' (SoundFxService — chat-service has never listened
+// there, so dev-host TTS announcements silently failed without the env
+// set). All call sites now share DEFAULT_CHAT_SERVICE_URL below: loopback,
+// which keeps the X-Internal-Secret header off the public hop. In
+// production CHAT_SERVICE_URL is set (compose.yaml: https://127.0.0.1:8444)
+// so the default only matters on dev hosts.
 
 const https = require('https');
 
@@ -28,14 +28,16 @@ const https = require('https');
 // one instance avoids a new TLS agent per request).
 const selfSignedAgent = new https.Agent({ rejectUnauthorized: false });
 
+const DEFAULT_CHAT_SERVICE_URL = 'https://127.0.0.1:8444';
+
 /**
  * Resolve the chat-service base URL: CHAT_SERVICE_URL env, else the
- * call site's historical default.
+ * unified loopback default (see NOTE above).
  *
- * @param {string} defaultUrl per-call-site fallback (see NOTE above)
+ * @param {string} [defaultUrl] override fallback (rarely needed)
  * @returns {string}
  */
-function chatServiceUrl(defaultUrl) {
+function chatServiceUrl(defaultUrl = DEFAULT_CHAT_SERVICE_URL) {
   return process.env.CHAT_SERVICE_URL || defaultUrl;
 }
 

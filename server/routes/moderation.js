@@ -112,7 +112,7 @@ router.post('/ban-chat', authenticateModerator, async (req, res) => {
         // registered users are still enforced at their next connect.
         let chatServicePropagated = false;
         try {
-            const chatBase = resolveChatServiceUrl('https://127.0.0.1:8444');
+            const chatBase = resolveChatServiceUrl();
             await axios.post(`${chatBase}/api/ban`, {
                 username,
                 reason: 'Banned from chat via user profile',

@@ -342,7 +342,7 @@ module.exports = function registerTakeover(io, socket, deps) {
 
           // Send announcement to chat service (CH3: chatAxiosConfig attaches
           // the X-Internal-Secret header + https agent + 5s timeout).
-          const chatServiceUrl = resolveChatServiceUrl('https://127.0.0.1:8444');
+          const chatServiceUrl = resolveChatServiceUrl();
 
           axios.post(`${chatServiceUrl}/api/system-message`, {
             message: announcementMessage,

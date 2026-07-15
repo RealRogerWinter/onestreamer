@@ -637,7 +637,7 @@ class ClipService {
     try {
       // Fetch chat from chat service API (CH3: chatAxiosConfig attaches the
       // X-Internal-Secret header + https agent + 5s timeout)
-      const chatServiceUrl = resolveChatServiceUrl('https://127.0.0.1:8444');
+      const chatServiceUrl = resolveChatServiceUrl();
       const axios = require('axios');
 
       const response = await axios.get(`${chatServiceUrl}/api/chat-history`, chatAxiosConfig(chatServiceUrl, {

@@ -15,7 +15,7 @@ class StreamBotService extends EventEmitter {
         this.autoSummonIntervalId = null;
         this.autoSummonTimeoutId = null;
         this.isInitialized = false;
-        this.chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
+        this.chatServiceUrl = require('../utils/chatServiceClient').chatServiceUrl();
 
         // References to other services (set via setters)
         this.chatBotService = null;

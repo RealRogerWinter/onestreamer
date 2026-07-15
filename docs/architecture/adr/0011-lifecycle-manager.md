@@ -200,6 +200,14 @@ control flow. Forcing both through `schedule` would distort the API.
 
 ## Amendment — PR 8.3 (Phase 8): child-process force-reap
 
+> **Superseded 2026-07-15 — ProcessManager removed.** The registry described
+> below was never wired: `registerProcess` had **zero** production callers
+> (flagged in ADR-0032), so the map was permanently empty, the per-bot kill
+> claims below were stale, and the shutdown reaper no-op'd on every drain.
+> The service, its stoppables slot, and its tests were deleted. Orphan-process
+> safety is owned by the per-service `stop()` paths and ADR-0032's
+> descendant-scoped crash kill. This amendment is retained as history.
+
 **Date**: 2026-05-27
 **PR**: 8.3 — `viewbot-child-process-force-reap`
 

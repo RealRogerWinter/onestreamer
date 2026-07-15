@@ -17,7 +17,7 @@
     "test:watch": "jest --config config/jest/jest.config.js --watch",
     "test:integration": "jest --config config/jest/jest.integration.config.js",
     "test:bettersqlite": "bash scripts/ci/run-bettersqlite-isolated.sh",
-    "test:all": "npm test && npm run test:bettersqlite && npm run test:integration && cd client && npm test -- --watchAll=false"
+    "test:all": "npm test && npm run test:bettersqlite && npm run test:integration && cd chat-service && npx jest && cd ../client && npm test -- --watchAll=false"
   },
   "keywords": [
     "streaming",

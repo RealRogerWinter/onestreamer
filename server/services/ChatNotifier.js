@@ -25,8 +25,7 @@ class ChatNotifier {
      */
     constructor(opts = {}) {
         this.chatServiceUrl = opts.chatServiceUrl
-            || process.env.CHAT_SERVICE_URL
-            || 'https://127.0.0.1:8444';
+            || require('../utils/chatServiceClient').chatServiceUrl();
 
         this.httpsAgent = opts.httpsAgent || new https.Agent({
             rejectUnauthorized: false // Allow self-signed certificates for local HTTPS

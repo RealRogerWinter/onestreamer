@@ -14,7 +14,7 @@ const { chatAxiosConfig } = require('../utils/chatServiceClient');
 const logger = require('../bootstrap/logger').child({ svc: 'SessionChatCaptureService' });
 class SessionChatCaptureService {
     constructor(config = {}) {
-        this.chatServiceUrl = config.chatServiceUrl || process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
+        this.chatServiceUrl = config.chatServiceUrl || require('../utils/chatServiceClient').chatServiceUrl();
         this.pollIntervalMs = config.pollIntervalMs || 5000; // Poll every 5 seconds
         this.contextWindowMs = config.contextWindowMs || 30000; // 30 seconds of context
 
