@@ -339,6 +339,135 @@ forEachBackend(({ make, label }) => {
             });
         });
 
+        // E6: every user-supplied amount must be a positive integer. Fractional,
+        // negative, zero, and string amounts are rejected with a 400 before any
+        // auth or ledger work happens, and no balance moves.
+        describe('amount validation (audit E6)', () => {
+            const balanceOf42 = async () =>
+                (await primitives.getAsync(
+                    'SELECT points_balance FROM user_stats WHERE user_id = ?', [42])).points_balance;
+
+            const cases = [
+                { label: 'fractional', amount: 10.5, expectMsg: /positive integer/ },
+                { label: 'negative', amount: -100, expectMsg: /positive integer/ },
+                // amount=0 trips the pre-existing falsy missing-params check
+                // first — still a 400, different message.
+                { label: 'zero', amount: 0, expectMsg: /Missing required parameters/ },
+                { label: 'string', amount: '100', expectMsg: /positive integer/ },
+            ];
+
+            for (const { label, amount, expectMsg } of cases) {
+                it(`gamble: 400 on ${label} amount`, async () => {
+                    const res = await request(app)
+                        .post('/api/internal/gamble')
+                        .set('Authorization', 'Bearer user:42')
+                        .send({ userId: 42, amount });
+                    expect(res.status).toBe(400);
+                    expect(res.body.success).toBe(false);
+                    expect(res.body.error).toMatch(expectMsg);
+                    expect(await balanceOf42()).toBe(1000);
+                });
+
+                it(`slots: 400 on ${label} amount`, async () => {
+                    const res = await request(app)
+                        .post('/api/internal/slots')
+                        .set('Authorization', 'Bearer user:42')
+                        .send({ userId: 42, amount });
+                    expect(res.status).toBe(400);
+                    expect(res.body.success).toBe(false);
+                    expect(res.body.error).toMatch(expectMsg);
+                    expect(await balanceOf42()).toBe(1000);
+                });
+
+                it(`transfer-points: 400 on ${label} amount`, async () => {
+                    const res = await request(app)
+                        .post('/api/internal/transfer-points')
+                        .set('Authorization', 'Bearer user:42')
+                        .send({ fromUserId: 42, toUsername: 'recipient', amount });
+                    expect(res.status).toBe(400);
+                    expect(res.body.success).toBe(false);
+                    expect(res.body.error).toMatch(expectMsg);
+                    expect(await balanceOf42()).toBe(1000);
+                });
+            }
+
+            it('admin/award-points: 400 on fractional amount', async () => {
+                const res = await request(app)
+                    .post('/api/internal/admin/award-points')
+                    .set('Authorization', 'Bearer user:1')
+                    .send({ targetUsername: 'sender', amount: 250.5, adminUserId: 1 });
+                expect(res.status).toBe(400);
+                expect(res.body.error).toMatch(/positive integer/);
+                expect(await balanceOf42()).toBe(1000);
+            });
+
+            it('admin/take-points: 400 on negative amount', async () => {
+                const res = await request(app)
+                    .post('/api/internal/admin/take-points')
+                    .set('Authorization', 'Bearer user:1')
+                    .send({ targetUsername: 'sender', amount: -250, adminUserId: 1 });
+                expect(res.status).toBe(400);
+                expect(res.body.error).toMatch(/positive integer/);
+                expect(await balanceOf42()).toBe(1000);
+            });
+        });
+
+        // E7: when the ledger's atomic guarded decrement loses a race the
+        // pre-check passed (balance drained between check and debit), the
+        // typed AccountServiceError must surface as a client 400 — not an
+        // opaque 500. Simulate the race by making the pre-check's balance
+        // read lie while the real row still holds only 1000 points.
+        describe('insufficient-balance decrement race → 400 not 500 (audit E7)', () => {
+            afterEach(() => jest.restoreAllMocks());
+
+            it('gamble: guarded debit fails after a stale pre-check → 400', async () => {
+                const gms = app.locals.services.gameMechanicsService;
+                jest.spyOn(gms.accountService, 'getPointsBalance').mockResolvedValue(999999);
+                jest.spyOn(Math, 'random').mockReturnValue(0.99); // force the loss (debit) path
+
+                const res = await request(app)
+                    .post('/api/internal/gamble')
+                    .set('Authorization', 'Bearer user:42')
+                    .send({ userId: 42, amount: 5000 }); // > the real 1000 balance
+
+                expect(res.status).toBe(400);
+                expect(res.body.success).toBe(false);
+                expect(res.body.error).toMatch(/Insufficient points balance/);
+
+                const balance = await primitives.getAsync(
+                    'SELECT points_balance FROM user_stats WHERE user_id = ?', [42]);
+                expect(balance.points_balance).toBe(1000); // untouched
+
+                const audit = await primitives.allAsync('SELECT * FROM points_transactions');
+                expect(audit).toEqual([]);
+            });
+
+            it('transfer-points: guarded debit fails inside the tx → 400, recipient not credited', async () => {
+                const gms = app.locals.services.gameMechanicsService;
+                jest.spyOn(gms.accountService, 'getPointsBalance').mockResolvedValue(999999);
+
+                const res = await request(app)
+                    .post('/api/internal/transfer-points')
+                    .set('Authorization', 'Bearer user:42')
+                    .send({ fromUserId: 42, toUsername: 'recipient', amount: 5000 });
+
+                expect(res.status).toBe(400);
+                expect(res.body.success).toBe(false);
+                expect(res.body.error).toMatch(/Insufficient points balance/);
+
+                const senderBal = await primitives.getAsync(
+                    'SELECT points_balance FROM user_stats WHERE user_id = ?', [42]);
+                expect(senderBal.points_balance).toBe(1000);
+
+                const recBal = await primitives.getAsync(
+                    'SELECT points_balance FROM user_stats WHERE user_id = ?', [99]);
+                expect(recBal.points_balance).toBe(0);
+
+                const audit = await primitives.allAsync('SELECT * FROM points_transactions');
+                expect(audit).toEqual([]);
+            });
+        });
+
         describe('POST /admin/award-points (is_admin guard)', () => {
             it('200 when caller is_admin=1', async () => {
                 const res = await request(app)
