@@ -425,17 +425,29 @@ class AuthService {
             // Check if email already exists
             const existingEmailUser = await this.accountService.getUserByEmail(oauthData.email);
             if (existingEmailUser) {
+                // S13: getUserByEmail returns a raw `SELECT *` row with
+                // snake_case columns; the code below read camelCase
+                // properties that were always undefined — disabling the
+                // already-linked fast-path (a second OAuth login re-ran the
+                // linking flow) and zeroing role flags in the response.
+                // Normalize once here (tolerate camelCase in case a caller
+                // ever pre-normalizes).
+                const existingOauthProvider = existingEmailUser.oauth_provider ?? existingEmailUser.oauthProvider;
+                const existingOauthId = existingEmailUser.oauth_id ?? existingEmailUser.oauthId;
+                const existingIsVerified = existingEmailUser.is_verified ?? existingEmailUser.isVerified;
+                const existingIsAdmin = existingEmailUser.is_admin ?? existingEmailUser.isAdmin;
+                const existingIsModerator = existingEmailUser.is_moderator ?? existingEmailUser.isModerator;
                 logger.debug('Existing user found:', {
                     id: existingEmailUser.id,
                     email: existingEmailUser.email,
-                    oauthProvider: existingEmailUser.oauthProvider,
-                    oauthId: existingEmailUser.oauthId,
+                    oauthProvider: existingOauthProvider,
+                    oauthId: existingOauthId,
                     hasPassword: !!existingEmailUser.password
                 });
 
                 // If user exists with this email and OAuth provider, link them
-                if (existingEmailUser.oauthProvider === oauthData.oauthProvider && 
-                    existingEmailUser.oauthId === oauthData.oauthId) {
+                if (existingOauthProvider === oauthData.oauthProvider && 
+                    existingOauthId === oauthData.oauthId) {
                     // User already exists with this OAuth account, just log them in
                     logger.debug('User already exists with same OAuth, logging them in');
                     const token = this.generateToken(existingEmailUser);
@@ -447,14 +459,14 @@ class AuthService {
                             id: existingEmailUser.id,
                             email: existingEmailUser.email,
                             username: existingEmailUser.username,
-                            isVerified: existingEmailUser.isVerified,
-                            isAdmin: existingEmailUser.isAdmin || false,
-                            isModerator: existingEmailUser.isModerator || false
+                            isVerified: existingIsVerified,
+                            isAdmin: existingIsAdmin || false,
+                            isModerator: existingIsModerator || false
                         },
                         token,
                         refreshToken
                     };
-                } else if (!existingEmailUser.oauthProvider && existingEmailUser.password) {
+                } else if (!existingOauthProvider && existingEmailUser.password) {
                     // User exists with password auth, we can link OAuth to existing account
                     logger.debug('Linking OAuth to existing password-based account');
                     
@@ -474,9 +486,9 @@ class AuthService {
                             id: existingEmailUser.id,
                             email: existingEmailUser.email,
                             username: existingEmailUser.username,
-                            isVerified: existingEmailUser.isVerified,
-                            isAdmin: existingEmailUser.isAdmin || false,
-                            isModerator: existingEmailUser.isModerator || false
+                            isVerified: existingIsVerified,
+                            isAdmin: existingIsAdmin || false,
+                            isModerator: existingIsModerator || false
                         },
                         token,
                         refreshToken
@@ -484,7 +496,7 @@ class AuthService {
                 } else {
                     // Email exists but with different OAuth provider
                     logger.debug('Email exists with different OAuth provider');
-                    throw new Error(`An account with this email already exists using ${existingEmailUser.oauthProvider || 'email/password'} authentication. Please login with your existing account method.`);
+                    throw new Error(`An account with this email already exists using ${existingOauthProvider || 'email/password'} authentication. Please login with your existing account method.`);
                 }
             }
 

@@ -362,6 +362,18 @@ describe('routes/auth characterization', () => {
       expect(res.body).toEqual({ message: 'Password reset successful' });
       expect(mockResetPassword).toHaveBeenCalledWith('tok', 'newpass1');
     });
+
+    // S11: reset-password now carries the Turnstile gate that forgot-password
+    // already had (it previously had none).
+    test('POST /auth/reset-password 400 when turnstile rejects (before the service call)', async () => {
+      turnstileState.reject = true;
+      const res = await request(buildApp())
+        .post('/auth/reset-password')
+        .send({ resetToken: 'tok', newPassword: 'newpass1' });
+
+      expect(res.status).toBe(400);
+      expect(mockResetPassword).not.toHaveBeenCalled();
+    });
   });
 
   // ---- Session / me / profile ----------------------------------------------

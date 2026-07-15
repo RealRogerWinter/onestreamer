@@ -180,7 +180,20 @@ class AccountService {
         return resetToken;
     }
 
+    // S11: server-enforced minimum password policy — the client-side check
+    // was the only gate, so a direct API call could set a trivial password.
+    static validatePasswordPolicy(password) {
+        if (typeof password !== 'string' || password.length < 8) {
+            throw new Error('Password must be at least 8 characters long');
+        }
+        if (password.length > 200) {
+            throw new Error('Password is too long');
+        }
+    }
+
     async resetPassword(resetToken, newPassword) {
+        AccountService.validatePasswordPolicy(newPassword);
+
         const user = await this.userRepository.findByResetToken(resetToken);
 
         if (!user) {

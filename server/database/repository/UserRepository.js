@@ -423,8 +423,12 @@ class UserRepository {
      * password, oauth_id, verification_token, reset_token, etc.
      */
     async getSafeById(id) {
+        // S8: account_status is included so authenticateToken's
+        // deleted/pending_deletion checks evaluate a real value (they were
+        // dead code — the column was omitted, so the check always saw
+        // undefined and purged users passed auth for their JWT's life).
         return await this.getAsync(
-            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_moderator, is_banned, oauth_provider, username_changed, avatar_url, description
+            `SELECT id, email, username, created_at, updated_at, last_login, is_verified, is_admin, is_moderator, is_banned, account_status, oauth_provider, username_changed, avatar_url, description
              FROM users WHERE id = ?`,
             [id]
         );

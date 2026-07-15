@@ -25,6 +25,23 @@ const {
 const router = express.Router();
 
 /**
+ * S6: resolve `name` inside `dir` and confine it there. Rejects `..`,
+ * absolute paths, and any basename containing a path separator, then
+ * asserts the resolved path stays under the session dir — closes the
+ * path-traversal / arbitrary-file-read hole (`?file=../../../etc/passwd`).
+ * Returns the safe absolute path, or null if it escapes.
+ */
+function safeSegmentPath(dir, name) {
+    if (typeof name !== 'string' || name.length === 0) return null;
+    if (name.includes('/') || name.includes('\\') || name.includes('\0')) return null;
+    if (name === '..' || name === '.') return null;
+    const resolvedDir = path.resolve(dir);
+    const resolved = path.resolve(resolvedDir, name);
+    if (resolved !== resolvedDir && !resolved.startsWith(resolvedDir + path.sep)) return null;
+    return resolved;
+}
+
+/**
  * GET /admin/review/sessions
  * List all recording sessions with pagination and filtering
  */
@@ -199,7 +216,10 @@ router.get('/sessions/:sessionId/stream', authenticateAdmin, async (req, res) =>
 
         // If requesting a specific segment file
         if (file) {
-            const segmentPath = path.join(sessionDir, file);
+            const segmentPath = safeSegmentPath(sessionDir, file);
+            if (!segmentPath) {
+                return res.status(400).json({ success: false, error: 'Invalid segment filename' });
+            }
             if (!fs.existsSync(segmentPath)) {
                 return res.status(404).json({ success: false, error: 'Segment not found' });
             }
@@ -323,7 +343,10 @@ router.get('/segment/:sessionId/:filename', authenticateAdmin, async (req, res) 
             return res.status(404).json({ success: false, error: 'Session not found' });
         }
 
-        const segmentPath = path.join(session.local_path, filename);
+        const segmentPath = safeSegmentPath(session.local_path, filename);
+        if (!segmentPath) {
+            return res.status(400).json({ success: false, error: 'Invalid segment filename' });
+        }
         if (!fs.existsSync(segmentPath)) {
             return res.status(404).json({ success: false, error: 'Segment not found' });
         }

@@ -41,8 +41,12 @@ const authenticateToken = async (req, res, next) => {
             return res.status(403).json({ error: 'Account is banned' });
         }
     } catch (err) {
-        logger.error('Authentication check error:', err);
-        // Continue with request if check fails
+        // S9: fail CLOSED. A DB error in the status/ban check used to be
+        // swallowed and the request proceeded — the same posture the admin
+        // and moderator variants already reject on. A banned/deleted user
+        // must not slip through on a transient DB error.
+        logger.error({ err }, 'Authentication check error - failing closed');
+        return res.status(500).json({ error: 'Authentication check failed' });
     }
 
     req.user = decoded;
