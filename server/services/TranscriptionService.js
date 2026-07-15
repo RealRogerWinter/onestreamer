@@ -296,10 +296,12 @@ class TranscriptionService extends EventEmitter {
                     logger.debug(`🎵 TRANSCRIPTION: Processing chunk ${session.chunkCount} (${extractResult.duration.toFixed(1)}s of new audio)`);
                     logger.debug(`   Processed up to: ${session.lastProcessedDuration.toFixed(1)}s`);
                     
-                    // Transcribe the extracted audio
+                    // Transcribe the extracted audio (duration scales the
+                    // whisper watchdog timeout — A3, audit Plan 07)
                     const transcription = await this.transcribeWithWhisperCpp(
                         extractResult.audioPath,
-                        session.config
+                        session.config,
+                        { audioDurationSec: extractResult.duration }
                     );
                     
                     if (transcription && transcription.trim() && transcription.trim() !== 'you') {
@@ -358,8 +360,8 @@ class TranscriptionService extends EventEmitter {
     
     // Removed processAudioChunk - replaced with startTranscriptionProcessing
     
-    async transcribeWithWhisperCpp(audioPath, config) {
-        return this.whisperRunner.transcribeWithWhisperCpp(audioPath, config);
+    async transcribeWithWhisperCpp(audioPath, config, options = {}) {
+        return this.whisperRunner.transcribeWithWhisperCpp(audioPath, config, options);
     }
     
     // Removed demo transcription - using real audio only
@@ -580,7 +582,8 @@ class TranscriptionService extends EventEmitter {
                 logger.debug(`🎙️ TRANSCRIPTION: Transcribing with Whisper...`);
                 const transcription = await this.transcribeWithWhisperCpp(
                     session.bufferFile,
-                    session.config
+                    session.config,
+                    { audioDurationSec: session.timedDuration }
                 );
 
                 if (transcription && transcription.trim() && transcription.trim() !== 'you') {
@@ -650,7 +653,8 @@ class TranscriptionService extends EventEmitter {
             // Transcribe the entire recording
             const transcription = await this.transcribeWithWhisperCpp(
                 extractResult.audioPath,
-                session.config
+                session.config,
+                { audioDurationSec: extractResult.duration }
             );
 
             if (transcription && transcription.trim() && transcription.trim() !== 'you') {

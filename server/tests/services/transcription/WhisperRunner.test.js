@@ -13,7 +13,12 @@ let mockProc;
 jest.mock('child_process', () => ({
     spawn: jest.fn(() => mockProc),
 }));
+jest.mock('../../../bootstrap/logger', () => {
+    const l = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    return { child: () => l, __mockLogger: l };
+});
 const { spawn } = require('child_process');
+const { __mockLogger: mockLogger } = require('../../../bootstrap/logger');
 const WhisperRunner = require('../../../services/transcription/WhisperRunner');
 
 function makeProc() {
@@ -77,5 +82,124 @@ describe('WhisperRunner.transcribeWithWhisperCpp', () => {
         } finally {
             jest.useRealTimers();
         }
+    });
+
+    // A3 (audit Plan 07): duration-scaled watchdog, partial-output salvage,
+    // and the in-module concurrency semaphore.
+    describe('A3: duration-scaled timeout / partial output / concurrency', () => {
+        test('watchdog timeout scales with audioDurationSec (45s audio > 20s floor)', async () => {
+            jest.useFakeTimers();
+            try {
+                const p = runner.transcribeWithWhisperCpp(
+                    '/tmp/audio-45s.wav',
+                    { model: 'base', language: 'en' },
+                    { audioDurationSec: 45 }
+                );
+                // Old fixed watchdog fired at 20s — with the default
+                // 1500 ms/s scaling a 45s window gets 67.5s.
+                jest.advanceTimersByTime(20000);
+                expect(mockProc.kill).not.toHaveBeenCalled();
+                jest.advanceTimersByTime(47500); // total 67500 = 45 * 1500
+                expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
+                mockProc.emit('close', null, 'SIGTERM');
+                await expect(p).resolves.toBe('');
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        test('short audio keeps the 20s floor', async () => {
+            jest.useFakeTimers();
+            try {
+                const p = runner.transcribeWithWhisperCpp(
+                    '/tmp/audio-5s.wav',
+                    { model: 'base', language: 'en' },
+                    { audioDurationSec: 5 } // 5 * 1500 = 7.5s, below the floor
+                );
+                jest.advanceTimersByTime(19999);
+                expect(mockProc.kill).not.toHaveBeenCalled();
+                jest.advanceTimersByTime(1);
+                expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
+                mockProc.emit('close', null, 'SIGTERM');
+                await expect(p).resolves.toBe('');
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        test('WHISPER_TIMEOUT_FLOOR_MS / WHISPER_TIMEOUT_PER_SEC_MS env overrides are honored', async () => {
+            jest.useFakeTimers();
+            process.env.WHISPER_TIMEOUT_FLOOR_MS = '1000';
+            process.env.WHISPER_TIMEOUT_PER_SEC_MS = '100';
+            try {
+                const p = runner.transcribeWithWhisperCpp(
+                    '/tmp/audio-env.wav',
+                    { model: 'base', language: 'en' },
+                    { audioDurationSec: 30 } // 30 * 100 = 3000ms > 1000ms floor
+                );
+                jest.advanceTimersByTime(2999);
+                expect(mockProc.kill).not.toHaveBeenCalled();
+                jest.advanceTimersByTime(1);
+                expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
+                mockProc.emit('close', null, 'SIGTERM');
+                await expect(p).resolves.toBe('');
+            } finally {
+                delete process.env.WHISPER_TIMEOUT_FLOOR_MS;
+                delete process.env.WHISPER_TIMEOUT_PER_SEC_MS;
+                jest.useRealTimers();
+            }
+        });
+
+        test('surfaces partial stdout as a truncated transcript on timeout, with a WARN', async () => {
+            jest.useFakeTimers();
+            mockLogger.warn.mockClear();
+            try {
+                const p = runner.transcribeWithWhisperCpp(
+                    '/tmp/audio-partial.wav',
+                    { model: 'base', language: 'en' },
+                    { audioDurationSec: 10 }
+                );
+                // whisper emits banner noise + real transcript lines before hanging
+                mockProc.stdout.emit('data', Buffer.from('whisper_init_state: compute buffer\n'));
+                mockProc.stdout.emit('data', Buffer.from(' Hello this is the first part\n of the stream audio\n'));
+                jest.advanceTimersByTime(20000); // floor applies (10 * 1500 < 20000)
+                expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
+                mockProc.emit('close', null, 'SIGTERM');
+                await expect(p).resolves.toBe('Hello this is the first part  of the stream audio');
+                expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringMatching(/timed out after 20000ms.*truncated/));
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        test('semaphore holds the 3rd concurrent run until one finishes (default max 2)', async () => {
+            const procs = [];
+            spawn.mockImplementation(() => {
+                const p = makeProc();
+                procs.push(p);
+                return p;
+            });
+            try {
+                const cfg = { model: 'base', language: 'en' };
+                const p1 = runner.transcribeWithWhisperCpp('/tmp/audio-c1.wav', cfg);
+                const p2 = runner.transcribeWithWhisperCpp('/tmp/audio-c2.wav', cfg);
+                const p3 = runner.transcribeWithWhisperCpp('/tmp/audio-c3.wav', cfg);
+
+                // Two slots (default WHISPER_MAX_CONCURRENT=2): the 3rd run queues.
+                expect(spawn).toHaveBeenCalledTimes(2);
+
+                procs[0].emit('close', 0, null); // run 1 finishes (silent, no .txt)
+                await expect(p1).resolves.toBe('');
+                await new Promise((resolve) => setImmediate(resolve)); // let the queued run spawn
+                expect(spawn).toHaveBeenCalledTimes(3);
+
+                procs[1].emit('close', 0, null);
+                procs[2].emit('close', 0, null);
+                await expect(p2).resolves.toBe('');
+                await expect(p3).resolves.toBe('');
+            } finally {
+                spawn.mockImplementation(() => mockProc);
+            }
+        });
     });
 });
