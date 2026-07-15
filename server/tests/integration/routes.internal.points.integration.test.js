@@ -179,6 +179,24 @@ forEachBackend(({ make, label }) => {
                 });
             });
 
+            it('E1b: 200 when the internal secret is configured AND provided (the legit chat-service path)', async () => {
+                const OLD = process.env.INTERNAL_API_SECRET;
+                process.env.INTERNAL_API_SECRET = 'test-internal-secret';
+                try {
+                    const res = await request(app)
+                        .post('/api/internal/award-points')
+                        .set('Authorization', 'Bearer user:42')
+                        .set('X-Internal-Secret', 'test-internal-secret')
+                        .send({ userId: 42, amount: 100, reason: 'Claim event winner' });
+
+                    expect(res.status).toBe(200);
+                    expect(res.body.success).toBe(true);
+                } finally {
+                    if (OLD === undefined) delete process.env.INTERNAL_API_SECRET;
+                    else process.env.INTERNAL_API_SECRET = OLD;
+                }
+            });
+
             it('400 when required params are missing', async () => {
                 const res = await request(app)
                     .post('/api/internal/award-points')
