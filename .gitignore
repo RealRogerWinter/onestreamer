@@ -115,8 +115,9 @@ nginx/*
 !nginx/.gitkeep
 !nginx/*.example.conf
 
-# LiveKit per-deploy configs — dormant infrastructure (ADR-0002, ADR-0007),
-# only the sanitized livekit-*.example.yaml references are tracked
+# LiveKit per-deploy configs — LiveKit is the sole WebRTC backend (ADR-0024);
+# these carry per-deploy secrets, only the sanitized livekit-*.example.yaml
+# references are tracked
 livekit-config.yaml
 livekit-ssl.yaml
 

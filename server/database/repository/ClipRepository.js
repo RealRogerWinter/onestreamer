@@ -182,6 +182,31 @@ class ClipRepository {
     }
 
     /**
+     * Boot-time crash sweep (audit Plan 01 P2.3-residual, flagged in
+     * PR #36): flip rows stuck at `status='processing'` for longer than
+     * `cutoffMs` to `'failed'`. A crash between `insertClip` (which bakes
+     * 'processing' in) and `setClipReady`/`setClipFailed` otherwise leaves
+     * the row 'processing' forever — no code path ever revisits it, and it
+     * inflates the getStats processing count for the life of the DB.
+     *
+     * `created_at` (DATETIME DEFAULT CURRENT_TIMESTAMP, UTC) is compared
+     * against `datetime('now', '-N seconds')` (also UTC). Genuinely
+     * in-flight clips are young (processing takes seconds, the cutoff is
+     * minutes), so a recent 'processing' row is left alone.
+     *
+     * @param {number} cutoffMs - age threshold; rows older than this flip.
+     * @returns {Promise<{id: number|undefined, changes: number}>}
+     */
+    async failStaleProcessing(cutoffMs) {
+        const cutoffSeconds = Math.max(0, Math.floor(cutoffMs / 1000));
+        return await this.runAsync(`
+            UPDATE clips SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'processing'
+              AND created_at <= datetime('now', ?)
+        `, [`-${cutoffSeconds} seconds`]);
+    }
+
+    /**
      * Aggregate stats across all clips. Same SQL as the legacy
      * `getStats` — single-row CASE-COUNT projection.
      */
