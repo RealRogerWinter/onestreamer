@@ -95,9 +95,16 @@ class PointsManager {
             // Either no stats row or insufficient balance — disambiguate
             // for the error message. The SELECT can race with concurrent
             // mutations but it's only feeding the error string.
+            //
+            // E7: typed AccountServiceError(400) instead of a plain Error, so
+            // routes surface a client 400 instead of an opaque 500 when the
+            // atomic guard loses a race that the caller's pre-check passed.
+            // Lazy require to dodge the PointsManager ⟷ AccountService
+            // circular import (same pattern as AdminPointsManager).
+            const { AccountServiceError } = require('../AccountService');
             const stats = await repo.getPointsBalanceByUserId(userId);
             const currentBalance = stats?.points_balance || 0;
-            throw new Error(`Insufficient points balance. Has: ${currentBalance}, Needs: ${amount}`);
+            throw new AccountServiceError(400, `Insufficient points balance. Has: ${currentBalance}, Needs: ${amount}`);
         }
 
         const newBalance = updated.points_balance;

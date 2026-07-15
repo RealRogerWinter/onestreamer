@@ -1,8 +1,8 @@
 # Backup and restore
 
-_Last verified: 2026-05-23 against commit 4a1d325._
+_Last verified: 2026-07-15._
 
-OneStreamer's state lives in a handful of places. Backing up requires capturing each one; restoring requires putting each back. There is no integrated backup tool today — this is the manual playbook.
+OneStreamer's state lives in a handful of places. Backing up requires capturing each one; restoring requires putting each back. The **main SQLite DB has an integrated nightly off-host backup tool** — [`scripts/ops/nightly-db-backup.sh`](../../scripts/ops/nightly-db-backup.sh) (audit D2.a) — documented below; everything else is still a manual playbook.
 
 ## What to back up
 
@@ -30,7 +30,58 @@ OneStreamer's state lives in a handful of places. Backing up requires capturing 
 
 ## Backup procedure
 
-A simple shell script run as cron, with versioned outputs:
+### Main SQLite DB — nightly off-host tool (shipped)
+
+[`scripts/ops/nightly-db-backup.sh`](../../scripts/ops/nightly-db-backup.sh) is the integrated backup for the main DB. Each run it:
+
+1. takes a **WAL-consistent online snapshot** via `sqlite3 <db> ".backup <tmp>"` (never a raw `cp`, which can capture a half-written WAL);
+2. runs `PRAGMA integrity_check` **on the snapshot** and discards it unless the result is exactly `ok`;
+3. gzips it to a timestamped artifact `onestreamer-nightly-<UTC ts>.db.gz` in `BACKUP_DIR`;
+4. **pushes it off-host** — this step is mandatory: the script exits non-zero if no push target is configured or the push fails (the local artifact is kept for a manual re-push), so cron/systemd mail and the backup-age alert in [`monitoring.md`](monitoring.md) catch it;
+5. prunes local artifacts beyond the newest `KEEP_BACKUPS` (deploy-time `onestreamer-<sha>-<ts>.db` backups are untouched).
+
+It also does a free-space precheck (`MIN_FREE_MB`, same fail-loud pattern as `deploy.sh`), takes an flock so runs never overlap, never prompts, and supports `--dry-run` (runs every precheck and prints the plan without writing anything — use it to validate a crontab line).
+
+**Environment variables** (defaults match the prod layout):
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `DB_PATH` | `/root/onestreamer/server/data/onestreamer.db` | Source DB |
+| `BACKUP_DIR` | `/backups/nightly` | Local artifact dir |
+| `KEEP_BACKUPS` | `7` | Newest N local artifacts to keep |
+| `MIN_FREE_MB` | `4096` | Required free MB in `BACKUP_DIR` |
+| `SQLITE_BUSY_MS` | `30000` | sqlite3 busy timeout |
+| `OFFHOST_PUSH_CMD` | — | Push command; the artifact path is appended (quoted) as its last argument, and exported as `$BACKUP_ARTIFACT`. Wins over `RSYNC_TARGET` if both set |
+| `RSYNC_TARGET` | — | Alternative: rsync destination dir, e.g. `backup@backup-host:/backups/onestreamer/` |
+| `LOCK_FILE` | `$BACKUP_DIR/.nightly-db-backup.lock` | flock path |
+
+One of `OFFHOST_PUSH_CMD` / `RSYNC_TARGET` is **required** — a local-only "backup" is refused. Examples:
+
+```bash
+# validate the config without writing anything
+RSYNC_TARGET='backup@backup-host:/backups/onestreamer/' \
+  /root/onestreamer/scripts/ops/nightly-db-backup.sh --dry-run
+
+# real run, rsync off-host
+RSYNC_TARGET='backup@backup-host:/backups/onestreamer/' \
+  /root/onestreamer/scripts/ops/nightly-db-backup.sh
+
+# real run, arbitrary push command (path appended as last arg)
+OFFHOST_PUSH_CMD='rclone copy --config /root/.config/rclone/rclone.conf -- ' \
+  /root/onestreamer/scripts/ops/nightly-db-backup.sh
+```
+
+**Scheduling** — the repo ships examples; **nothing installs itself**, the operator copies one in:
+
+- crontab: [`scripts/ops/nightly-db-backup.cron.example`](../../scripts/ops/nightly-db-backup.cron.example)
+- systemd: [`scripts/ops/nightly-db-backup.service.example`](../../scripts/ops/nightly-db-backup.service.example) + [`scripts/ops/nightly-db-backup.timer.example`](../../scripts/ops/nightly-db-backup.timer.example) (install steps in the service file's header)
+
+Run it as a user that can read the DB — root, or uid 1001 (which owns `server/data/` in the container layout). Wire the non-zero exit into whatever alerts you (cron `MAILTO`, systemd `OnFailure=`, Healthchecks.io wrapper), and add the **backup-age alert** from [`monitoring.md`](monitoring.md) so a cron that silently stops running is also caught.
+
+### Everything else — manual playbook
+
+A simple shell script run as cron, with versioned outputs (the main DB is
+covered by the nightly tool above and deliberately absent here):
 
 ```bash
 #!/bin/bash
@@ -41,9 +92,8 @@ DATE=$(date +%Y-%m-%d-%H%M)
 DEST=/backups/onestreamer/$DATE
 mkdir -p "$DEST"
 
-# 1. SQLite DB — use sqlite3 .backup for a consistent snapshot
-#    (cp can capture a half-written WAL file)
-sqlite3 /root/onestreamer/server/data/onestreamer.db ".backup '$DEST/onestreamer.db'"
+# 1. Main SQLite DB — handled by scripts/ops/nightly-db-backup.sh (above);
+#    if you must snapshot it here too, use sqlite3 .backup, NEVER cp.
 
 # 2. Chat moderation
 cp /root/onestreamer/chat-service/moderation_data.json "$DEST/"
@@ -82,7 +132,7 @@ Schedule:
 30 3 * * * /usr/local/bin/onestreamer-backup.sh >> /var/log/onestreamer-backup.log 2>&1
 ```
 
-**Push backups off-host.** A local-only backup doesn't survive disk failure. Options:
+**Push backups off-host.** A local-only backup doesn't survive disk failure. The nightly DB tool refuses to run without an off-host target; give this auxiliary script the same treatment. Options:
 
 - `rsync` to a remote host:
   ```bash
@@ -91,23 +141,46 @@ Schedule:
 - Upload to B2 or any S3-compatible storage (separate bucket from recordings)
 - Restic / Borg for deduplicated encrypted backups
 
-Whichever you pick, **test the restore at least once a quarter**. An untested backup is no backup.
+Whichever you pick, **test the restore at least once a quarter** — see the [restore drill](#restore-drill-quarterly) below. An untested backup is no backup.
 
 ## Restore procedure
 
-### SQLite (main DB)
+### SQLite (main DB) — from a nightly artifact
 
-Stop the app, swap the file, restart:
+Artifacts are gzipped snapshots named `onestreamer-nightly-<UTC ts>.db.gz` (in `BACKUP_DIR` locally, and on your off-host target). Verify **before** swapping, stop the app, swap the file, restart:
 
 ```bash
-pm2 stop onestreamer-server onestreamer-chat
-cp /backups/onestreamer/2026-05-23-0330/onestreamer.db /root/onestreamer/server/data/onestreamer.db
-chown root:root /root/onestreamer/server/data/onestreamer.db
-chmod 644 /root/onestreamer/server/data/onestreamer.db
-pm2 restart onestreamer-server onestreamer-chat --update-env
+# 1. pick the artifact (fetch from the off-host target if the local disk is gone)
+ART=/backups/nightly/onestreamer-nightly-20260715-033000.db.gz
+
+# 2. decompress to a scratch path and verify it BEFORE touching the live file
+gunzip -c "$ART" > /tmp/restore-candidate.db
+sqlite3 /tmp/restore-candidate.db "PRAGMA integrity_check;"   # must print exactly: ok
+sqlite3 /tmp/restore-candidate.db "SELECT COUNT(*) FROM users;"  # sanity: plausible row count
+
+# 3. stop the app, swap, restart
+docker compose -f ~/onestreamer-deploy/compose.yaml stop
+mv /root/onestreamer/server/data/onestreamer.db /root/onestreamer/server/data/onestreamer.db.pre-restore
+rm -f /root/onestreamer/server/data/onestreamer.db-wal /root/onestreamer/server/data/onestreamer.db-shm
+cp /tmp/restore-candidate.db /root/onestreamer/server/data/onestreamer.db
+chown 1001:1001 /root/onestreamer/server/data/onestreamer.db   # containers run as uid 1001
+docker compose -f ~/onestreamer-deploy/compose.yaml up -d
 ```
 
-Verify with `sqlite3 /root/onestreamer/server/data/onestreamer.db "SELECT COUNT(*) FROM users;"` and similar.
+Verify with `sqlite3 /root/onestreamer/server/data/onestreamer.db "SELECT COUNT(*) FROM users;"` and similar, then hit `/health` and smoke-test a login. Keep the `.pre-restore` copy until you're confident. (Deploy-time backups in `/backups/onestreamer-<sha>-<ts>.db` are uncompressed — same steps, skip the `gunzip`.)
+
+### Restore drill (quarterly)
+
+Run this every quarter (put it on the calendar). It touches nothing live — scratch paths only.
+
+- [ ] Pick the **latest** artifact **from the off-host target** (that proves the push leg works too), copy it to a scratch dir on any machine with `sqlite3`.
+- [ ] `gunzip -c <artifact> > /tmp/drill.db` — decompresses cleanly, no truncation errors.
+- [ ] `sqlite3 /tmp/drill.db "PRAGMA integrity_check;"` → prints exactly `ok`.
+- [ ] Row-count sanity vs prod expectations: `SELECT COUNT(*) FROM users;`, `SELECT COUNT(*) FROM points_transactions;`, `SELECT MAX(created_at) FROM points_transactions;` — counts in the ballpark of production, newest timestamp within the last ~24 h of the artifact's date.
+- [ ] Artifact age: newest artifact (local **and** off-host) is < 25 h old.
+- [ ] `rm /tmp/drill.db`, note the drill date + result in your ops log.
+
+If any step fails, treat it as an incident: the backup you thought you had does not exist.
 
 ### Chat moderation
 
