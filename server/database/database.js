@@ -10,9 +10,26 @@ const { initializeSchema } = require('./schema');
 const logger = require('../bootstrap/logger').child({ svc: 'database' });
 const dbPath = path.join(__dirname, '..', 'data', 'onestreamer.db');
 
+// DB4-remainder (audit Plan 04): boot/ready promise. Resolves once the async
+// self-boot below — connection open, PRAGMAs, and the FULL schema bootstrap
+// (CREATE TABLEs + seeds + numbered migrations) — has completed, so callers
+// (server/index.js startServer, deferred post-boot sweeps) can order their
+// DB-dependent work after schema init instead of racing it.
+//
+// `ready` never rejects — awaiting it can't throw and can't leave an
+// unhandled rejection in suites that merely require this module:
+//   - schema failure outside tests aborts the process (ADR-0035, below);
+//   - under jest the failure is logged and `ready` resolves anyway (same
+//     teardown-race tolerance as the exit(1) carve-out below);
+//   - a connection-open failure resolves it too (pre-existing behavior is
+//     to log and limp on; every later query fails loudly on its own).
+let resolveReady;
+const ready = new Promise((resolve) => { resolveReady = resolve; });
+
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         logger.error(err, 'Error opening database');
+        resolveReady();
         return;
     }
     logger.info({ dbPath }, 'Connected to SQLite database');
@@ -30,7 +47,9 @@ const db = new sqlite3.Database(dbPath, (err) => {
 });
 
 function initializeDatabase() {
-    initializeSchema(db, logger).catch((e) => {
+    initializeSchema(db, logger).then(() => {
+        resolveReady();
+    }).catch((e) => {
         // Fail LOUD (audit DB6 / ADR-0035): a failed schema bootstrap or
         // migration means the process would run against a schema it does not
         // understand — silent continuation risks data corruption, which is
@@ -48,6 +67,10 @@ function initializeDatabase() {
         if (process.env.NODE_ENV !== 'test') {
             process.exit(1);
         }
+        // Test env only: settle `ready` (resolved, never rejected — see its
+        // declaration) so a suite awaiting it can't hang on the jest
+        // teardown-race artifact described above.
+        resolveReady();
     });
 }
 
@@ -144,6 +167,10 @@ module.exports = {
     getAsync: withTransaction.gated.getAsync,
     allAsync: withTransaction.gated.allAsync,
     withTransaction,
+    // DB4-remainder: resolves once the async self-boot (open + PRAGMAs +
+    // initializeSchema, incl. migrations) has completed. Await before issuing
+    // queries whose tables the bootstrap creates. Never rejects (see above).
+    ready,
     // The production schema bootstrap (ADR-0030), re-exported from ./schema.
     // Tests and fixtures that only need the DDL should require ./schema
     // directly to avoid this module's self-boot side effect.

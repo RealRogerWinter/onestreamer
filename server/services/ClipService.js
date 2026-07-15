@@ -63,6 +63,42 @@ class ClipService {
     // the only thing keeping a process alive (audit B6).
     this._rateLimitCleanupTimer = setInterval(() => this.cleanupRateLimitCaches(), 15 * 60 * 1000); // Every 15 minutes
     if (typeof this._rateLimitCleanupTimer.unref === 'function') this._rateLimitCleanupTimer.unref();
+
+    // Stale-'processing' boot sweep (audit Plan 01 P2.3-residual, flagged in
+    // PR #36): a crash between the clips INSERT (status='processing' baked
+    // in) and setClipReady/setClipFailed strands the row at 'processing'
+    // forever. Sweep rows older than the cutoff to 'failed' once per boot.
+    //
+    // Boot ordering: createServices() constructs this service at module load,
+    // BEFORE database.js's async schema bootstrap has necessarily run its
+    // DDL — so the sweep is deferred behind `database.ready` (DB4-remainder),
+    // which resolves after CREATE TABLEs + migrations complete. Test doubles
+    // without a `ready` promise skip the boot sweep; tests exercise
+    // sweepStaleProcessingClips() directly.
+    this.STALE_PROCESSING_CUTOFF_MS = 10 * 60 * 1000; // 10 minutes
+    this._staleSweepPromise = null;
+    if (database && database.ready && typeof database.ready.then === 'function') {
+      this._staleSweepPromise = database.ready
+        .then(() => this.sweepStaleProcessingClips())
+        .catch((err) => {
+          // Never let the sweep break boot — a missing table (first boot
+          // interleavings) or transient DB error just skips this run.
+          logger.error({ err }, '🧹 CLIPS: stale-processing boot sweep failed');
+        });
+    }
+  }
+
+  /**
+   * Mark clips stuck at status='processing' longer than
+   * STALE_PROCESSING_CUTOFF_MS as 'failed' (crash leftovers). Recent
+   * 'processing' rows (genuinely in-flight) are untouched.
+   */
+  async sweepStaleProcessingClips() {
+    const result = await this.clipRepository.failStaleProcessing(this.STALE_PROCESSING_CUTOFF_MS);
+    if (result && result.changes > 0) {
+      logger.warn(`🧹 CLIPS: marked ${result.changes} stale 'processing' clip(s) as failed (crash leftovers)`);
+    }
+    return result;
   }
 
   /**

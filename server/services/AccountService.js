@@ -272,7 +272,10 @@ class AccountService {
      * @param {string} description - Human-readable description
      * @param {object} metadata - Optional metadata for the transaction
      * @param {object} [tx] - Optional withTransaction handle; the balance
-     *   UPDATE + audit INSERT then join the caller's scope (ADR-0029)
+     *   UPDATE + audit INSERT then join the caller's scope (ADR-0029).
+     *   Without one, PointsManager opens its own scope so the pair is
+     *   still atomic (audit DB7) — callers already inside a scope MUST
+     *   pass their tx through (nesting deadlocks).
      * @returns {number} New balance
      */
     async addPoints(userId, amount, type, description, metadata = null, tx = null) {

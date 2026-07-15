@@ -1192,6 +1192,13 @@ require('./bootstrap/register-socket-handlers')(io, {
 
 
 async function startServer() {
+  // DB4-remainder (audit Plan 04): database.js's schema bootstrap (CREATE
+  // TABLEs + seeds + migrations) is an async self-boot that used to race
+  // everything below — on a fresh clone / DR restore, services could query
+  // tables the DDL hadn't created yet. Gate on the ready promise first; it
+  // never rejects (schema failure exits the process per ADR-0035).
+  await database.ready;
+
   redisClient = await bootInitializeRedis();
 
   // B1 (audit Plan 07): hand the just-connected Redis client to services

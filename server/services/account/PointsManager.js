@@ -40,6 +40,27 @@ class PointsManager {
         if (amount <= 0) {
             throw new Error('Amount must be positive');
         }
+
+        // DB7-remainder (audit Plan 04): non-tx callers (timer/chat/buff
+        // writers, /award-points, admin grants) used to run the balance
+        // UPDATE and the audit INSERT as two bare statements — a crash
+        // between them left a credit with no ledger row. Open an implicit
+        // scope so the pair commits or rolls back together for ALL callers.
+        //
+        // CALLER CONTRACT unchanged: code already inside a withTransaction
+        // body MUST keep passing its `tx` handle through (nesting
+        // withTransaction deadlocks — see server/database/transaction.js).
+        // Lazy require dodges module-load cycles; test doubles that mock the
+        // database module without withTransaction fall through to the legacy
+        // two-statement path.
+        if (!tx) {
+            const { withTransaction } = require('../../database/database');
+            if (typeof withTransaction === 'function') {
+                return await withTransaction((scopedTx) =>
+                    this.addPoints(userId, amount, type, description, metadata, scopedTx)
+                );
+            }
+        }
         const repo = this._statsRepo(tx);
 
         // Atomic relative-arithmetic UPDATE. RETURNING gives us the post-write
