@@ -189,12 +189,44 @@ module.exports = function registerTakeover(io, socket, deps) {
         const userId = sessionService.getUserIdBySocketId(currentStreamer);
         const isNewViewBot = userId && userId < 0;
         const isLiveKitViewBot = currentStreamer.startsWith('viewbot-'); // LiveKit viewbots have this prefix
+        const isUrlStream = currentStreamer.startsWith('url-stream-'); // URL relay streams (ViewBotURLService)
         const currentIsViewbot = isOldViewBot || isNewViewBot || isLiveKitViewBot;
 
-        logger.info(`🔍 TAKEOVER: Viewbot detection - old: ${isOldViewBot}, new: ${isNewViewBot}, livekit: ${isLiveKitViewBot}`);
+        logger.info(`🔍 TAKEOVER: Viewbot detection - old: ${isOldViewBot}, new: ${isNewViewBot}, livekit: ${isLiveKitViewBot}, urlStream: ${isUrlStream}`);
 
-        // Handle viewbot takeover - must stop the viewbot properly
-        if (currentIsViewbot) {
+        // V3 (audit Plan 06): the current streamer is a URL relay — stop the
+        // relay pipeline itself. Before this branch existed, a url-stream-*
+        // id fell into the "real user" else-branch below: the takeover set a
+        // cooldown on a fake socket id and never stopped the relay, so its
+        // FFmpeg→ingress kept publishing into the LiveKit room over the
+        // human streamer. Runs inside runExclusiveTakeover (ADR-0033), so
+        // the relay's own restart/registration paths stand down while the
+        // takeoverInProgress flag is up.
+        if (isUrlStream) {
+          logger.info(`🔗 TAKEOVER: Current streamer ${currentStreamer} is a URL relay stream, stopping it`);
+          if (global.viewBotURLService) {
+            try {
+              await global.viewBotURLService.stopURLStream(currentStreamer);
+              logger.info('✅ TAKEOVER: URL relay stream stopped');
+            } catch (urlStopError) {
+              logger.error({ err: urlStopError }, '❌ TAKEOVER: Error stopping URL relay stream');
+            }
+          } else {
+            logger.warn('⚠️ TAKEOVER: viewBotURLService unavailable - cannot stop URL relay stream');
+          }
+          // If the rotation scheduler drove this relay, stop it too so it
+          // does not immediately rotate to a new stream over the human
+          // (its own takeoverInProgress/defensive-abort guards are the
+          // backstop; this is the clean stop).
+          try {
+            if (SimpleViewBotRotation && SimpleViewBotRotation.stopRotation) {
+              await SimpleViewBotRotation.stopRotation();
+              logger.info('✅ TAKEOVER: Rotation stopped after URL relay takeover');
+            }
+          } catch (rotationStopError) {
+            logger.error({ err: rotationStopError }, '❌ TAKEOVER: Error stopping rotation');
+          }
+        } else if (currentIsViewbot) {
           logger.info(`🤖 TAKEOVER: Current streamer ${currentStreamer} is a viewbot, stopping it`);
 
           // NOTE: the ViewbotService.handleTakeover() call was removed with the
