@@ -37,6 +37,9 @@
  */
 
 const express = require('express');
+// CH3: shared helper attaches the X-Internal-Secret header (and the
+// self-signed-tolerant https agent + 5s timeout) to every chat-service call.
+const { chatServiceUrl: resolveChatServiceUrl, chatAxiosConfig } = require('../utils/chatServiceClient');
 
 function createAdminModerationRouter(deps) {
     const {
@@ -59,10 +62,10 @@ function createAdminModerationRouter(deps) {
     router.get('/api/admin/moderation', authenticateModerator, async (req, res) => {
         try {
             // Send a request to the chat service to get moderation data
-            const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/moderation`;
+            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/moderation`;
             logger.info(`📊 MAIN SERVER: Fetching moderation data from ${chatServiceUrl}`);
         
-            const response = await axios.get(chatServiceUrl, { timeout: 5000 });
+            const response = await axios.get(chatServiceUrl, chatAxiosConfig(chatServiceUrl, { timeout: 5000 }));
         
             logger.info({ data: response.data }, `📊 MAIN SERVER: Received moderation data`);
             res.json(response.data);
@@ -83,12 +86,12 @@ function createAdminModerationRouter(deps) {
             const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
         
             // Send ban request to chat service
-            const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/ban`;
+            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/ban`;
             const response = await axios.post(chatServiceUrl, {
                 username,
                 reason,
                 bannedBy: adminUser.username
-            });
+            }, chatAxiosConfig(chatServiceUrl));
         
             res.json(response.data);
         } catch (error) {
@@ -102,8 +105,8 @@ function createAdminModerationRouter(deps) {
             const { username } = req.body;
         
             // Send unban request to chat service
-            const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/unban`;
-            const response = await axios.post(chatServiceUrl, { username });
+            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/unban`;
+            const response = await axios.post(chatServiceUrl, { username }, chatAxiosConfig(chatServiceUrl));
         
             res.json(response.data);
         } catch (error) {
@@ -118,13 +121,13 @@ function createAdminModerationRouter(deps) {
             const adminUser = await authService.getUserFromToken(req.headers.authorization?.substring(7));
         
             // Send timeout request to chat service
-            const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/timeout`;
+            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/timeout`;
             const response = await axios.post(chatServiceUrl, {
                 username,
                 duration,
                 reason,
                 timedOutBy: adminUser.username
-            });
+            }, chatAxiosConfig(chatServiceUrl));
         
             res.json(response.data);
         } catch (error) {
@@ -138,8 +141,8 @@ function createAdminModerationRouter(deps) {
             const { username } = req.body;
         
             // Send remove timeout request to chat service
-            const chatServiceUrl = `${process.env.CHAT_SERVICE_URL || 'https://onestreamer.live:8444'}/api/remove-timeout`;
-            const response = await axios.post(chatServiceUrl, { username });
+            const chatServiceUrl = `${resolveChatServiceUrl('https://onestreamer.live:8444')}/api/remove-timeout`;
+            const response = await axios.post(chatServiceUrl, { username }, chatAxiosConfig(chatServiceUrl));
         
             res.json(response.data);
         } catch (error) {

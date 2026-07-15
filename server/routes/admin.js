@@ -200,7 +200,10 @@ router.get('/internal/user/:userId/status', async (req, res) => {
         res.json({
             isAdmin: user.is_admin === 1,
             isModerator: user.is_moderator === 1,
-            isBanned: user.is_banned === 1
+            isBanned: user.is_banned === 1,
+            // M4 (audit): users.chat_banned was write-only — surfacing it here
+            // lets the chat-service enforce it at connect like isBanned.
+            isChatBanned: user.chat_banned === 1
         });
     } catch (error) {
         logger.error('Error fetching user status:', error);

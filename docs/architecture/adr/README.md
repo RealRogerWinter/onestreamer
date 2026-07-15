@@ -67,6 +67,11 @@ What else we looked at and why we did not pick it.
 | 0024 | [Retire MediaSoup; LiveKit is the sole WebRTC backend](0024-retire-mediasoup-livekit-only.md) | accepted |
 | 0025 | [Docker containers replace PM2 for the Node app](0025-docker-replaces-pm2.md) | accepted |
 | 0026 | [CircleCI build → test → approval → deploy pipeline](0026-circleci-pipeline.md) | accepted |
+| 0027 | [Discord live announcements](0027-discord-live-announcements.md) | accepted |
+| 0028 | [Per-run recording sessions with a terminal upload state](0028-per-run-recording-sessions.md) | accepted |
+| 0029 | [Transaction gate + economy tx plumbing](0029-transaction-gate-and-economy-tx-plumbing.md) | accepted |
+| 0030 | [database.js (schema.js) is the sole boot DDL source](0030-single-source-schema-ddl.md) | accepted |
+| 0031 | [Viewer reconnect worker — minimal C5 slice inside LiveKitClient](0031-viewer-reconnect-worker.md) | accepted |
 | 0032 | [Descendant-scoped shutdown kill, Chrome-pkill deletion, and a shutdown watchdog](0032-descendant-scoped-shutdown-kill.md) | accepted |
 
 ### Note on the 0013a slug

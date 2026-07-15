@@ -166,6 +166,9 @@ describe('startStreamingBackend (core orchestration)', () => {
     expect(arbiterArgs.streamService).toBe(deps.streamService);
     expect(arbiterArgs.randomStreamRotationService).toBe(global.randomStreamRotationService);
     expect(arbiterArgs.whitelistService).toBe(deps.whitelistService);
+    // Audit M3: the arbiter resolves URL-relay external identity from the
+    // live relay, so it must receive the ViewBotURLService instance.
+    expect(arbiterArgs.viewBotURLService).toBe(global.viewBotURLService);
     expect(arbiterArgs.moderationNotifier).toBe(deps.moderationNotifier);
     expect(arbiterArgs.enforce).toBe(false); // default — env unset
   });

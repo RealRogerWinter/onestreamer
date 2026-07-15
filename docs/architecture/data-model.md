@@ -2,7 +2,7 @@
 
 _Last verified: 2026-06-01 against `main`._
 
-OneStreamer persists its state in a single SQLite database at `server/data/onestreamer.db`. ~30 tables, all in one file. Schema lives in [`server/database/database.js`](../../server/database/database.js) (programmatic creation) and individual `.sql` files in [`server/database/`](../../server/database/) (`recording-schema.sql`, `url-stream-schema.sql`, `url-relay-whitelist-schema.sql`, `ai-moderation-schema.sql`). Incremental changes run through a lightweight migration runner in [`server/migrations/`](../../server/migrations/) ([ADR-0022](adr/0022-schema-migrations-layout.md)).
+OneStreamer persists its state in a single SQLite database at `server/data/onestreamer.db`. ~40 tables, all in one file. The boot schema has a single source ([ADR-0030](adr/0030-single-source-schema-ddl.md)): [`server/database/schema.js`](../../server/database/schema.js), invoked by [`server/database/database.js`](../../server/database/database.js) at boot. The remaining `.sql` files in [`server/database/`](../../server/database/) (`url-stream-schema.sql`, `url-relay-whitelist-schema.sql`, `ai-moderation-schema.sql`) are service-owned isolated schemas applied by their owning services. Incremental changes run through a lightweight migration runner in [`server/migrations/`](../../server/migrations/) ([ADR-0022](adr/0022-schema-migrations-layout.md)).
 
 This page describes the key entities and how they relate. The full schema is in code — this is the navigable summary.
 
@@ -384,14 +384,11 @@ A few important pieces of state live outside the DB:
 
 ## Migrations
 
-The base schema is created programmatically in [`server/database/database.js`](../../server/database/database.js) on first boot. Incremental changes run through a lightweight migration runner ([ADR-0022](adr/0022-schema-migrations-layout.md)): [`server/migrations/_runner.js`](../../server/migrations/_runner.js) executes the timestamped `2026MMDDHHMM-<description>.js` modules in lexicographic order on boot. Each migration exports `run(db, logger)` and is idempotent (there is no `schema_migrations` tracking table — at single-host scale a re-applied idempotent `ADD COLUMN` is cheap). A handful of older standalone scripts (`setup-*`, `add_*`, `migrate-*`) remain and are run manually.
+The base schema is created programmatically on first boot by [`server/database/schema.js`](../../server/database/schema.js) (the sole boot DDL source, [ADR-0030](adr/0030-single-source-schema-ddl.md)), invoked from [`server/database/database.js`](../../server/database/database.js). Incremental changes run through a lightweight migration runner ([ADR-0022](adr/0022-schema-migrations-layout.md)): [`server/migrations/_runner.js`](../../server/migrations/_runner.js) executes the timestamped `2026MMDDHHMM-<description>.js` modules in lexicographic order on boot. Each migration exports `run(db, logger)` and is idempotent (there is no `schema_migrations` tracking table — at single-host scale a re-applied idempotent `ADD COLUMN` is cheap). A handful of older standalone scripts (`add_*`, `migrate-*`) remain and are run manually.
 
 | Script | Purpose |
 |--------|---------|
 | `2026MMDDHHMM-*.js` (runner-managed) | Timestamped incremental migrations applied automatically on boot — e.g. `…-users-add-admin-flags.js`, `…-user-stats-drop-legacy-points.js`, `…-recordings-add-session-and-user.js`, `…-url-relay-add-preferred-languages.js`. |
-| `setup-transcription-tables.js` | Create `transcriptions`, `transcription_chunks`, etc. |
-| `setup-clips-tables.js` | Create `clips`, `clip_views` |
-| `setup-recording-tables.js` | Recording tables |
 | `migrate-points-system.js` | The calculated-on-read → authoritative-balance refactor for `user_stats.points`. |
 | `add_ip_bans.js` | `ip_bans` table |
 | `add_ai_moderation_tables.js` | AI moderation tables ([ADR-0013](adr/0013-ai-moderation-pipeline.md)) |

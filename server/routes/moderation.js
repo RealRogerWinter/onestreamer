@@ -1,6 +1,10 @@
 const express = require('express');
+const axios = require('axios');
 
 const logger = require('../bootstrap/logger').child({ svc: 'moderation' });
+// M4/CH3: shared helper resolves CHAT_SERVICE_URL and attaches the
+// X-Internal-Secret header (+ https agent + timeout) to chat-service calls.
+const { chatServiceUrl: resolveChatServiceUrl, chatAxiosConfig } = require('../utils/chatServiceClient');
 
 const router = express.Router();
 const AuthService = require('../services/AuthService');
@@ -83,7 +87,7 @@ router.post('/ban-chat', authenticateModerator, async (req, res) => {
         // Log the moderation action
         await new Promise((resolve, reject) => {
             db.run(
-                `INSERT INTO moderation_logs (moderator_id, moderator_username, target_user_id, target_username, action, reason, created_at) 
+                `INSERT INTO moderation_logs (moderator_id, moderator_username, target_user_id, target_username, action, reason, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
                 [req.userRecord.id, req.userRecord.username, user ? user.id : null, username, 'chat_ban', 'Banned from chat via user profile', ],
                 (err) => {
@@ -92,8 +96,40 @@ router.post('/ban-chat', authenticateModerator, async (req, res) => {
                 }
             );
         });
-        
-        res.json({ success: true, message: `${username} has been banned from chat` });
+
+        // M4 (audit): the DB stores above (banned_usernames / users.chat_banned)
+        // were WRITE-ONLY — nothing in the message path ever read them, so a
+        // "successful" ban never stopped a single message. Reconcile by
+        // propagating to the chat-service's own enforced + boot-persisted
+        // store via POST /api/ban (secret attached by chatAxiosConfig — CH3).
+        // The DB writes stay authoritative for registered users:
+        // users.chat_banned additionally surfaces as isChatBanned on the
+        // internal user-status route, which the chat-service enforces at
+        // connect (survives a chat-service store loss). banned_usernames is
+        // retained as an audit trail for anonymous bans.
+        // Partial failure (chat-service down) is NOT rolled back: the DB ban
+        // is recorded, the response reports chatServicePropagated=false, and
+        // registered users are still enforced at their next connect.
+        let chatServicePropagated = false;
+        try {
+            const chatBase = resolveChatServiceUrl('https://127.0.0.1:8444');
+            await axios.post(`${chatBase}/api/ban`, {
+                username,
+                reason: 'Banned from chat via user profile',
+                bannedBy: req.userRecord.username
+            }, chatAxiosConfig(chatBase));
+            chatServicePropagated = true;
+        } catch (chatError) {
+            logger.error({ err: chatError }, `ban-chat: failed to propagate ban for ${username} to chat-service (DB ban recorded; live chat enforcement deferred to next connect for registered users)`);
+        }
+
+        res.json({
+            success: true,
+            chatServicePropagated,
+            message: chatServicePropagated
+                ? `${username} has been banned from chat`
+                : `${username} has been banned from chat (warning: live chat service unreachable — the ban takes effect on their next reconnect)`
+        });
     } catch (error) {
         logger.error('Chat ban error:', error);
         res.status(500).json({ error: 'Failed to ban user from chat' });

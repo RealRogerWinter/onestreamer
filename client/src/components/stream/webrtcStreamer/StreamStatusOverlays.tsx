@@ -26,13 +26,24 @@ export const StreamLoadingOverlay: React.FC<StreamLoadingOverlayProps> = ({ isLo
 
 interface StreamErrorOverlayProps {
   error: string | null;
+  /**
+   * Optional manual-retry callback. When provided, a Retry button renders
+   * under the error message (audit Plan 05, C3: a failed publish must surface
+   * an error + retry instead of silently falling back to local preview).
+   */
+  onRetry?: () => void;
 }
 
-export const StreamErrorOverlay: React.FC<StreamErrorOverlayProps> = ({ error }) => {
+export const StreamErrorOverlay: React.FC<StreamErrorOverlayProps> = ({ error, onRetry }) => {
   if (!error) return null;
   return (
     <div className="webrtc-error">
       <p>⚠️ {error}</p>
+      {onRetry && (
+        <button className="retry-button" onClick={onRetry}>
+          Retry
+        </button>
+      )}
     </div>
   );
 };

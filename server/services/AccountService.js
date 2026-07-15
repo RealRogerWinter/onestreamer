@@ -258,10 +258,12 @@ class AccountService {
      * @param {string} type - Transaction type (streaming, viewing, chat, bonus, etc)
      * @param {string} description - Human-readable description
      * @param {object} metadata - Optional metadata for the transaction
+     * @param {object} [tx] - Optional withTransaction handle; the balance
+     *   UPDATE + audit INSERT then join the caller's scope (ADR-0029)
      * @returns {number} New balance
      */
-    async addPoints(userId, amount, type, description, metadata = null) {
-        return this.pointsManager.addPoints(userId, amount, type, description, metadata);
+    async addPoints(userId, amount, type, description, metadata = null, tx = null) {
+        return this.pointsManager.addPoints(userId, amount, type, description, metadata, tx);
     }
 
     /**
@@ -271,10 +273,11 @@ class AccountService {
      * @param {string} type - Transaction type (purchase, penalty, etc)
      * @param {string} description - Human-readable description
      * @param {object} metadata - Optional metadata for the transaction
+     * @param {object} [tx] - Optional withTransaction handle (ADR-0029)
      * @returns {number} New balance
      */
-    async subtractPoints(userId, amount, type, description, metadata = null) {
-        return this.pointsManager.subtractPoints(userId, amount, type, description, metadata);
+    async subtractPoints(userId, amount, type, description, metadata = null, tx = null) {
+        return this.pointsManager.subtractPoints(userId, amount, type, description, metadata, tx);
     }
 
     /**
@@ -289,8 +292,8 @@ class AccountService {
     /**
      * Record a points transaction
      */
-    async recordTransaction(userId, amount, balanceAfter, type, description, metadata = null) {
-        return this.pointsManager.recordTransaction(userId, amount, balanceAfter, type, description, metadata);
+    async recordTransaction(userId, amount, balanceAfter, type, description, metadata = null, tx = null) {
+        return this.pointsManager.recordTransaction(userId, amount, balanceAfter, type, description, metadata, tx);
     }
 
     /**

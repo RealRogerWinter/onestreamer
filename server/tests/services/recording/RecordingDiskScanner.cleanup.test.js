@@ -139,4 +139,67 @@ describe('RecordingDiskScanner.cleanupOldRecordings', () => {
     // The two old dirs are over budget → oldest deleted first until under budget.
     expect(exists(olderBig)).toBe(false);
   });
+
+  // ── Per-run dirs, recording_<date>_<epochMs> (ADR-0028) ──────────────────
+  // The regression gate for the format cutover: if these fail, cleanup has
+  // gone blind to the dirs the producer now writes and the leak returns.
+
+  test('per-run dirs: old run deleted; current + in-window runs kept; mixed with retired day-format', async () => {
+    const now = Date.now();
+    const current = `recording_${dayStr(0)}_${now}`;
+    scanner.owner.currentSessionId = current;
+    makeSessionDir(outputDir, current, { ageMs: 0 });
+    const oldRun = `recording_${dayStr(3)}_${now - 3 * DAY}`;          // finished days ago → delete
+    makeSessionDir(outputDir, oldRun, { ageMs: 3 * DAY });
+    const inWindowRun = `recording_${dayStr(0)}_${now - 5 * 60000}`;   // stopped 5 min ago → keep
+    makeSessionDir(outputDir, inWindowRun, { ageMs: 5 * 60000 });
+    const oldDayBucket = `recording_${dayStr(4)}`;                     // pre-cutover format → still ages out
+    makeSessionDir(outputDir, oldDayBucket, { ageMs: 4 * DAY });
+
+    await scanner.cleanupOldRecordings();
+
+    expect(exists(current)).toBe(true);
+    expect(exists(inWindowRun)).toBe(true);
+    expect(exists(oldRun)).toBe(false);
+    expect(exists(oldDayBucket)).toBe(false);
+  });
+
+  test('per-run pending-upload dir honored under the 26h grace, reclaimed past it', async () => {
+    const now = Date.now();
+    const underGrace = `recording_${dayStr(1)}_${now - 25 * HOUR}`;
+    makeSessionDir(outputDir, underGrace, { ageMs: 25 * HOUR });
+    const overGrace = `recording_${dayStr(2)}_${now - 27 * HOUR}`;
+    makeSessionDir(outputDir, overGrace, { ageMs: 27 * HOUR });
+    pending = [{ session_id: underGrace }, { session_id: overGrace }];
+
+    await scanner.cleanupOldRecordings();
+
+    expect(exists(underGrace)).toBe(true);
+    expect(exists(overGrace)).toBe(false);
+  });
+
+  test('an EMPTY per-run dir ages by its run-start epoch, not UTC midnight', async () => {
+    // A just-created run dir with no segments yet: the day-bucket format aged
+    // this from midnight (up to 24h "old" instantly); the per-run epoch keeps
+    // it inside the retention window.
+    const freshEmpty = `recording_${dayStr(0)}_${Date.now() - 2000}`;
+    makeSessionDir(outputDir, freshEmpty, { segments: 0 });
+
+    await scanner.cleanupOldRecordings();
+
+    expect(exists(freshEmpty)).toBe(true);
+  });
+
+  test('disk-budget backstop also covers per-run dirs', async () => {
+    const now = Date.now();
+    scanner.diskBudgetBytes = 5;
+    const newerRun = `recording_${dayStr(1)}_${now - 1 * DAY}`;
+    makeSessionDir(outputDir, newerRun, { ageMs: 1 * DAY, bytes: 10 });
+    const olderRun = `recording_${dayStr(6)}_${now - 6 * DAY}`;
+    makeSessionDir(outputDir, olderRun, { ageMs: 6 * DAY, bytes: 10 });
+
+    await scanner.cleanupOldRecordings();
+
+    expect(exists(olderRun)).toBe(false); // oldest goes first
+  });
 });

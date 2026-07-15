@@ -61,12 +61,11 @@ See [`backup-restore.md`](backup-restore.md) for the full backup procedure.
 
 Examples by category:
 
-Most incremental changes are now **runner-managed** ([ADR-0022](../architecture/adr/0022-schema-migrations-layout.md)): timestamped `server/migrations/2026MMDDHHMM-<description>.js` modules that [`_runner.js`](../../server/migrations/_runner.js) applies automatically on boot, so a plain restart picks them up. A handful of older standalone scripts remain and are run manually:
+Most incremental changes are now **runner-managed** ([ADR-0022](../architecture/adr/0022-schema-migrations-layout.md)): timestamped `server/migrations/2026MMDDHHMM-<description>.js` modules that [`_runner.js`](../../server/migrations/_runner.js) applies automatically on boot, so a plain restart picks them up. Table creation is never a standalone script anymore — every boot-path table lives in [`server/database/schema.js`](../../server/database/schema.js) ([ADR-0030](../architecture/adr/0030-single-source-schema-ddl.md); the old `setup-recording/clips/transcription-tables.js` scripts were deleted). A handful of older standalone scripts remain and are run manually:
 
 | Category | Examples |
 |----------|----------|
-| Runner-managed (auto on boot) | `2026…-users-add-admin-flags.js`, `2026…-user-stats-drop-legacy-points.js`, `2026…-recordings-add-session-and-user.js`, `2026…-url-relay-add-preferred-languages.js` |
-| Standalone table creation | `setup-transcription-tables.js`, `setup-clips-tables.js`, `setup-recording-tables.js` |
+| Runner-managed (auto on boot) | `2026…-users-add-admin-flags.js`, `2026…-user-stats-drop-legacy-points.js`, `2026…-recordings-add-session-and-user.js`, `2026…-user-stats-add-points-balance.js` |
 | Standalone schema additions | `add_ip_bans.js`, `add_ai_moderation_tables.js`, `add-summon-bot-support.js`, `add-auto-summon-bot.js` |
 | Data migrations | `migrate-points-system.js` (calculated → balance) |
 

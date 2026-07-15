@@ -33,6 +33,10 @@
 //   - `userLastMessage` / `userMessageHistory` — the throttle Maps, exposed
 //     for graceful-shutdown cleanup. Do not mutate from outside otherwise.
 
+// Client-IP derivation (audit CH2): last-XFF-hop parse + IPv6 normalization
+// moved to ./ipAddress.js so the spoof-resistant parse is unit-testable.
+const { getIpAddress } = require('./ipAddress');
+
 // Rate-limit and duplicate-detection windows. Kept here (not as deps) since
 // they are implementation details of the throttle subsystem and have no
 // other consumer in the codebase.
@@ -99,34 +103,6 @@ function createSocketHandlers(deps) {
     uuidv4
   } = deps;
 
-  // Get IP address from socket. Handles proxy chains (x-forwarded-for),
-  // IPv6 localhost (`::1`, `::ffff:127.0.0.1`), and IPv4-in-IPv6 prefixes.
-  function getIpAddress(socket) {
-    let ip = socket.handshake.headers['x-forwarded-for'] ||
-             socket.handshake.headers['x-real-ip'] ||
-             socket.handshake.address ||
-             socket.conn.remoteAddress ||
-             socket.request.connection.remoteAddress ||
-             '127.0.0.1';
-
-    // Handle IPv6 localhost
-    if (ip === '::1' || ip === '::ffff:127.0.0.1') {
-      ip = '127.0.0.1';
-    }
-
-    // Extract IPv4 from IPv6 format if needed
-    if (ip.includes('::ffff:')) {
-      ip = ip.replace('::ffff:', '');
-    }
-
-    // If multiple IPs (from proxy chain), take the first one
-    if (ip.includes(',')) {
-      ip = ip.split(',')[0].trim();
-    }
-
-    return ip;
-  }
-
   // Generate random username with color for anonymous viewers.
   function generateUsername() {
     const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
@@ -151,11 +127,18 @@ function createSocketHandlers(deps) {
       return {
         isAdmin: response.data.isAdmin || false,
         isModerator: response.data.isModerator || false,
-        isBanned: response.data.isBanned || false
+        isBanned: response.data.isBanned || false,
+        // M4: chat-specific ban flag (users.chat_banned) — enforced at
+        // connect exactly like isBanned. `|| false` also covers main-server
+        // builds that predate the field.
+        isChatBanned: response.data.isChatBanned || false
       };
     } catch (error) {
+      // Deliberately fails OPEN (audit CH1 decision): if the main server is
+      // unreachable, chat stays available rather than blocking every
+      // authenticated connect — availability over enforcement for this gate.
       console.error(`❌ CHAT: Failed to check user status for user ${userId}:`, error.message);
-      return { isAdmin: false, isModerator: false, isBanned: false };
+      return { isAdmin: false, isModerator: false, isBanned: false, isChatBanned: false };
     }
   }
 
@@ -312,11 +295,25 @@ function createSocketHandlers(deps) {
       const colorIndex = authenticatedUser.id % COLORS.length;
       let userColor = COLORS[colorIndex]; // Default color
 
-      // Check user status (admin/moderator)
+      // Check user status (admin/moderator/banned)
       let isAdmin = false;
       let isModerator = false;
       try {
         const userStatus = await getUserStatus(authenticatedUser.id);
+
+        // CH1 (audit): enforce the account-level ban the main server just
+        // reported — previously isBanned was fetched then DISCARDED, so
+        // banned accounts kept chatting. Mirrors the local username-ban
+        // branch below (emit('banned') + disconnect(true) + return), and
+        // runs BEFORE the saved-color fetch to skip the wasted round-trip.
+        // M4: users.chat_banned (isChatBanned) is treated identically.
+        if (userStatus.isBanned || userStatus.isChatBanned) {
+          console.log(`💬 CHAT: Banned account ${authenticatedUser.username} (ID: ${authenticatedUser.id}) attempted to connect (isBanned: ${userStatus.isBanned}, isChatBanned: ${userStatus.isChatBanned})`);
+          socket.emit('banned', { reason: 'You are banned from chat' });
+          socket.disconnect(true);
+          return;
+        }
+
         isAdmin = userStatus.isAdmin;
         isModerator = userStatus.isModerator;
       } catch (error) {

@@ -444,12 +444,15 @@ class ModerationService extends EventEmitter {
 
     if (arbResult && arbResult.final_decision && arbResult.final_decision !== 'admin_review') {
       try {
+        // M5 (audit): also persist the numeric user id the ban landed on
+        // (arbiter's banned_user_id) so reversal works by stable id.
         await this.database.runAsync(
-          'UPDATE moderation_events SET final_decision = ?, action_taken = ? WHERE id = ?',
-          [arbResult.final_decision, arbResult.action_taken || null, eventId]
+          'UPDATE moderation_events SET final_decision = ?, action_taken = ?, resolved_user_id = ? WHERE id = ?',
+          [arbResult.final_decision, arbResult.action_taken || null, arbResult.banned_user_id || null, eventId]
         );
         eventForArbiter.final_decision = arbResult.final_decision;
         eventForArbiter.action_taken = arbResult.action_taken;
+        eventForArbiter.resolved_user_id = arbResult.banned_user_id || null;
       } catch (err) {
         logger.warn(`⚠️ ModerationService.handleVisionFrame: event update failed: ${err.message}`);
       }
@@ -671,6 +674,10 @@ class ModerationService extends EventEmitter {
     let stage2CategoriesJson = null;
     let stage3VerdictJson = null;
     let actionTaken = null;
+    // M5 (audit): numeric users.id an auto_ban landed on (from the
+    // arbiter's banned_user_id) — persisted so ban reversal works after
+    // the socket id is gone.
+    let resolvedUserId = null;
     const mlModels = { stage1: 'embedded-v1' };
 
     if (stage2Result) {
@@ -732,6 +739,7 @@ class ModerationService extends EventEmitter {
                   });
                   finalDecision = arb.final_decision;
                   actionTaken = arb.action_taken;
+                  resolvedUserId = arb.banned_user_id || null;
                 } else {
                   finalDecision = 'admin_review';
                   actionTaken = 'no_action_arbiter';
@@ -769,6 +777,7 @@ class ModerationService extends EventEmitter {
       stage3_verdict_json: stage3VerdictJson,
       final_decision: finalDecision,
       action_taken: actionTaken,
+      resolved_user_id: resolvedUserId,
       actor: 'system',
       automated_decision: 1,
       legal_basis: null,
@@ -878,10 +887,10 @@ class ModerationService extends EventEmitter {
              matched_terms_json, stage1_hit,
              stage2_verdict_json, stage2_risk_level, stage2_categories_json,
              stage3_verdict_json,
-             final_decision, action_taken, actor,
+             final_decision, action_taken, resolved_user_id, actor,
              automated_decision, legal_basis, redress_url,
              ml_model_versions_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           row.stream_session_id,
           row.streamer_id,
@@ -897,6 +906,7 @@ class ModerationService extends EventEmitter {
           row.stage3_verdict_json || null,
           row.final_decision,
           row.action_taken,
+          row.resolved_user_id == null ? null : row.resolved_user_id,
           row.actor,
           row.automated_decision,
           row.legal_basis,
@@ -921,6 +931,7 @@ class ModerationService extends EventEmitter {
         stage3_verdict_json: row.stage3_verdict_json || null,
         final_decision: row.final_decision,
         action_taken: row.action_taken,
+        resolved_user_id: row.resolved_user_id == null ? null : row.resolved_user_id,
         actor: row.actor,
         created_at: new Date().toISOString(),
       };

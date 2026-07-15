@@ -102,15 +102,18 @@ describe('migration runner — filename discovery', () => {
         const files = migrationRunner.listMigrationFiles();
         // Names from the pre-Phase-14 inventory that must stay legacy. The
         // first group still lives in server/migrations/ (one-off data
-        // backfills / schema appliers, run manually). The second group was the
-        // set of load-bearing table creators promoted into database.js in the
-        // C1 schema reconciliation and DELETED — the runner must never have
-        // matched them either (they lack the 2026MMDDHHMM- prefix).
+        // backfills / schema appliers, run manually). The second group was
+        // DELETED — promoted into database.js in the C1 schema reconciliation
+        // or in the DB1/DB3 fresh-boot fix (setup-recording/clips/
+        // transcription-tables.js) — and the runner must never have matched
+        // them either (they lack the 2026MMDDHHMM- prefix).
         const legacy = [
             'add_ai_moderation_tables.js',
             'migrate-points-system.js',
+            // Promoted into database.js + deleted (C1 / DB1+DB3):
             'setup-recording-tables.js',
-            // Promoted into database.js + deleted (C1):
+            'setup-clips-tables.js',
+            'setup-transcription-tables.js',
             'add_streamer_connections.js',
             'add_streaming_logs.js',
             'add_bug_reports.js',
@@ -202,9 +205,18 @@ describe('migration runner — legacy-DB backfill', () => {
         expect(logger._calls.error).toEqual([]);
 
         const expected = {
-            users: ['is_admin', 'is_banned', 'is_moderator', 'vision_audit_optout'],
-            user_stats: ['chat_color'],
-            items: ['duration_seconds', 'effect_data', 'stack_behavior'],
+            users: [
+                'is_admin', 'is_banned', 'is_moderator', 'vision_audit_optout',
+                // 202607140011 — profile + deletion-lifecycle backfill (DB1)
+                'username_changed', 'deletion_requested_at', 'deletion_confirmed_at',
+                'deletion_scheduled_for', 'deletion_token', 'deletion_token_expires',
+                'account_status', 'bio', 'website', 'location', 'display_name',
+                'avatar_url', 'description',
+            ],
+            // 202607140010 — points economy backfill (DB1)
+            user_stats: ['chat_color', 'points_balance'],
+            // 202607140012 — category (live parity) + is_tradeable (gifting gate)
+            items: ['duration_seconds', 'effect_data', 'stack_behavior', 'category', 'is_tradeable'],
             chatbot_message_history: ['exact_prompt', 'message_type', 'content', 'metadata'],
             chatbot_config: ['llm_model'],
             chatbots: ['use_assigned_name', 'llm_model', 'moviebot_enabled', 'vision_bot_enabled'],
@@ -261,6 +273,49 @@ describe('migration runner — legacy-DB backfill', () => {
         const llmModel = (await allAsync(db, 'PRAGMA table_info(chatbot_config)'))
             .find((c) => c.name === 'llm_model');
         expect(llmModel).toMatchObject({ type: 'TEXT', dflt_value: "'mistral'" });
+
+        // 202607140010/11/12 — shapes must match the live DB byte-for-byte
+        // (the DB1 parity requirement).
+        const pointsBalance = (await allAsync(db, 'PRAGMA table_info(user_stats)'))
+            .find((c) => c.name === 'points_balance');
+        expect(pointsBalance).toMatchObject({ type: 'INTEGER', dflt_value: '0' });
+
+        const accountStatus = (await allAsync(db, 'PRAGMA table_info(users)'))
+            .find((c) => c.name === 'account_status');
+        expect(accountStatus).toMatchObject({ type: 'TEXT', dflt_value: "'active'" });
+
+        const itemCols = await allAsync(db, 'PRAGMA table_info(items)');
+        expect(itemCols.find((c) => c.name === 'category'))
+            .toMatchObject({ type: 'TEXT', dflt_value: "'general'" });
+        expect(itemCols.find((c) => c.name === 'is_tradeable'))
+            .toMatchObject({ type: 'BOOLEAN', dflt_value: '0' });
+    });
+
+    it('enforces the account_status CHECK constraint added via ALTER TABLE (202607140011)', async () => {
+        // SQLite allows ADD COLUMN with a CHECK when the default is a
+        // constant; this pins that the constraint actually took (and that the
+        // CI runner's SQLite supports it).
+        await new Promise((resolve) => db.serialize(() => {
+            migrationRunner.runAll(db, logger);
+            db.run('SELECT 1', resolve);
+        }));
+        expect(logger._calls.error).toEqual([]);
+
+        await runAsync(db, "INSERT INTO users (email, username) VALUES ('a@b.c', 'checker')");
+        const row = await new Promise((resolve, reject) => {
+            db.get("SELECT account_status FROM users WHERE username = 'checker'", (err, r) => {
+                if (err) reject(err);
+                else resolve(r);
+            });
+        });
+        expect(row.account_status).toBe('active');
+
+        await expect(
+            runAsync(db, "UPDATE users SET account_status = 'bogus' WHERE username = 'checker'")
+        ).rejects.toThrow(/CHECK constraint failed/);
+        await expect(
+            runAsync(db, "UPDATE users SET account_status = 'pending_deletion' WHERE username = 'checker'")
+        ).resolves.toBeDefined();
     });
 });
 
@@ -281,14 +336,28 @@ describe('migration runner — idempotency on fresh DB', () => {
                 is_admin BOOLEAN DEFAULT 0,
                 is_banned BOOLEAN DEFAULT 0,
                 is_moderator BOOLEAN DEFAULT 0,
-                vision_audit_optout BOOLEAN DEFAULT 0
+                vision_audit_optout BOOLEAN DEFAULT 0,
+                username_changed BOOLEAN DEFAULT 0,
+                deletion_requested_at DATETIME DEFAULT NULL,
+                deletion_confirmed_at DATETIME DEFAULT NULL,
+                deletion_scheduled_for DATETIME DEFAULT NULL,
+                deletion_token TEXT DEFAULT NULL,
+                deletion_token_expires DATETIME DEFAULT NULL,
+                account_status TEXT DEFAULT 'active' CHECK(account_status IN ('active', 'pending_deletion', 'deleted')),
+                bio TEXT DEFAULT NULL,
+                website TEXT DEFAULT NULL,
+                location TEXT DEFAULT NULL,
+                display_name TEXT DEFAULT NULL,
+                avatar_url TEXT,
+                description TEXT
             )
         `);
         await runAsync(db, `
             CREATE TABLE user_stats (
                 id INTEGER PRIMARY KEY,
                 user_id INTEGER NOT NULL,
-                chat_color TEXT DEFAULT NULL
+                chat_color TEXT DEFAULT NULL,
+                points_balance INTEGER DEFAULT 0
             )
         `);
         await runAsync(db, `
@@ -296,7 +365,9 @@ describe('migration runner — idempotency on fresh DB', () => {
                 id INTEGER PRIMARY KEY,
                 duration_seconds INTEGER DEFAULT 0,
                 effect_data TEXT,
-                stack_behavior TEXT DEFAULT 'replace'
+                stack_behavior TEXT DEFAULT 'replace',
+                category TEXT DEFAULT 'general',
+                is_tradeable BOOLEAN DEFAULT 0
             )
         `);
         await runAsync(db, `
@@ -369,48 +440,35 @@ describe('migration runner — idempotency on fresh DB', () => {
 
 describe('migration runner — bit-identical bootstrap', () => {
     // The committed fixture is a snapshot of the `database.js` bootstrap
-    // (CREATE TABLE + inline ALTERs) producing 38 tables. The post-PR
-    // bootstrap (CREATE TABLE + migration runner) must produce the same
-    // PRAGMA shape. (The fixture was re-baselined when the dead viewbot_*
-    // tables were dropped from the bootstrap — see the viewbot removal — and
-    // again in the C1 schema reconciliation, which promoted 5 load-bearing
-    // tables into the bootstrap: bug_reports, streambot_messages,
-    // streambot_settings, streamer_connections, streaming_logs.)
+    // producing every user table. Any DDL change must reproduce that exact
+    // snapshot or re-baseline the fixture deliberately (regenerate with
+    // scripts/ops/regenerate-schema-snapshot.js — never hand-edit). The
+    // fixture was re-baselined when the dead viewbot_* tables were dropped;
+    // again in the C1 schema reconciliation (promoted 5 load-bearing tables);
+    // and again in the DB1/DB3 fresh-boot fix, which promoted
+    // points_transactions / transcriptions / transcription_chunks + the
+    // user_stats.points_balance, users profile/deletion, and items
+    // category/is_tradeable columns into the bootstrap.
     //
-    // Strategy: boot database.js against an in-memory DB by monkey-patching
-    // sqlite3.Database before requiring the module, wait for the bootstrap
-    // setTimeout (recording indexes @1000ms) to settle, snapshot, diff
-    // against fixture.
+    // Strategy: boot the production init path (`initializeSchema` from the
+    // side-effect-free server/database/schema.js — the same function
+    // database.js's module boot calls, ADR-0030) against an in-memory DB and
+    // diff. It resolves when the whole serialize queue (tables, seeds,
+    // migrations, indexes) has flushed, so the old monkey-patch-require of
+    // database.js and the 2500 ms sleep — which covered a setTimeout the
+    // recording indexes used to hide in — are both gone.
 
-    let originalSqliteDatabase;
     let snapshot;
 
     beforeAll(async () => {
-        // Force a fresh require so the monkey-patch is effective.
-        jest.resetModules();
-        originalSqliteDatabase = sqlite3.Database;
-        function PatchedDatabase(_filename, ...rest) {
-            return new originalSqliteDatabase(':memory:', ...rest);
-        }
-        PatchedDatabase.prototype = originalSqliteDatabase.prototype;
-        sqlite3.Database = PatchedDatabase;
-
-        // Loading database.js triggers the bootstrap.
-        const { db } = require('../../database/database');
-
-        // The bootstrap queues a setTimeout for the recording indexes at
-        // 1000 ms (which require columns added by the migration runner).
-        // Wait long enough for it to settle.
-        await new Promise((r) => setTimeout(r, 2500));
-
+        const { initializeSchema } = require('../../database/schema');
+        const db = new sqlite3.Database(':memory:');
+        await initializeSchema(db, makeLogger());
         snapshot = await snapshotSchema(db);
+        await new Promise((r) => db.close(r));
     }, 10_000);
 
-    afterAll(() => {
-        sqlite3.Database = originalSqliteDatabase;
-    });
-
-    it('produces a schema bit-identical to the pre-PR-14.1 fixture', () => {
+    it('produces a schema bit-identical to the committed fixture', () => {
         const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf-8'));
         expect(snapshot).toEqual(fixture);
     });

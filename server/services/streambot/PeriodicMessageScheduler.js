@@ -9,8 +9,10 @@
  * service's delegators (and test spies) stay live.
  */
 
-const https = require('https');
 const axios = require('axios');
+// CH3: attaches the X-Internal-Secret header (+ https agent + 5s timeout —
+// this call site previously had NO timeout) to chat-service calls.
+const { chatAxiosConfig } = require('../../utils/chatServiceClient');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'StreamBotService' });
 
@@ -63,22 +65,17 @@ class PeriodicMessageScheduler {
     async sendToChatService(message) {
         const owner = this.owner;
         try {
-            const agent = new https.Agent({
-                rejectUnauthorized: false // Allow self-signed certificates
-            });
-
             const response = await axios.post(
                 `${owner.chatServiceUrl}/api/system-message`,
                 {
                     message: message,
                     username: '🤖 StreamBot'
                 },
-                {
-                    httpsAgent: agent,
+                chatAxiosConfig(owner.chatServiceUrl, {
                     headers: {
                         'Content-Type': 'application/json'
                     }
-                }
+                })
             );
 
             if (response.data.success) {

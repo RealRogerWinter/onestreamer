@@ -68,8 +68,13 @@ class GameMechanicsService {
    *                                         passed by reference; this service
    *                                         mutates it in claimChatBonus and
    *                                         reads it in getBonusStatus.
+   * @param {Function} [deps.withTransaction] withTransaction helper from
+   *                                         database.js — required by
+   *                                         transferPoints (ADR-0029, audit
+   *                                         E2). Injected so unit tests can
+   *                                         bind it to in-memory primitives.
    */
-  constructor({ accountService, userBonusCooldowns }) {
+  constructor({ accountService, userBonusCooldowns, withTransaction = null }) {
     if (!accountService) {
       throw new Error('GameMechanicsService requires accountService');
     }
@@ -78,6 +83,7 @@ class GameMechanicsService {
     }
     this.accountService = accountService;
     this.userBonusCooldowns = userBonusCooldowns;
+    this.withTransaction = withTransaction;
     this.logger = logger;
   }
 
@@ -321,21 +327,36 @@ class GameMechanicsService {
 
     const effectiveSenderUsername = senderUsername || senderUser.username;
 
-    const senderNewBalance = await this.accountService.subtractPoints(
-      fromUserId,
-      amount,
-      'transfer_out',
-      `Sent ${amount} points to ${toUsername}`,
-      { recipientId: targetUser.id, recipientUsername: toUsername }
-    );
+    // Atomic (ADR-0029, audit E2): debit + credit commit or roll back
+    // together, so a failure between them can no longer destroy the
+    // sender's points. An in-scope insufficient-funds throw (the atomic
+    // guard beat the pre-check) rolls back cleanly. withTransaction is
+    // resolved lazily so unit/integration tests can inject one bound to
+    // their own primitives without this module dragging in the real DB.
+    if (!this.withTransaction) {
+      this.withTransaction = require('../database/database').withTransaction;
+    }
+    const { senderNewBalance, recipientNewBalance } = await this.withTransaction(async (tx) => {
+      const senderBalanceAfter = await this.accountService.subtractPoints(
+        fromUserId,
+        amount,
+        'transfer_out',
+        `Sent ${amount} points to ${toUsername}`,
+        { recipientId: targetUser.id, recipientUsername: toUsername },
+        tx
+      );
 
-    const recipientNewBalance = await this.accountService.addPoints(
-      targetUser.id,
-      amount,
-      'transfer_in',
-      `Received ${amount} points from ${effectiveSenderUsername}`,
-      { senderId: fromUserId, senderUsername: effectiveSenderUsername }
-    );
+      const recipientBalanceAfter = await this.accountService.addPoints(
+        targetUser.id,
+        amount,
+        'transfer_in',
+        `Received ${amount} points from ${effectiveSenderUsername}`,
+        { senderId: fromUserId, senderUsername: effectiveSenderUsername },
+        tx
+      );
+
+      return { senderNewBalance: senderBalanceAfter, recipientNewBalance: recipientBalanceAfter };
+    });
 
     this.logger.debug(
       `💸 TRANSFER: ${effectiveSenderUsername} sent ${amount} points to ${toUsername}. Sender balance: ${senderNewBalance}, Recipient balance: ${recipientNewBalance}`

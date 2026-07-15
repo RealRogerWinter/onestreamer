@@ -587,6 +587,41 @@ describe('ModerationService Stage 3 + ActionArbiter integration', () => {
     expect(stage3Json.flagged).toBe(true);
   });
 
+  test('M5: arbiter banned_user_id is persisted as resolved_user_id on the event row', async () => {
+    const stage2 = makeStage2Stub();
+    const stage3 = makeStage3Stub();
+    const arbiter = makeArbiterStub({
+      arbitrate: jest.fn(async () => ({
+        final_decision: 'auto_ban',
+        action_taken: 'banned:42;rotation=rotated',
+        banned_user_id: 42,
+      })),
+    });
+    const { svc, wrapper } = await buildService({ stage2, stage3, actionArbiter: arbiter });
+    await svc.initialize();
+    const event = await svc.handleTranscriptChunk({ streamerId: 'sock_m5', text: 'faggot' });
+    expect(event.resolved_user_id).toBe(42);
+    const row = await wrapper.getAsync('SELECT resolved_user_id FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.resolved_user_id).toBe(42);
+  });
+
+  test('M5: resolved_user_id stays NULL when the arbiter reports no banned user (anonymous / url-relay)', async () => {
+    const stage2 = makeStage2Stub();
+    const stage3 = makeStage3Stub();
+    const arbiter = makeArbiterStub({
+      arbitrate: jest.fn(async () => ({
+        final_decision: 'auto_skip',
+        action_taken: 'blocked:twitch:badguy;rotation=rotated',
+        banned_user_id: null,
+      })),
+    });
+    const { svc, wrapper } = await buildService({ stage2, stage3, actionArbiter: arbiter });
+    await svc.initialize();
+    await svc.handleTranscriptChunk({ streamerId: 'sock_m5b', text: 'faggot' });
+    const row = await wrapper.getAsync('SELECT resolved_user_id FROM moderation_events ORDER BY id DESC LIMIT 1');
+    expect(row.resolved_user_id).toBeNull();
+  });
+
   test('Stage 3 disagrees with Stage 2 → admin_review, no arbiter', async () => {
     const stage2 = makeStage2Stub();
     const stage3 = makeStage3Stub({

@@ -111,31 +111,39 @@ const ConnectionMonitor: React.FC<ConnectionMonitorProps> = ({ makeApiCall, addL
   useEffect(() => {
     if (!socket || !connected) return;
 
-    socket.on('user-connected', () => {
+    const handleUserConnected = () => {
       addLog('New user connected');
       fetchConnections();
-    });
-    
-    socket.on('user-disconnected', () => {
+    };
+
+    const handleUserDisconnected = () => {
       addLog('User disconnected');
       fetchConnections();
-    });
-    
-    socket.on('stream-started', () => {
+    };
+
+    const handleStreamStarted = () => {
       addLog('Stream started');
       fetchConnections();
-    });
-    
-    socket.on('stream-ended', () => {
+    };
+
+    const handleStreamEnded = () => {
       addLog('Stream ended');
       fetchConnections();
-    });
+    };
+
+    socket.on('user-connected', handleUserConnected);
+    socket.on('user-disconnected', handleUserDisconnected);
+    socket.on('stream-started', handleStreamStarted);
+    socket.on('stream-ended', handleStreamEnded);
 
     return () => {
-      socket.off('user-connected');
-      socket.off('user-disconnected');
-      socket.off('stream-started');
-      socket.off('stream-ended');
+      // Pass the same handler refs so only OUR listeners are removed — a bare
+      // socket.off('stream-started') strips every other component's handlers
+      // on the shared main socket (audit Plan 05, C4).
+      socket.off('user-connected', handleUserConnected);
+      socket.off('user-disconnected', handleUserDisconnected);
+      socket.off('stream-started', handleStreamStarted);
+      socket.off('stream-ended', handleStreamEnded);
     };
   }, [socket, connected]);
 

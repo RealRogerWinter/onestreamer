@@ -298,11 +298,13 @@ class UserRepository {
 
     /**
      * Internal chat-service status check — returns only
-     * { is_admin, is_moderator, is_banned } or undefined.
+     * { is_admin, is_moderator, is_banned, chat_banned } or undefined.
+     * chat_banned added for audit M4: the chat-service treats it like
+     * is_banned at connect time, making /ban-chat's DB write enforceable.
      */
     async getStatusFlags(id) {
         return await this.getAsync(
-            'SELECT is_admin, is_moderator, is_banned FROM users WHERE id = ?',
+            'SELECT is_admin, is_moderator, is_banned, chat_banned FROM users WHERE id = ?',
             [id]
         );
     }

@@ -185,6 +185,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       }
     } catch (error) {
       console.error('❌ Failed to replace audio track:', error);
+      // Surface the failure - a silently-failed device swap leaves viewers
+      // hearing the old (possibly dead) input (audit Plan 05, C2).
+      setError(`Failed to switch microphone: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -259,6 +262,9 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       }
     } catch (error) {
       console.error('❌ Failed to replace video track:', error);
+      // Surface the failure - a silently-failed device swap leaves viewers
+      // seeing the old (possibly dead) camera (audit Plan 05, C2).
+      setError(`Failed to switch camera: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -967,7 +973,11 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
         await Promise.race([producePromise, produceTimeoutPromise]);
         
       } catch (webrtcError) {
-        console.warn('⚠️ WEBRTC STREAMER: WebRTC publish failed, but local video should still work:', webrtcError);
+        // C3 (audit Plan 05): a publish failure means viewers cannot see the
+        // stream. Treat it as a stream-start failure instead of silently
+        // falling back to a local-only preview that looks live to the
+        // streamer while every viewer gets a black screen.
+        console.error('❌ WEBRTC STREAMER: WebRTC publish failed - aborting stream start:', webrtcError);
         // Clean up the failed WebRTC client
         if (webrtcClientRef.current) {
           try {
@@ -977,9 +987,16 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
           }
           webrtcClientRef.current = null;
         }
-        // Don't fail completely if WebRTC fails - local video should still show
+        // Tear down the local preview too so the streamer isn't misled into
+        // thinking they are broadcasting.
+        await cleanup();
+        setError('Failed to publish stream - viewers cannot see you. Check your connection and retry.');
+        setIsLoading(false);
+        isProcessingRef.current = false;
+        lastStreamAttemptRef.current = 0; // allow an immediate manual retry
+        return; // CRITICAL: do not fire onStreamStart - the stream is NOT live
       }
-      
+
       setIsLoading(false);
       onStreamStart?.();
       
@@ -999,6 +1016,12 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
   const stopStreaming = async () => {
     await cleanup();
     onStreamStop?.();
+  };
+
+  // Manual retry after a failed stream start (e.g. publish failure).
+  const handleRetryStreaming = () => {
+    setError(null);
+    startStreaming();
   };
 
   const cleanup = async () => {
@@ -1066,7 +1089,7 @@ const WebRTCStreamer: React.FC<WebRTCStreamerProps> = ({
       
       <StreamLoadingOverlay isLoading={isLoading} />
 
-      <StreamErrorOverlay error={error} />
+      <StreamErrorOverlay error={error} onRetry={handleRetryStreaming} />
 
       <video
         ref={videoRef}

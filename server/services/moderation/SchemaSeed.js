@@ -76,6 +76,38 @@ class SchemaSeed {
         throw err;
       }
     }
+
+    await this._ensureColumn('moderation_events', 'resolved_user_id', 'INTEGER');
+  }
+
+  /**
+   * PRAGMA-checked idempotent ALTER (audit M5). `resolved_user_id` persists
+   * the numeric users.id an auto_ban actually landed on (returned by
+   * ModerationActionArbiter._actWebcam as `banned_user_id`), so the reverse
+   * route can unban by a stable id instead of re-resolving the ephemeral
+   * socket id live — which silently no-oped once the socket was gone.
+   * Unlike the OmniImageMod ALTERs above (which rely on the duplicate-column
+   * error being swallowed), this checks PRAGMA table_info first so a real
+   * ALTER failure still surfaces loudly instead of being conflated with
+   * the already-applied case.
+   */
+  async _ensureColumn(table, column, type) {
+    let cols;
+    try {
+      cols = await this.database.allAsync(`PRAGMA table_info(${table})`);
+    } catch (err) {
+      logger.error(`❌ ModerationService: PRAGMA table_info(${table}) failed:`, err.message);
+      throw err;
+    }
+    const exists = (cols || []).some((c) => c && c.name === column);
+    if (exists) return;
+    try {
+      await this.database.runAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type};`);
+      logger.debug(`✅ ModerationService: added ${table}.${column} (${type})`);
+    } catch (err) {
+      logger.error(`❌ ModerationService: ALTER TABLE ${table} ADD COLUMN ${column} failed:`, err.message);
+      throw err;
+    }
   }
 
   /**

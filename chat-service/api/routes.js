@@ -18,10 +18,20 @@
 //     moderationService, so command-parser / socket call sites are unaffected).
 //   - Same chatMessages ring (push + MAX_CHAT_HISTORY trim) for ban / timeout
 //     / system-message broadcasts.
-//   - Same auth posture: none of these routes guard with JWT (the main
-//     server is the only caller and reaches them over private networking).
+//   - Auth posture (audit CH3): every route except /health is gated by
+//     `internalAuth` — the X-Internal-Secret header the main server attaches
+//     via server/utils/chatServiceClient.js, matched against
+//     INTERNAL_API_SECRET. Enforcement is staged behind
+//     ENFORCE_CHAT_INTERNAL_AUTH (permissive warn-log while off); see
+//     ./internalAuth.js. The gated set deliberately includes the two READ
+//     endpoints: GET /api/moderation leaks the ban list (sole caller is
+//     server/routes/admin-moderation.js) and GET /api/chat-history leaks
+//     chat history (callers: server ClipService + SessionChatCaptureService;
+//     verified no browser/client code calls it directly — the client gets
+//     history via the 'chat-history' socket event).
 
 const express = require('express');
+const { internalAuth } = require('./internalAuth');
 
 /**
  * Create the chat-service HTTP API router.
@@ -68,7 +78,7 @@ function createApiRouter(deps) {
   });
 
   // API endpoint to get moderation data
-  router.get('/api/moderation', (req, res) => {
+  router.get('/api/moderation', internalAuth, (req, res) => {
     try {
       console.log(`📊 MODERATION API: Fetching moderation data`);
       console.log(`📊 MODERATION API: Current banned users:`, Array.from(bannedUsers));
@@ -121,7 +131,7 @@ function createApiRouter(deps) {
   });
 
   // API endpoint to ban a user
-  router.post('/api/ban', express.json(), (req, res) => {
+  router.post('/api/ban', internalAuth, express.json(), (req, res) => {
     try {
       const { username, reason, bannedBy } = req.body;
 
@@ -171,7 +181,7 @@ function createApiRouter(deps) {
   });
 
   // API endpoint to unban a user
-  router.post('/api/unban', express.json(), (req, res) => {
+  router.post('/api/unban', internalAuth, express.json(), (req, res) => {
     try {
       const { username } = req.body;
 
@@ -194,7 +204,7 @@ function createApiRouter(deps) {
   });
 
   // API endpoint to timeout a user
-  router.post('/api/timeout', express.json(), (req, res) => {
+  router.post('/api/timeout', internalAuth, express.json(), (req, res) => {
     try {
       const { username, duration, reason, timedOutBy } = req.body;
 
@@ -241,7 +251,7 @@ function createApiRouter(deps) {
   });
 
   // API endpoint to remove timeout
-  router.post('/api/remove-timeout', express.json(), (req, res) => {
+  router.post('/api/remove-timeout', internalAuth, express.json(), (req, res) => {
     try {
       const { username } = req.body;
 
@@ -263,7 +273,7 @@ function createApiRouter(deps) {
   });
 
   // Endpoint for main server to send system messages
-  router.post('/api/system-message', express.json(), (req, res) => {
+  router.post('/api/system-message', internalAuth, express.json(), (req, res) => {
     try {
       const { message, username = '🤖 StreamBot' } = req.body;
 
@@ -307,7 +317,7 @@ function createApiRouter(deps) {
 
   // API endpoint to get chat history for clip replay
   // This is used by the main server when creating clips
-  router.get('/api/chat-history', (req, res) => {
+  router.get('/api/chat-history', internalAuth, (req, res) => {
     try {
       const { since, until, contextMs = 30000 } = req.query;
 

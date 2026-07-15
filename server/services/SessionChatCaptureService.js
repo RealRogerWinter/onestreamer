@@ -7,6 +7,9 @@
 
 const axios = require('axios');
 const { runAsync, getAsync, allAsync } = require('../database/database');
+// CH3: attaches the X-Internal-Secret header (+ https agent + timeout)
+// to chat-service calls.
+const { chatAxiosConfig } = require('../utils/chatServiceClient');
 
 const logger = require('../bootstrap/logger').child({ svc: 'SessionChatCaptureService' });
 class SessionChatCaptureService {
@@ -86,16 +89,15 @@ class SessionChatCaptureService {
      */
     async captureMessages(sessionId, sessionData) {
         try {
-            // Fetch messages from chat service
-            const response = await axios.get(`${this.chatServiceUrl}/api/chat-history`, {
+            // Fetch messages from chat service (CH3: chatAxiosConfig attaches
+            // the X-Internal-Secret header + https agent + 5s timeout)
+            const response = await axios.get(`${this.chatServiceUrl}/api/chat-history`, chatAxiosConfig(this.chatServiceUrl, {
                 params: {
                     since: sessionData.lastCapturedTime,
                     until: Date.now(),
                     contextMs: 0 // We handle context ourselves
-                },
-                httpsAgent: new (require('https').Agent)({ rejectUnauthorized: false }),
-                timeout: 5000
-            });
+                }
+            }));
 
             if (!response.data.success || !response.data.messages) {
                 return;

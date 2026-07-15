@@ -333,8 +333,10 @@ app.use(express.json());
 // HTTP API routes — moved into ./api/routes.js (PR-K5).
 // The router shares the same moderationService, chatMessages ring, and
 // connectedUsers map instances that the socket layer and command parser
-// mutate, so behavior is unchanged. No API route checks auth (chat-service
-// trusts the main server reaching it over private networking).
+// mutate, so behavior is unchanged. Every route except /health is gated by
+// ./api/internalAuth.js (audit CH3): the main server must send
+// X-Internal-Secret (INTERNAL_API_SECRET); enforcement is staged behind
+// ENFORCE_CHAT_INTERNAL_AUTH (permissive warn-log while off).
 app.use(createApiRouter({
   io,
   moderationService,
@@ -396,10 +398,14 @@ loadModerationData();
 // ingress (ADR-0025). Defaults to '0.0.0.0' to preserve dev behaviour.
 const BIND_ADDR = process.env.BIND_ADDR || '0.0.0.0';
 
-// Defense-in-depth (ADR-0025): the chat HTTP API has no auth (it trusts the
-// main server over loopback), so in production it must bind 127.0.0.1.
+// Defense-in-depth (ADR-0025): the chat HTTP API's internal-secret gate
+// (api/internalAuth.js) only rejects once ENFORCE_CHAT_INTERNAL_AUTH is
+// flipped on, so in production the service must additionally bind 127.0.0.1.
+// Loopback-only binding is also the precondition for the last-XFF-hop client
+// IP parse (core/ipAddress.js) being trustworthy — nginx must be the sole
+// ingress.
 if (process.env.NODE_ENV === 'production' && !['127.0.0.1', '::1', 'localhost'].includes(BIND_ADDR)) {
-  console.warn(`⚠️  SECURITY: chat binding ${BIND_ADDR} (non-loopback) in production — set BIND_ADDR=127.0.0.1; the chat API is unauthenticated and must not be reachable off-host.`);
+  console.warn(`⚠️  SECURITY: chat binding ${BIND_ADDR} (non-loopback) in production — set BIND_ADDR=127.0.0.1; the chat API must not be reachable off-host.`);
 }
 
 // Start listeners. When HTTPS is configured (production) we serve ONLY over

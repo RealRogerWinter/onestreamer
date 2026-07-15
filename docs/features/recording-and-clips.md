@@ -58,12 +58,12 @@ Cloud (Backblaze B2):
 
 ## Database schema
 
-In SQLite ([`server/database/recording-schema.sql`](../../server/database/recording-schema.sql)):
+In SQLite (created at boot by [`server/database/schema.js`](../../server/database/schema.js), [ADR-0030](../architecture/adr/0030-single-source-schema-ddl.md)):
 
 ```sql
-recordings (id, stream_id, streamer_id, start_time, end_time, duration,
-            file_path, file_size, quality_profile, format, status,
-            compression_status, thumbnail_path, metadata_json, created_at)
+recordings (id, recording_id, stream_id, user_id, session_id, file_path,
+            file_size, duration, quality, status, is_continuous,
+            segment_number, created_at, updated_at, completed_at, metadata)
 
 recording_events (id, recording_id, event_type, event_data, user_id, timestamp)
 
