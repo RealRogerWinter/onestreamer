@@ -641,6 +641,10 @@ class LiveKitService {
     this.healthCheckTimer = setInterval(async () => {
       try {
         const currentStreamer = streamService.getCurrentStreamer();
+        // L1: snapshot the generation with the streamer id — the
+        // listParticipants await below is a TOCTOU window a takeover can
+        // race; clearStaleStreamer only clears if this still matches.
+        const expectedGeneration = streamService.getStreamGeneration();
 
         // Skip if no current streamer or it's a viewbot
         if (!currentStreamer) return;
@@ -665,7 +669,7 @@ class LiveKitService {
 
         if (!streamerParticipant) {
           logger.debug(`🔍 LIVEKIT HEALTH: Streamer ${currentStreamer} NOT FOUND in LiveKit room`);
-          await this.clearStaleStreamer(streamService, io, currentStreamer, 'not_in_room');
+          await this.clearStaleStreamer(streamService, io, currentStreamer, 'not_in_room', expectedGeneration);
           return;
         }
 
@@ -676,7 +680,7 @@ class LiveKitService {
         if (!hasTracks || !hasActiveTracks) {
           logger.debug(`🔍 LIVEKIT HEALTH: Streamer ${currentStreamer} has NO ACTIVE TRACKS`);
           logger.debug(`   Tracks: ${JSON.stringify(streamerParticipant.tracks?.map(t => ({ sid: t.sid, type: t.type, muted: t.muted })) || [])}`);
-          await this.clearStaleStreamer(streamService, io, currentStreamer, 'no_tracks');
+          await this.clearStaleStreamer(streamService, io, currentStreamer, 'no_tracks', expectedGeneration);
           return;
         }
 
@@ -689,13 +693,23 @@ class LiveKitService {
   }
 
   /**
-   * Clear a stale streamer and trigger viewbot rotation
+   * Clear a stale streamer and trigger viewbot rotation.
+   * L1: compare-and-clear — `expectedGeneration` is the caller's pre-await
+   * snapshot; if the stream state changed during the health-check RPC (a
+   * takeover installed a new streamer), the clear is skipped entirely so the
+   * fresh healthy stream is not killed and viewers get no false stream-ended.
+   * Returns true when the clear applied, false when the guard missed.
    */
-  async clearStaleStreamer(streamService, io, streamerId, reason) {
+  async clearStaleStreamer(streamService, io, streamerId, reason, expectedGeneration) {
     logger.debug(`🧹 LIVEKIT: Clearing stale streamer ${streamerId} (reason: ${reason})`);
 
-    // Clear the streamer status
-    streamService.clearStreamer();
+    // Clear the streamer status (no awaits between check and clear — atomic
+    // within this JS tick)
+    const cleared = streamService.clearStreamerIfCurrent(streamerId, expectedGeneration);
+    if (!cleared) {
+      logger.debug(`⏭️ LIVEKIT: Skipping stale-streamer clear for ${streamerId} (reason: ${reason}) - stream state changed during check (gen ${expectedGeneration} -> ${streamService.getStreamGeneration()})`);
+      return false;
+    }
     this.currentStreamer = null;
 
     // Emit stream-ended to all clients (PR 3.1 chokepoint when wired; falls
@@ -720,6 +734,7 @@ class LiveKitService {
     });
 
     logger.debug(`✅ LIVEKIT: Stale streamer ${streamerId} cleared, viewbot should take over`);
+    return true;
   }
 
   /**

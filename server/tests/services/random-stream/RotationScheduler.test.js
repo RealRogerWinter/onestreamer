@@ -296,4 +296,49 @@ describe('executeRotationWithRetry()', () => {
     await s.executeRotationWithRetry();
     expect(host._scheduleNextRotation).toHaveBeenCalled();
   });
+
+  // T4: a CANCELLED backoff means another actor (lock/pause/stop/forceRotate)
+  // took ownership of the timer lifecycle — the defensive reschedule must NOT
+  // re-arm the timer the cancel site just cleared.
+  test('cancelled backoff suppresses the defensive reschedule', async () => {
+    const host = makeHost({
+      _rotateToNewStream: jest.fn().mockResolvedValue({ success: false }),
+      _scheduleRetryWithBackoff: jest.fn().mockResolvedValue({ success: false, cancelled: true }),
+    });
+    const s = new RotationScheduler({ host });
+    await s.executeRotationWithRetry();
+    expect(host._scheduleNextRotation).not.toHaveBeenCalled();
+  });
+
+  // T2: rotation stands down while a takeover critical section runs.
+  describe('takeoverInProgress guard (T2)', () => {
+    afterEach(() => {
+      delete global.streamService;
+    });
+
+    test('executeRotationWithRetry early-returns while takeoverInProgress', async () => {
+      global.streamService = { takeoverInProgress: true };
+      const host = makeHost();
+      const s = new RotationScheduler({ host });
+      await s.executeRotationWithRetry();
+      expect(host._rotateToNewStream).not.toHaveBeenCalled();
+    });
+
+    test('timer callback skips + reschedules while takeoverInProgress', async () => {
+      global.streamService = { takeoverInProgress: true };
+      const host = makeHost();
+      const s = new RotationScheduler({ host });
+      s.scheduleNext(30_000);
+      await jest.advanceTimersByTimeAsync(30_001);
+      expect(host._executeRotationWithRetry).not.toHaveBeenCalled();
+      expect(host._scheduleNextRotation).toHaveBeenCalled();
+    });
+
+    test('guards are inert when global.streamService is unset (unit-test topology)', async () => {
+      const host = makeHost();
+      const s = new RotationScheduler({ host });
+      await s.executeRotationWithRetry();
+      expect(host._rotateToNewStream).toHaveBeenCalled();
+    });
+  });
 });

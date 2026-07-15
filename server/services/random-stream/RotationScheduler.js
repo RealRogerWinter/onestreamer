@@ -91,6 +91,15 @@ class RotationScheduler {
           return;
         }
 
+        // T2: a takeover critical section is running — stand down and try
+        // again next interval. (Optional chaining: unit tests construct the
+        // scheduler with no global.streamService.)
+        if (global.streamService?.takeoverInProgress) {
+          this.logger?.debug?.('⏸️ ROTATION: Skipping scheduled rotation - takeover in progress');
+          host._scheduleNextRotation();
+          return;
+        }
+
         await host._executeRotationWithRetry();
       } catch (error) {
         this.logger?.error?.('❌ ROTATION TIMER ERROR:', error.message);
@@ -202,6 +211,12 @@ class RotationScheduler {
       return;
     }
 
+    // T2: never start a rotation while a takeover critical section runs.
+    if (global.streamService?.takeoverInProgress) {
+      this.logger?.debug?.('⏸️ ROTATION: Skipping rotation - takeover in progress');
+      return;
+    }
+
     const result = await host._rotateToNewStream();
 
     if (result.success) {
@@ -214,10 +229,16 @@ class RotationScheduler {
       host._recordFailure();
       this.logger?.debug?.(`⚠️ ROTATION: Failed (${host.retryState.consecutiveFailures} consecutive failures): ${result.error}`);
 
-      await host._scheduleRetryWithBackoff(
+      const retryResult = await host._scheduleRetryWithBackoff(
         () => host._executeRotationWithRetry(),
         'scheduled rotation'
       );
+
+      // T4: a cancelled backoff means another actor (lock/pause/stop/
+      // forceRotate) took ownership of the timer lifecycle — do NOT fall
+      // through to the defensive reschedule, or we'd re-arm the timer that
+      // the cancel site just cleared.
+      if (retryResult && retryResult.cancelled) return;
 
       // If we get here and rotation is still enabled but nothing is armed,
       // reschedule defensively (same recovery branch as pre-PR).

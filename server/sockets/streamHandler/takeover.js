@@ -7,8 +7,13 @@
  * stream-ended/streaming-approved, opens logging/time-tracking sessions, and
  * for ViewBots emits stream-ready immediately.
  *
- * Handler body is VERBATIM from the original StreamHandler.js; this is a pure
- * extraction with no logic change. Takes the same `(io, socket, deps)`.
+ * Extracted from the original StreamHandler.js. T2 (ADR-0033): the takeover
+ * flow now runs inside `streamService.runExclusiveTakeover()` — one exclusive
+ * critical section per server, so concurrent `request-to-stream` handlers
+ * serialize (the loser is denied by the global cooldown that the winner's
+ * `recordTakeover` set) and rotation actors check
+ * `streamService.takeoverInProgress` and stand down. The rotation pause also
+ * moved to before `setStreamer`. Takes the same `(io, socket, deps)`.
  */
 const logger = require('../../bootstrap/logger').child({ svc: 'StreamHandler' });
 // CH3: shared helper resolves CHAT_SERVICE_URL and attaches the
@@ -110,6 +115,14 @@ module.exports = function registerTakeover(io, socket, deps) {
     }
 
     try {
+      // T2 (ADR-0033): everything below — the currentStreamer read, the
+      // canTakeOver cooldown gate, viewbot teardown, setStreamer and
+      // recordTakeover — runs as ONE exclusive critical section via a
+      // per-server promise chain on StreamService. A second concurrent
+      // request queues here and re-runs canTakeOver after the first's
+      // recordTakeover, so it is correctly denied by the global cooldown.
+      // (Body indentation left unchanged to keep the diff reviewable.)
+      await streamService.runExclusiveTakeover(async () => {
       // Lazy-resolve viewbot services — these are constructed after io wiring
       // in index.js (post-startServer), so they may be null at registration
       // time but populated by the time a real client fires this event.
@@ -255,10 +268,9 @@ module.exports = function registerTakeover(io, socket, deps) {
           newStreamerDisplayName,
         });
 
-        // Give viewers time to cleanup their consumers before we close producers
-        logger.info(`⏳ TAKEOVER: Waiting 200ms for viewer cleanup before producer cleanup`);
-        await new Promise(resolve => setTimeout(resolve, 200));
-
+        // (T2: the 200ms "viewer consumer cleanup" sleep that lived here was
+        // removed — under LiveKit, webrtcService.cleanup() only clears
+        // in-memory maps; there are no producers to close under viewers.)
         logger.info(`🧹 TAKEOVER: Cleaning up resources for previous streamer ${currentStreamer}`);
         webrtcService.cleanup(currentStreamer);
 
@@ -267,6 +279,20 @@ module.exports = function registerTakeover(io, socket, deps) {
       } else {
         // CRITICAL FIX: No current streamer - this is a fresh start (e.g., after server restart)
         logger.info(`🚀 STREAMING: No current streamer - ${socket.id} starting fresh stream (isViewBot: ${isViewBot})`);
+      }
+
+      // T2: pause random rotation BEFORE installing the new streamer, so no
+      // armed rotation timer survives into the takeover. pause() keeps
+      // shouldAutoRestart=true, so rotation resumes via the recovery monitor
+      // when the real streamer ends. (This block previously ran much later,
+      // after setStreamer AND recordTakeover.)
+      if (!isViewBot && global.randomStreamRotationService && global.randomStreamRotationService.isEnabled) {
+        logger.info('⏸️ RANDOM ROTATION: Pausing - real streamer taking over');
+        try {
+          await global.randomStreamRotationService.pause();
+        } catch (err) {
+          logger.error({ err }, '❌ RANDOM ROTATION: Failed to pause');
+        }
       }
 
       streamService.setStreamer(socket.id, data.streamType);
@@ -447,17 +473,8 @@ module.exports = function registerTakeover(io, socket, deps) {
 
       // Start streaming log session for real streamers
       if (!isViewBot) {
-        // CRITICAL: Pause random rotation when a real streamer starts
-        // It will auto-restart when the real streamer ends
-        if (global.randomStreamRotationService && global.randomStreamRotationService.isEnabled) {
-          logger.info('⏸️ RANDOM ROTATION: Pausing - real streamer taking over');
-          try {
-            await global.randomStreamRotationService.pause();
-          } catch (err) {
-            logger.error({ err }, '❌ RANDOM ROTATION: Failed to pause');
-          }
-        }
-
+        // (T2: the random-rotation pause that lived here moved up, before
+        // streamService.setStreamer.)
         await streamingLogsService.startSession(
           socket.id,
           streamerName,
@@ -571,6 +588,7 @@ module.exports = function registerTakeover(io, socket, deps) {
       }
 
       logger.info(`Stream taken over by: ${socket.id}`);
+      }); // end runExclusiveTakeover (T2)
     } catch (error) {
       logger.error({ err: error }, 'Error handling takeover request');
       socket.emit('takeover-error', { message: 'Server error occurred' });
