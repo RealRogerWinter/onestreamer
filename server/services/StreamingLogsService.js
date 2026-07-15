@@ -343,9 +343,13 @@ class StreamingLogsService {
 // Create singleton instance
 const streamingLogsService = new StreamingLogsService();
 
-// Schedule periodic cleanup
-setInterval(() => {
+// Schedule periodic cleanup. unref() so this background timer never holds
+// the process open on its own — the server's listeners own the event loop,
+// and jest workers / one-off scripts must be able to exit (audit B6).
+const cleanupTimer = setInterval(() => {
   streamingLogsService.cleanupOldLogs(7); // Keep viewbot logs for 7 days only
 }, 24 * 60 * 60 * 1000); // Daily cleanup
+if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref();
+streamingLogsService._cleanupTimer = cleanupTimer;
 
 module.exports = streamingLogsService;

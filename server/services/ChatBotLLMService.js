@@ -253,6 +253,11 @@ class ChatBotLLMService {
         return this.ollamaQueue.startRequestProcessor();
     }
 
+    // Stop the queue's processor interval (tests/shutdown).
+    stop() {
+        return this.ollamaQueue.stop();
+    }
+
     getModelConfig(modelName) {
         return this.ollamaQueue.getModelConfig(modelName);
     }

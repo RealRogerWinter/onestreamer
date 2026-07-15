@@ -294,7 +294,8 @@ class ContinuousRecordingService extends EventEmitter {
       logger.error({ err: err }, '❌ CONTINUOUS RECORDING: Initial auto-record check failed');
     });
 
-    // Then check every 5 seconds
+    // Then check every 5 seconds. Guarded unref: the poll must never be the
+    // only thing keeping a process alive (audit B6).
     this.autoRecordInterval = setInterval(async () => {
       try {
         await this.checkAndAutoRecord();
@@ -303,6 +304,9 @@ class ContinuousRecordingService extends EventEmitter {
         // Don't rethrow - keep polling running
       }
     }, 5000);
+    if (typeof this.autoRecordInterval.unref === 'function') {
+      this.autoRecordInterval.unref();
+    }
 
     logger.debug('🔄 CONTINUOUS RECORDING: Auto-record polling started');
   }
@@ -675,10 +679,15 @@ class ContinuousRecordingService extends EventEmitter {
    * clear it.
    */
   startCleanupInterval() {
-    // Run cleanup every minute
+    // Run cleanup every minute. Guarded unref: the timer must never be the
+    // only thing keeping a process alive — tests that initialize() this
+    // service used to leak it past teardown (audit B6).
     this.diskScanner.cleanupInterval = setInterval(() => {
       this.cleanupOldRecordings();
     }, 60 * 1000);
+    if (typeof this.diskScanner.cleanupInterval.unref === 'function') {
+      this.diskScanner.cleanupInterval.unref();
+    }
 
     // Run initial cleanup
     this.cleanupOldRecordings();

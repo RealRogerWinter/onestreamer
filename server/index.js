@@ -1565,8 +1565,10 @@ async function startServer() {
     await streamBotService.initialize();
     logger.info('📢 SERVER: StreamBot service initialized');
     
-    // Set up periodic cleanup for expired temporary bots
-    setInterval(async () => {
+    // Set up periodic cleanup for expired temporary bots. unref() so this
+    // maintenance timer never holds the process open on its own — the HTTP
+    // and Socket.IO listeners own the event loop (audit B6).
+    const botCleanupTimer = setInterval(async () => {
       try {
         const cleaned = await chatBotService.cleanupExpiredBots();
         if (cleaned > 0) {
@@ -1576,6 +1578,7 @@ async function startServer() {
         logger.error({ err: error }, '❌ Error during bot cleanup');
       }
     }, 5 * 60 * 1000); // Run every 5 minutes
+    if (typeof botCleanupTimer.unref === 'function') botCleanupTimer.unref();
     logger.info('⏰ Scheduled periodic cleanup for expired bots');
   } catch (error) {
     logger.error({ err: error }, '❌ SERVER: ChatBot service initialization failed');
