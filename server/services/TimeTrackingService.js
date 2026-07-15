@@ -143,9 +143,21 @@ class TimeTrackingService {
         const now = Date.now();
         const maxSessionAge = 60 * 60 * 1000; // 1 hour
 
-        // Clean up streaming sessions older than 1 hour
+        // Clean up streaming sessions older than 1 hour.
+        // T3 (stale-sweep half, audit Plan 05): raw age alone force-ended
+        // LEGIT >60-minute streamers mid-stream, so past the age cut we now
+        // also require the session's socket to be gone from the 'streamer'
+        // room. A live long streamer keeps accruing; genuinely-dead sessions
+        // (crashed socket, missed disconnect) still get reaped. Without io
+        // (unit-test topology) the old age-only behavior is preserved.
         for (const [userId, session] of this.activeSessions.entries()) {
             if (now - session.startTime > maxSessionAge) {
+                const stillStreaming = this.io?.sockets?.adapter?.rooms
+                    ?.get('streamer')?.has(session.socketId);
+                if (stillStreaming) {
+                    logger.debug(`⏱️ TIME: Keeping >1h streaming session for user ${userId} - socket still live in 'streamer' room`);
+                    continue;
+                }
                 logger.debug(`🧹 TIME: Cleaning up stale streaming session for user ${userId}`);
                 this.endStreamingSession(userId);
             }

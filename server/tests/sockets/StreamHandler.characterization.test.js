@@ -385,6 +385,36 @@ describe('sockets/StreamHandler characterization', () => {
       expect(deps.webrtcService.cleanup).toHaveBeenCalledWith('real-streamer-2');
     });
 
+    // T3 (economy half): the ousted streamer's time-tracking session must end
+    // AT the takeover — their socket deliberately stays connected (never hits
+    // DisconnectHandler), so nothing else ends it and they kept earning
+    // streaming points until the 1-hour stale sweep.
+    test('takeover ends the ousted authenticated streamer\'s time-tracking session', async () => {
+      const { io, deps, handlers } = register();
+      deps.streamService.getCurrentStreamer.mockReturnValue('real-streamer-2');
+      // ousted streamer is authenticated user 99; new streamer resolves null
+      deps.sessionService.getUserIdBySocketId.mockImplementation((sid) =>
+        sid === 'real-streamer-2' ? 99 : null);
+      deps._viewbotService.isViewbotStream.mockReturnValue(false);
+      io.sockets.sockets.set('real-streamer-2', { leave: jest.fn(), emit: jest.fn() });
+
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      expect(deps.timeTrackingService.endStreamingSession).toHaveBeenCalledWith(99);
+    });
+
+    test('takeover of an ANONYMOUS streamer does not call endStreamingSession', async () => {
+      const { io, deps, handlers } = register();
+      deps.streamService.getCurrentStreamer.mockReturnValue('anon-streamer');
+      deps.sessionService.getUserIdBySocketId.mockReturnValue(null);
+      deps._viewbotService.isViewbotStream.mockReturnValue(false);
+      io.sockets.sockets.set('anon-streamer', { leave: jest.fn(), emit: jest.fn() });
+
+      await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+      expect(deps.timeTrackingService.endStreamingSession).not.toHaveBeenCalled();
+    });
+
     // -----------------------------------------------------------------------
     // Discord live-announcement guard (real human streamers ONLY)
     // -----------------------------------------------------------------------

@@ -236,6 +236,23 @@ module.exports = function registerTakeover(io, socket, deps) {
           });
           logger.info(`📢 TAKEOVER: Notified ${currentStreamer} of takeover by ${socket.id} (${newStreamerDisplayNameForTakeover})`);
 
+          // T3 (economy half, audit Plan 05 — deterministic points farm):
+          // end the ousted streamer's time-tracking session NOW. Their
+          // socket deliberately stays connected below (never hits
+          // DisconnectHandler) and stop-streaming's guard already points at
+          // the new streamer, so nothing else ever ended this session — the
+          // ousted user kept earning streaming points (~500/25s) until the
+          // 1-hour stale sweep.
+          const oustedUserId = sessionService.getUserIdBySocketId(currentStreamer);
+          if (oustedUserId && oustedUserId > 0) {
+            try {
+              await timeTrackingService.endStreamingSession(oustedUserId);
+              logger.info(`📊 TIME: Ended streaming session for ousted streamer (user ${oustedUserId})`);
+            } catch (err) {
+              logger.error({ err }, '❌ TIME: Failed to end ousted streamer session');
+            }
+          }
+
           // Remove from streamer room but DON'T disconnect the socket
           // The cooldown already prevents them from streaming again
           // Disconnecting the socket causes race conditions with viewer initialization
