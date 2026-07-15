@@ -186,7 +186,7 @@ async function bootstrapSchema(primitives) {
     );
 }
 
-describe('ShopService.purchaseItem atomicity with REAL AccountService (USE_BETTER_SQLITE3=false)', () => {
+describe('ShopService.purchaseItem atomicity with REAL AccountService (legacy sqlite3 leg, USE_BETTER_SQLITE3=false)', () => {
     let primitives;
     let shopService;
     let shopRepository;

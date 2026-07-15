@@ -1,6 +1,7 @@
-// Exercises the atomic guarded decrement against the REAL sqlite3 driver — the
-// production path (USE_BETTER_SQLITE3 is off in prod). The better-sqlite3 adapter
-// uses the identical SQL and is covered by the maintainer's matching-ABI suite.
+// Exercises the atomic guarded decrement against the REAL sqlite3 driver —
+// the legacy/opt-out driver since the ADR-0014 Phase-C flip (better-sqlite3
+// is the production default). The better-sqlite3 adapter uses the identical
+// SQL and is covered by the maintainer's matching-ABI suite.
 const sqlite3 = require('sqlite3');
 const UserInventoryRepository = require('../../database/repository/UserInventoryRepository');
 const InventoryService = require('../../services/InventoryService');

@@ -13,8 +13,12 @@ better-sqlite3 adapter failed to load; falling back to sqlite3
        of Node.js requires NODE_MODULE_VERSION Y.
 ```
 
-The server keeps running (sqlite3 fallback is the default behavior), but
-`USE_BETTER_SQLITE3=true` is effectively a no-op until the rebuild lands.
+The server keeps running via the sqlite3 fallback — but since the
+ADR-0014 Phase-C flip, better-sqlite3 is the DEFAULT driver, so a load
+failure now **silently downgrades the default**. Treat the
+`better-sqlite3 adapter failed to load; falling back to sqlite3` log line
+as an incident signal, and check for the `better-sqlite3 adapter active`
+line as part of deploy verification.
 
 ## How to confirm
 
@@ -92,7 +96,7 @@ pm2 logs onestreamer-server --lines 50 | grep -i 'better-sqlite3'
 Expect to see the structured log line:
 
 ```
-better-sqlite3 adapter active (USE_BETTER_SQLITE3=true)
+better-sqlite3 adapter active (default; set USE_BETTER_SQLITE3=false to opt out)
   walActive: true
   dbPath: /root/onestreamer/server/data/onestreamer.db
 ```
@@ -102,9 +106,10 @@ better-sqlite3 adapter active (USE_BETTER_SQLITE3=true)
 If the rebuild produces a binary that misbehaves at runtime:
 
 ```bash
-# 1. Flip the env flag off.
-sed -i 's/^USE_BETTER_SQLITE3=true/USE_BETTER_SQLITE3=false/' /root/onestreamer/.env
-pm2 restart onestreamer-server
+# 1. Opt out of the default driver (container deploys: /etc/onestreamer/app.env;
+#    the legacy pm2-era path was /root/onestreamer/.env).
+echo 'USE_BETTER_SQLITE3=false' >> /etc/onestreamer/app.env
+# then restart the container (or pm2 restart onestreamer-server on bare host)
 ```
 
 The adapter loader catches its own errors, so even a broken binding

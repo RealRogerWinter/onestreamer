@@ -75,8 +75,14 @@ function allAsyncSqlite3(sql, params = []) {
 // same process; both backends see each other's commits through WAL.
 // busy_timeout=5000 on both handles bounds SQLITE_BUSY surfacing.
 //
-// Default is OFF — flipping it on is the operator's call, per the brief's
-// "the cutover is reversible without code revert" requirement.
+// Default is ON since the ADR-0014 Phase-C cutover (2026-07, audit Plan 04
+// driver decision): better-sqlite3 backs the wrappers unless the operator
+// opts out with the exact string USE_BETTER_SQLITE3=false. The cutover
+// remains reversible without a code revert (set the opt-out and restart).
+// A load failure still falls back to sqlite3 — but since that now silently
+// downgrades the DEFAULT driver, deploy verification must check for the
+// 'better-sqlite3 adapter active' line (see the better-sqlite3-rebuild
+// runbook).
 // ============================================================================
 
 let runAsync = runAsyncSqlite3;
@@ -84,7 +90,7 @@ let getAsync = getAsyncSqlite3;
 let allAsync = allAsyncSqlite3;
 let betterAdapter = null;
 
-if (process.env.USE_BETTER_SQLITE3 === 'true') {
+if (process.env.USE_BETTER_SQLITE3 !== 'false') {
     try {
         const { createBetterSqlite3Adapter } = require('./database-better');
         betterAdapter = createBetterSqlite3Adapter(dbPath, { tuneForLargeReads: true });
@@ -93,7 +99,7 @@ if (process.env.USE_BETTER_SQLITE3 === 'true') {
         allAsync = betterAdapter.allAsync;
         logger.info(
             { walActive: betterAdapter.walActive, dbPath },
-            'better-sqlite3 adapter active (USE_BETTER_SQLITE3=true)'
+            'better-sqlite3 adapter active (default; set USE_BETTER_SQLITE3=false to opt out)'
         );
     } catch (e) {
         logger.error(
@@ -129,6 +135,7 @@ module.exports = {
     // Test-only handle for the adapter, when active. Gated on NODE_ENV so
     // production code physically can't reach the adapter's raw Database
     // (which exposes .exec/.transaction/.backup outside the wrappers).
-    // Returns null in production OR when the env flag is off.
+    // Returns null in production OR when opted out / the adapter failed
+    // to load.
     _betterAdapter: () => (process.env.NODE_ENV === 'test' ? betterAdapter : null),
 };

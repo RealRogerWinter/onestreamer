@@ -1,7 +1,7 @@
 # ADR-0014: better-sqlite3 adapter behind an env flag
 
 **Date**: 2026-05-27
-**Status**: Accepted (default OFF; operator flips per host)
+**Status**: Accepted (default **ON** since 2026-07-15, ADR-0014 Phase-C cutover; opt-out `USE_BETTER_SQLITE3=false`; node-sqlite3 retirement planned — see the Rollout plan's Phase D)
 **Phase**: 5 (DB layer)
 **PR**: 5.2 (`better-sqlite3-adapter`)
 **Supersedes (eventually)**: none — sqlite3 stays open alongside.
@@ -59,22 +59,33 @@ today, backed by a prepared-statement-cached better-sqlite3 handle.
 The legacy `database.js` is modified to inspect
 `process.env.USE_BETTER_SQLITE3`:
 
-- **Default (unset or anything but `'true'`)**: behavior is identical to
-  pre-PR. `runAsync` / `getAsync` / `allAsync` are the sqlite3-callback-based
-  promise wrappers. No new connection opened. better-sqlite3 isn't loaded.
-- **`USE_BETTER_SQLITE3=true`**: `database.js` opens a *second* connection
-  to the same DB file via the better-sqlite3 adapter, applies the same
-  PRAGMAs the sqlite3 handle applies (`journal_mode=WAL`,
-  `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000`, plus the
-  large-reads tuning), and reassigns the exported
-  `runAsync`/`getAsync`/`allAsync` to the adapter's
+_(Amended 2026-07-15 — Phase-C cutover: the polarity below is inverted.)_
+
+- **Default (unset or anything but the exact string `'false'`)**:
+  `database.js` opens a *second* connection to the same DB file via the
+  better-sqlite3 adapter, applies the same PRAGMAs the sqlite3 handle
+  applies (`journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`,
+  `busy_timeout=5000`, plus the large-reads tuning), and reassigns the
+  exported `runAsync`/`getAsync`/`allAsync` to the adapter's
   `Promise.resolve(sync-call)` wrappers. **The sqlite3 `db` handle stays
   open and exported** for legacy consumers that bypass the wrappers (see
   "What still goes through sqlite3" below).
+- **`USE_BETTER_SQLITE3=false` (operator opt-out)**: pre-Phase-C behavior —
+  the wrappers stay sqlite3-callback-based, no second connection,
+  better-sqlite3 isn't loaded. This is the no-code-revert rollback lever.
 
 If the adapter fails to load (e.g. native binding mismatch), the catch
 logs a structured error and leaves the sqlite3-backed wrappers in place.
-The flag is best-effort, not fail-stop.
+The load is best-effort, not fail-stop — but since Phase C this fallback
+silently downgrades the **default** driver, so the
+`better-sqlite3 adapter failed to load` line is an incident signal and
+deploy verification must see `better-sqlite3 adapter active` (see the
+better-sqlite3-rebuild runbook). Fail-stop is a Phase-D decision.
+The test suites pin the AMBIENT driver to sqlite3 (`config/jest/jest.setup.js`
+sets `USE_BETTER_SQLITE3='false'`) so the main unit config never co-loads
+both bindings through this module's load-time gate; driver coverage is the
+explicit per-describe matrix + the isolated bettersqlite job, and the real
+flag-unset default is boot-smoked in CI.
 
 ### Why keep the async API
 
@@ -91,14 +102,29 @@ Outside the wrappers, ~14 sites grab the raw `db` handle and call
 `db.run(sql, params, cb)`, `db.get(sql, params, cb)`, `db.all(sql, params, cb)`,
 or `db.serialize(...)` directly:
 
-- `server/routes/auth.js` — `db.get(...)` for OAuth lookups.
-- `server/routes/moderation.js` — multiple `db.run(...)`.
-- `server/routes/admin.js`, `server/routes/bug-reports.js` — assorted.
-- `server/services/ChatBotLLMService.js` — `db.get` for config.
-- `server/services/StreamBotService.js` — heavy raw-handle use (~12 sites).
-- `server/services/WhitelistService.js`, `URLStreamDatabaseService.js` —
-  open their *own* sqlite3 handles to the same file.
-- `server/migrations/*.js` — many use `db.run` with callback shape.
+_(Consumer list refreshed at the 2026-07-15 Phase-C amendment — this is
+the Phase-D retirement work list:)_
+
+- **Dead imports (trivial removals)**: `routes/admin.js`,
+  `services/IPBanService.js`, `services/StreamingLogsService.js` destructure
+  `db` but never call it.
+- **Shared-handle direct callers (convert to the wrappers/repos)**:
+  `routes/moderation.js` (4 × `db.run`), `routes/auth/session.js` (lazy
+  require, 2 calls), `services/chatbot/llm/groqConfigStore.js` (2),
+  `services/VisionBotService.js` (1), `services/TranscriptionDrivenBotService.js`
+  (3), `services/StreamBotService.js` feeding `streambot/MessageStore.js` (8)
+  + `streambot/AutoSummonManager.js` (4), `services/AccountService.js`
+  feeding `account/AccountLifecycleManager.js` (7 DELETEs).
+- **Own-handle openers (`new sqlite3.Database`)**: `services/WhitelistService.js`
+  (3 calls), `services/URLStreamDatabaseService.js` (~23 calls — the largest
+  single surface), `routes/bug-reports.js` (8 calls).
+- **Schema + migrations plumbing**: `database/schema.js` (`initializeSchema`
+  drives callback-shaped `db.serialize`/`db.run`) and `migrations/_runner.js`
+  — promote the integration fixture's `makeBetterSchemaShim`
+  (`server/tests/integration/_helpers/db-fixture.js`) into production when
+  retiring; it already implements exactly this surface including the
+  duplicate-column error-message parity the migrations' swallowing depends
+  on (pin that with a test).
 
 A naïve "swap the exported `db` to better-sqlite3" would break all of
 these — better-sqlite3's Database object has no callback-shaped
@@ -313,22 +339,44 @@ objects. Rejected:
    better-sqlite3) and watch for SQLITE_BUSY in logs or event-loop
    stalls > 200 ms in pino's `responseTime`. If clean for a week,
    Phase C is unblocked.
-3. **Phase C (follow-up PR, days–weeks later).** If Phase B is clean,
-   flip the default to ON (set `USE_BETTER_SQLITE3=true` in
-   `.env.example` and document the opt-out via `=false`). sqlite3 still
-   alongside.
-4. **Phase D (conditional — only if Phase C is uneventful and the
-   consumer migration is well-scoped).** Drop sqlite3. The blockers
-   are non-trivial: ~14 raw-`db` consumers, plus WhitelistService and
-   URLStreamDatabaseService which each open their own sqlite3 handle,
-   plus ~6 migrations using callback-shaped `db.run`. Each callsite
-   needs review for shape compatibility against the adapter's promise-
-   wrapper. A realistic Phase D is **two PRs** of grunt work (one for
-   the raw-handle services, one for migrations + route handlers) — or
-   it may turn out simpler than expected and merge as one PR. The ADR
-   doesn't commit a shape; the decision is taken when Phase C
-   observation gives us a real signal on whether the benefit justifies
-   the work.
+3. **Phase C — DONE (2026-07-15, audit Plan 04 driver decision).**
+   Phases A/B complete (the adapter also ran green across the full unit +
+   integration matrices under both drivers since ADR-0029/0030). The
+   mechanism is a code-gate flip to `!== 'false'` (not the originally
+   sketched `.env.example=true`) so hosts flip by default on the next
+   deploy; opt-out documented in `.env.example`. sqlite3 still open
+   alongside. CI: the ambient test driver stays pinned to sqlite3
+   (jest.setup.js) to prevent unit-suite co-load; a boot smoke in the
+   bettersqlite job executes the real flag-unset default; the isolated
+   bettersqlite job is unchanged (its isolation protects the
+   throw-semantics contract tests regardless of the default).
+   **Deploy note**: verify `/etc/onestreamer/app.env` doesn't already pin
+   the flag (host-managed file), and check the boot log for
+   `better-sqlite3 adapter active` — the fallback line is an incident
+   signal now.
+4. **Phase D — node-sqlite3 retirement (written plan, NOT executed;
+   gated on ≥1 week of clean production observation of the Phase-C
+   default).** Ordered work list (details in the refreshed consumer list
+   above):
+   - **R1**: drop the three dead `db` imports (trivial).
+   - **R2**: convert the shared-handle direct callers to the wrappers/
+     repositories (one PR).
+   - **R3**: convert the three own-handle openers (one PR;
+     URLStreamDatabaseService's ~23 callsites are the big review surface).
+   - **R4**: move `schema.js` + `migrations/_runner.js` onto the promoted
+     better-sqlite3 schema shim (pin the duplicate-column error-message
+     parity with a test).
+   - **R5+R6 (atomic)**: drop the sqlite3 connection/`db` export/fallback
+     (adapter load becomes fail-stop), retire `applyPragmas.js`, remove the
+     `sqlite3` dep; collapse the test split (delete the sqlite3 contract
+     leg + matrix `'false'` legs, merge `jest.bettersqlite.config.js` back
+     into the main config, drop the CI job + the jest.setup.js pin).
+   Risks recorded: fail-stop makes a native-binding failure a boot failure
+   (the rebuild runbook becomes mandatory ops knowledge); better-sqlite3's
+   sync writes + `busy_timeout` event-loop stall becomes the only path
+   (mitigation pre-agreed above: drop the adapter busy_timeout to ~500ms if
+   tail latency bites); migrations' duplicate-column swallowing depends on
+   error-message text parity between bindings.
 
 ## Follow-ups
 
