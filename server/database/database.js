@@ -31,7 +31,23 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
 function initializeDatabase() {
     initializeSchema(db, logger).catch((e) => {
-        logger.error({ err: e }, 'Schema initialization failed');
+        // Fail LOUD (audit DB6 / ADR-0035): a failed schema bootstrap or
+        // migration means the process would run against a schema it does not
+        // understand — silent continuation risks data corruption, which is
+        // strictly worse than downtime. Abort the boot.
+        //
+        // Under jest only, log without exiting: this module self-boots when
+        // any repository falls back to require('../database'), and that async
+        // bootstrap can race jest's environment teardown (the runner's lazy
+        // migration require()s then throw "import after teardown") — a
+        // test-harness artifact, not a schema failure; process.exit(1) here
+        // would kill the whole worker and every unrelated test queued on it.
+        // Tests that exercise the schema use initializeSchema directly and
+        // still see the rejection.
+        logger.error({ err: e }, 'FATAL: schema initialization failed — aborting boot (ADR-0035)');
+        if (process.env.NODE_ENV !== 'test') {
+            process.exit(1);
+        }
     });
 }
 
