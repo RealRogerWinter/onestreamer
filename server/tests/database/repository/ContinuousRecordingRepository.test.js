@@ -201,13 +201,13 @@ describe.each([
     });
 
     describe('listSessionsPendingUpload', () => {
-        it('SELECTs session_id-only for rows with b2_file_id IS NULL', async () => {
+        it('SELECTs session_id-only for un-archived rows, excluding terminal upload_failed (P2.2)', async () => {
             const { repo, allAsync } = makeRepo();
             allAsync.mockResolvedValue([{ session_id: 'sess_a' }, { session_id: 'sess_b' }]);
             const rows = await repo.listSessionsPendingUpload();
             const [sql, params] = allAsync.mock.calls[0];
             expect(norm(sql)).toBe(
-                'SELECT session_id FROM recording_sessions WHERE b2_file_id IS NULL'
+                "SELECT session_id FROM recording_sessions WHERE b2_file_id IS NULL AND status != 'upload_failed'"
             );
             expect(params).toBeUndefined();
             expect(rows).toHaveLength(2);
