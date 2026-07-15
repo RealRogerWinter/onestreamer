@@ -14,18 +14,25 @@ jest.mock('../../bootstrap/logger', () => {
   return m;
 });
 
-// The service late-requires the database module inside giftItem (so the
-// audit-row INSERT can run without forcing the whole DB into the require
-// graph at unit-test setup time). Mock the singleton's runAsync so we can
-// assert SQL + bindings without touching SQLite.
+// giftItem now runs inside a withTransaction scope (ADR-0029) and writes its
+// audit row through the tx handle. Tests inject a fake withTransaction whose
+// tx.runAsync delegates to this spy, so the SQL + bindings assertions are
+// unchanged.
 const mockRunAsync = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../database/database', () => ({ runAsync: (...args) => mockRunAsync(...args) }));
 
 // The two repository modules are required at InventoryService module-load.
-// Mock both with empty class stubs so default-construction inside the
-// service constructor doesn't drag in the SQLite adapter; we inject test
-// doubles via the `deps` ctor arg for the specific methods we exercise.
-jest.mock('../../database/repository/UserInventoryRepository', () => class {});
+// Mock them so default-construction doesn't drag in the SQLite adapter.
+// UserInventoryRepository's mock constructor returns the CURRENT test double
+// (constructor-return override): with tx-scoped repos (ADR-0029) the service
+// builds `new UserInventoryRepository(tx)` inside the scope, and this makes
+// that instance BE the same double the test asserts on.
+const mockInventoryRepoSlot = { current: null };
+jest.mock('../../database/repository/UserInventoryRepository', () => class {
+  constructor() {
+    if (mockInventoryRepoSlot.current) return mockInventoryRepoSlot.current;
+  }
+});
 jest.mock('../../database/repository/ItemTransactionRepository', () => class {});
 
 const InventoryService = require('../../services/InventoryService');
@@ -82,9 +89,13 @@ describe('InventoryService.giftItem', () => {
   function buildService({ items = [ITEM, SOULBOUND], inventoryByUser = {} } = {}) {
     const itemService = makeItemService({ items });
     const userInventoryRepository = makeUserInventoryRepo({ inventoryByUser });
+    mockInventoryRepoSlot.current = userInventoryRepository;
     const svc = new InventoryService(itemService, null, {
       userInventoryRepository,
       itemTransactionRepository: { insertAdminGrant: jest.fn() },
+      // Fake scope: tx.runAsync delegates to the module spy so the audit-row
+      // assertions keep working (ADR-0029).
+      withTransaction: async (fn) => fn({ runAsync: (...args) => mockRunAsync(...args) }),
     });
     return { svc, itemService, userInventoryRepository };
   }

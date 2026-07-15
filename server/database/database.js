@@ -865,9 +865,16 @@ const withTransaction = createWithTransaction({ runAsync, getAsync, allAsync });
 
 module.exports = {
     db,
-    runAsync,
-    getAsync,
-    allAsync,
+    // The GATED primitives (ADR-0029; audit DB2): module-level ops serialize
+    // behind any open withTransaction scope instead of implicitly joining it,
+    // so a foreign ROLLBACK can never destroy a timer/socket write. In-scope
+    // code must write through its `tx` handle (the raw wrappers); an in-scope
+    // call that still lands here executes directly with a one-time warning.
+    // Legacy direct `db.run/.get/.all` callers bypass the gate (pre-existing
+    // hole, tracked separately).
+    runAsync: withTransaction.gated.runAsync,
+    getAsync: withTransaction.gated.getAsync,
+    allAsync: withTransaction.gated.allAsync,
     withTransaction,
     // Test-only handle for the adapter, when active. Gated on NODE_ENV so
     // production code physically can't reach the adapter's raw Database
