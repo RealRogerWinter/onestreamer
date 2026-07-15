@@ -52,9 +52,15 @@ class PointsManager {
         if (updated) {
             newBalance = updated.points_balance;
         } else {
-            // No stats row yet — INSERT with the amount as the initial balance.
-            await repo.insertStatsWithBalance({ userId, balance: amount });
-            newBalance = amount;
+            // No stats row yet — upsert with the amount as the initial
+            // balance. ON CONFLICT(user_id) (audit DB5 / ADR-0035): two
+            // concurrent first-credits can both miss the UPDATE above; the
+            // loser's INSERT folds into an atomic increment instead of
+            // creating a duplicate row, and RETURNING gives the true
+            // post-write balance (which may exceed `amount` when we lost
+            // that race).
+            const upserted = await repo.upsertStatsWithBalance({ userId, balance: amount });
+            newBalance = upserted.points_balance;
         }
 
         await this.owner.recordTransaction(userId, amount, newBalance, type, description, metadata, tx);

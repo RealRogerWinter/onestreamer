@@ -88,6 +88,11 @@ async function bootstrapSchema(primitives) {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `);
+    // DB5 / ADR-0035 parity with the prod schema: user_stats(user_id) is
+    // UNIQUE, and the upsertStatsWithBalance fallback's ON CONFLICT(user_id)
+    // clause needs the index to even prepare.
+    await primitives.runAsync(
+        'CREATE UNIQUE INDEX idx_user_stats_user_id_unique ON user_stats(user_id)');
     await primitives.runAsync(`
         CREATE TABLE points_transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,7 +112,7 @@ async function bootstrapSchema(primitives) {
     await primitives.runAsync(
         'INSERT INTO user_stats (user_id, points_balance) VALUES (42, 1000)');
     // Recipient deliberately has NO user_stats row — exercises the
-    // insertStatsWithBalance fallback inside the tx.
+    // upsertStatsWithBalance fallback inside the tx.
 }
 
 function makeService(primitives) {
@@ -180,8 +185,8 @@ describe.each([
 
     it('crash injection on the recipient credit: sender balance restored, ZERO audit rows (audit E2)', async () => {
         // The recipient has no stats row, so the credit goes through
-        // insertStatsWithBalance — fail it after the sender debit landed.
-        const insertSpy = jest.spyOn(AccountStatsRepository.prototype, 'insertStatsWithBalance')
+        // upsertStatsWithBalance — fail it after the sender debit landed.
+        const insertSpy = jest.spyOn(AccountStatsRepository.prototype, 'upsertStatsWithBalance')
             .mockRejectedValue(new Error('simulated credit failure'));
 
         await expect(svc.transferPoints(42, 'recipient', 300, 'sender'))

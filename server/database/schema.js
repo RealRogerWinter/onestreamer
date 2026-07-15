@@ -909,6 +909,15 @@ function initializeSchema(db, log = logger) {
         // server/migrations/_runner.js.
         migrationRunner.runAll(db, log);
 
+        // One user_stats row per user (audit DB5 / ADR-0035). This is the
+        // constraint the AccountStatsRepository ON CONFLICT(user_id) upsert
+        // targets. It queues AFTER migrationRunner.runAll deliberately: on a
+        // stale DB that accumulated duplicate rows, migration 202607150900
+        // must dedup first or this CREATE UNIQUE INDEX would fail. (That
+        // migration creates the same index; IF NOT EXISTS makes whichever
+        // runs second a no-op. Fresh DBs simply get it here.)
+        db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_stats_user_id_unique ON user_stats(user_id)`);
+
         // Recording-table indexes over migration-added columns. These used
         // to hide in a setTimeout(…, 1000) "to ensure columns exist";
         // recordings.session_id / recordings.user_id are added by migration
@@ -943,9 +952,20 @@ function initializeSchema(db, log = logger) {
 
         // Flush marker: this no-op queues LAST, so its callback firing means
         // every statement above (tables, seeds, migrations, indexes) has run.
+        // Fail-loud (audit DB6 / ADR-0035): by this point every migration
+        // statement's callback has fired, so drain the runner's async-failure
+        // sink — a non-benign migration error must reject the bootstrap (and
+        // abort boot at the database.js call site), not scroll past in a log.
         db.run('SELECT 1', (err) => {
-            if (err) reject(err);
-            else resolve();
+            if (err) return reject(err);
+            const failures = migrationRunner.drainAsyncFailures();
+            if (failures.length > 0) {
+                const summary = failures
+                    .map((f) => `${f.op || 'statement'}(${f.table || '?'}${f.column ? '.' + f.column : ''}): ${f.err ? f.err.message : 'unknown error'}`)
+                    .join('; ');
+                return reject(new Error(`${failures.length} migration statement(s) failed — ${summary}`));
+            }
+            resolve();
         });
         });
     });
