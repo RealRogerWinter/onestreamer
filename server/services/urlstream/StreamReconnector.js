@@ -265,10 +265,16 @@ class StreamReconnector {
       // Update stream entry with new URL
       streamEntry.sourceUrl = newPlaybackUrl;
 
-      // Update streamInfo for direct HLS playback
+      // Update streamInfo for direct HLS playback. Field names must match
+      // _startLiveKitStream's reader contract ({ pipeMode, streamUrl } from
+      // URLStreamExtractorService.getStreamURL) — the fresh playback URL is
+      // a direct .m3u8, so FFmpeg reads it without streamlink.
       streamEntry.streamInfo = {
-        mode: 'direct',
-        url: newPlaybackUrl
+        ...streamEntry.streamInfo,
+        streamUrl: newPlaybackUrl,
+        tool: 'direct',
+        pipeMode: false,
+        isHLS: true
       };
 
       // Small delay to let cleanup complete

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Kick 403 token-refresh restart was dead code** (audit Plan 06 **V2**, high): `StreamReconnector.refreshKickTokenAndRestart` wrote `streamEntry.streamInfo = { mode, url }`, but the restart pipeline (`_startLiveKitStream`) reads `streamInfo.pipeMode` / `streamInfo.streamUrl` — so every refresh attempt restarted FFmpeg with an `undefined` input URL, the restart threw, and the entire Kick token-recovery feature never worked (each attempt also churned a LiveKit ingress before the fall-through `handleStreamEnd` cleaned it up). The writer now emits the reader's field contract (`pipeMode: false`, `streamUrl: <fresh .m3u8>`, `tool: 'direct'`, `isHLS: true`, platform metadata preserved), matching the shape `URLStreamExtractorService.getStreamURL` produces for direct HLS URLs. New test suite pins the writer/reader contract, the restart-failure fall-through, and the removed-during-refresh abort.
+
 ### Removed
 - **`ProcessManager` (dead code, flagged in ADR-0032)** — its `registerProcess` had zero production callers, so the PID registry was permanently empty, the shutdown "reaper" no-op'd on every drain, and the services.js comment claiming ViewBot services "already call `killBotProcesses`" was stale. Deleted the service (335 lines), its stoppables slot, and its tests; ADR-0011's PR-8.3 amendment marked superseded; orphan-process safety is owned by per-service `stop()` paths + ADR-0032's descendant-scoped crash kill. "Wire it instead" was rejected: adding PID registration to spawn sites is feature work with real risk, for a net that ADR-0032 already provides at the crash boundary.
 
