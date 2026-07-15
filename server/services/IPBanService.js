@@ -207,9 +207,14 @@ class IPBanService {
 // Create singleton instance
 const ipBanService = new IPBanService();
 
-// Schedule periodic cleanup of expired bans
-setInterval(() => {
+// Schedule periodic cleanup of expired bans. unref() so this background
+// timer never holds the process open on its own — the server's listeners
+// own the event loop, and jest workers / one-off scripts must be able to
+// exit (audit B6).
+const cleanupTimer = setInterval(() => {
   ipBanService.cleanupExpiredBans();
 }, 60 * 60 * 1000); // Every hour
+if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref();
+ipBanService._cleanupTimer = cleanupTimer;
 
 module.exports = ipBanService;
