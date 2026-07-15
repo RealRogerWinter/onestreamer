@@ -167,8 +167,13 @@ Uses OAuth 2.0 client credentials grant for the Helix API. See [`/docs/integrati
 | `OLLAMA_HOST` | `http://localhost:11434` | Local Ollama server URL |
 | `OLLAMA_MODEL` | `mistral` | Default model name |
 | `GROQ_API_KEY` | (empty) | Groq cloud LLM API key. Optional fallback. |
+| `WHISPER_TIMEOUT_FLOOR_MS` | `20000` | Minimum whisper.cpp watchdog timeout per transcription run |
+| `WHISPER_TIMEOUT_PER_SEC_MS` | `1500` | Watchdog ms per second of input audio: `timeout = max(floor, duration × this)` |
+| `WHISPER_MAX_CONCURRENT` | `2` | Max concurrent whisper.cpp child processes; excess runs queue FIFO |
 
 Both optional. If neither is reachable, [`ChatBotLLMService`](../../server/services/ChatBotLLMService.js) uses a canned response set.
+
+The Groq key can also be stored at runtime via `POST /admin/groq/config` — the DB row `groq_config.api_key` is the single source of truth for the stored key (the legacy `moviebot_config.groq_api_key` column is migrated into it once and never written again).
 
 ---
 

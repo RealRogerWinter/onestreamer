@@ -58,54 +58,87 @@ class MovieBotService extends TranscriptionDrivenBotService {
     }
 
     afterConfigLoaded(row) {
-        if (row.groq_api_key && this.chatBotService && this.chatBotService.llmService) {
-            this.chatBotService.llmService.groqApiKey = row.groq_api_key;
-            if (this.config.useGroq) {
-                this.chatBotService.llmService.enableGroq(row.groq_api_key);
-                logger.debug('✅ MovieBotService: Groq enabled from database config');
-            }
+        const llm = this.chatBotService && this.chatBotService.llmService;
+        if (!llm) return;
+
+        // A7 (audit Plan 07): `groq_config.api_key` is the single source of
+        // truth for the Groq key. MovieBot used to keep its own copy in
+        // `moviebot_config.groq_api_key` and clobber the LLM service's key
+        // with it on every load, so the two tables silently diverged. The
+        // legacy column is no longer read except here — a one-time migration
+        // into groq_config for old installs whose key ONLY lives in
+        // moviebot_config.
+        if (row.groq_api_key) {
+            this._migrateLegacyGroqKey(row.groq_api_key, llm);
         }
     }
 
-    buildSaveConfigSQL(includeApiKey, apiKey) {
-        if (includeApiKey && apiKey) {
-            return {
-                query: `
-                    INSERT OR REPLACE INTO moviebot_config (
-                        id, enabled, streamer_id, use_groq, groq_api_key,
-                        transcription_duration, transcription_frequency,
-                        chat_history_limit, message_delay_min, message_delay_max,
-                        movie_prompt_template, updated_at
-                    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                `,
-                params: [
-                    this.config.enabled ? 1 : 0,
-                    this.currentStreamerId || null,
-                    this.config.useGroq ? 1 : 0,
-                    apiKey,
-                    this.config.transcriptionDuration,
-                    this.config.transcriptionFrequency,
-                    this.config.chatHistoryLimit,
-                    this.config.messageDelay.min,
-                    this.config.messageDelay.max,
-                    this.config.moviePromptTemplate || this.defaultPromptTemplate,
-                ],
-            };
+    /**
+     * One-time migration of a legacy `moviebot_config.groq_api_key` into the
+     * canonical `groq_config` row. Checks the groq_config TABLE directly (not
+     * the in-memory llm state, whose own async load may not have finished)
+     * so a key already stored in groq_config is never clobbered.
+     */
+    _migrateLegacyGroqKey(legacyKey, llm) {
+        const finish = () => {
+            if (this.config.useGroq) {
+                // No explicit key: enableGroq() uses the groq_config-sourced
+                // key already on the LLM service (or the one just migrated).
+                if (llm.enableGroq()) {
+                    logger.debug('✅ MovieBotService: Groq enabled from database config');
+                } else {
+                    logger.warn('⚠️ MovieBotService: useGroq is set but no Groq API key is available');
+                }
+            }
+        };
+        if (!this.db) {
+            finish();
+            return;
         }
+        this.db.get(`SELECT api_key FROM groq_config WHERE id = 1`, (err, groqRow) => {
+            if (err) {
+                logger.error('❌ MovieBotService: Could not read groq_config for legacy-key migration:', err);
+                finish();
+                return;
+            }
+            if (groqRow && groqRow.api_key) {
+                // groq_config already has a key — it wins; the legacy copy in
+                // moviebot_config is ignored (left in place, never re-read).
+                logger.debug('📝 MovieBotService: groq_config already has an API key; ignoring legacy moviebot_config.groq_api_key');
+            } else {
+                llm.groqApiKey = legacyKey;
+                llm.saveGroqConfig();
+                logger.info('🔑 MovieBotService: Migrated legacy moviebot_config.groq_api_key into groq_config (single source of truth)');
+            }
+            finish();
+        });
+    }
+
+    // A7 (audit Plan 07): moviebot_config.groq_api_key is a legacy column —
+    // never written anymore (Groq key writes go to groq_config via the LLM
+    // service). The upsert creates the singleton row when missing (the job
+    // the old `INSERT OR REPLACE ... groq_api_key` branch used to do) while
+    // leaving the legacy column untouched on existing rows.
+    buildSaveConfigSQL(_includeApiKey, _apiKey) {
         return {
             query: `
-                UPDATE moviebot_config SET
-                    enabled = ?,
-                    streamer_id = ?,
-                    use_groq = ?,
-                    transcription_duration = ?,
-                    transcription_frequency = ?,
-                    chat_history_limit = ?,
-                    message_delay_min = ?,
-                    message_delay_max = ?,
-                    movie_prompt_template = ?,
-                    updated_at = datetime('now')
-                WHERE id = 1
+                INSERT INTO moviebot_config (
+                    id, enabled, streamer_id, use_groq,
+                    transcription_duration, transcription_frequency,
+                    chat_history_limit, message_delay_min, message_delay_max,
+                    movie_prompt_template, updated_at
+                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(id) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    streamer_id = excluded.streamer_id,
+                    use_groq = excluded.use_groq,
+                    transcription_duration = excluded.transcription_duration,
+                    transcription_frequency = excluded.transcription_frequency,
+                    chat_history_limit = excluded.chat_history_limit,
+                    message_delay_min = excluded.message_delay_min,
+                    message_delay_max = excluded.message_delay_max,
+                    movie_prompt_template = excluded.movie_prompt_template,
+                    updated_at = excluded.updated_at
             `,
             params: [
                 this.config.enabled ? 1 : 0,
@@ -248,7 +281,10 @@ class MovieBotService extends TranscriptionDrivenBotService {
             this.config.moviePromptTemplate = newConfig.moviePromptTemplate;
         }
         if (newConfig.groqApiKey !== undefined && this.chatBotService && this.chatBotService.llmService) {
-            this.chatBotService.llmService.groqApiKey = newConfig.groqApiKey;
+            // A7 (audit Plan 07): persist the admin-supplied key into
+            // groq_config (single source of truth), NOT moviebot_config.
+            this.chatBotService.llmService.groqApiKey = newConfig.groqApiKey || null;
+            this.chatBotService.llmService.saveGroqConfig();
         }
         if (newConfig.useGroq !== undefined) {
             this.config.useGroq = newConfig.useGroq;
@@ -264,9 +300,14 @@ class MovieBotService extends TranscriptionDrivenBotService {
                 }
             }
         }
-        const saveWithApiKey = newConfig.groqApiKey !== undefined;
-        this.saveConfigToDatabase(saveWithApiKey, newConfig.groqApiKey);
-        this.logEvent('CONFIG_UPDATED', newConfig);
+        // A7: never write the key into moviebot_config (legacy column); the
+        // groq_config write above already persisted it.
+        this.saveConfigToDatabase();
+        this.logEvent('CONFIG_UPDATED', {
+            ...newConfig,
+            // Don't write the raw API key into the moviebot event log.
+            ...(newConfig.groqApiKey !== undefined ? { groqApiKey: '[REDACTED]' } : {}),
+        });
         return { success: true, config: this.config };
     }
 }
