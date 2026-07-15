@@ -145,6 +145,10 @@ module.exports = function startStreamingBackend({
       streamService,
       randomStreamRotationService,
       whitelistService,
+      // Audit M3: lets _actUrlRelay resolve the offending relay's
+      // platform/login from the live stream when the event carries none
+      // (transcript/vision events never populate external_*).
+      viewBotURLService,
       moderationNotifier,
       // Initial value (paranoid fallback). The authoritative source is
       // the DB-backed `moderation_global_config.enforce` row, which

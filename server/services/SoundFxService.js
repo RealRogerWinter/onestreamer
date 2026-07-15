@@ -2,7 +2,9 @@ const path = require('path');
 const fs = require('fs').promises;
 const { EventEmitter } = require('events');
 const axios = require('axios');
-const https = require('https');
+// CH3: shared helper resolves CHAT_SERVICE_URL and attaches the
+// X-Internal-Secret header (+ https agent + timeout) to chat-service calls.
+const { chatServiceUrl: resolveChatServiceUrl, chatAxiosConfig } = require('../utils/chatServiceClient');
 
 const logger = require('../bootstrap/logger').child({ svc: 'SoundFxService' });
 class SoundFxService extends EventEmitter {
@@ -167,22 +169,13 @@ class SoundFxService extends EventEmitter {
     async sendTTSToChat(username, text) {
         try {
             // Use 127.0.0.1 instead of localhost to avoid IPv6 issues
-            const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'http://127.0.0.1:8081';
+            const chatServiceUrl = resolveChatServiceUrl('http://127.0.0.1:8081');
             const formattedMessage = `📢 ${username} TTS: ${text}`;
             
             logger.debug(`📤 SOUNDFX: Sending TTS to chat at ${chatServiceUrl}/api/system-message`);
             
-            // Create axios config with HTTPS agent for self-signed certificates
-            const axiosConfig = {
-                timeout: 5000
-            };
-            
-            // If using HTTPS, add agent to accept self-signed certificates
-            if (chatServiceUrl.startsWith('https')) {
-                axiosConfig.httpsAgent = new https.Agent({
-                    rejectUnauthorized: false
-                });
-            }
+            // 5s timeout + self-signed-tolerant agent (when https) + internal secret.
+            const axiosConfig = chatAxiosConfig(chatServiceUrl);
             
             const response = await axios.post(`${chatServiceUrl}/api/system-message`, {
                 message: formattedMessage,
@@ -604,20 +597,13 @@ class SoundFxService extends EventEmitter {
 
     async sendSoundboardToChat(username, soundName, boardName) {
         try {
-            const chatServiceUrl = process.env.CHAT_SERVICE_URL || 'http://127.0.0.1:8081';
+            const chatServiceUrl = resolveChatServiceUrl('http://127.0.0.1:8081');
             const formattedMessage = `🔊 ${username} played: "${soundName}" from ${boardName}\n🎵 Browse more sounds at https://www.101soundboards.com`;
             
             logger.debug(`📤 SOUNDFX: Sending soundboard to chat at ${chatServiceUrl}/api/system-message`);
             
-            const axiosConfig = {
-                timeout: 5000
-            };
-            
-            if (chatServiceUrl.startsWith('https')) {
-                axiosConfig.httpsAgent = new https.Agent({
-                    rejectUnauthorized: false
-                });
-            }
+            // 5s timeout + self-signed-tolerant agent (when https) + internal secret.
+            const axiosConfig = chatAxiosConfig(chatServiceUrl);
             
             const response = await axios.post(`${chatServiceUrl}/api/system-message`, {
                 message: formattedMessage,

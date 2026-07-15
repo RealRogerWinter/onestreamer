@@ -7,8 +7,13 @@
 //   - Stale-session check downgrades to admin_review without acting.
 //   - enforce=false downgrades to admin_review without acting.
 //   - webcam branch: bans the authenticated user, calls notifier banner,
-//     requests rotation. Anonymous streamers skip the ban write.
-//   - url-relay branch: adds whitelist block entry, calls rotation.
+//     requests rotation. Anonymous streamers skip the ban write. The result
+//     carries banned_user_id (audit M5) so ModerationService can persist it.
+//   - url-relay branch: adds whitelist block entry, calls rotation. When the
+//     event carries no external identity, resolves it from the live relay
+//     via viewBotURLService (audit M3); when nothing resolves or the block
+//     write fails, downgrades to admin_review instead of claiming auto_skip
+//     (fail-honest, audit M3).
 //   - viewbot / unknown branch: no action.
 
 const ModerationActionArbiter = require('../../services/ModerationActionArbiter');
@@ -219,8 +224,8 @@ describe('ModerationActionArbiter.arbitrate url-relay', () => {
     expect(r.final_decision).toBe('auto_skip');
   });
 
-  test('missing platform / login cannot_block path', async () => {
-    const deps = makeDeps();
+  test('missing platform / login with no live-relay resolution → fail-honest admin_review (M3)', async () => {
+    const deps = makeDeps(); // no viewBotURLService wired
     const arb = new ModerationActionArbiter(deps);
     const r = await arb.arbitrate({
       id: 13,
@@ -229,8 +234,125 @@ describe('ModerationActionArbiter.arbitrate url-relay', () => {
       external_platform: null,
       external_login: null,
     });
-    expect(r.action_taken).toMatch(/cannot_block/);
+    // Fail-honest: previously this recorded final_decision 'auto_skip' as
+    // if the block had happened.
+    expect(r.final_decision).toBe('admin_review');
+    expect(r.action_taken).toMatch(/url_relay_block_unresolved/);
     expect(deps.whitelistService.addEntry).not.toHaveBeenCalled();
+    // The relay is still rotated away even though it could not be blocked.
+    expect(deps.randomStreamRotationService._rotateToNewStream).toHaveBeenCalled();
+  });
+
+  test('M3: missing external identity resolved from the LIVE relay via viewBotURLService → block lands, auto_skip', async () => {
+    const deps = makeDeps({
+      viewBotURLService: {
+        getActiveURLStream: jest.fn(() => ({
+          urlId: 'url-stream-123',
+          platform: 'twitch',
+          sourceUrl: 'https://twitch.tv/badguy',
+        })),
+        _extractLoginFromUrl: jest.fn(() => 'badguy'),
+      },
+    });
+    const arb = new ModerationActionArbiter(deps);
+    const r = await arb.arbitrate({
+      id: 16,
+      stream_session_id: '5',
+      stream_type: 'url-relay',
+      external_platform: null,
+      external_login: null,
+    });
+    expect(deps.viewBotURLService.getActiveURLStream).toHaveBeenCalled();
+    expect(deps.viewBotURLService._extractLoginFromUrl).toHaveBeenCalledWith('https://twitch.tv/badguy', 'twitch');
+    expect(deps.whitelistService.addEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ platform: 'twitch', value: 'badguy', list: 'block' }),
+      'ai-moderator'
+    );
+    expect(r.final_decision).toBe('auto_skip');
+    expect(r.action_taken).toMatch(/blocked:twitch:badguy/);
+  });
+
+  test('M3: event-supplied identity wins over the live relay (no unnecessary resolution)', async () => {
+    const deps = makeDeps({
+      viewBotURLService: {
+        getActiveURLStream: jest.fn(() => ({ platform: 'kick', sourceUrl: 'https://kick.com/other' })),
+        _extractLoginFromUrl: jest.fn(() => 'other'),
+      },
+    });
+    const arb = new ModerationActionArbiter(deps);
+    const r = await arb.arbitrate({
+      id: 17,
+      stream_session_id: '5',
+      stream_type: 'url-relay',
+      external_platform: 'twitch',
+      external_login: 'badguy',
+    });
+    expect(deps.viewBotURLService.getActiveURLStream).not.toHaveBeenCalled();
+    expect(r.final_decision).toBe('auto_skip');
+    expect(r.action_taken).toMatch(/blocked:twitch:badguy/);
+  });
+
+  test('M3: no active relay at action time → admin_review, not auto_skip', async () => {
+    const deps = makeDeps({
+      viewBotURLService: { getActiveURLStream: jest.fn(() => null), _extractLoginFromUrl: jest.fn() },
+    });
+    const arb = new ModerationActionArbiter(deps);
+    const r = await arb.arbitrate({
+      id: 18,
+      stream_session_id: '5',
+      stream_type: 'url-relay',
+      external_platform: null,
+      external_login: null,
+    });
+    expect(r.final_decision).toBe('admin_review');
+    expect(r.action_taken).toMatch(/url_relay_block_unresolved/);
+  });
+
+  test('M3: block WRITE failure (non-UNIQUE) is fail-honest admin_review', async () => {
+    const deps = makeDeps({
+      whitelistService: {
+        addEntry: jest.fn(async () => { throw new Error('disk full'); }),
+      },
+    });
+    const arb = new ModerationActionArbiter(deps);
+    const r = await arb.arbitrate({
+      id: 19,
+      stream_session_id: '5',
+      stream_type: 'url-relay',
+      external_platform: 'twitch',
+      external_login: 'badguy',
+    });
+    expect(r.final_decision).toBe('admin_review');
+    expect(r.action_taken).toMatch(/block_error:disk full/);
+  });
+});
+
+describe('ModerationActionArbiter M5: banned_user_id in the webcam result', () => {
+  test('resolved user → banned_user_id carries the numeric id', async () => {
+    const deps = makeDeps();
+    const arb = new ModerationActionArbiter(deps);
+    const r = await arb.arbitrate({
+      id: 20,
+      stream_session_id: '5',
+      streamer_id: 'sock_a',
+      stream_type: 'webcam',
+    });
+    expect(r.final_decision).toBe('auto_ban');
+    expect(r.banned_user_id).toBe(42);
+  });
+
+  test('anonymous streamer → banned_user_id null', async () => {
+    const deps = makeDeps({
+      sessionService: { getUserIdBySocketId: jest.fn(() => null) },
+    });
+    const arb = new ModerationActionArbiter(deps);
+    const r = await arb.arbitrate({
+      id: 21,
+      stream_session_id: '5',
+      streamer_id: 'sock_anon',
+      stream_type: 'webcam',
+    });
+    expect(r.banned_user_id).toBeNull();
   });
 });
 

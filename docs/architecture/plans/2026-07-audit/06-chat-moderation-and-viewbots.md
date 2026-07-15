@@ -2,7 +2,7 @@
 
 _Part of the [2026-07 codebase audit](README.md). Owner area: `chat-service/*`, `server/services/ModerationService.js` + `ModerationStage*.js` + `moderation/*`, `server/services/IPBanService.js`, `server/routes/moderation*.js`, `server/services/ViewBotURLService.js` + `urlstream/*` + `viewbotLivekit/*`, `server/services/URLStreamHealthService.js`._
 
-> Status: **proposed**. Three loosely-related subsystems grouped because they share one theme: **enforcement gaps** — controls that appear to work (bans, votes, auto-moderation, the "never bot over a human" invariant) but silently don't.
+> Status: **P0 merged (PR #25 — M2 vision-frame eventId/CSAM-evidence fix landed there); P1 moderation-enforcement tranche landed: CH1 (ban enforced at connect, fail-open kept), CH2/M1 (last-XFF-hop IP parse in both processes + vote dedup by authenticated user id), CH3 (internal-secret gate on the whole chat HTTP API incl. `/api/remove-timeout` and both reads, via `server/utils/chatServiceClient.js` on all 13 outbound sites, staged behind `ENFORCE_CHAT_INTERNAL_AUTH`), M3 (live-relay identity resolution + fail-honest `admin_review` downgrade), M4 (`/ban-chat` propagates to the chat-service store + `isChatBanned` on the internal status route; `banned_usernames` kept as audit trail), M5 (`moderation_events.resolved_user_id` persisted at ban time; reverse by stable id, 409 on unresolvable). Still open here: CH4–CH7, M6–M7, V1–V6.** Original audit status: proposed — three loosely-related subsystems grouped because they share one theme: **enforcement gaps** — controls that appear to work (bans, votes, auto-moderation, the "never bot over a human" invariant) but silently don't.
 
 ## Cross-cutting theme: write-only controls
 
