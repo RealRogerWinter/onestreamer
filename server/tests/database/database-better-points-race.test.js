@@ -18,6 +18,7 @@ const {
     makeBetterPrimitives,
     bootstrapProductionSchema,
 } = require('../integration/_helpers/db-fixture');
+const AccountStatsRepository = require('../../database/repository/AccountStatsRepository');
 
 describe('better-sqlite3 adapter — atomic points-race SQL (PR 5.1 + ADR-0014)', () => {
     let adapter;
@@ -122,5 +123,75 @@ describe('better-sqlite3 adapter — atomic points-race SQL (PR 5.1 + ADR-0014)'
         expect(successes).toHaveLength(seed / amount);
         const finalRow = adapter.db.prepare('SELECT points_balance FROM user_stats WHERE user_id = ?').get(userId);
         expect(finalRow.points_balance).toBe(0); // Drained exactly to zero, never below.
+    });
+
+    test('concurrent FIRST-credits (no stats row yet) land ONE row with the summed balance (audit DB5 / ADR-0035)', async () => {
+        // The duplicate-row corruption path: N callers race addPoints for a
+        // user with no user_stats row. Each misses the UPDATE and falls back.
+        // The old plain-INSERT fallback created N rows; the ON CONFLICT
+        // upsert (backed by idx_user_stats_user_id_unique, provisioned by
+        // the fresh boot above) must fold them into one.
+        const userId = 1234;
+        adapter.db
+            .prepare('INSERT INTO users (id, email, username) VALUES (?, ?, ?)')
+            .run(userId, `first-credit-${userId}@example.com`, `first-credit-${userId}`);
+        // Deliberately NO user_stats row.
+
+        const repo = new AccountStatsRepository({
+            runAsync: adapter.runAsync,
+            getAsync: adapter.getAsync,
+            allAsync: adapter.allAsync,
+        });
+
+        const N = 10;
+        const amount = 5;
+
+        // Mirror PointsManager.addPoints's exact fallback shape: atomic
+        // UPDATE first, upsert on miss.
+        const results = await Promise.all(
+            Array.from({ length: N }, async () => {
+                const updated = await repo.atomicAddPoints({ userId, amount });
+                if (updated) return updated.points_balance;
+                const upserted = await repo.upsertStatsWithBalance({ userId, balance: amount });
+                return upserted.points_balance;
+            })
+        );
+
+        // Exactly one row, holding the exact arithmetic total.
+        const rowCount = adapter.db
+            .prepare('SELECT COUNT(*) AS n FROM user_stats WHERE user_id = ?')
+            .get(userId);
+        expect(rowCount.n).toBe(1);
+        const finalRow = adapter.db
+            .prepare('SELECT points_balance FROM user_stats WHERE user_id = ?')
+            .get(userId);
+        expect(finalRow.points_balance).toBe(N * amount); // 50, exactly
+
+        // And some caller observed the final total (no lost updates).
+        expect(Math.max(...results)).toBe(N * amount);
+    });
+
+    test('insertEmptyStats after a racing first-credit is a no-op, not a duplicate row or an error (audit DB5)', async () => {
+        // Signup flow: createUser → createUserStats. If a credit for the new
+        // user won the race in between, the OR IGNORE insert must leave the
+        // upserted balance intact.
+        const userId = 4321;
+        adapter.db
+            .prepare('INSERT INTO users (id, email, username) VALUES (?, ?, ?)')
+            .run(userId, `empty-stats-${userId}@example.com`, `empty-stats-${userId}`);
+
+        const repo = new AccountStatsRepository({
+            runAsync: adapter.runAsync,
+            getAsync: adapter.getAsync,
+            allAsync: adapter.allAsync,
+        });
+
+        await repo.upsertStatsWithBalance({ userId, balance: 77 });
+        await expect(repo.insertEmptyStats(userId)).resolves.toMatchObject({ changes: 0 });
+
+        const rows = adapter.db
+            .prepare('SELECT points_balance FROM user_stats WHERE user_id = ?')
+            .all(userId);
+        expect(rows).toEqual([{ points_balance: 77 }]);
     });
 });

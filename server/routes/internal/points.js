@@ -149,6 +149,15 @@ module.exports = function createPointsRouter({ logger, authService }) {
         });
       }
 
+      // E6: server-side positive-integer validation. A fractional or negative
+      // bet used to reach the ledger unchecked.
+      if (!Number.isInteger(amount) || amount <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'amount must be a positive integer'
+        });
+      }
+
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -169,6 +178,15 @@ module.exports = function createPointsRouter({ logger, authService }) {
       res.json({ success: true, ...result });
     } catch (error) {
       if (respondGameMechanicsError(error, res)) return;
+      // E7: the ledger's atomic guard can lose a race the pre-check passed
+      // (balance drained between check and debit) — that's a client-visible
+      // insufficient-balance condition, not a server fault.
+      if (error instanceof AccountServiceError) {
+        return res.status(error.statusCode).json({
+          success: false,
+          error: error.clientMessage,
+        });
+      }
       logger.error('❌ GAMBLE: Error processing gamble:', error);
       res.status(500).json({
         success: false,
@@ -186,6 +204,14 @@ module.exports = function createPointsRouter({ logger, authService }) {
         return res.status(400).json({
           success: false,
           error: 'Missing required parameters'
+        });
+      }
+
+      // E6: server-side positive-integer validation (same guard as /gamble).
+      if (!Number.isInteger(amount) || amount <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'amount must be a positive integer'
         });
       }
 
@@ -209,6 +235,13 @@ module.exports = function createPointsRouter({ logger, authService }) {
       res.json({ success: true, ...result });
     } catch (error) {
       if (respondGameMechanicsError(error, res)) return;
+      // E7: see /gamble — decrement race surfaces as a 400, not a 500.
+      if (error instanceof AccountServiceError) {
+        return res.status(error.statusCode).json({
+          success: false,
+          error: error.clientMessage,
+        });
+      }
       logger.error('❌ SLOTS: Error processing slots:', error);
       res.status(500).json({
         success: false,
@@ -301,6 +334,15 @@ module.exports = function createPointsRouter({ logger, authService }) {
         });
       }
 
+      // E6: server-side positive-integer validation. A fractional or negative
+      // transfer amount would invert/corrupt both sides of the ledger pair.
+      if (!Number.isInteger(amount) || amount <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'amount must be a positive integer'
+        });
+      }
+
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -321,6 +363,13 @@ module.exports = function createPointsRouter({ logger, authService }) {
       res.json({ success: true, ...result });
     } catch (error) {
       if (respondGameMechanicsError(error, res)) return;
+      // E7: see /gamble — decrement race surfaces as a 400, not a 500.
+      if (error instanceof AccountServiceError) {
+        return res.status(error.statusCode).json({
+          success: false,
+          error: error.clientMessage,
+        });
+      }
       logger.error('❌ TRANSFER: Error transferring points:', error);
       res.status(500).json({
         success: false,
@@ -338,6 +387,14 @@ module.exports = function createPointsRouter({ logger, authService }) {
         return res.status(400).json({
           success: false,
           error: 'Missing required parameters'
+        });
+      }
+
+      // E6: server-side positive-integer validation (same guard as /gamble).
+      if (!Number.isInteger(amount) || amount <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'amount must be a positive integer'
         });
       }
 
@@ -378,6 +435,14 @@ module.exports = function createPointsRouter({ logger, authService }) {
         return res.status(400).json({
           success: false,
           error: 'Missing required parameters'
+        });
+      }
+
+      // E6: server-side positive-integer validation (same guard as /gamble).
+      if (!Number.isInteger(amount) || amount <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'amount must be a positive integer'
         });
       }
 

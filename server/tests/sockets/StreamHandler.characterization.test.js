@@ -385,6 +385,35 @@ describe('sockets/StreamHandler characterization', () => {
       expect(deps.webrtcService.cleanup).toHaveBeenCalledWith('real-streamer-2');
     });
 
+    // V3 (audit Plan 06): a url-stream-* current streamer is a URL relay —
+    // the takeover must stop the relay pipeline itself (previously it fell
+    // into the real-user branch: cooldown on a fake socket id, relay's
+    // FFmpeg→ingress left publishing over the human).
+    test('real user takes over a URL relay: stopURLStream + rotation stop, no fake-socket cooldown', async () => {
+      const { io, deps, handlers } = register();
+      deps.streamService.getCurrentStreamer.mockReturnValue('url-stream-555');
+      deps.sessionService.getUserIdBySocketId.mockReturnValue(null);
+      deps._viewbotService.isViewbotStream.mockReturnValue(false);
+      global.viewBotURLService = {
+        stopURLStream: jest.fn(async () => ({ success: true })),
+      };
+
+      try {
+        await handlers['request-to-stream']({ streamType: 'webcam', permissionsGranted: true });
+
+        expect(global.viewBotURLService.stopURLStream).toHaveBeenCalledWith('url-stream-555');
+        expect(deps.SimpleViewBotRotation.stopRotation).toHaveBeenCalled();
+        // The relay id must NOT be treated as an ousted real user.
+        expect(deps.takeoverService.setSocketCooldown).not.toHaveBeenCalledWith(
+          'url-stream-555', 'stream_taken_over'
+        );
+        // The human still becomes the streamer.
+        expect(deps.streamService.setStreamer).toHaveBeenCalledWith('socket-streamer-1', 'webcam');
+      } finally {
+        delete global.viewBotURLService;
+      }
+    });
+
     // T3 (economy half): the ousted streamer's time-tracking session must end
     // AT the takeover — their socket deliberately stays connected (never hits
     // DisconnectHandler), so nothing else ends it and they kept earning
