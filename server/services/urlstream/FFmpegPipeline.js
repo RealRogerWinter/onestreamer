@@ -210,7 +210,10 @@ class FFmpegPipeline {
   async stopProcesses(streamEntry) {
     const logger = this.logger;
     const killPromises = streamEntry.processes.map(async ({ type, process }) => {
-      if (!process || process.killed) {
+      // Skip only processes that have actually exited. NOTE: `process.killed`
+      // just means "a signal was sent", not "the process died" — using it here
+      // skipped teardown for processes that ignored SIGTERM (audit Plan 06 V4).
+      if (!process || process.exitCode !== null || process.signalCode !== null) {
         return;
       }
 
@@ -247,9 +250,12 @@ class FFmpegPipeline {
           return;
         }
 
-        // Force SIGKILL after 3 seconds if not dead
+        // Force SIGKILL after 3 seconds if not dead. `resolved` flips on
+        // exit/close, so it tracks actual termination — don't gate on
+        // `process.killed`, which is true as soon as SIGTERM is *sent* and
+        // made this escalation dead code (audit Plan 06 V4).
         setTimeout(() => {
-          if (!resolved && !process.killed) {
+          if (!resolved) {
             logger.debug(`⚠️ Force killing ${type} process (PID ${pid}) with SIGKILL`);
             try {
               process.kill('SIGKILL');
