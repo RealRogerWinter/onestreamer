@@ -72,16 +72,30 @@ describe.each([
     });
 
     describe('setSessionRecording', () => {
-        it("flips status back to 'recording' and bumps updated_at", async () => {
+        it("flips status back to 'recording' but never downgrades terminal rows (audit R8)", async () => {
             const { repo, runAsync } = makeRepo();
             runAsync.mockResolvedValue({ id: 0, changes: 1 });
             await repo.setSessionRecording('sess_20260527');
             const [sql, params] = runAsync.mock.calls[0];
             expect(norm(sql)).toBe(
                 "UPDATE recording_sessions SET status = 'recording', updated_at = CURRENT_TIMESTAMP " +
-                'WHERE session_id = ?'
+                "WHERE session_id = ? AND status NOT IN ('uploaded', 'processing')"
             );
             expect(params).toEqual(['sess_20260527']);
+        });
+    });
+
+    describe('markSessionCompleted', () => {
+        it("marks a run terminal, guarded on status = 'recording' (ADR-0028)", async () => {
+            const { repo, runAsync } = makeRepo();
+            runAsync.mockResolvedValue({ id: 0, changes: 1 });
+            await repo.markSessionCompleted('recording_2026-07-14_1752480000000');
+            const [sql, params] = runAsync.mock.calls[0];
+            expect(norm(sql)).toBe(
+                "UPDATE recording_sessions SET status = 'completed', updated_at = CURRENT_TIMESTAMP " +
+                "WHERE session_id = ? AND status = 'recording'"
+            );
+            expect(params).toEqual(['recording_2026-07-14_1752480000000']);
         });
     });
 

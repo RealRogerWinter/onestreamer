@@ -2,7 +2,7 @@
 
 _Part of the [2026-07 codebase audit](README.md). Owner area: `server/services/ContinuousRecordingService.js`, `server/services/recording/*`, `server/services/Recording*Scheduler.js`, `server/services/B2StorageService.js`, `server/services/ClipService.js`, `server/services/Clip*Service.js`, `server/routes/admin-recordings/*`._
 
-> Status: **proposed**. This is the flagship finding of the audit — the "known issues with the continuous recording system" resolve to one architectural decision (per-UTC-day session buckets) that is incompatible with the three cleanup/upload state machines layered on top of it.
+> Status: **P0 merged (PR #25); P1.1–P1.3 landed via [ADR-0028](../../adr/0028-per-run-recording-sessions.md) (per-run session ids, terminal upload state, downgrade guard); P1.4 was shipped early as P0.5. B2 archival remains OFF pending P2.2.** Original audit status: proposed — the "known issues with the continuous recording system" resolve to one architectural decision (per-UTC-day session buckets) that is incompatible with the three cleanup/upload state machines layered on top of it.
 
 ## TL;DR
 

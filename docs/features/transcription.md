@@ -48,10 +48,9 @@ Whisper model files live under `/root/onestreamer/whisper/models/*.bin` (not com
 ```bash
 # Build whisper.cpp + download models (one-time)
 node scripts/setup/setup-whisper.js
-
-# Create the transcription tables (idempotent)
-node server/migrations/setup-transcription-tables.js
 ```
+
+The `transcriptions`/`transcription_chunks` tables are created automatically at boot by the schema bootstrap ([`server/database/schema.js`](../../server/database/schema.js), [ADR-0030](../architecture/adr/0030-single-source-schema-ddl.md)) — no manual table-setup step.
 
 The build step compiles `whisper.cpp/main` from source via `gcc + make + cmake`. On Linux/macOS this is automatic; the resulting binary is at `/root/onestreamer/whisper/whisper.cpp/main`.
 

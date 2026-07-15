@@ -289,10 +289,11 @@ describe('ShopService.purchaseItem atomicity with REAL AccountService (USE_BETTE
         // tx commits. The decrementStockLimit throw triggers ROLLBACK,
         // which must undo AccountService's writes too — proving the
         // module-level wrappers route through our open tx.
-        const original = shopRepository.decrementStockLimit.bind(shopRepository);
-        shopRepository.decrementStockLimit = jest.fn(async () => {
-            throw new Error('simulated I/O failure mid-tx');
-        });
+        // Prototype-level spy: purchaseItem builds a tx-scoped ShopRepository
+        // inside the scope (ADR-0029), so instance-level mocks no longer
+        // intercept the in-scope call.
+        const decrementSpy = jest.spyOn(ShopRepository.prototype, 'decrementStockLimit')
+            .mockRejectedValue(new Error('simulated I/O failure mid-tx'));
 
         await expect(shopService.purchaseItem(42, 7, 2)).rejects.toThrow('simulated I/O failure');
 
@@ -319,6 +320,6 @@ describe('ShopService.purchaseItem atomicity with REAL AccountService (USE_BETTE
             'SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [42, 7]);
         expect(invRow).toBeUndefined();
 
-        shopRepository.decrementStockLimit = original;
+        decrementSpy.mockRestore();
     });
 });

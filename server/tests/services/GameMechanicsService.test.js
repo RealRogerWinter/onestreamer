@@ -326,17 +326,24 @@ describe('GameMechanicsService', () => {
         user: { id: 42, username: 'sender' },
         targetUser: { id: 99, username: 'recipient' },
       });
-      const svc = new GameMechanicsService({ accountService, userBonusCooldowns: new Map() });
+      // Fake scope: passes a sentinel tx through so the test also pins that
+      // transferPoints threads its tx handle into both ledger calls (ADR-0029).
+      const fakeTx = { runAsync: jest.fn(), getAsync: jest.fn(), allAsync: jest.fn() };
+      const withTransaction = jest.fn(async (fn) => fn(fakeTx));
+      const svc = new GameMechanicsService({ accountService, userBonusCooldowns: new Map(), withTransaction });
 
       const result = await svc.transferPoints(42, 'recipient', 300, 'sender');
 
+      expect(withTransaction).toHaveBeenCalledTimes(1);
       expect(accountService.subtractPoints).toHaveBeenCalledWith(
         42, 300, 'transfer_out', 'Sent 300 points to recipient',
-        { recipientId: 99, recipientUsername: 'recipient' }
+        { recipientId: 99, recipientUsername: 'recipient' },
+        fakeTx
       );
       expect(accountService.addPoints).toHaveBeenCalledWith(
         99, 300, 'transfer_in', 'Received 300 points from sender',
-        { senderId: 42, senderUsername: 'sender' }
+        { senderId: 42, senderUsername: 'sender' },
+        fakeTx
       );
       expect(result).toEqual({
         senderNewBalance: 700,
@@ -352,13 +359,15 @@ describe('GameMechanicsService', () => {
         user: { id: 42, username: 'authoritative_name' },
         targetUser: { id: 99, username: 'recipient' },
       });
-      const svc = new GameMechanicsService({ accountService, userBonusCooldowns: new Map() });
+      const withTransaction = jest.fn(async (fn) => fn(null));
+      const svc = new GameMechanicsService({ accountService, userBonusCooldowns: new Map(), withTransaction });
 
       await svc.transferPoints(42, 'recipient', 300);
 
       expect(accountService.addPoints).toHaveBeenCalledWith(
         99, 300, 'transfer_in', 'Received 300 points from authoritative_name',
-        { senderId: 42, senderUsername: 'authoritative_name' }
+        { senderId: 42, senderUsername: 'authoritative_name' },
+        null
       );
     });
 
