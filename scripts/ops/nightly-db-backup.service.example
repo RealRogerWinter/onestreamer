@@ -1,0 +1,33 @@
+# Nightly off-host DB backup (audit D2.a) — EXAMPLE systemd service.
+# Install by hand (this repo ships examples; nothing installs them):
+#   sudo cp scripts/ops/nightly-db-backup.service.example /etc/systemd/system/onestreamer-nightly-backup.service
+#   sudo cp scripts/ops/nightly-db-backup.timer.example   /etc/systemd/system/onestreamer-nightly-backup.timer
+#   edit the Environment= lines (off-host target!), then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now onestreamer-nightly-backup.timer
+# Verify: systemctl list-timers onestreamer-nightly-backup.timer
+# A failed run leaves the unit in a failed state (visible to `systemctl --failed`
+# and any OnFailure= hook you attach) — the script exits non-zero on ANY problem,
+# including a failed or unconfigured off-host push.
+
+[Unit]
+Description=OneStreamer nightly off-host SQLite backup
+Documentation=file:///root/onestreamer/docs/operations/backup-restore.md
+# Best-effort ordering only; the script takes an online-safe snapshot, so the
+# app may keep running.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Must be able to read the DB; root or uid 1001 (owner of server/data).
+User=root
+Environment=DB_PATH=/root/onestreamer/server/data/onestreamer.db
+Environment=BACKUP_DIR=/backups/nightly
+Environment=KEEP_BACKUPS=7
+# REQUIRED — pick ONE off-host target and set it (script fails loud if unset):
+Environment=RSYNC_TARGET=backup@backup-host:/backups/onestreamer/
+#Environment=OFFHOST_PUSH_CMD=rclone copy --config /root/.config/rclone/rclone.conf
+ExecStart=/root/onestreamer/scripts/ops/nightly-db-backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

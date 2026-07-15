@@ -53,24 +53,46 @@ class AccountStatsRepository {
      * cumulative-stat columns also 0). Called from
      * `AccountService.createUserStats` immediately after user
      * creation.
+     *
+     * OR IGNORE (audit DB5 / ADR-0035): user_stats(user_id) is UNIQUE
+     * now, and a concurrent first-credit may have upserted the row
+     * before this runs — in that case the row (with its balance) must
+     * survive and signup must not fail, so the duplicate INSERT is a
+     * silent no-op.
      */
     async insertEmptyStats(userId) {
         return await this.runAsync(
-            'INSERT INTO user_stats (user_id) VALUES (?)',
+            'INSERT OR IGNORE INTO user_stats (user_id) VALUES (?)',
             [userId]
         );
     }
 
     /**
-     * INSERT a fresh user_stats row with an initial `points_balance`.
-     * Used by the `atomicAddPoints` fallback path when the
-     * RETURNING-clause UPDATE found no row — the user has no stats
-     * row yet, so INSERT one with the just-added points as the
-     * starting balance.
+     * Race-safe first-credit UPSERT (audit DB5 / ADR-0035). Used by the
+     * `atomicAddPoints` fallback path when the RETURNING-clause UPDATE
+     * found no row — the user has no stats row yet, so INSERT one with
+     * the just-added points as the starting balance.
+     *
+     * Two concurrent first-credits can BOTH miss the UPDATE and both
+     * land here; the plain-INSERT predecessor then created two rows
+     * (permanent balance corruption — later UPDATEs hit all rows,
+     * reads see one). ON CONFLICT(user_id) — backed by the
+     * idx_user_stats_user_id_unique index — folds the loser into an
+     * atomic increment instead, and RETURNING reports the post-write
+     * balance either way (goes through getAsync, which consumes
+     * RETURNING rows on both drivers — same ADR-0013/0014 contract as
+     * atomicAddPoints).
+     *
+     * @returns {{points_balance: number}} the post-upsert balance row
      */
-    async insertStatsWithBalance({ userId, balance }) {
-        return await this.runAsync(
-            'INSERT INTO user_stats (user_id, points_balance) VALUES (?, ?)',
+    async upsertStatsWithBalance({ userId, balance }) {
+        return await this.getAsync(
+            `INSERT INTO user_stats (user_id, points_balance)
+             VALUES (?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET
+                 points_balance = points_balance + excluded.points_balance,
+                 updated_at = CURRENT_TIMESTAMP
+             RETURNING points_balance`,
             [userId, balance]
         );
     }
@@ -122,7 +144,7 @@ class AccountStatsRepository {
      * ADR-0013a. Bumps `points_balance` by `amount` (positive number
      * by AccountService precondition) and returns the post-write
      * value in a single statement. Returns undefined if no row
-     * exists (caller falls back to `insertStatsWithBalance`).
+     * exists (caller falls back to `upsertStatsWithBalance`).
      *
      * **DO NOT** refactor to a read-compute-write loop. The single
      * statement is what closes the lost-update race.

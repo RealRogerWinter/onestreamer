@@ -473,3 +473,191 @@ describe('migration runner — bit-identical bootstrap', () => {
         expect(snapshot).toEqual(fixture);
     });
 });
+
+describe('migration 202607150900 — user_stats dedup + UNIQUE(user_id) (audit DB5 / ADR-0035)', () => {
+    let db;
+    let logger;
+
+    const getAsync = (sql, params = []) => new Promise((resolve, reject) => {
+        db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
+    });
+
+    async function runMigration() {
+        const mod = require('../../migrations/202607150900-user-stats-unique-user-id');
+        await new Promise((resolve) => db.serialize(() => {
+            mod.run(db, logger);
+            db.run('SELECT 1', resolve);
+        }));
+    }
+
+    beforeEach(async () => {
+        db = new sqlite3.Database(':memory:');
+        logger = makeLogger();
+        // Pre-fix shape: no uniqueness on user_id — exactly the live-DB
+        // hazard the migration remediates.
+        await runAsync(db, `
+            CREATE TABLE user_stats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                total_stream_time INTEGER DEFAULT 0,
+                points_balance INTEGER DEFAULT 0,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+    });
+
+    afterEach((done) => {
+        migrationRunner.drainAsyncFailures(); // never leak into other suites
+        db.close(done);
+    });
+
+    it('keeps the MAX(points_balance) row per user (favor the user), deletes the rest', async () => {
+        // User 1: three duplicate rows from racing first-credits. Balances
+        // diverge only by what each row captured at INSERT time (later
+        // UPDATEs hit all rows equally), so the migration keeps the highest.
+        await runAsync(db, 'INSERT INTO user_stats (id, user_id, points_balance) VALUES (1, 1, 100)');
+        await runAsync(db, 'INSERT INTO user_stats (id, user_id, points_balance) VALUES (2, 1, 250)');
+        await runAsync(db, 'INSERT INTO user_stats (id, user_id, points_balance) VALUES (3, 1, 250)');
+        // User 2: healthy single row — untouched.
+        await runAsync(db, 'INSERT INTO user_stats (id, user_id, points_balance) VALUES (4, 2, 40)');
+
+        await runMigration();
+
+        expect(logger._calls.error).toEqual([]);
+        expect(migrationRunner.drainAsyncFailures()).toEqual([]);
+
+        const user1 = await new Promise((resolve, reject) => {
+            db.all('SELECT id, points_balance FROM user_stats WHERE user_id = 1', (e, r) => (e ? reject(e) : resolve(r)));
+        });
+        // One row; MAX balance; equal-balance tie broken by lowest id.
+        expect(user1).toEqual([{ id: 2, points_balance: 250 }]);
+
+        const user2 = await getAsync('SELECT id, points_balance FROM user_stats WHERE user_id = 2');
+        expect(user2).toEqual({ id: 4, points_balance: 40 });
+    });
+
+    it('creates the UNIQUE index so duplicate rows can never come back', async () => {
+        await runAsync(db, 'INSERT INTO user_stats (user_id, points_balance) VALUES (1, 10)');
+        await runMigration();
+
+        const idx = await getAsync(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_user_stats_user_id_unique'");
+        expect(idx).toBeDefined();
+
+        await expect(
+            runAsync(db, 'INSERT INTO user_stats (user_id, points_balance) VALUES (1, 999)')
+        ).rejects.toThrow(/UNIQUE constraint failed/);
+    });
+
+    it('is idempotent (the ADR-0022 every-boot contract)', async () => {
+        await runAsync(db, 'INSERT INTO user_stats (user_id, points_balance) VALUES (1, 100)');
+        await runAsync(db, 'INSERT INTO user_stats (user_id, points_balance) VALUES (1, 250)');
+
+        await runMigration();
+        await runMigration();
+
+        expect(logger._calls.error).toEqual([]);
+        expect(migrationRunner.drainAsyncFailures()).toEqual([]);
+        const row = await getAsync('SELECT COUNT(*) AS n, MAX(points_balance) AS b FROM user_stats');
+        expect(row).toEqual({ n: 1, b: 250 });
+    });
+
+    it('the repository upsert SQL is race-safe against the new index (sqlite3 driver)', async () => {
+        await runMigration();
+
+        // The exact upsertStatsWithBalance shape: two "first credits" for the
+        // same user — the second folds into an increment, never a second row.
+        const upsertSql = `INSERT INTO user_stats (user_id, points_balance)
+             VALUES (?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET
+                 points_balance = points_balance + excluded.points_balance,
+                 updated_at = CURRENT_TIMESTAMP
+             RETURNING points_balance`;
+        const first = await getAsync(upsertSql, [7, 50]);
+        const second = await getAsync(upsertSql, [7, 25]);
+        expect(first).toEqual({ points_balance: 50 });
+        expect(second).toEqual({ points_balance: 75 });
+
+        const row = await getAsync('SELECT COUNT(*) AS n FROM user_stats WHERE user_id = 7');
+        expect(row).toEqual({ n: 1 });
+    });
+});
+
+describe('migration runner — fail-loud (audit DB6 / ADR-0035)', () => {
+    const FIXTURES = path.join(__dirname, '..', 'fixtures', 'failloud-migrations');
+    let db;
+    let logger;
+
+    beforeEach(() => {
+        db = new sqlite3.Database(':memory:');
+        logger = makeLogger();
+    });
+
+    afterEach((done) => {
+        migrationRunner.drainAsyncFailures();
+        db.close(done);
+    });
+
+    it('a migration whose run() throws synchronously aborts the run', () => {
+        expect(() => migrationRunner.runAll(db, logger, path.join(FIXTURES, 'throws')))
+            .toThrow(/202601010001-throws-synchronously\.js threw synchronously: fixture migration exploded/);
+        expect(logger._calls.error.length).toBe(1);
+    });
+
+    it('a migration module missing run() aborts the run', () => {
+        expect(() => migrationRunner.runAll(db, logger, path.join(FIXTURES, 'missing-run')))
+            .toThrow(/202601010002-missing-run-export\.js is missing its run\(db, logger\) export/);
+    });
+
+    it('a migration module that fails to load aborts the run', () => {
+        expect(() => migrationRunner.runAll(db, logger, path.join(FIXTURES, 'load-error')))
+            .toThrow(/202601010003-throws-at-load\.js failed to load: fixture migration failed to load/);
+    });
+
+    it('the abort propagates out of initializeSchema as a rejection (boot-abort wiring)', async () => {
+        // The sink is drained at initializeSchema's flush marker; recording a
+        // failure before boot proves a non-benign async migration error turns
+        // into a rejected bootstrap instead of a log line.
+        const { initializeSchema } = require('../../database/schema');
+        migrationRunner.recordAsyncFailure({
+            err: new Error('injected failure'),
+            op: 'test-injection',
+            table: 'user_stats',
+        });
+        const memDb = new sqlite3.Database(':memory:');
+        await expect(initializeSchema(memDb, makeLogger()))
+            .rejects.toThrow(/1 migration statement\(s\) failed — test-injection\(user_stats\): injected failure/);
+        await new Promise((r) => memDb.close(r));
+    });
+
+    it('benign duplicate-column errors are still tolerated (addColumn)', async () => {
+        await runAsync(db, 'CREATE TABLE t (id INTEGER PRIMARY KEY, existing TEXT)');
+        await new Promise((resolve) => db.serialize(() => {
+            migrationRunner.addColumn(db, 't', 'existing', 'TEXT', logger);
+            db.run('SELECT 1', resolve);
+        }));
+        expect(logger._calls.error).toEqual([]);
+        expect(migrationRunner.drainAsyncFailures()).toEqual([]);
+    });
+
+    it('benign no-such-column errors are still tolerated (dropColumn)', async () => {
+        await runAsync(db, 'CREATE TABLE t (id INTEGER PRIMARY KEY)');
+        await new Promise((resolve) => db.serialize(() => {
+            migrationRunner.dropColumn(db, 't', 'never_existed', logger);
+            db.run('SELECT 1', resolve);
+        }));
+        expect(logger._calls.error).toEqual([]);
+        expect(migrationRunner.drainAsyncFailures()).toEqual([]);
+    });
+
+    it('a NON-benign addColumn error is logged AND recorded for the boot-abort path', async () => {
+        await new Promise((resolve) => db.serialize(() => {
+            migrationRunner.addColumn(db, 'no_such_table', 'col', 'TEXT', logger);
+            db.run('SELECT 1', resolve);
+        }));
+        expect(logger._calls.error.length).toBe(1);
+        const failures = migrationRunner.drainAsyncFailures();
+        expect(failures).toHaveLength(1);
+        expect(failures[0]).toMatchObject({ op: 'addColumn', table: 'no_such_table', column: 'col' });
+    });
+});

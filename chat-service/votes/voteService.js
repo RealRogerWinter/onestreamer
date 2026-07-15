@@ -140,7 +140,16 @@ function createVoteService(deps) {
 
     const vote = state.active;
     const voteCount = vote.voters.size;
-    const requiredVotes = vote.requiredVotes;
+    // Audit CH7: the requirement was frozen at vote start, so viewers
+    // leaving mid-vote made the vote unpassable (e.g. 10 viewers at start →
+    // 5 required; 6 leave → the remaining 4 can never pass, and the failed
+    // vote then imposes the cooldown). Recompute against the LIVE viewer
+    // count at tally time and take min(start, live): a vote can only get
+    // EASIER as viewers leave, never harder mid-flight (min also keeps a
+    // late crowd influx from raising the bar announced at start).
+    const liveViewers = getUniqueViewerCount();
+    const liveRequired = Math.max(Math.ceil(liveViewers * threshold), minRequiredVotes);
+    const requiredVotes = Math.min(vote.requiredVotes, liveRequired);
     const passed = voteCount >= requiredVotes;
 
     // Clear timers + reset active before the async action so re-entries don't

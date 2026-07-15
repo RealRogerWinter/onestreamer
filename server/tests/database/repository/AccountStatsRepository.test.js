@@ -29,26 +29,32 @@ describe.each([
     // ============================================================
 
     describe('insertEmptyStats', () => {
-        it('INSERTs (user_id) only; defaults to 0 for points_balance + counters', async () => {
+        it('INSERT OR IGNOREs (user_id) only — no-op when a concurrent first-credit upserted the row (DB5)', async () => {
             const { repo, runAsync } = makeRepo();
             runAsync.mockResolvedValue({ id: 0, changes: 1 });
             await repo.insertEmptyStats(7);
             const [sql, params] = runAsync.mock.calls[0];
-            expect(norm(sql)).toBe('INSERT INTO user_stats (user_id) VALUES (?)');
+            expect(norm(sql)).toBe('INSERT OR IGNORE INTO user_stats (user_id) VALUES (?)');
             expect(params).toEqual([7]);
         });
     });
 
-    describe('insertStatsWithBalance', () => {
-        it('INSERTs (user_id, points_balance) — used by the atomicAddPoints fallback', async () => {
-            const { repo, runAsync } = makeRepo();
-            runAsync.mockResolvedValue({ id: 0, changes: 1 });
-            await repo.insertStatsWithBalance({ userId: 7, balance: 100 });
-            const [sql, params] = runAsync.mock.calls[0];
+    describe('upsertStatsWithBalance', () => {
+        it('ON CONFLICT(user_id) DO UPDATE + RETURNING — the race-safe atomicAddPoints fallback (DB5 / ADR-0035)', async () => {
+            // Regression gate: ANY change back to a plain INSERT reintroduces
+            // the duplicate-row corruption two concurrent first-credits cause.
+            const { repo, getAsync } = makeRepo();
+            getAsync.mockResolvedValue({ points_balance: 100 });
+            const row = await repo.upsertStatsWithBalance({ userId: 7, balance: 100 });
+            const [sql, params] = getAsync.mock.calls[0];
             expect(norm(sql)).toBe(
-                'INSERT INTO user_stats (user_id, points_balance) VALUES (?, ?)'
+                'INSERT INTO user_stats (user_id, points_balance) VALUES (?, ?) ' +
+                'ON CONFLICT(user_id) DO UPDATE SET ' +
+                'points_balance = points_balance + excluded.points_balance, ' +
+                'updated_at = CURRENT_TIMESTAMP RETURNING points_balance'
             );
             expect(params).toEqual([7, 100]);
+            expect(row).toEqual({ points_balance: 100 });
         });
     });
 

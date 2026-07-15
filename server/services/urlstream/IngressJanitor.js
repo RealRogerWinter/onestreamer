@@ -67,10 +67,18 @@ class IngressJanitor {
       });
 
       // Find viewbot ingresses (they should be stopped when URL stream starts)
-      const viewbotIngresses = allIngresses.filter(ing =>
-        ing.participantIdentity?.startsWith('viewbot-') ||
-        ing.name?.includes('viewbot')
-      );
+      const viewbotIngresses = allIngresses.filter(ing => {
+        const isViewbot = ing.participantIdentity?.startsWith('viewbot-') ||
+          ing.name?.includes('viewbot');
+        // Same excludeUrlId guard as the url-stream filter above: without it,
+        // the NEW stream's ingress gets deleted seconds after starting whenever
+        // its name happens to contain 'viewbot' (audit Plan 06 V5).
+        if (excludeUrlId && (ing.participantIdentity === excludeUrlId || ing.name?.includes(excludeUrlId))) {
+          logger.debug(`🔒 URL STREAM CLEANUP: Preserving viewbot-matching ingress for new stream: ${ing.participantIdentity}`);
+          return false;
+        }
+        return isViewbot;
+      });
 
       logger.debug(`🧹 URL STREAM CLEANUP: Found ${urlStreamIngresses.length} URL stream ingresses and ${viewbotIngresses.length} viewbot ingresses to clean up`);
 

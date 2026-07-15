@@ -20,6 +20,7 @@
 // the socket layer (core/socketHandlers.js) on every connect / message.
 
 const fs = require('fs');
+const crypto = require('crypto');
 
 /**
  * Create a moderation service.
@@ -33,6 +34,7 @@ const fs = require('fs');
  *   isUserTimedOut: (username: string) => boolean,
  *   banUserWithSideEffects: (opts: object) => { messagesDeleted: number, disconnectedCount: number, messageIds: string[] },
  *   timeoutUserWithSideEffects: (opts: object) => { endTime: number, startTime: number, notifiedCount: number },
+ *   getAnonSalt: () => string,
  *   bannedUsers: Set<string>,
  *   bannedUsersData: Map<string, object>,
  *   timeoutUsers: Map<string, object>
@@ -154,6 +156,44 @@ function createModerationService(deps) {
     } catch (error) {
       console.error('❌ MODERATION: Failed to save moderation data:', error);
     }
+  }
+
+  // Per-install salt for deterministic anonymous-identity derivation
+  // (audit CH5). Bans are persisted by USERNAME, but anonymous usernames
+  // were random per process — a chat-service restart regenerated a fresh
+  // name for the same IP, silently voiding every anonymous ban. The socket
+  // layer (core/socketHandlers.js) now derives the anonymous username from
+  // hash(salt + IP), so the same IP maps to the same username across
+  // restarts and the persisted username-ban keeps holding. The salt lives
+  // in a sibling file of the moderation store (same directory, same
+  // runtime-state posture, gitignored) so it survives restarts but never
+  // ships in the repo; it also keeps the IP -> name mapping unguessable to
+  // outsiders. If the file can't be written, we fall back to an ephemeral
+  // per-process salt — identical to the pre-fix behavior, never worse.
+  const anonSaltPath = `${moderationDataPath}.salt`;
+  let anonSalt = null;
+
+  function getAnonSalt() {
+    if (anonSalt) return anonSalt;
+    try {
+      if (fs.existsSync(anonSaltPath)) {
+        const onDisk = fs.readFileSync(anonSaltPath, 'utf8').trim();
+        if (onDisk.length >= 16) {
+          anonSalt = onDisk;
+          return anonSalt;
+        }
+      }
+    } catch (error) {
+      console.error('❌ MODERATION: Failed to read anonymous-identity salt, regenerating:', error);
+    }
+    anonSalt = crypto.randomBytes(32).toString('hex');
+    try {
+      fs.writeFileSync(anonSaltPath, `${anonSalt}\n`, { mode: 0o600 });
+      console.log('💾 MODERATION: Persisted new anonymous-identity salt');
+    } catch (error) {
+      console.error('❌ MODERATION: Failed to persist anonymous-identity salt (anonymous bans will not survive restart):', error);
+    }
+    return anonSalt;
   }
 
   // Check if username is banned (case-insensitive)
@@ -354,6 +394,9 @@ function createModerationService(deps) {
     isUserTimedOut,
     banUserWithSideEffects,
     timeoutUserWithSideEffects,
+    // Audit CH5: consumed by core/socketHandlers.js to derive stable
+    // anonymous usernames (see comment on getAnonSalt above).
+    getAnonSalt,
     // Direct state handles. The HTTP API (api/routes.js) drives unban /
     // remove-timeout / moderation-listing directly off these (an unconditional
     // delete + save that intentionally differs from a membership-checked
