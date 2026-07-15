@@ -34,7 +34,14 @@ async function migratePointsSystem() {
         const cols = await allAsync(db, `PRAGMA table_info(user_stats)`);
         const hasLegacyPoints = cols.some((c) => c.name === 'points');
         if (!hasLegacyPoints) {
-            console.log('ℹ️  Legacy `user_stats.points` column already removed — migration is complete.');
+            const hasBalance = cols.some((c) => c.name === 'points_balance');
+            if (hasBalance) {
+                console.log('ℹ️  Legacy `user_stats.points` column already removed and `points_balance` exists — migration already ran.');
+            } else {
+                console.log('ℹ️  No legacy `user_stats.points` column found — this looks like a FRESH database, not a migrated one.');
+                console.log('   The points schema (user_stats.points_balance + points_transactions) is provisioned by');
+                console.log('   server/database/database.js at boot; this script only migrates the pre-2026 legacy `points` column.');
+            }
             console.log('   Nothing to do. (This script is preserved for forensic value only.)');
             return;
         }

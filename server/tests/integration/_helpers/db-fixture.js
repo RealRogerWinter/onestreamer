@@ -9,13 +9,18 @@
  * Express app, so the bootstrap moves here and the test files stay focused on
  * the actual HTTP round-trips they're proving.
  *
- * What this is NOT: a general-purpose schema framework. The CREATE TABLE
- * shapes here mirror exactly the columns the production AccountService /
- * ShopService / InventoryService SQL touches — and only those. If a service's
- * SQL grows a new column, add it here (and to any sibling per-test bootstraps
- * that haven't migrated yet). The single source of truth for the live schema
- * is server/database/database.js; this fixture is an integration-test
- * approximation of the subset money-flow code paths touch.
+ * Schema source (ADR-0030): the bootstrap functions run the REAL production
+ * init path — `initializeSchema` exported by server/database/database.js —
+ * against the test's :memory: connection. The fixture used to hand-copy an
+ * "approximation" of the money-flow subset, which is exactly the drift trap
+ * audit findings DB1/DB3 called out (the copy invented columns prod never
+ * created, masking a fresh-boot-breaks-the-economy bug). Do NOT add CREATE
+ * TABLE statements here; add them to database.js (+ a numbered migration)
+ * and every consumer of this fixture picks them up.
+ *
+ * `bootstrapMoneyFlowSchema` / `bootstrapRecordingSchema` are kept as named
+ * aliases of the same full prod-path boot so existing call sites read
+ * unchanged.
  *
  * Test-env-flag matrix (per Phase 13 plan): `forEachBackend(fn)` calls `fn`
  * twice — once with the sqlite3 primitives, once with the better-sqlite3
@@ -26,6 +31,10 @@
 
 const sqlite3 = require('sqlite3').verbose();
 const { createBetterSqlite3Adapter } = require('../../../database/database-better');
+// NOTE: require the side-effect-free schema module, NOT database/database —
+// requiring the latter self-boots against the real data file and its async
+// bootstrap can outlive fast test files (jest "import after teardown").
+const { initializeSchema } = require('../../../database/schema');
 
 function makeSqlite3Primitives() {
     const db = new sqlite3.Database(':memory:');
@@ -62,130 +71,65 @@ function makeBetterPrimitives() {
 }
 
 /**
- * Create the subset of the production schema that money-flow services touch.
- * Mirrors columns in ShopService, AccountService, InventoryService.
+ * Wrap a raw better-sqlite3 Database in the minimal callback-style surface
+ * `initializeSchema` needs (`serialize(fn)` + `run(sql[, params][, cb])`).
+ * better-sqlite3 is synchronous, so "serialize" is a plain invoke and each
+ * run executes eagerly; errors go to the callback when one is provided
+ * (matching sqlite3's contract — the migrations' duplicate-column swallowing
+ * depends on receiving the error, and better-sqlite3 uses the same
+ * "duplicate column" message text).
+ */
+function makeBetterSchemaShim(rawBetterDb) {
+    return {
+        serialize(fn) {
+            if (typeof fn === 'function') fn();
+        },
+        run(sql, params, cb) {
+            if (typeof params === 'function') {
+                cb = params;
+                params = undefined;
+            }
+            let err = null;
+            try {
+                const stmt = rawBetterDb.prepare(sql);
+                const args = params === undefined ? [] : Array.isArray(params) ? params : [params];
+                if (stmt.reader) stmt.all(...args);
+                else stmt.run(...args);
+            } catch (e) {
+                err = e;
+            }
+            if (typeof cb === 'function') cb.call({}, err);
+            else if (err) throw err;
+        },
+    };
+}
+
+/**
+ * Boot the FULL production schema (database.js `initializeSchema`, incl. the
+ * numbered migrations and seeds) against the test's :memory: connection.
+ * Works for both backends: sqlite3 primitives expose the callback API
+ * natively; better-sqlite3 goes through `makeBetterSchemaShim`.
+ */
+async function bootstrapProductionSchema(primitives) {
+    const quietLogger = {
+        error: (...args) => console.error('[db-fixture initializeSchema]', ...args),
+        debug: () => {},
+    };
+    // Backend detection: better-sqlite3's Database exposes `.pragma`
+    // (sqlite3's does not — and BOTH have `.serialize`, with different
+    // meanings, so that is NOT a usable discriminator).
+    const handle = typeof primitives.db.pragma === 'function'
+        ? makeBetterSchemaShim(primitives.db)
+        : primitives.db;
+    await initializeSchema(handle, quietLogger);
+}
+
+/**
+ * Historical name — Phase 13 tests bootstrapped only a hand-copied
+ * "money-flow subset". Now the full prod schema (ADR-0030).
  */
 async function bootstrapMoneyFlowSchema(primitives) {
-    await primitives.runAsync(`
-        CREATE TABLE users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT,
-            is_verified BOOLEAN DEFAULT 0,
-            is_admin BOOLEAN DEFAULT 0,
-            is_moderator BOOLEAN DEFAULT 0,
-            is_banned BOOLEAN DEFAULT 0,
-            account_status TEXT,
-            oauth_provider TEXT,
-            oauth_id TEXT,
-            verification_token TEXT,
-            display_name TEXT,
-            avatar_url TEXT,
-            bio TEXT,
-            website TEXT,
-            location TEXT,
-            description TEXT,
-            username_changed BOOLEAN DEFAULT 0,
-            last_login DATETIME,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    await primitives.runAsync(`
-        CREATE TABLE user_stats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            total_stream_time INTEGER DEFAULT 0,
-            total_view_time INTEGER DEFAULT 0,
-            stream_count INTEGER DEFAULT 0,
-            chat_message_count INTEGER DEFAULT 0,
-            points_balance INTEGER DEFAULT 0,
-            last_stream_at DATETIME,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    await primitives.runAsync(`
-        CREATE TABLE points_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            amount INTEGER NOT NULL,
-            balance_after INTEGER NOT NULL,
-            type TEXT NOT NULL,
-            description TEXT,
-            metadata TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    await primitives.runAsync(`
-        CREATE TABLE items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            display_name TEXT NOT NULL,
-            emoji TEXT NOT NULL,
-            description TEXT NOT NULL,
-            item_type TEXT NOT NULL,
-            category TEXT,
-            rarity TEXT NOT NULL,
-            base_price INTEGER NOT NULL DEFAULT 0,
-            is_purchasable BOOLEAN DEFAULT 1,
-            is_active BOOLEAN DEFAULT 1,
-            is_tradeable BOOLEAN DEFAULT 0,
-            cooldown_seconds INTEGER DEFAULT 0,
-            max_stack INTEGER DEFAULT 0,
-            effect_data TEXT
-        )
-    `);
-    await primitives.runAsync(`
-        CREATE TABLE shop_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item_id INTEGER NOT NULL,
-            price INTEGER NOT NULL,
-            discount_percentage INTEGER DEFAULT 0,
-            is_featured BOOLEAN DEFAULT 0,
-            stock_limit INTEGER DEFAULT 0,
-            available_from DATETIME,
-            available_until DATETIME
-        )
-    `);
-    await primitives.runAsync(`
-        CREATE TABLE user_inventory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            item_id INTEGER NOT NULL,
-            quantity INTEGER NOT NULL DEFAULT 0,
-            acquired_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_used_at DATETIME,
-            UNIQUE(user_id, item_id)
-        )
-    `);
-    await primitives.runAsync(`
-        CREATE TABLE item_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            item_id INTEGER NOT NULL,
-            transaction_type TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
-            price_per_item INTEGER,
-            total_cost INTEGER,
-            points_before INTEGER,
-            points_after INTEGER,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    // PR 16.3: gift_transactions audit table — InventoryService.giftItem
-    // INSERTs one row per successful gift.
-    await primitives.runAsync(`
-        CREATE TABLE gift_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            from_user_id INTEGER NOT NULL,
-            to_user_id INTEGER NOT NULL,
-            item_id INTEGER NOT NULL,
-            quantity INTEGER NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
+    await bootstrapProductionSchema(primitives);
 }
 
 /**
@@ -266,62 +210,13 @@ function forEachBackend(fn) {
 }
 
 /**
- * Create the subset of the production schema that recording-pipeline
- * services touch — `recording_sessions`, `session_chat_messages`,
- * `admin_review_settings`. Mirrors columns the live SQL references in
- * RecordingCleanupScheduler, RecordingUploadScheduler, and the PR 2.6
- * ContinuousRecordingService cleanup path. Added in PR 13.3.
+ * Historical name — PR 13.3 tests bootstrapped only a hand-copied recording
+ * subset (`recording_sessions`, `session_chat_messages`,
+ * `admin_review_settings` + its seed). Now the full prod schema (ADR-0030);
+ * the admin_review_settings defaults come from database.js's own seed.
  */
 async function bootstrapRecordingSchema(primitives) {
-    await primitives.runAsync(`
-        CREATE TABLE recording_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT UNIQUE NOT NULL,
-            streamer_identity TEXT,
-            streamer_user_id INTEGER,
-            streamer_username TEXT,
-            start_time INTEGER NOT NULL,
-            end_time INTEGER,
-            duration_ms INTEGER,
-            status TEXT DEFAULT 'recording',
-            local_path TEXT,
-            b2_file_id TEXT,
-            b2_file_name TEXT,
-            file_size_bytes INTEGER,
-            segment_count INTEGER DEFAULT 0,
-            chat_message_count INTEGER DEFAULT 0,
-            metadata_json TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    await primitives.runAsync(`
-        CREATE TABLE session_chat_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            username TEXT NOT NULL,
-            message TEXT NOT NULL,
-            color TEXT,
-            absolute_time_ms INTEGER NOT NULL,
-            relative_time_ms INTEGER NOT NULL,
-            is_system INTEGER DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    await primitives.runAsync(`
-        CREATE TABLE admin_review_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            description TEXT,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    await primitives.runAsync(
-        `INSERT INTO admin_review_settings (key, value, description) VALUES
-           ('retention_days', '7', 'Days to keep recordings on B2 (1-7)'),
-           ('upload_enabled', 'true', 'Enable automatic upload to B2'),
-           ('local_buffer_hours', '2', 'Hours to keep local copies before upload')`
-    );
+    await bootstrapProductionSchema(primitives);
 }
 
 /**
@@ -367,6 +262,8 @@ async function seedRecordingSession(primitives, overrides = {}) {
 module.exports = {
     makeSqlite3Primitives,
     makeBetterPrimitives,
+    makeBetterSchemaShim,
+    bootstrapProductionSchema,
     bootstrapMoneyFlowSchema,
     bootstrapRecordingSchema,
     seedUserAndItem,
