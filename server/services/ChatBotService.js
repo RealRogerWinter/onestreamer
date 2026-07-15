@@ -27,7 +27,7 @@ class ChatBotService {
         this.bots = new Map(); // botId -> BotInstance
         this.llmService = new ChatBotLLMService();
         this.repo = chatBotRepository || new ChatBotRepository();
-        this.chatServiceUrl = process.env.CHAT_SERVICE_URL || 'https://127.0.0.1:8444';
+        this.chatServiceUrl = require('../utils/chatServiceClient').chatServiceUrl();
         this.isInitialized = false;
         this.io = null; // Reference to Socket.IO server instance for managing connections
         // BotEventBus is the post-PR-1.3 path for ChatBot → MovieBot signaling.
