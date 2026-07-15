@@ -119,6 +119,8 @@ The dev defaults `devkey` / `secret` are well-known LiveKit values that the dev 
 
 All required for recording/clip features. See [`/docs/integrations/backblaze-b2.md`](../integrations/backblaze-b2.md).
 
+> **Keep all `B2_*` variables UNSET until an operator deliberately enables archival.** The upload-correctness blockers (audit R5/R6/R11) are fixed ([ADR-0034](../architecture/adr/0034-b2-upload-ordering-multipart-timeouts.md)), but enablement is a separate operational decision: local retention is still coupled to upload state until Plan 01 P2.1 lands, and first enablement will churn the legacy backlog through `upload_failed` (expected). With the vars unset the whole archival subsystem is dormant.
+
 ---
 
 ## Email (SendGrid SMTP via nodemailer)

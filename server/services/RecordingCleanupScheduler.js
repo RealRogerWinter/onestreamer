@@ -84,11 +84,14 @@ class RecordingCleanupScheduler {
             // safety valve: even an un-uploaded session is cleaned up
             // eventually, so a permanently-failed upload doesn't leak
             // local storage forever.
+            // P2.2: upload_failed rows are terminal — they will never
+            // upload, so they reap at plain retention (no extra retry
+            // window; the OR clause lets them pass the guard immediately).
             const expiredSessions = await allAsync(`
                 SELECT * FROM recording_sessions
                 WHERE start_time < ?
-                  AND status IN ('completed', 'uploaded')
-                  AND (b2_file_id IS NOT NULL OR start_time < ?)
+                  AND status IN ('completed', 'uploaded', 'upload_failed')
+                  AND (b2_file_id IS NOT NULL OR status = 'upload_failed' OR start_time < ?)
             `, [cutoffTime, extendedCutoff]);
 
             if (expiredSessions.length === 0) {
@@ -177,8 +180,8 @@ class RecordingCleanupScheduler {
         const expiredCount = await getAsync(`
             SELECT COUNT(*) as count FROM recording_sessions
             WHERE start_time < ?
-              AND status IN ('completed', 'uploaded')
-              AND (b2_file_id IS NOT NULL OR start_time < ?)
+              AND status IN ('completed', 'uploaded', 'upload_failed')
+              AND (b2_file_id IS NOT NULL OR status = 'upload_failed' OR start_time < ?)
         `, [cutoffTime, extendedCutoff]);
 
         // Get total session count

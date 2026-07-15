@@ -90,12 +90,15 @@ jest.mock('../../database/database', () => {
         const cutoffTime = params[0];
         const extendedCutoff = params[1];
         // Replicate the new SQL filter exactly so tests reflect production.
+        // P2.2: 'upload_failed' is terminal — reaps at plain retention via
+        // its own OR-clause leg (no b2 confirmation, no extended window).
         return rows.filter((r) => {
             if (r.start_time >= cutoffTime) return false;
-            if (!['completed', 'uploaded'].includes(r.status)) return false;
+            if (!['completed', 'uploaded', 'upload_failed'].includes(r.status)) return false;
             const bUploaded = r.b2_file_id !== null && r.b2_file_id !== undefined;
+            const failedTerminal = r.status === 'upload_failed';
             const pastExtended = extendedCutoff !== undefined && r.start_time < extendedCutoff;
-            return bUploaded || pastExtended;
+            return bUploaded || failedTerminal || pastExtended;
         });
     }
 
@@ -227,6 +230,27 @@ describe('RecordingCleanupScheduler.runCleanup — upload-race guard (PR 8.4)', 
         ]);
         await scheduler.runCleanup();
         expect(dbMock.__testStore.getRows().length).toBe(2);
+    });
+
+    // P2.2: 'upload_failed' (distinct from the legacy 'failed') is terminal —
+    // it reaps at plain retention without waiting the extra retry window,
+    // because it will never upload.
+    test('upload_failed past retention is reaped even inside the retry window', async () => {
+        dbMock.__testStore.seedRows([
+            // 7.5 days old: past the 7d retention but INSIDE the 1d retry
+            // window — a plain un-uploaded 'completed' row would be kept.
+            makeSession({ sessionId: 'UF-OLD', daysAgo: 7.5, status: 'upload_failed', b2_file_id: null }),
+        ]);
+        await scheduler.runCleanup();
+        expect(dbMock.__testStore.getRows().length).toBe(0);
+    });
+
+    test('upload_failed under retention is untouched', async () => {
+        dbMock.__testStore.seedRows([
+            makeSession({ sessionId: 'UF-FRESH', daysAgo: 1, status: 'upload_failed', b2_file_id: null }),
+        ]);
+        await scheduler.runCleanup();
+        expect(dbMock.__testStore.getRows().length).toBe(1);
     });
 });
 

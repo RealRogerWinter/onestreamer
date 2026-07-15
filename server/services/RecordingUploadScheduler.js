@@ -19,6 +19,18 @@ class RecordingUploadScheduler {
         this.isProcessing = false;
         this.checkInterval = null;
 
+        // P2.2: terminal-failure bookkeeping. After maxUploadAttempts
+        // consecutive transient failures (12 × 30min ≈ 6h, inside the disk
+        // scanner's 26h pending-dir grace) the session goes to the terminal
+        // 'upload_failed' status so the cleaner can reclaim it. The counter
+        // is deliberately in-memory: a restart resets it, but the
+        // local-recording-missing path (dir reclaimed at 26h) guarantees
+        // termination anyway, and persisting it would need a schema change
+        // for no behavioral gain.
+        this.maxUploadAttempts = config.maxUploadAttempts || 12;
+        this.attempts = new Map(); // sessionId -> consecutive failure count
+        this.processingStartedAt = null; // watchdog on the isProcessing latch
+
         logger.debug(`[UploadScheduler] Initialized with ${this.localBufferHours}h local buffer`);
     }
 
@@ -63,7 +75,7 @@ class RecordingUploadScheduler {
         try {
             const sessions = await allAsync(`
                 SELECT * FROM recording_sessions
-                WHERE b2_file_id IS NULL AND end_time IS NOT NULL AND status != 'uploaded'
+                WHERE b2_file_id IS NULL AND end_time IS NOT NULL AND status NOT IN ('uploaded', 'upload_failed')
                 ORDER BY end_time ASC
             `);
 
@@ -108,10 +120,19 @@ class RecordingUploadScheduler {
      */
     async processPendingUploads() {
         if (this.isProcessing) {
+            // P2.2 watchdog: alarm (don't force-release) if the latch has
+            // been held implausibly long — every await under it is now
+            // bounded (concat timeout + S3 request timeouts), so a trip
+            // here means one of those bounds failed.
+            const heldMs = this.processingStartedAt ? Date.now() - this.processingStartedAt : 0;
+            if (heldMs > 2 * 60 * 60 * 1000) {
+                logger.error(`[UploadScheduler] isProcessing latch held ${Math.round(heldMs / 60000)} min - a hung upload/concat is blocking all uploads`);
+            }
             return;
         }
 
         this.isProcessing = true;
+        this.processingStartedAt = Date.now();
 
         try {
             // Re-discover pending sessions each tick (additive — see
@@ -129,7 +150,14 @@ class RecordingUploadScheduler {
 
                     if (result.success) {
                         this.uploadQueue.delete(sessionId);
+                        this.attempts.delete(sessionId);
                         logger.debug(`[UploadScheduler] Successfully uploaded session ${sessionId}`);
+                    } else if (result.permanent) {
+                        // P2.2: terminal — the session is 'upload_failed' in
+                        // the DB; stop retrying so the cleaner can reclaim it.
+                        this.uploadQueue.delete(sessionId);
+                        this.attempts.delete(sessionId);
+                        logger.error(`[UploadScheduler] Giving up on ${sessionId} (upload_failed): ${result.error}`);
                     } else {
                         // Retry in 30 minutes
                         this.uploadQueue.set(sessionId, now + 30 * 60 * 1000);
@@ -141,6 +169,7 @@ class RecordingUploadScheduler {
             logger.error({ err: error }, '[UploadScheduler] Error processing uploads');
         } finally {
             this.isProcessing = false;
+            this.processingStartedAt = null;
         }
     }
 
@@ -168,7 +197,15 @@ class RecordingUploadScheduler {
                 // Try default path
                 const defaultPath = path.join(process.env.EGRESS_RECORDINGS_DIR || '/root/onestreamer/egress-recordings', sessionId);
                 if (!fs.existsSync(defaultPath)) {
-                    return { success: false, error: 'Local recording not found' };
+                    // P2.2: PERMANENT — the source dir is gone (reclaimed by
+                    // the disk scanner after its 26h grace), so this upload
+                    // can never succeed. Terminal status lets the DB-row
+                    // cleaner reap it instead of retrying forever.
+                    await runAsync(
+                        'UPDATE recording_sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?',
+                        ['upload_failed', sessionId]
+                    );
+                    return { success: false, permanent: true, error: 'Local recording not found' };
                 }
                 session.local_path = defaultPath;
             }
@@ -206,8 +243,21 @@ class RecordingUploadScheduler {
                 // Optionally delete local files
                 await this.cleanupLocalFiles(session.local_path);
 
+                this.attempts.delete(sessionId);
                 return { success: true };
             } else {
+                // P2.2: cap consecutive transient failures — after
+                // maxUploadAttempts, flip to the terminal 'upload_failed'
+                // instead of reverting to 'completed' for another retry.
+                const attemptCount = (this.attempts.get(sessionId) || 0) + 1;
+                this.attempts.set(sessionId, attemptCount);
+                if (attemptCount >= this.maxUploadAttempts) {
+                    await runAsync(
+                        'UPDATE recording_sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?',
+                        ['upload_failed', sessionId]
+                    );
+                    return { success: false, permanent: true, error: `${result.error} (giving up after ${attemptCount} attempts)` };
+                }
                 // Revert status
                 await runAsync(
                     'UPDATE recording_sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?',
