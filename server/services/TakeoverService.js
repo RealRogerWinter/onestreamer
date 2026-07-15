@@ -26,6 +26,26 @@ class TakeoverService {
   }
 
   /**
+   * B1 (audit Plan 07): attach the Redis client AFTER it connects.
+   * TakeoverService is constructed at module load, before
+   * bootInitializeRedis() resolves, so the constructor always captured
+   * `undefined` — every Redis path (cooldowns, last_stream_start_time, and
+   * the T5 extended_cooldown_until persistence) silently ran on the
+   * in-memory fallback, which dies with the process. index.js calls this
+   * once Redis is up so cooldowns actually persist across restarts. Then
+   * reloads the persisted values that the constructor's fire-and-forget
+   * loads missed (they ran against the null client).
+   */
+  setRedisClient(redisClient) {
+    this.redisClient = redisClient || null;
+    if (this.redisClient) {
+      this.loadLastStreamStartTime().catch((err) => logger.error({ err }, 'loadLastStreamStartTime (post-redis) failed'));
+      this.loadExtendedCooldown().catch((err) => logger.error({ err }, 'loadExtendedCooldown (post-redis) failed'));
+      logger.debug('🔧 TAKEOVER: Redis client attached - cooldowns now persist across restarts');
+    }
+  }
+
+  /**
    * Set the game stream service reference (for game mode integration)
    */
   setGameStreamService(gameStreamService) {

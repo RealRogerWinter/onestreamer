@@ -372,5 +372,26 @@ describe('TakeoverService', () => {
 
       expect(service.inMemoryStorage.get('extended_cooldown_until')).toBe(service.extendedCooldownUntil);
     });
+
+    // B1 (audit Plan 07): TakeoverService is constructed before Redis
+    // connects, so it captures undefined and all persistence silently runs
+    // on the process-local fallback. setRedisClient attaches the client
+    // post-connect and reloads the persisted cooldowns.
+    test('setRedisClient attaches the client and reloads the persisted extended cooldown', async () => {
+      const until = Date.now() + 30000;
+      const client = {
+        get: jest.fn(async (key) => (key === 'extended_cooldown_until' ? String(until) : null)),
+        set: jest.fn(), expire: jest.fn(), del: jest.fn(),
+      };
+      const service = new TakeoverService(); // no redis at construction
+      expect(service.redisClient).toBe(null);
+
+      service.setRedisClient(client);
+      await new Promise((r) => setImmediate(r)); // let the fire-and-forget loads settle
+
+      expect(service.redisClient).toBe(client);
+      expect(client.get).toHaveBeenCalledWith('extended_cooldown_until');
+      expect(service.extendedCooldownUntil).toBe(until);
+    });
   });
 });

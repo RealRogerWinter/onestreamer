@@ -1193,7 +1193,17 @@ require('./bootstrap/register-socket-handlers')(io, {
 
 async function startServer() {
   redisClient = await bootInitializeRedis();
-  
+
+  // B1 (audit Plan 07): hand the just-connected Redis client to services
+  // that were constructed at module load with `undefined` (createServices ran
+  // before this point). Without this, TakeoverService's cooldown persistence
+  // — including the T5 guard-item extended cooldown — silently ran on the
+  // process-local in-memory fallback and never survived a restart.
+  if (redisClient && takeoverService.setRedisClient) {
+    takeoverService.setRedisClient(redisClient);
+  }
+
+
   // Initialize resource monitoring
   resourceMonitor.setCallbacks({
     onAlert: (alert) => {
@@ -1652,12 +1662,23 @@ async function startServer() {
   // doesn't need a setInterval to stay alive — the httpServer/httpsServer
   // listening sockets already keep the process up.
 
+  // B3 (audit Plan 07): a listener error (e.g. EADDRINUSE in dev/no-HTTPS
+  // mode) is fatal — logging alone left a zombie process bound to nothing.
+  // Mirrors the HTTPS-listener + cert-load exits already in
+  // start-listeners.js / the USE_HTTPS block above.
   httpServer.on('error', (err) => {
-    logger.error({ err }, '❌ SERVER: Server error');
+    logger.error({ err }, '❌ SERVER: HTTP listener error - exiting');
+    process.exit(1);
   });
 }
 
-startServer().catch((err) => logger.error({ err }, 'startServer failed'));
+// B3: a throw inside startServer() used to only log and leave a half-booted
+// zombie (listeners maybe up, services not). Exit non-zero so the container
+// restarts cleanly instead of running degraded.
+startServer().catch((err) => {
+  logger.error({ err }, 'startServer failed - exiting');
+  process.exit(1);
+});
 
 // Phase 15B.4 — shutdown sequence + signal handlers + cleanupMediaProcesses
 // extracted to bootstrap/shutdown.js. Lazy services are passed via getters

@@ -352,6 +352,13 @@ class VisionBotService extends TranscriptionDrivenBotService {
                 abortSignal,
                 sourceStreamerId: frame.streamerId,
                 sourceStreamGeneration: frame.streamGeneration,
+                // A2 (audit Plan 07): thread the LIVE streamService so the F3
+                // takeover guard can actually fire — it compares the frame's
+                // captured generation against the current one and drops if a
+                // takeover happened mid-cycle (streamer A's frame would else
+                // post into streamer B's chat). Without this the guard was
+                // dead code (streamService undefined → always skipped).
+                streamService: this.streamService,
                 visionPromptTemplate: this.config.vision_prompt_template,
                 model: this.config.vision_model,
                 maxTokens: this.config.max_response_tokens,
