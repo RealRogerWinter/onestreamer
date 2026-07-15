@@ -185,9 +185,22 @@ async function bootstrapSchema(primitives) {
 }
 
 function makeServices(primitives) {
+    // ADR-0029 strengthening: atomicity must come from tx plumbing, not the
+    // shared-connection implicit join (which the gated module wrappers have
+    // closed). Track any WRITE that reaches the service-held (non-tx)
+    // primitives while a scope is open — post-refactor that list must stay
+    // empty, or the test is passing for the wrong reason.
+    let scopeOpen = false;
+    const txBypassWrites = [];
+    const recordBypass = (kind, raw) => (sql, params) => {
+        if (scopeOpen && /^\s*(INSERT|UPDATE|DELETE)/i.test(String(sql))) {
+            txBypassWrites.push(`${kind}: ${String(sql).trim().slice(0, 60)}`);
+        }
+        return raw(sql, params);
+    };
     const repoDeps = {
-        getAsync: primitives.getAsync,
-        runAsync: primitives.runAsync,
+        getAsync: recordBypass('getAsync', primitives.getAsync),
+        runAsync: recordBypass('runAsync', primitives.runAsync),
         allAsync: primitives.allAsync,
     };
     const userRepository = new UserRepository(repoDeps);
@@ -205,11 +218,9 @@ function makeServices(primitives) {
         async getAllItems() { return await primitives.allAsync('SELECT * FROM items'); },
     };
 
-    // Minimal AccountService stub that uses the test's primitives (so the
-    // points UPDATE lands inside our withTransaction scope on the same
-    // connection). Production AccountService captures the module-level
-    // wrappers via destructuring at require time; the relevant property
-    // here is "uses the same primitives the helper is constructed with".
+    // Minimal AccountService stub honoring the per-call tx handle
+    // (ADR-0029): in-scope writes go through tx, matching the production
+    // AccountService → PointsManager → tx-scoped-repo plumbing.
     const accountService = {
         async getPointsBalance(userId) {
             const row = await primitives.getAsync(
@@ -218,8 +229,9 @@ function makeServices(primitives) {
             );
             return row?.points_balance || 0;
         },
-        async subtractPoints(userId, amount) {
-            const updated = await primitives.getAsync(
+        async subtractPoints(userId, amount, type, description, metadata, tx = null) {
+            const getAsync = tx ? tx.getAsync : repoDeps.getAsync;
+            const updated = await getAsync(
                 `UPDATE user_stats
                     SET points_balance = points_balance - ?,
                         updated_at = CURRENT_TIMESTAMP
@@ -239,9 +251,23 @@ function makeServices(primitives) {
         itemTransactionRepository,
     });
 
-    // Build withTransaction bound to THESE primitives — not the module
-    // singleton in database.js (which is bound to the real DB handle).
-    const withTransaction = createWithTransaction(repoDeps);
+    // Build withTransaction bound to the RAW primitives — not the module
+    // singleton in database.js (which is bound to the real DB handle). The
+    // tx handle the body receives is therefore the raw wrappers, while the
+    // service-held repos go through the bypass recorder above.
+    const rawWithTransaction = createWithTransaction({
+        runAsync: primitives.runAsync,
+        getAsync: primitives.getAsync,
+        allAsync: primitives.allAsync,
+    });
+    const withTransaction = (fn, opts) => rawWithTransaction(async (tx) => {
+        scopeOpen = true;
+        try {
+            return await fn(tx);
+        } finally {
+            scopeOpen = false;
+        }
+    }, opts);
 
     const shopService = new ShopService(itemService, inventoryService, accountService, null, {
         userRepository,
@@ -250,7 +276,7 @@ function makeServices(primitives) {
         withTransaction,
     });
 
-    return { shopService, shopRepository, itemTransactionRepository, userInventoryRepository, accountService };
+    return { shopService, shopRepository, itemTransactionRepository, userInventoryRepository, accountService, txBypassWrites };
 }
 
 describe.each([
@@ -324,17 +350,25 @@ describe.each([
                 'SELECT stock_limit FROM shop_items WHERE id = ?', [1]);
             expect(stockRow.stock_limit).toBe(8);
         });
+
+        it('routes every in-scope write through the tx handle — the implicit join is no longer load-bearing (ADR-0029)', async () => {
+            const result = await services.shopService.purchaseItem(42, 7, 2);
+            expect(result.success).toBe(true);
+            // No INSERT/UPDATE/DELETE reached the service-held (non-tx)
+            // primitives while the scope was open. Pre-refactor this list was
+            // non-empty: atomicity only held because bare writes implicitly
+            // joined the open tx on the shared connection (audit DB2).
+            expect(services.txBypassWrites).toEqual([]);
+        });
     });
 
     describe('rollback', () => {
         it('rolls back EVERYTHING when a body statement throws mid-tx — points NOT debited, inventory NOT credited, audit NOT written', async () => {
-            // Inject a failing decrementStockLimit AFTER inventory + audit
-            // have already written, simulating the worst-case mid-tx
-            // failure (last statement of the tx body).
-            const originalDecrement = services.shopRepository.decrementStockLimit.bind(services.shopRepository);
-            services.shopRepository.decrementStockLimit = jest.fn(async () => {
-                throw new Error('simulated I/O failure on stock decrement');
-            });
+            // Inject a failing decrementStockLimit mid-tx. Prototype-level
+            // spy: purchaseItem builds a tx-scoped ShopRepository inside the
+            // scope (ADR-0029), so instance-level mocks no longer intercept.
+            const decrementSpy = jest.spyOn(ShopRepository.prototype, 'decrementStockLimit')
+                .mockRejectedValue(new Error('simulated I/O failure on stock decrement'));
 
             await expect(services.shopService.purchaseItem(42, 7, 2)).rejects.toThrow('simulated I/O failure');
 
@@ -355,15 +389,12 @@ describe.each([
                 'SELECT stock_limit FROM shop_items WHERE id = ?', [1]);
             expect(stockRow.stock_limit).toBe(10); // unchanged
 
-            // restore for any subsequent tests in the block
-            services.shopRepository.decrementStockLimit = originalDecrement;
+            decrementSpy.mockRestore();
         });
 
         it('rolls back when the audit-write step throws — points NOT debited, inventory NOT credited', async () => {
-            const original = services.itemTransactionRepository.insertPurchase.bind(services.itemTransactionRepository);
-            services.itemTransactionRepository.insertPurchase = jest.fn(async () => {
-                throw new Error('simulated audit-write failure');
-            });
+            const insertSpy = jest.spyOn(ItemTransactionRepository.prototype, 'insertPurchase')
+                .mockRejectedValue(new Error('simulated audit-write failure'));
 
             await expect(services.shopService.purchaseItem(42, 7, 1)).rejects.toThrow('simulated audit-write failure');
 
@@ -375,7 +406,7 @@ describe.each([
                 'SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [42, 7]);
             expect(invRow).toBeUndefined();
 
-            services.itemTransactionRepository.insertPurchase = original;
+            insertSpy.mockRestore();
         });
     });
 
@@ -414,9 +445,9 @@ describe.each([
         it('rolls back when the guarded stock decrement returns no row (concurrent purchase consumed the last unit)', async () => {
             // Simulate the race: the pre-tx stock check sees enough stock,
             // but between then and our decrement another purchase has cleaned
-            // the shelf. Stub decrementStockLimit to return undefined.
-            const original = services.shopRepository.decrementStockLimit.bind(services.shopRepository);
-            services.shopRepository.decrementStockLimit = jest.fn(async () => undefined);
+            // the shelf. Prototype-level stub (tx-scoped repos, ADR-0029).
+            const decrementSpy = jest.spyOn(ShopRepository.prototype, 'decrementStockLimit')
+                .mockResolvedValue(undefined);
 
             await expect(services.shopService.purchaseItem(42, 7, 1)).rejects.toThrow('Insufficient stock');
 
@@ -433,7 +464,7 @@ describe.each([
                 'SELECT * FROM item_transactions WHERE user_id = ?', [42]);
             expect(txRows).toEqual([]);
 
-            services.shopRepository.decrementStockLimit = original;
+            decrementSpy.mockRestore();
         });
 
         it('rolls back when the inside-tx max-stack re-check fails (concurrent credit pushed inventory past cap)', async () => {
@@ -451,15 +482,18 @@ describe.each([
             // Pre-tx check (run inside the service) sees 4 already, so a
             // qty=2 purchase would trip the *pre-tx* guard. To force the
             // intra-tx path, sneak the inventory in AFTER the pre-check by
-            // making getInventoryItem return 0 the first time (pre-check)
-            // and the real value (4) the second time (intra-tx).
-            const originalFind = services.userInventoryRepository.findInventoryItem.bind(services.userInventoryRepository);
+            // making findInventoryItem return 0 the first time (pre-check)
+            // and the real value (4) afterwards (intra-tx). Prototype-level
+            // (tx-scoped repos, ADR-0029); `function` keeps `this` so the
+            // passthrough hits whichever instance the call landed on.
+            const originalFind = UserInventoryRepository.prototype.findInventoryItem;
             let callCount = 0;
-            services.userInventoryRepository.findInventoryItem = jest.fn(async (...args) => {
-                callCount++;
-                if (callCount === 1) return undefined; // pre-check sees nothing
-                return await originalFind(...args);
-            });
+            const findSpy = jest.spyOn(UserInventoryRepository.prototype, 'findInventoryItem')
+                .mockImplementation(function (...args) {
+                    callCount++;
+                    if (callCount === 1) return Promise.resolve(undefined); // pre-check sees nothing
+                    return originalFind.apply(this, args);
+                });
 
             await expect(services.shopService.purchaseItem(42, 7, 2)).rejects.toThrow('Cannot exceed maximum stack');
 
@@ -471,7 +505,7 @@ describe.each([
                 'SELECT * FROM item_transactions WHERE user_id = ?', [42]);
             expect(txRows).toEqual([]); // no audit row written
 
-            services.userInventoryRepository.findInventoryItem = originalFind;
+            findSpy.mockRestore();
         });
     });
 });

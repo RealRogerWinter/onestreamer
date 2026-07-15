@@ -75,13 +75,24 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
 
     socket.emit('join-as-viewer');
 
+    // Track every (event, handler) pair we register so cleanup can pass the
+    // SAME references to socket.off. A bare socket.off('stream-started')
+    // removes every other component's listeners for that event on the shared
+    // App-level socket — e.g. WebRTCViewer's stream-ended handler — killing
+    // takeover/stream-end handling app-wide (audit Plan 05, C4).
+    const registered: Array<[string, (...args: any[]) => void]> = [];
+    const on = (event: string, handler: (...args: any[]) => void): void => {
+      registered.push([event, handler]);
+      socket.on(event, handler);
+    };
+
     const handleConnect = () => {
       console.log('🔌 CLIENT: Socket (re)connected - requesting stream status');
       socket.emit('join-as-viewer');
     };
-    socket.on('connect', handleConnect);
+    on('connect', handleConnect);
 
-    socket.on('stream-started', (data: any) => {
+    on('stream-started', (data: any) => {
       // Clear any pending stream switch timeout
       if (streamSwitchTimeoutRef.current) {
         clearTimeout(streamSwitchTimeoutRef.current);
@@ -118,7 +129,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }
     });
 
-    socket.on('stream-ended', (data?: { reason?: string; previousStreamer?: string; newStreamer?: string; newStreamerDisplayName?: string; isRandomRotation?: boolean; isUrlStream?: boolean }) => {
+    on('stream-ended', (data?: { reason?: string; previousStreamer?: string; newStreamer?: string; newStreamerDisplayName?: string; isRandomRotation?: boolean; isUrlStream?: boolean }) => {
       // CRITICAL: Handle takeover differently - there IS an active stream (the new one)
       if (data?.reason === 'takeover' && data.newStreamer) {
         console.log(`🛑 CLIENT: Stream ended due to takeover by ${data.newStreamer} (${data.newStreamerDisplayName}) - updating to new streamer`);
@@ -201,12 +212,12 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }
     });
 
-    socket.on('viewer-count-update', (count: number) => {
+    on('viewer-count-update', (count: number) => {
       setStreamStatus(prev => ({ ...prev, viewerCount: count }));
     });
 
     // CRITICAL: Listen for new-streamer events to update streamer display name
-    socket.on('new-streamer', (data: {
+    on('new-streamer', (data: {
       streamer?: {
         odyseeId?: string;
         odysee_username?: string;
@@ -241,7 +252,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
     });
 
     // Random rotation status updates
-    socket.on('random-rotation-status', (data: {
+    on('random-rotation-status', (data: {
       enabled: boolean;
       currentStream?: {
         displayName: string;
@@ -296,7 +307,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }
     });
 
-    socket.on('rotation-timing', (data: {
+    on('rotation-timing', (data: {
       nextRotationAt: number;
       currentRotationDuration: number;
       serverTime: number;
@@ -310,7 +321,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }));
     });
 
-    socket.on('rotation-extended', (data: {
+    on('rotation-extended', (data: {
       extendedBy: number;
       extendedByMinutes: number;
       newNextRotationAt: number;
@@ -324,7 +335,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }));
     });
 
-    socket.on('rotation-reduced', (data: {
+    on('rotation-reduced', (data: {
       reducedBy: number;
       reducedByMinutes: number;
       newNextRotationAt: number;
@@ -342,7 +353,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }));
     });
 
-    socket.on('rotation-locked', (data: {
+    on('rotation-locked', (data: {
       locked: boolean;
       remainingMs: number;
     }) => {
@@ -354,7 +365,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }));
     });
 
-    socket.on('rotation-unlocked', (data: {
+    on('rotation-unlocked', (data: {
       locked: boolean;
       remainingMs: number;
       nextRotationAt: number;
@@ -368,12 +379,12 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }));
     });
 
-    socket.on('global-cooldown', (data: { cooldownRemaining: number }) => {
+    on('global-cooldown', (data: { cooldownRemaining: number }) => {
       setCooldownRemaining(data.cooldownRemaining);
       startCooldownTimer(data.cooldownRemaining);
     });
 
-    socket.on('cooldown-status-update', (data: { globalCooldown: any, timestamp: number }) => {
+    on('cooldown-status-update', (data: { globalCooldown: any, timestamp: number }) => {
       if (data.globalCooldown) {
         const remaining = data.globalCooldown.remainingSeconds || data.globalCooldown.remaining || 0;
         setCooldownRemaining(Math.ceil(remaining));
@@ -381,7 +392,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }
     });
 
-    socket.on('streaming-approved', () => {
+    on('streaming-approved', () => {
       setIsStreaming(true);
       onClearErrorRef.current?.();
 
@@ -393,7 +404,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }, 2000);
     });
 
-    socket.on('takeover-approved', () => {
+    on('takeover-approved', () => {
       setIsStreaming(true);
       onClearErrorRef.current?.();
 
@@ -405,24 +416,24 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
       }, 2500);
     });
 
-    socket.on('takeover-denied', (data: { reason: string, cooldownRemaining: number }) => {
+    on('takeover-denied', (data: { reason: string, cooldownRemaining: number }) => {
       setCooldownRemaining(data.cooldownRemaining);
       startCooldownTimer(data.cooldownRemaining);
       onErrorRef.current?.(data.reason);
     });
 
-    socket.on('takeover-blocked', (data: { message: string, cooldownRemaining: number }) => {
+    on('takeover-blocked', (data: { message: string, cooldownRemaining: number }) => {
       setCooldownRemaining(data.cooldownRemaining);
       startCooldownTimer(data.cooldownRemaining);
       onErrorRef.current?.(data.message);
     });
 
-    socket.on('streamer-buffs-update', (data: { buffs: any[] }) => {
+    on('streamer-buffs-update', (data: { buffs: any[] }) => {
       setStreamerBuffs(data.buffs || []);
     });
 
     // Handle force disconnect from killswitch or admin
-    socket.on('force-disconnect', (data: { reason: string; activatedBy?: string; message: string }) => {
+    on('force-disconnect', (data: { reason: string; activatedBy?: string; message: string }) => {
       console.log('💥 CLIENT: Force disconnect received:', data);
 
       // CRITICAL: If this is a stream_takeover, DON'T clear the stream status or show disconnect UI
@@ -471,7 +482,7 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
     });
 
     // Stream takeover event (sent to the current streamer being taken over)
-    socket.on('stream-takeover', (data: { newStreamerId: string; newStreamerDisplayName?: string; cooldownRemaining: number }) => {
+    on('stream-takeover', (data: { newStreamerId: string; newStreamerDisplayName?: string; cooldownRemaining: number }) => {
       console.log('🔄 CLIENT: Stream takeover event received:', data);
       if (isStreamingRef.current) {
         console.log('🔄 CLIENT: I was streaming, transitioning to viewer mode');
@@ -512,26 +523,9 @@ export function useStreamSocketListeners(deps: StreamSocketListenerDeps): void {
     });
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('stream-started');
-      socket.off('stream-ended');
-      socket.off('viewer-count-update');
-      socket.off('new-streamer');
-      socket.off('random-rotation-status');
-      socket.off('rotation-timing');
-      socket.off('rotation-extended');
-      socket.off('rotation-reduced');
-      socket.off('rotation-locked');
-      socket.off('rotation-unlocked');
-      socket.off('global-cooldown');
-      socket.off('cooldown-status-update');
-      socket.off('streaming-approved');
-      socket.off('takeover-approved');
-      socket.off('takeover-denied');
-      socket.off('takeover-blocked');
-      socket.off('streamer-buffs-update');
-      socket.off('force-disconnect');
-      socket.off('stream-takeover');
+      // Remove exactly the handlers this hook registered (see `on` above) —
+      // never the bare-event form, which strips other components' listeners.
+      registered.forEach(([event, handler]) => socket.off(event, handler));
     };
   }, [socket, startCooldownTimer]); // eslint-disable-line react-hooks/exhaustive-deps
 }

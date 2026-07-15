@@ -674,12 +674,21 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
         socket,
         serverUrl,
         onConnectionLost: () => {
-          setConnectionState('disconnected');
+          // The client's serialized reconnect worker (ADR-0031) starts
+          // retrying on full disconnect; show the attempt-counting recovery
+          // overlay while it works instead of a dead-end error.
+          setConnectionState('reconnecting');
           setError('Connection lost - attempting recovery...');
         },
         onConnectionRecovered: async () => {
           setConnectionState('reconnecting');
           setError(null);
+        },
+        onReconnectionFailed: () => {
+          // The reconnect worker exhausted its budget (~2 minutes). Fall back
+          // to the manual affordances (Retry Connection / Force Reconnect).
+          setConnectionState('disconnected');
+          setError('Connection lost - automatic reconnection failed. Please retry.');
         },
         onStreamUpdate: async () => {
           // CRITICAL FIX: Skip if initializeViewer is handling the consume
@@ -2295,7 +2304,7 @@ const WebRTCViewer: React.FC<WebRTCViewerProps> = ({ socket, isActive, className
             Reconnecting to stream...
           </p>
           <p style={{ textAlign: 'center', margin: '5px', fontSize: '14px', opacity: 0.7 }}>
-            Attempt {reconnectionAttempts} of 5
+            Attempt {reconnectionAttempts} of 8
           </p>
           <button 
             onClick={handleForceReconnection}

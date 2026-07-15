@@ -29,6 +29,25 @@ class InventoryService {
         // AccountService.
         this.userInventoryRepository = deps.userInventoryRepository || new UserInventoryRepository();
         this.itemTransactionRepository = deps.itemTransactionRepository || new ItemTransactionRepository();
+        // Injected for testability (matches ShopService); resolved lazily from
+        // the database module otherwise, so unit tests can jest.mock it
+        // without dragging the DB into the require graph at module load.
+        this.withTransaction = deps.withTransaction || null;
+    }
+
+    _getWithTransaction() {
+        if (!this.withTransaction) {
+            this.withTransaction = require('../database/database').withTransaction;
+        }
+        return this.withTransaction;
+    }
+
+    /**
+     * Inventory repo to write through: the caller's tx-scoped one when a
+     * `tx` handle is supplied (ADR-0029), the default otherwise.
+     */
+    _inventoryRepo(tx) {
+        return tx ? new UserInventoryRepository(tx) : this.userInventoryRepository;
     }
 
     // Set buff-debuff service dependency after initialization if needed
@@ -53,11 +72,11 @@ class InventoryService {
         return await this.userInventoryRepository.findInventoryWithItemsForUser(userId);
     }
 
-    async getInventoryItem(userId, itemId) {
-        return await this.userInventoryRepository.findInventoryItem(userId, itemId);
+    async getInventoryItem(userId, itemId, tx = null) {
+        return await this._inventoryRepo(tx).findInventoryItem(userId, itemId);
     }
 
-    async addItemToInventory(userId, itemId, quantity = 1) {
+    async addItemToInventory(userId, itemId, quantity = 1, tx = null) {
         const item = await this.itemService.getItemById(itemId);
         if (!item) {
             throw new Error('Item not found');
@@ -67,9 +86,9 @@ class InventoryService {
         // is the atomic upsert below, so two concurrent adds can no longer
         // lost-update (the stored quantity is always exact — `added` is
         // best-effort under a race, exact otherwise).
-        const before = (await this.getInventoryItem(userId, itemId))?.quantity ?? 0;
+        const before = (await this.getInventoryItem(userId, itemId, tx))?.quantity ?? 0;
 
-        const updated = await this.userInventoryRepository.incrementQuantity(
+        const updated = await this._inventoryRepo(tx).incrementQuantity(
             userId,
             itemId,
             quantity,
@@ -84,7 +103,7 @@ class InventoryService {
         };
     }
 
-    async removeItemFromInventory(userId, itemId, quantity = 1) {
+    async removeItemFromInventory(userId, itemId, quantity = 1, tx = null) {
         // Atomic guarded decrement (ADR-0013a; mirrors
         // AccountStatsRepository.atomicSubtractPoints): the UPDATE applies and
         // RETURNs the new quantity only if the row holds >= quantity, so two
@@ -92,13 +111,14 @@ class InventoryService {
         // loser gets undefined and throws. Closes the item-duplication /
         // double-use race the prior read-then-update allowed. Single statement,
         // so it composes safely inside an outer withTransaction scope.
-        const updated = await this.userInventoryRepository.decrementQuantity(userId, itemId, quantity);
+        const repo = this._inventoryRepo(tx);
+        const updated = await repo.decrementQuantity(userId, itemId, quantity);
 
         if (!updated) {
             // Decrement didn't apply. Disambiguate "missing" vs "insufficient"
             // to preserve the pre-atomic error messages — this read is only for
             // the message; the mutation decision was already made atomically.
-            const inventoryItem = await this.getInventoryItem(userId, itemId);
+            const inventoryItem = await this.getInventoryItem(userId, itemId, tx);
             if (!inventoryItem) {
                 throw new Error('Item not in inventory');
             }
@@ -107,7 +127,7 @@ class InventoryService {
 
         const newQuantity = updated.quantity;
         if (newQuantity === 0) {
-            await this.userInventoryRepository.deleteItem(userId, itemId);
+            await repo.deleteItem(userId, itemId);
         }
 
         return {
@@ -234,23 +254,27 @@ class InventoryService {
     }
 
     async transferItem(fromUserId, toUserId, itemId, quantity = 1) {
-        const fromInventory = await this.getInventoryItem(fromUserId, itemId);
-        
-        if (!fromInventory || fromInventory.quantity < quantity) {
-            throw new Error('Insufficient items to transfer');
-        }
-        
-        await this.removeItemFromInventory(fromUserId, itemId, quantity);
-        
-        await this.addItemToInventory(toUserId, itemId, quantity);
-        
-        return {
-            success: true,
-            itemId,
-            quantity,
-            fromUserId,
-            toUserId
-        };
+        // Atomic (ADR-0029): remove + add commit or roll back together, so a
+        // failure between them can no longer destroy the item.
+        return await this._getWithTransaction()(async (tx) => {
+            const fromInventory = await this.getInventoryItem(fromUserId, itemId, tx);
+
+            if (!fromInventory || fromInventory.quantity < quantity) {
+                throw new Error('Insufficient items to transfer');
+            }
+
+            await this.removeItemFromInventory(fromUserId, itemId, quantity, tx);
+
+            await this.addItemToInventory(toUserId, itemId, quantity, tx);
+
+            return {
+                success: true,
+                itemId,
+                quantity,
+                fromUserId,
+                toUserId
+            };
+        });
     }
 
     async grantItemsToUser(userId, itemId, quantity, grantedBy = 'admin') {
@@ -290,11 +314,9 @@ class InventoryService {
      * the eligibility checks (self-gift, is_tradeable, sufficient quantity)
      * and the swap + audit-row write.
      *
-     * NOT transactional today — the pre-PR inline handler did the same three
-     * sequential writes (remove, add, insert-audit) without a transaction
-     * wrapper. Wrapping them in `withTransaction` is a follow-up worth
-     * considering but is OUT OF SCOPE for Phase 16 (which is byte-equivalent
-     * extraction).
+     * Transactional since ADR-0029 (audit E3): remove + add + audit INSERT
+     * commit or roll back together, so a failure mid-gift can no longer
+     * destroy the sender's items or mint unaudited ones.
      *
      * @throws {InventoryError} 400 self-gift, 400 not-tradeable, 400
      *                          insufficient-quantity, 404 item-not-found.
@@ -329,19 +351,17 @@ class InventoryService {
             );
         }
 
-        await this.removeItemFromInventory(fromUserId, itemId, quantity);
-        await this.addItemToInventory(toUserId, itemId, quantity);
+        await this._getWithTransaction()(async (tx) => {
+            await this.removeItemFromInventory(fromUserId, itemId, quantity, tx);
+            await this.addItemToInventory(toUserId, itemId, quantity, tx);
 
-        // Audit row. Required-late so the unit tests can jest.mock the
-        // database module per-test without dragging it into the require
-        // graph at InventoryService module-load time. Matches the inline
-        // require pre-PR.
-        const { runAsync } = require('../database/database');
-        await runAsync(
-            `INSERT INTO gift_transactions (from_user_id, to_user_id, item_id, quantity, timestamp)
-             VALUES (?, ?, ?, ?, datetime('now'))`,
-            [fromUserId, toUserId, itemId, quantity]
-        );
+            // Audit row, through the tx handle so it rolls back with the swap.
+            await tx.runAsync(
+                `INSERT INTO gift_transactions (from_user_id, to_user_id, item_id, quantity, timestamp)
+                 VALUES (?, ?, ?, ?, datetime('now'))`,
+                [fromUserId, toUserId, itemId, quantity]
+            );
+        });
 
         return {
             item: {

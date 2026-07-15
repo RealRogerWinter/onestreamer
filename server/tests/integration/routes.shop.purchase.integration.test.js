@@ -355,11 +355,11 @@ forEachBackend(({ make, label }) => {
                 // inventory, and stock must all roll back. The notifier must NOT
                 // fire — emission only happens after a successful purchase
                 // resolves through ShopService.
-                const original = services.itemTransactionRepository.insertPurchase
-                    .bind(services.itemTransactionRepository);
-                services.itemTransactionRepository.insertPurchase = jest.fn(async () => {
-                    throw new Error('simulated audit-write failure');
-                });
+                // Prototype-level spy: purchaseItem builds a tx-scoped
+                // ItemTransactionRepository inside the scope (ADR-0029), so an
+                // instance-level mock no longer intercepts the in-scope call.
+                const insertSpy = jest.spyOn(ItemTransactionRepository.prototype, 'insertPurchase')
+                    .mockRejectedValue(new Error('simulated audit-write failure'));
 
                 const res = await request(app)
                     .post('/api/shop/purchase')
@@ -386,7 +386,7 @@ forEachBackend(({ make, label }) => {
 
                 expect(buffNotifier.inventoryUpdated).not.toHaveBeenCalled();
 
-                services.itemTransactionRepository.insertPurchase = original;
+                insertSpy.mockRestore();
             });
         });
     });

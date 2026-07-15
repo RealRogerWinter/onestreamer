@@ -87,13 +87,7 @@ In your browser, you'll need to accept the self-signed certificate at `https://l
 
 ## Database
 
-SQLite, file lives at `server/data/onestreamer.db`. The schema is created on first boot; migrations are in `server/migrations/` and run manually if needed:
-
-```bash
-node server/migrations/setup-transcription-tables.js
-node server/migrations/setup-clips-tables.js
-# ... etc — each migration is a self-contained script
-```
+SQLite, file lives at `server/data/onestreamer.db`. The full schema — every table, index, and seed — is created automatically on first boot ([`server/database/schema.js`](../../server/database/schema.js), [ADR-0030](../architecture/adr/0030-single-source-schema-ddl.md)), and the numbered migrations in `server/migrations/` run automatically on every boot ([ADR-0022](../architecture/adr/0022-schema-migrations-layout.md)). No manual migration step is needed for local dev.
 
 ## Run
 

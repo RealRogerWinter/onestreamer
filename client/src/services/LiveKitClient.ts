@@ -86,14 +86,18 @@ export class LiveKitClient {
 
   // Connection management
   private isProcessing: boolean = false;
-  private operationTimeout: number = 30000;
   private reconnectionAttempts: number = 0;
-  private maxReconnectionAttempts: number = 5;
+  private maxReconnectionAttempts: number = 8;
   private reconnectionDelay: number = 1000;
   private maxReconnectionDelay: number = 30000;
   private reconnectionTimer?: NodeJS.Timeout;
   private isReconnecting: boolean = false;
   private lastConnectionState: 'connected' | 'disconnected' = 'disconnected';
+  // Epoch counter guarding the serialized reconnect worker: every deliberate
+  // teardown / fresh-connect initiator bumps it, so an in-flight worker
+  // captured on an older epoch aborts instead of resurrecting a connection
+  // that another path tore down (audit Plan 05, C1/C5 — see ADR-0031).
+  private connectEpoch: number = 0;
   
   // Callbacks
   private onConnectionRecovered?: () => void;
@@ -307,10 +311,28 @@ export class LiveKitClient {
       this.lastConnectionState = 'disconnected';
       this.sendTransport = { ...this.sendTransport, state: 'disconnected' };
       this.recvTransport = { ...this.recvTransport, state: 'disconnected' };
-      
+
       if (this.onConnectionLost) {
         this.onConnectionLost();
       }
+
+      // C1 (audit Plan 05): a full Disconnected means LiveKit's built-in
+      // retries (reconnectPolicy above) are already exhausted, so waiting for
+      // RoomEvent.Reconnected is useless. Start the manual serialized
+      // reconnect worker — unless this teardown was deliberate, or this
+      // client is a PUBLISHER: reconnecting the room without republishing
+      // tracks (WebRTCStreamer's job) would leave a silently-broken
+      // connected-but-not-publishing streamer. Publisher recovery stays on
+      // the streamer's explicit error/retry path until the C5 re-home
+      // (ADR-0031).
+      if (this.isDestroyed || reason === DisconnectReason.CLIENT_INITIATED) {
+        return;
+      }
+      if (this.videoProducer || this.audioProducer) {
+        log('🔌 LIVEKIT CLIENT: Publisher disconnected — leaving recovery to the streamer UI');
+        return;
+      }
+      this.startReconnectWorker();
     });
     
     this.room.on(RoomEvent.TrackSubscribed, (
@@ -534,7 +556,9 @@ export class LiveKitClient {
       // Connect to room if not connected
       if (!this.room || this.room.state !== 'connected') {
         log('🔗 LIVEKIT CLIENT: Connecting to room...');
-        
+        // Fresh deliberate connect: supersede any stale reconnect worker.
+        this.connectEpoch++;
+
         if (!this.room) {
           this.room = new Room({
             adaptiveStream: false,
@@ -844,6 +868,8 @@ export class LiveKitClient {
       // Connect to room if not connected
       if (!this.room || this.room.state !== 'connected') {
         log('🔗 LIVEKIT CLIENT: Connecting to room as viewer...');
+        // Fresh deliberate connect: supersede any stale reconnect worker.
+        this.connectEpoch++;
 
         // iOS Safari detection for viewer configuration
         const isIOSDevice = isIOS();
@@ -1078,66 +1104,104 @@ export class LiveKitClient {
   }
 
   /**
-   * Attempt reconnection
+   * Serialized reconnect worker (audit Plan 05, C1 — a minimal version of the
+   * C5 worker pulled forward; see ADR-0031).
+   *
+   * Started only from RoomEvent.Disconnected with a non-CLIENT_INITIATED
+   * reason (i.e. LiveKit's built-in retries already gave up). Single-flight
+   * via `isReconnecting`, epoch-guarded via `connectEpoch`: destroy()/
+   * cleanup()/reset()/forceReconnection() and fresh produce()/consume()
+   * connects all bump the epoch, aborting any stale worker so it can never
+   * resurrect a connection another initiator tore down. This is deliberately
+   * NOT fully self-contained — C5 (P2) re-homes it into the single client
+   * connection state machine.
    */
-  async attemptReconnection(): Promise<void> {
+  private startReconnectWorker(): void {
     if (this.isReconnecting) {
-      log('⏳ LIVEKIT CLIENT: Already reconnecting, skipping');
+      log('⏳ LIVEKIT CLIENT: Reconnect worker already running, skipping');
       return;
     }
-    
     this.isReconnecting = true;
-    this.reconnectionAttempts++;
-    
-    log(`🔄 LIVEKIT CLIENT: Reconnection attempt ${this.reconnectionAttempts}/${this.maxReconnectionAttempts}`);
-    
-    try {
-      if (this.room) {
-        // LiveKit handles reconnection automatically
-        // We just need to wait for it
-        await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error('Reconnection timeout'));
-          }, this.operationTimeout);
-          
-          const handleReconnected = () => {
-            clearTimeout(timeout);
-            this.room!.off(RoomEvent.Reconnected, handleReconnected);
-            resolve(undefined);
-          };
-          
-          this.room!.once(RoomEvent.Reconnected, handleReconnected);
-        });
-        
-        log('✅ LIVEKIT CLIENT: Reconnected successfully');
-        this.reconnectionAttempts = 0;
-        this.isReconnecting = false;
-        
-        if (this.onConnectionRecovered) {
-          this.onConnectionRecovered();
-        }
-      }
-    } catch (error) {
-      console.error('❌ LIVEKIT CLIENT: Reconnection failed:', error);
+    this.reconnectionAttempts = 0;
+    this.scheduleReconnectAttempt(this.connectEpoch);
+  }
+
+  private scheduleReconnectAttempt(epoch: number): void {
+    // Backoff before attempt k (1-based): 1s * 2^(k-1), capped at 30s.
+    // 8 attempts spans ~121s (1+2+4+8+16+30+30+30), so a viewer survives a
+    // ~2-minute outage without a manual refresh.
+    const delay = Math.min(
+      this.reconnectionDelay * Math.pow(2, this.reconnectionAttempts),
+      this.maxReconnectionDelay
+    );
+    log(`⏱️ LIVEKIT CLIENT: Scheduling reconnect attempt ${this.reconnectionAttempts + 1}/${this.maxReconnectionAttempts} in ${delay}ms`);
+    this.reconnectionTimer = this.createTrackedTimeout(() => {
+      this.reconnectionTimer = undefined;
+      void this.runReconnectAttempt(epoch);
+    }, delay);
+  }
+
+  /**
+   * Abort check for the reconnect worker. True (and stops the worker) when
+   * the client was destroyed or a competing initiator bumped the epoch.
+   */
+  private reconnectAborted(epoch: number): boolean {
+    if (this.isDestroyed || epoch !== this.connectEpoch) {
+      log('🛑 LIVEKIT CLIENT: Reconnect worker aborted (destroyed or superseded)');
       this.isReconnecting = false;
-      
+      return true;
+    }
+    return false;
+  }
+
+  private async runReconnectAttempt(epoch: number): Promise<void> {
+    if (this.reconnectAborted(epoch)) return;
+
+    this.reconnectionAttempts++;
+    log(`🔄 LIVEKIT CLIENT: Reconnect attempt ${this.reconnectionAttempts}/${this.maxReconnectionAttempts}`);
+
+    try {
+      // Always re-fetch a FRESH token: the old one may have expired during
+      // the outage, and the refetch also picks up the current socket.id
+      // identity after a socket.io reconnect. A fetch failure (network still
+      // down) counts as a failed attempt and falls into the backoff below.
+      const tokenInfo = await this.getLiveKitToken();
+      if (this.reconnectAborted(epoch)) return;
+
+      this.token = tokenInfo.token;
+      this.wsUrl = tokenInfo.url;
+      this.roomName = tokenInfo.roomName;
+      this.identity = tokenInfo.identity;
+      this.turnServers = tokenInfo.turnServers || null;
+
+      if (!this.room) {
+        throw new Error('Room instance gone during reconnect');
+      }
+
+      await this.room.connect(this.wsUrl, this.token, {
+        autoSubscribe: true,
+      } as RoomConnectOptions);
+      if (this.reconnectAborted(epoch)) return;
+
+      log('✅ LIVEKIT CLIENT: Reconnect worker succeeded');
+      this.reconnectionAttempts = 0;
+      this.isReconnecting = false;
+      // RoomEvent.Connected fires onConnectionRecovered, and TrackSubscribed
+      // triggers the debounced stream update that re-renders the video.
+    } catch (error) {
+      if (this.reconnectAborted(epoch)) return;
+
       if (this.reconnectionAttempts >= this.maxReconnectionAttempts) {
+        console.error('❌ LIVEKIT CLIENT: Reconnect worker exhausted all attempts:', error);
+        this.isReconnecting = false;
         if (this.onReconnectionFailed) {
           this.onReconnectionFailed(new Error('Max reconnection attempts reached'));
         }
-      } else {
-        // Exponential backoff
-        const delay = Math.min(
-          this.reconnectionDelay * Math.pow(2, this.reconnectionAttempts - 1),
-          this.maxReconnectionDelay
-        );
-        
-        log(`⏱️ LIVEKIT CLIENT: Retrying in ${delay}ms`);
-        
-        this.reconnectionTimer = setTimeout(() => {
-          this.attemptReconnection();
-        }, delay);
+        return;
       }
+
+      warn(`⚠️ LIVEKIT CLIENT: Reconnect attempt ${this.reconnectionAttempts} failed:`, error);
+      this.scheduleReconnectAttempt(epoch);
     }
   }
 
@@ -1167,6 +1231,9 @@ export class LiveKitClient {
    */
   async reset(): Promise<void> {
     log('🔄 LIVEKIT CLIENT: Performing complete reset...');
+
+    // Abort any in-flight reconnect worker (epoch guard).
+    this.connectEpoch++;
 
     // Clear all pending timeouts
     this.clearAllTimeouts();
@@ -1212,17 +1279,23 @@ export class LiveKitClient {
    */
   async replaceAudioTrack(newTrack: MediaStreamTrack): Promise<void> {
     log('🔄 LIVEKIT CLIENT: Replacing audio track...');
-    
+
     try {
-      if (this.room && this.room.localParticipant && this.localAudioTrack) {
-        // Unpublish old track
-        this.room.localParticipant.unpublishTrack(this.localAudioTrack);
-        
-        // Publish new track
-        this.localAudioTrack = this.room.localParticipant.publishTrack(newTrack) as any;
-        this.audioProducer = this.localAudioTrack;
-        
+      if (this.localAudioTrack) {
+        // C2 (audit Plan 05): mirror the screen-share path — replaceTrack
+        // swaps the underlying MediaStreamTrack on the SAME LocalAudioTrack,
+        // so localAudioTrack/audioProducer refs stay valid. The previous
+        // unpublish/publish variant assigned the un-awaited publishTrack()
+        // Promise as the local track, corrupting producer state.
+        await this.localAudioTrack.replaceTrack(newTrack);
         log('✅ LIVEKIT CLIENT: Audio track replaced');
+      } else if (this.room && this.room.localParticipant) {
+        // No published audio track yet — publish the new one and adopt it
+        // (same pattern produce() uses).
+        const publication = await this.room.localParticipant.publishTrack(newTrack);
+        this.localAudioTrack = publication.track as LocalAudioTrack;
+        this.audioProducer = this.localAudioTrack;
+        log('✅ LIVEKIT CLIENT: Audio track published (no existing track to replace)');
       } else {
         warn('⚠️ LIVEKIT CLIENT: No audio track to replace');
       }
@@ -1237,17 +1310,23 @@ export class LiveKitClient {
    */
   async replaceVideoTrack(newTrack: MediaStreamTrack): Promise<void> {
     log('🔄 LIVEKIT CLIENT: Replacing video track...');
-    
+
     try {
-      if (this.room && this.room.localParticipant && this.localVideoTrack) {
-        // Unpublish old track
-        this.room.localParticipant.unpublishTrack(this.localVideoTrack);
-        
-        // Publish new track
-        this.localVideoTrack = this.room.localParticipant.publishTrack(newTrack) as any;
-        this.videoProducer = this.localVideoTrack;
-        
+      if (this.localVideoTrack) {
+        // C2 (audit Plan 05): mirror the screen-share path — replaceTrack
+        // swaps the underlying MediaStreamTrack on the SAME LocalVideoTrack,
+        // so localVideoTrack/videoProducer refs stay valid. The previous
+        // unpublish/publish variant assigned the un-awaited publishTrack()
+        // Promise as the local track, corrupting producer state.
+        await this.localVideoTrack.replaceTrack(newTrack);
         log('✅ LIVEKIT CLIENT: Video track replaced');
+      } else if (this.room && this.room.localParticipant) {
+        // No published video track yet — publish the new one and adopt it
+        // (same pattern produce() uses).
+        const publication = await this.room.localParticipant.publishTrack(newTrack);
+        this.localVideoTrack = publication.track as LocalVideoTrack;
+        this.videoProducer = this.localVideoTrack;
+        log('✅ LIVEKIT CLIENT: Video track published (no existing track to replace)');
       } else {
         warn('⚠️ LIVEKIT CLIENT: No video track to replace');
       }
@@ -1478,6 +1557,8 @@ export class LiveKitClient {
    */
   async forceReconnection(): Promise<void> {
     log('🔄 LIVEKIT CLIENT: Forcing reconnection...');
+    // Manual reconnection supersedes any in-flight reconnect worker.
+    this.connectEpoch++;
     if (this.room) {
       this.room.disconnect();
       // Re-connect with same token
@@ -1526,6 +1607,8 @@ export class LiveKitClient {
 
     // Set destroyed flag first to prevent new operations
     this.isDestroyed = true;
+    // Abort any in-flight reconnect worker (belt-and-braces with isDestroyed).
+    this.connectEpoch++;
 
     // Clear all pending timeouts
     this.clearAllTimeouts();

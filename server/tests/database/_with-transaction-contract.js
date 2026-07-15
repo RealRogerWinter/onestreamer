@@ -196,6 +196,119 @@ function defineWithTransactionContract(flag, makePrimitives) {
                 expect(after.timeout).toBe(7000);
             });
         });
+
+        // ── The gate (ADR-0029, audit DB2) ────────────────────────────────
+        // withTransaction.gated exposes the module-level primitives database.js
+        // exports. These tests pin the DB2 headline criterion: a bare write can
+        // never land inside a foreign scope, and a failing scope can never
+        // destroy it — while in-scope stragglers still join their own tx.
+        describe('the gate (ADR-0029, audit DB2)', () => {
+            it('a failing scope cannot roll back a concurrent gated bare write', async () => {
+                let releaseBarrier;
+                const barrier = new Promise((r) => { releaseBarrier = r; });
+                const scope = withTransaction(async (tx) => {
+                    await tx.runAsync('INSERT INTO t (v) VALUES (1)');
+                    await barrier;
+                    throw new Error('scope fails');
+                }).catch((e) => e);
+
+                // Let the scope open and write, then issue a gated bare write.
+                await new Promise((r) => setTimeout(r, 10));
+                let bareDone = false;
+                const bare = withTransaction.gated
+                    .runAsync('INSERT INTO t (v) VALUES (2)')
+                    .then(() => { bareDone = true; });
+
+                // The bare write must be QUEUED behind the open scope, not
+                // interleaved into it.
+                await new Promise((r) => setTimeout(r, 20));
+                expect(bareDone).toBe(false);
+
+                releaseBarrier();
+                expect(await scope).toBeInstanceOf(Error);
+                await bare;
+
+                const rows = await primitives.allAsync('SELECT v FROM t ORDER BY v');
+                // The scope's row rolled back; the bare write survived.
+                expect(rows).toEqual([{ v: 2 }]);
+            });
+
+            it('an in-scope call through the gated wrapper joins its own tx without deadlocking (reentrancy)', async () => {
+                await withTransaction(async () => {
+                    await withTransaction.gated.runAsync('INSERT INTO t (v) VALUES (7)');
+                });
+                const rows = await primitives.allAsync('SELECT v FROM t');
+                expect(rows).toEqual([{ v: 7 }]);
+            });
+
+            it('an in-scope straggler write rolls back with its own scope (it joined the tx)', async () => {
+                await withTransaction(async () => {
+                    await withTransaction.gated.runAsync('INSERT INTO t (v) VALUES (8)');
+                    throw new Error('boom');
+                }).catch(() => {});
+                const rows = await primitives.allAsync('SELECT v FROM t');
+                expect(rows).toEqual([]);
+            });
+
+            it('a write born in scope A executing while scope B is open is gated (token identity, not a boolean)', async () => {
+                // Scope A spawns an async chain that keeps A's ALS context and
+                // fires a gated write LATER — while scope B is open. Token
+                // identity (A-token !== B-token) must gate it out of B.
+                let releaseA;
+                const barrierA = new Promise((r) => { releaseA = r; });
+                let lateWrite;
+                await withTransaction(async () => {
+                    lateWrite = (async () => {
+                        await barrierA;
+                        return withTransaction.gated.runAsync('INSERT INTO t (v) VALUES (9)');
+                    })();
+                });
+
+                let releaseB;
+                const barrierB = new Promise((r) => { releaseB = r; });
+                const scopeB = withTransaction(async (tx) => {
+                    await tx.runAsync('INSERT INTO t (v) VALUES (10)');
+                    await barrierB;
+                    throw new Error('B fails');
+                }).catch(() => {});
+
+                await new Promise((r) => setTimeout(r, 10)); // B is open
+                releaseA();                                   // A's late write fires now
+                await new Promise((r) => setTimeout(r, 20));
+                releaseB();
+                await scopeB;
+                await lateWrite;
+
+                const rows = await primitives.allAsync('SELECT v FROM t ORDER BY v');
+                // B's row rolled back; A's late write landed OUTSIDE B.
+                expect(rows).toEqual([{ v: 9 }]);
+            });
+
+            it('concurrent timer-shaped gated writes all survive a failing scope (the DB2 corruption scenario)', async () => {
+                let releaseBarrier;
+                const barrier = new Promise((r) => { releaseBarrier = r; });
+                const scope = withTransaction(async (tx) => {
+                    await tx.runAsync('INSERT INTO t (v) VALUES (100)');
+                    await barrier;
+                    throw new Error('scope fails');
+                }).catch(() => {});
+
+                await new Promise((r) => setTimeout(r, 10));
+                // Three "timer tick" writes racing the open scope.
+                const ticks = Promise.all([
+                    withTransaction.gated.runAsync('INSERT INTO t (v) VALUES (101)'),
+                    withTransaction.gated.runAsync('INSERT INTO t (v) VALUES (102)'),
+                    withTransaction.gated.runAsync('INSERT INTO t (v) VALUES (103)'),
+                ]);
+                await new Promise((r) => setTimeout(r, 10));
+                releaseBarrier();
+                await scope;
+                await ticks;
+
+                const rows = await primitives.allAsync('SELECT v FROM t ORDER BY v');
+                expect(rows).toEqual([{ v: 101 }, { v: 102 }, { v: 103 }]);
+            });
+        });
     });
 }
 

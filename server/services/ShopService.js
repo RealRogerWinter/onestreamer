@@ -188,19 +188,18 @@ class ShopService {
         // the connection rolls back on next open / on the next withTransaction call
         // and the user is NOT debited. See ADR-0015 for the crash-recovery story.
         //
-        // The accountService/inventoryService methods use the module-level
-        // runAsync/getAsync wrappers (captured at their construction). Inside
-        // the BEGIN IMMEDIATE scope those wrappers route through the same
-        // connection, so every statement is part of our tx. The tx proxy here
-        // is unused — kept for documentation symmetry with PR 10.2 and future
-        // consumers that DO need to thread it through.
-        const newBalance = await this.withTransaction(async (_tx) => {
+        // Every write goes through the `tx` handle (ADR-0029): the service/repo
+        // layers accept a per-call tx and build tx-scoped repos from it, so
+        // atomicity no longer depends on the shared-connection implicit join
+        // (which the gated module wrappers have closed — audit DB2).
+        const newBalance = await this.withTransaction(async (tx) => {
             const balanceAfter = await this.accountService.subtractPoints(
                 userId,
                 totalCost,
                 'purchase',
                 `Purchased ${quantity}x ${shopItem.display_name}`,
-                { itemId, quantity, pricePerItem: finalPrice }
+                { itemId, quantity, pricePerItem: finalPrice },
+                tx
             );
 
             // Guarded stock decrement happens BEFORE inventory credit so a
@@ -209,7 +208,7 @@ class ShopService {
             // inventory rows. The guard returns no row when stock_limit < quantity;
             // we throw, the tx rolls back, no one is debited.
             if (shopItem.stock_limit !== 0) {
-                const after = await this.shopRepository.decrementStockLimit(shopItem.id, quantity);
+                const after = await new ShopRepository(tx).decrementStockLimit(shopItem.id, quantity);
                 if (!after) {
                     throw new Error('Insufficient stock');
                 }
@@ -221,20 +220,20 @@ class ShopService {
             // throwing, so without this check a user purchasing past their cap
             // would get debited the full price but receive only (cap - currentQty)
             // items. Throwing here triggers ROLLBACK.
-            const inventoryNow = await this.inventoryService.getInventoryItem(userId, itemId);
+            const inventoryNow = await this.inventoryService.getInventoryItem(userId, itemId, tx);
             const quantityNow = inventoryNow ? inventoryNow.quantity : 0;
             if (maxStack > 0 && quantityNow + quantity > maxStack) {
                 throw new Error(`Cannot exceed maximum stack of ${maxStack}`);
             }
 
-            await this.inventoryService.addItemToInventory(userId, itemId, quantity);
+            await this.inventoryService.addItemToInventory(userId, itemId, quantity, tx);
 
             // Compute pointsBefore from the exact-subtract relationship:
             // subtractPoints succeeded iff balanceAfter = oldBalance - totalCost,
             // so oldBalance = balanceAfter + totalCost. This is more accurate
             // than the pre-tx `currentBalance` read, which can race with
             // concurrent debits/credits from other code paths.
-            await this.itemTransactionRepository.insertPurchase({
+            await new ItemTransactionRepository(tx).insertPurchase({
                 userId,
                 itemId,
                 quantity,
@@ -289,28 +288,39 @@ class ShopService {
         const sellPrice = Math.floor(item.base_price * 0.5); // 50% of base price
         const totalEarnings = sellPrice * quantity;
 
-        // Get current balance before adding
-        const currentBalance = await this.accountService.getPointsBalance(userId);
+        // Guard BEFORE removing (audit E3): a zero-value sell (base_price 0/1
+        // floors to 0) used to destroy the items for no points. Reject instead.
+        if (totalEarnings === 0) {
+            throw new Error('Item has no resale value');
+        }
 
-        await this.inventoryService.removeItemFromInventory(userId, itemId, quantity);
+        // Atomic (ADR-0029): remove + credit + audit row commit or roll back
+        // together, so a failure mid-sell can no longer destroy items without
+        // paying, and pointsBefore derives from the exact credit relationship
+        // instead of a racy pre-read.
+        const newBalance = await this.withTransaction(async (tx) => {
+            await this.inventoryService.removeItemFromInventory(userId, itemId, quantity, tx);
 
-        // Add points using new method
-        const newBalance = await this.accountService.addPoints(
-            userId,
-            totalEarnings,
-            'sell',
-            `Sold ${quantity}x ${item.display_name}`,
-            { itemId, quantity, pricePerItem: sellPrice }
-        );
+            const balanceAfter = await this.accountService.addPoints(
+                userId,
+                totalEarnings,
+                'sell',
+                `Sold ${quantity}x ${item.display_name}`,
+                { itemId, quantity, pricePerItem: sellPrice },
+                tx
+            );
 
-        await this.itemTransactionRepository.insertSell({
-            userId,
-            itemId,
-            quantity,
-            pricePerItem: sellPrice,
-            totalCost: totalEarnings,
-            pointsBefore: currentBalance,
-            pointsAfter: newBalance,
+            await new ItemTransactionRepository(tx).insertSell({
+                userId,
+                itemId,
+                quantity,
+                pricePerItem: sellPrice,
+                totalCost: totalEarnings,
+                pointsBefore: balanceAfter - totalEarnings,
+                pointsAfter: balanceAfter,
+            });
+
+            return balanceAfter;
         });
 
         // Emit socket event for real-time update
