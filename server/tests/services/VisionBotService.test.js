@@ -135,6 +135,11 @@ describe('VisionBotService', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(deps.chatBotService.generateVisionCommentForBot).toHaveBeenCalledTimes(3);
+        // A2: the LIVE streamService must be threaded into every dispatch so
+        // the F3 takeover guard can fire (it was dead code without this).
+        for (const call of deps.chatBotService.generateVisionCommentForBot.mock.calls) {
+            expect(call[0].streamService).toBe(deps.streamService);
+        }
     });
 
     test('dedupes by sessionId — the same session does not fire twice', async () => {
