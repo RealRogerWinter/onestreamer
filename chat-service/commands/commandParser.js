@@ -651,12 +651,19 @@ function createCommandParser(deps) {
             claimEventService.clearActiveClaim();
           } else {
             sendAdminResponse(socket, `❌ ${response.data.error}`);
-            activeClaimEvent.claimedBy = null; // Reset if award failed
+            // Audit CH4: clear the event instead of only resetting
+            // .claimedBy. The expiry timer skips cleanup when .claimedBy is
+            // set at fire time, so an award failure after (or racing) expiry
+            // left a stale activeClaimEvent forever, blocking every future
+            // claim event. clearActiveClaim() is the lifecycle-supported
+            // reset; the expiry timer's null-guard tolerates it.
+            claimEventService.clearActiveClaim();
           }
         } catch (error) {
           console.error('❌ CHAT: Failed to award claim points:', error.message);
           sendAdminResponse(socket, '❌ Failed to award points. Please contact an admin.');
-          activeClaimEvent.claimedBy = null; // Reset if award failed
+          // Audit CH4: see above — clear so future claim events still fire.
+          claimEventService.clearActiveClaim();
         }
         break;
       }
