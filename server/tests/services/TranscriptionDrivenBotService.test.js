@@ -101,6 +101,33 @@ describe('TranscriptionDrivenBotService', () => {
             expect(bot.recentChatMessages[0].username).toBe('alice');
         });
 
+        test('skips an identical rapid duplicate within the dedup window (audit A4)', () => {
+            const deps = makeStubDeps();
+            const bot = new StubBot(deps);
+            bot.addChatMessage('alice', 'hi there');
+            bot.addChatMessage('alice', 'hi there'); // duplicate delivery
+            expect(bot.recentChatMessages).toHaveLength(1);
+        });
+
+        test('accepts the same message again after the dedup window (audit A4)', () => {
+            const deps = makeStubDeps();
+            const bot = new StubBot(deps);
+            bot.addChatMessage('alice', 'hi there');
+            // Age the stored entry past the window, then repeat the message.
+            bot.recentChatMessages[0].timestamp =
+                new Date(Date.now() - bot.CHAT_DEDUP_WINDOW_MS - 1);
+            bot.addChatMessage('alice', 'hi there');
+            expect(bot.recentChatMessages).toHaveLength(2);
+        });
+
+        test('same text from different users is not deduped (audit A4)', () => {
+            const deps = makeStubDeps();
+            const bot = new StubBot(deps);
+            bot.addChatMessage('alice', 'gg');
+            bot.addChatMessage('bob', 'gg');
+            expect(bot.recentChatMessages).toHaveLength(2);
+        });
+
         test('caps history at MAX_CHAT_HISTORY', () => {
             const deps = makeStubDeps();
             const bot = new StubBot(deps);
