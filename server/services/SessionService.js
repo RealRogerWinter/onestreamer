@@ -1,4 +1,5 @@
 const logger = require('../bootstrap/logger').child({ svc: 'SessionService' });
+const { ipFromSocket } = require('../utils/clientIp');
 
 class SessionService {
   constructor() {
@@ -22,30 +23,9 @@ class SessionService {
    * Get IP address from socket/request
    */
   getIpAddress(socket) {
-    // Try different methods to get IP
-    let ip = socket.handshake.headers['x-forwarded-for'] || 
-             socket.handshake.headers['x-real-ip'] ||
-             socket.handshake.address ||
-             socket.conn.remoteAddress ||
-             socket.request.connection.remoteAddress ||
-             '127.0.0.1';
-    
-    // Handle IPv6 localhost
-    if (ip === '::1' || ip === '::ffff:127.0.0.1') {
-      ip = '127.0.0.1';
-    }
-    
-    // Extract IPv4 from IPv6 format if needed
-    if (ip.includes('::ffff:')) {
-      ip = ip.replace('::ffff:', '');
-    }
-    
-    // If multiple IPs (from proxy chain), take the first one
-    if (ip.includes(',')) {
-      ip = ip.split(',')[0].trim();
-    }
-    
-    return ip;
+    // S5: last-XFF-hop rule via the shared helper — the old code returned
+    // the raw (client-spoofable) header, then took the FIRST hop.
+    return ipFromSocket(socket);
   }
 
   /**
