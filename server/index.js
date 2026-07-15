@@ -1667,7 +1667,11 @@ startServer().catch((err) => logger.error({ err }, 'startServer failed'));
 require('./bootstrap/shutdown')({
   stoppables,
   io,
-  server,
+  // ADR-0032: pass BOTH listeners — shutdown closes whichever are actually
+  // listening (today exactly one is, per start-listeners.js, but this keeps
+  // shutdown correct if the second listener ever returns).
+  httpServer,
+  httpsServer,
   getRedisClient: () => redisClient,
   getWebrtcService: () => webrtcService,
   getViewbotService: () => viewbotService,

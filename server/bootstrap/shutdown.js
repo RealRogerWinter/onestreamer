@@ -26,18 +26,29 @@
  *
  * Shutdown ordering invariants (load-bearing — do not reorder without
  * consulting the relevant ADRs and re-running the SIGTERM smoke):
+ *   0. Re-entrancy guard + force-exit watchdog FIRST (ADR-0032): a second
+ *      signal is ignored while a shutdown is in flight, and an unref'd
+ *      watchdog timer (default 15 s, `SHUTDOWN_WATCHDOG_MS` override —
+ *      sized BELOW compose.yaml's `stop_grace_period: 20s`) force-exits
+ *      with code 1 if the drain wedges.
  *   1. Run stoppables registry in reverse-construction order (PR 1.2).
  *   2. Disconnect all live sockets BEFORE media-process termination so
  *      the per-disconnect cleanup paths don't race the kill loop.
  *   3. Service-level cleanup (ViewBot/Recording) BEFORE the
- *      `pkill -TERM ffmpeg` safety net — services with stop() get a
- *      clean exit; the safety net catches strays.
- *   4. MediaSoup `cleanupAll()` AFTER stream-level cleanup so the SFU
+ *      descendant-scoped ffmpeg SIGTERM safety net (ADR-0032 — replaces
+ *      the old host-wide `pkill -TERM ffmpeg`; the Chrome pkills were
+ *      deleted outright, this codebase never spawns Chrome) — services
+ *      with stop() get a clean exit; the safety net catches strays
+ *      among OUR descendants only.
+ *   4. LiveKit `cleanupAll()` AFTER stream-level cleanup so the backend
  *      doesn't tear down transports under live producers.
  *   5. Redis `quit()` LATE in the sequence — services may consult Redis
  *      during their stop() (currently none do, but the ordering keeps
  *      the option open).
- *   6. `server.close()` LAST — once it returns, the process exits.
+ *   6. HTTP(S) server close LAST — BOTH `httpServer` and `httpsServer`
+ *      (whichever are listening) are closed, `closeAllConnections()` is
+ *      invoked after close() is initiated so keep-alive sockets can't
+ *      hold the drain open forever, and once done the process exits.
  *
  * Risk surfaces flagged in the closure audit:
  *   - `simpleMediaStreamService` is referenced via a
@@ -50,12 +61,37 @@
  */
 
 const logger = require('./logger').child({ svc: 'shutdown' });
+const { killDescendantsByComm, killDescendantsByCommSync } = require('./process-tree');
+
+// Default watchdog. MUST stay below compose.yaml's `stop_grace_period: 20s`,
+// or docker SIGKILLs the container before the watchdog can fire (ADR-0032).
+const DEFAULT_WATCHDOG_MS = 15_000;
+
+function watchdogMs() {
+    const override = Number(process.env.SHUTDOWN_WATCHDOG_MS);
+    return Number.isFinite(override) && override > 0 ? override : DEFAULT_WATCHDOG_MS;
+}
+
+/**
+ * Close one HTTP(S) server: initiate close(), then hard-drop any remaining
+ * (keep-alive / in-flight) connections so close() can actually complete on
+ * Node 18 — `server.close()` alone waits on open sockets forever there.
+ * Resolves even if the server was already closed (ERR_SERVER_NOT_RUNNING).
+ */
+function closeListeningServer(srv) {
+    return new Promise((resolve) => {
+        srv.close(() => resolve());
+        srv.closeAllConnections?.();
+    });
+}
 
 function registerShutdownHandlers(deps) {
     const {
         stoppables,
         io,
         server,
+        httpServer,
+        httpsServer,
         getRedisClient,
         getWebrtcService,
         getTimeTrackingService,
@@ -64,8 +100,28 @@ function registerShutdownHandlers(deps) {
         getSimpleMediaStreamService,
     } = deps;
 
+    // ADR-0032 (B2): re-entrancy guard — SIGINT+SIGTERM back-to-back (or a
+    // repeated Ctrl-C) must not run two overlapping drains.
+    let shuttingDown = false;
+
     async function shutdown(signal) {
+        if (shuttingDown) {
+            logger.warn(`🛑 Received ${signal} but a shutdown is already in progress — ignoring`);
+            return;
+        }
+        shuttingDown = true;
+
         logger.info(`🛑 Received ${signal}, shutting down server gracefully...`);
+
+        // ADR-0032 (B2): force-exit watchdog. unref'd so it never keeps the
+        // process alive; if the drain wedges (stuck redis quit(), wedged
+        // socket fetch, …) we exit dirty-but-promptly instead of hanging
+        // until docker's stop_grace_period SIGKILL.
+        const watchdog = setTimeout(() => {
+            logger.error({ signal, watchdogMs: watchdogMs() }, '⏰ shutdown watchdog fired — force exit');
+            process.exit(1);
+        }, watchdogMs());
+        watchdog.unref();
 
         try {
             // PR 1.2: iterate the stoppables registry in reverse-construction
@@ -128,26 +184,28 @@ function registerShutdownHandlers(deps) {
             // via continuousRecordingService.stop() in the stoppables registry,
             // not local ffmpeg children — so there's nothing to SIGTERM here.)
 
-            // Safety-net pkill for any strays
+            // Safety-net kill for any strays — scoped to OUR descendants
+            // (ADR-0032). The pre-0032 shape was a host/namespace-wide
+            // `pkill -TERM ffmpeg` plus two Chrome pkills; the ffmpeg kill
+            // could SIGTERM a co-located LiveKit egress recorder on any
+            // bare-host run, and the Chrome pkills matched ONLY foreign
+            // processes (this codebase spawns no Chrome), so they were
+            // deleted outright. In the containerized prod, node is PID 1,
+            // so even orphaned ffmpeg reparents to us and stays a
+            // descendant — nothing legitimate is missed by the scoping.
             logger.info('🔍 Checking for any remaining media processes...');
-            const { exec } = require('child_process');
 
             if (process.platform === 'win32') {
+                // Dev-only platform; taskkill has no cheap descendant filter.
+                const { exec } = require('child_process');
                 exec('taskkill /F /IM ffmpeg.exe 2>nul', (err) => {
                     if (!err) logger.info('   - Killed remaining FFmpeg processes');
                 });
-                exec('taskkill /F /IM chrome.exe /FI "COMMANDLINE like *puppeteer*" 2>nul', (err) => {
-                    if (!err) logger.info('   - Killed Puppeteer Chrome processes');
-                });
-                exec('taskkill /F /IM chromium.exe /FI "COMMANDLINE like *puppeteer*" 2>nul', () => {});
             } else {
-                exec('pkill -TERM ffmpeg 2>/dev/null', (err) => {
-                    if (!err) logger.info('   - Killed remaining FFmpeg processes');
-                });
-                exec('pkill -f "puppeteer.*chrome" 2>/dev/null', (err) => {
-                    if (!err) logger.info('   - Killed Puppeteer Chrome processes');
-                });
-                exec('pkill -f "chrome.*--no-sandbox.*--disable-setuid-sandbox" 2>/dev/null', () => {});
+                const killed = await killDescendantsByComm(process.pid, 'ffmpeg', 'SIGTERM');
+                if (killed.length > 0) {
+                    logger.info({ pids: killed }, `   - SIGTERMed ${killed.length} remaining descendant FFmpeg process(es)`);
+                }
             }
 
             await new Promise((resolve) => setTimeout(resolve, 500));
@@ -184,27 +242,38 @@ function registerShutdownHandlers(deps) {
                 await redisClient.quit();
             }
 
-            // 8. Close the HTTP server
-            logger.info('🌐 Closing HTTP server...');
-            await new Promise((resolve) => {
-                server.close(resolve);
-            });
+            // 8. Close the HTTP(S) servers (ADR-0032). Accept both the new
+            // httpServer/httpsServer deps and the legacy `server` dep
+            // (deduped — index.js's `server` aliases one of the other two).
+            // Only servers actually listening are closed; today exactly one
+            // listens (start-listeners.js), but this stays correct if a
+            // second listener ever returns.
+            logger.info('🌐 Closing HTTP server(s)...');
+            const servers = [...new Set([httpServer, httpsServer, server])]
+                .filter((srv) => srv && srv.listening === true);
+            await Promise.all(servers.map(closeListeningServer));
 
             logger.info('✅ Graceful shutdown complete');
+            clearTimeout(watchdog);
             process.exit(0);
         } catch (error) {
             logger.error({ err: error }, '❌ Error during shutdown');
+            clearTimeout(watchdog);
             process.exit(1);
         }
     }
 
     function cleanupMediaProcesses() {
-        const { execSync } = require('child_process');
+        // Crash-path (uncaughtException) emergency sweep. Scoped to OUR
+        // descendant ffmpeg only (ADR-0032) — the pre-0032 `pkill -9 ffmpeg`
+        // was namespace-wide. Sync variant: the process exits immediately
+        // after this, so async work would never run.
         try {
             if (process.platform === 'win32') {
+                const { execSync } = require('child_process');
                 execSync('taskkill /F /IM ffmpeg.exe 2>nul', { stdio: 'ignore' });
             } else {
-                execSync('pkill -9 ffmpeg 2>/dev/null', { stdio: 'ignore' });
+                killDescendantsByCommSync(process.pid, 'ffmpeg', 'SIGKILL');
             }
         } catch (e) {
             // Ignore errors in emergency cleanup
