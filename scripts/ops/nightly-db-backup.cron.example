@@ -1,0 +1,14 @@
+# Nightly off-host DB backup (audit D2.a) — EXAMPLE crontab entry.
+# Install by hand as a user that can read the DB (root, or uid 1001 which owns
+# server/data in the container layout): `crontab -e`, paste, adjust the target.
+# Do NOT commit real credentials/targets here — this file is an example.
+#
+# 03:30 UTC nightly. cron's default MAILTO (or your wrapper) must surface the
+# non-zero exit — the script fails loud on any problem, including a failed or
+# unconfigured off-host push. Pair with the backup-age alert in
+# docs/operations/monitoring.md so a silently-not-running cron is also caught.
+#
+#30 3 * * * DB_PATH=/root/onestreamer/server/data/onestreamer.db BACKUP_DIR=/backups/nightly KEEP_BACKUPS=7 RSYNC_TARGET='backup@backup-host:/backups/onestreamer/' /root/onestreamer/scripts/ops/nightly-db-backup.sh >> /var/log/onestreamer-nightly-backup.log 2>&1
+#
+# Or with an arbitrary push command (artifact path is appended as last arg):
+#30 3 * * * OFFHOST_PUSH_CMD='rclone copy --config /root/.config/rclone/rclone.conf' /root/onestreamer/scripts/ops/nightly-db-backup.sh >> /var/log/onestreamer-nightly-backup.log 2>&1
