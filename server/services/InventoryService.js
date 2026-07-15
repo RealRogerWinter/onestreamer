@@ -157,8 +157,16 @@ class InventoryService {
         }
 
         const item = await this.itemService.getItemById(itemId);
-        
-        // Apply buff/debuff FIRST if the item is a buff or debuff type and we have the buff service
+
+        // Consume the item FIRST (audit E5). removeItemFromInventory is the
+        // atomic guarded decrement (ADR-0013a), so of two concurrent uses of
+        // a 1-stack exactly one passes this line — the loser throws before
+        // any effect is applied. The old order (apply buff, then decrement)
+        // let both racers apply the effect. If effect application below
+        // fails, we compensate by re-adding the unit.
+        await this.removeItemFromInventory(userId, itemId, 1);
+
+        // Apply buff/debuff if the item is a buff or debuff type and we have the buff service
         let buffResult = null;
         if (this.buffDebuffService && this.itemService.isBuffOrDebuffItem(item)) {
             // Determine target user - should be the current streamer
@@ -202,12 +210,17 @@ class InventoryService {
                 );
             } catch (buffError) {
                 logger.error(`❌ INVENTORY: Error applying ${item.item_type}:`, buffError);
-                // Don't fail the entire operation if buff application fails
+                // Compensate: the unit was already consumed above, so give it
+                // back before surfacing the failure (E5). If the re-add itself
+                // fails we log and still rethrow the original effect error.
+                try {
+                    await this.addItemToInventory(userId, itemId, 1);
+                } catch (restoreError) {
+                    logger.error(`❌ INVENTORY: Failed to restore item ${itemId} to user ${userId} after effect failure:`, restoreError);
+                }
                 throw buffError; // Re-throw so the user knows the buff failed
             }
         }
-
-        await this.removeItemFromInventory(userId, itemId, 1);
 
         await this.itemService.applyItemCooldown(userId, itemId, streamId);
 
