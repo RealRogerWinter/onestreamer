@@ -71,6 +71,7 @@ What else we looked at and why we did not pick it.
 | 0028 | [Per-run recording sessions with a terminal upload state](0028-per-run-recording-sessions.md) | accepted |
 | 0029 | [Transaction gate + economy tx plumbing](0029-transaction-gate-and-economy-tx-plumbing.md) | accepted |
 | 0030 | [database.js (schema.js) is the sole boot DDL source](0030-single-source-schema-ddl.md) | accepted |
+| 0031 | [Viewer reconnect worker — minimal C5 slice inside LiveKitClient](0031-viewer-reconnect-worker.md) | accepted |
 
 ### Note on the 0013a slug
 

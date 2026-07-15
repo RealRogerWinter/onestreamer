@@ -232,6 +232,95 @@ describe('WebRTCStreamer (characterization)', () => {
     });
   });
 
+  // --- 2b. Publish failure is a stream-start failure (audit Plan 05, C3) ---
+
+  describe('publish failure (C3)', () => {
+    it('does NOT fire onStreamStart when produce rejects; surfaces error + retry and cleans up the adapter', async () => {
+      mockAdapter.produce.mockRejectedValue(new Error('sfu unreachable'));
+      const onStreamStart = jest.fn();
+      render(
+        <WebRTCStreamer
+          socket={mockSocket as Socket}
+          isStreaming={true}
+          onStreamStart={onStreamStart}
+        />
+      );
+
+      await waitFor(
+        () => expect(screen.getByText(/Failed to publish stream/)).toBeInTheDocument(),
+        { timeout: 4000 }
+      );
+      expect(onStreamStart).not.toHaveBeenCalled();
+      expect(mockAdapter.cleanup).toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    });
+
+    it('does NOT fire onStreamStart when createSendTransport rejects', async () => {
+      mockAdapter.createSendTransport.mockRejectedValue(new Error('token endpoint down'));
+      const onStreamStart = jest.fn();
+      render(
+        <WebRTCStreamer
+          socket={mockSocket as Socket}
+          isStreaming={true}
+          onStreamStart={onStreamStart}
+        />
+      );
+
+      await waitFor(
+        () => expect(screen.getByText(/Failed to publish stream/)).toBeInTheDocument(),
+        { timeout: 4000 }
+      );
+      expect(onStreamStart).not.toHaveBeenCalled();
+      expect(mockAdapter.cleanup).toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    });
+  });
+
+  // --- 2c. Mid-stream device change goes through the adapter (C2) ----------
+
+  describe('device change (C2)', () => {
+    it('replaces the published audio track via the adapter with a MediaStreamTrack', async () => {
+      mockAdapter.hasAudioProducer = true;
+      const onStreamStart = jest.fn();
+      const baseAudioSettings = {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        sampleRate: 48000,
+        channelCount: 2,
+        profile: 'raw' as const,
+        inputDeviceId: undefined,
+        outputDeviceId: undefined,
+      };
+
+      const { rerender } = render(
+        <WebRTCStreamer
+          socket={mockSocket as Socket}
+          isStreaming={true}
+          onStreamStart={onStreamStart}
+          audioSettings={baseAudioSettings as any}
+        />
+      );
+      await waitFor(() => expect(onStreamStart).toHaveBeenCalled(), { timeout: 4000 });
+
+      await act(async () => {
+        rerender(
+          <WebRTCStreamer
+            socket={mockSocket as Socket}
+            isStreaming={true}
+            onStreamStart={onStreamStart}
+            audioSettings={{ ...baseAudioSettings, inputDeviceId: 'mic-2' } as any}
+          />
+        );
+      });
+
+      await waitFor(() => expect(mockAdapter.replaceAudioTrack).toHaveBeenCalled());
+      const replacementTrack = mockAdapter.replaceAudioTrack.mock.calls[0][0];
+      expect(replacementTrack).toBeDefined();
+      expect(replacementTrack.kind).toBe('audio');
+    });
+  });
+
   // --- 3. Parent control contracts ----------------------------------------
 
   describe('control contracts', () => {
