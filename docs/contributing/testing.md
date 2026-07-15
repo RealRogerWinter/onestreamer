@@ -62,7 +62,7 @@ CI runs on **CircleCI** ([`.circleci/config.yml`](../../.circleci/config.yml), [
 
 - **lint** — client `tsc --noEmit` + `scripts/ci/docs-lint.sh` (root-md hygiene, no-stub docs, SendGrid-secret scan). There is no server ESLint config.
 - **test-server-unit** — root jest (`config/jest/jest.config.js`).
-- **test-server-bettersqlite** — the better-sqlite3 contract tests in their own process (`config/jest/jest.bettersqlite.config.js`) so node-sqlite3 never co-loads with better-sqlite3 (they corrupt each other in one process; ADR-0014).
+- **test-server-bettersqlite** — the better-sqlite3 contract tests in their own process (`config/jest/jest.bettersqlite.config.js`) so node-sqlite3 never co-loads with better-sqlite3 (they corrupt each other in one process; ADR-0014 — better-sqlite3 is the production default since the Phase-C flip, and this job also boot-smokes the flag-unset default), plus jest.setup.js pins the ambient test driver to sqlite3 so the main config never loads the adapter.
 - **test-server-integration** — `config/jest/jest.integration.config.js`.
 - **test-chat** — `chat-service` jest.
 - **test-client** — `tsc --noEmit` + react-scripts tests.

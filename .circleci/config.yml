@@ -5,7 +5,8 @@ version: 2.1
 #   build ──┬─ lint
 #           ├─ test-server-unit
 #           ├─ test-server-bettersqlite   (isolated process: node-sqlite3 must
-#           ├─ test-server-integration     never co-load with better-sqlite3)
+#           ├─ test-server-integration     never co-load with better-sqlite3,
+#           │                              now the default driver — ADR-0014)
 #           ├─ test-chat
 #           └─ test-client
 #   vuln-scan-deps  (independent; ALL branches — shift-left npm CVE gate)
@@ -126,16 +127,36 @@ jobs:
   test-server-bettersqlite:
     executor: node
     # Own process so node-sqlite3 is never loaded alongside better-sqlite3
-    # (they corrupt each other's error handling). See jest.bettersqlite.config.js.
+    # (they corrupt each other's error handling) — the isolation matters for
+    # the throw-semantics contract tests regardless of which driver is the
+    # production default (better-sqlite3 since the ADR-0014 Phase-C flip).
+    # See jest.bettersqlite.config.js.
     steps:
       - checkout
       - attach_workspace: { at: . }
       - with_test_secrets
       - run:
-          name: better-sqlite3 contract tests (isolated)
-          command: npx jest --config config/jest/jest.bettersqlite.config.js --reporters=default --reporters=jest-junit --maxWorkers=2
+          # Per-SUITE process isolation (scripts/ci/run-bettersqlite-isolated.sh):
+          # the two contract suites corrupt each other's better-sqlite3 error
+          # handling when jest's in-band heuristic puts them in one worker.
+          name: better-sqlite3 contract tests (isolated per suite)
+          command: bash scripts/ci/run-bettersqlite-isolated.sh --reporters=default --reporters=jest-junit
           environment:
             JEST_JUNIT_OUTPUT_DIR: ./test-results/server-bettersqlite
+      - run:
+          # ADR-0014 Phase C: the jest suites all PIN the flag (setup file
+          # pins 'false' ambiently; matrix tests pin per-describe), so this
+          # is the one place the real flipped default — flag unset →
+          # better-sqlite3 active — executes end-to-end. Own node process,
+          # so no jest contamination; server/data/ is ephemeral in CI.
+          name: Default-driver boot smoke (flag unset -> better-sqlite3 active)
+          command: |
+            node -e "
+              const dbm = require('./server/database/database');
+              if (!dbm._betterAdapter()) { console.error('FAIL: better-sqlite3 not active with USE_BETTER_SQLITE3 unset'); process.exit(1); }
+              console.log('OK: default driver is better-sqlite3');
+              process.exit(0);
+            "
       - store_test_results: { path: ./test-results }
 
   test-server-integration:

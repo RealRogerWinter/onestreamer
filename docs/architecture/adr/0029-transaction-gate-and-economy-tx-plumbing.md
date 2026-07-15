@@ -11,7 +11,7 @@ Worse, the economy paths *depended* on the hole. `ShopService.purchaseItem` open
 
 The audit weighed two designs (Plan 04 DB2) and its red-team pass reversed the original ranking: a **second dedicated connection** for scopes (option b) breaks purchaseItem outright — its bare writes would land on the other connection, making the "atomic" purchase non-atomic and deadlock-prone against the scope's own `BEGIN IMMEDIATE` lock. The safer migration is the **mutex gate with explicit reentrancy** (option a).
 
-A prerequisite decision: sqlite3 vs better-sqlite3 (`USE_BETTER_SQLITE3`, default off). Building the gate *above* the promise wrappers makes it driver-neutral, so the transaction layer is built once; the flag cutover stays a separate operator decision (its own PR + ADR-0014 update, per the plan's "not a drive-by" warning). **better-sqlite3 remains the target default**; nothing here blocks or presumes the flip, and the whole layer is tested under both backends.
+A prerequisite decision: sqlite3 vs better-sqlite3 (`USE_BETTER_SQLITE3`, default off). Building the gate *above* the promise wrappers makes it driver-neutral, so the transaction layer is built once; the flag cutover stays a separate operator decision (its own PR + ADR-0014 update, per the plan's "not a drive-by" warning). **better-sqlite3 remains the target default**; nothing here blocks or presumes the flip, and the whole layer is tested under both backends. _(Done 2026-07-15 — the Phase-C default flip landed with the ADR-0014 amendment.)_
 
 ## Decision
 
