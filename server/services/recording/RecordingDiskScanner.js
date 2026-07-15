@@ -142,10 +142,11 @@ class RecordingDiskScanner {
 
         if (hasPlaylist) {
           // Stat every segment for its mtime — the segment file's completion
-          // time is the only reliable per-segment timestamp now that egress
-          // writes per-DAY `recording_<date>` buckets (the dir name is a date,
-          // not a start time, and segments aren't start-aligned). A finished
-          // segment covers roughly [mtime - segmentDuration, mtime].
+          // time is the only reliable per-segment timestamp: retired per-day
+          // `recording_<date>` buckets may still exist on disk (dir name is a
+          // date, not a start time), and even per-run dirs (ADR-0028) hold
+          // segments that aren't start-aligned. A finished segment covers
+          // roughly [mtime - segmentDuration, mtime].
           const segDurMs = this.segmentDuration * 1000;
           const segMeta = entry.segments
             .map((file) => {
@@ -306,15 +307,29 @@ class RecordingDiskScanner {
 
   /**
    * Recognize a recording session directory and return its start timestamp in
-   * ms, or null if the name isn't a session dir. Handles the current egress
-   * format `recording_<YYYY-MM-DD>` (a per-day bucket; the date parses to that
-   * day's UTC midnight) and the legacy `session_<unix-ms>` format older builds
-   * wrote. The previous code matched ONLY `session_`, so against today's
-   * `recording_<date>` dirs every cleanup scan found nothing — the root cause
-   * of the unbounded disk growth.
+   * ms, or null if the name isn't a session dir. Three formats, newest first:
+   *
+   *   - `recording_<YYYY-MM-DD>_<epochMs>` — current per-run dirs (ADR-0028);
+   *     the epoch capture is the run's start time.
+   *   - `recording_<YYYY-MM-DD>` — the retired per-day buckets; parses to that
+   *     day's UTC midnight. Kept so dirs written before the per-run cutover
+   *     still age out (their sessionTs only matters for empty dirs — segment
+   *     mtime drives age otherwise).
+   *   - `session_<unix-ms>` — legacy dirs from older builds.
+   *
+   * LOCKSTEP: this must recognize every format
+   * ContinuousRecordingService.startRecording produces, or cleanup AND clip
+   * lookup silently skip those dirs (the original unbounded-disk-growth root
+   * cause was exactly such a drift). Gated by
+   * RecordingDiskScanner.parseSessionDir.test.js — extend it with any new
+   * format FIRST.
    */
   _parseSessionDir(item) {
-    let m = item.match(/^recording_(\d{4}-\d{2}-\d{2})$/);
+    let m = item.match(/^recording_(\d{4}-\d{2}-\d{2})_(\d+)$/);
+    if (m) {
+      return parseInt(m[2], 10);
+    }
+    m = item.match(/^recording_(\d{4}-\d{2}-\d{2})$/);
     if (m) {
       const ts = Date.parse(`${m[1]}T00:00:00Z`);
       return Number.isNaN(ts) ? null : ts;
