@@ -26,6 +26,38 @@ class GroqUnavailableError extends Error {
     }
 }
 
+// Audit A6 (Plan 07): Groq fetches used to run with no timeout, so a hung
+// upstream connection pinned the caller forever. Every fetch now carries an
+// abort signal that fires after GROQ_TIMEOUT_MS (default 30s).
+const DEFAULT_GROQ_TIMEOUT_MS = 30000;
+function groqTimeoutMs() {
+    const v = parseInt(process.env.GROQ_TIMEOUT_MS, 10);
+    return Number.isFinite(v) && v > 0 ? v : DEFAULT_GROQ_TIMEOUT_MS;
+}
+
+// Combine an optional caller-supplied AbortSignal with a time-based timeout
+// signal: the fetch aborts when EITHER fires. Uses AbortSignal.any when the
+// runtime has it (Node >= 18.17); otherwise falls back to a tiny manual
+// combiner so older Node 18 patch releases still get both behaviors.
+function withTimeoutSignal(callerSignal, ms = groqTimeoutMs()) {
+    const timeoutSignal = AbortSignal.timeout(ms);
+    if (!callerSignal) return timeoutSignal;
+    if (typeof AbortSignal.any === 'function') {
+        return AbortSignal.any([callerSignal, timeoutSignal]);
+    }
+    const controller = new AbortController();
+    const forward = (src) => {
+        if (src.aborted) {
+            controller.abort(src.reason);
+        } else {
+            src.addEventListener('abort', () => controller.abort(src.reason), { once: true });
+        }
+    };
+    forward(callerSignal);
+    forward(timeoutSignal);
+    return controller.signal;
+}
+
 // Maps each opening quote to its valid closer. Used by stripWrappingQuotes
 // to remove a balanced pair only when both ends actually match (so we don't
 // eat a leading apostrophe in `'sup chat`).
@@ -81,7 +113,8 @@ class GroqClient {
                     max_tokens: 120,
                     temperature: 0.7,
                     stream: false
-                })
+                }),
+                signal: withTimeoutSignal(null)
             });
 
             if (!response.ok) {
@@ -131,7 +164,8 @@ class GroqClient {
                     max_tokens: maxTokens,
                     temperature: temperature,
                     stream: false
-                })
+                }),
+                signal: withTimeoutSignal(null)
             });
 
             if (!response.ok) {
@@ -206,7 +240,9 @@ class GroqClient {
                     temperature,
                     stream: false,
                 }),
-                signal: abortSignal || undefined,
+                // Timeout always applies; a caller-supplied signal is combined
+                // with it so either can abort the request (audit A6).
+                signal: withTimeoutSignal(abortSignal),
             });
         } catch (fetchErr) {
             // Authorization header is in the fetch options object but isn't on
@@ -325,4 +361,7 @@ module.exports = {
     GroqUnavailableError,
     QUOTE_PAIRS,
     stripWrappingQuotes,
+    // Exported for tests (audit A6).
+    groqTimeoutMs,
+    withTimeoutSignal,
 };

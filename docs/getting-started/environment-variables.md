@@ -166,10 +166,12 @@ Uses OAuth 2.0 client credentials grant for the Helix API. See [`/docs/integrati
 |----------|---------|---------|
 | `OLLAMA_HOST` | `http://localhost:11434` | Local Ollama server URL |
 | `OLLAMA_MODEL` | `mistral` | Default model name |
+| `OLLAMA_TIMEOUT_MS` | `60000` | Hard deadline per Ollama chat call; queued requests older than 2× this are dropped with a fallback response (audit A6) |
 | `GROQ_API_KEY` | (empty) | Groq cloud LLM API key. Optional fallback. |
 | `WHISPER_TIMEOUT_FLOOR_MS` | `20000` | Minimum whisper.cpp watchdog timeout per transcription run |
 | `WHISPER_TIMEOUT_PER_SEC_MS` | `1500` | Watchdog ms per second of input audio: `timeout = max(floor, duration × this)` |
 | `WHISPER_MAX_CONCURRENT` | `2` | Max concurrent whisper.cpp child processes; excess runs queue FIFO |
+| `GROQ_TIMEOUT_MS` | `30000` | Abort deadline for every Groq API fetch (audit A6) |
 
 Both optional. If neither is reachable, [`ChatBotLLMService`](../../server/services/ChatBotLLMService.js) uses a canned response set.
 

@@ -164,7 +164,10 @@ class ChatBotLLMService {
         this.activeRequests.set(modelToUse, activeCount + 1);
 
         try {
-            const response = await this.ollama.chat({
+            // Timeout-wrapped (audit A6): a hung Ollama otherwise pins this
+            // model's concurrency slot forever. On timeout the catch below
+            // returns the fallback and the finally frees the slot.
+            const response = await this.ollamaQueue.chatWithTimeout({
                 model: modelToUse,
                 messages: [
                     { role: 'system', content: systemPrompt },
