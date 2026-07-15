@@ -34,6 +34,17 @@ class ChatBotService {
         // Falls back to null when not injected (the test mocks don't pass one);
         // emit() guards on truthiness so the no-bus case is a silent no-op.
         this.botEventBus = botEventBus;
+        // Audit A4 (Plan 07): every connected bot socket receives every chat
+        // 'new-message' broadcast, so the per-socket handler used to emit
+        // 'chat-message' onto the bus once PER BOT (N duplicates per message,
+        // O(N²) event volume into the LLM chat context). Dedup by message
+        // identity so the bus sees each chat message exactly once regardless
+        // of how many bot sockets observe it. Keyed by the chat-service
+        // message id (uuid) with a timestamp+username+message fallback; a
+        // small FIFO-bounded set keeps memory constant.
+        this.BUS_DEDUP_MAX_KEYS = 500;
+        this._busEmittedKeys = new Set();
+        this._busEmittedKeyOrder = [];
         // PR-M4 (ADR-0013): optional ModerationService reference. When set,
         // every MovieBot reply runs through `checkBotOutput()` before it's
         // emitted to chat — flagged outputs are dropped silently and a
@@ -130,6 +141,28 @@ class ChatBotService {
                 botId
             },
             rejectUnauthorized: false // Allow self-signed certificates
+        });
+    }
+
+    // Audit A4 (Plan 07): emit a chat message onto the BotEventBus exactly
+    // once per message, no matter how many bot sockets received the same
+    // 'new-message' broadcast. Chat-service messages carry a uuid `id`; the
+    // fallback key covers test/legacy payloads without one.
+    _emitChatMessageToBus(message) {
+        if (!this.botEventBus || !message || !message.username || !message.message) {
+            return;
+        }
+        const key = message.id ||
+            `${message.fullTimestamp || message.timestamp || ''}|${message.username}|${message.message}`;
+        if (this._busEmittedKeys.has(key)) return;
+        this._busEmittedKeys.add(key);
+        this._busEmittedKeyOrder.push(key);
+        if (this._busEmittedKeyOrder.length > this.BUS_DEDUP_MAX_KEYS) {
+            this._busEmittedKeys.delete(this._busEmittedKeyOrder.shift());
+        }
+        this.botEventBus.emit('chat-message', {
+            username: message.username,
+            message: message.message,
         });
     }
 
@@ -332,13 +365,11 @@ class ChatBotService {
             
             // Feed to MovieBotService via the BotEventBus. Decoupled in PR 1.3
             // so this service no longer holds a direct MovieBotService ref;
-            // the factory wires the same bus into both subscribers.
-            if (this.botEventBus && message.username && message.message) {
-                this.botEventBus.emit('chat-message', {
-                    username: message.username,
-                    message: message.message,
-                });
-            }
+            // the factory wires the same bus into both subscribers. Every bot
+            // socket receives this broadcast, so the emit is deduped by
+            // message identity (audit A4) — the bus sees each chat message
+            // exactly once, not once per connected bot.
+            this._emitChatMessageToBus(message);
         });
 
         socket.on('connect_error', (error) => {

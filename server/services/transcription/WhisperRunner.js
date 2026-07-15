@@ -4,6 +4,82 @@ const { spawn } = require('child_process');
 
 const logger = require('../../bootstrap/logger').child({ svc: 'WhisperRunner' });
 
+// A3 (audit Plan 07): watchdog-timeout scaling + child-process concurrency.
+//
+// The old fixed 20 s watchdog silently truncated long windows (MovieBot's
+// 45 s capture routinely needs more than 20 s of whisper.cpp CPU time on a
+// loaded host) and discarded whatever whisper had already emitted. The
+// timeout now scales with the audio duration when the caller knows it:
+//
+//   timeoutMs = max(WHISPER_TIMEOUT_FLOOR_MS,
+//                   audioDurationSec * WHISPER_TIMEOUT_PER_SEC_MS)
+//
+// Defaults: 20 s floor, 1500 ms per second of audio (~1.5x realtime — the
+// floor absorbs model-load overhead for short clips). When the duration is
+// unknown the floor alone applies (previous behaviour).
+const DEFAULT_TIMEOUT_FLOOR_MS = 20000;
+const DEFAULT_TIMEOUT_PER_SEC_MS = 1500;
+const DEFAULT_MAX_CONCURRENT = 2;
+
+function envPositiveInt(name, fallback) {
+    const n = parseInt(process.env[name], 10);
+    return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+function computeTimeoutMs(audioDurationSec) {
+    const floorMs = envPositiveInt('WHISPER_TIMEOUT_FLOOR_MS', DEFAULT_TIMEOUT_FLOOR_MS);
+    if (!Number.isFinite(audioDurationSec) || audioDurationSec <= 0) {
+        return floorMs;
+    }
+    const perSecMs = envPositiveInt('WHISPER_TIMEOUT_PER_SEC_MS', DEFAULT_TIMEOUT_PER_SEC_MS);
+    return Math.max(floorMs, Math.ceil(audioDurationSec * perSecMs));
+}
+
+// In-module semaphore bounding concurrent whisper.cpp child processes.
+// Module-level (not per-instance) because there is one whisper binary and one
+// CPU budget per host regardless of how many WhisperRunner instances exist.
+// Excess runs queue FIFO and start when a slot frees — never rejected.
+// Tunable via WHISPER_MAX_CONCURRENT (default 2).
+const semaphore = { active: 0, waiters: [] };
+
+/**
+ * Take a slot. Returns `null` when acquired synchronously (so the caller can
+ * spawn immediately, keeping the watchdog timer accurate), or a Promise that
+ * resolves once a slot is handed over.
+ */
+function acquireSlot() {
+    const max = envPositiveInt('WHISPER_MAX_CONCURRENT', DEFAULT_MAX_CONCURRENT);
+    if (semaphore.active < max) {
+        semaphore.active += 1;
+        return null;
+    }
+    return new Promise((resolve) => semaphore.waiters.push(resolve));
+}
+
+function releaseSlot() {
+    const next = semaphore.waiters.shift();
+    if (next) {
+        next(); // hand the slot straight to the next queued run; count unchanged
+    } else {
+        semaphore.active -= 1;
+    }
+}
+
+// Whisper prints its banner/timings to stdout alongside transcript lines;
+// keep only the transcript. Shared by the clean-exit stdout fallback and the
+// timed-out partial-output path.
+function parseStdoutTranscript(output) {
+    return output
+        .split('\n')
+        .filter(line =>
+            !line.includes('whisper_') &&
+            !line.includes('time =') &&
+            line.trim().length > 0
+        )
+        .join(' ')
+        .trim();
+}
+
 /**
  * WhisperRunner
  *
@@ -23,7 +99,34 @@ class WhisperRunner {
         this.isWindows = deps.isWindows;
     }
 
-    async transcribeWithWhisperCpp(audioPath, config) {
+    /**
+     * @param {string} audioPath - WAV file to transcribe
+     * @param {object} config - { model, language }
+     * @param {object} [options]
+     * @param {number} [options.audioDurationSec] - duration of the audio
+     *   window in seconds; scales the watchdog timeout. When omitted the
+     *   WHISPER_TIMEOUT_FLOOR_MS floor applies.
+     * @returns {Promise<string>} the transcript (possibly partial on timeout)
+     */
+    transcribeWithWhisperCpp(audioPath, config, options = {}) {
+        const wait = acquireSlot();
+        if (!wait) {
+            return this._runReleasing(audioPath, config, options);
+        }
+        logger.debug('⏳ WHISPER: Concurrency limit reached, queueing run');
+        return wait.then(() => this._runReleasing(audioPath, config, options));
+    }
+
+    _runReleasing(audioPath, config, options) {
+        const run = this._runWhisperProcess(audioPath, config, options);
+        // Release the slot when the child settles — as a side chain, so the
+        // caller still sees the original resolution/rejection and a rejected
+        // run can't become an unhandled rejection here.
+        run.then(releaseSlot, releaseSlot);
+        return run;
+    }
+
+    _runWhisperProcess(audioPath, config, options = {}) {
         return new Promise((resolve, reject) => {
             const modelPath = path.join(this.whisperPath, 'models', `ggml-${config.model}.bin`);
             const whisperExe = this.isWindows
@@ -63,9 +166,11 @@ class WhisperRunner {
             // handler can tell our own SIGTERM/SIGKILL apart from a crash signal.
             let killedByTimeout = false;
 
-            // Add timeout to kill hanging whisper process
+            // Add timeout to kill hanging whisper process. Scales with the
+            // audio duration when the caller provides it (A3, audit Plan 07).
+            const timeoutMs = computeTimeoutMs(options.audioDurationSec);
             timeoutId = setTimeout(() => {
-                logger.debug('⚠️ WHISPER: Process timeout, killing...');
+                logger.debug(`⚠️ WHISPER: Process timeout after ${timeoutMs}ms, killing...`);
                 killedByTimeout = true;
                 whisperProcess.kill('SIGTERM');
                 setTimeout(() => {
@@ -73,7 +178,7 @@ class WhisperRunner {
                         whisperProcess.kill('SIGKILL');
                     }
                 }, 2000);
-            }, 20000); // 20 second timeout
+            }, timeoutMs);
 
             whisperProcess.stdout.on('data', (data) => {
                 output += data.toString();
@@ -86,11 +191,22 @@ class WhisperRunner {
             whisperProcess.on('close', (code, signal) => {
                 clearTimeout(timeoutId);
 
-                // Our own watchdog kill (SIGTERM, then SIGKILL) — expected, treat
-                // as an empty (timed-out) transcription, not a crash.
+                // Our own watchdog kill (SIGTERM, then SIGKILL) — expected,
+                // not a crash. Salvage whatever transcript whisper already
+                // emitted on stdout instead of discarding it (A3): a timed-out
+                // 45 s window used to come back as '' even when 40 s of it had
+                // been transcribed. The result is truncated — WARN loudly so
+                // operators can raise WHISPER_TIMEOUT_* / lower window sizes.
                 if (killedByTimeout) {
-                    logger.debug('⚠️ WHISPER: Process timed out');
-                    resolve('');
+                    const partial = parseStdoutTranscript(output);
+                    const durationLabel = Number.isFinite(options.audioDurationSec)
+                        ? `${options.audioDurationSec}s`
+                        : 'unknown';
+                    logger.warn(
+                        `⚠️ WHISPER: Process timed out after ${timeoutMs}ms (audio duration: ${durationLabel}); `
+                        + `returning ${partial.length} chars of partial transcript (truncated)`
+                    );
+                    resolve(partial);
                     return;
                 }
 
@@ -126,13 +242,7 @@ class WhisperRunner {
                         resolve(transcription);
                     } else if (output.trim()) {
                         // Parse output from stdout if no file
-                        const lines = output.split('\n');
-                        const transcriptionLines = lines.filter(line =>
-                            !line.includes('whisper_') &&
-                            !line.includes('time =') &&
-                            line.trim().length > 0
-                        );
-                        const transcription = transcriptionLines.join(' ').trim();
+                        const transcription = parseStdoutTranscript(output);
                         logger.debug(`✅ WHISPER: Transcription from stdout (${transcription.split(' ').length} words)`);
                         resolve(transcription);
                     } else {

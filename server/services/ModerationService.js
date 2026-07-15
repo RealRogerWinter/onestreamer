@@ -1001,9 +1001,17 @@ class ModerationService extends EventEmitter {
     // pipeline (which only acts on risk_level=3 + 2-of-2) because bot output
     // is a controlled surface — we'd rather drop a borderline reply than
     // emit it under the platform's identity.
+    //
+    // Audit M7: fail CLOSED when Stage 1 soft-matched but Stage 2 produced
+    // no usable verdict (degraded/breaker-open, error, threw, not ready, or
+    // not configured — all leave stage2Said null). Previously a Groq outage
+    // let every non-hard Stage-1 match ship unverified under the platform
+    // identity. Hard-hit behavior is unchanged (always drops); clean text
+    // (no Stage-1 match) never reaches Stage 2 and is unaffected.
     const hardHit = matches.some((m) => m.severity === 'hard');
     const stage2Hit = stage2Said && stage2Said.risk_level >= 2;
-    const shouldDrop = matches.length > 0 && (hardHit || stage2Hit);
+    const stage2Unverifiable = stage2Said === null;
+    const shouldDrop = matches.length > 0 && (hardHit || stage2Hit || stage2Unverifiable);
 
     if (!shouldDrop) {
       return { allowed: true };
@@ -1024,7 +1032,9 @@ class ModerationService extends EventEmitter {
       stage2_risk_level: stage2RiskLevel,
       stage2_categories_json: stage2CategoriesJson,
       final_decision: 'mb_output_dropped',
-      action_taken: hardHit ? 'dropped_hard_tier_word' : 'dropped_stage2_risk',
+      action_taken: hardHit
+        ? 'dropped_hard_tier_word'
+        : (stage2Hit ? 'dropped_stage2_risk' : 'dropped_stage2_unverifiable'),
       actor: 'system',
       automated_decision: 1,
       legal_basis: null,
@@ -1041,7 +1051,9 @@ class ModerationService extends EventEmitter {
     }
     return {
       allowed: false,
-      reason: hardHit ? 'hard_tier_word' : 'stage2_risk',
+      reason: hardHit
+        ? 'hard_tier_word'
+        : (stage2Hit ? 'stage2_risk' : 'stage2_unverifiable'),
       eventId: event && event.id,
     };
   }

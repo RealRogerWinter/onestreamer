@@ -107,6 +107,9 @@ public/hls/*.m3u8
 
 # Runtime state / per-deploy config — checked-in counterparts have .example.* siblings
 chat-service/moderation_data.json
+# Per-install anonymous-identity salt (audit CH5) — runtime secret, sibling
+# of the moderation store; also covers .bak/.tmp of the store itself
+chat-service/moderation_data.json.*
 server/data/*-state.json
 youtube-cookies.txt
 
@@ -115,11 +118,18 @@ nginx/*
 !nginx/.gitkeep
 !nginx/*.example.conf
 
-# LiveKit per-deploy configs — LiveKit is the sole WebRTC backend (ADR-0024);
-# these carry per-deploy secrets, only the sanitized livekit-*.example.yaml
-# references are tracked
+# LiveKit per-deploy configs — LiveKit is the sole WebRTC backend (ADR-0024)
+# and these carry the live api_key/api_secret on a deployed host. Only the
+# sanitized *.example siblings are tracked (audit Plan 02 S4 / Plan 03 D3:
+# a `git commit -a` must never be able to pick up a secret-bearing config).
 livekit-config.yaml
 livekit-ssl.yaml
+egress-config.yaml
+ingress-config.yaml
+
+# Secret-bearing rotation backups (e.g. .env.bak-20260604-rotate,
+# egress-config.yaml.bak-20260604-rotate) — same S4/D3 rule
+*.bak-*-rotate
 
 # Recording artifacts (keep the .gitkeep scaffolding, ignore actual recordings)
 recordings/**

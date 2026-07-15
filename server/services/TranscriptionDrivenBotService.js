@@ -58,6 +58,10 @@ class TranscriptionDrivenBotService extends EventEmitter {
 
         this.recentChatMessages = [];
         this.MAX_CHAT_HISTORY = 50;
+        // Audit A4 (Plan 07): window inside which an identical
+        // username+message pair is treated as a duplicate delivery and
+        // skipped by addChatMessage().
+        this.CHAT_DEDUP_WINDOW_MS = 2000;
 
         this.config = null;
         this.isActive = false;
@@ -305,6 +309,16 @@ class TranscriptionDrivenBotService extends EventEmitter {
 
     addChatMessage(username, message) {
         if (!username || username.includes('🤖')) return;
+        // Defensive dedup (audit A4, Plan 07): an upstream fan-out bug (or a
+        // double-wired listener) can deliver the same chat message multiple
+        // times in quick succession. Skip an identical username+message seen
+        // within a short window so duplicates never inflate the LLM context.
+        const now = Date.now();
+        for (let i = this.recentChatMessages.length - 1; i >= 0; i--) {
+            const prev = this.recentChatMessages[i];
+            if (now - prev.timestamp.getTime() > this.CHAT_DEDUP_WINDOW_MS) break;
+            if (prev.username === username && prev.message === message) return;
+        }
         this.recentChatMessages.push({ username, message, timestamp: new Date() });
         if (this.recentChatMessages.length > this.MAX_CHAT_HISTORY) {
             this.recentChatMessages = this.recentChatMessages.slice(-this.MAX_CHAT_HISTORY);

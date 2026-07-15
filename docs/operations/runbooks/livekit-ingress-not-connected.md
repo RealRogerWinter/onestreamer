@@ -69,6 +69,8 @@ Restart: `sudo systemctl restart livekit`. Verify both lines appear in `ss -tlnp
 
 `livekit-ingress` and `livekit-egress` run as Docker containers with `restart: unless-stopped`. If something manually stopped them (or a host reboot before docker daemon came up), they stay down. The compose-equivalent pieces of state still live in `/root/onestreamer/ingress-config.yaml` and the egress container's mount config.
 
+> Note (audit S4/D3): `ingress-config.yaml` / `egress-config.yaml` are **gitignored** — only the sanitized `*.example` templates are tracked. On a fresh clone, `cp ingress-config.yaml.example ingress-config.yaml` (and egress likewise) and fill in the real LiveKit `api_key`/`api_secret` before starting the containers.
+
 **Fix:**
 
 ```bash
