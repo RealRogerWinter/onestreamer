@@ -257,12 +257,47 @@ class ViewBotURLService extends EventEmitter {
   }
 
   /**
+   * V3 (audit Plan 06): reason string when this URL stream must stand down
+   * for a human, or null when it may proceed. Two conditions:
+   *  - a takeover critical section is running (ADR-0033 `takeoverInProgress`
+   *    on StreamService) — the human wins even though setStreamer hasn't
+   *    landed yet;
+   *  - the current streamer is a real human (same prefix classification as
+   *    the startURLStream entry gate: not a viewbot/bot/url-stream id, and
+   *    not this stream itself).
+   * Synchronous by design so check-and-act stays atomic within a JS tick.
+   */
+  _supersededByRealStreamer(urlId) {
+    if (!this.streamService) return null;
+    if (this.streamService.takeoverInProgress) return 'takeover in progress';
+    const current = this.streamService.getCurrentStreamer();
+    const realStreamerActive = !!current
+      && current !== urlId
+      && !current.startsWith('viewbot-')
+      && !current.includes('viewbot')
+      && !current.startsWith('bot-')
+      && !current.startsWith('url-stream-');
+    return realStreamerActive ? `real streamer ${current} is active` : null;
+  }
+
+  /**
    * Register a URL stream as the current streamer on StreamService and the
    * LiveKit WebRTC service. Shared across startURLStream, broadcast,
    * reconnect, and Kick token refresh. The per-call-site debug log is
    * preserved verbatim via the optional `streamerLog` string.
+   *
+   * V3: re-checks the real-streamer gate at write time (the entry gate in
+   * startURLStream is check-once and every restart path used to re-register
+   * unconditionally — a takeover landing mid-flight was silently
+   * overwritten). Returns false and writes nothing when superseded; callers
+   * own the teardown.
    */
   _registerAsCurrentStreamer(urlId, { streamerLog = null } = {}) {
+    const superseded = this._supersededByRealStreamer(urlId);
+    if (superseded) {
+      logger.warn(`⛔ URL STREAM: Refusing to register ${urlId} as current streamer — ${superseded}`);
+      return false;
+    }
     if (this.streamService) {
       if (streamerLog) logger.debug(streamerLog);
       this.streamService.setStreamer(urlId);
@@ -270,6 +305,7 @@ class ViewBotURLService extends EventEmitter {
     if (global.webrtcService) {
       global.webrtcService.currentStreamer = urlId;
     }
+    return true;
   }
 
   /**
@@ -364,14 +400,11 @@ class ViewBotURLService extends EventEmitter {
       // URL streams should NEVER override a real human streamer. Source of
       // truth is StreamService (a real streamer is a current streamer whose
       // socket id is not a viewbot/bot/url-stream).
-      const currentStreamer = this.streamService && this.streamService.getCurrentStreamer();
-      const realStreamerActive = !!currentStreamer
-        && !currentStreamer.startsWith('viewbot-')
-        && !currentStreamer.includes('viewbot')
-        && !currentStreamer.startsWith('bot-')
-        && !currentStreamer.startsWith('url-stream-');
-      if (realStreamerActive) {
-        logger.debug(`⛔ URL STREAM: Blocking ${urlId} - real streamer is active`);
+      // V3: shared with the write-time re-check in _registerAsCurrentStreamer
+      // (this entry check alone is check-once and raceable).
+      const supersededAtEntry = this._supersededByRealStreamer(urlId);
+      if (supersededAtEntry) {
+        logger.debug(`⛔ URL STREAM: Blocking ${urlId} - ${supersededAtEntry}`);
         this._startingStream = false;
         return {
           success: false,
@@ -477,9 +510,27 @@ class ViewBotURLService extends EventEmitter {
       // CRITICAL FIX: Register as current streamer IMMEDIATELY
       // This prevents "offline" status indicator during stream startup
       // (previously only set after track verification, causing null streamerId)
-      this._registerAsCurrentStreamer(urlId, {
+      //
+      // V3: registration re-checks the real-streamer gate — a takeover that
+      // landed between the entry gate and here wins, and the just-started
+      // pipeline is torn back down (generalizes the PR #33 rotation-side
+      // defensive abort to every startURLStream caller).
+      const registered = this._registerAsCurrentStreamer(urlId, {
         streamerLog: `📢 URL STREAM: Immediately registering ${urlId} as current streamer`,
       });
+      if (!registered) {
+        logger.warn(`⏸️ URL STREAM: ${urlId} superseded by a real streamer during startup - stopping`);
+        try {
+          await this.stopURLStream(urlId);
+        } catch (stopErr) {
+          logger.error(`❌ URL STREAM: Failed to stop superseded stream ${urlId}:`, stopErr.message);
+        }
+        return {
+          success: false,
+          error: 'Superseded by real streamer during startup',
+          urlId
+        };
+      }
 
       // Emit event for integration
       this.emit('url-stream-started', {

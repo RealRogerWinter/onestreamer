@@ -114,6 +114,16 @@ class StreamReconnector {
           return;
         }
 
+        // V3: a takeover may have installed a real streamer during the
+        // stop/teardown/backoff span — stand down instead of restarting
+        // a relay over the human.
+        const supersededBeforeRestart = owner._supersededByRealStreamer(urlId);
+        if (supersededBeforeRestart) {
+          logger.warn(`⏸️ URL STREAM: Not reconnecting ${urlId} - ${supersededBeforeRestart}`);
+          await this.handleStreamEnd(urlId, 'superseded_by_real_streamer');
+          return;
+        }
+
         // Attempt restart
         try {
           await owner._startPipeline(urlId, streamEntry);
@@ -123,9 +133,16 @@ class StreamReconnector {
 
           // CRITICAL: Re-register as current streamer after reconnect
           // This ensures status indicator stays correct
-          owner._registerAsCurrentStreamer(urlId, {
+          // V3: registration re-checks the gate; on refusal, tear the
+          // freshly-restarted relay back down and skip viewer notification.
+          const reRegistered = owner._registerAsCurrentStreamer(urlId, {
             streamerLog: `📢 URL STREAM: Re-registering ${urlId} as current streamer after reconnect`,
           });
+          if (!reRegistered) {
+            logger.warn(`⏸️ URL STREAM: ${urlId} superseded during reconnect restart - ending`);
+            await this.handleStreamEnd(urlId, 'superseded_by_real_streamer');
+            return;
+          }
 
           // Notify viewers about the reconnected stream
           if (owner.io) {
@@ -226,6 +243,14 @@ class StreamReconnector {
     const owner = this.owner;
     const logger = this.logger;
     try {
+      // V3: a real streamer may have taken over since the 403 fired —
+      // returning false falls through to the caller's handleStreamEnd.
+      const superseded = owner._supersededByRealStreamer(urlId);
+      if (superseded) {
+        logger.warn(`⏸️ KICK TOKEN: Not refreshing ${urlId} - ${superseded}`);
+        return false;
+      }
+
       streamEntry.tokenRefreshAttempts++;
       streamEntry.status = 'refreshing_token';
 
@@ -296,9 +321,15 @@ class StreamReconnector {
         logger.debug(`✅ KICK TOKEN: Successfully refreshed and restarted stream ${urlId}`);
 
         // Re-register as current streamer
-        owner._registerAsCurrentStreamer(urlId, {
+        // V3: refusal means a takeover landed mid-refresh — report failure
+        // so the caller's fall-through handleStreamEnd tears the relay down.
+        const reRegistered = owner._registerAsCurrentStreamer(urlId, {
           streamerLog: `📢 KICK TOKEN: Re-registering ${urlId} as current streamer`,
         });
+        if (!reRegistered) {
+          logger.warn(`⏸️ KICK TOKEN: ${urlId} superseded during token refresh - ending stream`);
+          return false;
+        }
 
         return true;
       } catch (restartError) {
