@@ -172,5 +172,5 @@ These aren't automated yet. Adding a doc-link-check to CI would be a cheap, usef
 
 - [`coding-conventions.md`](coding-conventions.md) — style + file layout
 - [`branching-and-releases.md`](branching-and-releases.md) — what CI blocks
-- [`/.github/workflows/ci.yml`](../../.github/workflows/ci.yml) — current CI workflow
+- [`/.circleci/config.yml`](../../.circleci/config.yml) — current CI pipeline ([ADR-0026](../architecture/adr/0026-circleci-pipeline.md))
 - [`/docs/getting-started/first-stream.md`](../getting-started/first-stream.md) — manual smoke test of the happy path
